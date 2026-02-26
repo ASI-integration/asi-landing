@@ -17,7 +17,7 @@ export function FinalCTA() {
         </p>
         <Link
           href="/signup"
-          className="mt-8 inline-flex items-center justify-center px-8 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800"
+          className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all duration-200 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:shadow-slate-900/30"
         >
           {t('finalCta.button')}
         </Link>

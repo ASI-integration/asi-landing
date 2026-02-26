@@ -41,7 +41,7 @@ export function Pricing() {
             </p>
             <Link
               href="/signup"
-              className="mt-6 block text-center py-3 rounded-lg font-medium border border-slate-900 text-slate-900 hover:bg-slate-50"
+              className="mt-6 block text-center py-4 rounded-xl font-semibold border border-slate-900 text-slate-900 hover:bg-slate-50 transition-all duration-200 shadow-sm hover:shadow-md"
             >
               {t('pricing.startTrial')}
             </Link>
@@ -62,7 +62,7 @@ export function Pricing() {
             </p>
             <Link
               href="/signup"
-              className="mt-6 block text-center py-3 rounded-lg font-medium bg-slate-900 text-white hover:bg-slate-800"
+              className="mt-6 block text-center py-4 rounded-xl font-semibold bg-slate-900 text-white hover:bg-slate-800 transition-all duration-200 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:shadow-slate-900/30"
             >
               {t('pricing.startTrial')}
             </Link>
@@ -82,7 +82,7 @@ export function Pricing() {
             </p>
             <Link
               href="/signup"
-              className="mt-6 block text-center py-3 rounded-lg font-medium border border-slate-900 text-slate-900 hover:bg-slate-50"
+              className="mt-6 block text-center py-4 rounded-xl font-semibold border border-slate-900 text-slate-900 hover:bg-slate-50 transition-all duration-200 shadow-sm hover:shadow-md"
             >
               {t('pricing.startTrial')}
             </Link>

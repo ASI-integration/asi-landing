@@ -5,7 +5,7 @@
     "features": "Features",
     "pricing": "Pricing",
     "faq": "FAQ",
-    "startTrial": "Start free trial"
+    "startTrial": "Start 14-day trial"
   },
   "hero": {
     "headline": "Run your property autonomously.",
@@ -14,7 +14,9 @@
     "ctaSecondary": "Book demo",
     "emailPlaceholder": "Enter your email",
     "getStarted": "Get started",
-    "trustCopy": "No credit card required · Cancel anytime"
+    "trustCopy": "No credit card required · Cancel anytime",
+    "contactLabel": "Contact",
+    "telegramSupport": "Telegram support"
   },
   "problem": {
     "title": "What sucks about property management today",
@@ -81,7 +83,7 @@
       {
         "icon": "🔗",
         "title": "OTA integration",
-        "desc": "Sync with Booking, Airbnb, etc. Reduce reliance over time."
+        "desc": "Synchronization with OTAs via channel manager."
       }
     ]
   },
