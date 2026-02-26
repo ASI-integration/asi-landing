@@ -73,6 +73,12 @@
         "desc": "Occupancy, revenue, channel mix. One view."
       },
       {
+        "icon": "📝",
+        "title": "Electronic contract signing (in development)",
+        "desc": "Planned integration with e-signature services for automated guest contract processing.",
+        "badge": "Coming soon"
+      },
+      {
         "icon": "🔗",
         "title": "OTA integration",
         "desc": "Sync with Booking, Airbnb, etc. Reduce reliance over time."

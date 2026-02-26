@@ -4,7 +4,7 @@ import { useTranslation } from '@/i18n/useTranslation';
 
 export function Features() {
   const { t, get } = useTranslation();
-  const features = get<{ icon?: string; title: string; desc: string }[]>('features.items') ?? [];
+  const features = get<{ icon?: string; title: string; desc: string; badge?: string }[]>('features.items') ?? [];
 
   return (
     <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
@@ -21,7 +21,14 @@ export function Features() {
               key={i}
               className="p-6 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-colors"
             >
-              <span className="text-2xl">{f.icon ?? '•'}</span>
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-2xl">{f.icon ?? '•'}</span>
+                {f.badge && (
+                  <span className="px-2 py-0.5 text-xs font-medium text-slate-500 bg-slate-100 rounded">
+                    {f.badge}
+                  </span>
+                )}
+              </div>
               <h3 className="mt-4 text-lg font-semibold text-slate-900">{f.title}</h3>
               <p className="mt-2 text-slate-600">{f.desc}</p>
             </div>
