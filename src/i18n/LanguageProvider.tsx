@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Locale } from './useTranslation';
+import { dictionaries } from './dictionaries';
 
 const STORAGE_KEY = 'asi-locale';
 
@@ -39,7 +40,6 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('en');
-  const [dict, setDict] = useState<Dict>({});
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -50,12 +50,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!mounted) return;
-    import(`./${locale}.json`).then((mod) => {
-      setDict(mod.default);
-    });
-  }, [locale, mounted]);
+  const dict = dictionaries[locale];
+  const fallbackDict = dictionaries.en;
 
   const setLocale = useCallback((lang: Locale) => {
     setLocaleState(lang);
@@ -66,22 +62,23 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback(
     (path: string): string => {
-      const val = getNested(dict, path);
-      return val != null ? String(val) : path;
+      const val = getNested(dict, path) ?? getNested(fallbackDict, path);
+      return val != null ? String(val) : '';
     },
-    [dict]
+    [dict, fallbackDict]
   );
 
   const get = useCallback(
     <T = unknown>(path: string): T | undefined => {
-      return getNested(dict, path) as T | undefined;
+      const val = getNested(dict, path) ?? getNested(fallbackDict, path);
+      return val as T | undefined;
     },
-    [dict]
+    [dict, fallbackDict]
   );
 
   const value = useMemo(
-    () => ({ locale, setLocale, t, get }),
-    [locale, setLocale, t, get]
+    () => ({ locale: mounted ? locale : 'en', setLocale, t, get }),
+    [locale, mounted, setLocale, t, get]
   );
 
   return (
