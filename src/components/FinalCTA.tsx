@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
 
 export function FinalCTA() {
-  const [email, setEmail] = useState('');
   const { t } = useTranslation();
 
   return (
@@ -16,24 +15,12 @@ export function FinalCTA() {
         <p className="mt-4 text-lg text-slate-600">
           {t('finalCta.subtitle')}
         </p>
-        <form
-          onSubmit={(e) => e.preventDefault()}
-          className="mt-8 flex flex-col sm:flex-row gap-3"
+        <Link
+          href="/signup"
+          className="mt-8 inline-flex items-center justify-center px-8 py-4 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800"
         >
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('finalCta.emailPlaceholder')}
-            className="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-          />
-          <button
-            type="submit"
-            className="px-8 py-3 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800"
-          >
-            {t('finalCta.button')}
-          </button>
-        </form>
+          {t('finalCta.button')}
+        </Link>
       </div>
     </section>
   );

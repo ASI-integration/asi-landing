@@ -5,7 +5,7 @@ import { LegalFooter } from '@/components/LegalFooter';
 
 export const metadata: Metadata = {
   title: 'ASI — Autonomous Property Management',
-  description: 'Run your property autonomously. No staff. No chaos. No OTA dependency.',
+  description: 'Run your property autonomously. 14-day free trial. No staff. No chaos. No OTA dependency.',
 };
 
 export default function RootLayout({

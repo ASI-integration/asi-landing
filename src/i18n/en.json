@@ -10,7 +10,7 @@
   "hero": {
     "headline": "Run your property autonomously.",
     "subheadline": "No staff. No chaos. No OTA dependency.",
-    "ctaPrimary": "Start 7-day free trial",
+    "ctaPrimary": "Start 14-day free trial",
     "ctaSecondary": "Book demo",
     "emailPlaceholder": "Enter your email",
     "getStarted": "Get started",
@@ -115,32 +115,29 @@
   },
   "pricing": {
     "title": "Simple pricing",
-    "subtitle": "7-day free trial on all plans. No credit card.",
-    "trialBadge": "7-day free trial",
-    "startTrial": "Start trial",
-    "plans": [
-      {
-        "name": "Starter",
-        "desc": "Up to 5 units. Core automations.",
-        "features": ["Guest messaging", "Smart lock", "Basic cleaning"]
-      },
-      {
-        "name": "Pro",
-        "desc": "Up to 25 units. Full stack.",
-        "features": ["Everything in Starter", "Payments", "Analytics", "OTA sync"]
-      },
-      {
-        "name": "Enterprise",
-        "desc": "Unlimited. Custom integrations.",
-        "features": ["Everything in Pro", "API access", "Dedicated support"]
-      }
-    ]
+    "subtitle": "14-day free trial. No credit card.",
+    "valueFraming": "Costs less than 15% of a full-time booking manager salary.",
+    "comparisonNote": "Save vs. a booking manager from 70,000 RUB/month",
+    "pricePerObjectNote": "Price shown per 1 property per month",
+    "smallPlan": "Small (1–3 properties)",
+    "smallPrice": "12,900 RUB / property / month",
+    "smallFeature1": "Full system access",
+    "smallFeature2": "Telegram support",
+    "growthPlan": "Growth (4–10 properties)",
+    "growthPrice": "8,900 RUB / property / month",
+    "growthFeature1": "Full access",
+    "growthFeature2": "Priority support",
+    "enterprisePlan": "Enterprise (10+ properties)",
+    "enterprisePrice": "Custom terms",
+    "enterpriseFeature": "Contact us",
+    "trialBadge": "14-day free trial",
+    "startTrial": "Start trial"
   },
   "faq": {
     "title": "FAQ",
     "items": [
       {
-        "q": "What is the 7-day trial?",
+        "q": "What is the 14-day trial?",
         "a": "Full access to your chosen plan. No credit card. Cancel anytime."
       },
       {
@@ -158,11 +155,15 @@
       {
         "q": "Who is ASI for?",
         "a": "Urban short-term rental owners, small hotels, apart-hotels, and property managers who want to reduce staffing and OTA reliance."
+      },
+      {
+        "q": "Why this price?",
+        "a": "Because the system replaces an operations manager and reduces OTA dependency."
       }
     ]
   },
   "finalCta": {
-    "title": "Start your 7-day free trial",
+    "title": "Start your 14-day free trial",
     "subtitle": "No credit card. Full access. Cancel anytime.",
     "emailPlaceholder": "Enter your email",
     "button": "Start trial"
@@ -171,5 +172,45 @@
     "copyright": "© ASI. All rights reserved.",
     "privacy": "Privacy",
     "terms": "Terms"
+  },
+  "signup": {
+    "title": "Start your trial",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@company.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Min 6 characters",
+    "submit": "Start 14-day free trial",
+    "noCard": "No credit card required",
+    "errorEmailRequired": "Email is required",
+    "errorEmailInvalid": "Please enter a valid email",
+    "errorPasswordRequired": "Password is required",
+    "errorPasswordMin": "Password must be at least 6 characters",
+    "errorEmailExists": "Email already registered",
+    "errorGeneric": "Something went wrong. Please try again."
+  },
+  "dashboard": {
+    "sidebar": {
+      "overview": "Overview",
+      "properties": "Properties",
+      "automations": "Automations",
+      "settings": "Settings"
+    },
+    "propertiesSubtitle": "Manage your properties",
+    "automationsSubtitle": "Configure automations",
+    "settingsSubtitle": "Account and preferences",
+    "header": {
+      "userEmail": "user@example.com"
+    },
+    "overview": {
+      "title": "Overview",
+      "subtitle": "System status and performance",
+      "kpi1": "Active Properties",
+      "kpi2": "Automations Running",
+      "kpi3": "Direct Bookings (30d)",
+      "activityTitle": "Recent activity",
+      "activity1": "Guest check-in automated",
+      "activity2": "Pricing updated",
+      "activity3": "Message sent to guest"
+    }
   }
 }
