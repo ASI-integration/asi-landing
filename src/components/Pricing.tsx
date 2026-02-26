@@ -18,6 +18,9 @@ export function Pricing() {
         <p className="mt-6 text-center text-slate-600 max-w-2xl mx-auto">
           {t('pricing.valueFraming')}
         </p>
+        <p className="mt-2 text-center text-sm text-slate-500 max-w-2xl mx-auto">
+          {t('pricing.valueFramingSecondary')}
+        </p>
         <p className="mt-3 text-center text-sm text-slate-500 font-medium">
           {t('pricing.comparisonNote')}
         </p>
