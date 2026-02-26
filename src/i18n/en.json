@@ -1,11 +1,15 @@
 {
   "nav": {
-    "problem": "Problem",
-    "solution": "Solution",
+    "howItWorks": "How it works",
     "features": "Features",
     "pricing": "Pricing",
     "faq": "FAQ",
     "startTrial": "Start 14-day trial"
+  },
+  "demo": {
+    "title": "See ASI in action",
+    "subtitle": "A short walkthrough of autonomous property management",
+    "button": "Watch demo"
   },
   "hero": {
     "headline": "Run your property autonomously.",
@@ -19,7 +23,7 @@
     "telegramSupport": "Telegram support"
   },
   "problem": {
-    "title": "What sucks about property management today",
+    "title": "What makes property management more complex than it should be",
     "subtitle": "Most owners and operators run on the same broken playbook.",
     "pains": [
       {

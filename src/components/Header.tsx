@@ -21,10 +21,7 @@ export function Header() {
         </Link>
         <div className="hidden md:flex items-center gap-6">
           <a href="#problem" className="text-slate-600 hover:text-slate-900 text-sm transition-colors">
-            {t('nav.problem')}
-          </a>
-          <a href="#solution" className="text-slate-600 hover:text-slate-900 text-sm transition-colors">
-            {t('nav.solution')}
+            {t('nav.howItWorks')}
           </a>
           <a href="#features" className="text-slate-600 hover:text-slate-900 text-sm transition-colors">
             {t('nav.features')}
@@ -84,8 +81,7 @@ export function Header() {
       </nav>
       {open && (
         <div className="md:hidden border-t border-slate-200 bg-white/95 backdrop-blur px-4 py-4 space-y-4">
-          <a href="#problem" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.problem')}</a>
-          <a href="#solution" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.solution')}</a>
+          <a href="#problem" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.howItWorks')}</a>
           <a href="#features" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.features')}</a>
           <a href="#pricing" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.pricing')}</a>
           <a href="#faq" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.faq')}</a>

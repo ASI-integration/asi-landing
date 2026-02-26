@@ -49,20 +49,12 @@ export function Hero() {
               {t('hero.ctaPrimary')}
             </Link>
             <Link
-              href="/signup"
+              href="#demo"
               className="inline-flex items-center justify-center px-10 py-4 border-2 border-slate-400 text-white text-lg font-semibold rounded-xl hover:bg-white/10 hover:border-slate-300 transition-all duration-300"
             >
               {t('hero.ctaSecondary')}
             </Link>
           </div>
-          <Link
-            href="/signup"
-            className="mt-10 inline-flex items-center justify-center px-10 py-4 bg-white/10 text-white font-medium rounded-xl hover:bg-white/20 transition-all duration-300 border border-slate-600/50 opacity-0"
-            style={{ animation: 'fadeIn 0.8s ease-out 0.4s forwards' }}
-          >
-            {t('hero.getStarted')}
-          </Link>
-          <p className="mt-4 text-sm text-slate-400">{t('hero.trustCopy')}</p>
           <div className="mt-16 pt-12 border-t border-slate-700/50">
             <p className="text-sm text-slate-500 mb-3">{t('hero.contactLabel')}</p>
             <div className="flex flex-wrap justify-center gap-6 text-slate-400">

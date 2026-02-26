@@ -1,4 +1,5 @@
 import { Hero } from '@/components/Hero';
+import { DemoSection } from '@/components/DemoSection';
 import { Problem } from '@/components/Problem';
 import { Solution } from '@/components/Solution';
 import { Features } from '@/components/Features';
@@ -16,6 +17,7 @@ export default function Home() {
       <Header />
       <main>
         <Hero />
+        <DemoSection />
         <Problem />
         <Solution />
         <Features />
