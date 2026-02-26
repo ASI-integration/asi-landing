@@ -1,0 +1,175 @@
+{
+  "nav": {
+    "problem": "Problem",
+    "solution": "Solution",
+    "features": "Features",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "startTrial": "Start free trial"
+  },
+  "hero": {
+    "headline": "Run your property autonomously.",
+    "subheadline": "No staff. No chaos. No OTA dependency.",
+    "ctaPrimary": "Start 7-day free trial",
+    "ctaSecondary": "Book demo",
+    "emailPlaceholder": "Enter your email",
+    "getStarted": "Get started",
+    "trustCopy": "No credit card required · Cancel anytime"
+  },
+  "problem": {
+    "title": "What sucks about property management today",
+    "subtitle": "Most owners and operators run on the same broken playbook.",
+    "pains": [
+      {
+        "title": "Staff costs eat your margins",
+        "desc": "Receptionists, cleaners, maintenance — the list never ends. You can't scale without hiring more. And labor is expensive."
+      },
+      {
+        "title": "Operational chaos",
+        "desc": "Last-minute bookings, late check-ins, guest complaints. Everything feels urgent. You're always on call."
+      },
+      {
+        "title": "OTA dependency",
+        "desc": "15–30% commissions. Your brand buried in their search. You play by their rules. They own your distribution."
+      },
+      {
+        "title": "Lack of control",
+        "desc": "You rely on staff to show up. On OTAs to send guests. On spreadsheets to track it all. One person quits and everything breaks."
+      }
+    ]
+  },
+  "solution": {
+    "title": "One operating system for your property.",
+    "desc": "ASI connects smart locks, cleaning, payments, and communication in one place. You configure once. It runs.",
+    "highlight": "Guests check in with a code. Messages are automated. Cleaning is scheduled. Payments are collected. You get a dashboard."
+  },
+  "features": {
+    "title": "Everything you need",
+    "subtitle": "Modular blocks. Turn on what you need.",
+    "items": [
+      {
+        "icon": "💬",
+        "title": "Automated guest communication",
+        "desc": "Check-in instructions, FAQs, reminders. No manual replies."
+      },
+      {
+        "icon": "🔐",
+        "title": "Smart lock & access control",
+        "desc": "Unique codes per booking. No keys. No handoffs."
+      },
+      {
+        "icon": "🧹",
+        "title": "Cleaning & maintenance orchestration",
+        "desc": "Tasks triggered by booking events. Vendors get notified."
+      },
+      {
+        "icon": "💳",
+        "title": "Payments & invoicing",
+        "desc": "Collect, reconcile, issue receipts. No spreadsheets."
+      },
+      {
+        "icon": "📊",
+        "title": "Analytics & reporting",
+        "desc": "Occupancy, revenue, channel mix. One view."
+      },
+      {
+        "icon": "🔗",
+        "title": "OTA integration",
+        "desc": "Sync with Booking, Airbnb, etc. Reduce reliance over time."
+      }
+    ]
+  },
+  "howItWorks": {
+    "title": "How it works",
+    "subtitle": "Three steps to autonomy.",
+    "steps": [
+      {
+        "title": "Add property",
+        "desc": "Add your property, connect smart locks, and link your calendar."
+      },
+      {
+        "title": "Configure automations",
+        "desc": "Set rules for guest communication, cleaning, and access."
+      },
+      {
+        "title": "Go live",
+        "desc": "Publish. Guests book. ASI handles the rest."
+      }
+    ]
+  },
+  "socialProof": {
+    "title": "Trusted by operators",
+    "logos": ["Booking.com", "Airbnb", "Direct", "Apart-hotel A", "Property Co"],
+    "testimonials": [
+      {
+        "quote": "Saved 40 hours a month. No more midnight check-in calls.",
+        "author": "Maria K.",
+        "role": "Owner, 8 units"
+      },
+      {
+        "quote": "We cut OTA share from 80% to 45% in six months.",
+        "author": "Dmitry B.",
+        "role": "Operations, 24 units"
+      }
+    ]
+  },
+  "pricing": {
+    "title": "Simple pricing",
+    "subtitle": "7-day free trial on all plans. No credit card.",
+    "trialBadge": "7-day free trial",
+    "startTrial": "Start trial",
+    "plans": [
+      {
+        "name": "Starter",
+        "desc": "Up to 5 units. Core automations.",
+        "features": ["Guest messaging", "Smart lock", "Basic cleaning"]
+      },
+      {
+        "name": "Pro",
+        "desc": "Up to 25 units. Full stack.",
+        "features": ["Everything in Starter", "Payments", "Analytics", "OTA sync"]
+      },
+      {
+        "name": "Enterprise",
+        "desc": "Unlimited. Custom integrations.",
+        "features": ["Everything in Pro", "API access", "Dedicated support"]
+      }
+    ]
+  },
+  "faq": {
+    "title": "FAQ",
+    "items": [
+      {
+        "q": "What is the 7-day trial?",
+        "a": "Full access to your chosen plan. No credit card. Cancel anytime."
+      },
+      {
+        "q": "Do I need smart locks?",
+        "a": "Recommended. We support major brands. Manual entry codes work too."
+      },
+      {
+        "q": "Can I keep my OTA listings?",
+        "a": "Yes. We sync with them. Over time you can shift to direct bookings."
+      },
+      {
+        "q": "What is the setup time?",
+        "a": "Most properties go live in under 48 hours."
+      },
+      {
+        "q": "Who is ASI for?",
+        "a": "Urban short-term rental owners, small hotels, apart-hotels, and property managers who want to reduce staffing and OTA reliance."
+      }
+    ]
+  },
+  "finalCta": {
+    "title": "Start your 7-day free trial",
+    "subtitle": "No credit card. Full access. Cancel anytime.",
+    "emailPlaceholder": "Enter your email",
+    "button": "Start trial"
+  },
+  "footer": {
+    "copyright": "© ASI. All rights reserved.",
+    "privacy": "Privacy",
+    "terms": "Terms"
+  }
+}
