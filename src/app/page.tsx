@@ -4,6 +4,7 @@ import { Problem } from '@/components/Problem';
 import { Solution } from '@/components/Solution';
 import { Features } from '@/components/Features';
 import { HowItWorks } from '@/components/HowItWorks';
+import { ArchitectureSection } from '@/components/ArchitectureSection';
 import { SocialProof } from '@/components/SocialProof';
 import { Pricing } from '@/components/Pricing';
 import { FAQ } from '@/components/FAQ';
@@ -22,6 +23,7 @@ export default function Home() {
         <Solution />
         <Features />
         <HowItWorks />
+        <ArchitectureSection />
         <SocialProof />
         <Pricing />
         <FAQ />

@@ -91,6 +91,18 @@
       }
     ]
   },
+  "architecture": {
+    "title": "ASI Architecture",
+    "subtitle": "ASI operates on top of your existing infrastructure and enhances it.",
+    "steps": [
+      { "title": "OTAs", "desc": "Airbnb, Booking and other platforms" },
+      { "title": "Channel Manager", "desc": "Calendar and rate synchronization" },
+      { "title": "ASI", "desc": "Operational logic, automation, management scenarios" },
+      { "title": "Property", "desc": "Apartments, rentals, boutique hotels" },
+      { "title": "Control & Analytics", "desc": "Reports, automation, centralized oversight" }
+    ],
+    "footer": "At the initial stage, ASI integrates with your channel manager. As you scale, operational dependency on third-party systems can be optimized."
+  },
   "howItWorks": {
     "title": "How it works",
     "subtitle": "Three steps to autonomy.",
