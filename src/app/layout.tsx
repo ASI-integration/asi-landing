@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { LanguageProvider } from '@/i18n/LanguageProvider';
+import { LegalFooter } from '@/components/LegalFooter';
 
 export const metadata: Metadata = {
   title: 'ASI — Autonomous Property Management',
@@ -15,7 +16,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <LanguageProvider>{children}</LanguageProvider>
+        <LanguageProvider>
+          <div className="flex flex-col min-h-screen">
+            <div className="flex-1">{children}</div>
+            <LegalFooter />
+          </div>
+        </LanguageProvider>
       </body>
     </html>
   );
