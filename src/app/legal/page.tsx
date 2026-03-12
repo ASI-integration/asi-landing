@@ -13,12 +13,11 @@ export default function LegalPage() {
         <div className="mt-8 space-y-6 text-slate-700 text-sm leading-relaxed">
           <section>
             <h2 className="font-semibold text-slate-900 mb-2">ИП или самозанятый:</h2>
-            <p>Николай Гопенко</p>
-            <p>ИНН: 470321944609</p>
-            <p>
+            <p>Реутова Юлия Игоревна</p>
+              <p>ИНН: 235307941957</p>
               Email:{' '}
-              <a href="mailto:project.ayfaar@gmail.com" className="text-slate-900 hover:underline">
-                project.ayfaar@gmail.com
+              <a href="mailto:GlaiGmaltss@ya.ru" className="text-slate-900 hover:underline">
+                GlaiGmaltss@ya.ru
               </a>
             </p>
           </section>
