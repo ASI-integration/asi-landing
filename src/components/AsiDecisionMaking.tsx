@@ -23,7 +23,7 @@ export function AsiDecisionMaking() {
           <p className="text-sm font-medium text-slate-700">{t('asiDecisionMaking.evalLabel')}</p>
           <ul className="mt-1 list-disc list-inside text-slate-600 text-sm space-y-0.5">
             {evalBullets.map((b, k) => (
-              <li key={k}>{b}</li>
+              <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
             ))}
           </ul>
         </div>
@@ -35,7 +35,7 @@ export function AsiDecisionMaking() {
             <h3 className="text-xl font-semibold text-slate-900">{t('asiDecisionMaking.systemCanLabel')}</h3>
             <ul className="mt-3 list-disc list-inside text-slate-600 text-sm space-y-0.5">
               {systemCanBullets.map((b, k) => (
-                <li key={k}>{b}</li>
+                <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
               ))}
             </ul>
             <p className="mt-4 pt-3 border-t border-slate-200 text-slate-600 text-sm italic">

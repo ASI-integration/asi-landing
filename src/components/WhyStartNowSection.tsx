@@ -4,7 +4,8 @@ import { useTranslation } from '@/i18n/useTranslation';
 
 export function WhyStartNowSection() {
   const { t, get } = useTranslation();
-  const listItems = get<string[]>('whyStartNow.listItems') ?? [];
+  const rawItems = get<string[]>('whyStartNow.listItems') ?? [];
+  const listItems = rawItems.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
 
   return (
     <section id="why-start-now" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
@@ -29,12 +30,9 @@ export function WhyStartNowSection() {
           <h3 className="text-lg font-semibold text-slate-900">
             {t('whyStartNow.listTitle')}
           </h3>
-          <ul className="mt-4 space-y-2 text-slate-600 text-sm">
+          <ul className="mt-4 list-disc list-inside space-y-2 text-slate-600 text-sm">
             {listItems.map((item, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="text-emerald-600 mt-0.5">•</span>
-                {item}
-              </li>
+              <li key={i}>{item}</li>
             ))}
           </ul>
         </div>

@@ -16,7 +16,7 @@ export function Header() {
             ASI
           </span>
           <span className="text-xs text-slate-500 font-medium tracking-wide mt-0.5">
-            Automated Smart Infrastructure
+            {t('nav.tagline')}
           </span>
         </Link>
         <div className="hidden md:flex items-center gap-6">

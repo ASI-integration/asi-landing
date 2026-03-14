@@ -4,8 +4,10 @@ import { useTranslation } from '@/i18n/useTranslation';
 
 export function EconomicImpactSection() {
   const { t, get } = useTranslation();
-  const exampleBullets = get<string[]>('economicImpact.exampleBullets') ?? [];
-  const benefits = get<string[]>('economicImpact.benefits') ?? [];
+  const rawExampleBullets = get<string[]>('economicImpact.exampleBullets') ?? [];
+  const exampleBullets = rawExampleBullets.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
+  const rawBenefits = get<string[]>('economicImpact.benefits') ?? [];
+  const benefits = rawBenefits.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
 
   return (
     <section id="economic-impact" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
@@ -57,12 +59,9 @@ export function EconomicImpactSection() {
           <h3 className="text-lg font-semibold text-slate-900">
             {t('economicImpact.benefitsTitle')}
           </h3>
-          <ul className="mt-3 space-y-2 text-slate-600 text-sm">
+          <ul className="mt-3 list-disc list-inside space-y-2 text-slate-600 text-sm">
             {benefits.map((item, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="text-emerald-600 mt-0.5">•</span>
-                {item}
-              </li>
+              <li key={i}>{item}</li>
             ))}
           </ul>
         </div>

@@ -1,5 +1,6 @@
 {
   "nav": {
+    "tagline": "Automated Smart Infrastructure",
     "howItWorks": "How it works",
     "features": "Features",
     "pricing": "Pricing",
@@ -262,39 +263,39 @@
     "startTrial": "Start trial"
   },
   "economicImpact": {
-    "title": "Экономический эффект автоматизации",
-    "intro1": "ASI позволяет значительно сократить операционные расходы и упростить управление объектами недвижимости.",
-    "intro2": "Во многих случаях управление объектами краткосрочной аренды требует отдельного персонала: администратора, брониста или управляющего.",
-    "intro3": "ASI автоматизирует большую часть этих задач.",
-    "exampleTitle": "Пример операционных расходов",
-    "exampleText": "Для управления примерно 5 объектами недвижимости в крупных городах обычно требуется:",
-    "exampleBullets": ["бронист", "управляющий или администратор"],
-    "examplePayroll": "Фонд оплаты труда может составлять около 100 000 – 120 000 рублей в месяц и выше.",
-    "automationTitle": "С ASI",
-    "automationText1": "При использовании ASI значительная часть операционных процессов автоматизируется.",
-    "automationText2": "Управление объектами может сводиться к контролю системы и координации обслуживающего персонала.",
-    "benefitsTitle": "Система помогает:",
+    "title": "Economic impact of automation",
+    "intro1": "ASI can significantly reduce operational costs and simplify property management.",
+    "intro2": "In many cases, managing short-term rentals requires dedicated staff: an administrator, booking manager or property manager.",
+    "intro3": "ASI automates most of these tasks.",
+    "exampleTitle": "Example operational costs",
+    "exampleText": "Managing around 5 properties in major cities typically requires:",
+    "exampleBullets": ["Booking manager", "Property or operations manager"],
+    "examplePayroll": "Payroll can be around 100,000–120,000 RUB per month or more.",
+    "automationTitle": "With ASI",
+    "automationText1": "With ASI, a large part of operational processes is automated.",
+    "automationText2": "Property management can be reduced to system oversight and coordinating service staff.",
+    "benefitsTitle": "The system helps to:",
     "benefits": [
-      "сокращать операционные расходы",
-      "уменьшать зависимость от персонала",
-      "экономить время владельца",
-      "повышать эффективность управления"
+      "Reduce operational costs",
+      "Lower dependence on staff",
+      "Save owner time",
+      "Improve management efficiency"
     ],
-    "note": "ASI не заменяет владельца бизнеса. Система автоматизирует операционные процессы и помогает принимать более точные управленческие решения."
+    "note": "ASI does not replace the business owner. It automates operations and helps make better management decisions."
   },
   "whyStartNow": {
-    "title": "Почему многие владельцы объектов начинают автоматизацию уже сейчас",
-    "intro1": "Рынок краткосрочной аренды становится всё более конкурентным.",
-    "intro2": "Управление объектами требует всё большего количества времени, внимания и анализа данных.",
-    "intro3": "Те, кто начинают автоматизацию раньше, получают преимущество в эффективности управления и скорости принятия решений.",
-    "listTitle": "ASI позволяет:",
+    "title": "Why many property owners start automating now",
+    "intro1": "The short-term rental market is becoming more competitive.",
+    "intro2": "Property management requires more time, attention and data analysis than ever.",
+    "intro3": "Those who automate earlier gain an advantage in efficiency and decision speed.",
+    "listTitle": "ASI enables you to:",
     "listItems": [
-      "быстрее реагировать на изменения рынка",
-      "оптимизировать загрузку объектов",
-      "уменьшать операционные ошибки",
-      "снижать зависимость от ручного управления"
+      "React faster to market changes",
+      "Optimize occupancy",
+      "Reduce operational errors",
+      "Lower dependence on manual management"
     ],
-    "final": "Поэтому многие владельцы объектов начинают внедрение автоматизации уже сейчас — чтобы постепенно выстроить систему управления и подготовиться к дальнейшему масштабированию."
+    "final": "That is why many owners start implementing automation now — to build a management system and prepare for scaling."
   },
   "faq": {
     "title": "FAQ",

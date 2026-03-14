@@ -8,5 +8,5 @@ export const legalConfig = {
   status: 'Самозанятый',
 } as const;
 
-/** One-line legal footer text: ИНН · Name · Status */
-export const legalFooterLine = `ИНН ${legalConfig.inn} · ${legalConfig.name} · ${legalConfig.status}`;
+/** One-line legal footer text for RU only: ИНН · Name */
+export const legalFooterLine = `ИНН ${legalConfig.inn} · ${legalConfig.name}`;

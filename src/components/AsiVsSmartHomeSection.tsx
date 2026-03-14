@@ -42,7 +42,7 @@ export function AsiVsSmartHomeSection() {
             <p className="mt-3 text-slate-600 text-sm">{comparison.smartHome.intro}</p>
             <ul className="mt-3 list-disc list-inside text-slate-600 text-sm space-y-0.5 flex-1">
               {comparison.smartHome.bullets.map((b, k) => (
-                <li key={k}>{b}</li>
+                <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
               ))}
             </ul>
             <p className="mt-4 pt-3 border-t border-slate-200 text-slate-700 text-sm font-medium">
@@ -54,7 +54,7 @@ export function AsiVsSmartHomeSection() {
             <p className="mt-3 text-slate-600 text-sm">{comparison.asi.intro}</p>
             <ul className="mt-3 list-disc list-inside text-slate-600 text-sm space-y-0.5 flex-1">
               {comparison.asi.bullets.map((b, k) => (
-                <li key={k}>{b}</li>
+                <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
               ))}
             </ul>
             <p className="mt-4 pt-3 border-t border-slate-200 text-slate-700 text-sm font-medium">
@@ -78,9 +78,9 @@ export function AsiVsSmartHomeSection() {
             <h3 className="text-xl font-semibold text-slate-900">{example.title}</h3>
             <p className="mt-3 text-slate-600 text-sm">{example.intro}</p>
             <ul className="mt-3 list-disc list-inside text-slate-600 text-sm space-y-0.5">
-              {example.bullets.map((b, k) => (
-                <li key={k}>{b}</li>
-              ))}
+{example.bullets.map((b, k) => (
+              <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
+            ))}
             </ul>
           </div>
         )}
