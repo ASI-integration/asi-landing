@@ -10,10 +10,10 @@ export function Footer() {
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
         <span className="text-slate-600 text-sm">{t('footer.copyright')}</span>
         <div className="flex gap-6">
-          <a href="#" className="text-slate-600 hover:text-slate-900 text-sm">
+          <a href="/privacy" className="text-slate-600 hover:text-slate-900 text-sm">
             {t('footer.privacy')}
           </a>
-          <a href="#" className="text-slate-600 hover:text-slate-900 text-sm">
+          <a href="/offer" className="text-slate-600 hover:text-slate-900 text-sm">
             {t('footer.terms')}
           </a>
         </div>

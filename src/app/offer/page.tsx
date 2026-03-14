@@ -2,11 +2,11 @@ import Link from 'next/link';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
-  title: 'Правовая информация — ASI',
-  description: 'Юридическая информация и условия использования сервиса ASI.',
+  title: 'Публичная оферта — ASI',
+  description: 'Договор публичной оферты на оказание услуг сервиса ASI.',
 };
 
-export default function LegalPage() {
+export default function OfferPage() {
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
@@ -15,12 +15,12 @@ export default function LegalPage() {
         </Link>
 
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          Правовая информация
+          Публичная оферта
         </h1>
 
         <div className="mt-8 space-y-6 text-slate-700 text-sm leading-relaxed">
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">ИП или самозанятый:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Исполнитель:</h2>
             <p>{legalConfig.name}</p>
             <p>ИНН: {legalConfig.inn}</p>
             <p>
@@ -33,15 +33,17 @@ export default function LegalPage() {
           </section>
 
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">Описание услуги:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Предмет оферты:</h2>
             <p>
-              ASI — SaaS-платформа для автоматизации управления объектами краткосрочной аренды.
-              Сервис предоставляет инструменты автоматизации бронирований, коммуникации и аналитики.
+              Настоящая оферта является официальным предложением на заключение договора оказания услуг
+              по использованию сервиса ASI — платформы для автоматизации управления объектами
+              краткосрочной аренды. Акцепт оферты осуществляется путём регистрации и начала
+              использования сервиса.
             </p>
           </section>
 
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">Условия оказания услуг:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Условия:</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li>Подписка оплачивается ежемесячно.</li>
               <li>Бесплатный пробный период — 14 дней.</li>
