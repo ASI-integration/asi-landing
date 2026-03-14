@@ -196,7 +196,10 @@
   "footer": {
     "copyright": "© ASI. All rights reserved.",
     "privacy": "Privacy",
-    "terms": "Terms"
+    "terms": "Terms",
+    "legalInfo": "Legal Information",
+    "offer": "Public Offer",
+    "privacyPolicy": "Privacy Policy"
   },
   "signup": {
     "title": "Start your trial",
