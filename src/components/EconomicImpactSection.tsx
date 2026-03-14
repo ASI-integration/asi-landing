@@ -5,9 +5,9 @@ import { useTranslation } from '@/i18n/useTranslation';
 export function EconomicImpactSection() {
   const { t, get } = useTranslation();
   const rawExampleBullets = get<string[]>('economicImpact.exampleBullets') ?? [];
-  const exampleBullets = rawExampleBullets.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
+  const exampleBullets = rawExampleBullets.map((item) => String(item).replace(/^[\s•]+/, '').trim());
   const rawBenefits = get<string[]>('economicImpact.benefits') ?? [];
-  const benefits = rawBenefits.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
+  const benefits = rawBenefits.map((item) => String(item).replace(/^[\s•]+/, '').trim());
 
   return (
     <section id="economic-impact" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">

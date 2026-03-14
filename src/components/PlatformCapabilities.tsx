@@ -43,14 +43,14 @@ export function PlatformCapabilities() {
                   <p className="text-sm font-medium text-slate-700">{mod.evalTitle}</p>
                   <ul className="mt-1 list-disc list-inside text-slate-600 text-sm space-y-0.5">
                     {mod.evalBullets.map((b, k) => (
-                      <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
+                      <li key={k}>{String(b).replace(/^[\s•]+/, '').trim()}</li>
                     ))}
                   </ul>
                 </div>
               )}
               <ul className="mt-3 list-disc list-inside text-slate-600 text-sm space-y-0.5 flex-1">
                 {mod.bullets?.map((b, k) => (
-                  <li key={k}>{String(b).replace(/^[\s•]+/u, '').trim()}</li>
+                  <li key={k}>{String(b).replace(/^[\s•]+/, '').trim()}</li>
                 ))}
               </ul>
               {mod.note && (

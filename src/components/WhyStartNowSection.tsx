@@ -5,7 +5,7 @@ import { useTranslation } from '@/i18n/useTranslation';
 export function WhyStartNowSection() {
   const { t, get } = useTranslation();
   const rawItems = get<string[]>('whyStartNow.listItems') ?? [];
-  const listItems = rawItems.map((item) => String(item).replace(/^[\s•]+/u, '').trim());
+  const listItems = rawItems.map((item) => String(item).replace(/^[\s•]+/, '').trim());
 
   return (
     <section id="why-start-now" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
