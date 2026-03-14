@@ -91,6 +91,109 @@
       }
     ]
   },
+  "platformCapabilities": {
+    "title": "Key capabilities of the ASI platform",
+    "subtitle": "A full automation platform, not just a channel manager — from distribution and pricing to communication and financial control.",
+    "modules": [
+      {
+        "title": "Channel and OTA distribution management",
+        "intro": [
+          "ASI can automatically distribute property information and media across multiple sales channels."
+        ],
+        "bullets": [
+          "Publish photos and property descriptions",
+          "Sync information across channels",
+          "Use the built-in channel manager",
+          "Integrate with existing channel managers and OTA platforms"
+        ],
+        "note": "The system includes its own channel manager, so third-party channel managers may be optional."
+      },
+      {
+        "title": "Intelligent dynamic pricing engine",
+        "intro": [
+          "ASI uses dynamic pricing algorithms that analyze market conditions in real time.",
+          "Unlike traditional systems based mainly on historical ADR data, the platform evaluates many more factors."
+        ],
+        "bullets": [
+          "Analyze data in real time",
+          "Account for multiple demand factors",
+          "React instantly to market changes",
+          "Adjust prices automatically"
+        ],
+        "note": "This approach enables pricing decisions that often exceed the accuracy of traditional manual revenue management."
+      },
+      {
+        "title": "Demand and occupancy strategy",
+        "intro": [
+          "ASI helps build occupancy strategy based on target audience and market factors."
+        ],
+        "bullets": [
+          "Analyze different guest segments",
+          "Adjust occupancy strategy",
+          "Reduce seasonality dependence",
+          "Gradually reduce OTA dependence"
+        ],
+        "note": "The goal is to achieve the most stable and efficient occupancy level for the property."
+      },
+      {
+        "title": "Location and property potential analysis",
+        "intro": [
+          "ASI can analyze location appeal in much greater depth than typical real estate yield calculators."
+        ],
+        "evalTitle": "The system evaluates:",
+        "evalBullets": [
+          "Neighborhood characteristics",
+          "Guest behavior patterns",
+          "Infrastructure and transport",
+          "Activity heat maps"
+        ],
+        "bullets": [
+          "Estimate rental potential",
+          "Recommend how to package the property",
+          "Suggest improvements to increase occupancy"
+        ]
+      },
+      {
+        "title": "Autonomous property management",
+        "intro": [
+          "In full configuration the system can perform most operational tasks automatically.",
+          "Typically only housekeeping and technical staff (home master) are required. ASI handles most operational processes."
+        ],
+        "bullets": [
+          "Reduce operational costs",
+          "Lower staffing needs",
+          "Save owner time"
+        ]
+      },
+      {
+        "title": "Intelligent communication system",
+        "intro": [
+          "The ASI communication module is designed for full interaction with guests and staff.",
+          "The system imitates natural human dialogue rather than acting as a simple auto-reply bot."
+        ],
+        "bullets": [
+          "Understanding the meaning of inquiries",
+          "Conducting dialogue like an administrator",
+          "Communication in Russian and English",
+          "Voice interaction",
+          "Automatic language detection"
+        ],
+        "note": "The system can identify whether the contact has a valid reservation and restrict access to sensitive information."
+      },
+      {
+        "title": "Financial control and safety",
+        "intro": [
+          "ASI has no access to user funds."
+        ],
+        "bullets": [
+          "Analyzes data",
+          "Generates reports",
+          "Informs the owner"
+        ],
+        "note": "Even in autopilot mode the owner retains full control. Users can define the level of automation and when the system must hand decisions back to the owner."
+      }
+    ]
+  },
   "architecture": {
     "title": "ASI Architecture",
     "subtitle": "ASI operates on top of your existing infrastructure and enhances it.",
@@ -157,6 +260,41 @@
     "enterpriseFeature": "Contact us",
     "trialBadge": "14-day free trial",
     "startTrial": "Start trial"
+  },
+  "economicImpact": {
+    "title": "Экономический эффект автоматизации",
+    "intro1": "ASI позволяет значительно сократить операционные расходы и упростить управление объектами недвижимости.",
+    "intro2": "Во многих случаях управление объектами краткосрочной аренды требует отдельного персонала: администратора, брониста или управляющего.",
+    "intro3": "ASI автоматизирует большую часть этих задач.",
+    "exampleTitle": "Пример операционных расходов",
+    "exampleText": "Для управления примерно 5 объектами недвижимости в крупных городах обычно требуется:",
+    "exampleBullets": ["бронист", "управляющий или администратор"],
+    "examplePayroll": "Фонд оплаты труда может составлять около 100 000 – 120 000 рублей в месяц и выше.",
+    "automationTitle": "С ASI",
+    "automationText1": "При использовании ASI значительная часть операционных процессов автоматизируется.",
+    "automationText2": "Управление объектами может сводиться к контролю системы и координации обслуживающего персонала.",
+    "benefitsTitle": "Система помогает:",
+    "benefits": [
+      "сокращать операционные расходы",
+      "уменьшать зависимость от персонала",
+      "экономить время владельца",
+      "повышать эффективность управления"
+    ],
+    "note": "ASI не заменяет владельца бизнеса. Система автоматизирует операционные процессы и помогает принимать более точные управленческие решения."
+  },
+  "whyStartNow": {
+    "title": "Почему многие владельцы объектов начинают автоматизацию уже сейчас",
+    "intro1": "Рынок краткосрочной аренды становится всё более конкурентным.",
+    "intro2": "Управление объектами требует всё большего количества времени, внимания и анализа данных.",
+    "intro3": "Те, кто начинают автоматизацию раньше, получают преимущество в эффективности управления и скорости принятия решений.",
+    "listTitle": "ASI позволяет:",
+    "listItems": [
+      "быстрее реагировать на изменения рынка",
+      "оптимизировать загрузку объектов",
+      "уменьшать операционные ошибки",
+      "снижать зависимость от ручного управления"
+    ],
+    "final": "Поэтому многие владельцы объектов начинают внедрение автоматизации уже сейчас — чтобы постепенно выстроить систему управления и подготовиться к дальнейшему масштабированию."
   },
   "faq": {
     "title": "FAQ",
