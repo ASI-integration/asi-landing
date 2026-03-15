@@ -16,7 +16,7 @@ export function FinalCTA() {
           {t('finalCta.subtitle')}
         </p>
         <Link
-          href="/signup"
+          href="/connect"
           className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all duration-200 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:shadow-slate-900/30"
         >
           {t('finalCta.button')}

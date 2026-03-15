@@ -43,7 +43,7 @@ export function Hero() {
             style={{ animation: 'fadeIn 0.8s ease-out 0.3s forwards' }}
           >
             <Link
-              href="/signup"
+              href="/connect"
               className="inline-flex items-center justify-center px-10 py-4 bg-white text-slate-900 text-lg font-semibold rounded-xl hover:bg-slate-100 transition-all duration-300 shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02]"
             >
               {t('hero.ctaPrimary')}

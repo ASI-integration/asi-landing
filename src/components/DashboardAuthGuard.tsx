@@ -11,7 +11,7 @@ export function DashboardAuthGuard({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (loading) return;
     if (!session?.user) {
-      router.replace('/signup');
+      router.replace('/connect');
     }
   }, [session, loading, router]);
 

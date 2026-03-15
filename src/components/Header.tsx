@@ -59,7 +59,7 @@ export function Header() {
             </svg>
           </a>
           <Link
-            href="/signup"
+            href="/connect"
             className="inline-flex items-center justify-center px-5 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-all duration-200 shadow-sm hover:shadow-md"
           >
             {t('nav.startTrial')}
@@ -89,7 +89,7 @@ export function Header() {
             <button onClick={() => setLocale('en')} className={`px-2 py-1 text-sm rounded ${locale === 'en' ? 'font-semibold bg-slate-100' : ''}`}>EN</button>
             <button onClick={() => setLocale('ru')} className={`px-2 py-1 text-sm rounded ${locale === 'ru' ? 'font-semibold bg-slate-100' : ''}`}>RU</button>
           </div>
-          <Link href="/signup" className="block text-center py-3 bg-slate-900 text-white rounded-xl font-semibold" onClick={() => setOpen(false)}>{t('nav.startTrial')}</Link>
+          <Link href="/connect" className="block text-center py-3 bg-slate-900 text-white rounded-xl font-semibold" onClick={() => setOpen(false)}>{t('nav.startTrial')}</Link>
         </div>
       )}
     </header>
