@@ -29,3 +29,31 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function replyToTelegram(chatId: number | string, text: string): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
+    return false;
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error('[Telegram] Reply Failed:', await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[Telegram] Reply Error:', err);
+    return false;
+  }
+}
