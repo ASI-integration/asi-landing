@@ -50,10 +50,10 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight text-center">
-          {t('signup.title')}
+          {t('login.title')}
         </h1>
         <p className="mt-2 text-center text-sm text-slate-500">
-          Sign in to your account
+          {t('login.subtitle')}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -100,17 +100,17 @@ export default function LoginPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {t('hero.getStarted')}
+                {t('login.submit')}
               </span>
             ) : (
-              'Sign in'
+              t('login.submit')
             )}
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            Don&apos;t have an account?{' '}
+            {t('login.signUpPrompt')}{' '}
             <Link href="/connect" className="text-slate-900 font-medium hover:underline">
-              Sign up
+              {t('cta.startTrial')}
             </Link>
           </p>
         </form>

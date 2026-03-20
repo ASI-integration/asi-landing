@@ -1,21 +1,32 @@
 {
+  "contact": {
+    "supportEmail": "support@asi.system"
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Sign in to your account",
+    "submit": "Sign in",
+    "signUpPrompt": "Don't have an account?"
+  },
+  "cta": {
+    "startTrial": "Start 14-day free trial",
+    "trialNote": "14-day free trial. No credit card. Full access. Cancel anytime."
+  },
   "nav": {
     "tagline": "Automated Smart Infrastructure",
     "howItWorks": "How it works",
     "features": "Features",
     "pricing": "Pricing",
-    "faq": "FAQ",
-    "startTrial": "Start 14-day trial"
+    "faq": "FAQ"
   },
   "demo": {
     "title": "See ASI in action",
     "subtitle": "A short walkthrough of autonomous property management",
-    "button": "Watch demo"
+    "button": "Book demo"
   },
   "hero": {
     "headline": "Run your property autonomously.",
     "subheadline": "No staff. No chaos. No OTA dependency.",
-    "ctaPrimary": "Start 14-day free trial",
     "ctaSecondary": "Book demo",
     "emailPlaceholder": "Enter your email",
     "getStarted": "Get started",
@@ -243,7 +254,6 @@
   },
   "pricing": {
     "title": "Simple pricing",
-    "subtitle": "14-day free trial. No credit card.",
     "valueFraming": "Fixed cost instead of a 70,000–150,000 RUB monthly salary.",
     "valueFramingSecondary": "No need to hire a full-time administrator, booking manager or property manager.",
     "comparisonNote": "Reduce operational costs without expanding your team.",
@@ -258,9 +268,9 @@
     "growthFeature2": "Priority support",
     "enterprisePlan": "Enterprise (10+ properties)",
     "enterprisePrice": "Custom terms",
-    "enterpriseFeature": "Contact us",
+    "enterpriseFeature": "Custom scope, volume pricing, and support",
     "trialBadge": "14-day free trial",
-    "startTrial": "Start trial"
+    "enterpriseCta": "Contact us for custom terms"
   },
   "economicImpact": {
     "title": "Economic impact of automation",
@@ -301,8 +311,8 @@
     "title": "FAQ",
     "items": [
       {
-        "q": "What is the 14-day trial?",
-        "a": "Full access to your chosen plan. No credit card. Cancel anytime."
+        "q": "What is the 14-day free trial?",
+        "a": "The 14-day free trial gives you full access to your chosen plan. No credit card. Cancel anytime."
       },
       {
         "q": "Do I need smart locks?",
@@ -327,10 +337,7 @@
     ]
   },
   "finalCta": {
-    "title": "Start your 14-day free trial",
-    "subtitle": "No credit card. Full access. Cancel anytime.",
-    "emailPlaceholder": "Enter your email",
-    "button": "Start trial"
+    "emailPlaceholder": "Enter your email"
   },
   "footer": {
     "copyright": "© ASI. All rights reserved.",
@@ -371,7 +378,7 @@
     "commentLabel": "Comment",
     "commentPlaceholder": "Briefly describe your property, current workflow or goal",
     "cta": "Start connection",
-    "ctaSecondary": "Free trial activates after we confirm your connection.",
+    "ctaSecondary": "We activate your trial after we confirm your connection.",
     "quickConnectHeading": "Quick connection",
     "quickConnectNote": "Quick connection via external accounts will be available at the next stage. For now you can leave your contacts to activate.",
     "quickConnectGoogle": "Connect via Google",

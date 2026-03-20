@@ -46,7 +46,7 @@ export function Hero() {
               href="/connect"
               className="inline-flex items-center justify-center px-10 py-4 bg-white text-slate-900 text-lg font-semibold rounded-xl hover:bg-slate-100 transition-all duration-300 shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02]"
             >
-              {t('hero.ctaPrimary')}
+              {t('cta.startTrial')}
             </Link>
             <Link
               href="#demo"
@@ -59,10 +59,10 @@ export function Hero() {
             <p className="text-sm text-slate-500 mb-3">{t('hero.contactLabel')}</p>
             <div className="flex flex-wrap justify-center gap-6 text-slate-400">
               <a
-                href="mailto:project.ayfaar@gmail.com"
+                href={`mailto:${t('contact.supportEmail')}`}
                 className="text-sm hover:text-white transition-colors"
               >
-                support@asi.system
+                {t('contact.supportEmail')}
               </a>
               <a
                 href="https://t.me/asi_support"

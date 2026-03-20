@@ -15,7 +15,9 @@ export function DemoSection() {
           {t('demo.subtitle')}
         </p>
         <a
-          href="#"
+          href="https://t.me/asi_support"
+          target="_blank"
+          rel="noopener noreferrer"
           className="mt-10 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white text-lg font-semibold rounded-xl hover:bg-slate-800 transition-all duration-300 shadow-lg"
         >
           {t('demo.button')}

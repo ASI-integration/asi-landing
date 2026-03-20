@@ -7,7 +7,7 @@ export function Features() {
   const features = get<{ icon?: string; title: string; desc: string; badge?: string }[]>('features.items') ?? [];
 
   return (
-    <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
+    <section id="features" className="scroll-mt-24 py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
       <div className="max-w-6xl mx-auto">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
           {t('features.title')}

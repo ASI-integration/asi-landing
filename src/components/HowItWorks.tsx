@@ -7,7 +7,7 @@ export function HowItWorks() {
   const steps = get<{ title: string; desc: string }[]>('howItWorks.steps') ?? [];
 
   return (
-    <section className="py-20 px-4 sm:px-6 lg:px-8">
+    <section id="how-it-works" className="scroll-mt-24 py-20 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
           {t('howItWorks.title')}

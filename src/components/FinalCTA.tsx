@@ -10,16 +10,16 @@ export function FinalCTA() {
     <section id="trial" className="py-24 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto text-center">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-          {t('finalCta.title')}
+          {t('cta.startTrial')}
         </h2>
         <p className="mt-4 text-lg text-slate-600">
-          {t('finalCta.subtitle')}
+          {t('cta.trialNote')}
         </p>
         <Link
           href="/connect"
           className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all duration-200 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:shadow-slate-900/30"
         >
-          {t('finalCta.button')}
+          {t('cta.startTrial')}
         </Link>
       </div>
     </section>

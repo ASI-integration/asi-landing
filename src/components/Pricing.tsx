@@ -7,13 +7,13 @@ export function Pricing() {
   const { t } = useTranslation();
 
   return (
-    <section id="pricing" className="py-20 px-4 sm:px-6 lg:px-8">
+    <section id="pricing" className="scroll-mt-24 py-20 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 text-center">
           {t('pricing.title')}
         </h2>
         <p className="mt-4 text-lg text-slate-600 text-center">
-          {t('pricing.subtitle')}
+          {t('cta.trialNote')}
         </p>
         <p className="mt-6 text-center text-slate-600 max-w-2xl mx-auto">
           {t('pricing.valueFraming')}
@@ -43,7 +43,7 @@ export function Pricing() {
               href="/connect"
               className="mt-6 block text-center py-4 rounded-xl font-semibold border border-slate-900 text-slate-900 hover:bg-slate-50 transition-all duration-200 shadow-sm hover:shadow-md"
             >
-              {t('pricing.startTrial')}
+              {t('cta.startTrial')}
             </Link>
           </div>
           <div className="p-6 rounded-xl border border-slate-900 bg-slate-50">
@@ -64,7 +64,7 @@ export function Pricing() {
               href="/connect"
               className="mt-6 block text-center py-4 rounded-xl font-semibold bg-slate-900 text-white hover:bg-slate-800 transition-all duration-200 shadow-lg shadow-slate-900/20 hover:shadow-xl hover:shadow-slate-900/30"
             >
-              {t('pricing.startTrial')}
+              {t('cta.startTrial')}
             </Link>
           </div>
           <div className="p-6 rounded-xl border border-slate-200 bg-white">
@@ -80,12 +80,12 @@ export function Pricing() {
             <p className="mt-4 text-xs text-slate-500">
               {t('pricing.pricePerObjectNote')}
             </p>
-            <Link
-              href="/connect"
+            <a
+              href={`mailto:${t('contact.supportEmail')}?subject=${encodeURIComponent('Enterprise pricing inquiry')}`}
               className="mt-6 block text-center py-4 rounded-xl font-semibold border border-slate-900 text-slate-900 hover:bg-slate-50 transition-all duration-200 shadow-sm hover:shadow-md"
             >
-              {t('pricing.startTrial')}
-            </Link>
+              {t('pricing.enterpriseCta')}
+            </a>
           </div>
         </div>
       </div>

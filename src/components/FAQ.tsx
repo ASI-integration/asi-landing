@@ -7,7 +7,7 @@ export function FAQ() {
   const faqs = get<{ q: string; a: string }[]>('faq.items') ?? [];
 
   return (
-    <section id="faq" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
+    <section id="faq" className="scroll-mt-24 py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
       <div className="max-w-2xl mx-auto">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
           {t('faq.title')}

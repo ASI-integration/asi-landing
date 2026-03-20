@@ -1,5 +1,6 @@
 /**
  * Shared legal/entity data for footer, legal, offer, and privacy pages.
+ * `email` is the legal / official contact-of-record (not product support).
  */
 export const legalConfig = {
   name: 'Реутова Юлия Игоревна',

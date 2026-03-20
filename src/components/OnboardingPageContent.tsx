@@ -131,6 +131,9 @@ export function OnboardingPageContent() {
           <p className="mt-3 text-slate-600 text-center text-sm sm:text-base max-w-xl mx-auto">
             {t('onboarding.subtitle')}
           </p>
+          <p className="mt-2 text-slate-600 text-center text-sm max-w-xl mx-auto">
+            {t('cta.trialNote')}
+          </p>
 
           {/* Trust pills above the form */}
           <div className="mt-8 flex flex-wrap justify-center gap-2 sm:gap-3">
@@ -322,10 +325,10 @@ export function OnboardingPageContent() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      {t('hero.getStarted')}
+                      {t('cta.startTrial')}
                     </span>
                   ) : (
-                    t('onboarding.cta')
+                    t('cta.startTrial')
                   )}
                 </button>
                 <p className="text-center text-xs text-slate-500">

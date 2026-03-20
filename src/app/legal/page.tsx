@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
@@ -24,9 +25,15 @@ export default function LegalPage() {
             <p>{legalConfig.name}</p>
             <p>ИНН: {legalConfig.inn}</p>
             <p>
-              Email:{' '}
+              Контакт для правовых и официальных вопросов:{' '}
               <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
                 {legalConfig.email}
+              </a>
+            </p>
+            <p>
+              Поддержка сервиса ASI:{' '}
+              <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
+                {productSupportEmail}
               </a>
             </p>
             <p>{legalConfig.status}</p>
