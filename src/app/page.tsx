@@ -1,5 +1,6 @@
 import { Hero } from '@/components/Hero';
 import { DemoSection } from '@/components/DemoSection';
+import { StrategicTeaser } from '@/components/StrategicTeaser';
 import { Problem } from '@/components/Problem';
 import { Solution } from '@/components/Solution';
 import { Features } from '@/components/Features';
@@ -37,6 +38,7 @@ export default function Home() {
         <EconomicImpactSection />
         <WhyStartNowSection />
         <FAQ />
+        <StrategicTeaser />
         <FinalCTA />
       </main>
       <Footer />

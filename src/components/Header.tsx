@@ -32,6 +32,9 @@ export function Header() {
           <a href="#faq" className="text-slate-600 hover:text-slate-900 text-sm transition-colors">
             {t('nav.faq')}
           </a>
+          <Link href="/strategic-partnerships" className="text-slate-600 hover:text-slate-900 text-sm transition-colors font-medium">
+            {locale === 'ru' ? 'Стратегическое участие' : 'Strategic'}
+          </Link>
           <div className="flex items-center gap-1 text-slate-500 text-sm">
             <button
               onClick={() => setLocale('en')}
@@ -85,6 +88,7 @@ export function Header() {
           <a href="#features" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.features')}</a>
           <a href="#pricing" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.pricing')}</a>
           <a href="#faq" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.faq')}</a>
+          <Link href="/strategic-partnerships" className="block text-slate-600 hover:text-slate-900 font-medium" onClick={() => setOpen(false)}>{locale === 'ru' ? 'Стратегическое участие' : 'Strategic'}</Link>
           <div className="flex gap-2">
             <button onClick={() => setLocale('en')} className={`px-2 py-1 text-sm rounded ${locale === 'en' ? 'font-semibold bg-slate-100' : ''}`}>EN</button>
             <button onClick={() => setLocale('ru')} className={`px-2 py-1 text-sm rounded ${locale === 'ru' ? 'font-semibold bg-slate-100' : ''}`}>RU</button>
