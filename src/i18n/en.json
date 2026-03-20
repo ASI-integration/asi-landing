@@ -9,8 +9,8 @@
     "signUpPrompt": "Don't have an account?"
   },
   "cta": {
-    "startTrial": "Start 14-day free trial",
-    "trialNote": "14-day free trial. No credit card. Full access. Cancel anytime."
+    "startTrial": "Book demo",
+    "trialNote": "Connect your property, channels, and communication flow with guided setup."
   },
   "nav": {
     "tagline": "Automated Smart Infrastructure",
@@ -269,7 +269,7 @@
     "enterprisePlan": "Enterprise (10+ properties)",
     "enterprisePrice": "Custom terms",
     "enterpriseFeature": "Custom scope, volume pricing, and support",
-    "trialBadge": "14-day free trial",
+    "trialBadge": "Guided setup",
     "enterpriseCta": "Contact us for custom terms"
   },
   "economicImpact": {
@@ -311,8 +311,8 @@
     "title": "FAQ",
     "items": [
       {
-        "q": "What is the 14-day free trial?",
-        "a": "The 14-day free trial gives you full access to your chosen plan. No credit card. Cancel anytime."
+        "q": "How does onboarding work?",
+        "a": "We connect your property, channels, and core communication flow with guided setup. The system is configured around your operations, not just unlocked as a generic trial."
       },
       {
         "q": "Do I need smart locks?",
@@ -392,14 +392,14 @@
     "trustPill2": "Channel manager and OTA connection",
     "trustPill3": "Your finances under your control",
     "afterTitle": "What happens after connecting",
-    "afterText": "After connecting you get a free trial. During the trial we help connect the system to your channel manager and OTA platforms and set up the core workflow. The system is designed to scale.",
+    "afterText": "After connecting your property, channels, and communication flow, we configure the core workflow around your operations.",
     "afterBullet1": "trial activation",
     "afterBullet2": "connection to channel manager",
     "afterBullet3": "connection to OTA platforms",
     "afterBullet4": "basic workflow setup",
     "afterBullet5": "preparing the system for production use",
-    "trialTitle": "What you get in the trial",
-    "trialText": "The trial is for real integration of ASI into your operations, not just UI access.",
+    "trialTitle": "What you get during onboarding",
+    "trialText": "This stage is for real integration of ASI into your operations, not just UI access.",
     "trialBullet1": "access to ASI platform",
     "trialBullet2": "communication setup",
     "trialBullet3": "basic workflow configuration",
