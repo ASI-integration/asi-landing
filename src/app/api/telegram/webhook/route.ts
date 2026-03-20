@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server';
 import { replyToTelegram } from '@/lib/telegram';
+import { callLLM } from '@/lib/openai';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Lang = 'en' | 'ru';
+
+type Category =
+  | 'start'
+  | 'greeting'
+  | 'guest-message'
+  | 'issue'
+  | 'booking'
+  | 'fallback';
 
 interface MessageSlots {
   isUrgent: boolean;
@@ -9,128 +22,166 @@ interface MessageSlots {
   mentionsObject: boolean;
 }
 
+interface ClassifyResult {
+  category: Category;
+  lang: Lang;
+  slots: MessageSlots;
+}
+
+// ─── Slot Extraction ──────────────────────────────────────────────────────────
+
 function extractSlots(normalized: string): MessageSlots {
-  const urgencyTriggers = ['urgent', 'emergency', 'asap', 'срочно', 'быстро'];
-  const accessTriggers = ['access', 'lock', 'door', 'code', 'замок', 'дверь', 'код', 'доступ', 'попасть'];
-  const guestTriggers = ['guest', 'tenant', 'client', 'гость', 'клиент', 'жилец'];
-  const timeTriggers = ['time', 'check-in', 'checkout', 'arrive', 'время', 'заезд', 'выезд', 'прибытие'];
-  const objectTriggers = ['object', 'unit', 'apartment', 'room', 'property', 'объект', 'квартира', 'комната', 'апартаменты'];
-
   return {
-    isUrgent: urgencyTriggers.some(t => normalized.includes(t)),
-    isAccessRelated: accessTriggers.some(t => normalized.includes(t)),
-    mentionsGuest: guestTriggers.some(t => normalized.includes(t)),
-    mentionsTime: timeTriggers.some(t => normalized.includes(t)),
-    mentionsObject: objectTriggers.some(t => normalized.includes(t)),
+    isUrgent: ['urgent', 'emergency', 'asap', 'срочно', 'быстро'].some(t => normalized.includes(t)),
+    isAccessRelated: ['access', 'lock', 'door', 'code', 'замок', 'дверь', 'код', 'доступ', 'попасть'].some(t => normalized.includes(t)),
+    mentionsGuest: ['guest', 'tenant', 'client', 'гость', 'клиент', 'жилец'].some(t => normalized.includes(t)),
+    mentionsTime: ['time', 'check-in', 'checkout', 'arrive', 'время', 'заезд', 'выезд', 'прибытие'].some(t => normalized.includes(t)),
+    mentionsObject: ['object', 'unit', 'apartment', 'room', 'property', 'объект', 'квартира', 'комната', 'апартаменты'].some(t => normalized.includes(t)),
   };
 }
 
-function getBaseReplies(lang: 'en' | 'ru') {
-  if (lang === 'ru') {
-    return {
-      fallback: "Получено.\nТип сообщения пока не классифицирован.\nСледующий шаг: ручная проверка или общий communication flow.",
-      start: "ASI online.\nОтправьте сообщение гостя, проблему или запрос.",
-      greeting: "Соединение работает.\nОтправьте сообщение гостя, проблему или запрос.",
-      // Upgraded guest message template
-      guestMessage: "Получено.\nОбнаружено сообщение от гостя.\nОтправьте точный текст сообщения, если нужен разбор или маршрутизация.\nСледующий шаг: передача в communication flow.",
-      issueGeneric: "Получено.\nОбнаружена проблема или инцидент.\nСледующий шаг: передача в incident handling flow.",
-      // New specific issue access urgent template
-      issueAccessUrgent: "Получено.\nПохоже на проблему с доступом.\nЕсли гость не может попасть внутрь, укажите объект и время заезда.\nСледующий шаг: передача в incident handling flow.",
-      bookingGeneric: "Получено.\nОбнаружен запрос по бронированию или доступу.\nСледующий шаг: передача в guest operations flow."
-    };
-  }
-  return {
-    fallback: "Received.\nMessage type not yet classified.\nNext step: manual review or general communication flow.",
-    start: "ASI online.\nSend a guest message, issue, or request.",
-    greeting: "Connection is working.\nSend a guest message, issue, or request.",
-    // Upgraded guest message template
-    guestMessage: "Received.\nGuest message detected.\nSend the exact guest text if you want routing or draft handling.\nNext step: communication flow.",
-    issueGeneric: "Received.\nIssue detected.\nNext step: route to incident handling flow.",
-    // New specific issue access urgent template
-    issueAccessUrgent: "Received.\nThis looks like an access-related issue.\nIf the guest is locked out, send the property/unit and check-in time.\nNext step: incident handling flow.",
-    bookingGeneric: "Received.\nBooking/access-related request detected.\nNext step: route to guest operations flow."
-  };
-}
+// ─── Deterministic Classifier ─────────────────────────────────────────────────
 
-function processWebhookMessage(text: string, languageCode?: string): string {
+function classify(text: string, languageCode?: string): ClassifyResult {
   const normalized = (text || '').trim().toLowerCase();
-  
-  // Decide language based on Cyrillic presence, falling back to Telegram user language if missing (for e.g., /start)
   const isRuText = /[а-яё]/i.test(normalized);
-  const lang = (isRuText || (normalized === '/start' && languageCode === 'ru')) ? 'ru' : 'en';
-  
-  const templates = getBaseReplies(lang);
-
-  // Guard empty text
-  if (!text) return templates.fallback;
-
-  // Extract slots dynamically from the text
+  const lang: Lang = (isRuText || (normalized === '/start' && languageCode === 'ru')) ? 'ru' : 'en';
   const slots = extractSlots(normalized);
 
-  // 1. start
-  if (normalized === '/start') {
-    return templates.start;
-  }
+  if (!text) return { category: 'fallback', lang, slots };
+  if (normalized === '/start') return { category: 'start', lang, slots };
 
-  // 2. greeting/test
   const greetingsEn = ['hi', 'hello', 'hey', 'test', 'ping'];
   const greetingsRu = ['привет', 'здравствуйте', 'тест', 'пинг'];
   if (
     greetingsEn.some(g => normalized === g || normalized.startsWith(g + ' ')) ||
     greetingsRu.some(g => normalized === g || normalized.startsWith(g + ' '))
   ) {
-    return templates.greeting;
+    return { category: 'greeting', lang, slots };
   }
 
-  // 3. guest-message
-  // Evaluated early so "guest says there is a problem" doesn't falsely trigger only an issue
   const guestEn = ['guest says', 'client says', 'message from guest', 'guest wrote', 'tenant says'];
   const guestRu = ['гость пишет', 'гость сказал', 'сообщение от гостя', 'клиент пишет'];
   if (guestEn.some(t => normalized.includes(t)) || guestRu.some(t => normalized.includes(t))) {
-    return templates.guestMessage;
+    return { category: 'guest-message', lang, slots };
   }
 
-  // 4. issue/problem
   const issueEn = ['problem', 'issue', 'broken', 'not working', 'error', 'urgent', 'complaint', 'noise', 'water', 'electricity', 'lock failed'];
   const issueRu = ['не работает', 'проблема', 'ошибка', 'сломалось', 'срочно', 'жалоба', 'шум', 'вода', 'свет'];
-  const isIssue = issueEn.some(t => normalized.includes(t)) || issueRu.some(t => normalized.includes(t));
-  
-  if (isIssue) {
-    if (slots.isAccessRelated && slots.isUrgent) {
-      return templates.issueAccessUrgent;
-    }
-    return templates.issueGeneric;
+  if (issueEn.some(t => normalized.includes(t)) || issueRu.some(t => normalized.includes(t))) {
+    return { category: 'issue', lang, slots };
   }
 
-  // 5. booking/access
   const bookingEn = ['check-in', 'check in', 'checkout', 'check-out', 'code', 'access', 'lock', 'door', 'reservation', 'booking', 'arrive', 'arrival'];
   const bookingRu = ['заезд', 'выезд', 'код', 'доступ', 'замок', 'дверь', 'бронь', 'бронирование'];
-  const isBooking = bookingEn.some(t => normalized.includes(t)) || bookingRu.some(t => normalized.includes(t));
-  
-  if (isBooking) {
-    return templates.bookingGeneric;
+  if (bookingEn.some(t => normalized.includes(t)) || bookingRu.some(t => normalized.includes(t))) {
+    return { category: 'booking', lang, slots };
   }
 
-  // 6. fallback
-  return templates.fallback;
+  return { category: 'fallback', lang, slots };
 }
+
+// ─── Deterministic Fallback Replies ──────────────────────────────────────────
+
+function deterministicReply(result: ClassifyResult): string {
+  const { category, lang, slots } = result;
+
+  if (lang === 'ru') {
+    switch (category) {
+      case 'start':    return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
+      case 'greeting': return 'Соединение работает.\nОтправьте сообщение гостя, проблему или запрос.';
+      case 'guest-message': return 'Понял. Отправьте точный текст сообщения от гостя — разберём и направим дальше.';
+      case 'issue':
+        return slots.isAccessRelated && slots.isUrgent
+          ? 'Понял, похоже на проблему с доступом. Укажите объект и время заезда гостя — передадим в нужный поток.'
+          : 'Понял. Опишите проблему подробнее — передадим в incident handling flow.';
+      case 'booking': return 'Понял. Укажите объект, даты и гостя — передадим в guest operations flow.';
+      default:         return 'Получено. Тип запроса пока не определён — передаём на ручную проверку.';
+    }
+  }
+
+  switch (category) {
+    case 'start':    return 'ASI online.\nSend a guest message, issue, or request.';
+    case 'greeting': return 'Connection is working.\nSend a guest message, issue, or request.';
+    case 'guest-message': return 'Got it. Share the exact guest message and I\'ll help route or draft a reply.';
+    case 'issue':
+      return slots.isAccessRelated && slots.isUrgent
+        ? 'Understood — looks like an urgent access issue. Send the property/unit and check-in time so this can be escalated.'
+        : 'Got it. Describe the issue in more detail and it will be routed to incident handling.';
+    case 'booking': return 'Got it. Share the property, dates, and guest name and this will go to guest operations.';
+    default:         return 'Received. Message type is unclear — passing to manual review.';
+  }
+}
+
+// ─── LLM System Prompt ────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are an operations assistant for a short-term rental (STR) management company.
+You receive operational messages forwarded by staff via Telegram — these may include guest complaints, access issues, booking questions, or forwarded guest messages.
+
+Rules:
+- Reply in the same language as the user message (English or Russian)
+- Be concise: 1–3 short sentences max
+- Sound human and operational, not robotic
+- Do not claim actions were taken if they weren't
+- Do not hallucinate missing details
+- If key information is missing (property, time, guest name), ask for the single most important missing item
+- Do not use bullet lists or headers — plain conversational text only`;
+
+// ─── LLM Prompt Builder ───────────────────────────────────────────────────────
+
+function buildUserPrompt(text: string, result: ClassifyResult): string {
+  const { category, lang, slots } = result;
+  const slotSummary = [
+    slots.isUrgent && 'urgency: high',
+    slots.isAccessRelated && 'access-related: yes',
+    slots.mentionsGuest && 'mentions guest: yes',
+    slots.mentionsTime && 'mentions time: yes',
+    slots.mentionsObject && 'mentions property/unit: yes',
+  ].filter(Boolean).join(', ') || 'no specific signals';
+
+  return [
+    `Detected category: ${category}`,
+    `Language: ${lang}`,
+    `Signals: ${slotSummary}`,
+    ``,
+    `Original message:`,
+    text,
+  ].join('\n');
+}
+
+// ─── Categories that use LLM ─────────────────────────────────────────────────
+
+const LLM_CATEGORIES: Category[] = ['guest-message', 'issue', 'booking', 'fallback'];
+
+// ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // Basic guards
     const message = body?.message || body?.edited_message;
     const chatId = message?.chat?.id;
     const text = message?.text;
-    const languageCode = message?.from?.language_code; 
+    const languageCode = message?.from?.language_code;
 
     if (chatId) {
-      const replyText = processWebhookMessage(text, languageCode);
+      const classifyResult = classify(text, languageCode);
+      let replyText: string;
+
+      if (text && LLM_CATEGORIES.includes(classifyResult.category)) {
+        const llmReply = await callLLM({
+          systemPrompt: SYSTEM_PROMPT,
+          userMessage: buildUserPrompt(text, classifyResult),
+        });
+        // Use LLM reply if successful, otherwise fall back to deterministic
+        replyText = llmReply ?? deterministicReply(classifyResult);
+      } else {
+        replyText = deterministicReply(classifyResult);
+      }
+
       await replyToTelegram(chatId, replyText);
     }
 
-    // Return 200 quickly
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[Telegram Webhook] Error:', error);
