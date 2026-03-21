@@ -212,6 +212,42 @@ describe('deterministicReply', () => {
     expect(deterministicReply(r)).toContain('urgent access issue');
   });
 
+  // ── Tone tests ─────────────────────────────────────────────────────────────
+
+  it('RU Greeting reply opens with Здравствуйте!', () => {
+    const reply = deterministicReply(classify('привет'));
+    expect(reply).toMatch(/^Здравствуйте!/);
+  });
+
+  it('RU GuestMessage reply opens with Здравствуйте!', () => {
+    const reply = deterministicReply(classify('гость пишет что нет воды'));
+    expect(reply).toMatch(/^Здравствуйте!/);
+  });
+
+  it('RU Booking reply opens with Здравствуйте! and mentions guest operations', () => {
+    const reply = deterministicReply(classify('заезд завтра утром'));
+    expect(reply).toMatch(/^Здравствуйте!/);
+    expect(reply).toContain('guest operations');
+  });
+
+  it('RU Issue (non-urgent) reply opens with Здравствуйте!', () => {
+    const reply = deterministicReply(classify('не работает свет'));
+    expect(reply).toMatch(/^Здравствуйте!/);
+  });
+
+  it('RU Fallback reply does NOT start with Здравствуйте (stays neutral)', () => {
+    // Must use Cyrillic input so the RU branch is taken
+    const reply = deterministicReply(classify('непонятный запрос абырвалг'));
+    expect(reply).not.toMatch(/^Здравствуйте/);
+    expect(reply).toContain('ручную проверку');
+  });
+
+  it('EN Greeting reply is friendly and asks how to help', () => {
+    const reply = deterministicReply(classify('hello'));
+    expect(reply).toContain('Hi!');
+    expect(reply).toContain('can I help');
+  });
+
   it('returns escalated RU reply for urgent+access issue', () => {
     const r = classify('срочно замок не открывается');
     expect(deterministicReply(r)).toContain('доступ');

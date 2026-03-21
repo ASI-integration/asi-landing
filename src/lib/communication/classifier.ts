@@ -173,15 +173,15 @@ export function deterministicReply(result: ClassifyResult): string {
       case MessageCategory.Start:
         return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
       case MessageCategory.Greeting:
-        return 'Соединение работает.\nОтправьте сообщение гостя, проблему или запрос.';
+        return 'Здравствуйте! Чем могу помочь? Отправьте запрос гостя, проблему или детали заезда.';
       case MessageCategory.GuestMessage:
-        return 'Понял. Отправьте точный текст сообщения от гостя — разберём и направим дальше.';
+        return 'Здравствуйте! Получили сообщение. Пришлите точный текст от гостя — разберём и поможем с ответом.';
       case MessageCategory.Issue:
         return slots.isAccessRelated && slots.isUrgent
-          ? 'Понял, похоже на проблему с доступом. Укажите объект и время заезда гостя — передадим в нужный поток.'
-          : 'Понял. Опишите проблему подробнее — передадим в incident handling flow.';
+          ? 'Здравствуйте! Похоже на срочную проблему с доступом. Укажите объект и время заезда — передадим немедленно.'
+          : 'Здравствуйте! Получили информацию о проблеме. Опишите подробнее — передадим в нужный поток.';
       case MessageCategory.Booking:
-        return 'Понял. Укажите объект, даты и гостя — передадим в guest operations flow.';
+        return 'Здравствуйте! Принято. Уточните объект, даты и имя гостя — всё передадим в guest operations.';
       default:
         return 'Получено. Тип запроса пока не определён — передаём на ручную проверку.';
     }
@@ -191,15 +191,15 @@ export function deterministicReply(result: ClassifyResult): string {
     case MessageCategory.Start:
       return 'ASI online.\nSend a guest message, issue, or request.';
     case MessageCategory.Greeting:
-      return 'Connection is working.\nSend a guest message, issue, or request.';
+      return 'Hi! How can I help? Send a guest message, issue, or check-in details.';
     case MessageCategory.GuestMessage:
       return "Got it. Share the exact guest message and I'll help route or draft a reply.";
     case MessageCategory.Issue:
       return slots.isAccessRelated && slots.isUrgent
-        ? 'Understood — looks like an urgent access issue. Send the property/unit and check-in time so this can be escalated.'
+        ? 'On it — urgent access issue noted. Send the property and check-in time to escalate.'
         : 'Got it. Describe the issue in more detail and it will be routed to incident handling.';
     case MessageCategory.Booking:
-      return 'Got it. Share the property, dates, and guest name and this will go to guest operations.';
+      return 'Got it! Share the property, dates, and guest name and this will go to guest operations.';
     default:
       return 'Received. Message type is unclear — passing to manual review.';
   }
