@@ -4,16 +4,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const OPTIONS = { systemPrompt: 'You are a helpful assistant.', userMessage: 'Hello' };
 
-function mockFetch(status: number, body: unknown): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({
-      ok: status >= 200 && status < 300,
-      status,
-      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
-      json: async () => body,
-    }),
-  );
+function mockFetch(status: number, body: unknown): ReturnType<typeof vi.fn> {
+  const mock = vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    json: async () => body,
+  });
+  vi.stubGlobal('fetch', mock);
+  return mock;
 }
 
 function mockFetchNetworkError(name = 'TypeError'): void {
@@ -131,6 +130,7 @@ describe('callLLM — provider abstraction', () => {
     process.env.LLM_FALLBACK_MODEL = 'fallback-model';
 
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     // Primary fails with 403, fallback succeeds
@@ -163,6 +163,7 @@ describe('callLLM — provider abstraction', () => {
 
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
@@ -176,5 +177,77 @@ describe('callLLM — provider abstraction', () => {
 
     expect(result).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // ── OpenRouter-specific tests ──────────────────────────────────────────────
+
+  it('injects HTTP-Referer and X-Title headers when provider is OpenRouter', async () => {
+    process.env.LLM_API_KEY = 'sk-or-test-key';
+    process.env.LLM_BASE_URL = 'https://openrouter.ai/api/v1';
+    process.env.NEXT_PUBLIC_APP_URL = 'https://example.com';
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const fetchMock = mockFetch(200, {
+      choices: [{ message: { content: 'OpenRouter reply' } }],
+    });
+
+    const { callLLM } = await import('../openai');
+    await callLLM(OPTIONS);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['HTTP-Referer']).toBe('https://example.com');
+    expect(headers['X-Title']).toBe('ASI Telegram Bot');
+  });
+
+  it('does NOT inject OpenRouter headers for non-OpenRouter providers', async () => {
+    process.env.LLM_API_KEY = 'sk-groq-test';
+    process.env.LLM_BASE_URL = 'https://api.groq.com/openai/v1';
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const fetchMock = mockFetch(200, {
+      choices: [{ message: { content: 'Groq reply' } }],
+    });
+
+    const { callLLM } = await import('../openai');
+    await callLLM(OPTIONS);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers['HTTP-Referer']).toBeUndefined();
+    expect(headers['X-Title']).toBeUndefined();
+  });
+
+  it('returns null and warns when provider returns content: null on 200', async () => {
+    process.env.LLM_API_KEY = 'sk-or-test-key';
+    process.env.LLM_BASE_URL = 'https://openrouter.ai/api/v1';
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    mockFetch(200, { choices: [{ message: { content: null } }] });
+
+    const { callLLM } = await import('../openai');
+    const result = await callLLM(OPTIONS);
+
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('content=null'),
+    );
+  });
+
+  it('logs a masked API key prefix in the diagnostic info line', async () => {
+    process.env.LLM_API_KEY = 'sk-or-v3-abcdefghijklmnop';
+    process.env.LLM_BASE_URL = 'https://openrouter.ai/api/v1';
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    mockFetch(200, { choices: [{ message: { content: 'ok' } }] });
+
+    const { callLLM } = await import('../openai');
+    await callLLM(OPTIONS);
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/key=sk-or-v3/),
+    );
   });
 });
