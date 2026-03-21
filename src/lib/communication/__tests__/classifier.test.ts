@@ -2,15 +2,44 @@ import { describe, it, expect } from 'vitest';
 import { classify, deterministicReply, extractSlots } from '../classifier';
 import { MessageCategory } from '../types';
 
+// ─── extractSlots ──────────────────────────────────────────────────────────────
+
 describe('extractSlots', () => {
-  it('detects urgency keywords', () => {
+  it('detects urgency keywords (EN)', () => {
     expect(extractSlots('urgent problem')).toMatchObject({ isUrgent: true });
-    expect(extractSlots('срочно')).toMatchObject({ isUrgent: true });
+    expect(extractSlots('asap please')).toMatchObject({ isUrgent: true });
   });
 
-  it('detects access-related keywords', () => {
+  it('detects urgency keywords (RU)', () => {
+    expect(extractSlots('срочно')).toMatchObject({ isUrgent: true });
+    expect(extractSlots('немедленно')).toMatchObject({ isUrgent: true });
+  });
+
+  it('detects access-related keywords (EN)', () => {
     expect(extractSlots('lock broken')).toMatchObject({ isAccessRelated: true });
+    expect(extractSlots('how to get inside')).toMatchObject({ isAccessRelated: true });
+  });
+
+  it('detects access-related keywords (RU)', () => {
     expect(extractSlots('замок не работает')).toMatchObject({ isAccessRelated: true });
+    expect(extractSlots('как попасть внутрь')).toMatchObject({ isAccessRelated: true });
+    expect(extractSlots('войти в квартиру')).toMatchObject({ isAccessRelated: true });
+  });
+
+  it('detects parking as object signal', () => {
+    expect(extractSlots('где парковка')).toMatchObject({ mentionsObject: true });
+    expect(extractSlots('where is the parking')).toMatchObject({ mentionsObject: true });
+  });
+
+  it('detects time signals (RU)', () => {
+    expect(extractSlots('сегодня вечером')).toMatchObject({ mentionsTime: true });
+    expect(extractSlots('после 23:00 часов')).toMatchObject({ mentionsTime: true });
+    expect(extractSlots('завтра утром')).toMatchObject({ mentionsTime: true });
+  });
+
+  it('detects guest mentions (RU plural/genitive)', () => {
+    expect(extractSlots('2 гостя')).toMatchObject({ mentionsGuest: true });
+    expect(extractSlots('для гостей')).toMatchObject({ mentionsGuest: true });
   });
 
   it('returns false signals for generic text', () => {
@@ -20,34 +49,39 @@ describe('extractSlots', () => {
   });
 });
 
-describe('classify', () => {
+// ─── classify — basic cases ────────────────────────────────────────────────────
+
+describe('classify — basic', () => {
   it('classifies /start command', () => {
-    const r = classify('/start');
-    expect(r.category).toBe(MessageCategory.Start);
+    expect(classify('/start').category).toBe(MessageCategory.Start);
   });
 
   it('classifies /start as RU when language_code is ru', () => {
-    const r = classify('/start', 'ru');
-    expect(r.lang).toBe('ru');
+    expect(classify('/start', 'ru').lang).toBe('ru');
   });
 
-  it('classifies English greetings', () => {
+  it('classifies short English greetings', () => {
     for (const g of ['hi', 'hello', 'hey', 'test', 'ping']) {
       expect(classify(g).category).toBe(MessageCategory.Greeting);
     }
   });
 
-  it('classifies Russian greetings', () => {
+  it('classifies short Russian greetings (exact)', () => {
     expect(classify('привет').category).toBe(MessageCategory.Greeting);
     expect(classify('здравствуйте').category).toBe(MessageCategory.Greeting);
   });
 
-  it('classifies guest messages', () => {
+  it('classifies greeting with trailing punctuation as Greeting when short', () => {
+    expect(classify('hello!').category).toBe(MessageCategory.Greeting);
+    expect(classify('привет,').category).toBe(MessageCategory.Greeting);
+  });
+
+  it('classifies guest-forwarded messages', () => {
     expect(classify('guest says the wifi is down').category).toBe(MessageCategory.GuestMessage);
     expect(classify('гость пишет что нет воды').category).toBe(MessageCategory.GuestMessage);
   });
 
-  it('classifies issues', () => {
+  it('classifies operational issues', () => {
     expect(classify('problem with the heating').category).toBe(MessageCategory.Issue);
     expect(classify('не работает свет').category).toBe(MessageCategory.Issue);
   });
@@ -57,7 +91,7 @@ describe('classify', () => {
     expect(classify('заезд завтра утром').category).toBe(MessageCategory.Booking);
   });
 
-  it('falls back for unrecognised messages', () => {
+  it('falls back for truly unrecognised messages', () => {
     expect(classify('qwerty foobar').category).toBe(MessageCategory.Fallback);
   });
 
@@ -74,29 +108,112 @@ describe('classify', () => {
   });
 });
 
+// ─── classify — multi-intent realistic guest messages ─────────────────────────
+
+describe('classify — multi-intent guest messages (RU)', () => {
+  it('classifies parking + late-access inquiry (the reported failing case)', () => {
+    const msg =
+      'Здравствуйте. Мы заселяемся сегодня в апартаменты X, 2 гостя. ' +
+      'Подскажите, где парковка и как попасть внутрь после 23:00?';
+    const result = classify(msg);
+    expect(result.category).toBe(MessageCategory.Booking);
+    expect(result.lang).toBe('ru');
+  });
+
+  it('classifies check-in + door code request', () => {
+    const msg = 'Добрый день! Мы заедем в 21:00. Пришлите код от двери, пожалуйста.';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies late-arrival + access question', () => {
+    const msg = 'Прилетаем поздно ночью, примерно в 02:00. Как войти в квартиру?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies guest count + booking context', () => {
+    const msg = 'Нас будет 3 гостя. Заселяемся завтра. Есть ли детская кроватка?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies parking-only question with object context', () => {
+    const msg = 'Где парковка у апартаментов?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('does NOT classify long greeting-prefixed message as Greeting', () => {
+    const msg =
+      'Здравствуйте. Мы заселяемся сегодня в апартаменты X, 2 гостя. ' +
+      'Подскажите, где парковка и как попасть внутрь после 23:00?';
+    expect(classify(msg).category).not.toBe(MessageCategory.Greeting);
+  });
+
+  it('classifies urgent lock failure as Issue', () => {
+    const msg = 'Срочно! Замок не открывается, гость стоит у двери.';
+    expect(classify(msg).category).toBe(MessageCategory.Issue);
+  });
+});
+
+describe('classify — multi-intent guest messages (EN)', () => {
+  it('classifies parking + late entry inquiry', () => {
+    const msg =
+      'Hi, we are checking in today, 2 guests. ' +
+      'Can you tell us where the parking is and how to get inside after 11pm?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies late arrival + door code request', () => {
+    const msg = 'We will arrive around 1am. Could you send the door code please?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies booking + check-in time question', () => {
+    const msg = 'Hello, we have a reservation for tomorrow. What time is check-in?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('classifies access + parking multi-intent', () => {
+    const msg = 'Good evening! Where do I park and how do I access the building?';
+    expect(classify(msg).category).toBe(MessageCategory.Booking);
+  });
+
+  it('keeps manual review for truly ambiguous messages', () => {
+    expect(classify('qwerty foobar').category).toBe(MessageCategory.Fallback);
+    expect(classify('???').category).toBe(MessageCategory.Fallback);
+  });
+});
+
+// ─── deterministicReply ───────────────────────────────────────────────────────
+
 describe('deterministicReply', () => {
   it('returns EN start reply', () => {
-    const r = classify('/start');
-    expect(deterministicReply(r)).toContain('ASI online');
+    expect(deterministicReply(classify('/start'))).toContain('ASI online');
   });
 
   it('returns RU start reply', () => {
-    const r = classify('/start', 'ru');
-    const reply = deterministicReply(r);
+    const reply = deterministicReply(classify('/start', 'ru'));
     expect(reply).toContain('ASI online');
     expect(reply).toContain('Отправьте');
+  });
+
+  it('returns RU booking reply for multi-intent parking+access message', () => {
+    const msg =
+      'Здравствуйте. Мы заселяемся сегодня в апартаменты X, 2 гостя. ' +
+      'Подскажите, где парковка и как попасть внутрь после 23:00?';
+    const reply = deterministicReply(classify(msg));
+    // Must NOT be the manual-review fallback
+    expect(reply).not.toContain('ручную проверку');
+    // Must be the booking reply
+    expect(reply).toContain('guest operations');
   });
 
   it('returns escalated EN reply for urgent+access issue', () => {
     const r = classify('urgent lock failed');
     expect(r.category).toBe(MessageCategory.Issue);
-    const reply = deterministicReply(r);
-    expect(reply).toContain('urgent access issue');
+    expect(deterministicReply(r)).toContain('urgent access issue');
   });
 
   it('returns escalated RU reply for urgent+access issue', () => {
     const r = classify('срочно замок не открывается');
-    const reply = deterministicReply(r);
-    expect(reply).toContain('доступ');
+    expect(deterministicReply(r)).toContain('доступ');
   });
 });

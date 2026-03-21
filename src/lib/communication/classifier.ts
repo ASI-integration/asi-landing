@@ -9,12 +9,103 @@ import {
 
 export function extractSlots(normalized: string): MessageSlots {
   return {
-    isUrgent: ['urgent', 'emergency', 'asap', 'срочно', 'быстро'].some(t => normalized.includes(t)),
-    isAccessRelated: ['access', 'lock', 'door', 'code', 'замок', 'дверь', 'код', 'доступ', 'попасть'].some(t => normalized.includes(t)),
-    mentionsGuest: ['guest', 'tenant', 'client', 'гость', 'клиент', 'жилец'].some(t => normalized.includes(t)),
-    mentionsTime: ['time', 'check-in', 'checkout', 'arrive', 'время', 'заезд', 'выезд', 'прибытие'].some(t => normalized.includes(t)),
-    mentionsObject: ['object', 'unit', 'apartment', 'room', 'property', 'объект', 'квартира', 'комната', 'апартаменты'].some(t => normalized.includes(t)),
+    isUrgent: [
+      'urgent', 'emergency', 'asap', 'right now', 'immediately',
+      'срочно', 'быстро', 'немедленно', 'экстренно',
+    ].some(t => normalized.includes(t)),
+
+    isAccessRelated: [
+      'access', 'lock', 'door', 'code', 'key', 'entry', 'enter', 'get in', 'get inside',
+      'замок', 'дверь', 'код', 'доступ', 'попасть', 'войти', 'ключ', 'открыть', 'внутрь',
+    ].some(t => normalized.includes(t)),
+
+    mentionsGuest: [
+      'guest', 'tenant', 'client', 'visitor',
+      'гость', 'клиент', 'жилец', 'гостя', 'гостей', 'гости', 'постоялец',
+    ].some(t => normalized.includes(t)),
+
+    mentionsTime: [
+      'time', 'check-in', 'checkout', 'check in', 'check out', 'arrive', 'arrival',
+      'tonight', 'today', 'tomorrow', 'after', 'before', 'pm', 'am', 'hour', 'late',
+      'время', 'заезд', 'выезд', 'прибытие', 'сегодня', 'завтра', 'после', 'ночи',
+      'вечер', 'утром', 'часов',
+    ].some(t => normalized.includes(t)),
+
+    mentionsObject: [
+      'object', 'unit', 'apartment', 'room', 'property', 'flat', 'suite', 'building', 'parking',
+      'объект', 'квартира', 'комната', 'апартамент', 'апартаменты', 'здание', 'корпус',
+      'парковка', 'паркинг', 'место',
+    ].some(t => normalized.includes(t)),
   };
+}
+
+// ─── Keyword Banks ────────────────────────────────────────────────────────────
+
+/** Greeting: only exact single-word OR sentence-start prefix (punctuation-tolerant). */
+const GREETINGS_EN = ['hi', 'hello', 'hey', 'test', 'ping'];
+const GREETINGS_RU = ['привет', 'здравствуйте', 'добрый день', 'добрый вечер', 'доброе утро', 'тест', 'пинг'];
+
+/** Forwarded-guest-message intro phrases. */
+const GUEST_FWD_EN = ['guest says', 'client says', 'message from guest', 'guest wrote', 'tenant says', 'forwarded from guest'];
+const GUEST_FWD_RU = ['гость пишет', 'гость сказал', 'сообщение от гостя', 'клиент пишет', 'пересылаю от гостя'];
+
+/** Operational issue signals. */
+const ISSUE_EN = ['problem', 'issue', 'broken', 'not working', 'doesn\'t work', 'error', 'urgent', 'complaint', 'noise', 'water leak', 'electricity', 'lock failed', 'out of order'];
+const ISSUE_RU = ['не работает', 'проблема', 'ошибка', 'сломалось', 'сломан', 'срочно', 'жалоба', 'шум', 'вода', 'протечка', 'свет', 'электричество', 'не открывается'];
+
+/**
+ * Booking / check-in / access signals — intentionally broad.
+ * Covers multi-intent messages that mention any aspect of a stay.
+ */
+const BOOKING_EN = [
+  'check-in', 'check in', 'checkout', 'check-out', 'check out',
+  'code', 'access', 'lock', 'door', 'key',
+  'reservation', 'booking', 'booked', 'book',
+  'arrive', 'arrival', 'arriving', 'leaving',
+  'parking', 'park', 'garage',
+  'how to get in', 'get inside', 'enter', 'entry',
+  'tonight', 'late arrival', 'after midnight',
+];
+const BOOKING_RU = [
+  'заезд', 'выезд', 'заселен', 'заселяемся', 'заселение', 'выселение',
+  'код', 'доступ', 'замок', 'дверь', 'ключ', 'открыть',
+  'бронь', 'бронирование', 'забронировано',
+  'парковка', 'паркинг', 'машина',
+  'попасть', 'войти', 'как попасть', 'как войти', 'внутрь',
+  'после', 'ночи', 'вечером', 'сегодня заедем', 'поздно',
+  'гостей', 'гостя', // "2 гостя" → booking context
+];
+
+// ─── Scoring helpers ──────────────────────────────────────────────────────────
+
+function countMatches(normalized: string, keywords: string[]): number {
+  return keywords.filter(k => normalized.includes(k)).length;
+}
+
+/**
+ * Returns true when a message bears multiple operational signals typical of a
+ * guest operational inquiry — even if no single keyword bank fires outright.
+ *
+ * Promotes messages to Booking when they have:
+ *   ≥1 booking/access keyword  AND  ≥1 object/time/guest slot
+ * This prevents multi-intent guest messages from falling to Fallback.
+ */
+function hasBookingContext(normalized: string, slots: MessageSlots): boolean {
+  const bookingHits =
+    countMatches(normalized, BOOKING_EN) +
+    countMatches(normalized, BOOKING_RU);
+
+  if (bookingHits === 0) return false;
+
+  // At least one secondary signal must also be present
+  const secondarySignals = [
+    slots.mentionsObject,
+    slots.mentionsTime,
+    slots.mentionsGuest,
+    slots.isAccessRelated,
+  ].filter(Boolean).length;
+
+  return secondarySignals >= 1;
 }
 
 // ─── Deterministic Classifier ─────────────────────────────────────────────────
@@ -28,33 +119,47 @@ export function classify(text: string, languageCode?: string): ClassifyResult {
   if (!text) return { category: MessageCategory.Fallback, lang, slots };
   if (normalized === '/start') return { category: MessageCategory.Start, lang, slots };
 
-  const greetingsEn = ['hi', 'hello', 'hey', 'test', 'ping'];
-  const greetingsRu = ['привет', 'здравствуйте', 'тест', 'пинг'];
-  if (
-    greetingsEn.some(g => normalized === g || normalized.startsWith(g + ' ')) ||
-    greetingsRu.some(g => normalized === g || normalized.startsWith(g + ' '))
-  ) {
+  // ── Greeting: exact match OR sentence starts with keyword (punctuation-tolerant) ──
+  const startsWithGreeting = (greetings: string[]) =>
+    greetings.some(g => {
+      if (normalized === g) return true;
+      // Allow punctuation immediately after the keyword: "здравствуйте." / "hello,"
+      return normalized.startsWith(g) &&
+        (normalized.length === g.length || /[\s.,!?]/.test(normalized[g.length]));
+    });
+
+  // Only classify as Greeting if the message is SHORT (≤ 60 chars) — long
+  // messages that open with a greeting are operational, not just hellos.
+  if (normalized.length <= 60 && startsWithGreeting([...GREETINGS_EN, ...GREETINGS_RU])) {
     return { category: MessageCategory.Greeting, lang, slots };
   }
 
-  const guestEn = ['guest says', 'client says', 'message from guest', 'guest wrote', 'tenant says'];
-  const guestRu = ['гость пишет', 'гость сказал', 'сообщение от гостя', 'клиент пишет'];
-  if (guestEn.some(t => normalized.includes(t)) || guestRu.some(t => normalized.includes(t))) {
+  // ── Forwarded guest message ───────────────────────────────────────────────
+  if (GUEST_FWD_EN.some(t => normalized.includes(t)) ||
+      GUEST_FWD_RU.some(t => normalized.includes(t))) {
     return { category: MessageCategory.GuestMessage, lang, slots };
   }
 
-  const issueEn = ['problem', 'issue', 'broken', 'not working', 'error', 'urgent', 'complaint', 'noise', 'water', 'electricity', 'lock failed'];
-  const issueRu = ['не работает', 'проблема', 'ошибка', 'сломалось', 'срочно', 'жалоба', 'шум', 'вода', 'свет'];
-  if (issueEn.some(t => normalized.includes(t)) || issueRu.some(t => normalized.includes(t))) {
+  // ── Operational issue ─────────────────────────────────────────────────────
+  if (ISSUE_EN.some(t => normalized.includes(t)) ||
+      ISSUE_RU.some(t => normalized.includes(t))) {
     return { category: MessageCategory.Issue, lang, slots };
   }
 
-  const bookingEn = ['check-in', 'check in', 'checkout', 'check-out', 'code', 'access', 'lock', 'door', 'reservation', 'booking', 'arrive', 'arrival'];
-  const bookingRu = ['заезд', 'выезд', 'код', 'доступ', 'замок', 'дверь', 'бронь', 'бронирование'];
-  if (bookingEn.some(t => normalized.includes(t)) || bookingRu.some(t => normalized.includes(t))) {
+  // ── Booking / check-in / access (single-keyword match) ───────────────────
+  if (BOOKING_EN.some(t => normalized.includes(t)) ||
+      BOOKING_RU.some(t => normalized.includes(t))) {
     return { category: MessageCategory.Booking, lang, slots };
   }
 
+  // ── Multi-signal promotion: operational guest inquiry without exact keyword ─
+  // Catches messages like "Здравствуйте, мы заселяемся, где парковка?"
+  // that have booking context spread across the sentence.
+  if (hasBookingContext(normalized, slots)) {
+    return { category: MessageCategory.Booking, lang, slots };
+  }
+
+  // ── True fallback: unclear intent, requires operator ─────────────────────
   return { category: MessageCategory.Fallback, lang, slots };
 }
 
