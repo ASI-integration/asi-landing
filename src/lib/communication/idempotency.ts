@@ -35,7 +35,7 @@ export function isDuplicate(updateId: number): boolean {
 /** Evict entries older than TTL_MS. Called lazily on each checkAndMark. */
 function sweep(): void {
   const cutoff = Date.now() - TTL_MS;
-  for (const [id, entry] of store) {
+  for (const [id, entry] of Array.from(store.entries())) {
     if (entry.processedAt < cutoff) store.delete(id);
   }
 }
