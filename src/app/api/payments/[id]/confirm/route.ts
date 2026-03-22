@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { confirmPayment, getPaymentRequest } from '@/lib/payments/stub';
-import { replyToTelegram } from '@/lib/telegram';
+import { getPaymentById, updatePaymentStatusById } from '@/lib/payments/db';
+import { sendPaymentConfirmation } from '@/lib/communication/notifications';
 
-export async function POST(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
-  const id = params.id;
-  const payment = getPaymentRequest(id);
-  
+export async function POST(
+  _req: Request,
+  { params }: { params: { id: string } }
+): Promise<NextResponse> {
+  const payment = await getPaymentById(params.id);
+
   if (!payment) {
     return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
   }
@@ -14,11 +16,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ message: 'Already paid' });
   }
 
-  const success = confirmPayment(id);
-  if (success) {
-    await replyToTelegram(payment.chatId, "✅ Payment received, thank you. We are processing your request.");
-    return NextResponse.json({ ok: true, message: 'Payment confirmed' });
+  const updated = await updatePaymentStatusById(payment.id, 'paid');
+
+  if (updated && payment.chatId) {
+    await sendPaymentConfirmation({
+      paymentId: payment.id,
+      chatId: parseInt(payment.chatId, 10),
+      amount: payment.amount,
+      currency: payment.currency,
+      serviceType: payment.serviceType,
+    });
   }
 
-  return NextResponse.json({ error: 'Failed to confirm' }, { status: 500 });
+  return updated
+    ? NextResponse.json({ ok: true, message: 'Payment confirmed' })
+    : NextResponse.json({ error: 'Failed to confirm' }, { status: 500 });
 }

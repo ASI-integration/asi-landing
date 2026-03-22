@@ -2,43 +2,55 @@ import { NextResponse } from 'next/server';
 import { getProvider } from '@/lib/payments/factory';
 import { updatePaymentStatus, getPaymentByTransactionId } from '@/lib/payments/db';
 import { sendPaymentConfirmation } from '@/lib/communication/notifications';
+import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/events';
 
 export async function POST(req: Request) {
   try {
     const provider = getProvider('yookassa');
-    const signature = ''; // Yookassa typically relies on mTLS or IP whitelists
-    
     const bodyText = await req.text();
 
-    if (!provider.verifyWebhookSignature(bodyText, signature)) {
-      console.error('[Yookassa Webhook] Invalid signature logic');
+    // YooKassa uses IP whitelisting; signature param is unused but kept for interface parity
+    if (!provider.verifyWebhookSignature(bodyText, '')) {
+      console.error('[YooKassa Webhook] Origin verification failed');
       return NextResponse.json({ error: 'Invalid origin' }, { status: 400 });
     }
 
-    const { transactionId, status } = await provider.parseWebhookEvent(bodyText, signature);
-    const payment = await getPaymentByTransactionId(transactionId);
-    
-    if (!payment) {
-      console.warn(`[Yookassa Webhook] Unrecognized transaction ID ${transactionId}`);
-      return NextResponse.json({ received: true }); 
+    const { transactionId, status, eventId, rawEvent } = await provider.parseWebhookEvent(
+      bodyText,
+      ''
+    );
+
+    console.log(`[YooKassa Webhook] Received eventId=${eventId} tx=${transactionId} status=${status}`);
+
+    // Idempotency: skip if already processed
+    if (eventId && hasWebhookBeenProcessed('yookassa', eventId)) {
+      console.log(`[YooKassa Webhook] Event ${eventId} already processed, skipping.`);
+      return NextResponse.json({ received: true });
     }
 
-    // Idempotent update
+    const payment = await getPaymentByTransactionId(transactionId);
+    if (!payment) {
+      console.warn(`[YooKassa Webhook] Unrecognized transaction ID ${transactionId}`);
+      return NextResponse.json({ received: true });
+    }
+
     const updated = await updatePaymentStatus(transactionId, status);
-    
-    if (updated && status === 'paid' && payment.metadata?.chatId) {
-      // Send bot confirmation smoothly 
+    console.log(`[YooKassa Webhook] Status update tx=${transactionId} status=${status} changed=${updated}`);
+
+    if (updated && status === 'paid' && payment.chatId) {
       await sendPaymentConfirmation({
-        chatId: payment.metadata.chatId,
+        paymentId: payment.id,
+        chatId: parseInt(payment.chatId, 10),
         amount: payment.amount,
         currency: payment.currency,
-        serviceType: payment.metadata.serviceType
+        serviceType: payment.serviceType,
       });
     }
 
+    if (eventId) markWebhookProcessed('yookassa', eventId);
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error('[Yookassa Webhook Error]', err);
+    console.error('[YooKassa Webhook Error]', err);
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }

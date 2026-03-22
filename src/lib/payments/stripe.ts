@@ -1,7 +1,6 @@
 import Stripe from 'stripe';
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 
-// Real usage requires a configured webhook secret in env
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_fake';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_fake';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -9,18 +8,28 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const stripeClient = new Stripe(STRIPE_SECRET);
 
 export class StripeProvider implements PaymentProvider {
-  async createPaymentLink(params: Omit<PaymentRequest, "id" | "provider" | "providerTransactionId" | "status" | "createdAt" | "updatedAt" | "checkoutUrl">): Promise<{ checkoutUrl: string; transactionId: string; }> {
+  async createPaymentLink(
+    params: Omit<PaymentRequest, 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'>
+  ): Promise<{ paymentUrl: string; transactionId: string }> {
+    const description = [
+      params.description,
+      params.reservationId ? `Reservation: ${params.reservationId}` : null,
+      params.propertyId ? `Property: ${params.propertyId}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ') || undefined;
+
     const session = await stripeClient.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
-            currency: params.currency,
+            currency: params.currency.toLowerCase(),
             product_data: {
-              name: params.metadata.serviceType || 'ASI Service',
-              description: `Reservation: ${params.metadata.reservationId || 'N/A'}, Property: ${params.metadata.propertyId || 'N/A'}`,
+              name: params.serviceType || 'ASI Service',
+              ...(description ? { description } : {}),
             },
-            unit_amount: Math.round(params.amount * 100), // Stripe expects cents natively, assuming 'amount' is float if USD, so cent-adjust
+            unit_amount: Math.round(params.amount * 100),
           },
           quantity: 1,
         },
@@ -28,11 +37,18 @@ export class StripeProvider implements PaymentProvider {
       mode: 'payment',
       success_url: `${APP_URL}/payments/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/payments/cancel`,
-      metadata: { ...params.metadata, chatId: params.metadata.chatId?.toString() || '' },
+      metadata: {
+        paymentRequestId: params.id,
+        reservationId: params.reservationId || '',
+        propertyId: params.propertyId || '',
+        guestId: params.guestId || '',
+        chatId: params.chatId || '',
+        serviceType: params.serviceType || '',
+      },
     });
 
     return {
-      checkoutUrl: session.url!,
+      paymentUrl: session.url!,
       transactionId: session.id,
     };
   }
@@ -41,29 +57,39 @@ export class StripeProvider implements PaymentProvider {
     try {
       stripeClient.webhooks.constructEvent(payload, signature, STRIPE_WEBHOOK_SECRET);
       return true;
-    } catch (err) {
+    } catch {
       return false;
     }
   }
 
-  async parseWebhookEvent(payload: string | Buffer, signature: string): Promise<{ transactionId: string; status: PaymentStatus; rawEvent: any; }> {
+  async parseWebhookEvent(
+    payload: string | Buffer,
+    signature: string
+  ): Promise<{ transactionId: string; status: PaymentStatus; eventId?: string; rawEvent: unknown }> {
     const event = stripeClient.webhooks.constructEvent(payload, signature, STRIPE_WEBHOOK_SECRET);
-    let status: PaymentStatus = 'pending';
 
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as Stripe.Checkout.Session;
-      if (session.payment_status === 'paid') {
-        status = 'paid';
-      }
-      return { transactionId: session.id, status, rawEvent: event };
+      const status: PaymentStatus =
+        session.payment_status === 'paid' ? 'paid' : 'requires_action';
+      return { transactionId: session.id, status, eventId: event.id, rawEvent: event };
     }
 
-    if (event.type === 'checkout.session.expired' || event.type === 'checkout.session.async_payment_failed') {
+    if (event.type === 'checkout.session.expired') {
       const session = event.data.object as Stripe.Checkout.Session;
-      status = 'failed';
-      return { transactionId: session.id, status, rawEvent: event };
+      return { transactionId: session.id, status: 'expired', eventId: event.id, rawEvent: event };
     }
 
-    return { transactionId: (event.data.object as any).id, status: 'pending', rawEvent: event };
+    if (event.type === 'checkout.session.async_payment_failed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      return { transactionId: session.id, status: 'failed', eventId: event.id, rawEvent: event };
+    }
+
+    return {
+      transactionId: (event.data.object as { id: string }).id,
+      status: 'pending',
+      eventId: event.id,
+      rawEvent: event,
+    };
   }
 }

@@ -5,18 +5,20 @@ const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || 'test_shop';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export class YookassaProvider implements PaymentProvider {
-  async createPaymentLink(params: Omit<PaymentRequest, 'id' | 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'checkoutUrl'>): Promise<{ checkoutUrl: string; transactionId: string }> {
+  async createPaymentLink(
+    params: Omit<PaymentRequest, 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'>
+  ): Promise<{ paymentUrl: string; transactionId: string }> {
     const amountStr = params.amount.toFixed(2);
     const auth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET}`).toString('base64');
-    
-    // In strict test environments we avoid hitting the real API if we want to mock it,
-    // but the prompt specifies implementing the real payment flow.
+    // Use internal payment ID as idempotency key so retries are safe
+    const idempotencyKey = params.id;
+
     const res = await fetch('https://api.yookassa.ru/v3/payments', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Basic ${auth}`,
-        'Idempotence-Key': `pay-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+        'Idempotence-Key': idempotencyKey,
       },
       body: JSON.stringify({
         amount: { value: amountStr, currency: params.currency || 'RUB' },
@@ -25,29 +27,39 @@ export class YookassaProvider implements PaymentProvider {
           return_url: `${APP_URL}/payments/success?provider=yookassa`,
         },
         capture: true,
-        description: params.metadata.serviceType || 'Payment Request',
-        metadata: params.metadata,
+        description: params.description || params.serviceType || 'ASI Payment',
+        metadata: {
+          paymentRequestId: params.id,
+          reservationId: params.reservationId || '',
+          propertyId: params.propertyId || '',
+          guestId: params.guestId || '',
+          chatId: params.chatId || '',
+          serviceType: params.serviceType || '',
+        },
       }),
     });
 
     if (!res.ok) {
-      throw new Error(`Yookassa API Error: ${await res.text()}`);
+      throw new Error(`YooKassa API Error: ${await res.text()}`);
     }
 
     const data = await res.json();
     return {
-      checkoutUrl: data.confirmation.confirmation_url,
+      paymentUrl: data.confirmation.confirmation_url,
       transactionId: data.id,
     };
   }
 
-  verifyWebhookSignature(payload: string | Buffer, signature: string): boolean {
-    // Yookassa primarily relies on IP whitelisting rather than HMAC signatures,
-    // but for our abstraction we'll accept requests here.
+  verifyWebhookSignature(_payload: string | Buffer, _signature: string): boolean {
+    // YooKassa uses IP whitelisting rather than HMAC signatures.
+    // In production: verify the request originates from YooKassa's IP ranges.
     return true;
   }
 
-  async parseWebhookEvent(payload: string | Buffer, signature: string): Promise<{ transactionId: string; status: PaymentStatus; rawEvent: any }> {
+  async parseWebhookEvent(
+    payload: string | Buffer,
+    _signature: string
+  ): Promise<{ transactionId: string; status: PaymentStatus; eventId?: string; rawEvent: unknown }> {
     const bodyStr = typeof payload === 'string' ? payload : payload.toString('utf8');
     const event = JSON.parse(bodyStr);
 
@@ -58,7 +70,8 @@ export class YookassaProvider implements PaymentProvider {
       status = 'cancelled';
     }
 
-    const transactionId = event.object.id;
-    return { transactionId, status, rawEvent: event };
+    const transactionId: string = event.object.id;
+    // YooKassa event objects use the payment ID as their unique identifier
+    return { transactionId, status, eventId: transactionId, rawEvent: event };
   }
 }

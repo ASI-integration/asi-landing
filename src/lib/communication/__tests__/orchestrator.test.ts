@@ -33,12 +33,20 @@ vi.mock('../intent', () => ({
   detectIntent: (...args: unknown[]) => mockDetectIntent(...args),
 }));
 
-// Mock Payments
-const mockCreatePaymentRequest = vi.fn().mockReturnValue('pay_mock123');
-vi.mock('@/lib/payments/stub', () => ({
+// Mock Payments (real factory — returns a PaymentRequest object with paymentUrl)
+const mockCreatePaymentRequest = vi.fn().mockResolvedValue({
+  id: 'pay_mock123',
+  provider: 'stripe',
+  providerTransactionId: 'cs_test_mock',
+  status: 'pending',
+  amount: 100,
+  currency: 'USD',
+  paymentUrl: 'https://pay.test/pay_mock123',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+vi.mock('@/lib/payments/factory', () => ({
   createPaymentRequest: (...args: unknown[]) => mockCreatePaymentRequest(...args),
-  confirmPayment: vi.fn(),
-  getPaymentRequest: vi.fn(),
 }));
 
 // Mock Reservation Matcher

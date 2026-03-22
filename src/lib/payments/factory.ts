@@ -1,51 +1,95 @@
 import { StripeProvider } from './stripe';
 import { YookassaProvider } from './yookassa';
-import { PaymentProvider, PaymentRequest, PaymentMetadata } from './types';
-import { createPaymentRecord } from './db';
+import { PaymentProvider, PaymentProviderType, PaymentRequest } from './types';
+import { createPaymentRecord, getActivePaymentForContext } from './db';
 
-const stripe = new StripeProvider();
-const yookassa = new YookassaProvider();
+const providers: Record<PaymentProviderType, PaymentProvider> = {
+  stripe: new StripeProvider(),
+  yookassa: new YookassaProvider(),
+};
 
-export function getProvider(name: 'stripe' | 'yookassa'): PaymentProvider {
-  return name === 'stripe' ? stripe : yookassa;
+export function getProvider(name: PaymentProviderType): PaymentProvider {
+  return providers[name];
 }
 
-export async function createPaymentRequest(
-  amount: number,
-  currency: 'USD' | 'RUB',
-  metadata: PaymentMetadata
-): Promise<PaymentRequest> {
-  const providerName = currency === 'RUB' ? 'yookassa' : 'stripe';
-  const internalId = `pay_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+/**
+ * Resolves the payment provider for a given request.
+ *
+ * Priority:
+ *   1. Explicit provider if passed in params
+ *   2. Business config: RUB → yookassa
+ *   3. Currency fallback: all others → stripe
+ */
+function resolveProvider(currency: string, explicit?: PaymentProviderType): PaymentProviderType {
+  if (explicit) return explicit;
+  if (currency === 'RUB') return 'yookassa';
+  return 'stripe';
+}
 
-  // Partial creation
-  const partial: PaymentRequest = {
-    id: internalId,
-    provider: providerName,
-    providerTransactionId: null,
-    amount,
-    currency,
-    status: 'pending',
-    metadata,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    checkoutUrl: null,
+export interface CreatePaymentParams {
+  amount: number;
+  currency: string;
+  chatId?: string;
+  reservationId?: string;
+  propertyId?: string;
+  listingId?: string;
+  guestId?: string;
+  description?: string;
+  serviceType?: string;
+  expiresAt?: Date;
+  /** Override provider explicitly; omit to let resolveProvider decide. */
+  provider?: PaymentProviderType;
+}
+
+/**
+ * Creates a real provider payment session and persists the record.
+ *
+ * Returns an existing active (pending / requires_action) payment for the same
+ * chatId if one already exists — preventing duplicate checkout sessions for
+ * the same guest context.
+ */
+export async function createPaymentRequest(params: CreatePaymentParams): Promise<PaymentRequest> {
+  // Deduplicate: reuse active unpaid session for the same chat
+  if (params.chatId) {
+    const active = await getActivePaymentForContext(params.chatId);
+    if (active) return active;
+  }
+
+  const providerName = resolveProvider(params.currency, params.provider);
+  const id = `pay_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const now = new Date();
+
+  // Build the request sent to the provider (no status/provider-assigned fields yet)
+  const requestForProvider: Omit<
+    PaymentRequest,
+    'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'
+  > = {
+    id,
+    amount: params.amount,
+    currency: params.currency,
+    chatId: params.chatId,
+    reservationId: params.reservationId,
+    propertyId: params.propertyId,
+    listingId: params.listingId,
+    guestId: params.guestId,
+    description: params.description,
+    serviceType: params.serviceType,
+    expiresAt: params.expiresAt,
   };
 
   const provider = getProvider(providerName);
-  
-  // Actually create checkout session
-  const { checkoutUrl, transactionId } = await provider.createPaymentLink({
-    amount,
-    currency,
-    metadata,
-  });
+  const { paymentUrl, transactionId } = await provider.createPaymentLink(requestForProvider);
 
-  partial.checkoutUrl = checkoutUrl;
-  partial.providerTransactionId = transactionId;
+  const record: PaymentRequest = {
+    ...requestForProvider,
+    provider: providerName,
+    providerTransactionId: transactionId,
+    status: 'pending',
+    paymentUrl,
+    createdAt: now,
+    updatedAt: now,
+  };
 
-  // Persist
-  await createPaymentRecord(partial);
-
-  return partial;
+  await createPaymentRecord(record);
+  return record;
 }

@@ -35,7 +35,7 @@ import {
 
 import { getContext, updateContext } from './memory';
 import { detectIntent } from './intent';
-import { createPaymentRequest } from '@/lib/payments/stub';
+import { createPaymentRequest } from '@/lib/payments/factory';
 import { callLLM } from '@/lib/openai';
 import { buildCommunicationContext } from './context';
 import { evaluateActionSafety } from './action';
@@ -94,8 +94,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
     } else if (safety.action === 'trigger_payment_request') {
-      const paymentId = createPaymentRequest(chatId, 100);
-      const paymentUrl = `https://pay.test/${paymentId}`;
+      const payment = await createPaymentRequest({
+        amount: 100,
+        currency: classification.lang === 'ru' ? 'RUB' : 'USD',
+        chatId: String(chatId),
+        serviceType: 'Chat Assistant Payment',
+        reservationId: commContext.reservation.reservationId,
+        propertyId: commContext.reservation.propertyId,
+      });
+      const paymentUrl = payment.paymentUrl;
       const linkStr = classification.lang === 'ru'
         ? `Пожалуйста, завершите оплату по этой ссылке: ${paymentUrl}`
         : `Please complete your payment using this link: ${paymentUrl}`;

@@ -2,13 +2,12 @@ import { NextResponse } from 'next/server';
 import { getProvider } from '@/lib/payments/factory';
 import { updatePaymentStatus, getPaymentByTransactionId } from '@/lib/payments/db';
 import { sendPaymentConfirmation } from '@/lib/communication/notifications';
+import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/events';
 
 export async function POST(req: Request) {
   try {
     const provider = getProvider('stripe');
     const signature = req.headers.get('stripe-signature') || '';
-    
-    // We need raw string for stripe signature verification
     const bodyText = await req.text();
 
     if (!provider.verifyWebhookSignature(bodyText, signature)) {
@@ -16,27 +15,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
-    const { transactionId, status } = await provider.parseWebhookEvent(bodyText, signature);
-    const payment = await getPaymentByTransactionId(transactionId);
-    
-    if (!payment) {
-      console.warn(`[Stripe Webhook] Unrecognized transaction ID ${transactionId}`);
-      return NextResponse.json({ received: true }); 
+    const { transactionId, status, eventId, rawEvent } = await provider.parseWebhookEvent(
+      bodyText,
+      signature
+    );
+
+    console.log(`[Stripe Webhook] Received event=${eventId} tx=${transactionId} status=${status}`);
+
+    // Idempotency: skip if this exact event was already processed
+    if (eventId && hasWebhookBeenProcessed('stripe', eventId)) {
+      console.log(`[Stripe Webhook] Event ${eventId} already processed, skipping.`);
+      return NextResponse.json({ received: true });
     }
 
-    // Idempotent string safety
+    const payment = await getPaymentByTransactionId(transactionId);
+    if (!payment) {
+      console.warn(`[Stripe Webhook] Unrecognized transaction ID ${transactionId}`);
+      return NextResponse.json({ received: true });
+    }
+
     const updated = await updatePaymentStatus(transactionId, status);
-    
-    if (updated && status === 'paid' && payment.metadata?.chatId) {
-      // Send bot confirmation seamlessly
+    console.log(`[Stripe Webhook] Status update tx=${transactionId} status=${status} changed=${updated}`);
+
+    if (updated && status === 'paid' && payment.chatId) {
       await sendPaymentConfirmation({
-        chatId: payment.metadata.chatId,
+        paymentId: payment.id,
+        chatId: parseInt(payment.chatId, 10),
         amount: payment.amount,
         currency: payment.currency,
-        serviceType: payment.metadata.serviceType
+        serviceType: payment.serviceType,
       });
     }
 
+    if (eventId) markWebhookProcessed('stripe', eventId);
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error('[Stripe Webhook Error]', err);
