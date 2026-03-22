@@ -1,19 +1,13 @@
 import { Hero } from '@/components/Hero';
-import { DemoSection } from '@/components/DemoSection';
-import { StrategicTeaser } from '@/components/StrategicTeaser';
 import { Problem } from '@/components/Problem';
 import { Solution } from '@/components/Solution';
 import { Features } from '@/components/Features';
-import { PlatformCapabilities } from '@/components/PlatformCapabilities';
-import { AsiDecisionMaking } from '@/components/AsiDecisionMaking';
-import { AsiVsSmartHomeSection } from '@/components/AsiVsSmartHomeSection';
 import { HowItWorks } from '@/components/HowItWorks';
-import { ArchitectureSection } from '@/components/ArchitectureSection';
-import { SocialProof } from '@/components/SocialProof';
+import { UseCases } from '@/components/UseCases';
+import { TrustSection } from '@/components/TrustSection';
 import { Pricing } from '@/components/Pricing';
-import { EconomicImpactSection } from '@/components/EconomicImpactSection';
-import { WhyStartNowSection } from '@/components/WhyStartNowSection';
 import { FAQ } from '@/components/FAQ';
+import { DemoSection } from '@/components/DemoSection';
 import { FinalCTA } from '@/components/FinalCTA';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
@@ -24,21 +18,15 @@ export default function Home() {
       <Header />
       <main>
         <Hero />
-        <DemoSection />
         <Problem />
         <Solution />
         <Features />
-        <PlatformCapabilities />
-        <AsiDecisionMaking />
-        <AsiVsSmartHomeSection />
         <HowItWorks />
-        <ArchitectureSection />
-        <SocialProof />
+        <UseCases />
+        <TrustSection />
         <Pricing />
-        <EconomicImpactSection />
-        <WhyStartNowSection />
         <FAQ />
-        <StrategicTeaser />
+        <DemoSection />
         <FinalCTA />
       </main>
       <Footer />

@@ -9,230 +9,193 @@
     "signUpPrompt": "Don't have an account?"
   },
   "cta": {
-    "startTrial": "Book demo",
-    "trialNote": "Connect your property, channels, and communication flow with guided setup."
+    "startTrial": "Book a demo",
+    "trialNote": "We're in early pilot phase. Book a call to see ASI working in a real property workflow."
   },
   "nav": {
-    "tagline": "Automated Smart Infrastructure",
+    "tagline": "Hospitality Communication Layer",
     "howItWorks": "How it works",
-    "features": "Features",
+    "features": "Capabilities",
+    "useCases": "Use cases",
     "pricing": "Pricing",
     "faq": "FAQ"
   },
   "demo": {
     "title": "See ASI in action",
-    "subtitle": "A short walkthrough of autonomous property management",
-    "button": "Book demo"
+    "subtitle": "A live walkthrough of the guest communication workflow — intent detection, reservation matching, response, and escalation.",
+    "button": "Book a demo"
   },
   "hero": {
-    "headline": "Run your property autonomously.",
-    "subheadline": "No staff. No chaos. No OTA dependency.",
-    "ctaSecondary": "Book demo",
+    "headline": "Intelligent guest communication for short-term rentals.",
+    "subheadline": "ASI handles guest messages from intent detection to resolution — reservation-aware, multilingual, with payments and operator escalation built in.",
+    "ctaSecondary": "See how it works",
     "emailPlaceholder": "Enter your email",
     "getStarted": "Get started",
-    "trustCopy": "No credit card required · Cancel anytime",
+    "trustCopy": "Early pilot access · No complex setup required",
     "contactLabel": "Contact",
     "telegramSupport": "Telegram support"
   },
   "problem": {
-    "title": "What makes property management more complex than it should be",
-    "subtitle": "Most owners and operators run on the same broken playbook.",
+    "title": "Guest communication that doesn't scale",
+    "subtitle": "Most short-term rental operators manage guest messages manually — and it breaks down as volume grows.",
     "pains": [
       {
-        "title": "Staff costs eat your margins",
-        "desc": "Receptionists, cleaners, maintenance — the list never ends. You can't scale without hiring more. And labor is expensive."
+        "title": "Every message needs a human",
+        "desc": "Check-in questions, access codes, late arrivals, house rules. Each one interrupts someone's day. At 5 properties it's manageable. At 15 it's a full-time job."
       },
       {
-        "title": "Operational chaos",
-        "desc": "Last-minute bookings, late check-ins, guest complaints. Everything feels urgent. You're always on call."
+        "title": "Context lives in someone's head",
+        "desc": "Which guest is arriving? What are the parking rules for that unit? What did they ask last week? When staff changes, that knowledge disappears."
       },
       {
-        "title": "OTA dependency",
-        "desc": "15–30% commissions. Your brand buried in their search. You play by their rules. They own your distribution."
+        "title": "Issues escalate because no one triages",
+        "desc": "A broken appliance and a Wi-Fi question arrive with the same urgency. Without routing logic, operators are constantly context-switching."
       },
       {
-        "title": "Lack of control",
-        "desc": "You rely on staff to show up. On OTAs to send guests. On spreadsheets to track it all. One person quits and everything breaks."
+        "title": "Payments are a separate manual step",
+        "desc": "Collecting fees for late check-out, early check-in, or add-on services means chasing guests across channels. There's no clean path from request to payment."
       }
     ]
   },
   "solution": {
-    "title": "One operating system for your property.",
-    "desc": "ASI connects smart locks, cleaning, payments, and communication in one place. You configure once. It runs.",
-    "highlight": "Guests check in with a code. Messages are automated. Cleaning is scheduled. Payments are collected. You get a dashboard."
+    "title": "A communication layer that knows your property.",
+    "desc": "ASI sits between your guests and your operations. It understands message intent, matches reservation context, applies property knowledge, and decides what to do — reply, process a payment, or hand off to the operator.",
+    "highlight": "Not a chatbot. An operations layer that handles guest communication the way a trained operator would — available around the clock, grounded in your actual property context."
   },
   "features": {
-    "title": "Everything you need",
-    "subtitle": "Modular blocks. Turn on what you need.",
+    "title": "Built capabilities",
+    "subtitle": "What ASI does today — not a roadmap.",
     "items": [
       {
         "icon": "💬",
-        "title": "Automated guest communication",
-        "desc": "Check-in instructions, FAQs, reminders. No manual replies."
-      },
-      {
-        "icon": "🔐",
-        "title": "Smart lock & access control",
-        "desc": "Unique codes per booking. No keys. No handoffs."
-      },
-      {
-        "icon": "🧹",
-        "title": "Cleaning & maintenance orchestration",
-        "desc": "Tasks triggered by booking events. Vendors get notified."
-      },
-      {
-        "icon": "💳",
-        "title": "Payments & invoicing",
-        "desc": "Collect, reconcile, issue receipts. No spreadsheets."
-      },
-      {
-        "icon": "📊",
-        "title": "Analytics & reporting",
-        "desc": "Occupancy, revenue, channel mix. One view."
-      },
-      {
-        "icon": "📝",
-        "title": "Electronic contract signing (in development)",
-        "desc": "Planned integration with e-signature services for automated guest contract processing.",
-        "badge": "Coming soon"
+        "title": "Intelligent guest communication",
+        "desc": "Understands message intent across inquiry types — check-in, issues, service requests, complaints. Responds in natural language grounded in property knowledge."
       },
       {
         "icon": "🔗",
-        "title": "OTA integration",
-        "desc": "Synchronization with OTAs via channel manager."
+        "title": "Reservation-aware routing",
+        "desc": "Matches incoming messages to active reservations. Applies different logic for confirmed guests, pre-booking inquiries, and post-checkout contacts."
+      },
+      {
+        "icon": "🌐",
+        "title": "Multilingual support",
+        "desc": "Detects guest language automatically. Handles English and Russian natively, with architecture ready for additional languages."
+      },
+      {
+        "icon": "💳",
+        "title": "Payment processing",
+        "desc": "Sends payment links directly in the conversation. Supports Stripe (international) and YooKassa (Russia). Confirms payment and triggers next steps automatically.",
+        "badge": "Stripe + YooKassa"
+      },
+      {
+        "icon": "🔔",
+        "title": "Operator escalation & handoff",
+        "desc": "Recognizes when a situation requires human judgment — urgent issues, low-confidence responses, unusual requests. Transfers full context to the operator cleanly."
+      },
+      {
+        "icon": "🔍",
+        "title": "Issue triage",
+        "desc": "Classifies guest issues by type and urgency. Separates noise from critical problems. Routes maintenance, access, and complaint messages appropriately."
+      },
+      {
+        "icon": "📚",
+        "title": "Property knowledge grounding",
+        "desc": "Responses are grounded in your property's rules, policies, and operational context — not generic answers. Configure once, apply consistently across all messages."
+      },
+      {
+        "icon": "📡",
+        "title": "Channel-ready architecture",
+        "desc": "Currently operational on Telegram. Built channel-agnostically for expansion to WhatsApp, email, and booking platform messaging without core changes."
       }
     ]
-  },
-  "platformCapabilities": {
-    "title": "Key capabilities of the ASI platform",
-    "subtitle": "A full automation platform, not just a channel manager — from distribution and pricing to communication and financial control.",
-    "modules": [
-      {
-        "title": "Channel and OTA distribution management",
-        "intro": [
-          "ASI can automatically distribute property information and media across multiple sales channels."
-        ],
-        "bullets": [
-          "Publish photos and property descriptions",
-          "Sync information across channels",
-          "Use the built-in channel manager",
-          "Integrate with existing channel managers and OTA platforms"
-        ],
-        "note": "The system includes its own channel manager, so third-party channel managers may be optional."
-      },
-      {
-        "title": "Intelligent dynamic pricing engine",
-        "intro": [
-          "ASI uses dynamic pricing algorithms that analyze market conditions in real time.",
-          "Unlike traditional systems based mainly on historical ADR data, the platform evaluates many more factors."
-        ],
-        "bullets": [
-          "Analyze data in real time",
-          "Account for multiple demand factors",
-          "React instantly to market changes",
-          "Adjust prices automatically"
-        ],
-        "note": "This approach enables pricing decisions that often exceed the accuracy of traditional manual revenue management."
-      },
-      {
-        "title": "Demand and occupancy strategy",
-        "intro": [
-          "ASI helps build occupancy strategy based on target audience and market factors."
-        ],
-        "bullets": [
-          "Analyze different guest segments",
-          "Adjust occupancy strategy",
-          "Reduce seasonality dependence",
-          "Gradually reduce OTA dependence"
-        ],
-        "note": "The goal is to achieve the most stable and efficient occupancy level for the property."
-      },
-      {
-        "title": "Location and property potential analysis",
-        "intro": [
-          "ASI can analyze location appeal in much greater depth than typical real estate yield calculators."
-        ],
-        "evalTitle": "The system evaluates:",
-        "evalBullets": [
-          "Neighborhood characteristics",
-          "Guest behavior patterns",
-          "Infrastructure and transport",
-          "Activity heat maps"
-        ],
-        "bullets": [
-          "Estimate rental potential",
-          "Recommend how to package the property",
-          "Suggest improvements to increase occupancy"
-        ]
-      },
-      {
-        "title": "Autonomous property management",
-        "intro": [
-          "In full configuration the system can perform most operational tasks automatically.",
-          "Typically only housekeeping and technical staff (home master) are required. ASI handles most operational processes."
-        ],
-        "bullets": [
-          "Reduce operational costs",
-          "Lower staffing needs",
-          "Save owner time"
-        ]
-      },
-      {
-        "title": "Intelligent communication system",
-        "intro": [
-          "The ASI communication module is designed for full interaction with guests and staff.",
-          "The system imitates natural human dialogue rather than acting as a simple auto-reply bot."
-        ],
-        "bullets": [
-          "Understanding the meaning of inquiries",
-          "Conducting dialogue like an administrator",
-          "Communication in Russian and English",
-          "Voice interaction",
-          "Automatic language detection"
-        ],
-        "note": "The system can identify whether the contact has a valid reservation and restrict access to sensitive information."
-      },
-      {
-        "title": "Financial control and safety",
-        "intro": [
-          "ASI has no access to user funds."
-        ],
-        "bullets": [
-          "Analyzes data",
-          "Generates reports",
-          "Informs the owner"
-        ],
-        "note": "Even in autopilot mode the owner retains full control. Users can define the level of automation and when the system must hand decisions back to the owner."
-      }
-    ]
-  },
-  "architecture": {
-    "title": "ASI Architecture",
-    "subtitle": "ASI operates on top of your existing infrastructure and enhances it.",
-    "steps": [
-      { "title": "OTAs", "desc": "Airbnb, Booking and other platforms" },
-      { "title": "Channel Manager", "desc": "Calendar and rate synchronization" },
-      { "title": "ASI", "desc": "Operational logic, automation, management scenarios" },
-      { "title": "Property", "desc": "Apartments, rentals, boutique hotels" },
-      { "title": "Control & Analytics", "desc": "Reports, automation, centralized oversight" }
-    ],
-    "footer": "At the initial stage, ASI integrates with your channel manager. As you scale, operational dependency on third-party systems can be optimized."
   },
   "howItWorks": {
     "title": "How it works",
-    "subtitle": "Three steps to autonomy.",
+    "subtitle": "From guest message to resolution.",
     "steps": [
       {
-        "title": "Add property",
-        "desc": "Add your property, connect smart locks, and link your calendar."
+        "title": "Message arrives",
+        "desc": "A guest sends a message. ASI receives it and runs intent classification to understand what they need — check-in help, a service request, a payment, or something that needs a human."
       },
       {
-        "title": "Configure automations",
-        "desc": "Set rules for guest communication, cleaning, and access."
+        "title": "Reservation context matched",
+        "desc": "The system identifies the guest's reservation, property, and relevant history. This context shapes the response — confirmed guests get different handling than pre-booking inquiries."
       },
       {
-        "title": "Go live",
-        "desc": "Publish. Guests book. ASI handles the rest."
+        "title": "Knowledge-grounded decision",
+        "desc": "ASI applies property policies, house rules, and operational knowledge to determine the right action. No generic answers — responses are specific to your property."
+      },
+      {
+        "title": "Response, payment, or handoff",
+        "desc": "Guest gets an accurate reply, a payment link, or confirmation that a human will follow up. If escalation is triggered, the operator receives full context — not just a forwarded message."
+      }
+    ]
+  },
+  "useCases": {
+    "title": "What this looks like in practice",
+    "subtitle": "Six scenarios that happen every day in short-term rental operations.",
+    "items": [
+      {
+        "scenario": "Pre-booking inquiry",
+        "guest": "Is the apartment suitable for a family with two small children?",
+        "asi": "ASI pulls property details and house rules, confirms suitability, and answers the question — without involving the operator.",
+        "tag": "Guest communication"
+      },
+      {
+        "scenario": "Check-in instructions",
+        "guest": "How do I get in? My flight lands at 11pm.",
+        "asi": "ASI matches the reservation, retrieves access instructions, confirms the late arrival works, and sends the door code — all from the property knowledge base.",
+        "tag": "Reservation-aware"
+      },
+      {
+        "scenario": "Issue during stay",
+        "guest": "The washing machine isn't working.",
+        "asi": "ASI classifies the issue, acknowledges the guest immediately, logs it for the operator, and escalates with unit number, reservation ID, and issue description.",
+        "tag": "Issue triage"
+      },
+      {
+        "scenario": "Paid service request",
+        "guest": "Can I check out at 1pm instead of 11am?",
+        "asi": "ASI confirms availability, quotes the late check-out fee, and sends a payment link via Stripe or YooKassa. The checkout time updates once payment clears.",
+        "tag": "Payments"
+      },
+      {
+        "scenario": "Multilingual guest",
+        "guest": "Добрый день, когда можно заехать?",
+        "asi": "ASI detects Russian, switches language, matches the reservation, and replies with check-in time and access instructions in Russian.",
+        "tag": "Multilingual"
+      },
+      {
+        "scenario": "Urgent escalation",
+        "guest": "There's a water leak — it's coming through the ceiling.",
+        "asi": "ASI immediately notifies the operator with reservation details and property location, acknowledges the guest, and flags the issue as requiring urgent action.",
+        "tag": "Escalation"
+      }
+    ]
+  },
+  "trust": {
+    "title": "Built for operators, not around hype",
+    "subtitle": "Direct answers to the questions operators actually ask.",
+    "items": [
+      {
+        "q": "Is there always a human fallback?",
+        "a": "Yes. Escalation is a core part of the system, not an afterthought. When confidence is low or the situation is complex, ASI hands off to the operator with full context. You stay in control."
+      },
+      {
+        "q": "Is this only Telegram?",
+        "a": "The current channel is Telegram. The architecture is channel-agnostic and built for expansion. Adding channels doesn't require rebuilding the communication logic."
+      },
+      {
+        "q": "Does this replace our existing setup?",
+        "a": "No. ASI layers on top of your current operations. It doesn't require replacing your PMS, channel manager, or booking flow — it connects to what's already there."
+      },
+      {
+        "q": "Can we configure what it handles?",
+        "a": "Yes. Property knowledge, escalation thresholds, and response policies are all configurable. The system adapts to your operational context, not the other way around."
+      },
+      {
+        "q": "What stage is this at?",
+        "a": "Early production / pilot. The communication module and payment layer are live. We're onboarding pilot properties now and working closely with initial operators."
       }
     ]
   },
@@ -312,27 +275,27 @@
     "items": [
       {
         "q": "How does onboarding work?",
-        "a": "We connect your property, channels, and core communication flow with guided setup. The system is configured around your operations, not just unlocked as a generic trial."
+        "a": "We configure ASI around your properties — property knowledge, escalation rules, and response policies. It's a guided setup, not self-serve registration. We want it to work for your specific operation."
       },
       {
-        "q": "Do I need smart locks?",
-        "a": "Recommended. We support major brands. Manual entry codes work too."
+        "q": "What channels does it work on?",
+        "a": "Currently Telegram. The architecture supports additional channels. Channel expansion is part of the roadmap beyond the pilot phase."
       },
       {
-        "q": "Can I keep my OTA listings?",
-        "a": "Yes. We sync with them. Over time you can shift to direct bookings."
+        "q": "What languages are supported?",
+        "a": "English and Russian natively. Language detection is automatic. Additional languages can be added through the knowledge base configuration."
       },
       {
-        "q": "What is the setup time?",
-        "a": "Most properties go live in under 48 hours."
+        "q": "How does payment processing work?",
+        "a": "ASI sends payment links in the guest conversation. Stripe handles international payments, YooKassa handles RUB transactions. Payment confirmation triggers downstream actions automatically."
       },
       {
-        "q": "Who is ASI for?",
-        "a": "Urban short-term rental owners, small hotels, apart-hotels, and property managers who want to reduce staffing and OTA reliance."
+        "q": "Can we run it alongside our current process?",
+        "a": "Yes. You can start with one property or one message type, see how it performs, and expand from there. Nothing needs to be replaced upfront."
       },
       {
-        "q": "Why this price?",
-        "a": "Because the system replaces an operations manager and reduces OTA dependency."
+        "q": "Who is this for?",
+        "a": "Short-term rental operators, serviced apartment managers, and property management companies handling guest communication across multiple units."
       }
     ]
   },
