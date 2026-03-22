@@ -6,7 +6,7 @@ const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_fake';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_fake';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-const stripeClient = new Stripe(STRIPE_SECRET, { apiVersion: '2024-10-28.acacia' });
+const stripeClient = new Stripe(STRIPE_SECRET);
 
 export class StripeProvider implements PaymentProvider {
   async createPaymentLink(params: Omit<PaymentRequest, "id" | "provider" | "providerTransactionId" | "status" | "createdAt" | "updatedAt" | "checkoutUrl">): Promise<{ checkoutUrl: string; transactionId: string; }> {
