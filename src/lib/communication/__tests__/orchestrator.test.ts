@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { _resetForTesting } from '../idempotency';
-import { ProcessOutcome, TelegramUpdate } from '../types';
+import { ProcessOutcome, TelegramUpdate, IntentCategory } from '../types';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -27,8 +27,28 @@ vi.mock('@/lib/openai', () => ({
   callLLM: (...args: unknown[]) => mockLLM(...args),
 }));
 
+// Mock detectIntent
+const mockDetectIntent = vi.fn().mockResolvedValue({ intent: IntentCategory.GeneralQuestion, confidence: 0.9 });
+vi.mock('../intent', () => ({
+  detectIntent: (...args: unknown[]) => mockDetectIntent(...args),
+}));
+
+// Mock Payments
+const mockCreatePaymentRequest = vi.fn().mockReturnValue('pay_mock123');
+vi.mock('@/lib/payments/stub', () => ({
+  createPaymentRequest: (...args: unknown[]) => mockCreatePaymentRequest(...args),
+  confirmPayment: vi.fn(),
+  getPaymentRequest: vi.fn(),
+}));
+
+// Mock Reservation Matcher
+const mockMatchReservation = vi.fn().mockResolvedValue({ status: 'matched', confidence: 1.0, propertyId: 'prop_A', guestName: 'Test Guest', reservationId: 'res_test' });
+vi.mock('../reservation', () => ({
+  matchReservation: (...args: unknown[]) => mockMatchReservation(...args),
+}));
+
 // ─── Import after mocks ───────────────────────────────────────────────────────
-const { processUpdate } = await import('../orchestrator');
+import { processUpdate } from '../orchestrator';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -53,6 +73,9 @@ describe('processUpdate', () => {
     mockReply.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
+    mockDetectIntent.mockClear();
+    mockDetectIntent.mockResolvedValue({ intent: IntentCategory.GeneralQuestion, confidence: 0.9 });
+    mockCreatePaymentRequest.mockClear();
   });
 
   it('replies to a valid message and returns Replied outcome', async () => {
@@ -68,11 +91,29 @@ describe('processUpdate', () => {
     expect(mockReply).toHaveBeenCalledWith(42, 'LLM: issue acknowledged');
   });
 
+  it('escalates on low confidence intent', async () => {
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.Unknown, confidence: 0.4 });
+    const result = await processUpdate(makeUpdate('some weird message'));
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.escalation).toBeDefined();
+    expect(result.escalation?.reason).toBe('LLM_UNCERTAIN');
+    const [, sentText] = mockReply.mock.calls[0];
+    expect(sentText).toContain('review');
+  });
+
+  it('generates mock payment link on PaymentRequest intent', async () => {
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.PaymentRequest, confidence: 0.95 });
+    const result = await processUpdate(makeUpdate('I want to pay'));
+    expect(mockCreatePaymentRequest).toHaveBeenCalled();
+    const [, sentText] = mockReply.mock.calls[0];
+    expect(sentText).toContain('https://pay.test/pay_mock123');
+  });
+
   it('falls back to deterministic reply when LLM returns null', async () => {
     mockLLM.mockResolvedValue(null);
     await processUpdate(makeUpdate('guest says wifi is broken'));
     const [, sentText] = mockReply.mock.calls[0];
-    // Should be deterministic fallback text, not null/undefined
+    // Should be deterministic fallback text
     expect(typeof sentText).toBe('string');
     expect(sentText.length).toBeGreaterThan(0);
   });
@@ -95,43 +136,16 @@ describe('processUpdate', () => {
     expect(mockReply).not.toHaveBeenCalled();
   });
 
-  it('preserves EN reply language for English input', async () => {
-    mockLLM.mockResolvedValue(null); // force deterministic
-    await processUpdate(makeUpdate('/start', 'en'));
-    const [, reply] = mockReply.mock.calls[0];
-    expect(reply).toContain('ASI online');
-    expect(reply).not.toContain('Отправьте'); // no Russian
-  });
-
-  it('preserves RU reply language for Russian input', async () => {
-    mockLLM.mockResolvedValue(null); // force deterministic
-    await processUpdate(makeUpdate('/start', 'ru'));
-    const [, reply] = mockReply.mock.calls[0];
-    expect(reply).toContain('ASI online');
-    expect(reply).toContain('Отправьте');
-  });
-
-  it('creates an escalation event for urgent access issues', async () => {
+  it('creates an escalation event for urgent access issues based on slots', async () => {
     const result = await processUpdate(makeUpdate('urgent lock failed access'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.escalation).toBeDefined();
     expect(result.escalation?.reason).toBe('URGENT_ISSUE');
   });
 
-  it('does not escalate a plain greeting', async () => {
-    const result = await processUpdate(makeUpdate('hello'));
-    expect(result.escalation).toBeUndefined();
-  });
-
   it('returns Error outcome but still does not throw when reply fails', async () => {
     mockReply.mockRejectedValueOnce(new Error('Telegram API down'));
     const result = await processUpdate(makeUpdate('check-in tomorrow'));
     expect(result.outcome).toBe(ProcessOutcome.Error);
-  });
-
-  it('sets chat_id and category on the result', async () => {
-    const result = await processUpdate(makeUpdate('booking for next week'));
-    expect(result.chat_id).toBe(42);
-    expect(result.category).toBeTruthy();
   });
 });

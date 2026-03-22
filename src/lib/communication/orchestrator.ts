@@ -1,5 +1,6 @@
-import { callLLM } from '@/lib/openai';
-import { replyToTelegram } from '@/lib/telegram';
+import { getChannelAdapter } from './channels';
+import { createOrMergeIdentity } from './identity';
+import { appendTimelineEvent } from './timeline';
 import {
   auditDuplicate,
   auditEscalation,
@@ -9,10 +10,9 @@ import {
   auditOutbound,
 } from './audit';
 import {
-  buildUserPrompt,
-  classify,
+  buildIntelligentPrompt,
+  classifyMessage,
   deterministicReply,
-  LLM_CATEGORIES,
   SYSTEM_PROMPT,
 } from './classifier';
 import { checkAndMark } from './idempotency';
@@ -29,48 +29,36 @@ import {
 import {
   ProcessOutcome,
   ProcessResult,
-  TelegramUpdate,
+  EscalationReason,
+  InboundMessageEnvelope,
 } from './types';
 
-/**
- * Core orchestrator.
- *
- * Given a parsed TelegramUpdate it:
- *   1. Validates idempotency (dedup by update_id)
- *   2. Classifies the message
- *   3. Calls LLM for substantive categories, falls back to deterministic reply
- *   4. Persists session + message turns
- *   5. Generates escalation event if warranted
- *   6. Sends the reply via Telegram
- *   7. Returns a typed ProcessResult
- *
- * Never throws — all errors are caught, logged, and result in a ProcessResult
- * with outcome=error.  The route layer can then return HTTP 200 safely.
- */
-export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
-  const { update_id } = update;
-  const message = update.message ?? update.edited_message;
+import { getContext, updateContext } from './memory';
+import { detectIntent } from './intent';
+import { createPaymentRequest } from '@/lib/payments/stub';
+import { callLLM } from '@/lib/openai';
+import { buildCommunicationContext } from './context';
+import { evaluateActionSafety } from './action';
+import { buildOperatorHandoff } from './handoff';
 
-  // ── Ignore updates with no message ────────────────────────────────────────
-  if (!message) {
-    return { outcome: ProcessOutcome.Ignored, update_id };
+export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
+  const update_id = envelope.update_id ?? Date.now();
+  const text = envelope.messageText ?? '';
+
+  // Idempotency: drop duplicate update_ids
+  if (checkAndMark(update_id)) {
+    auditDuplicate({ chat_id: 0, update_id });
+    return { outcome: ProcessOutcome.Duplicate, update_id };
   }
 
-  const chatId = message.chat.id;
-  const text = message.text;
-  const languageCode = message.from?.language_code;
+  // Resolve unified identity
+  const identity = await createOrMergeIdentity(envelope);
+  const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
+  
+  await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
 
   try {
-    // ── 1. Idempotency ───────────────────────────────────────────────────────
-    const alreadyProcessed = checkAndMark(update_id);
-    if (alreadyProcessed) {
-      auditDuplicate({ chat_id: chatId, update_id });
-      return { outcome: ProcessOutcome.Duplicate, update_id, chat_id: chatId };
-    }
-
-    // ── 2. Classify ──────────────────────────────────────────────────────────
-    const classification = classify(text ?? '', languageCode);
-
+    const classification = await classifyMessage(text);
     auditInbound({
       chat_id: chatId,
       update_id,
@@ -79,40 +67,66 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       lang: classification.lang,
     });
 
-    // ── 3. Build reply ───────────────────────────────────────────────────────
+    const intentResult = await detectIntent(text);
+    const ctx = getContext(chatId);
+
+    // Assembly
+    const commContext = await buildCommunicationContext(chatId, text, intentResult, []);
+
+    // Action Policy Guard
+    const safety = evaluateActionSafety(commContext, text);
+
     let replyText: string;
     let llmSucceeded = false;
+    let escalation = undefined;
+    const adapter = getChannelAdapter(envelope.channel);
 
-    if (text && LLM_CATEGORIES.includes(classification.category)) {
-      const llmReply = await callLLM({
-        systemPrompt: SYSTEM_PROMPT,
-        userMessage: buildUserPrompt(text, classification),
+    if (!safety.safe && safety.action === 'escalate_to_operator') {
+      const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
+      escalation = createEscalationEvent({
+        reason: safety.escalationReason || EscalationReason.RequiresOperator,
+        chat_id: chatId,
+        update_id,
+        classification,
+        summary: handoff.reasonForEscalation,
       });
+      auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
+      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
+      replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
+    } else if (safety.action === 'trigger_payment_request') {
+      const paymentId = createPaymentRequest(chatId, 100);
+      const paymentUrl = `https://pay.test/${paymentId}`;
+      const linkStr = classification.lang === 'ru'
+        ? `Пожалуйста, завершите оплату по этой ссылке: ${paymentUrl}`
+        : `Please complete your payment using this link: ${paymentUrl}`;
+      replyText = adapter.formatResponse(linkStr, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+    } else {
+      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification);
+      const llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
 
       llmSucceeded = llmReply !== null;
-      replyText = llmReply ?? deterministicReply(classification);
-
+      const rawFallback = llmReply ?? deterministicReply(classification);
+      replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
       auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
-    } else {
-      replyText = deterministicReply(classification);
     }
 
-    // ── 4. Persist (fire-and-forget — errors don't block reply) ──────────────
+    updateContext(chatId, { lastIntent: intentResult.intent });
+
     await Promise.allSettled([
       upsertSession(chatId),
       saveUserTurn({
         chat_id: chatId,
         update_id,
-        text: text ?? '',
+        text,
         category: classification.category,
         lang: classification.lang,
       }),
     ]);
 
-    // ── 5. Escalation check ──────────────────────────────────────────────────
-    let escalation = undefined;
-    if (shouldEscalate(classification, llmSucceeded)) {
+    if (!escalation && shouldEscalate(classification, llmSucceeded)) {
       const reason = deriveEscalationReason(classification, llmSucceeded);
+      const handoff = buildOperatorHandoff(commContext, text, 'escalate_to_operator', 'LLM fallback triggered');
       escalation = createEscalationEvent({
         reason,
         chat_id: chatId,
@@ -125,10 +139,14 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
         update_id,
         detail: `reason=${reason} category=${classification.category}`,
       });
+      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
     }
 
-    // ── 6. Send reply ────────────────────────────────────────────────────────
-    await replyToTelegram(chatId, replyText);
+    // Send the response abstractly
+    const targetId = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+    const sent = await adapter.sendMessage(targetId, replyText);
+    if (!sent) throw new Error('Adapter failed to send message');
+    await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
 
     auditOutbound({
       chat_id: chatId,
@@ -138,7 +156,6 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       detail: escalation ? `escalated:${escalation.reason}` : undefined,
     });
 
-    // ── 7. Persist assistant turn ────────────────────────────────────────────
     await saveAssistantTurn({
       chat_id: chatId,
       update_id,
@@ -159,4 +176,22 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     auditError({ chat_id: chatId, update_id, detail });
     return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
   }
+}
+
+// Keep backward compatibility for Telegram Webhook
+import { TelegramUpdate } from './types';
+export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
+  const message = update.message ?? update.edited_message;
+  if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
+
+  const envelope: InboundMessageEnvelope = {
+    channel: 'telegram',
+    externalUserId: message.chat.id.toString(),
+    chatId: message.chat.id.toString(),
+    messageText: message.text || '',
+    receivedAt: new Date(),
+    update_id: update.update_id,
+  };
+
+  return processMessage(envelope);
 }

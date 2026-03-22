@@ -1,6 +1,6 @@
 // ─── Language ─────────────────────────────────────────────────────────────────
 
-export type Lang = 'en' | 'ru';
+export type Lang = 'zh' | 'en' | 'es' | 'ar' | 'fr' | 'de' | 'ru';
 
 // ─── Message Category ─────────────────────────────────────────────────────────
 
@@ -11,6 +11,42 @@ export enum MessageCategory {
   Issue        = 'issue',
   Booking      = 'booking',
   Fallback     = 'fallback',
+}
+
+// ─── Intent & Memory (Phase 1) ──────────────────────────────────────────────────
+
+export enum IntentCategory {
+  BookingInquiry  = 'booking_inquiry',
+  CheckInInfo     = 'check_in_info',
+  CheckOut        = 'check_out',
+  IssueReport     = 'issue_report',
+  PaymentRequest  = 'payment_request',
+  UpsellRequest   = 'upsell_request',
+  GeneralQuestion = 'general_question',
+  Unknown         = 'unknown',
+}
+
+export interface IntentResult {
+  intent: IntentCategory;
+  confidence: number;
+}
+
+export interface ConversationContext {
+  lastIntent?: IntentCategory;
+  guestName?: string;
+  reservationId?: string;
+  lastMessageAt: Date;
+}
+
+// ─── Payment Stub ─────────────────────────────────────────────────────────────
+
+export interface PaymentRequest {
+  id: string;
+  chatId: number;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'paid' | 'failed';
+  description?: string;
 }
 
 // ─── Slot Signals ─────────────────────────────────────────────────────────────
@@ -137,4 +173,112 @@ export interface ProcessResult {
   chat_id?: number;
   category?: MessageCategory;
   escalation?: EscalationEvent;
+}
+
+// ─── Phase 2 ──────────────────────────────────────────────────────────────────
+
+export interface ReservationMatchResult {
+  status: 'matched' | 'ambiguous' | 'unmatched';
+  reservationId?: string;
+  propertyId?: string;
+  listingId?: string;
+  guestId?: string;
+  guestName?: string;
+  confidence: number;
+  candidates?: Array<{
+    reservationId: string;
+    guestName?: string;
+    checkIn?: string;
+    checkOut?: string;
+  }>;
+}
+
+export interface GroundedKnowledge {
+  universalPolicy: string;
+  propertyPolicy?: string;
+  houseRules?: string;
+  checkInInstructions?: string;
+  checkOutInstructions?: string;
+  wifiInstructions?: string;
+  parkingInstructions?: string;
+  paymentRules?: string;
+  upsells?: string;
+  emergencyContacts?: string;
+}
+
+export interface CommunicationContext {
+  chatId: number;
+  memory: ConversationContext;
+  intentResult: { intent: IntentCategory; confidence: number };
+  reservation: ReservationMatchResult;
+  knowledge: GroundedKnowledge;
+  recentMessages: MessageTurn[];
+}
+
+export type IssuePriority = 'emergency' | 'urgent' | 'normal' | 'informational';
+
+export type ActionType =
+  | 'send_informational_reply'
+  | 'ask_clarifying_question'
+  | 'escalate_to_operator'
+  | 'create_issue_record'
+  | 'create_service_request'
+  | 'trigger_payment_request'
+  | 'provide_check_in_instructions'
+  | 'provide_checkout_instructions';
+
+export interface ActionSafetyResult {
+  safe: boolean;
+  action: ActionType;
+  reason?: string;
+  escalationReason?: EscalationReason;
+}
+
+export interface OperatorHandoffPayload {
+  guestSummary: string;
+  detectedIntent: string;
+  reservationStatus: string;
+  issuePriority: IssuePriority;
+  lastMessagesSummary: string;
+  recommendedAction: string;
+  reasonForEscalation: string;
+}
+
+// ─── Phase 3: Multi-Channel & Multilingual ────────────────────────────────────
+
+export type CommunicationChannel = 'telegram' | 'email' | 'phone' | 'max';
+
+export interface InboundMessageEnvelope {
+  channel: CommunicationChannel;
+  externalUserId: string;
+  chatId?: string;
+  phoneNumber?: string;
+  email?: string;
+  messageText?: string;
+  subject?: string;
+  metadata?: Record<string, unknown>;
+  receivedAt: Date;
+  /** Caller-supplied idempotency key (e.g. Telegram update_id). Falls back to Date.now(). */
+  update_id?: number;
+}
+
+export type PhoneCallRecord = {
+  id: string;
+  phoneNumber: string;
+  reservationId?: string;
+  propertyId?: string;
+  guestId?: string;
+  startedAt: Date;
+  endedAt?: Date;
+  direction: 'inbound' | 'outbound';
+  status: 'missed' | 'answered' | 'voicemail' | 'escalated';
+  summary?: string;
+};
+
+export type LanguageCode = 'zh' | 'en' | 'es' | 'ar' | 'fr' | 'de' | 'ru';
+
+export interface LanguageResolution {
+  detectedLanguage: LanguageCode;
+  confidence: number;
+  source: 'message' | 'profile' | 'manual_override' | 'fallback';
 }

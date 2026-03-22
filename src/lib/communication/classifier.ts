@@ -3,7 +3,10 @@ import {
   Lang,
   MessageCategory,
   MessageSlots,
+  CommunicationContext,
+  LanguageCode
 } from './types';
+import { detectLanguage, formatLanguageFallbackPrompt } from './language';
 
 // ─── Slot Extraction ──────────────────────────────────────────────────────────
 
@@ -38,6 +41,14 @@ export function extractSlots(normalized: string): MessageSlots {
     ].some(t => normalized.includes(t)),
   };
 }
+
+export const emptySlots: MessageSlots = {
+  isUrgent: false,
+  isAccessRelated: false,
+  mentionsGuest: false,
+  mentionsTime: false,
+  mentionsObject: false,
+};
 
 // ─── Keyword Banks ────────────────────────────────────────────────────────────
 
@@ -110,26 +121,30 @@ function hasBookingContext(normalized: string, slots: MessageSlots): boolean {
 
 // ─── Deterministic Classifier ─────────────────────────────────────────────────
 
-export function classify(text: string, languageCode?: string): ClassifyResult {
-  const normalized = (text || '').trim().toLowerCase();
-  const isRuText = /[а-яё]/i.test(normalized);
-  const lang: Lang = (isRuText || (normalized === '/start' && languageCode === 'ru')) ? 'ru' : 'en';
+/** Synchronous classifier. Pass an optional `langOverride` (e.g. from Telegram's
+ *  `language_code`) to force the `lang` field without affecting category detection. */
+export function classify(text: string, langOverride?: string): ClassifyResult {
+  const normalized = text.toLowerCase().trim();
+  const detectedLang = detectLanguage(text).detectedLanguage;
+  const lang: Lang = (langOverride as Lang) ?? detectedLang;
+
+  if (!normalized) {
+    return { category: MessageCategory.Fallback, lang, slots: { ...emptySlots } };
+  }
+
   const slots = extractSlots(normalized);
 
-  if (!text) return { category: MessageCategory.Fallback, lang, slots };
   if (normalized === '/start') return { category: MessageCategory.Start, lang, slots };
 
   // ── Greeting: exact match OR sentence starts with keyword (punctuation-tolerant) ──
   const startsWithGreeting = (greetings: string[]) =>
     greetings.some(g => {
       if (normalized === g) return true;
-      // Allow punctuation immediately after the keyword: "здравствуйте." / "hello,"
       return normalized.startsWith(g) &&
         (normalized.length === g.length || /[\s.,!?]/.test(normalized[g.length]));
     });
 
-  // Only classify as Greeting if the message is SHORT (≤ 60 chars) — long
-  // messages that open with a greeting are operational, not just hellos.
+  // Only classify as Greeting if the message is SHORT (≤ 60 chars)
   if (normalized.length <= 60 && startsWithGreeting([...GREETINGS_EN, ...GREETINGS_RU])) {
     return { category: MessageCategory.Greeting, lang, slots };
   }
@@ -153,14 +168,16 @@ export function classify(text: string, languageCode?: string): ClassifyResult {
   }
 
   // ── Multi-signal promotion: operational guest inquiry without exact keyword ─
-  // Catches messages like "Здравствуйте, мы заселяемся, где парковка?"
-  // that have booking context spread across the sentence.
   if (hasBookingContext(normalized, slots)) {
     return { category: MessageCategory.Booking, lang, slots };
   }
 
-  // ── True fallback: unclear intent, requires operator ─────────────────────
+  // ── True fallback ─────────────────────────────────────────────────────────
   return { category: MessageCategory.Fallback, lang, slots };
+}
+
+export async function classifyMessage(text: string): Promise<ClassifyResult> {
+  return classify(text);
 }
 
 // ─── Deterministic Fallback Replies ──────────────────────────────────────────
@@ -216,17 +233,19 @@ export const LLM_CATEGORIES: MessageCategory[] = [
 
 // ─── LLM prompt helpers ───────────────────────────────────────────────────────
 
-export const SYSTEM_PROMPT = `You are an operations assistant for a short-term rental (STR) management company.
+export const SYSTEM_PROMPT = `You are a high-intelligence operations assistant for a short-term rental (STR) management company.
 You receive operational messages forwarded by staff via Telegram — these may include guest complaints, access issues, booking questions, or forwarded guest messages.
 
-Rules:
-- Reply in the same language as the user message (English or Russian)
-- Be concise: 1–3 short sentences max
-- Sound human and operational, not robotic
-- Do not claim actions were taken if they weren't
-- Do not hallucinate missing details
-- If key information is missing (property, time, guest name), ask for the single most important missing item
-- Do not use bullet lists or headers — plain conversational text only`;
+Rules for Hospitality Layer:
+- Adapt tone to the guest's situation: welcoming for pre-arrival/pre-booking, urgent and empathetic for in-stay issues, appreciative for post-stay.
+- Reply in the same language as the user message (English or Russian).
+- Answer briefly for simple questions.
+- Ask a targeted follow-up question if key identifiers (property, guest name) or details are missing.
+- Avoid repetitive wording. Use warm, natural hospitality-style wording without sounding robotic.
+- Do not claim actions were taken if they weren't.
+- Do not hallucinate policies, facts, fees, or access details.
+- Only answer based on the provided grounded knowledge. If knowledge is missing, explicitly say information is unavailable.
+- Do not use bullet lists or headers — plain conversational text only.`;
 
 export function buildUserPrompt(text: string, result: ClassifyResult): string {
   const { category, lang, slots } = result;
@@ -245,5 +264,32 @@ export function buildUserPrompt(text: string, result: ClassifyResult): string {
     ``,
     `Original message:`,
     text,
+  ].join('\n');
+}
+
+export function buildIntelligentPrompt(context: CommunicationContext, text: string, classification: ClassifyResult): string {
+  const base = buildUserPrompt(text, classification);
+  const langCode = classification.lang as LanguageCode || 'en';
+  let dynamicSystemPrompt = formatLanguageFallbackPrompt(langCode, SYSTEM_PROMPT);
+  const { intentResult, reservation, knowledge } = context;
+  
+  return [
+    base,
+    `--- Context Assembly ---`,
+    `Detected Intent: ${intentResult.intent} (Confidence: ${intentResult.confidence})`,
+    `Reservation Match: ${reservation.status} (\${reservation.guestName || 'Unknown Name'} @ \${reservation.propertyId || 'Unknown Property'})`,
+    `--- Grounded Knowledge ---`,
+    `Universal Policy: ${knowledge.universalPolicy}`,
+    `Property Policy: ${knowledge.propertyPolicy || 'N/A'}`,
+    `House Rules: ${knowledge.houseRules || 'N/A'}`,
+    `Check-in: ${knowledge.checkInInstructions || 'N/A'}`,
+    `Check-out: ${knowledge.checkOutInstructions || 'N/A'}`,
+    `WiFi: ${knowledge.wifiInstructions || 'N/A'}`,
+    `Parking: ${knowledge.parkingInstructions || 'N/A'}`,
+    `Payment: ${knowledge.paymentRules || 'N/A'}`,
+    `Upsells: ${knowledge.upsells || 'N/A'}`,
+    `Emergency Contacts: ${knowledge.emergencyContacts || 'N/A'}`,
+    `--------------------------`,
+    `Please respond to the guest or staff accordingly, keeping strict adherence to the grounded knowledge and tone policies.`
   ].join('\n');
 }
