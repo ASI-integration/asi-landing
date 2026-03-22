@@ -1,3 +1,5 @@
+'use client';
+
 export default function PaymentSuccessPage() {
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-gray-50 text-gray-900">
