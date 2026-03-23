@@ -40,6 +40,11 @@ import { callLLM } from '@/lib/openai';
 import { buildCommunicationContext } from './context';
 import { evaluateActionSafety } from './action';
 import { buildOperatorHandoff } from './handoff';
+import {
+  SessionStatus,
+  setPaymentExpiry,
+  transitionSessionStatus,
+} from './session-status';
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
@@ -56,6 +61,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
   
   await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
+
+  // Mark session active on first processed message (fire-and-forget — never blocks reply).
+  transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
 
   try {
     const classification = await classifyMessage(text);
@@ -92,6 +100,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
+      await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
       replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
     } else if (safety.action === 'trigger_payment_request') {
       const payment = await createPaymentRequest({
@@ -102,6 +111,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reservationId: commContext.reservation.reservationId,
         propertyId: commContext.reservation.propertyId,
       });
+      const paymentExpiresAt = payment.expiresAt ?? new Date(Date.now() + 30 * 60 * 1000);
+      await transitionSessionStatus(chatId, SessionStatus.PaymentPending, { paymentExpiresAt });
+      setPaymentExpiry(chatId, paymentExpiresAt);
       const paymentUrl = payment.paymentUrl;
       const linkStr = classification.lang === 'ru'
         ? `Пожалуйста, завершите оплату по этой ссылке: ${paymentUrl}`
@@ -147,6 +159,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         detail: `reason=${reason} category=${classification.category}`,
       });
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
+      await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
     }
 
     // Send the response abstractly

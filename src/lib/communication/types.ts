@@ -88,6 +88,9 @@ export interface ConversationSession {
   chat_id: number;
   created_at: string;
   updated_at: string;
+  /** Operational session status — see SessionStatus in session-status.ts */
+  status?: string;
+  status_updated_at?: string;
   /** Reserved for future: matched guest/property IDs */
   guest_id?: string;
   property_id?: string;

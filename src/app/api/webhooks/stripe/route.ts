@@ -3,6 +3,7 @@ import { getProvider } from '@/lib/payments/factory';
 import { updatePaymentStatus, getPaymentByTransactionId } from '@/lib/payments/db';
 import { sendPaymentConfirmation } from '@/lib/communication/notifications';
 import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/events';
+import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
 
 export async function POST(req: Request) {
   try {
@@ -38,13 +39,19 @@ export async function POST(req: Request) {
     console.log(`[Stripe Webhook] Status update tx=${transactionId} status=${status} changed=${updated}`);
 
     if (updated && status === 'paid' && payment.chatId) {
+      const numericChatId = parseInt(payment.chatId, 10);
       await sendPaymentConfirmation({
         paymentId: payment.id,
-        chatId: parseInt(payment.chatId, 10),
+        chatId: numericChatId,
         amount: payment.amount,
         currency: payment.currency,
         serviceType: payment.serviceType,
       });
+      await transitionSessionStatus(numericChatId, SessionStatus.Paid);
+    }
+
+    if (updated && status === 'cancelled' && payment.chatId) {
+      await transitionSessionStatus(parseInt(payment.chatId, 10), SessionStatus.Cancelled);
     }
 
     if (eventId) markWebhookProcessed('stripe', eventId);

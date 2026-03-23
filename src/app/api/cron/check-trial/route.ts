@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { checkTrialExpiration } from '@/lib/trial';
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { sweepExpiredPaymentSessions } from '@/lib/communication/session-status';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -30,7 +31,12 @@ export async function GET(req: Request) {
 
     await checkTrialExpiration();
 
-    return NextResponse.json({ ok: true });
+    const swept = await sweepExpiredPaymentSessions();
+    if (swept > 0) {
+      console.log(`[Cron] Swept ${swept} expired payment session(s)`);
+    }
+
+    return NextResponse.json({ ok: true, sweptPaymentSessions: swept });
   } catch (err) {
     console.error('[Cron check-trial]', err);
     return NextResponse.json({ error: 'Cron failed' }, { status: 500 });
