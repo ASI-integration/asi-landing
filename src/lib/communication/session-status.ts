@@ -56,7 +56,7 @@ const ALLOWED: Record<SessionStatus, SessionStatus[]> = {
   paid:                     ['booking_confirmed', 'operator_review_required'],
   booking_confirmed:        ['cancelled'],
   cancelled:                [],
-  expired:                  ['active'],
+  expired:                  ['active', 'paid', 'cancelled'],
   operator_review_required: ['active'],
 };
 
