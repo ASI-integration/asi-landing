@@ -4,8 +4,8 @@ import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { LegalFooter } from '@/components/LegalFooter';
 
 export const metadata: Metadata = {
-  title: 'ASI — Autonomous Property Management',
-  description: 'Run your property autonomously. 14-day free trial. No staff. No chaos. No OTA dependency.',
+  title: 'ASI — Объект недвижимости на автопилоте',
+  description: 'Платформа автоматизации объектов недвижимости. Коммуникация с гостями, сбор платежей, управление бронированиями и контроль задач — без найма дополнительного персонала.',
 };
 
 export default function RootLayout({
