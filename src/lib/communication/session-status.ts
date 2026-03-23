@@ -120,7 +120,8 @@ export async function transitionSessionStatus(
   newStatus: SessionStatus,
   opts?: { paymentExpiresAt?: Date },
 ): Promise<void> {
-  const current = sessionStore.get(chatId)?.status ?? SessionStatus.Inquiry;
+  // Always consult Supabase on cold start — in-memory store is empty per serverless invocation.
+  const current = await getSessionStatus(chatId);
 
   if (current === newStatus) return;
 
@@ -176,15 +177,22 @@ export function setPaymentExpiry(chatId: number, expiresAt: Date): void {
 }
 
 /**
- * Scan all in-memory sessions with status=payment_pending whose payment
- * window has elapsed. Transitions them to 'expired'.
+ * Scan for sessions with status=payment_pending whose payment window has
+ * elapsed and transition them to 'expired'.
  *
- * Called from the cron job. Returns count of sessions swept.
+ * Two-pass strategy:
+ *   1. In-memory pass — catches sessions active in this process.
+ *   2. Supabase pass — catches sessions from previous process instances
+ *      (cold-start safe). Requires the migration to be applied; silently
+ *      skips if the column is missing.
+ *
+ * Called from the cron job. Returns total count swept.
  */
 export async function sweepExpiredPaymentSessions(): Promise<number> {
   const now = new Date();
   let swept = 0;
 
+  // Pass 1 — in-memory
   for (const [chatId, entry] of Array.from(sessionStore.entries())) {
     if (
       entry.status === SessionStatus.PaymentPending &&
@@ -194,6 +202,29 @@ export async function sweepExpiredPaymentSessions(): Promise<number> {
       await transitionSessionStatus(chatId, SessionStatus.Expired);
       swept++;
     }
+  }
+
+  // Pass 2 — Supabase (catches sessions not in memory after cold start)
+  // Uses status_updated_at as a proxy for when payment_pending was entered.
+  // Default window: 30 minutes.  Silently skips if column not yet migrated.
+  try {
+    const cutoff = new Date(now.getTime() - 30 * 60 * 1000);
+    const { data } = await supabase
+      .from('tg_conversation_sessions')
+      .select('chat_id')
+      .eq('status', SessionStatus.PaymentPending)
+      .lt('status_updated_at', cutoff.toISOString());
+
+    for (const row of data ?? []) {
+      if (!sessionStore.has(row.chat_id)) {
+        // Seed memory so the transition guard sees payment_pending, not inquiry.
+        sessionStore.set(row.chat_id, { status: SessionStatus.PaymentPending, updatedAt: new Date() });
+        await transitionSessionStatus(row.chat_id, SessionStatus.Expired);
+        swept++;
+      }
+    }
+  } catch {
+    // Column not yet migrated or Supabase unreachable — DB sweep skipped silently.
   }
 
   return swept;
