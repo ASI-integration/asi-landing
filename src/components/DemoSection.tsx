@@ -18,7 +18,7 @@ export function DemoSection() {
           href="https://t.me/asi_support"
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-10 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white text-lg font-semibold rounded-xl hover:bg-slate-800 transition-all duration-300 shadow-lg"
+          className="mt-10 inline-flex items-center justify-center px-10 py-4 border-2 border-slate-900 text-slate-900 text-lg font-semibold rounded-xl hover:bg-slate-900 hover:text-white transition-all duration-300"
         >
           {t('demo.button')}
         </a>

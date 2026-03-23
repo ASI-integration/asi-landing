@@ -21,9 +21,6 @@ export function Pricing() {
         <p className="mt-2 text-center text-sm text-slate-500 max-w-2xl mx-auto">
           {t('pricing.valueFramingSecondary')}
         </p>
-        <p className="mt-3 text-center text-sm text-slate-500 font-medium">
-          {t('pricing.comparisonNote')}
-        </p>
         <div className="mt-12 grid sm:grid-cols-3 gap-6">
           <div className="p-6 rounded-xl border border-slate-200 bg-white">
             <span className="inline-block px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-medium rounded-full">

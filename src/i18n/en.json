@@ -14,7 +14,7 @@
     "ctaHeadline": "Ready to put your property on autopilot?"
   },
   "nav": {
-    "tagline": "Hospitality Communication Layer",
+    "tagline": "Property Automation Platform",
     "howItWorks": "How it works",
     "features": "Capabilities",
     "useCases": "Use cases",
@@ -219,9 +219,8 @@
   "pricing": {
     "title": "Simple pricing",
     "subtitle": "Early pilot. Onboarding is assisted.",
-    "valueFraming": "Fixed cost instead of a 70,000–150,000 RUB monthly salary.",
-    "valueFramingSecondary": "No need to hire a full-time administrator, booking manager or property manager.",
-    "comparisonNote": "Reduce operational costs without expanding your team.",
+    "valueFraming": "One fixed monthly cost. No headcount added.",
+    "valueFramingSecondary": "Guest comms, payments, bookings, and task control — covered without hiring.",
     "pricePerObjectNote": "Price shown per 1 property per month",
     "smallPlan": "Small (1–3 properties)",
     "smallPrice": "12,900 RUB / property / month",

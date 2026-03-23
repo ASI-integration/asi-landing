@@ -50,7 +50,7 @@ export function Header() {
               RU
             </button>
           </div>
-          <div className="flex items-center gap-3 text-sm text-slate-500 border-l border-slate-200 pl-4">
+          <div className="hidden lg:flex items-center gap-3 text-sm text-slate-500 border-l border-slate-200 pl-4">
             <a
               href={`mailto:${t('contact.supportEmail')}`}
               className="hover:text-slate-900 transition-colors"
@@ -101,6 +101,10 @@ export function Header() {
           <div className="flex gap-2">
             <button onClick={() => setLocale('en')} className={`px-2 py-1 text-sm rounded ${locale === 'en' ? 'font-semibold bg-slate-100' : ''}`}>EN</button>
             <button onClick={() => setLocale('ru')} className={`px-2 py-1 text-sm rounded ${locale === 'ru' ? 'font-semibold bg-slate-100' : ''}`}>RU</button>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-slate-500 pt-1">
+            <a href={`mailto:${t('contact.supportEmail')}`} className="hover:text-slate-900 transition-colors">{t('contact.supportEmail')}</a>
+            <a href="https://t.me/asi_support" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 transition-colors">@asi_support</a>
           </div>
           <Link href="/connect" className="block text-center py-3 bg-slate-900 text-white rounded-xl font-semibold" onClick={() => setOpen(false)}>{t('cta.startTrial')}</Link>
         </div>
