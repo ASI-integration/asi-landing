@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getPaymentById, updatePaymentStatusById } from '@/lib/payments/db';
 import { sendPaymentConfirmation } from '@/lib/communication/notifications';
+import { hasConfirmationBeenSent, markConfirmationSent } from '@/lib/payments/events';
 
 export async function POST(
   _req: Request,
@@ -18,7 +19,7 @@ export async function POST(
 
   const updated = await updatePaymentStatusById(payment.id, 'paid');
 
-  if (updated && payment.chatId) {
+  if (updated && payment.chatId && !hasConfirmationBeenSent(payment.id)) {
     await sendPaymentConfirmation({
       paymentId: payment.id,
       chatId: parseInt(payment.chatId, 10),
@@ -26,6 +27,7 @@ export async function POST(
       currency: payment.currency,
       serviceType: payment.serviceType,
     });
+    markConfirmationSent(payment.id);
   }
 
   return updated

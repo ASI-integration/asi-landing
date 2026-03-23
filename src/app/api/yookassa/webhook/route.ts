@@ -1,64 +1,29 @@
+/**
+ * DEPRECATED — this route is retired.
+ *
+ * Canonical YooKassa webhook endpoint: POST /api/webhooks/yookassa
+ *
+ * To migrate: update your YooKassa dashboard webhook URL to
+ * https://<your-domain>/api/webhooks/yookassa
+ *
+ * During the transition period, incoming requests are forwarded to the canonical handler.
+ */
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { sendTelegramMessage } from '@/lib/telegram';
 
-export async function POST(req: Request) {
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+export async function POST(req: Request): Promise<NextResponse> {
+  const bodyText = await req.text();
   try {
-    const body = await req.json();
-
-    if (body.event !== 'payment.succeeded') {
-      return NextResponse.json({ received: true });
-    }
-
-    const payment = body.object;
-    const paymentId = payment.id;
-    const userId = payment.metadata?.user_id;
-    const paymentMethodId = payment.payment_method?.id;
-
-    if (!userId) {
-      console.warn('[YooKassa webhook] No user_id in metadata');
-      return NextResponse.json({ received: true });
-    }
-
-    const { data: existing } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('yookassa_payment_id', paymentId)
-      .single();
-
-    if (existing) {
-      await supabase
-        .from('payments')
-        .update({ status: 'succeeded' })
-        .eq('yookassa_payment_id', paymentId);
-    } else {
-      const amount = payment.amount?.value ? Math.round(parseFloat(payment.amount.value) * 100) : 0;
-      await supabase.from('payments').insert({
-        user_id: userId,
-        yookassa_payment_id: paymentId,
-        amount,
-        status: 'succeeded',
-      });
-    }
-
-    const periodEnd = new Date();
-    periodEnd.setDate(periodEnd.getDate() + 30);
-
-    await supabase
-      .from('subscriptions')
-      .update({
-        status: 'active',
-        current_period_end: periodEnd.toISOString(),
-        payment_method_id: paymentMethodId || null,
-      })
-      .eq('user_id', userId);
-
-    const { data: user } = await supabase.from('users').select('email').eq('id', userId).single();
-    await sendTelegramMessage(`✅ Successful payment: ${user?.email ?? userId}`);
-
-    return NextResponse.json({ received: true });
+    const res = await fetch(`${APP_URL}/api/webhooks/yookassa`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: bodyText,
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (err) {
-    console.error('[YooKassa webhook]', err);
-    return NextResponse.json({ error: 'Webhook error' }, { status: 500 });
+    console.error('[YooKassa webhook forward error]', err);
+    return NextResponse.json({ error: 'Forward failed' }, { status: 500 });
   }
 }

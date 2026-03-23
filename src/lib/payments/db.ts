@@ -1,21 +1,92 @@
 import { PaymentRequest, PaymentStatus } from './types';
 
 /**
- * In-memory payment store with two indices:
- *   - byId              keyed on internal payment ID
- *   - byProviderTxId    keyed on provider transaction ID → internal ID
+ * Payment store with two layers:
+ *   1. In-memory Maps (byId, byProviderTxId) — fast path, always consistent within a process
+ *   2. Supabase `operational_payments` table — persistent across restarts (best-effort)
  *
- * Swap both Maps for Supabase client calls in production.
+ * Supabase writes are fire-and-forget: failures are logged but never block the caller.
+ * Reads fall back to in-memory so the system stays functional if Supabase is unavailable.
+ *
+ * Schema required (run once):
+ *   create table operational_payments (
+ *     id text primary key,
+ *     provider text not null,
+ *     provider_transaction_id text,
+ *     chat_id text,
+ *     reservation_id text,
+ *     property_id text,
+ *     guest_id text,
+ *     service_type text,
+ *     amount numeric not null,
+ *     currency text not null,
+ *     status text not null,
+ *     payment_url text,
+ *     expires_at timestamptz,
+ *     created_at timestamptz not null,
+ *     updated_at timestamptz not null
+ *   );
+ *   create index on operational_payments (provider_transaction_id);
  */
 
 const byId = new Map<string, PaymentRequest>();
 const byProviderTxId = new Map<string, string>(); // providerTxId → internal id
+
+function getSupabase() {
+  try {
+    // Lazy import to avoid crashing if env vars are missing
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('@/lib/supabase').supabase;
+  } catch {
+    return null;
+  }
+}
+
+async function persistCreate(payment: PaymentRequest): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    await sb.from('operational_payments').upsert({
+      id: payment.id,
+      provider: payment.provider,
+      provider_transaction_id: payment.providerTransactionId ?? null,
+      chat_id: payment.chatId ?? null,
+      reservation_id: payment.reservationId ?? null,
+      property_id: payment.propertyId ?? null,
+      guest_id: payment.guestId ?? null,
+      service_type: payment.serviceType ?? null,
+      amount: payment.amount,
+      currency: payment.currency,
+      status: payment.status,
+      payment_url: payment.paymentUrl ?? null,
+      expires_at: payment.expiresAt?.toISOString() ?? null,
+      created_at: payment.createdAt.toISOString(),
+      updated_at: payment.updatedAt.toISOString(),
+    });
+  } catch (err) {
+    console.warn('[payments/db] Supabase persist failed (non-fatal):', err);
+  }
+}
+
+async function persistStatusUpdate(id: string, status: PaymentStatus): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  try {
+    await sb
+      .from('operational_payments')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id);
+  } catch (err) {
+    console.warn('[payments/db] Supabase status update failed (non-fatal):', err);
+  }
+}
 
 export async function createPaymentRecord(payment: PaymentRequest): Promise<void> {
   byId.set(payment.id, { ...payment });
   if (payment.providerTransactionId) {
     byProviderTxId.set(payment.providerTransactionId, payment.id);
   }
+  void persistCreate(payment);
 }
 
 export async function getPaymentById(id: string): Promise<PaymentRequest | null> {
@@ -59,6 +130,7 @@ export async function updatePaymentStatus(
   if (payment.status === status) return false;
   payment.status = status;
   payment.updatedAt = new Date();
+  void persistStatusUpdate(id, status);
   return true;
 }
 
@@ -75,6 +147,7 @@ export async function updatePaymentStatusById(
   if (payment.status === status) return false;
   payment.status = status;
   payment.updatedAt = new Date();
+  void persistStatusUpdate(id, status);
   return true;
 }
 
