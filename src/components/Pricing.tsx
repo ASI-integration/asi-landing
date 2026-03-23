@@ -13,7 +13,7 @@ export function Pricing() {
           {t('pricing.title')}
         </h2>
         <p className="mt-4 text-lg text-slate-600 text-center">
-          {t('cta.trialNote')}
+          {t('pricing.subtitle')}
         </p>
         <p className="mt-6 text-center text-slate-600 max-w-2xl mx-auto">
           {t('pricing.valueFraming')}

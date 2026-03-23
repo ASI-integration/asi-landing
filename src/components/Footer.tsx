@@ -15,13 +15,10 @@ export function Footer() {
             {t('footer.privacyPolicy')}
           </Link>
           <Link href="/offer" className="text-slate-600 hover:text-slate-900 text-sm">
-            {t('footer.terms')}
+            {t('footer.offer')}
           </Link>
           <Link href="/legal" className="text-slate-600 hover:text-slate-900 text-sm">
             {t('footer.legalInfo')}
-          </Link>
-          <Link href="/offer" className="text-slate-600 hover:text-slate-900 text-sm">
-            {t('footer.offer')}
           </Link>
         </div>
       </div>

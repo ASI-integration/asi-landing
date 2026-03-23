@@ -10,7 +10,8 @@
   },
   "cta": {
     "startTrial": "Book a demo",
-    "trialNote": "We're in early pilot phase. Book a call to see ASI working in a real property workflow."
+    "trialNote": "We're in early pilot phase. Book a call to see ASI working in a real property workflow.",
+    "ctaHeadline": "Ready to put your property on autopilot?"
   },
   "nav": {
     "tagline": "Hospitality Communication Layer",
@@ -217,6 +218,7 @@
   },
   "pricing": {
     "title": "Simple pricing",
+    "subtitle": "Early pilot. Onboarding is assisted.",
     "valueFraming": "Fixed cost instead of a 70,000–150,000 RUB monthly salary.",
     "valueFramingSecondary": "No need to hire a full-time administrator, booking manager or property manager.",
     "comparisonNote": "Reduce operational costs without expanding your team.",

@@ -5,12 +5,11 @@ import { Features } from '@/components/Features';
 import { HowItWorks } from '@/components/HowItWorks';
 import { UseCases } from '@/components/UseCases';
 import { TrustSection } from '@/components/TrustSection';
+import { DemoSection } from '@/components/DemoSection';
 import { Pricing } from '@/components/Pricing';
 import { FAQ } from '@/components/FAQ';
-import { DemoSection } from '@/components/DemoSection';
 import { FinalCTA } from '@/components/FinalCTA';
 import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
 
 export default function Home() {
   return (
@@ -24,12 +23,11 @@ export default function Home() {
         <HowItWorks />
         <UseCases />
         <TrustSection />
+        <DemoSection />
         <Pricing />
         <FAQ />
-        <DemoSection />
         <FinalCTA />
       </main>
-      <Footer />
     </div>
   );
 }
