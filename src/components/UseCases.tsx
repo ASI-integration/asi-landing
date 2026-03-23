@@ -27,7 +27,7 @@ export function UseCases() {
   }[]>('useCases.items') ?? [];
 
   return (
-    <section id="use-cases" className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
+    <section id="use-cases" className="scroll-mt-24 py-20 px-4 sm:px-6 lg:px-8 bg-slate-50">
       <div className="max-w-5xl mx-auto">
         <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
           {t('useCases.title')}

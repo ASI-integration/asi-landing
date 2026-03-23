@@ -49,7 +49,7 @@ export function Hero() {
               {t('cta.startTrial')}
             </Link>
             <Link
-              href="#demo"
+              href="#how-it-works"
               className="inline-flex items-center justify-center px-10 py-4 border-2 border-slate-400 text-white text-lg font-semibold rounded-xl hover:bg-white/10 hover:border-slate-300 transition-all duration-300"
             >
               {t('hero.ctaSecondary')}
