@@ -94,9 +94,46 @@ export async function getPaymentById(id: string): Promise<PaymentRequest | null>
 }
 
 export async function getPaymentByTransactionId(transactionId: string): Promise<PaymentRequest | null> {
+  // Fast path — in-memory
   const id = byProviderTxId.get(transactionId);
-  if (!id) return null;
-  return byId.get(id) ?? null;
+  if (id) return byId.get(id) ?? null;
+
+  // Cold-start fallback — Supabase
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data } = await sb
+      .from('operational_payments')
+      .select('*')
+      .eq('provider_transaction_id', transactionId)
+      .single();
+    if (data) {
+      const payment: PaymentRequest = {
+        id:                    data.id,
+        provider:              data.provider,
+        providerTransactionId: data.provider_transaction_id ?? null,
+        chatId:                data.chat_id ?? undefined,
+        reservationId:         data.reservation_id ?? undefined,
+        propertyId:            data.property_id ?? undefined,
+        guestId:               data.guest_id ?? undefined,
+        serviceType:           data.service_type ?? undefined,
+        amount:                Number(data.amount),
+        currency:              data.currency,
+        status:                data.status as PaymentRequest['status'],
+        paymentUrl:            data.payment_url ?? undefined,
+        expiresAt:             data.expires_at ? new Date(data.expires_at) : undefined,
+        createdAt:             new Date(data.created_at),
+        updatedAt:             new Date(data.updated_at),
+      };
+      // Warm the in-memory store to avoid redundant DB hits within the same process lifetime.
+      byId.set(payment.id, payment);
+      byProviderTxId.set(transactionId, payment.id);
+      return payment;
+    }
+  } catch (err) {
+    console.warn('[payments/db] getPaymentByTransactionId Supabase fallback failed:', err);
+  }
+  return null;
 }
 
 /**
