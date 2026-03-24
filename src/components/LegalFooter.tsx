@@ -18,6 +18,9 @@ export function LegalFooter() {
               <Link href="/offer" className="hover:text-slate-300 transition-colors">
                 Оферта
               </Link>
+              <Link href="/contacts" className="hover:text-slate-300 transition-colors">
+                Контакты
+              </Link>
             </div>
           </div>
           <div>
