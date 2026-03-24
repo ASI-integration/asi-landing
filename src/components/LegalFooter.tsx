@@ -8,7 +8,6 @@ export function LegalFooter() {
           <div>
             <p className="font-semibold text-slate-300">Реутова Юлия Игоревна</p>
             <p className="mt-1">ИНН: 235307941957</p>
-            <p>Местонахождение: г. Мурино, Ленинградская обл.</p>
           </div>
           <div className="space-y-1">
             <p>© 2026 ASI Integrations. Все права защищены.</p>

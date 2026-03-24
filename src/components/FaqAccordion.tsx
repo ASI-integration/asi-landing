@@ -12,6 +12,10 @@ const FAQ_ITEMS = [
     a: 'Платежная информация гостей не хранится в ASI вообще: она в зашифрованном виде обрабатывается на стороне банка, а мы получаем только одноразовые токены. Коды от замков и Wi-Fi лежат в защищённом хранилище (encrypted credential vault) с шифрованием данных в покое (encryption at rest) и строгим контролем доступа. Система выдаёт их строго по сценарию, скрывая под масками в логах и интерфейсах.',
   },
   {
+    q: 'Подходит ли ASI для B2B: сетей, агентств и управляющих компаний?',
+    a: 'Да. Платформа рассчитана на портфели объектов: единый кабинет, роли и прозрачная операционная картина по каждой точке. Подключение и биллинг можно выстроить под договор с юрлицом — без необходимости держать отдельный операционный штат на каждый объект.',
+  },
+  {
     q: 'У меня уже есть менеджер каналов (Channel Manager). Зачем мне ASI?',
     a: 'ASI — это не просто синхронизация от овербукинга. У нас встроен свой умный Channel Manager. Сначала система по API подтягивает все ваши текущие площадки. Затем, когда объект упакован под нужную аудиторию, ASI сама уводит его с неэффективных каналов, оставляя только самые прибыльные. Система сама управляет загрузкой, заменяя дорогого ревеню-менеджера.',
   },
@@ -49,38 +53,40 @@ export function FaqAccordion() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {FAQ_ITEMS.map((item, i) => {
         const isOpen = openIndex === i;
         return (
           <div
             key={i}
-            className="border border-slate-200 rounded-xl overflow-hidden bg-white"
+            className="rounded-xl border border-slate-800/90 bg-slate-900/40 overflow-hidden backdrop-blur-sm"
           >
             <button
               type="button"
               onClick={() => setOpenIndex(isOpen ? null : i)}
               aria-expanded={isOpen}
-              className="w-full flex items-start justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+              className="w-full flex items-start justify-between gap-4 px-5 py-4 text-left text-slate-100 hover:bg-slate-800/35 transition-colors duration-200 text-lg"
             >
-              <span className="font-semibold text-slate-900 leading-snug">
-                {item.q}
-              </span>
+              <span className="font-medium leading-snug pr-2">{item.q}</span>
               <span
-                className="mt-0.5 shrink-0 text-slate-400 text-xl leading-none transition-transform duration-200"
-                style={{ transform: isOpen ? 'rotate(45deg)' : 'none' }}
+                className={`mt-0.5 shrink-0 text-slate-500 text-lg leading-none transition-transform duration-300 ease-out ${
+                  isOpen ? 'rotate-45' : ''
+                }`}
                 aria-hidden
               >
                 +
               </span>
             </button>
             <div
-              className="overflow-hidden transition-all duration-200"
-              style={{ maxHeight: isOpen ? '600px' : '0px' }}
+              className={`grid overflow-hidden transition-[grid-template-rows] duration-500 ease-in-out motion-reduce:transition-none ${
+                isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+              }`}
             >
-              <p className="px-5 pb-5 text-slate-600 leading-relaxed">
-                {item.a}
-              </p>
+              <div className="min-h-0">
+                <p className="px-5 pb-5 pt-1 text-base text-slate-400 leading-relaxed">
+                  {item.a}
+                </p>
+              </div>
             </div>
           </div>
         );
