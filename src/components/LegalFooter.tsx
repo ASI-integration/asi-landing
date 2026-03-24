@@ -1,37 +1,38 @@
-'use client';
-
 import Link from 'next/link';
-import { legalFooterLine } from '@/config/legal';
-import { useTranslation } from '@/i18n/useTranslation';
 
 export function LegalFooter() {
-  const { t, locale } = useTranslation();
-
-  const links = (
-    <div className="flex flex-wrap justify-center gap-x-6 gap-y-1">
-      <Link href="/legal" className="hover:text-slate-900">
-        {t('footer.legalInfo')}
-      </Link>
-      <Link href="/offer" className="hover:text-slate-900">
-        {t('footer.offer')}
-      </Link>
-      <Link href="/privacy" className="hover:text-slate-900">
-        {t('footer.privacyPolicy')}
-      </Link>
-    </div>
-  );
-
   return (
-    <footer className="py-4 px-4 sm:px-6 border-t border-slate-200 bg-white">
-      <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2 text-slate-600 text-sm">
-        {locale === 'ru' ? (
-          <>
-            <span>{legalFooterLine}</span>
-            {links}
-          </>
-        ) : (
-          <div className="w-full flex justify-center sm:justify-end">{links}</div>
-        )}
+    <footer className="bg-slate-950 text-slate-500 py-8 border-t border-slate-900">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 text-sm leading-relaxed">
+        <div className="flex flex-col md:flex-row justify-between gap-6">
+          <div>
+            <p className="font-semibold text-slate-300">Реутова Юлия Игоревна</p>
+            <p className="mt-1">ИНН: 235307941957</p>
+            <p>Местонахождение: г. Мурино, Ленинградская обл.</p>
+          </div>
+          <div className="space-y-1">
+            <p>© 2026 ASI Integrations. Все права защищены.</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <Link href="/privacy" className="hover:text-slate-300 transition-colors">
+                Политика конфиденциальности
+              </Link>
+              <Link href="/offer" className="hover:text-slate-300 transition-colors">
+                Оферта
+              </Link>
+            </div>
+          </div>
+          <div>
+            <p>
+              Email:{' '}
+              <a
+                href="mailto:support@asi.system"
+                className="hover:text-slate-300 transition-colors"
+              >
+                support@asi.system
+              </a>
+            </p>
+          </div>
+        </div>
       </div>
     </footer>
   );

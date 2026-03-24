@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AutopilotInterfaceMock } from '@/components/AutopilotInterfaceMock';
 import { FaqAccordion } from '@/components/FaqAccordion';
 
 /* ─── Strength cards data ──────────────────────────────────────────────────── */
@@ -82,8 +83,9 @@ export default function Home() {
               На автопилоте.
             </h1>
             <p className="mt-6 text-xl text-slate-400 max-w-xl mx-auto">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-              eiusmod tempor incididunt ut labore et dolore magna aliqua.
+              Единая система, которая заменяет целый штат сотрудников. От общения
+              с гостями до умного ценообразования и контроля уборок — ASI
+              работает, пока вы масштабируете бизнес
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
               <Link
@@ -129,12 +131,18 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── Autopilot UI mock ── */}
+        <AutopilotInterfaceMock />
+
         {/* ── FAQ ── */}
-        <section id="faq" className="scroll-mt-20 py-20 px-4 sm:px-6 bg-slate-50">
+        <section id="faq" className="scroll-mt-20 py-20 px-4 sm:px-6 bg-slate-950">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold text-white text-center tracking-tight">
               Разбираем сомнения: как ASI меняет правила игры
             </h2>
+            <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
+              Автоматизация, безопасность данных и формат работы с бизнесом — коротко и по делу.
+            </p>
             <div className="mt-10">
               <FaqAccordion />
             </div>
