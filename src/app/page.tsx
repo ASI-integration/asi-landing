@@ -67,7 +67,7 @@ export default function Home() {
       <main>
 
         {/* ── Hero ── */}
-        <section className="relative overflow-hidden bg-slate-900 py-28 px-4 sm:px-6 text-center">
+        <section className="relative overflow-hidden bg-slate-900 py-24 sm:py-32 px-4 sm:px-6">
           <div
             className="absolute inset-0 opacity-[0.04]"
             style={{
@@ -76,27 +76,33 @@ export default function Home() {
               backgroundSize: '60px 60px',
             }}
           />
-          <div className="relative max-w-3xl mx-auto">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight">
-              Объект недвижимости.
+          <div className="relative max-w-5xl mx-auto">
+            {/* Swiss-school: left-aligned, massive, confident */}
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-6">
+              ASI — Система управления недвижимостью
+            </p>
+            <h1 className="text-5xl sm:text-7xl lg:text-display font-bold text-white tracking-tight leading-none">
+              Объект
+              <br />
+              <span className="text-slate-400">недвижимости.</span>
               <br />
               На автопилоте.
             </h1>
-            <p className="mt-6 text-xl text-slate-400 max-w-xl mx-auto">
+            <p className="mt-8 text-lg sm:text-xl text-slate-400 max-w-xl leading-relaxed">
               Единая система, которая заменяет целый штат сотрудников. От общения
               с гостями до умного ценообразования и контроля уборок — ASI
-              работает, пока вы масштабируете бизнес
+              работает, пока вы масштабируете бизнес.
             </p>
-            <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="mt-10 flex flex-col sm:flex-row gap-4">
               <Link
                 href="/connect"
-                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02]"
+                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
               >
                 Подключиться
               </Link>
               <Link
                 href="#faq"
-                className="inline-flex items-center justify-center px-8 py-4 border-2 border-slate-600 text-white font-semibold rounded-xl hover:bg-white/10 hover:border-slate-400 transition-all"
+                className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
               >
                 Разобрать сомнения
               </Link>
@@ -107,7 +113,7 @@ export default function Home() {
         {/* ── Strength cards ── */}
         <section className="py-20 px-4 sm:px-6">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center">
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
               Что делает платформа
             </h2>
             <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -137,8 +143,8 @@ export default function Home() {
         {/* ── FAQ ── */}
         <section id="faq" className="scroll-mt-20 py-20 px-4 sm:px-6 bg-slate-950">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white text-center tracking-tight">
-              Разбираем сомнения: как ASI меняет правила игры
+            <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
+              Разбираем сомнения
             </h2>
             <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
               Автоматизация, безопасность данных и формат работы с бизнесом — коротко и по делу.
@@ -152,7 +158,7 @@ export default function Home() {
         {/* ── CTA ── */}
         <section className="py-24 px-4 sm:px-6 text-center">
           <div className="max-w-xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
               Подключение и демо
             </h2>
             <p className="mt-4 text-slate-600">

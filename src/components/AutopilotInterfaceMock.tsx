@@ -1,3 +1,7 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
 type Traffic = 'ok' | 'warn' | 'err';
 
 function TrafficLights({ a, b, c }: { a: Traffic; b: Traffic; c: Traffic }) {
@@ -26,6 +30,21 @@ const OBJECTS: { name: string; meta: string; lights: [Traffic, Traffic, Traffic]
 ];
 
 export function AutopilotInterfaceMock() {
+  const [yookassaActive, setYookassaActive] = useState(false);
+
+  useEffect(() => {
+    // Fetch current user session + subscription status.
+    // If subscription.status === 'active', turn YooKassa indicator green.
+    fetch('/api/auth/session')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.subscription?.status === 'active') {
+          setYookassaActive(true);
+        }
+      })
+      .catch(() => {/* unauthenticated visitors — keep default */});
+  }, []);
+
   return (
     <section
       className="relative py-20 px-4 sm:px-6 border-y border-slate-800/80 bg-slate-950"
@@ -46,7 +65,7 @@ export function AutopilotInterfaceMock() {
           </p>
           <h2
             id="autopilot-interface-heading"
-            className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight"
+            className="mt-2 text-3xl sm:text-4xl font-bold text-white tracking-tight"
           >
             Интерфейс Автопилота
           </h2>
@@ -144,24 +163,34 @@ export function AutopilotInterfaceMock() {
                 </h3>
               </div>
               <div className="p-4 space-y-3 flex-1">
+                {/* Stripe — always active in mock */}
                 <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-slate-100">Stripe</span>
                     <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/25">
-                      Active
+                      Активен
                     </span>
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">Платежи и возвраты</p>
                 </div>
+
+                {/* YooKassa — green when subscription is active, amber otherwise */}
                 <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-slate-100">YooKassa</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25">
-                      Setup
-                    </span>
+                    <span className="text-sm font-medium text-slate-100">ЮKassa</span>
+                    {yookassaActive ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/25">
+                        Активна
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25">
+                        Настройка
+                      </span>
+                    )}
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">Подключение СБП и карт РФ</p>
+                  <p className="mt-1.5 text-xs text-slate-500">СБП и карты РФ</p>
                 </div>
+
                 <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
                   Статусы обновляются при сохранении ключей и прохождении тестового платежа.
                 </p>
