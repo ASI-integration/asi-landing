@@ -82,7 +82,7 @@ export default function Home() {
               ASI — Система краткосрочного управления недвижимостью
             </p>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight">
-              Ваши объекты или отели
+              Ваши объекты недвижимости или отели
               <br />
               <span className="text-slate-400">на полном автопилоте.</span>
             </h1>
