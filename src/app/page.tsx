@@ -79,16 +79,16 @@ export default function Home() {
           <div className="relative max-w-5xl mx-auto">
             {/* Swiss-school: left-aligned, massive, confident */}
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-6">
-              ASI — Система управления недвижимостью
+              ASI — Система краткосрочного управления недвижимостью
             </p>
             <h1 className="text-7xl sm:text-8xl lg:text-display-lg font-bold text-white tracking-tight leading-none">
-              Ваша сеть
+              Ваши объекты или отели
               <br />
-              <span className="text-slate-400">на автопилоте.</span>
+              <span className="text-slate-400">на полном автопилоте.</span>
             </h1>
             <p className="mt-8 text-lg sm:text-xl text-slate-400 max-w-xl leading-relaxed">
-              Заменяем операционный отдел одной системой. Автоматизируем всё:
-              от первого сообщения гостя до контроля уборки.
+              Среди прочего, заменяем ваш операционный персонал одной нашей системой.
+              Автоматизируем весь процесс краткосрочной аренды целиком.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4">
               <a
