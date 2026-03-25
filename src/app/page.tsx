@@ -3,11 +3,27 @@ import { AutopilotInterfaceMock } from '@/components/AutopilotInterfaceMock';
 import { FaqAccordion } from '@/components/FaqAccordion';
 
 /* ─── Strength cards data ──────────────────────────────────────────────────── */
-const CARDS = [
+type Card = {
+  icon: string;
+  title: string;
+  desc: string;
+  badge?: string;
+  bullets?: string[];
+  href?: string;
+};
+
+const CARDS: Card[] = [
   {
     icon: '💬',
     title: 'Коммуникация с гостями',
-    desc: 'Автоматические ответы на запросы 24/7 — заезд, коды доступа, вопросы и жалобы.',
+    badge: 'RU / EN · Text / Voice',
+    desc: 'Не просто автоответчик. ASI ведёт диалог с учётом бронирования, этапа проживания и правил объекта, чтобы гости получали быстрые ответы, а команда не тонула в сообщениях.',
+    bullets: [
+      'Ответы на типовые вопросы без участия менеджера',
+      'Контекст по бронированию, заезду, правилам и услугам',
+      'Передача сложных случаев человеку, когда это действительно нужно',
+    ],
+    href: '/modules/guest-communication',
   },
   {
     icon: '💳',
@@ -117,17 +133,47 @@ export default function Home() {
               {CARDS.map((card) => (
                 <div
                   key={card.title}
-                  className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                  className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col"
                 >
-                  <span className="text-3xl" aria-hidden>
-                    {card.icon}
-                  </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-3xl" aria-hidden>
+                      {card.icon}
+                    </span>
+                    {card.badge && (
+                      <span className="flex-shrink-0 px-2 py-0.5 text-xs font-medium text-slate-400 bg-slate-800 border border-slate-700 rounded-md whitespace-nowrap">
+                        {card.badge}
+                      </span>
+                    )}
+                  </div>
                   <h3 className="mt-3 font-semibold text-white">
                     {card.title}
                   </h3>
                   <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     {card.desc}
                   </p>
+                  {card.bullets && (
+                    <ul className="mt-3 space-y-1.5">
+                      {card.bullets.map((b) => (
+                        <li key={b} className="flex items-start gap-2 text-xs text-slate-500">
+                          <span className="mt-0.5 text-slate-600 flex-shrink-0">—</span>
+                          <span>{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {card.href && (
+                    <div className="mt-4 pt-3 border-t border-slate-800">
+                      <Link
+                        href={card.href}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-300 hover:text-white transition-colors"
+                      >
+                        Подробнее
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
