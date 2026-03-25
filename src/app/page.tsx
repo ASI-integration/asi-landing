@@ -81,7 +81,7 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-6">
               ASI — Система краткосрочного управления недвижимостью
             </p>
-            <h1 className="text-7xl sm:text-8xl lg:text-display-lg font-bold text-white tracking-tight leading-none">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight">
               Ваши объекты или отели
               <br />
               <span className="text-slate-400">на полном автопилоте.</span>
