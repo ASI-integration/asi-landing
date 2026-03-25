@@ -31,7 +31,11 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || t('signup.errorGeneric'));
+        setError(
+          res.status === 401
+            ? 'Неверный email или пароль'
+            : data.error || t('signup.errorGeneric')
+        );
         return;
       }
       router.push('/dashboard');
@@ -108,10 +112,7 @@ export default function LoginPage() {
           </button>
 
           <p className="text-center text-sm text-slate-500">
-            {t('login.signUpPrompt')}{' '}
-            <Link href="/connect" className="text-slate-900 font-medium hover:underline">
-              {t('cta.startTrial')}
-            </Link>
+            Демо-доступ для проверки личного кабинета
           </p>
         </form>
       </div>

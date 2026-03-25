@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from '@/i18n/useTranslation';
 import { SessionProvider, useSession } from '@/contexts/SessionContext';
 import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
@@ -62,8 +62,14 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { t } = useTranslation();
   const { session } = useSession();
+  const router = useRouter();
   const email = session?.user?.email ?? t('dashboard.header.userEmail');
   const initial = email.charAt(0).toUpperCase();
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.replace('/login');
+  };
 
   return (
     <header className="h-[60px] bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6">
@@ -82,6 +88,12 @@ function Header({ onMenuClick }: { onMenuClick: () => void }) {
         <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-sm font-medium">
           {initial}
         </div>
+        <button
+          onClick={handleLogout}
+          className="text-sm text-slate-500 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          Выйти
+        </button>
       </div>
     </header>
   );
