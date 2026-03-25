@@ -6,14 +6,14 @@ import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
 
 const inputClass =
-  'w-full px-5 py-3.5 text-lg border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent';
+  'w-full px-5 py-3.5 text-lg bg-slate-800/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent';
 
 function BulletList({ items }: { items: string[] }) {
   return (
-    <ul className="mt-3 space-y-1.5 text-slate-600 text-lg leading-relaxed">
+    <ul className="mt-3 space-y-1.5 text-slate-400 text-lg leading-relaxed">
       {items.map((item, i) => (
         <li key={i} className="flex gap-2">
-          <span className="text-slate-400 shrink-0">•</span>
+          <span className="text-slate-600 shrink-0">•</span>
           <span>{item}</span>
         </li>
       ))}
@@ -105,20 +105,20 @@ export function OnboardingPageContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-slate-950 flex flex-col">
       <Link
         href="/"
-        className="absolute top-6 left-6 text-3xl font-bold text-slate-900 tracking-tight z-10"
+        className="absolute top-6 left-6 text-3xl font-bold text-white tracking-tight z-10"
       >
         ASI
       </Link>
 
       <div className="flex-1 flex items-start justify-center px-4 sm:px-6 pt-16 pb-20">
         <div className="w-full max-w-5xl">
-          <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight text-center">
+          <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight text-center">
             {t('onboarding.pageTitle')}
           </h1>
-          <p className="mt-3 text-slate-600 text-center text-lg sm:text-xl max-w-xl mx-auto">
+          <p className="mt-3 text-slate-400 text-center text-lg sm:text-xl max-w-xl mx-auto">
             {t('onboarding.subtitle')}
           </p>
 
@@ -127,7 +127,7 @@ export function OnboardingPageContent() {
             {trustPills.map((text, i) => (
               <span
                 key={i}
-                className="inline-flex items-center px-4 py-2 rounded-full text-base font-medium text-slate-600 bg-slate-100 border border-slate-200/80"
+                className="inline-flex items-center px-4 py-2 rounded-full text-base font-medium text-slate-300 bg-slate-800/60 border border-slate-700"
               >
                 {text}
               </span>
@@ -139,7 +139,7 @@ export function OnboardingPageContent() {
             <div className="lg:col-span-2 space-y-8">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label htmlFor="name" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="name" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.nameLabel')}
                   </label>
                   <input
@@ -153,7 +153,7 @@ export function OnboardingPageContent() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="email" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="email" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.emailLabel')}
                   </label>
                   <input
@@ -167,9 +167,9 @@ export function OnboardingPageContent() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="phone" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="phone" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.phoneLabel')}{' '}
-                    <span className="text-slate-400 font-normal">{t('onboarding.optional')}</span>
+                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
                   </label>
                   <input
                     id="phone"
@@ -182,9 +182,9 @@ export function OnboardingPageContent() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="telegram" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="telegram" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.telegramLabel')}{' '}
-                    <span className="text-slate-400 font-normal">{t('onboarding.optional')}</span>
+                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
                   </label>
                   <input
                     id="telegram"
@@ -196,14 +196,14 @@ export function OnboardingPageContent() {
                     disabled={loading}
                   />
                 </div>
-                <p className="text-sm text-slate-500 -mt-1">
+                <p className="text-sm text-slate-500/80 -mt-1">
                   {t('onboarding.contactPreferred')}
                 </p>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-500/80">
                   {t('onboarding.contactsHelperNote')}
                 </p>
                 <div>
-                  <label htmlFor="objectsCount" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="objectsCount" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.objectsCountLabel')}
                   </label>
                   <input
@@ -218,9 +218,9 @@ export function OnboardingPageContent() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="comment" className="block text-base font-medium text-slate-700 mb-1">
+                  <label htmlFor="comment" className="block text-base font-medium text-slate-300 mb-1">
                     {t('onboarding.commentLabel')}{' '}
-                    <span className="text-slate-400 font-normal">{t('onboarding.optional')}</span>
+                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
                   </label>
                   <textarea
                     id="comment"
@@ -233,12 +233,12 @@ export function OnboardingPageContent() {
                   />
                 </div>
 
-                {error && <p className="text-base text-red-600">{error}</p>}
+                {error && <p className="text-base text-red-400">{error}</p>}
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-center px-6 py-4 text-lg bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center px-6 py-4 text-lg bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -252,38 +252,38 @@ export function OnboardingPageContent() {
                     t('cta.startTrial')
                   )}
                 </button>
-                <p className="text-center text-sm text-slate-500">
+                <p className="text-center text-sm text-slate-500/80">
                   {t('onboarding.ctaSecondary')}
                 </p>
               </form>
             </div>
 
             {/* Right: onboarding explanation and trust blocks */}
-            <div className="lg:col-span-3 space-y-8 lg:pt-0 pt-6 border-t border-slate-200 lg:border-t-0 lg:pl-8 lg:border-l border-slate-200">
+            <div className="lg:col-span-3 space-y-8 lg:pt-0 pt-6 border-t border-slate-800 lg:border-t-0 lg:pl-8 lg:border-l border-slate-800">
               <section>
-                <h2 className="text-2xl font-semibold text-slate-900">
+                <h2 className="text-2xl font-semibold text-white">
                   {t('onboarding.afterTitle')}
                 </h2>
-                <p className="mt-2 text-slate-600 text-lg leading-relaxed">
+                <p className="mt-2 text-slate-400 text-lg leading-relaxed">
                   {t('onboarding.afterText')}
                 </p>
                 <BulletList items={afterBullets} />
               </section>
 
-              <section className="p-4 sm:p-5 bg-slate-50 rounded-xl border border-slate-200">
-                <h2 className="text-2xl font-semibold text-slate-900">
+              <section className="p-5 sm:p-6 bg-slate-900/60 rounded-xl border border-slate-800">
+                <h2 className="text-2xl font-semibold text-white">
                   {t('onboarding.financeTitle')}
                 </h2>
-                <p className="mt-2 text-slate-600 text-lg leading-relaxed">
+                <p className="mt-2 text-slate-400 text-lg leading-relaxed">
                   {t('onboarding.financeText')}
                 </p>
-                <p className="mt-3 text-slate-500 text-sm italic">
+                <p className="mt-3 text-slate-500/80 text-sm italic">
                   {t('onboarding.financeNote')}
                 </p>
               </section>
 
               <section>
-                <h2 className="text-2xl font-semibold text-slate-900">
+                <h2 className="text-2xl font-semibold text-white">
                   {t('onboarding.forWhomTitle')}
                 </h2>
                 <BulletList items={forWhomBullets} />
@@ -291,7 +291,7 @@ export function OnboardingPageContent() {
             </div>
           </div>
 
-          <p className="mt-12 text-center text-sm text-slate-500 max-w-xl mx-auto">
+          <p className="mt-12 text-center text-sm text-slate-500/70 max-w-xl mx-auto">
             {t('onboarding.trustNoteBottom')}
           </p>
         </div>
