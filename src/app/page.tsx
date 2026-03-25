@@ -39,24 +39,24 @@ const CARDS = [
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function Home() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-slate-950">
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/60">
+      <header className="sticky top-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/60">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="text-2xl font-bold text-slate-900 tracking-tight">
+          <Link href="/" className="text-2xl font-bold text-white tracking-tight">
             ASI
           </Link>
           <div className="flex items-center gap-3">
             <Link
               href="/login"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+              className="text-sm font-medium text-slate-400 hover:text-white transition-colors"
             >
               Войти
             </Link>
             <Link
               href="/connect"
-              className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors shadow-sm"
+              className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
             >
               Подключиться
             </Link>
@@ -67,7 +67,7 @@ export default function Home() {
       <main>
 
         {/* ── Hero ── */}
-        <section className="relative overflow-hidden bg-slate-900 py-24 sm:py-32 px-4 sm:px-6">
+        <section className="relative overflow-hidden bg-slate-900 py-28 sm:py-36 px-4 sm:px-6">
           <div
             className="absolute inset-0 opacity-[0.04]"
             style={{
@@ -81,54 +81,51 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-6">
               ASI — Система управления недвижимостью
             </p>
-            <h1 className="text-5xl sm:text-7xl lg:text-display font-bold text-white tracking-tight leading-none">
-              Объект
+            <h1 className="text-7xl sm:text-8xl lg:text-display-lg font-bold text-white tracking-tight leading-none">
+              Ваша сеть
               <br />
-              <span className="text-slate-400">недвижимости.</span>
-              <br />
-              На автопилоте.
+              <span className="text-slate-400">на автопилоте.</span>
             </h1>
             <p className="mt-8 text-lg sm:text-xl text-slate-400 max-w-xl leading-relaxed">
-              Единая система, которая заменяет целый штат сотрудников. От общения
-              с гостями до умного ценообразования и контроля уборок — ASI
-              работает, пока вы масштабируете бизнес.
+              Заменяем операционный отдел одной системой. Автоматизируем всё:
+              от первого сообщения гостя до контроля уборки.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4">
-              <Link
-                href="/connect"
+              <a
+                href="#faq"
                 className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
               >
-                Подключиться
-              </Link>
+                Как это работает
+              </a>
               <Link
-                href="#faq"
+                href="/connect"
                 className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
               >
-                Разобрать сомнения
+                Подключиться
               </Link>
             </div>
           </div>
         </section>
 
         {/* ── Strength cards ── */}
-        <section className="py-20 px-4 sm:px-6">
+        <section className="py-28 sm:py-32 px-4 sm:px-6">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white">
               Что делает платформа
             </h2>
             <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {CARDS.map((card) => (
                 <div
                   key={card.title}
-                  className="p-6 rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm transition-all"
+                  className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
                 >
                   <span className="text-3xl" aria-hidden>
                     {card.icon}
                   </span>
-                  <h3 className="mt-3 font-semibold text-slate-900">
+                  <h3 className="mt-3 font-semibold text-white">
                     {card.title}
                   </h3>
-                  <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+                  <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     {card.desc}
                   </p>
                 </div>
@@ -141,10 +138,10 @@ export default function Home() {
         <AutopilotInterfaceMock />
 
         {/* ── FAQ ── */}
-        <section id="faq" className="scroll-mt-20 py-20 px-4 sm:px-6 bg-slate-950">
+        <section id="faq" className="scroll-mt-20 py-28 sm:py-32 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
-              Разбираем сомнения
+              Как работает автоматизация
             </h2>
             <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
               Автоматизация, безопасность данных и формат работы с бизнесом — коротко и по делу.
@@ -156,18 +153,18 @@ export default function Home() {
         </section>
 
         {/* ── CTA ── */}
-        <section className="py-24 px-4 sm:px-6 text-center">
+        <section className="py-28 sm:py-32 px-4 sm:px-6 text-center">
           <div className="max-w-xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white">
               Подключение и демо
             </h2>
-            <p className="mt-4 text-slate-600">
+            <p className="mt-4 text-slate-400">
               Оставьте контакты — покажем платформу в работе на реальном объекте
               и поможем настроить систему под вашу задачу.
             </p>
             <Link
               href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/20 hover:shadow-xl hover:scale-[1.02]"
+              className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:scale-[1.02]"
             >
               Записаться на демо
             </Link>
@@ -178,6 +175,7 @@ export default function Home() {
         </section>
 
       </main>
+
     </div>
   );
 }
