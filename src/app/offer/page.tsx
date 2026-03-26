@@ -124,6 +124,52 @@ export default function OfferPage() {
             </p>
           </section>
 
+          {/* Что оплачивается онлайн */}
+          <section className="p-5 bg-slate-50 rounded-xl border border-slate-200">
+            <h2 className="text-base font-semibold text-slate-900 mb-3">
+              Что оплачивается онлайн
+            </h2>
+            <p className="mb-3">Через ASI онлайн может оплачиваться:</p>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li>
+                подписка на использование сервиса ASI для владельцев и управляющих объектами
+                недвижимости;
+              </li>
+              <li>
+                дополнительные услуги и согласованные доплаты в рамках сценария бронирования,
+                если они используются через платформу.
+              </li>
+            </ul>
+            <p className="mt-3 text-slate-500">
+              Например: ранний заезд, поздний выезд, продление проживания и другие дополнительные
+              услуги.
+            </p>
+            <p className="mt-3 text-slate-500 text-xs">
+              Конкретный сценарий оплаты зависит от конфигурации и подключённых модулей проекта.
+            </p>
+          </section>
+
+          {/* Как происходит оплата */}
+          <section className="p-5 bg-slate-50 rounded-xl border border-slate-200">
+            <h2 className="text-base font-semibold text-slate-900 mb-3">
+              Как происходит оплата
+            </h2>
+            <p className="mb-3">
+              ASI не является классическим интернет-магазином с корзиной товаров. Оплата в
+              сервисе может происходить:
+            </p>
+            <ul className="list-disc pl-5 space-y-1.5">
+              <li>через личный кабинет;</li>
+              <li>по платёжной ссылке;</li>
+              <li>по QR;</li>
+              <li>в рамках конкретного пользовательского сценария внутри платформы.</li>
+            </ul>
+            <p className="mt-3">
+              Платёж привязывается не к набору товаров, а к подписке, бронированию или конкретной
+              услуге / доплате.
+            </p>
+          </section>
+
           {/* 5. Условия подписки */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">5. Условия подписки</h2>
