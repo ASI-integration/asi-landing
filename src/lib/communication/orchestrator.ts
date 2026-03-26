@@ -28,6 +28,7 @@ import {
 import {
   createEscalationEvent,
   deriveEscalationReason,
+  notifyOperatorEscalation,
   shouldEscalate,
 } from './escalation';
 import {
@@ -37,7 +38,7 @@ import {
   InboundMessageEnvelope,
 } from './types';
 
-import { getContext, updateContext } from './memory';
+import { getContext, updateContext, loadContextFromDB, persistContext } from './memory';
 import { updateBookingDraft } from './memory';
 import { detectIntent } from './intent';
 import { createPaymentRequest } from '@/lib/payments/factory';
@@ -70,11 +71,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   // Mark durable immediately so parallel/restarted instances see it
   markDurable(update_id);
 
-  // Resolve unified identity
+  // Resolve unified identity (G1 — now persisted in tg_guest_identities)
   const identity = await createOrMergeIdentity(envelope);
   const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
-  
-  await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
+
+  // G5 — load persisted conversation context on cold start
+  await loadContextFromDB(chatId);
+
+  await appendTimelineEvent(
+    identity.guestId,
+    { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt },
+    chatId,
+  );
 
   // Mark session active on first processed message (fire-and-forget — never blocks reply).
   transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
@@ -120,7 +128,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       saveEscalationEvent(escalation).catch(() => {});
-      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
+      // G6 — deliver operator notification (fire-and-forget)
+      notifyOperatorEscalation(escalation).catch(() => {});
+      await appendTimelineEvent(
+        identity.guestId,
+        { type: 'escalation', reason: escalation.summary, ts: new Date() },
+        chatId,
+      );
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
       replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
     } else if (safety.action === 'trigger_payment_request') {
@@ -185,9 +199,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Link session to reservation once matched (durable chatId→reservation mapping)
     if (commContext.reservation.status === 'matched') {
       linkSessionToReservation({
-        chat_id: chatId,
-        guest_id: commContext.reservation.guestId,
-        property_id: commContext.reservation.propertyId,
+        chat_id:        chatId,
+        guest_id:       commContext.reservation.guestId,
+        property_id:    commContext.reservation.propertyId,
+        reservation_id: commContext.reservation.reservationId,
       }).catch(() => {});
     }
 
@@ -206,7 +221,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         detail: `reason=${reason} category=${classification.category}`,
       });
       saveEscalationEvent(escalation).catch(() => {});
-      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
+      // G6 — deliver operator notification (fire-and-forget)
+      notifyOperatorEscalation(escalation).catch(() => {});
+      await appendTimelineEvent(
+        identity.guestId,
+        { type: 'escalation', reason: escalation.summary, ts: new Date() },
+        chatId,
+      );
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
     }
 
@@ -222,7 +243,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       throw new Error('Adapter failed to send message');
     }
-    await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
+    await appendTimelineEvent(
+      identity.guestId,
+      { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() },
+      chatId,
+    );
 
     auditOutbound({
       chat_id: chatId,
@@ -239,6 +264,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       category: classification.category,
       lang: classification.lang,
     });
+
+    // G5 — persist conversation context for cold-start continuity
+    persistContext(chatId).catch(() => {});
 
     return {
       outcome: ProcessOutcome.Replied,
