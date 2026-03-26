@@ -24,6 +24,7 @@
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { appendTimelineEvent } from './timeline';
+import { upsertStayFlow } from './stay-flow';
 import { IntentCategory, IntentResult } from './types';
 
 // ─── Status constants ──────────────────────────────────────────────────────────
@@ -418,7 +419,16 @@ export async function bridgeInquiryToReservation(
       convertedAt:          now,
     });
 
+    // Initialize stay-flow (idempotent — on conflict preserves existing flow_status)
+    upsertStayFlow({ reservationId, chatId, guestId }).catch(() => {});
+
     if (guestId) {
+      appendTimelineEvent(
+        guestId,
+        { type: 'stay_flow_initialized', reservation_id: reservationId, ts: now },
+        chatId,
+      ).catch(() => {});
+
       appendTimelineEvent(
         guestId,
         { type: 'inquiry_converted', reason: `linked to reservation ${reservationId}`, ts: now },

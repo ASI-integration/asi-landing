@@ -87,6 +87,11 @@ vi.mock('../timeline', () => ({
   appendTimelineEvent: (...args: unknown[]) => mockAppendTimeline(...args),
 }));
 
+const mockUpsertStayFlow = vi.fn().mockResolvedValue({ id: 'sf-uuid', reservationId: 'res_ABC' });
+vi.mock('../stay-flow', () => ({
+  upsertStayFlow: (...args: unknown[]) => mockUpsertStayFlow(...args),
+}));
+
 // Import under test (after mocks)
 import {
   getInquiryFlowByChatId,
@@ -108,6 +113,7 @@ function resetState() {
   for (const key of Object.keys(upsertedRows)) delete upsertedRows[key];
   mockSendTelegram.mockClear();
   mockAppendTimeline.mockClear();
+  mockUpsertStayFlow.mockClear();
 }
 
 // ─── I1: First contact creates inquiry context ────────────────────────────────
@@ -526,6 +532,50 @@ describe('I9 — bridge inquiry to reservation', () => {
     // No entry in dbRows for this chatId
     await expect(bridgeInquiryToReservation(9998, 'res_XYZ')).resolves.not.toThrow();
   });
+
+  it('bridgeInquiryToReservation calls upsertStayFlow with reservationId and chatId', async () => {
+    const now = new Date().toISOString();
+    dbRows['tg_inquiry_flows:6003'] = {
+      id:               'uuid-6003',
+      chat_id:          6003,
+      guest_id:         'guest_6003',
+      inquiry_status:   InquiryFlowStatus.HandedOff,
+      booking_details:  {},
+      intake_turn_count: 2,
+      handoff_at:       now,
+      last_inbound_at:  now,
+      created_at:       now,
+      updated_at:       now,
+    };
+
+    await bridgeInquiryToReservation(6003, 'res_GHI', 'guest_6003');
+
+    expect(mockUpsertStayFlow).toHaveBeenCalledOnce();
+    expect(mockUpsertStayFlow).toHaveBeenCalledWith(
+      expect.objectContaining({ reservationId: 'res_GHI', chatId: 6003, guestId: 'guest_6003' }),
+    );
+  });
+
+  it('bridgeInquiryToReservation does NOT call upsertStayFlow when already converted', async () => {
+    const now = new Date().toISOString();
+    dbRows['tg_inquiry_flows:6004'] = {
+      id:               'uuid-6004',
+      chat_id:          6004,
+      guest_id:         'guest_6004',
+      inquiry_status:   InquiryFlowStatus.ConvertedToReservation,
+      booking_details:  {},
+      intake_turn_count: 2,
+      linked_reservation_id: 'res_EXISTING',
+      converted_at:     now,
+      last_inbound_at:  now,
+      created_at:       now,
+      updated_at:       now,
+    };
+
+    await bridgeInquiryToReservation(6004, 'res_NEW', 'guest_6004');
+
+    expect(mockUpsertStayFlow).not.toHaveBeenCalled();
+  });
 });
 
 // ─── I10: Timeline continuity across bridge ───────────────────────────────────
@@ -572,6 +622,30 @@ describe('I10 — timeline continuity across inquiry-to-reservation bridge', () 
       'guest_7002',
       expect.objectContaining({ type: 'inquiry_converted' }),
       7002,
+    );
+  });
+
+  it('bridgeInquiryToReservation appends stay_flow_initialized timeline event', async () => {
+    const now = new Date().toISOString();
+    dbRows['tg_inquiry_flows:7003'] = {
+      id:               'uuid-7003',
+      chat_id:          7003,
+      guest_id:         'guest_7003',
+      inquiry_status:   InquiryFlowStatus.HandedOff,
+      booking_details:  {},
+      intake_turn_count: 2,
+      handoff_at:       now,
+      last_inbound_at:  now,
+      created_at:       now,
+      updated_at:       now,
+    };
+
+    await bridgeInquiryToReservation(7003, 'res_GHI', 'guest_7003');
+
+    expect(mockAppendTimeline).toHaveBeenCalledWith(
+      'guest_7003',
+      expect.objectContaining({ type: 'stay_flow_initialized', reservation_id: 'res_GHI' }),
+      7003,
     );
   });
 });
