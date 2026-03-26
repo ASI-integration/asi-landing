@@ -217,6 +217,36 @@ const MIGRATIONS: { label: string; sql: string }[] = [
     `,
   },
 
+  // ── 20260326000003 / tg_inquiry_flows ───────────────────────────────────
+  {
+    label: '20260326c / tg_inquiry_flows',
+    sql: `
+      CREATE TABLE IF NOT EXISTS tg_inquiry_flows (
+        id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        chat_id               BIGINT      NOT NULL UNIQUE,
+        guest_id              TEXT,
+        telegram_user_id      BIGINT,
+        inquiry_status        TEXT        NOT NULL DEFAULT 'new_contact',
+        booking_details       JSONB       NOT NULL DEFAULT '{}',
+        intake_turn_count     INT         NOT NULL DEFAULT 0,
+        handoff_type          TEXT,
+        handoff_at            TIMESTAMPTZ,
+        handoff_summary       TEXT,
+        linked_reservation_id TEXT,
+        converted_at          TIMESTAMPTZ,
+        conversion_source     TEXT,
+        last_inbound_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_outbound_at      TIMESTAMPTZ,
+        created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_tg_inquiry_flows_guest_id
+        ON tg_inquiry_flows (guest_id);
+      CREATE INDEX IF NOT EXISTS idx_tg_inquiry_flows_inquiry_status
+        ON tg_inquiry_flows (inquiry_status);
+    `,
+  },
+
   // ── 20260326000002 / tg_stay_flows ──────────────────────────────────────
   {
     label: '20260326b / tg_stay_flows',
@@ -243,6 +273,16 @@ const MIGRATIONS: { label: string; sql: string }[] = [
         ON tg_stay_flows (flow_status, checkout_date);
       CREATE INDEX IF NOT EXISTS idx_tg_stay_flows_chat_id
         ON tg_stay_flows (chat_id);
+    `,
+  },
+
+  // ── 20260327000001 / inquiry_flows.conversion_source ────────────────────
+  // Idempotent ADD COLUMN — safe to run even if column already exists.
+  {
+    label: '20260327a / tg_inquiry_flows.conversion_source',
+    sql: `
+      ALTER TABLE tg_inquiry_flows
+        ADD COLUMN IF NOT EXISTS conversion_source TEXT;
     `,
   },
 ];

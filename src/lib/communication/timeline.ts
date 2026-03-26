@@ -22,8 +22,10 @@ export type TimelineEvent =
   | { type: 'call_record';      record:  PhoneCallRecord;       ts: Date }
   | { type: 'payment_event';    status:  string;                ts: Date }
   | { type: 'escalation';       reason:  string;                ts: Date }
-  | { type: 'inquiry_handoff';  reason:  string;                ts: Date }
-  | { type: 'inquiry_converted'; reason: string;                ts: Date };
+  | { type: 'inquiry_handoff';       reason:  string;                ts: Date }
+  | { type: 'inquiry_converted';     reason:  string; [k: string]: unknown; ts: Date }
+  | { type: 'reservation_linked';    source:  string; [k: string]: unknown; ts: Date }
+  | { type: 'stay_flow_initialized'; [k: string]: unknown; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;

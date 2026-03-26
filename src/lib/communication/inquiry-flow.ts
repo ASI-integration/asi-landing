@@ -71,6 +71,7 @@ export interface InquiryFlow {
   handoffSummary?:       string;
   linkedReservationId?:  string;
   convertedAt?:          Date;
+  conversionSource?:     string;
   lastInboundAt:         Date;
   lastOutboundAt?:       Date;
   createdAt:             Date;
@@ -93,6 +94,7 @@ function rowToFlow(row: Record<string, unknown>): InquiryFlow {
     handoffSummary:       row.handoff_summary       as string | undefined,
     linkedReservationId:  row.linked_reservation_id as string | undefined,
     convertedAt:          row.converted_at  ? new Date(row.converted_at  as string) : undefined,
+    conversionSource:     row.conversion_source    as string | undefined,
     lastInboundAt:        new Date(row.last_inbound_at as string),
     lastOutboundAt:       row.last_outbound_at ? new Date(row.last_outbound_at as string) : undefined,
     createdAt:            new Date(row.created_at  as string),
@@ -116,6 +118,20 @@ export async function getInquiryFlowByChatId(chatId: number): Promise<InquiryFlo
   }
 }
 
+export async function getInquiryFlowById(id: string): Promise<InquiryFlow | null> {
+  try {
+    const { data } = await supabase
+      .from('tg_inquiry_flows')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    return data ? rowToFlow(data as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── DB: Upsert ───────────────────────────────────────────────────────────────
 
 interface InquiryFlowUpsert {
@@ -130,6 +146,7 @@ interface InquiryFlowUpsert {
   handoffSummary?:      string;
   linkedReservationId?: string;
   convertedAt?:         Date;
+  conversionSource?:    string;
   lastInboundAt?:       Date;
   lastOutboundAt?:      Date;
 }
@@ -152,6 +169,7 @@ export async function upsertInquiryFlow(params: InquiryFlowUpsert): Promise<Inqu
     if (params.handoffSummary     != null) row.handoff_summary       = params.handoffSummary;
     if (params.linkedReservationId != null) row.linked_reservation_id = params.linkedReservationId;
     if (params.convertedAt        != null) row.converted_at          = params.convertedAt.toISOString();
+    if (params.conversionSource   != null) row.conversion_source     = params.conversionSource;
     if (params.lastInboundAt      != null) row.last_inbound_at       = params.lastInboundAt.toISOString();
     if (params.lastOutboundAt     != null) row.last_outbound_at      = params.lastOutboundAt.toISOString();
 
