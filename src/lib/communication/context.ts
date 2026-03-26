@@ -20,7 +20,7 @@ export async function buildCommunicationContext(
   // Use memory or current exact identifiers to find reservation
   const reservationMatch = await matchReservation({
     chatId,
-    guestName: memory.guestName,
+    guestName: memory.guestName ?? memory.bookingDraft?.guestName,
   });
 
   // Fetch grounded knowledge based on the matched property

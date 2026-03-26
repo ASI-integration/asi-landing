@@ -1,36 +1,45 @@
+/**
+ * Escalation event model + operator delivery foundation (G6).
+ *
+ * G6 delivery path: when an escalation is created, a notification is sent
+ * to the operator via sendTelegramMessage() which uses the TELEGRAM_CHAT_ID
+ * environment variable (the configured operator group / channel).
+ *
+ * This is the smallest real delivery mechanism already present in the repo
+ * (sendTelegramMessage is already used for payment confirmations).
+ *
+ * Graceful degradation: delivery failure is logged but never aborts
+ * processing or prevents the guest from receiving a reply.
+ */
+
 import {
   ClassifyResult,
   EscalationEvent,
   EscalationReason,
   MessageCategory,
 } from './types';
+import { sendTelegramMessage } from '@/lib/telegram';
 
-/**
- * Escalation event model.
- *
- * An EscalationEvent signals that the automated flow cannot confidently
- * resolve a message and an operator should be aware of it.
- *
- * Current behaviour: events are created and logged via the audit layer.
- * Future: forward to an operator queue, webhook, or ticketing system.
- */
+// ─── Event creation ───────────────────────────────────────────────────────────
 
 export function createEscalationEvent(params: {
-  reason: EscalationReason;
-  chat_id: number;
-  update_id?: number;
+  reason:          EscalationReason;
+  chat_id:         number;
+  update_id?:      number;
   classification?: ClassifyResult;
-  summary: string;
+  summary:         string;
 }): EscalationEvent {
   return {
-    reason: params.reason,
-    chat_id: params.chat_id,
-    update_id: params.update_id,
-    category: params.classification?.category,
-    summary: params.summary,
+    reason:     params.reason,
+    chat_id:    params.chat_id,
+    update_id:  params.update_id,
+    category:   params.classification?.category,
+    summary:    params.summary,
     created_at: new Date().toISOString(),
   };
 }
+
+// ─── Escalation routing rules ─────────────────────────────────────────────────
 
 /**
  * Determines whether a classification + reply outcome warrants an escalation
@@ -38,7 +47,7 @@ export function createEscalationEvent(params: {
  */
 export function shouldEscalate(
   classification: ClassifyResult,
-  llmSucceeded: boolean,
+  llmSucceeded:   boolean,
 ): boolean {
   const { category, slots } = classification;
 
@@ -48,7 +57,11 @@ export function shouldEscalate(
   }
 
   // LLM failed on a guest message or issue — operator attention needed.
-  if (!llmSucceeded && category !== MessageCategory.Start && category !== MessageCategory.Greeting) {
+  if (
+    !llmSucceeded &&
+    category !== MessageCategory.Start &&
+    category !== MessageCategory.Greeting
+  ) {
     return true;
   }
 
@@ -60,7 +73,7 @@ export function shouldEscalate(
  */
 export function deriveEscalationReason(
   classification: ClassifyResult,
-  llmSucceeded: boolean,
+  llmSucceeded:   boolean,
 ): EscalationReason {
   const { category, slots } = classification;
 
@@ -73,4 +86,39 @@ export function deriveEscalationReason(
   }
 
   return EscalationReason.RequiresOperator;
+}
+
+// ─── G6: Operator delivery ────────────────────────────────────────────────────
+
+/**
+ * Send a real-time escalation notification to the operator via Telegram.
+ *
+ * Uses sendTelegramMessage() which targets the TELEGRAM_CHAT_ID env var
+ * (the configured operator group / channel).  If TELEGRAM_CHAT_ID is not
+ * set, the function logs a warning and returns false without throwing.
+ *
+ * This must be called after saveEscalationEvent() so the durable record
+ * exists even if the notification delivery fails.
+ *
+ * Never throws — fire-and-forget safe.
+ */
+export async function notifyOperatorEscalation(
+  event: EscalationEvent,
+): Promise<boolean> {
+  const lines = [
+    `🚨 Escalation Required`,
+    `Chat ID: ${event.chat_id}`,
+    `Reason: ${event.reason}`,
+    ...(event.category ? [`Category: ${event.category}`] : []),
+    `Summary: ${event.summary}`,
+  ];
+
+  try {
+    return await sendTelegramMessage(lines.join('\n'));
+  } catch (err) {
+    console.warn(
+      `[Escalation] notifyOperatorEscalation delivery failed chatId=${event.chat_id}: ${String(err)}`,
+    );
+    return false;
+  }
 }

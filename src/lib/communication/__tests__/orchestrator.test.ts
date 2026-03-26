@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { _resetForTesting } from '../idempotency';
 import { ProcessOutcome, TelegramUpdate, IntentCategory } from '../types';
+import { clearContext, getContext } from '../memory';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ function makeUpdate(text: string, languageCode = 'en'): TelegramUpdate {
 describe('processUpdate', () => {
   beforeEach(() => {
     _resetForTesting();
+    clearContext(42);
     mockReply.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
@@ -155,5 +157,99 @@ describe('processUpdate', () => {
     mockReply.mockRejectedValueOnce(new Error('Telegram API down'));
     const result = await processUpdate(makeUpdate('check-in tomorrow'));
     expect(result.outcome).toBe(ProcessOutcome.Error);
+  });
+
+  it('stores booking draft entities and passes them to the prompt', async () => {
+    await processUpdate(makeUpdate('Принял бронь на Литейный, 38 на 4 ночи. Нужна парковка.', 'ru'));
+
+    const context = getContext(42);
+    expect(context.bookingDraft).toMatchObject({
+      propertyLabel: 'Литейный, 38',
+      stayNights: 4,
+      specificRequests: ['parking'],
+    });
+
+    const llmArgs = mockLLM.mock.calls[0][0] as { userMessage: string };
+    expect(llmArgs.userMessage).toContain('Known Property: Литейный, 38');
+    expect(llmArgs.userMessage).toContain('Known Stay Duration Nights: 4');
+    expect(llmArgs.userMessage).toContain('Known Specific Requests: parking');
+  });
+
+  // ─── G8: edited_message ─────────────────────────────────────────────────────
+
+  it('G8: edited_message returns Ignored and sends no reply', async () => {
+    const update: TelegramUpdate = {
+      update_id: nextUpdateId++,
+      edited_message: {
+        message_id: nextUpdateId,
+        chat: { id: 42 },
+        from: { language_code: 'en' },
+        text: 'edited text — should not trigger a reply',
+      },
+    };
+    const result = await processUpdate(update);
+    expect(result.outcome).toBe(ProcessOutcome.Ignored);
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it('G8: edited_message with no text is still Ignored, not an Error', async () => {
+    const update: TelegramUpdate = {
+      update_id: nextUpdateId++,
+      edited_message: { message_id: nextUpdateId, chat: { id: 42 } },
+    };
+    const result = await processUpdate(update);
+    expect(result.outcome).toBe(ProcessOutcome.Ignored);
+  });
+
+  // ─── G9: language_code propagation ──────────────────────────────────────────
+
+  it('G9: from.language_code is threaded to the classifier — Russian user gets RU systemPrompt', async () => {
+    // Short ambiguous English text that would default to 'en' without languageCode
+    const update: TelegramUpdate = {
+      update_id: nextUpdateId++,
+      message: {
+        message_id: nextUpdateId,
+        chat: { id: 42 },
+        from: { language_code: 'ru' },
+        text: 'ok',        // too short for Cyrillic/character-set detection → would fallback to 'en'
+      },
+    };
+    await processUpdate(update);
+    // The systemPrompt passed to callLLM should reference 'ru' language
+    const firstCallArgs = mockLLM.mock.calls[0][0] as { systemPrompt: string };
+    expect(firstCallArgs.systemPrompt).toMatch(/русск|ru|Russian/i);
+  });
+
+  it('G9: BCP-47 sub-tag ru-RU is sanitised to ru', async () => {
+    const update: TelegramUpdate = {
+      update_id: nextUpdateId++,
+      message: {
+        message_id: nextUpdateId,
+        chat: { id: 42 },
+        from: { language_code: 'ru-RU' },
+        text: 'ok',
+      },
+    };
+    const result = await processUpdate(update);
+    // Should not error and should produce a Replied outcome
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+  });
+
+  // ─── G7: payment_pending duplicate guard ────────────────────────────────────
+
+  it('G7: does NOT call createPaymentRequest when session is already payment_pending', async () => {
+    // First call — creates the initial payment request
+    mockDetectIntent.mockResolvedValue({ intent: 'payment_request', confidence: 0.95 });
+    await processUpdate(makeUpdate('I want to pay'));
+    expect(mockCreatePaymentRequest).toHaveBeenCalledTimes(1);
+    mockCreatePaymentRequest.mockClear();
+
+    // Second call with same intent while status is now payment_pending
+    await processUpdate(makeUpdate('I want to pay'));
+    expect(mockCreatePaymentRequest).not.toHaveBeenCalled();
+    // A reminder message should still be sent
+    expect(mockReply).toHaveBeenCalled();
+    const [, reminderText] = mockReply.mock.calls[mockReply.mock.calls.length - 1];
+    expect(reminderText).toMatch(/payment|pending|already|оплат/i);
   });
 });

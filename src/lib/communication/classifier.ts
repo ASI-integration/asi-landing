@@ -176,8 +176,19 @@ export function classify(text: string, langOverride?: string): ClassifyResult {
   return { category: MessageCategory.Fallback, lang, slots };
 }
 
-export async function classifyMessage(text: string): Promise<ClassifyResult> {
-  return classify(text);
+/**
+ * Async wrapper around the synchronous `classify`. Accepts an optional raw
+ * language code from the channel provider (e.g. Telegram `from.language_code`)
+ * and sanitises it before passing to `classify` as a lang override.
+ *
+ * Supported codes: zh | en | es | ar | fr | de | ru
+ * BCP-47 sub-tags (e.g. 'ru-RU') are trimmed to the 2-letter base.
+ */
+const SUPPORTED_LANGS_ARR: Lang[] = ['zh', 'en', 'es', 'ar', 'fr', 'de', 'ru'];
+export async function classifyMessage(text: string, rawLangCode?: string): Promise<ClassifyResult> {
+  const base = rawLangCode?.split('-')[0]?.toLowerCase();
+  const langOverride = base && SUPPORTED_LANGS_ARR.includes(base as Lang) ? base : undefined;
+  return classify(text, langOverride);
 }
 
 // ─── Deterministic Fallback Replies ──────────────────────────────────────────
@@ -198,7 +209,7 @@ export function deterministicReply(result: ClassifyResult): string {
           ? 'Здравствуйте! Похоже на срочную проблему с доступом. Укажите объект и время заезда — передадим немедленно.'
           : 'Здравствуйте! Получили информацию о проблеме. Опишите подробнее — передадим в нужный поток.';
       case MessageCategory.Booking:
-        return 'Здравствуйте! Принято. Уточните объект, даты и имя гостя — всё передадим в guest operations.';
+        return 'Здравствуйте! Принято. Уточню только недостающие данные по брони (объект, даты, имя гостя) и передам в guest operations.';
       default:
         return 'Получено. Тип запроса пока не определён — передаём на ручную проверку.';
     }
@@ -216,7 +227,7 @@ export function deterministicReply(result: ClassifyResult): string {
         ? 'On it — urgent access issue noted. Send the property and check-in time to escalate.'
         : 'Got it. Describe the issue in more detail and it will be routed to incident handling.';
     case MessageCategory.Booking:
-      return 'Got it! Share the property, dates, and guest name and this will go to guest operations.';
+      return 'Got it. I will ask only for missing booking details (property, dates, guest name) and route it to guest operations.';
     default:
       return 'Received. Message type is unclear — passing to manual review.';
   }
@@ -233,19 +244,34 @@ export const LLM_CATEGORIES: MessageCategory[] = [
 
 // ─── LLM prompt helpers ───────────────────────────────────────────────────────
 
-export const SYSTEM_PROMPT = `You are a high-intelligence operations assistant for a short-term rental (STR) management company.
-You receive operational messages forwarded by staff via Telegram — these may include guest complaints, access issues, booking questions, or forwarded guest messages.
+export const SYSTEM_PROMPT = `Role: You are the intelligent concierge assistant of ASI (Automated Service Integration).
+Goal: automate short-term-rental operations as close to 99% as possible.
 
-Rules for Hospitality Layer:
-- Adapt tone to the guest's situation: welcoming for pre-arrival/pre-booking, urgent and empathetic for in-stay issues, appreciative for post-stay.
-- Reply in the same language as the user message (English or Russian).
-- Answer briefly for simple questions.
-- Ask a targeted follow-up question if key identifiers (property, guest name) or details are missing.
-- Avoid repetitive wording. Use warm, natural hospitality-style wording without sounding robotic.
-- Do not claim actions were taken if they weren't.
-- Do not hallucinate policies, facts, fees, or access details.
-- Only answer based on the provided grounded knowledge. If knowledge is missing, explicitly say information is unavailable.
-- Do not use bullet lists or headers — plain conversational text only.`;
+CRITICAL RULE BEFORE ASKING ANY FOLLOW-UP QUESTION:
+- First analyze the current message and provided context for these entities:
+  1) Property (address or listing name)
+  2) Dates (check-in, check-out, or number of nights)
+  3) Guest name
+  4) Specific requests (parking, extra bed, pets)
+- If an entity is already present, NEVER ask for it again.
+- Confirm captured entities briefly in the reply (example pattern: "Accepted booking for <property> for <nights> nights").
+- Ask only for truly missing information.
+
+Knowledge and escalation rules:
+- If the guest asks about details like parking, restaurants, extra amenities, or access instructions, answer strictly from grounded property knowledge.
+- If relevant knowledge is unavailable, say that the information is currently unavailable and that you will уточнить у guest operations. Do this only after confirming already-known booking parameters.
+
+Communication rules:
+- Reply in the same language as the user message.
+- Tone: professional, concise, efficient. No fluff, no excessive apologies.
+- Keep responses short for simple asks.
+- Do not claim actions were taken if they were not.
+- Do not hallucinate policies, facts, fees, access details, or booking terms.
+- Use plain conversational text only (no bullet lists or headers in the final user-facing reply).`;
+
+export function buildSystemPrompt(langCode: LanguageCode = 'en'): string {
+  return formatLanguageFallbackPrompt(langCode, SYSTEM_PROMPT);
+}
 
 export function buildUserPrompt(text: string, result: ClassifyResult): string {
   const { category, lang, slots } = result;
@@ -269,15 +295,27 @@ export function buildUserPrompt(text: string, result: ClassifyResult): string {
 
 export function buildIntelligentPrompt(context: CommunicationContext, text: string, classification: ClassifyResult): string {
   const base = buildUserPrompt(text, classification);
-  const langCode = classification.lang as LanguageCode || 'en';
-  let dynamicSystemPrompt = formatLanguageFallbackPrompt(langCode, SYSTEM_PROMPT);
   const { intentResult, reservation, knowledge } = context;
+  const knownGuest = reservation.guestName || context.memory.guestName || context.memory.bookingDraft?.guestName || 'N/A';
+  const knownProperty = context.memory.bookingDraft?.propertyLabel || reservation.propertyId || 'N/A';
+  const matchedPropertyId = reservation.propertyId || 'N/A';
+  const knownStayNights = context.memory.bookingDraft?.stayNights ?? 'N/A';
+  const knownSpecificRequests = context.memory.bookingDraft?.specificRequests?.join(', ') || 'N/A';
+  const recentContext = context.recentMessages.length > 0
+    ? context.recentMessages.slice(-5).map((m) => `[${m.role}] ${m.content}`).join(' | ')
+    : 'N/A';
   
   return [
     base,
     `--- Context Assembly ---`,
     `Detected Intent: ${intentResult.intent} (Confidence: ${intentResult.confidence})`,
-    `Reservation Match: ${reservation.status} (\${reservation.guestName || 'Unknown Name'} @ \${reservation.propertyId || 'Unknown Property'})`,
+    `Reservation Match: ${reservation.status} (${knownGuest} @ ${knownProperty})`,
+    `Known Guest Name: ${knownGuest}`,
+    `Known Property: ${knownProperty}`,
+    `Matched Property ID: ${matchedPropertyId}`,
+    `Known Stay Duration Nights: ${knownStayNights}`,
+    `Known Specific Requests: ${knownSpecificRequests}`,
+    `Recent Conversation Context: ${recentContext}`,
     `--- Grounded Knowledge ---`,
     `Universal Policy: ${knowledge.universalPolicy}`,
     `Property Policy: ${knowledge.propertyPolicy || 'N/A'}`,

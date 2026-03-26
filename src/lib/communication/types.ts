@@ -31,10 +31,20 @@ export interface IntentResult {
   confidence: number;
 }
 
+export interface BookingDraft {
+  propertyLabel?: string;
+  stayNights?: number;
+  checkInDate?: string;
+  checkOutDate?: string;
+  guestName?: string;
+  specificRequests?: string[];
+}
+
 export interface ConversationContext {
   lastIntent?: IntentCategory;
   guestName?: string;
   reservationId?: string;
+  bookingDraft?: BookingDraft;
   lastMessageAt: Date;
 }
 
@@ -263,6 +273,11 @@ export interface InboundMessageEnvelope {
   receivedAt: Date;
   /** Caller-supplied idempotency key (e.g. Telegram update_id). Falls back to Date.now(). */
   update_id?: number;
+  /**
+   * G9: Raw IETF language tag from the channel provider (e.g. Telegram `from.language_code`).
+   * Used as a tiebreaker when text-based language detection falls back to English.
+   */
+  languageCode?: string;
 }
 
 export type PhoneCallRecord = {

@@ -3,36 +3,87 @@ import { AutopilotInterfaceMock } from '@/components/AutopilotInterfaceMock';
 import { FaqAccordion } from '@/components/FaqAccordion';
 
 /* ─── Strength cards data ──────────────────────────────────────────────────── */
-const CARDS = [
+type Card = {
+  icon: string;
+  title: string;
+  desc: string;
+  badge?: string;
+  bullets?: string[];
+  href?: string;
+};
+
+const CARDS: Card[] = [
   {
     icon: '💬',
     title: 'Коммуникация с гостями',
-    desc: 'Автоматические ответы на запросы 24/7 — заезд, коды доступа, вопросы и жалобы.',
+    badge: 'RU / EN · Text / Voice',
+    desc: 'Не просто автоответчик. ASI ведёт диалог с учётом бронирования, этапа проживания и правил объекта, чтобы гости получали быстрые ответы, а команда не тонула в сообщениях.',
+    bullets: [
+      'Ответы на типовые вопросы без участия менеджера',
+      'Контекст по бронированию, заезду, правилам и услугам',
+      'Передача сложных случаев человеку, когда это действительно нужно',
+    ],
+    href: '/modules/guest-communication',
   },
   {
     icon: '💳',
     title: 'Сбор платежей',
-    desc: 'Доплаты за поздний выезд и доп. услуги собираются прямо в диалоге с гостем.',
+    badge: 'ЮKassa · Ссылка / QR · По сценарию',
+    desc: 'Доплаты за ранний или поздний заезд, продление, штрафы в рамках правил объекта и дополнительные услуги можно собирать прямо в логике проживания, без ручной гонки за оплатой.',
+    bullets: [
+      'Оплата по ссылке или QR в нужный момент сценария',
+      'Привязка платежа к гостю, бронированию и услуге',
+      'Контроль статуса: ожидается, оплачено, просрочено, передано менеджеру',
+    ],
+    href: '/modules/payments-collection',
   },
   {
     icon: '📅',
     title: 'Управление бронированиями',
-    desc: 'Синхронизация календарей, контроль заездов и выездов, window-доступ к объекту.',
+    badge: 'Календарь · Заезд/выезд · Контроль доступа',
+    desc: 'ASI помогает держать под контролем бронирование от подтверждения до выезда: синхронизировать ключевые шаги, не терять статусы, вовремя запускать сценарии и снижать хаос вокруг заездов и выездов.',
+    bullets: [
+      'Единая логика для заезда, проживания, продления и выезда',
+      'Контекст по гостю, объекту, времени и правилам доступа',
+      'Сценарии запускаются вовремя, а не вручную и с опозданием',
+    ],
+    href: '/modules/booking-management',
   },
   {
     icon: '⚙️',
-    title: 'Операционный контроль',
-    desc: 'Задачи на уборку и техобслуживание ставятся и закрываются без участия управляющего.',
+    title: 'Операционная автоматизация',
+    badge: 'Задачи · Правила · Эскалации',
+    desc: 'ASI помогает автоматизировать рутинные операционные действия вокруг объекта: запускать задачи вовремя, держать процесс под контролем и передавать человеку только те случаи, где действительно нужно вмешательство.',
+    bullets: [
+      'Автозапуск задач по событиям и расписанию',
+      'Контроль статусов, сроков и отклонений',
+      'Эскалация человеку, если сценарий не завершён или вышел за рамки правил',
+    ],
+    href: '/modules/operations-automation',
   },
   {
     icon: '📊',
-    title: 'Динамическое ценообразование',
-    desc: 'Тарифы обновляются автоматически на основе спроса, конкурентов и алгоритмов OTA.',
+    title: 'Управление доходностью',
+    badge: 'Цены · Спрос · Net Yield',
+    desc: 'ASI помогает управлять доходностью объекта не по шаблону и не по слепому копированию рынка, а с учётом спроса, типа объекта, правил продаж и целевого профиля гостя.',
+    bullets: [
+      'Гибкая логика цен вместо ручных догадок',
+      'Учёт спроса, загрузки, правил и целевой аудитории',
+      'Фокус на чистой доходности, а не на красивых, но пустых метриках',
+    ],
+    href: '/modules/revenue-management',
   },
   {
     icon: '🔔',
-    title: 'Эскалация и контроль',
-    desc: 'Нестандартные ситуации немедленно передаются оператору с полным контекстом.',
+    title: 'Сигналы и эскалации',
+    badge: 'Риски · Отклонения · Контроль',
+    desc: 'ASI помогает не пропускать важные отклонения в процессе: если что-то идёт не по сценарию, система фиксирует риск, отправляет сигнал и вовремя передаёт кейс человеку.',
+    bullets: [
+      'Уведомления по важным событиям и отклонениям',
+      'Понятные правила, когда нужен человек',
+      'Эскалация до того, как сбой станет проблемой для гостя или команды',
+    ],
+    href: '/modules/alerts-escalations',
   },
 ];
 
@@ -117,17 +168,47 @@ export default function Home() {
               {CARDS.map((card) => (
                 <div
                   key={card.title}
-                  className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                  className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col"
                 >
-                  <span className="text-3xl" aria-hidden>
-                    {card.icon}
-                  </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-3xl" aria-hidden>
+                      {card.icon}
+                    </span>
+                    {card.badge && (
+                      <span className="flex-shrink-0 px-2 py-0.5 text-xs font-medium text-slate-400 bg-slate-800 border border-slate-700 rounded-md whitespace-nowrap">
+                        {card.badge}
+                      </span>
+                    )}
+                  </div>
                   <h3 className="mt-3 font-semibold text-white">
                     {card.title}
                   </h3>
                   <p className="mt-2 text-sm text-slate-400 leading-relaxed">
                     {card.desc}
                   </p>
+                  {card.bullets && (
+                    <ul className="mt-3 space-y-1.5">
+                      {card.bullets.map((b) => (
+                        <li key={b} className="flex items-start gap-2 text-xs text-slate-500">
+                          <span className="mt-0.5 text-slate-600 flex-shrink-0">—</span>
+                          <span>{b}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {card.href && (
+                    <div className="mt-4 pt-3 border-t border-slate-800">
+                      <Link
+                        href={card.href}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-300 hover:text-white transition-colors"
+                      >
+                        Подробнее
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
