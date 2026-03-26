@@ -41,6 +41,7 @@ import {
 import { getContext, updateContext, loadContextFromDB, persistContext } from './memory';
 import { updateBookingDraft } from './memory';
 import { detectIntent } from './intent';
+import { transitionFlowOnEscalation, transitionFlowOnGuestReply } from './stay-flow';
 import { createPaymentRequest } from '@/lib/payments/factory';
 import { callLLM } from '@/lib/openai';
 import { buildCommunicationContext } from './context';
@@ -267,6 +268,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // G5 — persist conversation context for cold-start continuity
     persistContext(chatId).catch(() => {});
+
+    // Stay-flow bridge (fire-and-forget)
+    if (escalation) {
+      transitionFlowOnEscalation(chatId).catch(() => {});
+    } else {
+      transitionFlowOnGuestReply(chatId, classification.category).catch(() => {});
+    }
 
     return {
       outcome: ProcessOutcome.Replied,
