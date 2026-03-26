@@ -556,6 +556,39 @@ describe('I9 — bridge inquiry to reservation', () => {
     );
   });
 
+  it('bridgeInquiryToReservation awaits upsertStayFlow before returning (no fire-and-forget)', async () => {
+    const now = new Date().toISOString();
+    dbRows['tg_inquiry_flows:6005'] = {
+      id:               'uuid-6005',
+      chat_id:          6005,
+      guest_id:         'guest_6005',
+      inquiry_status:   InquiryFlowStatus.HandedOff,
+      booking_details:  {},
+      intake_turn_count: 2,
+      handoff_at:       now,
+      last_inbound_at:  now,
+      created_at:       now,
+      updated_at:       now,
+    };
+
+    let stayFlowResolved = false;
+    mockUpsertStayFlow.mockImplementationOnce(
+      () => new Promise<{ id: string; reservationId: string }>(resolve => {
+        // Resolve on next I/O tick — if not awaited, bridgeInquiryToReservation
+        // would return before this executes and stayFlowResolved would be false.
+        setImmediate(() => {
+          stayFlowResolved = true;
+          resolve({ id: 'sf-deferred', reservationId: 'res_JKL' });
+        });
+      }),
+    );
+
+    await bridgeInquiryToReservation(6005, 'res_JKL', 'guest_6005');
+
+    // If stayFlowResolved is false here, the call was fire-and-forget (the bug).
+    expect(stayFlowResolved).toBe(true);
+  });
+
   it('bridgeInquiryToReservation does NOT call upsertStayFlow when already converted', async () => {
     const now = new Date().toISOString();
     dbRows['tg_inquiry_flows:6004'] = {

@@ -419,8 +419,9 @@ export async function bridgeInquiryToReservation(
       convertedAt:          now,
     });
 
-    // Initialize stay-flow (idempotent — on conflict preserves existing flow_status)
-    upsertStayFlow({ reservationId, chatId, guestId }).catch(() => {});
+    // Initialize stay-flow (idempotent — on conflict preserves existing flow_status).
+    // Must be awaited: fire-and-forget is killed by Vercel before the write completes.
+    await upsertStayFlow({ reservationId, chatId, guestId });
 
     if (guestId) {
       appendTimelineEvent(
