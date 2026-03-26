@@ -269,11 +269,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // G5 — persist conversation context for cold-start continuity
     persistContext(chatId).catch(() => {});
 
-    // Stay-flow bridge (fire-and-forget)
+    // Stay-flow bridge — awaited so Vercel does not terminate the function
+    // before the status write completes. Both functions never throw.
     if (escalation) {
-      transitionFlowOnEscalation(chatId).catch(() => {});
+      await transitionFlowOnEscalation(chatId);
     } else {
-      transitionFlowOnGuestReply(chatId, classification.category).catch(() => {});
+      await transitionFlowOnGuestReply(chatId, classification.category);
     }
 
     return {
