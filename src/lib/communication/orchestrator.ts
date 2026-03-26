@@ -10,14 +10,18 @@ import {
   auditOutbound,
 } from './audit';
 import {
+  buildSystemPrompt,
   buildIntelligentPrompt,
   classifyMessage,
   deterministicReply,
-  SYSTEM_PROMPT,
 } from './classifier';
-import { checkAndMark } from './idempotency';
+import { checkAndMark, checkDurableDuplicate, markDurable } from './idempotency';
 import {
+  linkSessionToReservation,
+  loadRecentTurns,
   saveAssistantTurn,
+  saveEscalationEvent,
+  saveOutboundFailure,
   saveUserTurn,
   upsertSession,
 } from './persistence';
@@ -34,14 +38,17 @@ import {
 } from './types';
 
 import { getContext, updateContext } from './memory';
+import { updateBookingDraft } from './memory';
 import { detectIntent } from './intent';
 import { createPaymentRequest } from '@/lib/payments/factory';
 import { callLLM } from '@/lib/openai';
 import { buildCommunicationContext } from './context';
 import { evaluateActionSafety } from './action';
 import { buildOperatorHandoff } from './handoff';
+import { extractBookingDraft } from './booking-draft';
 import {
   SessionStatus,
+  getSessionStatusSync,
   setPaymentExpiry,
   transitionSessionStatus,
 } from './session-status';
@@ -50,11 +57,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const update_id = envelope.update_id ?? Date.now();
   const text = envelope.messageText ?? '';
 
-  // Idempotency: drop duplicate update_ids
+  // Idempotency: L1 in-memory check (fast path)
   if (checkAndMark(update_id)) {
     auditDuplicate({ chat_id: 0, update_id });
     return { outcome: ProcessOutcome.Duplicate, update_id };
   }
+  // Idempotency: L2 durable check (cross-restart — only fires on L1 miss)
+  if (await checkDurableDuplicate(update_id)) {
+    auditDuplicate({ chat_id: 0, update_id });
+    return { outcome: ProcessOutcome.Duplicate, update_id };
+  }
+  // Mark durable immediately so parallel/restarted instances see it
+  markDurable(update_id);
 
   // Resolve unified identity
   const identity = await createOrMergeIdentity(envelope);
@@ -66,7 +80,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
 
   try {
-    const classification = await classifyMessage(text);
+    const classification = await classifyMessage(text, envelope.languageCode);
     auditInbound({
       chat_id: chatId,
       update_id,
@@ -78,8 +92,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const intentResult = await detectIntent(text);
     const ctx = getContext(chatId);
 
-    // Assembly
-    const commContext = await buildCommunicationContext(chatId, text, intentResult, []);
+    const draftUpdate = extractBookingDraft(text);
+    if (draftUpdate.propertyLabel || draftUpdate.stayNights || draftUpdate.guestName || draftUpdate.specificRequests?.length) {
+      updateBookingDraft(chatId, draftUpdate);
+    }
+
+    // Assembly — load persisted turn history for conversation continuity
+    const recentMessages = await loadRecentTurns(chatId, 10);
+    const commContext = await buildCommunicationContext(chatId, text, intentResult, recentMessages);
 
     // Action Policy Guard
     const safety = evaluateActionSafety(commContext, text);
@@ -99,10 +119,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         summary: handoff.reasonForEscalation,
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
+      saveEscalationEvent(escalation).catch(() => {});
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
       replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
     } else if (safety.action === 'trigger_payment_request') {
+      // G7: Guard against duplicate payment creation when a request is already pending.
+      if (getSessionStatusSync(chatId) === SessionStatus.PaymentPending) {
+        const isRu = classification.lang === 'ru';
+        replyText = adapter.formatResponse(
+          isRu
+            ? 'Запрос на оплату уже был отправлен. Пожалуйста, завершите предыдущую оплату или дождитесь её истечения.'
+            : 'A payment request has already been sent. Please complete the pending payment or wait for it to expire.',
+          commContext as unknown as Record<string, unknown>,
+        );
+        llmSucceeded = true;
+      } else {
       const payment = await createPaymentRequest({
         amount: 100,
         currency: classification.lang === 'ru' ? 'RUB' : 'USD',
@@ -120,9 +152,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         : `Please complete your payment using this link: ${paymentUrl}`;
       replyText = adapter.formatResponse(linkStr, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
+      } // end else (payment not already pending)
     } else {
       const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification);
-      const llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
+      const llmReply = await callLLM({
+        systemPrompt: buildSystemPrompt(classification.lang),
+        userMessage: prompt,
+      });
 
       llmSucceeded = llmReply !== null;
       const rawFallback = llmReply ?? deterministicReply(classification);
@@ -130,7 +166,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
     }
 
-    updateContext(chatId, { lastIntent: intentResult.intent });
+    updateContext(chatId, {
+      lastIntent: intentResult.intent,
+      guestName: draftUpdate.guestName ?? ctx.guestName,
+    });
 
     await Promise.allSettled([
       upsertSession(chatId),
@@ -143,9 +182,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       }),
     ]);
 
+    // Link session to reservation once matched (durable chatId→reservation mapping)
+    if (commContext.reservation.status === 'matched') {
+      linkSessionToReservation({
+        chat_id: chatId,
+        guest_id: commContext.reservation.guestId,
+        property_id: commContext.reservation.propertyId,
+      }).catch(() => {});
+    }
+
     if (!escalation && shouldEscalate(classification, llmSucceeded)) {
       const reason = deriveEscalationReason(classification, llmSucceeded);
-      const handoff = buildOperatorHandoff(commContext, text, 'escalate_to_operator', 'LLM fallback triggered');
       escalation = createEscalationEvent({
         reason,
         chat_id: chatId,
@@ -158,6 +205,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         update_id,
         detail: `reason=${reason} category=${classification.category}`,
       });
+      saveEscalationEvent(escalation).catch(() => {});
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
     }
@@ -165,7 +213,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Send the response abstractly
     const targetId = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
     const sent = await adapter.sendMessage(targetId, replyText);
-    if (!sent) throw new Error('Adapter failed to send message');
+    if (!sent) {
+      // Persist the delivery failure before surfacing as error
+      await saveOutboundFailure({
+        chat_id: chatId,
+        update_id,
+        error_detail: 'Adapter returned false — message not delivered',
+      });
+      throw new Error('Adapter failed to send message');
+    }
     await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
 
     auditOutbound({
@@ -201,7 +257,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 // Keep backward compatibility for Telegram Webhook
 import { TelegramUpdate } from './types';
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
-  const message = update.message ?? update.edited_message;
+  // G8: Edited messages must NOT generate a second assistant reply.
+  // Telegram resends edited_message with a new update_id, which bypasses
+  // idempotency. Silently ignore them instead.
+  if (update.edited_message) {
+    return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
+  }
+
+  const message = update.message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
 
   const envelope: InboundMessageEnvelope = {
@@ -211,6 +274,8 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     messageText: message.text || '',
     receivedAt: new Date(),
     update_id: update.update_id,
+    // G9: Preserve Telegram's language_code so the classifier can use it.
+    languageCode: message.from?.language_code,
   };
 
   return processMessage(envelope);
