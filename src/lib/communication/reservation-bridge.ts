@@ -208,3 +208,118 @@ export async function operatorLinkReservation(params: BridgeParams): Promise<Bri
     return { ok: false, error: String(err) };
   }
 }
+
+// ─── Recovery: create missing stay_flows for already-converted inquiries ──────
+
+export interface RecoveryDetail {
+  reservationId: string;
+  chatId?:       number;
+  status:        'recovered' | 'already_exists' | 'error';
+  error?:        string;
+}
+
+export interface RecoveryResult {
+  ok:        boolean;
+  recovered: number;
+  skipped:   number;
+  errors:    number;
+  details:   RecoveryDetail[];
+  error?:    string;
+}
+
+/**
+ * Find converted inquiries that have a linked_reservation_id but no tg_stay_flows row,
+ * and create the missing stay_flow in reservation_linked state.
+ *
+ * Idempotent: safe to call multiple times — skips any reservation that already has a stay_flow.
+ * Pass chatId to scope recovery to a single chat for targeted manual validation.
+ * Never throws — per-row errors are recorded in details[].
+ */
+export async function recoverMissingStayFlows(params?: {
+  chatId?: number;
+}): Promise<RecoveryResult> {
+  try {
+    // 1. Load converted inquiries with a linked reservation
+    const base = supabase
+      .from('tg_inquiry_flows')
+      .select('chat_id, guest_id, linked_reservation_id')
+      .eq('inquiry_status', InquiryFlowStatus.ConvertedToReservation)
+      .not('linked_reservation_id', 'is', null);
+
+    const query = params?.chatId != null ? base.eq('chat_id', params.chatId) : base;
+
+    const { data: inquiries, error: qErr } = await query;
+    if (qErr) {
+      return { ok: false, recovered: 0, skipped: 0, errors: 0, details: [], error: qErr.message };
+    }
+
+    const rows = (inquiries ?? []) as Array<{
+      chat_id:               number;
+      guest_id?:             string;
+      linked_reservation_id: string;
+    }>;
+
+    const details: RecoveryDetail[] = [];
+    let recovered = 0;
+    let skipped   = 0;
+    let errors    = 0;
+
+    for (const row of rows) {
+      const reservationId = row.linked_reservation_id;
+      const chatId        = row.chat_id;
+      const guestId       = row.guest_id;
+
+      try {
+        // 2. Skip if stay_flow already exists
+        const existing = await getStayFlowByReservationId(reservationId);
+        if (existing) {
+          details.push({ reservationId, chatId, status: 'already_exists' });
+          skipped++;
+          continue;
+        }
+
+        // 3. Confirm reservation row exists and load enrichment data
+        const { data: resRow } = await supabase
+          .from('tg_guest_reservations')
+          .select('id, property_id, check_in, check_out')
+          .eq('id', reservationId)
+          .maybeSingle();
+
+        if (!resRow) {
+          details.push({ reservationId, chatId, status: 'error', error: 'reservation_not_found' });
+          errors++;
+          continue;
+        }
+
+        const res = resRow as { id: string; property_id?: string; check_in?: string; check_out?: string };
+
+        // 4. Create missing stay_flow (upsert on conflict reservation_id is safe)
+        const flow = await upsertStayFlow({
+          reservationId,
+          chatId,
+          guestId,
+          propertyId:   res.property_id,
+          checkinDate:  res.check_in,
+          checkoutDate: res.check_out,
+        });
+
+        if (!flow) {
+          details.push({ reservationId, chatId, status: 'error', error: 'upsert_failed' });
+          errors++;
+        } else {
+          details.push({ reservationId, chatId, status: 'recovered' });
+          recovered++;
+          console.log(`[RecoverStayFlow] Created stay_flow flowId=${flow.id} reservationId=${reservationId} chatId=${chatId}`);
+        }
+      } catch (rowErr) {
+        details.push({ reservationId, chatId, status: 'error', error: String(rowErr) });
+        errors++;
+      }
+    }
+
+    return { ok: true, recovered, skipped, errors, details };
+  } catch (err) {
+    console.error('[RecoverStayFlow] recoverMissingStayFlows error:', String(err));
+    return { ok: false, recovered: 0, skipped: 0, errors: 0, details: [], error: String(err) };
+  }
+}
