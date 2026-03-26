@@ -278,7 +278,7 @@ describe('R5 — scoped by chatId: only target chat processed', () => {
 
     // eq() is called multiple times: inquiry_status filter + chat_id filter
     const eqCalls = inquiryChain.eq.mock.calls;
-    expect(eqCalls.some(([col, val]: [string, unknown]) => col === 'chat_id' && val === 1343269271)).toBe(true);
+    expect(eqCalls.some((call) => { const [col, val] = call as [string, unknown]; return col === 'chat_id' && val === 1343269271; })).toBe(true);
   });
 
   it('returns recovered:0, skipped:0 when no rows match the scoped chatId', async () => {
