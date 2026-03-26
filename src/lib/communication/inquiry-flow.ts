@@ -224,20 +224,24 @@ export function mergeBookingDetails(
     }
   }
 
-  // Desired dates — English: "July 5-10", "Aug 1 to Sep 3", "5-10 July"
+  // Desired dates — English: "July 5-10", "Aug 1 to Sep 3"
+  // Requires an actual month name to avoid false positives like "for 2".
   if (!merged.desired_dates) {
+    const MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
     const enDate = text.match(
-      /\b([A-Za-z]+ \d{1,2}(?:\s*[-–—]\s*(?:[A-Za-z]+ ?)?\d{1,2})?|\d{1,2}(?:\s*[-–—]\s*\d{1,2})?\s+[A-Za-z]+)\b/,
+      new RegExp(`\\b(${MONTH} \\d{1,2}(?:\\s*[-–—]\\s*(?:${MONTH} ?)?\\d{1,2})?)\\b`, 'i'),
     );
     if (enDate) {
       merged.desired_dates = enDate[1].trim();
     }
   }
 
-  // Property / city reference: "in Moscow", "в Москве", "near the center"
+  // Property / city reference: "in Moscow", "в Москве", "near New York"
+  // Each captured word must start with a capital letter to stop at lowercase
+  // prepositions like "for", "с", "по" that follow the city name.
   if (!merged.property_ref) {
-    const propRu = text.match(/в\s+([А-ЯЁ][а-яё\s]{2,25})(?=[,.\s]|$)/u);
-    const propEn = text.match(/(?:in|at|near)\s+([A-Z][a-zA-Z\s]{2,25})(?=[,.\s]|$)/u);
+    const propRu = text.match(/в\s+([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)*)(?=\s|,|\.|$)/u);
+    const propEn = text.match(/(?:in|at|near)\s+([A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*)(?=\s|,|\.|$)/u);
     if (propRu?.[1]) {
       merged.property_ref = propRu[1].trim();
     } else if (propEn?.[1]) {
