@@ -5,7 +5,9 @@ export type TimelineEvent =
   | { type: 'message_outbound'; channel: CommunicationChannel; content: string; ts: Date }
   | { type: 'call_record'; record: PhoneCallRecord; ts: Date }
   | { type: 'payment_event'; status: string; ts: Date }
-  | { type: 'escalation'; reason: string; ts: Date };
+  | { type: 'escalation'; reason: string; ts: Date }
+  | { type: 'property_knowledge_upserted'; property_id: string; created: boolean; ts: Date }
+  | { type: 'reservation_upserted'; reservation_ref: string; created: boolean; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;
