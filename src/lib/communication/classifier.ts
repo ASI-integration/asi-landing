@@ -267,13 +267,18 @@ export function buildUserPrompt(text: string, result: ClassifyResult): string {
   ].join('\n');
 }
 
-export function buildIntelligentPrompt(context: CommunicationContext, text: string, classification: ClassifyResult): string {
+export function buildIntelligentPrompt(
+  context: CommunicationContext,
+  text: string,
+  classification: ClassifyResult,
+  templateHints?: string | null,
+): string {
   const base = buildUserPrompt(text, classification);
   const langCode = classification.lang as LanguageCode || 'en';
   let dynamicSystemPrompt = formatLanguageFallbackPrompt(langCode, SYSTEM_PROMPT);
   const { intentResult, reservation, knowledge } = context;
-  
-  return [
+
+  const lines = [
     base,
     `--- Context Assembly ---`,
     `Detected Intent: ${intentResult.intent} (Confidence: ${intentResult.confidence})`,
@@ -289,7 +294,16 @@ export function buildIntelligentPrompt(context: CommunicationContext, text: stri
     `Payment: ${knowledge.paymentRules || 'N/A'}`,
     `Upsells: ${knowledge.upsells || 'N/A'}`,
     `Emergency Contacts: ${knowledge.emergencyContacts || 'N/A'}`,
+  ];
+
+  if (templateHints) {
+    lines.push(`--- Property Templates ---`, templateHints);
+  }
+
+  lines.push(
     `--------------------------`,
-    `Please respond to the guest or staff accordingly, keeping strict adherence to the grounded knowledge and tone policies.`
-  ].join('\n');
+    `Please respond to the guest or staff accordingly, keeping strict adherence to the grounded knowledge and tone policies.`,
+  );
+
+  return lines.join('\n');
 }

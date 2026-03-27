@@ -7,6 +7,7 @@ export type TimelineEvent =
   | { type: 'payment_event'; status: string; ts: Date }
   | { type: 'escalation'; reason: string; ts: Date }
   | { type: 'property_knowledge_upserted'; property_id: string; created: boolean; ts: Date }
+  | { type: 'property_templates_upserted'; property_id: string; created: boolean; ts: Date }
   | { type: 'reservation_upserted'; reservation_ref: string; created: boolean; ts: Date };
 
 export interface GlobalTimeline {

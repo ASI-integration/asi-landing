@@ -45,6 +45,7 @@ import {
   setPaymentExpiry,
   transitionSessionStatus,
 } from './session-status';
+import { getPropertyTemplates } from './templates';
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
@@ -81,6 +82,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Assembly
     const commContext = await buildCommunicationContext(chatId, text, intentResult, []);
 
+    // Fetch per-property templates (null when none set or on any error)
+    const propertyId = commContext.reservation.propertyId;
+    const templates = propertyId ? await getPropertyTemplates(propertyId) : null;
+
     // Action Policy Guard
     const safety = evaluateActionSafety(commContext, text);
 
@@ -101,7 +106,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
-      replyText = adapter.formatResponse("I'm not entirely sure how to answer that. I have flagged this for our team to review!", commContext as unknown as Record<string, unknown>);
+      const escalationBase = "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
+      const escalationMsg = templates?.escalation_contact_text
+        ? `${escalationBase} ${templates.escalation_contact_text}`
+        : escalationBase;
+      replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
+    } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
+      replyText = adapter.formatResponse(templates.pre_checkin_template, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+    } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
+      replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
     } else if (safety.action === 'trigger_payment_request') {
       const payment = await createPaymentRequest({
         amount: 100,
@@ -121,7 +136,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(linkStr, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
     } else {
-      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification);
+      const followupHint = templates?.followup_template
+        ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
+        : null;
+      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
       const llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
 
       llmSucceeded = llmReply !== null;
