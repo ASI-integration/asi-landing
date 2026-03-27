@@ -285,6 +285,21 @@ const MIGRATIONS: { label: string; sql: string }[] = [
         ADD COLUMN IF NOT EXISTS conversion_source TEXT;
     `,
   },
+
+  // ── 20260327000002 / escalation resolution columns ───────────────────────
+  {
+    label: '20260327b / tg_escalation_events resolution columns',
+    sql: `
+      ALTER TABLE tg_escalation_events
+        ADD COLUMN IF NOT EXISTS resolved_at        TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS resolved_by        TEXT,
+        ADD COLUMN IF NOT EXISTS resolution_action  TEXT,
+        ADD COLUMN IF NOT EXISTS operator_note      TEXT;
+      CREATE INDEX IF NOT EXISTS idx_tg_escalation_events_unresolved
+        ON tg_escalation_events (chat_id, created_at DESC)
+        WHERE resolved_at IS NULL;
+    `,
+  },
 ];
 
 // ─── Runner ───────────────────────────────────────────────────────────────────

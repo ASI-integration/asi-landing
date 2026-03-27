@@ -25,7 +25,9 @@ export type TimelineEvent =
   | { type: 'inquiry_handoff';       reason:  string;                ts: Date }
   | { type: 'inquiry_converted';     reason:  string; [k: string]: unknown; ts: Date }
   | { type: 'reservation_linked';    source:  string; [k: string]: unknown; ts: Date }
-  | { type: 'stay_flow_initialized'; [k: string]: unknown; ts: Date };
+  | { type: 'stay_flow_initialized'; [k: string]: unknown; ts: Date }
+  | { type: 'escalation_resolved'; action: string; note?: string; [k: string]: unknown; ts: Date }
+  | { type: 'escalation_resumed';  action: string; resumeStatus: string; [k: string]: unknown; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;
@@ -70,9 +72,13 @@ export async function appendTimelineEvent(
     };
   } else if (event.type === 'payment_event') {
     eventData = { status: event.status };
+  } else if (event.type === 'escalation_resolved') {
+    eventData = { action: event.action, ...(event.note ? { note: event.note } : {}) };
+  } else if (event.type === 'escalation_resumed') {
+    eventData = { action: event.action, resumeStatus: event.resumeStatus };
   } else {
-    // escalation
-    eventData = { reason: event.reason };
+    // escalation / inquiry_handoff / inquiry_converted / reservation_linked / stay_flow_initialized
+    eventData = { reason: (event as { reason?: string }).reason };
   }
 
   try {
