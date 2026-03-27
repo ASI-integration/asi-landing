@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { sendTelegramMessage } from './telegram';
+import { getYooKassaCredentials } from './payments/yookassa-env';
 
 export async function checkTrialExpiration(): Promise<void> {
   const now = new Date().toISOString();
@@ -43,12 +44,11 @@ export async function checkTrialExpiration(): Promise<void> {
 }
 
 async function attemptRecurringPayment(userId: string, paymentMethodId: string): Promise<boolean> {
-  const YOOKASSA_SECRET = process.env.YOOKASSA_SECRET_KEY;
-  const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID;
-  if (!YOOKASSA_SECRET || !YOOKASSA_SHOP_ID) return false;
+  const creds = getYooKassaCredentials();
+  if (!creds) return false;
 
   try {
-    const auth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET}`).toString('base64');
+    const auth = Buffer.from(`${creds.shopId}:${creds.secretKey}`).toString('base64');
     const res = await fetch('https://api.yookassa.ru/v3/payments', {
       method: 'POST',
       headers: {

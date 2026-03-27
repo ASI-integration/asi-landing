@@ -27,10 +27,10 @@ export function LegalFooter() {
             <p>
               Email:{' '}
               <a
-                href="mailto:support@asi.system"
+                href="mailto:support@asi-global.ru"
                 className="hover:text-slate-300 transition-colors"
               >
-                support@asi.system
+                support@asi-global.ru
               </a>
             </p>
           </div>

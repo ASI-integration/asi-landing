@@ -133,7 +133,7 @@ function Btn({
 
 // ─── Section A — Property Setup ───────────────────────────────────────────────
 
-function PropertySetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }) {
+function PropertySetup({ fetch, onPropertyIdChange }: { fetch: ReturnType<typeof useAdminFetch>; onPropertyIdChange?: (id: string) => void }) {
   const [f, setF] = useState({
     property_id: '', property_name: '', location: '', check_in_time: '', check_out_time: '',
     wifi_name: '', wifi_password: '', check_in_instructions: '', check_out_instructions: '',
@@ -144,7 +144,10 @@ function PropertySetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }) {
   const [readRes, setReadRes] = useState<ApiResult | null>(null);
   const [readLoading, setReadLoading] = useState(false);
 
-  const set = (k: keyof typeof f) => (v: string) => setF(p => ({ ...p, [k]: v }));
+  const set = (k: keyof typeof f) => (v: string) => {
+    setF(p => ({ ...p, [k]: v }));
+    if (k === 'property_id') onPropertyIdChange?.(v);
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -235,6 +238,7 @@ function ReservationSetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }
   });
   const [res, setRes] = useState<ApiResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lastPayload, setLastPayload] = useState<Record<string, unknown> | null>(null);
   const [readRes, setReadRes] = useState<ApiResult | null>(null);
   const [readLoading, setReadLoading] = useState(false);
 
@@ -254,6 +258,7 @@ function ReservationSetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }
     if (f.check_out)   body.check_out   = f.check_out;
     if (f.status)      body.status      = f.status;
     if (f.note)        body.note        = f.note;
+    setLastPayload(body);
     const r = await fetch('/api/admin/upsert-reservation', {
       method: 'POST', body: JSON.stringify(body),
     });
@@ -274,7 +279,9 @@ function ReservationSetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }
 
   return (
     <Section title="B. Reservation Setup">
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* autoComplete="off" prevents browser autofill from visually populating fields
+          without triggering React onChange, which would leave state empty on submit */}
+      <form onSubmit={handleSubmit} autoComplete="off" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="reservation_ref" id="b-rr" value={f.reservation_ref} onChange={set('reservation_ref')} required placeholder="RES-001" />
         <Field label="property_id" id="b-pid" value={f.property_id} onChange={set('property_id')} required placeholder="prop_A" />
         <Field label="chat_id (Telegram)" id="b-cid" value={f.chat_id} onChange={set('chat_id')} required placeholder="123456789" type="number" />
@@ -304,6 +311,14 @@ function ReservationSetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }
           </Btn>
         </div>
       </form>
+      {lastPayload && (
+        <details className="mt-2">
+          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Last sent payload</summary>
+          <pre className="mt-1 p-2 rounded text-xs bg-gray-50 border border-gray-200 text-gray-700 whitespace-pre-wrap break-all">
+            {JSON.stringify(lastPayload, null, 2)}
+          </pre>
+        </details>
+      )}
       <Result data={res} />
       {readRes && <Result data={readRes} />}
     </Section>
@@ -312,7 +327,7 @@ function ReservationSetup({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }
 
 // ─── Section C — Property Templates ──────────────────────────────────────────
 
-function PropertyTemplates({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }) {
+function PropertyTemplates({ fetch, currentPropertyId }: { fetch: ReturnType<typeof useAdminFetch>; currentPropertyId?: string }) {
   const [f, setF] = useState({
     property_id: '', pre_checkin_template: '', checkout_template: '',
     followup_template: '', escalation_contact_text: '',
@@ -350,7 +365,31 @@ function PropertyTemplates({ fetch }: { fetch: ReturnType<typeof useAdminFetch> 
   return (
     <Section title="C. Property Templates">
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-3">
-        <Field label="property_id" id="c-pid" value={f.property_id} onChange={set('property_id')} required placeholder="prop_A" />
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="c-pid" className="block text-xs font-medium text-gray-600">
+              property_id<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            {currentPropertyId && currentPropertyId !== f.property_id && (
+              <button
+                type="button"
+                onClick={() => set('property_id')(currentPropertyId)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Use current ({currentPropertyId})
+              </button>
+            )}
+          </div>
+          <input
+            id="c-pid"
+            type="text"
+            value={f.property_id}
+            onChange={e => set('property_id')(e.target.value)}
+            placeholder="prop_A"
+            required
+            className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+          />
+        </div>
         <Field label="pre_checkin_template" id="c-pct" value={f.pre_checkin_template} onChange={set('pre_checkin_template')} rows={3} placeholder="Hi {guest_name}, your check-in is tomorrow…" />
         <Field label="checkout_template" id="c-cot" value={f.checkout_template} onChange={set('checkout_template')} rows={3} />
         <Field label="followup_template" id="c-ft" value={f.followup_template} onChange={set('followup_template')} rows={3} />
@@ -627,6 +666,7 @@ function FlowControls({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }) {
 export default function OpsConsolePage() {
   const [secret, setSecret] = useState('');
   const [committed, setCommitted] = useState(false);
+  const [sharedPropertyId, setSharedPropertyId] = useState('');
 
   const adminFetch = useAdminFetch(committed ? secret : '');
 
@@ -680,9 +720,9 @@ export default function OpsConsolePage() {
           </button>
         </header>
 
-        <PropertySetup fetch={adminFetch} />
+        <PropertySetup fetch={adminFetch} onPropertyIdChange={setSharedPropertyId} />
         <ReservationSetup fetch={adminFetch} />
-        <PropertyTemplates fetch={adminFetch} />
+        <PropertyTemplates fetch={adminFetch} currentPropertyId={sharedPropertyId} />
         <OpsTasksViewer fetch={adminFetch} />
         <FlowControls fetch={adminFetch} />
       </div>
