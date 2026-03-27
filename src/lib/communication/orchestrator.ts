@@ -31,6 +31,7 @@ import {
   ProcessResult,
   EscalationReason,
   InboundMessageEnvelope,
+  IntentCategory,
 } from './types';
 
 import { getContext, updateContext } from './memory';
@@ -46,6 +47,7 @@ import {
   transitionSessionStatus,
 } from './session-status';
 import { getPropertyTemplates } from './templates';
+import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
@@ -106,6 +108,20 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
+      // Ops task: policy escalation → guest_issue (fire-and-forget)
+      createOpsTask({
+        property_id: commContext.reservation.propertyId ?? 'unknown',
+        reservation_id: commContext.reservation.reservationId ?? null,
+        chat_id: chatId,
+        task_type: OpsTaskType.GuestIssue,
+        title: `Guest issue escalated: ${escalation.reason}`,
+        description: escalation.summary,
+        priority: OpsTaskPriority.Urgent,
+        source_event: 'escalation_policy',
+        trigger_reason: escalation.reason,
+      }).then(({ task_id }) => {
+        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+      }).catch(() => {});
       const escalationBase = "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -178,6 +194,36 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
+      // Ops task: LLM-fallback escalation → guest_issue (fire-and-forget)
+      createOpsTask({
+        property_id: commContext.reservation.propertyId ?? 'unknown',
+        reservation_id: commContext.reservation.reservationId ?? null,
+        chat_id: chatId,
+        task_type: OpsTaskType.GuestIssue,
+        title: `Guest issue escalated: ${reason}`,
+        description: escalation.summary,
+        priority: classification.slots.isUrgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+        source_event: 'escalation_llm_fallback',
+        trigger_reason: reason,
+      }).then(({ task_id }) => {
+        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+      }).catch(() => {});
+    }
+
+    // Ops task: checkout intent → checkout task (fire-and-forget)
+    if (intentResult.intent === IntentCategory.CheckOut && commContext.reservation.propertyId) {
+      createOpsTask({
+        property_id: commContext.reservation.propertyId,
+        reservation_id: commContext.reservation.reservationId ?? null,
+        chat_id: chatId,
+        task_type: OpsTaskType.Checkout,
+        title: 'Guest checkout',
+        priority: OpsTaskPriority.Normal,
+        source_event: 'checkout_intent',
+        trigger_reason: 'checkout_message_sent',
+      }).then(({ task_id }) => {
+        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.Checkout, task_id, ts: new Date() });
+      }).catch(() => {});
     }
 
     // Send the response abstractly

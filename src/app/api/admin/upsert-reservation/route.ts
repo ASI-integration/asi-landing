@@ -35,6 +35,7 @@
 import { NextResponse } from 'next/server';
 import { supabase }     from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
+import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -129,6 +130,66 @@ export async function POST(req: Request) {
     `tg_${chatIdNum}`,
     { type: 'reservation_upserted', reservation_ref: reservation_ref as string, created, ts: new Date() },
   );
+
+  // ── Auto-create ops tasks on new reservation linkage ──────────────────────
+  // Idempotent: dedup_key prevents duplicates on retries.
+  if (created) {
+    const taskBase = {
+      property_id:    property_id as string,
+      reservation_id: reservationId,
+      chat_id:        chatIdNum,
+      priority:       OpsTaskPriority.Normal,
+      source_event:   'reservation_linked',
+    };
+
+    const checkInDate = typeof check_in === 'string' ? check_in : null;
+    const checkOutDate = typeof check_out === 'string' ? check_out : null;
+
+    await Promise.allSettled([
+      createOpsTask({
+        ...taskBase,
+        task_type:      OpsTaskType.PreArrivalPrep,
+        title:          'Pre-arrival preparation',
+        description:    `Prepare property for guest arrival${checkInDate ? ` on ${checkInDate}` : ''}.`,
+        due_at:         checkInDate ? new Date(new Date(checkInDate).getTime() - 24 * 60 * 60 * 1000).toISOString() : null,
+        trigger_reason: 'reservation_created',
+      }),
+      createOpsTask({
+        ...taskBase,
+        task_type:      OpsTaskType.CheckinReady,
+        title:          'Check-in readiness',
+        description:    `Confirm property is ready for guest check-in${checkInDate ? ` on ${checkInDate}` : ''}.`,
+        due_at:         checkInDate ? new Date(checkInDate).toISOString() : null,
+        trigger_reason: 'reservation_created',
+      }),
+    ]);
+
+    // Timeline: ops tasks created (fire-and-forget)
+    appendTimelineEvent(`tg_${chatIdNum}`, { type: 'ops_task_created', task_type: OpsTaskType.PreArrivalPrep, task_id: null, ts: new Date() }).catch(() => {});
+    appendTimelineEvent(`tg_${chatIdNum}`, { type: 'ops_task_created', task_type: OpsTaskType.CheckinReady, task_id: null, ts: new Date() }).catch(() => {});
+
+    // Checkout + turnover tasks (only when check_out is known)
+    if (checkOutDate) {
+      await Promise.allSettled([
+        createOpsTask({
+          ...taskBase,
+          task_type:      OpsTaskType.Checkout,
+          title:          'Guest checkout',
+          description:    `Guest checkout on ${checkOutDate}.`,
+          due_at:         new Date(checkOutDate).toISOString(),
+          trigger_reason: 'reservation_created',
+        }),
+        createOpsTask({
+          ...taskBase,
+          task_type:      OpsTaskType.Turnover,
+          title:          'Post-checkout turnover',
+          description:    `Clean and prepare property after checkout on ${checkOutDate}.`,
+          due_at:         new Date(new Date(checkOutDate).getTime() + 2 * 60 * 60 * 1000).toISOString(),
+          trigger_reason: 'reservation_created',
+        }),
+      ]);
+    }
+  }
 
   return NextResponse.json({ ok: true, reservation_id: reservationId, reservation_ref, created });
 }

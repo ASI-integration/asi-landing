@@ -1,6 +1,6 @@
 import { CommunicationChannel, InboundMessageEnvelope, PhoneCallRecord } from './types';
 
-export type TimelineEvent = 
+export type TimelineEvent =
   | { type: 'message_inbound'; channel: CommunicationChannel; content: string; ts: Date }
   | { type: 'message_outbound'; channel: CommunicationChannel; content: string; ts: Date }
   | { type: 'call_record'; record: PhoneCallRecord; ts: Date }
@@ -8,7 +8,10 @@ export type TimelineEvent =
   | { type: 'escalation'; reason: string; ts: Date }
   | { type: 'property_knowledge_upserted'; property_id: string; created: boolean; ts: Date }
   | { type: 'property_templates_upserted'; property_id: string; created: boolean; ts: Date }
-  | { type: 'reservation_upserted'; reservation_ref: string; created: boolean; ts: Date };
+  | { type: 'reservation_upserted'; reservation_ref: string; created: boolean; ts: Date }
+  | { type: 'ops_task_created'; task_type: string; task_id: string | null; ts: Date }
+  | { type: 'ops_task_updated'; task_id: string; task_status: string; ts: Date }
+  | { type: 'ops_task_resolved'; task_id: string; task_type: string; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;
