@@ -10,7 +10,12 @@
  *   resolve_only          — mark resolved, leave stay flow in escalated state
  *   close_without_resume  — mark resolved + set stay flow to closed
  *
- * Called from: POST /api/admin/resolve-escalation
+ * Also exports resumeStayFlow() — resume an escalated flow independently of
+ * whether the escalation event itself has already been resolved.
+ *
+ * Called from:
+ *   POST /api/admin/resolve-escalation  (resolveEscalation)
+ *   POST /api/admin/resume-stay-flow    (resumeStayFlow)
  */
 
 import { supabase } from '@/lib/supabase';
@@ -243,4 +248,101 @@ export async function resolveEscalation(
   ).catch(() => {});
 
   return { ok: true, escalationEventId: event.id, resumedStatus };
+}
+
+// ─── resumeStayFlow ───────────────────────────────────────────────────────────
+
+export interface ResumeStayFlowParams {
+  chatId:      number;
+  resumedBy?:  string;
+}
+
+export interface ResumeStayFlowResult {
+  ok:              boolean;
+  /** Flow was not in escalated state — no action taken. */
+  alreadyResumed?: boolean;
+  currentStatus?:  string;
+  resumedStatus?:  string;
+  error?:          string;
+}
+
+/**
+ * Resume an escalated stay flow independently of the escalation event's
+ * resolved state.  Intended for the case where the operator called
+ * resolve_only first and later wants to unblock the flow without needing
+ * a new escalation.
+ *
+ * Idempotent: if the flow is not in escalated state the call returns
+ * { ok: true, alreadyResumed: true, currentStatus } with no side effects.
+ *
+ * Safe: does not re-send any messages. Message delivery guards
+ * (pre_checkin_sent_at, checkout_sent_at, followup_sent_at) remain intact
+ * and are respected by the cron runner on its next tick.
+ */
+export async function resumeStayFlow(
+  params: ResumeStayFlowParams,
+): Promise<ResumeStayFlowResult> {
+  const { chatId, resumedBy } = params;
+
+  // 1. Look up the most recent flow for this chat, including escalated ones.
+  const flow = await getAnyFlowByChatId(chatId);
+  if (!flow) {
+    return { ok: false, error: 'No stay flow found for this chat_id' };
+  }
+
+  // 2. Idempotency — only act if currently escalated.
+  if (flow.flow_status !== StayFlowStatus.Escalated) {
+    return { ok: true, alreadyResumed: true, currentStatus: flow.flow_status };
+  }
+
+  // 3. Determine safest next state from dates.
+  const nextStatus = determineResumeStatus(flow);
+
+  // 4. Advance the flow.
+  await updateFlowStatus(flow.id, nextStatus);
+
+  // 5. Audit timeline (best-effort).
+  const guestId = flow.guest_id ?? `tg_${chatId}`;
+  appendTimelineEvent(
+    guestId,
+    {
+      type:         'escalation_resumed',
+      action:       'resume_stay_flow',
+      resumeStatus: nextStatus,
+      resumedBy:    resumedBy ?? null,
+      ts:           new Date(),
+    },
+    chatId,
+  ).catch(() => {});
+
+  console.log(
+    `[EscalationResolution] resumeStayFlow: flowId=${flow.id} chatId=${chatId} → ${nextStatus}`,
+  );
+
+  return { ok: true, resumedStatus: nextStatus };
+}
+
+// ─── DB: any-status flow lookup ───────────────────────────────────────────────
+
+/**
+ * Return the most recent stay flow for a chat regardless of status.
+ * Unlike getStayFlowByChatId (which skips closed/followup_sent) or
+ * getEscalatedFlowByChatId (which skips non-escalated), this returns
+ * whatever row exists so resumeStayFlow can report alreadyResumed.
+ */
+async function getAnyFlowByChatId(chatId: number): Promise<StayFlowRow | null> {
+  try {
+    const { data } = await supabase
+      .from('tg_stay_flows')
+      .select('id, chat_id, guest_id, flow_status, checkin_date, checkout_date, pre_checkin_sent_at')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) return null;
+    return data as StayFlowRow;
+  } catch {
+    return null;
+  }
 }

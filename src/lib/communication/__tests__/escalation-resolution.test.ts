@@ -122,6 +122,7 @@ vi.mock('../timeline', () => ({ appendTimelineEvent: (...args: unknown[]) => moc
 
 import {
   resolveEscalation,
+  resumeStayFlow,
   VALID_RESOLUTION_ACTIONS,
 } from '../escalation-resolution';
 
@@ -431,5 +432,106 @@ describe('resolveEscalation — error cases', () => {
     expect(result.ok).toBe(true);
     expect(result.resumedStatus).toBeUndefined();
     expect(updatedRows['tg_escalation_events']).toHaveLength(1);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// resumeStayFlow
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('resumeStayFlow — escalated flow (checkin past)', () => {
+  it('advances flow to in_stay and writes timeline event', async () => {
+    seedEscalatedFlow(); // checkin 2027-06-10, today 2027-06-15
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.resumedStatus).toBe('in_stay');
+    expect(result.alreadyResumed).toBeUndefined();
+
+    const sfUpdates = updatedRows['tg_stay_flows'] ?? [];
+    expect(sfUpdates).toHaveLength(1);
+    expect((sfUpdates[0].payload as Record<string, unknown>).flow_status).toBe('in_stay');
+  });
+
+  it('writes escalation_resumed timeline event', async () => {
+    seedEscalatedFlow();
+
+    await resumeStayFlow({ chatId: CHAT_ID, resumedBy: 'ops@example.com' });
+
+    expect(mockAppendTimeline).toHaveBeenCalledWith(
+      expect.stringContaining('tg_'),
+      expect.objectContaining({ type: 'escalation_resumed', action: 'resume_stay_flow' }),
+      CHAT_ID,
+    );
+  });
+});
+
+describe('resumeStayFlow — escalated flow (checkin future, message sent)', () => {
+  it('resumes to pre_checkin_sent', async () => {
+    seedEscalatedFlow({ checkin_date: '2027-06-20', pre_checkin_sent_at: '2027-06-13T09:00:00Z' });
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.resumedStatus).toBe('pre_checkin_sent');
+  });
+});
+
+describe('resumeStayFlow — escalated flow (checkin future, no message sent)', () => {
+  it('resumes to reservation_linked', async () => {
+    seedEscalatedFlow({ checkin_date: '2027-06-20', pre_checkin_sent_at: null });
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.resumedStatus).toBe('reservation_linked');
+  });
+});
+
+describe('resumeStayFlow — idempotency: flow not in escalated state', () => {
+  it('returns alreadyResumed=true when flow is in_stay, no DB writes', async () => {
+    seedEscalatedFlow({ flow_status: 'in_stay' });
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.alreadyResumed).toBe(true);
+    expect(result.currentStatus).toBe('in_stay');
+    expect(updatedRows['tg_stay_flows'] ?? []).toHaveLength(0);
+    expect(mockAppendTimeline).not.toHaveBeenCalled();
+  });
+
+  it('returns alreadyResumed=true when flow is closed', async () => {
+    seedEscalatedFlow({ flow_status: 'closed' });
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(true);
+    expect(result.alreadyResumed).toBe(true);
+    expect(result.currentStatus).toBe('closed');
+  });
+});
+
+describe('resumeStayFlow — error cases', () => {
+  it('returns error when no flow exists for chat_id', async () => {
+    // empty store
+
+    const result = await resumeStayFlow({ chatId: CHAT_ID });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no stay flow/i);
+  });
+
+  it('escalation_events are NOT touched — only the flow is advanced', async () => {
+    seedEscalation({ resolved_at: '2027-06-15T08:00:00Z' }); // resolved escalation present
+    seedEscalatedFlow();
+
+    await resumeStayFlow({ chatId: CHAT_ID });
+
+    // No writes to escalation table.
+    expect(updatedRows['tg_escalation_events'] ?? []).toHaveLength(0);
+    // Flow IS updated.
+    expect(updatedRows['tg_stay_flows']).toHaveLength(1);
   });
 });
