@@ -36,6 +36,10 @@ import { NextResponse } from 'next/server';
 import { supabase }     from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
+import { markUnitOccupied } from '@/lib/ops/unit-state';
+
+/** Reservation statuses that mean the guest is actively staying. */
+const ACTIVE_STAY_STATUSES = new Set(['in_stay', 'confirmed', 'active']);
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -189,6 +193,14 @@ export async function POST(req: Request) {
         }),
       ]);
     }
+  }
+
+  // ── Unit state: mark occupied when reservation is active ──────────────────
+  // Applies on both create and update so re-sending the same reservation
+  // with status=in_stay correctly advances the unit state.
+  const effectiveStatus = typeof status === 'string' ? status : (created ? 'confirmed' : undefined);
+  if (effectiveStatus && ACTIVE_STAY_STATUSES.has(effectiveStatus)) {
+    markUnitOccupied(property_id as string, reservationId).catch(() => {});
   }
 
   return NextResponse.json({ ok: true, reservation_id: reservationId, reservation_ref, created });

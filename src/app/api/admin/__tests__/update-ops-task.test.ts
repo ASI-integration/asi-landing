@@ -30,6 +30,14 @@ vi.mock('@/lib/communication/timeline', () => ({
   appendTimelineEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/ops/unit-state', () => ({
+  getUnitState:              vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'occupied', dirty: false, blocked_reason: null } }),
+  markUnitCheckoutDue:       vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'checkout_due' } }),
+  markUnitTurnoverNeeded:    vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'turnover_needed' } }),
+  markUnitInTurnover:        vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'in_turnover' } }),
+  markUnitReadyAfterTurnover: vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'ready', blocked_reason: null }, gate_blocked: false }),
+}));
+
 import { POST } from '../update-ops-task/route';
 
 const ADMIN_SECRET = 'test-secret';
@@ -133,6 +141,41 @@ describe('POST /api/admin/update-ops-task', () => {
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
     expect(json.turnover_created).toBe(true);
+    // unit state should advance to turnover_needed
+    expect(json.unit_state).toBe('turnover_needed');
+  });
+
+  it('advances unit state to checkout_due when checkout task goes in_progress', async () => {
+    mockUpdatedTask = {
+      id: 'task-checkout', task_type: 'checkout', task_status: 'in_progress',
+      property_id: 'prop_A', reservation_id: 'res_123', chat_id: 999,
+    };
+    const res  = await POST(makeReq({ task_id: 'task-checkout', task_status: 'in_progress' }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.unit_state).toBe('checkout_due');
+  });
+
+  it('advances unit state to in_turnover when turnover task goes in_progress', async () => {
+    mockUpdatedTask = {
+      id: 'task-turnover', task_type: 'turnover', task_status: 'in_progress',
+      property_id: 'prop_A', reservation_id: 'res_123', chat_id: 999,
+    };
+    const res  = await POST(makeReq({ task_id: 'task-turnover', task_status: 'in_progress' }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.unit_state).toBe('in_turnover');
+  });
+
+  it('advances unit state to ready when turnover task resolves and gates pass', async () => {
+    mockUpdatedTask = {
+      id: 'task-turnover', task_type: 'turnover', task_status: 'resolved',
+      property_id: 'prop_A', reservation_id: 'res_123', chat_id: 999,
+    };
+    const res  = await POST(makeReq({ task_id: 'task-turnover', task_status: 'resolved' }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.unit_state).toBe('ready');
   });
 
   it('does not auto-create turnover when non-checkout task is resolved', async () => {

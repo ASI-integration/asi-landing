@@ -15,10 +15,11 @@
  * Side-effects:
  *   - When resolving a "checkout" task → auto-creates a "turnover" task
  *     for the same reservation (idempotent via dedup_key).
+ *   - Unit state is advanced on checkout/turnover task transitions.
  *   - Timeline events are appended for every update.
  *
  * Returns:
- *   200 { ok: true, task: OpsTask, turnover_created?: boolean }
+ *   200 { ok: true, task: OpsTask, turnover_created?: boolean, unit_state?: string }
  *   400 { error: "..." }
  *   401 { error: "Unauthorized" }
  *   404 { ok: false, error: "task_not_found" }
@@ -34,6 +35,13 @@ import {
   OpsTaskPriority,
 } from '@/lib/ops/tasks';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
+import {
+  getUnitState,
+  markUnitCheckoutDue,
+  markUnitTurnoverNeeded,
+  markUnitInTurnover,
+  markUnitReadyAfterTurnover,
+} from '@/lib/ops/unit-state';
 
 const VALID_STATUSES = new Set<string>(Object.values(OpsTaskStatus));
 
@@ -86,7 +94,8 @@ export async function POST(req: Request) {
 
   // ── Timeline ──────────────────────────────────────────────────────────────
   const guestId = task.chat_id ? `tg_${task.chat_id}` : `prop_${task.property_id}`;
-  const isResolved = task_status === OpsTaskStatus.Resolved;
+  const isResolved   = task_status === OpsTaskStatus.Resolved;
+  const isInProgress = task_status === OpsTaskStatus.InProgress;
 
   appendTimelineEvent(
     guestId,
@@ -94,6 +103,86 @@ export async function POST(req: Request) {
       ? { type: 'ops_task_resolved', task_id: task.id, task_type: task.task_type, ts: new Date() }
       : { type: 'ops_task_updated', task_id: task.id, task_status: task.task_status, ts: new Date() },
   ).catch(() => {});
+
+  // ── Unit state transitions ─────────────────────────────────────────────────
+  let unit_state: string | undefined;
+
+  if (task.task_type === OpsTaskType.Checkout) {
+    if (isInProgress) {
+      // checkout task → in_progress: unit becomes checkout_due
+      const us = await markUnitCheckoutDue(task.property_id, task.reservation_id);
+      if (us.ok && us.state) {
+        unit_state = us.state.current_state;
+        const prev = await getUnitState(task.property_id);
+        const fromState = prev.state?.current_state ?? 'unknown';
+        appendTimelineEvent(`prop_${task.property_id}`, {
+          type: 'unit_state_changed',
+          property_id: task.property_id,
+          from_state: fromState,
+          to_state: us.state.current_state,
+          ts: new Date(),
+        }).catch(() => {});
+      }
+    } else if (isResolved) {
+      // checkout task resolved: unit → turnover_needed, dirty = true
+      const us = await markUnitTurnoverNeeded(task.property_id, task.reservation_id);
+      if (us.ok && us.state) {
+        unit_state = us.state.current_state;
+        appendTimelineEvent(`prop_${task.property_id}`, {
+          type: 'unit_state_changed',
+          property_id: task.property_id,
+          from_state: 'checkout_due',
+          to_state: us.state.current_state,
+          ts: new Date(),
+        }).catch(() => {});
+      }
+    }
+  }
+
+  if (task.task_type === OpsTaskType.Turnover) {
+    if (isInProgress) {
+      // turnover task → in_progress: unit → in_turnover
+      const us = await markUnitInTurnover(task.property_id, task.reservation_id);
+      if (us.ok && us.state) {
+        unit_state = us.state.current_state;
+        appendTimelineEvent(`prop_${task.property_id}`, {
+          type: 'unit_state_changed',
+          property_id: task.property_id,
+          from_state: 'turnover_needed',
+          to_state: us.state.current_state,
+          ts: new Date(),
+        }).catch(() => {});
+      }
+    } else if (isResolved) {
+      // turnover task resolved: check gates → ready or blocked
+      appendTimelineEvent(`prop_${task.property_id}`, {
+        type: 'turnover_completed',
+        property_id: task.property_id,
+        reservation_id: task.reservation_id,
+        ts: new Date(),
+      }).catch(() => {});
+
+      const us = await markUnitReadyAfterTurnover(task.property_id, task.reservation_id);
+      if (us.ok && us.state) {
+        unit_state = us.state.current_state;
+        if (us.gate_blocked) {
+          appendTimelineEvent(`prop_${task.property_id}`, {
+            type: 'unit_blocked',
+            property_id: task.property_id,
+            blocked_reason: us.state.blocked_reason ?? 'gate_failed',
+            ts: new Date(),
+          }).catch(() => {});
+        } else {
+          appendTimelineEvent(`prop_${task.property_id}`, {
+            type: 'unit_ready',
+            property_id: task.property_id,
+            reservation_id: task.reservation_id,
+            ts: new Date(),
+          }).catch(() => {});
+        }
+      }
+    }
+  }
 
   // ── Auto-create turnover when checkout is resolved ────────────────────────
   let turnover_created = false;
@@ -122,5 +211,10 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, task, ...(isResolved && task.task_type === OpsTaskType.Checkout ? { turnover_created } : {}) });
+  return NextResponse.json({
+    ok: true,
+    task,
+    ...(isResolved && task.task_type === OpsTaskType.Checkout ? { turnover_created } : {}),
+    ...(unit_state !== undefined ? { unit_state } : {}),
+  });
 }

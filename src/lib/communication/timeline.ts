@@ -11,7 +11,11 @@ export type TimelineEvent =
   | { type: 'reservation_upserted'; reservation_ref: string; created: boolean; ts: Date }
   | { type: 'ops_task_created'; task_type: string; task_id: string | null; ts: Date }
   | { type: 'ops_task_updated'; task_id: string; task_status: string; ts: Date }
-  | { type: 'ops_task_resolved'; task_id: string; task_type: string; ts: Date };
+  | { type: 'ops_task_resolved'; task_id: string; task_type: string; ts: Date }
+  | { type: 'unit_state_changed'; property_id: string; from_state: string; to_state: string; ts: Date }
+  | { type: 'unit_ready'; property_id: string; reservation_id: string | null; ts: Date }
+  | { type: 'unit_blocked'; property_id: string; blocked_reason: string; ts: Date }
+  | { type: 'turnover_completed'; property_id: string; reservation_id: string | null; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;
