@@ -84,6 +84,16 @@ describe('evaluateCheckinReadiness — blocked', () => {
     const result = await evaluateCheckinReadiness('prop_A');
     expect(result.allowed).toBe(false);
     expect(result.blocked_reason).toBe('unit_state_lookup_error');
+    expect(result.error_detail).toBe('connection timeout');
+  });
+
+  it('includes PGRST205 detail when unit_state table is missing', async () => {
+    mockSelectError = "Could not find the table 'public.unit_state' in the schema cache";
+
+    const result = await evaluateCheckinReadiness('prop_A');
+    expect(result.allowed).toBe(false);
+    expect(result.blocked_reason).toBe('unit_state_lookup_error');
+    expect(result.error_detail).toContain('unit_state');
   });
 
   it('blocks when unit is dirty', async () => {

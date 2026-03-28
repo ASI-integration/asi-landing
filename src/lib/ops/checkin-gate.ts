@@ -22,6 +22,8 @@ export interface CheckinGateResult {
   unit_state:     UnitStateValue | null;
   /** Human-readable reason for blocking (null when allowed). */
   blocked_reason: string | null;
+  /** Raw DB/network error detail when blocked_reason is unit_state_lookup_error. */
+  error_detail?:  string;
   /** ISO timestamp of evaluation. */
   checked_at:     string;
 }
@@ -87,6 +89,7 @@ export async function evaluateCheckinReadiness(
       allowed:        false,
       unit_state:     null,
       blocked_reason: 'unit_state_lookup_error',
+      error_detail:   error ?? 'unknown db error',
       checked_at:     now,
     };
   }

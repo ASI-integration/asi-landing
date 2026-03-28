@@ -109,6 +109,7 @@ export async function GET(req: Request) {
       pre_checkin_sent_at:   row.pre_checkin_sent_at,
     },
     unit_state:               unitStateResult.state ?? null,
+    unit_state_error:         unitStateResult.ok ? undefined : unitStateResult.error,
     checkin_gate:             checkinGate,
     eligible_for_auto_advance,
   });
