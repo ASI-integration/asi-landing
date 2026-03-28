@@ -19,7 +19,8 @@ export type TimelineEvent =
   | { type: 'stay_flow_readiness_blocked'; property_id: string; blocked_reason: string; reservation_id: string | null; ts: Date }
   | { type: 'stay_flow_readiness_unblocked'; property_id: string; reservation_id: string | null; ts: Date }
   | { type: 'unit_ready_unlocked'; property_id: string; reservation_id: string | null; ts: Date }
-  | { type: 'checkin_gate_passed'; property_id: string; reservation_id: string | null; ts: Date };
+  | { type: 'checkin_gate_passed'; property_id: string; reservation_id: string | null; ts: Date }
+  | { type: 'next_reservation_auto_advanced'; property_id: string; reservation_id: string; ts: Date };
 
 export interface GlobalTimeline {
   guestId: string;

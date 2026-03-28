@@ -146,6 +146,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           reservation_id: commContext.reservation.reservationId ?? null,
           ts: new Date(),
         }).catch(() => {});
+        // Seal pre_checkin_sent_at so the stay-flow runner never double-sends (best-effort)
+        if (commContext.reservation.reservationId) {
+          const resId = commContext.reservation.reservationId;
+          Promise.resolve().then(() =>
+            supabase
+              .from('tg_guest_reservations')
+              .update({ pre_checkin_sent_at: new Date().toISOString() })
+              .eq('id', resId)
+          ).catch(() => {});
+        }
       } else {
         // Unit NOT ready — send safe holding message, never check-in instructions
         const holdingEn = "We're preparing your accommodation — we'll share check-in details once everything is ready!";

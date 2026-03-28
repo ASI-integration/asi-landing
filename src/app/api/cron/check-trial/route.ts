@@ -3,6 +3,7 @@ import { checkTrialExpiration } from '@/lib/trial';
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { sweepExpiredPaymentSessions } from '@/lib/communication/session-status';
+import { runStayFlowAdvancement } from '@/lib/ops/stay-flow-runner';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -36,7 +37,12 @@ export async function GET(req: Request) {
       console.log(`[Cron] Swept ${swept} expired payment session(s)`);
     }
 
-    return NextResponse.json({ ok: true, sweptPaymentSessions: swept });
+    const stayFlow = await runStayFlowAdvancement();
+    if (stayFlow.advanced > 0 || stayFlow.re_blocked > 0 || stayFlow.failed > 0) {
+      console.log(`[Cron] Stay-flow runner: advanced=${stayFlow.advanced} skipped=${stayFlow.skipped} re_blocked=${stayFlow.re_blocked} failed=${stayFlow.failed}`);
+    }
+
+    return NextResponse.json({ ok: true, sweptPaymentSessions: swept, stayFlow });
   } catch (err) {
     console.error('[Cron check-trial]', err);
     return NextResponse.json({ error: 'Cron failed' }, { status: 500 });
