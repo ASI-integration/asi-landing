@@ -822,6 +822,272 @@ function UnitStateViewer({ fetch: adminFetch, currentPropertyId }: { fetch: Retu
   );
 }
 
+// ─── Section G — Reservation Readiness & Auto-Advance Validation ──────────────
+
+interface ReservationReadinessData {
+  id: string;
+  reservation_ref: string;
+  property_id: string;
+  chat_id: number | null;
+  check_in: string | null;
+  status: string;
+  readiness_blocked: boolean;
+  readiness_block_reason: string | null;
+  readiness_checked_at: string | null;
+  pre_checkin_sent_at: string | null;
+}
+
+interface RunnerResult {
+  advanced:   number;
+  skipped:    number;
+  re_blocked: number;
+  failed:     number;
+}
+
+function ReservationReadiness({
+  fetch: adminFetch,
+  currentPropertyId,
+}: {
+  fetch: ReturnType<typeof useAdminFetch>;
+  currentPropertyId?: string;
+}) {
+  const [propertyId, setPropertyId]         = useState('');
+  const [reservationRef, setReservationRef] = useState('');
+  const [checkLoading, setCheckLoading]     = useState(false);
+  const [runLoading, setRunLoading]         = useState(false);
+  const [readiness, setReadiness]           = useState<ReservationReadinessData | null>(null);
+  const [eligible, setEligible]             = useState<boolean | null>(null);
+  const [checkinGate, setCheckinGate]       = useState<CheckinGateData | null>(null);
+  const [unitState, setUnitState]           = useState<UnitStateData | null>(null);
+  const [checkError, setCheckError]         = useState<string | null>(null);
+  const [runResult, setRunResult]           = useState<RunnerResult | null>(null);
+  const [runError, setRunError]             = useState<string | null>(null);
+
+  const pid = propertyId || currentPropertyId || '';
+
+  const handleCheck = async () => {
+    if (!pid || !reservationRef) return;
+    setCheckLoading(true);
+    setCheckError(null);
+    setReadiness(null);
+    setEligible(null);
+    setCheckinGate(null);
+    setUnitState(null);
+    const r = await adminFetch(
+      `/api/admin/reservation-readiness?property_id=${encodeURIComponent(pid)}&reservation_ref=${encodeURIComponent(reservationRef)}`,
+    );
+    if (r.ok) {
+      setReadiness((r.reservation as ReservationReadinessData) ?? null);
+      setEligible((r.eligible_for_auto_advance as boolean) ?? false);
+      setCheckinGate((r.checkin_gate as CheckinGateData) ?? null);
+      setUnitState((r.unit_state as UnitStateData) ?? null);
+    } else {
+      setCheckError((r.error as string) ?? 'Failed to fetch');
+    }
+    setCheckLoading(false);
+  };
+
+  const handleRun = async () => {
+    setRunLoading(true);
+    setRunError(null);
+    setRunResult(null);
+    const r = await adminFetch('/api/admin/run-stay-flow', { method: 'POST' });
+    if (r.ok && r.result) {
+      setRunResult(r.result as RunnerResult);
+      // Refresh readiness after runner pass if we have context
+      if (pid && reservationRef) await handleCheck();
+    } else {
+      setRunError((r.error as string) ?? 'Runner failed');
+    }
+    setRunLoading(false);
+  };
+
+  const stateColor = (s: string) => {
+    if (s === 'ready') return 'bg-green-100 text-green-800';
+    if (s === 'blocked') return 'bg-red-100 text-red-800';
+    if (s === 'in_turnover' || s === 'turnover_needed') return 'bg-yellow-100 text-yellow-800';
+    return 'bg-gray-100 text-gray-700';
+  };
+
+  return (
+    <Section title="G. Reservation Readiness & Auto-Advance Validation">
+      {/* Inputs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="g-pid" className="block text-xs font-medium text-gray-600">
+              property_id<span className="text-red-500 ml-0.5">*</span>
+            </label>
+            {currentPropertyId && currentPropertyId !== propertyId && (
+              <button
+                type="button"
+                onClick={() => setPropertyId(currentPropertyId)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Use current ({currentPropertyId})
+              </button>
+            )}
+          </div>
+          <input
+            id="g-pid"
+            type="text"
+            value={propertyId}
+            onChange={e => setPropertyId(e.target.value)}
+            placeholder={currentPropertyId || 'prop_A'}
+            className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+          />
+        </div>
+        <Field
+          label="reservation_ref"
+          id="g-rr"
+          value={reservationRef}
+          onChange={setReservationRef}
+          placeholder="RES-001"
+          required
+        />
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <Btn type="button" loading={checkLoading} onClick={handleCheck} variant="secondary">
+          Check Readiness
+        </Btn>
+        <Btn type="button" loading={runLoading} onClick={handleRun}>
+          Trigger Runner
+        </Btn>
+      </div>
+
+      {/* Readiness check error */}
+      {checkError && (
+        <pre className="mb-4 p-3 rounded text-xs bg-red-50 border border-red-200 text-red-900">{checkError}</pre>
+      )}
+
+      {/* Readiness results */}
+      {readiness && (
+        <div className="space-y-4">
+          {/* Eligibility badge */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded border text-sm font-semibold ${
+            eligible
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+          }`}>
+            <span>{eligible ? '✓ Eligible for auto-advance' : '✗ Not eligible for auto-advance on next runner pass'}</span>
+          </div>
+
+          {/* Reservation readiness fields */}
+          <div className="border border-gray-200 rounded p-3">
+            <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Reservation</h3>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              {([
+                ['reservation_ref',       readiness.reservation_ref],
+                ['status',                readiness.status],
+                ['check_in',              readiness.check_in ?? '—'],
+                ['chat_id',               readiness.chat_id ?? '—'],
+                ['readiness_blocked',     String(readiness.readiness_blocked)],
+                ['readiness_block_reason',readiness.readiness_block_reason ?? '—'],
+                ['readiness_checked_at',  readiness.readiness_checked_at?.slice(0, 19) ?? '—'],
+                ['pre_checkin_sent_at',   readiness.pre_checkin_sent_at?.slice(0, 19) ?? '—'],
+              ] as [string, string | number][]).map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-2 col-span-2 sm:col-span-1">
+                  <dt className="text-gray-500 shrink-0">{k}</dt>
+                  <dd className={`font-mono text-right break-all ${
+                    k === 'readiness_blocked' && v === 'true' ? 'text-red-600 font-semibold' :
+                    k === 'pre_checkin_sent_at' && v !== '—'  ? 'text-green-700 font-semibold' :
+                    'text-gray-800'
+                  }`}>{String(v)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {/* Unit state + gate side by side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {unitState && (
+              <div className="border border-gray-200 rounded p-3">
+                <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Unit State</h3>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">State</span>
+                    <span className={`px-1.5 rounded font-medium ${stateColor(unitState.current_state)}`}>
+                      {unitState.current_state}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Ready for check-in</span>
+                    <span className={unitState.ready_for_checkin ? 'text-green-700 font-medium' : 'text-gray-600'}>
+                      {unitState.ready_for_checkin ? '✓ Yes' : '✗ No'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Dirty</span>
+                    <span className={unitState.dirty ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                      {unitState.dirty ? '⚠ Yes' : 'No'}
+                    </span>
+                  </div>
+                  {unitState.blocked_reason && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Blocked reason</span>
+                      <span className="text-red-700 font-mono">{unitState.blocked_reason}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {checkinGate && (
+              <div className={`border rounded p-3 ${checkinGate.allowed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Check-in Gate</h3>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Gate result</span>
+                    <span className={`px-1.5 rounded font-semibold ${checkinGate.allowed ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                      {checkinGate.allowed ? '✓ ALLOWED' : '✗ BLOCKED'}
+                    </span>
+                  </div>
+                  {checkinGate.blocked_reason && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Reason</span>
+                      <span className="text-red-700 font-mono">{checkinGate.blocked_reason}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Checked at</span>
+                    <span className="text-gray-600">{checkinGate.checked_at?.slice(0, 19) ?? '—'}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Runner result */}
+      {(runResult || runError) && (
+        <div className="mt-4">
+          <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Runner Result</h3>
+          {runError && (
+            <pre className="p-3 rounded text-xs bg-red-50 border border-red-200 text-red-900">{runError}</pre>
+          )}
+          {runResult && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {([
+                ['advanced',   runResult.advanced,   'bg-green-50 border-green-200 text-green-800'],
+                ['skipped',    runResult.skipped,    'bg-gray-50 border-gray-200 text-gray-700'],
+                ['re_blocked', runResult.re_blocked, 'bg-yellow-50 border-yellow-200 text-yellow-800'],
+                ['failed',     runResult.failed,     'bg-red-50 border-red-200 text-red-800'],
+              ] as [string, number, string][]).map(([label, val, cls]) => (
+                <div key={label} className={`border rounded p-3 text-center ${cls}`}>
+                  <div className="text-xl font-bold">{val}</div>
+                  <div className="text-xs mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 // ─── Root Page ────────────────────────────────────────────────────────────────
 
 export default function OpsConsolePage() {
@@ -887,6 +1153,7 @@ export default function OpsConsolePage() {
         <OpsTasksViewer fetch={adminFetch} />
         <FlowControls fetch={adminFetch} />
         <UnitStateViewer fetch={adminFetch} currentPropertyId={sharedPropertyId} />
+        <ReservationReadiness fetch={adminFetch} currentPropertyId={sharedPropertyId} />
       </div>
     </div>
   );
