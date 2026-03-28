@@ -5,7 +5,7 @@
  * Header: x-admin-secret: {ADMIN_SECRET}
  *
  * Returns:
- *   200 { ok: true, state: UnitState | null }
+ *   200 { ok: true, state: UnitState | null, checkin_gate: CheckinGateResult }
  *   400 { error: "property_id is required" }
  *   401 { error: "Unauthorized" }
  *   500 { ok: false, error: "..." }
@@ -13,6 +13,7 @@
 
 import { NextResponse } from 'next/server';
 import { getUnitState } from '@/lib/ops/unit-state';
+import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 
 export async function GET(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -35,5 +36,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, state: result.state });
+  // Evaluate check-in gate (cheap: reuses the unit_state we already loaded)
+  const checkinGate = await evaluateCheckinReadiness(property_id);
+
+  return NextResponse.json({ ok: true, state: result.state, checkin_gate: checkinGate });
 }
+

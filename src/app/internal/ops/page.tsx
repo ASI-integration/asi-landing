@@ -661,6 +661,167 @@ function FlowControls({ fetch }: { fetch: ReturnType<typeof useAdminFetch> }) {
   );
 }
 
+// ─── Section F — Unit State & Readiness ───────────────────────────────────────
+
+interface UnitStateData {
+  current_state: string;
+  ready_for_checkin: boolean;
+  dirty: boolean;
+  blocked_reason: string | null;
+  current_reservation_id: string | null;
+  last_turnover_completed_at: string | null;
+  updated_at: string;
+}
+
+interface CheckinGateData {
+  allowed: boolean;
+  unit_state: string | null;
+  blocked_reason: string | null;
+  checked_at: string;
+}
+
+function UnitStateViewer({ fetch: adminFetch, currentPropertyId }: { fetch: ReturnType<typeof useAdminFetch>; currentPropertyId?: string }) {
+  const [propertyId, setPropertyId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [unitState, setUnitState] = useState<UnitStateData | null>(null);
+  const [checkinGate, setCheckinGate] = useState<CheckinGateData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFetch = async () => {
+    const pid = propertyId || currentPropertyId;
+    if (!pid) return;
+    setLoading(true);
+    setError(null);
+    const r = await adminFetch(`/api/admin/unit-state?property_id=${encodeURIComponent(pid)}`);
+    if (r.ok) {
+      setUnitState((r.state as UnitStateData) ?? null);
+      setCheckinGate((r.checkin_gate as CheckinGateData) ?? null);
+    } else {
+      setError(r.error as string ?? 'Failed to fetch');
+      setUnitState(null);
+      setCheckinGate(null);
+    }
+    setLoading(false);
+  };
+
+  const stateColor = (s: string) => {
+    if (s === 'ready') return 'bg-green-100 text-green-800';
+    if (s === 'blocked') return 'bg-red-100 text-red-800';
+    if (s === 'in_turnover' || s === 'turnover_needed') return 'bg-yellow-100 text-yellow-800';
+    return 'bg-gray-100 text-gray-700';
+  };
+
+  return (
+    <Section title="F. Unit State & Readiness">
+      <div className="flex gap-2 mb-4">
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="f-pid" className="block text-xs font-medium text-gray-600">
+              property_id
+            </label>
+            {currentPropertyId && currentPropertyId !== propertyId && (
+              <button
+                type="button"
+                onClick={() => setPropertyId(currentPropertyId)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Use current ({currentPropertyId})
+              </button>
+            )}
+          </div>
+          <input
+            id="f-pid"
+            type="text"
+            value={propertyId}
+            onChange={e => setPropertyId(e.target.value)}
+            placeholder="prop_A"
+            className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+          />
+        </div>
+        <div className="flex items-end">
+          <Btn type="button" loading={loading} onClick={handleFetch}>Fetch State</Btn>
+        </div>
+      </div>
+
+      {error && (
+        <pre className="mt-2 p-3 rounded text-xs bg-red-50 border border-red-200 text-red-900">{error}</pre>
+      )}
+
+      {unitState && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+          <div className="border border-gray-200 rounded p-3">
+            <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Unit State</h3>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">State</span>
+                <span className={`px-1.5 rounded font-medium ${stateColor(unitState.current_state)}`}>
+                  {unitState.current_state}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Ready for check-in</span>
+                <span className={unitState.ready_for_checkin ? 'text-green-700 font-medium' : 'text-gray-600'}>
+                  {unitState.ready_for_checkin ? '✓ Yes' : '✗ No'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Dirty</span>
+                <span className={unitState.dirty ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                  {unitState.dirty ? '⚠ Yes' : 'No'}
+                </span>
+              </div>
+              {unitState.blocked_reason && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Blocked reason</span>
+                  <span className="text-red-700 font-mono">{unitState.blocked_reason}</span>
+                </div>
+              )}
+              {unitState.current_reservation_id && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Reservation</span>
+                  <span className="font-mono">{unitState.current_reservation_id.slice(0, 8)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Updated at</span>
+                <span className="text-gray-600">{unitState.updated_at?.slice(0, 19) ?? '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          {checkinGate && (
+            <div className={`border rounded p-3 ${checkinGate.allowed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+              <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Check-in Gate</h3>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Gate result</span>
+                  <span className={`px-1.5 rounded font-semibold ${checkinGate.allowed ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                    {checkinGate.allowed ? '✓ ALLOWED' : '✗ BLOCKED'}
+                  </span>
+                </div>
+                {checkinGate.blocked_reason && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Reason</span>
+                    <span className="text-red-700 font-mono">{checkinGate.blocked_reason}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Checked at</span>
+                  <span className="text-gray-600">{checkinGate.checked_at?.slice(0, 19) ?? '—'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!unitState && !error && !loading && (
+        <p className="text-xs text-gray-400 mt-2">Enter a property_id and click Fetch State to view unit state and check-in gate status.</p>
+      )}
+    </Section>
+  );
+}
+
 // ─── Root Page ────────────────────────────────────────────────────────────────
 
 export default function OpsConsolePage() {
@@ -725,6 +886,7 @@ export default function OpsConsolePage() {
         <PropertyTemplates fetch={adminFetch} currentPropertyId={sharedPropertyId} />
         <OpsTasksViewer fetch={adminFetch} />
         <FlowControls fetch={adminFetch} />
+        <UnitStateViewer fetch={adminFetch} currentPropertyId={sharedPropertyId} />
       </div>
     </div>
   );

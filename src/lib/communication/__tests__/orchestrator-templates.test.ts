@@ -31,6 +31,16 @@ vi.mock('../templates', () => ({
   getPropertyTemplates: async () => mockTemplates,
 }));
 
+// ─── Check-in gate mock (default: allowed — existing tests don't test the gate) ─
+vi.mock('@/lib/ops/checkin-gate', () => ({
+  evaluateCheckinReadiness: async () => ({
+    allowed: true,
+    unit_state: 'ready',
+    blocked_reason: null,
+    checked_at: new Date().toISOString(),
+  }),
+}));
+
 // ─── Standard mocks ───────────────────────────────────────────────────────────
 
 const mockReply = vi.fn().mockResolvedValue(true);

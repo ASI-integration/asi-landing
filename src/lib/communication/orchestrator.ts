@@ -48,6 +48,8 @@ import {
 } from './session-status';
 import { getPropertyTemplates } from './templates';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
+import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
+import { supabase } from '@/lib/supabase';
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
@@ -128,8 +130,67 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         : escalationBase;
       replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
     } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
-      replyText = adapter.formatResponse(templates.pre_checkin_template, commContext as unknown as Record<string, unknown>);
-      llmSucceeded = true;
+      // ── Check-in readiness gate ──────────────────────────────────────
+      const gateResult = propertyId
+        ? await evaluateCheckinReadiness(propertyId)
+        : { allowed: false, unit_state: null, blocked_reason: 'no_property_id', checked_at: new Date().toISOString() };
+
+      if (gateResult.allowed) {
+        // Unit is ready — deliver check-in instructions normally
+        replyText = adapter.formatResponse(templates.pre_checkin_template, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        // Timeline: gate passed
+        appendTimelineEvent(identity.guestId, {
+          type: 'checkin_gate_passed',
+          property_id: propertyId!,
+          reservation_id: commContext.reservation.reservationId ?? null,
+          ts: new Date(),
+        }).catch(() => {});
+      } else {
+        // Unit NOT ready — send safe holding message, never check-in instructions
+        const holdingEn = "We're preparing your accommodation — we'll share check-in details once everything is ready!";
+        const holdingRu = 'Мы готовим ваше жильё — мы отправим детали заселения, как только всё будет готово!';
+        const holdingMsg = classification.lang === 'ru' ? holdingRu : holdingEn;
+        replyText = adapter.formatResponse(holdingMsg, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true; // no LLM fallback needed — we have a deterministic safe reply
+
+        // Timeline: gate blocked
+        appendTimelineEvent(identity.guestId, {
+          type: 'stay_flow_readiness_blocked',
+          property_id: propertyId!,
+          blocked_reason: gateResult.blocked_reason ?? 'unit_not_ready',
+          reservation_id: commContext.reservation.reservationId ?? null,
+          ts: new Date(),
+        }).catch(() => {});
+
+        // Persist blocked state on reservation (best-effort)
+        if (commContext.reservation.reservationId) {
+          Promise.resolve(
+            supabase
+              .from('tg_guest_reservations')
+              .update({
+                readiness_blocked: true,
+                readiness_block_reason: gateResult.blocked_reason,
+                readiness_checked_at: gateResult.checked_at,
+              })
+              .eq('id', commContext.reservation.reservationId)
+          ).catch(() => {});
+        }
+
+        // Ops task: check-in blocked (idempotent via dedup_key)
+        createOpsTask({
+          property_id: propertyId ?? 'unknown',
+          reservation_id: commContext.reservation.reservationId ?? null,
+          chat_id: chatId,
+          task_type: OpsTaskType.CheckinReady,
+          title: `Check-in blocked: ${gateResult.blocked_reason}`,
+          description: `Guest asked for check-in info but unit is not ready. Reason: ${gateResult.blocked_reason}. Unit state: ${gateResult.unit_state ?? 'unknown'}.`,
+          priority: OpsTaskPriority.Urgent,
+          source_event: 'checkin_gate_blocked',
+          trigger_reason: gateResult.blocked_reason ?? 'unit_not_ready',
+          dedup_key: `checkin_gate_blocked:${commContext.reservation.reservationId ?? propertyId ?? 'unknown'}`,
+        }).catch(() => {});
+      }
     } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
