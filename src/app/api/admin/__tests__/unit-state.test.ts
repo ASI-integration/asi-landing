@@ -192,4 +192,37 @@ describe('POST /api/admin/update-unit-state', () => {
     expect(res.status).toBe(500);
     expect(json.ok).toBe(false);
   });
+
+  // ── bootstrap action ─────────────────────────────────────────────────────
+
+  it('bootstrap creates idle state when row is missing', async () => {
+    mockState = null;
+    mockTransitionResult.mockResolvedValue({ ok: true, state: { current_state: 'idle', dirty: false, ready_for_checkin: false, blocked_reason: null, property_id: 'prop_A' } });
+    const res  = await POST(makePostReq({ property_id: 'prop_A', action: 'bootstrap' }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.action).toBe('bootstrap');
+    expect(json.bootstrapped).toBe(true);
+    expect(json.state.current_state).toBe('idle');
+  });
+
+  it('bootstrap returns existing state without modification when row exists', async () => {
+    mockState = { id: 'us-1', property_id: 'prop_A', current_state: 'ready', dirty: false, ready_for_checkin: true };
+    const res  = await POST(makePostReq({ property_id: 'prop_A', action: 'bootstrap' }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.bootstrapped).toBe(false);
+    expect(json.state.current_state).toBe('ready');
+  });
+
+  it('bootstrap returns 500 when getUnitState fails', async () => {
+    mockGetError = 'db connection failed';
+    const res  = await POST(makePostReq({ property_id: 'prop_A', action: 'bootstrap' }));
+    const json = await res.json();
+    expect(res.status).toBe(500);
+    expect(json.ok).toBe(false);
+    expect(json.error).toBe('db connection failed');
+  });
 });

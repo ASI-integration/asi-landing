@@ -28,12 +28,13 @@ import { NextResponse } from 'next/server';
 import {
   blockUnit,
   unblockUnit,
+  getUnitState,
   transitionUnitState,
   UnitStateValue,
 } from '@/lib/ops/unit-state';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
 
-const VALID_ACTIONS = new Set(['block', 'unblock', 'mark_dirty', 'mark_ready_override']);
+const VALID_ACTIONS = new Set(['block', 'unblock', 'mark_dirty', 'mark_ready_override', 'bootstrap']);
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -70,6 +71,29 @@ export async function POST(req: Request) {
   // ── Execute action ─────────────────────────────────────────────────────────
   let stateResult: Awaited<ReturnType<typeof transitionUnitState>>;
   let isOverride = false;
+
+  // bootstrap: create idle row if missing; no-op (return existing) if present.
+  if (action === 'bootstrap') {
+    const existing = await getUnitState(property_id);
+    if (!existing.ok) {
+      return NextResponse.json({ ok: false, error: existing.error }, { status: 500 });
+    }
+    if (existing.state) {
+      return NextResponse.json({ ok: true, action, state: existing.state, bootstrapped: false });
+    }
+    stateResult = await transitionUnitState({
+      property_id,
+      new_state:         UnitStateValue.Idle,
+      dirty:             false,
+      ready_for_checkin: false,
+      blocked_reason:    null,
+      source:            'operator_bootstrap',
+    });
+    if (!stateResult.ok) {
+      return NextResponse.json({ ok: false, error: stateResult.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, action, state: stateResult.state, bootstrapped: true });
+  }
 
   if (action === 'block') {
     stateResult = await blockUnit(property_id, blocked_reason as string);
