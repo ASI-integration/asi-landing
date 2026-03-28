@@ -19,7 +19,7 @@
  *   - Timeline events are appended for every update.
  *
  * Returns:
- *   200 { ok: true, task: OpsTask, turnover_created?: boolean, unit_state?: string }
+ *   200 { ok: true, task: OpsTask, turnover_created?: boolean, unit_state?: string, reservation_unblocked?: string }
  *   400 { error: "..." }
  *   401 { error: "Unauthorized" }
  *   404 { ok: false, error: "task_not_found" }
@@ -41,6 +41,7 @@ import {
   markUnitTurnoverNeeded,
   markUnitInTurnover,
   markUnitReadyAfterTurnover,
+  unlockNextBlockedReservation,
 } from '@/lib/ops/unit-state';
 
 const VALID_STATUSES = new Set<string>(Object.values(OpsTaskStatus));
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
 
   // ── Unit state transitions ─────────────────────────────────────────────────
   let unit_state: string | undefined;
+  let reservation_unblocked: string | null = null;
 
   if (task.task_type === OpsTaskType.Checkout) {
     if (isInProgress) {
@@ -179,6 +181,32 @@ export async function POST(req: Request) {
             reservation_id: task.reservation_id,
             ts: new Date(),
           }).catch(() => {});
+
+          // ── Auto-unlock next blocked reservation ──────────────────────────
+          // Find the nearest upcoming reservation for this property blocked by
+          // readiness, clear its blocked state, and emit audit events so the
+          // next normal runner pass can proceed without manual intervention.
+          const unlock = await unlockNextBlockedReservation(task.property_id);
+          if (unlock.ok && unlock.reservation_id) {
+            reservation_unblocked = unlock.reservation_id;
+
+            appendTimelineEvent(`prop_${task.property_id}`, {
+              type: 'unit_ready_unlocked',
+              property_id: task.property_id,
+              reservation_id: unlock.reservation_id,
+              ts: new Date(),
+            }).catch(() => {});
+
+            const guestUnlockId = unlock.chat_id
+              ? `tg_${unlock.chat_id}`
+              : `prop_${task.property_id}`;
+            appendTimelineEvent(guestUnlockId, {
+              type: 'stay_flow_readiness_unblocked',
+              property_id: task.property_id,
+              reservation_id: unlock.reservation_id,
+              ts: new Date(),
+            }).catch(() => {});
+          }
         }
       }
     }
@@ -216,5 +244,6 @@ export async function POST(req: Request) {
     task,
     ...(isResolved && task.task_type === OpsTaskType.Checkout ? { turnover_created } : {}),
     ...(unit_state !== undefined ? { unit_state } : {}),
+    ...(reservation_unblocked !== null ? { reservation_unblocked } : {}),
   });
 }

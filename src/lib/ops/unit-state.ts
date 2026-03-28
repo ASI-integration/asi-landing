@@ -312,6 +312,65 @@ export async function markUnitReadyAfterTurnover(
   return { ok: result.ok, state: result.state, gate_blocked: false, error: result.error };
 }
 
+// ─── Next-reservation unlock ──────────────────────────────────────────────────
+
+/**
+ * After a unit becomes ready, find the nearest upcoming reservation for this
+ * property that is still readiness-blocked and clear its blocked state so the
+ * next normal runner pass can proceed automatically.
+ *
+ * Safety rules:
+ *   - Only affects reservations for the given property_id.
+ *   - Ignores cancelled reservations.
+ *   - Ignores check-ins older than 48 h to avoid touching historical records.
+ *   - Picks the one with the nearest upcoming check_in (ascending).
+ *   - Idempotent: if already cleared, the query returns nothing and is a no-op.
+ */
+export async function unlockNextBlockedReservation(
+  property_id: string,
+): Promise<{
+  ok:             boolean;
+  reservation_id: string | null;
+  chat_id:        string | null;
+  error?:         string;
+}> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('tg_guest_reservations')
+    .select('id, chat_id')
+    .eq('property_id', property_id)
+    .eq('readiness_blocked', true)
+    .neq('status', 'cancelled')
+    .gte('check_in', cutoff)
+    .order('check_in', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, reservation_id: null, chat_id: null, error: error.message };
+  }
+  if (!data) {
+    return { ok: true, reservation_id: null, chat_id: null };
+  }
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from('tg_guest_reservations')
+    .update({
+      readiness_blocked:      false,
+      readiness_block_reason: null,
+      readiness_checked_at:   now,
+    })
+    .eq('id', data.id);
+
+  if (updateError) {
+    return { ok: false, reservation_id: null, chat_id: null, error: updateError.message };
+  }
+
+  return { ok: true, reservation_id: data.id as string, chat_id: (data.chat_id as string | null) ?? null };
+}
+
 /** Block a unit with an explicit reason. */
 export async function blockUnit(
   property_id: string,

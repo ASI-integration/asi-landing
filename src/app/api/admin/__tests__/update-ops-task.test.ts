@@ -31,11 +31,12 @@ vi.mock('@/lib/communication/timeline', () => ({
 }));
 
 vi.mock('@/lib/ops/unit-state', () => ({
-  getUnitState:              vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'occupied', dirty: false, blocked_reason: null } }),
-  markUnitCheckoutDue:       vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'checkout_due' } }),
-  markUnitTurnoverNeeded:    vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'turnover_needed' } }),
-  markUnitInTurnover:        vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'in_turnover' } }),
-  markUnitReadyAfterTurnover: vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'ready', blocked_reason: null }, gate_blocked: false }),
+  getUnitState:                    vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'occupied', dirty: false, blocked_reason: null } }),
+  markUnitCheckoutDue:             vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'checkout_due' } }),
+  markUnitTurnoverNeeded:          vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'turnover_needed' } }),
+  markUnitInTurnover:              vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'in_turnover' } }),
+  markUnitReadyAfterTurnover:      vi.fn().mockResolvedValue({ ok: true, state: { current_state: 'ready', blocked_reason: null }, gate_blocked: false }),
+  unlockNextBlockedReservation:    vi.fn().mockResolvedValue({ ok: true, reservation_id: null, chat_id: null }),
 }));
 
 import { POST } from '../update-ops-task/route';
