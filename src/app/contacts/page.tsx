@@ -96,12 +96,12 @@ export default function ContactsPage() {
               Telegram
             </p>
             <a
-              href="https://t.me/ASI_assistant_bot"
+              href="https://t.me/ASI_core_bot"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xl font-semibold text-white hover:text-slate-300 transition-colors"
             >
-              @ASI_assistant_bot
+              @ASI_core_bot
             </a>
           </div>
           <p className="text-sm text-slate-400 leading-relaxed">
@@ -109,7 +109,7 @@ export default function ContactsPage() {
             по тарифам и передаст сложный запрос оператору.
           </p>
           <a
-            href="https://t.me/ASI_assistant_bot"
+            href="https://t.me/ASI_core_bot"
             target="_blank"
             rel="noopener noreferrer"
             className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-600 transition-colors"
