@@ -35,6 +35,7 @@
     "src/app/api/auth/session/route.ts": "36028de45feb13236bb8941d62a9c1d30d86ac8a3ec78ce369b292b9cd770514",
     "src/app/api/auth/signup/route.ts": "e803fb18b14005ad105ceea184bdfcfc28d5d4f001d39f86cc53a9120e732c86",
     "src/app/api/cron/check-trial/route.ts": "e5755c366acbce57af34b930e67167722db10fd7fbfd7074dc9103cce961274a",
+    "src/app/api/ops-demo/route.ts": "149f2358e855ec681694a9ef6300f11ec0841f5d51139064267d0f4d9876a95a",
     "src/app/api/payments/[id]/confirm/route.ts": "4fba23c789218992fa368f06ba4d69ef3deb2ae7939408a19f5b77516716cde5",
     "src/app/api/payments/create/route.ts": "7eda31afc407db994c905d8d8d68baf7838a5bdca2a057a618ccbbfe701a96ac",
     "src/app/api/payments/webhook/route.ts": "152b8ed84dba7b8c0947aa28cba001ce2b2ed54b82cc3833f62c2357cfc7904f",
@@ -56,7 +57,8 @@
     "src/app/legal/page.tsx": "958c3b1bb7f19763012389f16bfb22b62fd151c2e395eeccfe4dfb2727475312",
     "src/app/login/page.tsx": "9ea00a6147202d655f7b7705b8592f0fa22ded1a4485c325c4956af8c80d7f6b",
     "src/app/offer/page.tsx": "09904e077649ef58121867473abe6e8cc9d325d986d9b8a24ee12ee45df5ff9a",
-    "src/app/page.tsx": "07b8911597a90e91259b5142c9d763518d8966cac246347bfbd8db8028a72ee6",
+    "src/app/ops-demo/page.tsx": "65e24dfe168513fdd0d1ce3056b6762907c2782bc1cd68ed87f9c04656b86b31",
+    "src/app/page.tsx": "b1d387dafac4ad702ad6a2a2cc8ecaeeaaafc4dce1602f0d91ad87118f5da9f4",
     "src/app/payments/cancel/page.tsx": "fec486d6e36226b5fcedeb97e0eea2daba7594a527bdff7e476ff91969d32b5b",
     "src/app/payments/success/page.tsx": "2043e5ceca1ccbad91f408da01b635b6ec7e4a8501ee57bcff4db2bdd45fda19",
     "src/app/privacy/page.tsx": "351428106bcf4d16b2d7c5b793859a21d4f7607ca65d5dab08d656dabf372ab0",
@@ -74,7 +76,7 @@
     "src/components/Features.tsx": "1a5bb238d8d3374a6b67d166e1bedde393f27a541e3c75972cc164d389fa030f",
     "src/components/FinalCTA.tsx": "9d0687e4708affd6f3a2a84283eb920d72bd2b1e59406d9f91ab4d127b6b656d",
     "src/components/Footer.tsx": "9faed52e9d8dfa8b614b5d978a4dd88d7bad4488ad8e800694d2721478462f8e",
-    "src/components/Header.tsx": "2008ec3baf3068d5bd370530240375a2b57528d0582b90e3217ad90f1ca23514",
+    "src/components/Header.tsx": "73c1617fecd18a8b4dd7700cd5f6f7dfcbf83db2289671dadcd46f781e0287ae",
     "src/components/Hero.tsx": "376cd26752ce4b383d2e111bee22622afb32039ea2d546b4aae62ea9d7cde300",
     "src/components/HowItWorks.tsx": "a74be831392bb5b86b40cd7b4d33ebcf6ba8ed6d617ca5a5243aa508f8de4d15",
     "src/components/LegalFooter.tsx": "465b3348a3d06322d3bc120692b0e6b20b02cce86cabc470d4a0c7891385a559",
@@ -143,8 +145,11 @@
     "src/lib/ops/__tests__/unit-state.test.ts": "94bef8851108db5c9550f5b9ae5f8c69e704cd488b2cc3181441bce4926c4435",
     "src/lib/ops/__tests__/unlock-next-reservation.test.ts": "95a6e2354f7498130f245647a77f42c76e2af87b0cfcddcdd68da19826dd1885",
     "src/lib/ops/checkin-gate.ts": "127d4440a3e0a7a44a6cbf30d561c174f16186e1b3a36e9838e61022a36dca84",
+    "src/lib/ops/decision-engine.ts": "921e3d470d9368bde0614a55effd0c856383069ee429cda920b93f0d68d9d03f",
+    "src/lib/ops/incident-service.ts": "5e8447511f7afcd9fbb4879dfc93e75be7fd027df4b6852823cc520b0c9fdf5c",
+    "src/lib/ops/incident-test-harness.ts": "878009a40d81c69367fbb6d5d7ad5388f25d8f71fbc44e131bc558bdba0762c1",
     "src/lib/ops/mappers.ts": "b6bd9a74929e0a4ebdf836281ed642119df14ddb28eb0ee4204b5409fe5cf227",
-    "src/lib/ops/stay-flow-runner.ts": "a8c800c27dce8c1022a29d876bbe3ffe3b0fb4354e897eca0b819a88159cd270",
+    "src/lib/ops/stay-flow-runner.ts": "eec6386026c2b04c961bd22b7fafacfb884edcaf6594ddcafb39e1381f95aec3",
     "src/lib/ops/tasks.ts": "6ad5f776694c3d0d162625b8e5e473989d1ceff15dae5bf38140bd2228902ebb",
     "src/lib/ops/types.ts": "90070fbcaa54182814c8493078205859827db20c96602b7af47475df8674cff1",
     "src/lib/ops/unit-state.ts": "8a8fded19373db896e26fca759201126887b357e72fb1b27a1699d494929d812",
@@ -165,13 +170,13 @@
     "tailwind.config.js": "82350e3d8152951c147fa5231bac6bd229e2c199b1e5a60d598351e382d83c34",
     "vitest.config.ts": "a874049279b69f2f7103190f30af0711fd072489c5b0ce56ae9517e75c1b5889"
   },
-  "indexed_at_commit": "ad708cf5d6c57070f095eacc524fdd4407817a87",
-  "indexed_at_timestamp": "2026-03-28T18:12:32.219562100+00:00",
+  "indexed_at_commit": "67ae6e7437c3e8ed08593a9ba7bcb5189e460509",
+  "indexed_at_timestamp": "2026-03-29T11:57:20.952176300+00:00",
   "schema_version": 3,
   "stats": {
-    "total_edges": 379,
-    "total_files": 164,
-    "total_nodes": 372
+    "total_edges": 398,
+    "total_files": 169,
+    "total_nodes": 419
   },
   "vexp_version": "1.2.29"
 }
