@@ -59,28 +59,6 @@ function BoolBadge({ value }: { value: boolean }) {
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <tr>
-      <td style={{ padding: '4px 12px 4px 0', color: '#6b7280', fontSize: 13, whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
-        {label}
-      </td>
-      <td style={{ padding: '4px 0', fontSize: 13, fontWeight: 500, verticalAlign: 'middle' }}>
-        {children}
-      </td>
-    </tr>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  padding: '4px 7px',
-  border: '1px solid #d1d5db',
-  borderRadius: 4,
-  fontSize: 12,
-  background: '#fff',
-  cursor: 'pointer',
-};
-
 function ScenarioCard({ s }: { s: ScenarioResult }) {
   const [ov, setOv] = useState<ScenarioOverride>(defaultOverride);
 
@@ -137,7 +115,7 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
             onChange={(e) => setField('enabled', e.target.checked)}
             style={{ accentColor: '#4338ca' }}
           />
-          Override decision
+          Переопределить решение
         </label>
       </div>
 
@@ -156,9 +134,9 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
           alignItems: 'center',
           gap: 6,
         }}>
-          <span>System decision</span>
+          <span>Системное решение</span>
           <span style={{ color: '#6366f1' }}>→</span>
-          <span>Overridden</span>
+          <span>Переопределено</span>
         </div>
       )}
 
@@ -168,11 +146,11 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
           <tr>
             <th style={{ width: 130 }} />
             <th style={{ textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: 4 }}>
-              System
+              Система
             </th>
             {ov.enabled && (
               <th style={{ textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.05em', paddingBottom: 4, paddingLeft: 16 }}>
-                Override
+                Переопределение
               </th>
             )}
           </tr>
@@ -248,16 +226,16 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
           borderRadius: 6,
         }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#6d28d9', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-            Override values
+            Значения переопределения
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end' }}>
             {/* Payer */}
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 3 }}>Payer</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 3 }}>Плательщик</label>
               <select
                 value={ov.payer}
                 onChange={(e) => setField('payer', e.target.value as OverridePayer)}
-                style={inputStyle}
+                style={{ padding: '4px 7px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, background: '#fff', cursor: 'pointer' }}
               >
                 <option value="guest">guest</option>
                 <option value="owner">owner</option>
@@ -269,11 +247,11 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
 
             {/* Communication mode */}
             <div>
-              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 3 }}>Communication mode</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7c3aed', marginBottom: 3 }}>Режим коммуникации</label>
               <select
                 value={ov.communicationMode}
                 onChange={(e) => setField('communicationMode', e.target.value as OverrideComms)}
-                style={inputStyle}
+                style={{ padding: '4px 7px', border: '1px solid #d1d5db', borderRadius: 4, fontSize: 12, background: '#fff', cursor: 'pointer' }}
               >
                 <option value="silent">silent</option>
                 <option value="soft">soft</option>
@@ -317,10 +295,10 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
           borderRadius: 6,
         }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-            Override changes
+            Изменения переопределения
           </div>
           {!overrideDiff.blockCheckin && !overrideDiff.payer && !overrideDiff.comms && !overrideDiff.escalate ? (
-            <span style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No changes from system decision</span>
+            <span style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>Изменений нет</span>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
               {overrideDiff.payer && (
@@ -365,10 +343,10 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
         borderRadius: 6,
       }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
-          Effective decision
+          Итоговое решение
         </div>
         <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 500, marginBottom: 10 }}>
-          Final outcome (what system will execute)
+          Финальный результат (что выполнит система)
         </div>
         <table style={{ borderCollapse: 'collapse' }}>
           <tbody>
@@ -396,7 +374,7 @@ function ScenarioCard({ s }: { s: ScenarioResult }) {
       {s.decision_reasons.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-            Decision reasons
+            Причины решения
           </div>
           <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
             {s.decision_reasons.map((r) => (
@@ -440,10 +418,10 @@ export default function OpsDemoPage() {
   };
 
   const selectStyle: React.CSSProperties = {
-    padding: '5px 8px',
+    padding: '6px 10px',
     border: '1px solid #d1d5db',
     borderRadius: 5,
-    fontSize: 13,
+    fontSize: 14,
     background: '#fff',
     cursor: 'pointer',
   };
@@ -452,15 +430,39 @@ export default function OpsDemoPage() {
     fontSize: 12,
     color: '#6b7280',
     fontWeight: 600,
-    marginBottom: 4,
+    marginBottom: 5,
     display: 'block',
   };
 
   return (
-    <div style={{ maxWidth: 640, margin: '40px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, color: '#111827' }}>OPS Decision Engine</h1>
-      <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 24 }}>
-        Runs all incident scenarios through the decision engine and shows the output.
+    <div style={{ maxWidth: 660, margin: '40px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif' }}>
+
+      {/* Home return — large, prominent, at the very top */}
+      <div style={{ marginBottom: 28 }}>
+        <a
+          href="/"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '11px 22px',
+            background: '#111827',
+            color: '#f9fafb',
+            borderRadius: 8,
+            fontSize: 15,
+            fontWeight: 700,
+            textDecoration: 'none',
+            border: '1px solid #374151',
+            letterSpacing: '0.01em',
+          }}
+        >
+          ← ASI — На главную
+        </a>
+      </div>
+
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4, color: '#111827' }}>OPS: Движок операционных решений</h1>
+      <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 24 }}>
+        Прогоняет все сценарии инцидентов через движок решений и показывает результат.
       </p>
 
       {/* Demo context banner */}
@@ -477,9 +479,9 @@ export default function OpsDemoPage() {
         Это демонстрация того, как ASI принимает решения в реальном времени
       </div>
 
-      <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <label style={labelStyle}>Guest tier</label>
+          <label style={labelStyle}>Уровень гостя</label>
           <select value={guestTier} onChange={(e) => setGuestTier(e.target.value as GuestTier)} style={selectStyle}>
             <option value="strict">strict</option>
             <option value="trusted">trusted</option>
@@ -487,7 +489,7 @@ export default function OpsDemoPage() {
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Cost tier</label>
+          <label style={labelStyle}>Уровень стоимости</label>
           <select value={costTier} onChange={(e) => setCostTier(e.target.value as CostTier)} style={selectStyle}>
             <option value="micro">micro</option>
             <option value="minor">minor</option>
@@ -495,7 +497,7 @@ export default function OpsDemoPage() {
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Evidence confidence</label>
+          <label style={labelStyle}>Достоверность</label>
           <select value={evidenceConfidence} onChange={(e) => setEvidenceConfidence(e.target.value as EvidenceConfidence)} style={selectStyle}>
             <option value="low">low</option>
             <option value="medium">medium</option>
@@ -504,52 +506,43 @@ export default function OpsDemoPage() {
         </div>
       </div>
 
-      {/* Conversion CTA */}
-      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      {/* Run button */}
+      <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <button
+          onClick={runScenarios}
+          disabled={loading}
+          style={{
+            padding: '11px 28px',
+            background: loading ? '#9ca3af' : '#1d4ed8',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            letterSpacing: '0.01em',
+          }}
+        >
+          {loading ? 'Загрузка…' : 'Запустить сценарии'}
+        </button>
+
+        {/* Connect CTA */}
         <a
           href="/connect"
           style={{
             display: 'inline-block',
-            padding: '8px 20px',
+            padding: '11px 22px',
             background: '#16a34a',
             color: '#fff',
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 600,
+            borderRadius: 8,
+            fontSize: 15,
+            fontWeight: 700,
             textDecoration: 'none',
           }}
         >
           Подключить свои объекты
         </a>
-        <a
-          href="/"
-          style={{
-            fontSize: 13,
-            color: '#6b7280',
-            textDecoration: 'underline',
-          }}
-        >
-          Вернуться на главную
-        </a>
       </div>
-
-      <button
-        onClick={runScenarios}
-        disabled={loading}
-        style={{
-          padding: '8px 20px',
-          background: loading ? '#9ca3af' : '#1d4ed8',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 6,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: loading ? 'not-allowed' : 'pointer',
-          marginBottom: 28,
-        }}
-      >
-        {loading ? 'Running…' : 'Run scenarios'}
-      </button>
 
       {result && !result.ok && (
         <div style={{
@@ -560,7 +553,7 @@ export default function OpsDemoPage() {
           color: '#991b1b',
           fontSize: 13,
         }}>
-          Failed to load OPS demo
+          Ошибка загрузки демо
         </div>
       )}
 
@@ -568,11 +561,11 @@ export default function OpsDemoPage() {
         <div>
           {simLabel && (
             <p style={{ fontSize: 12, color: '#374151', fontWeight: 600, marginBottom: 8 }}>
-              Simulation: {simLabel}
+              Симуляция: {simLabel}
             </p>
           )}
           <p style={{ fontSize: 12, color: '#9ca3af', marginBottom: 16 }}>
-            {result.scenarios.length} scenario{result.scenarios.length !== 1 ? 's' : ''} returned
+            {result.scenarios.length} сценариев
           </p>
           {result.scenarios.map((s) => (
             <ScenarioCard key={s.scenario} s={s} />

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AutopilotInterfaceMock } from '@/components/AutopilotInterfaceMock';
 import { FaqAccordion } from '@/components/FaqAccordion';
+import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 
 /* ─── Strength cards data ──────────────────────────────────────────────────── */
 const CARDS = [
@@ -56,14 +57,25 @@ export default function Home() {
               О нас
             </a>
           </div>
-          {/* Right: Contacts + Login */}
+          {/* Right: Telegram + Contacts + Login */}
           <div className="flex items-center gap-4">
             <a
-              href="mailto:support@asi-global.ru"
+              href="https://t.me/ASI_assistant_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.17 13.595l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.978.964z" />
+              </svg>
+              Telegram
+            </a>
+            <Link
+              href="/contacts"
               className="hidden sm:block text-sm font-medium text-slate-400 hover:text-white transition-colors"
             >
               Контакты
-            </a>
+            </Link>
             <Link
               href="/login"
               className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
@@ -101,30 +113,39 @@ export default function Home() {
               платежи, бронирования и контроль задач.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row sm:flex-wrap gap-4 items-start sm:items-center">
+              {/* Primary CTA — largest, highest visual weight */}
               <Link
                 href="/connect"
-                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
+                className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-lg"
               >
-                Подключиться
+                Записаться на демо
               </Link>
+              {/* Secondary: how it works */}
               <a
                 href="#faq"
                 className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
               >
                 Как это работает
               </a>
-              <div className="flex flex-col gap-1">
-                <Link
-                  href="/ops-demo"
-                  className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
-                >
-                  Посмотреть, как система принимает решения
-                </Link>
-                <span className="text-xs text-slate-500 text-center">Интерактивный демо-режим</span>
-              </div>
+            </div>
+            {/* Tertiary: interactive demo — separate row, smaller */}
+            <div className="mt-4 flex flex-col gap-1 items-start">
+              <Link
+                href="/ops-demo"
+                className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors underline underline-offset-4 decoration-slate-700 hover:decoration-slate-400"
+              >
+                Посмотреть, как система принимает решения
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </Link>
+              <span className="text-xs text-slate-600">Интерактивный демо-режим</span>
             </div>
           </div>
         </section>
+
+        {/* ── Location intelligence demo ── */}
+        <LocationIntelligenceDemo />
 
         {/* ── Strength cards ── */}
         <section className="py-28 sm:py-32 px-4 sm:px-6">
@@ -171,6 +192,42 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── Contact strip ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-900/60 border-t border-slate-800/60">
+          <div className="max-w-5xl mx-auto">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-6 text-center">
+              Связаться с нами
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              {/* Telegram */}
+              <a
+                href="https://t.me/ASI_assistant_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-3 px-7 py-4 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-base hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[#2CA5E0] shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.17 13.595l-2.96-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.978.964z" />
+                </svg>
+                <span>@ASI_assistant_bot</span>
+              </a>
+              {/* Email */}
+              <a
+                href="mailto:support@asi-global.ru"
+                className="inline-flex items-center justify-center gap-3 px-7 py-4 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-base hover:bg-slate-800 hover:border-slate-600 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
+                </svg>
+                <span>support@asi-global.ru</span>
+              </a>
+            </div>
+            <p className="mt-5 text-center text-sm text-slate-500">
+              Отвечаем в течение рабочего дня (пн–пт, 9:00–18:00 МСК)
+            </p>
+          </div>
+        </section>
+
         {/* ── CTA ── */}
         <section className="py-28 sm:py-32 px-4 sm:px-6 text-center">
           <div className="max-w-xl mx-auto">
@@ -183,7 +240,7 @@ export default function Home() {
             </p>
             <Link
               href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-10 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:scale-[1.02]"
+              className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:scale-[1.02] text-lg"
             >
               Записаться на демо
             </Link>
