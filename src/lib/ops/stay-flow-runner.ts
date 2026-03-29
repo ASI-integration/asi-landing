@@ -184,10 +184,10 @@ async function processEligibleReservation(
   }
 
   // Seal with sent timestamp (idempotency — future passes skip this reservation)
-  const now = new Date().toISOString();
+  const sentAt = new Date().toISOString();
   await supabase
     .from('tg_guest_reservations')
-    .update({ pre_checkin_sent_at: now })
+    .update({ pre_checkin_sent_at: sentAt })
     .eq('id', row.id);
 
   // Audit event
