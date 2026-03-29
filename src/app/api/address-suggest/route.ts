@@ -38,7 +38,23 @@ export async function GET(request: NextRequest) {
       },
     );
 
-    if (!res.ok) return NextResponse.json({ suggestions: [], status: 'error' });
+    if (!res.ok) {
+      let providerBodyPreview: string | null = null;
+      try {
+        const raw = await res.text();
+        providerBodyPreview = raw.slice(0, 200);
+      } catch { /* ignore */ }
+      return NextResponse.json({
+        suggestions: [],
+        status: 'error',
+        hasKey: true,
+        providerStatus: res.status,
+        providerStatusText: res.statusText || null,
+        providerErrorKind: 'provider_http_error',
+        providerBodyPreview,
+        queryLength: q.length,
+      });
+    }
 
     const data: DaDataResponse = await res.json();
 
@@ -52,7 +68,17 @@ export async function GET(request: NextRequest) {
       suggestions,
       status: suggestions.length > 0 ? 'ok' : 'no_results',
     });
-  } catch {
-    return NextResponse.json({ suggestions: [], status: 'error' });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({
+      suggestions: [],
+      status: 'error',
+      hasKey: Boolean(process.env.DADATA_API_KEY),
+      providerStatus: null,
+      providerStatusText: null,
+      providerErrorKind: 'fetch_exception',
+      providerBodyPreview: message.slice(0, 200),
+      queryLength: q.length,
+    });
   }
 }
