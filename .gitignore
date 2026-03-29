@@ -4,3 +4,9 @@ node_modules
 .env.local
 node_modules
 .vercel
+
+.env.production.pulled
+
+.env.production.pulled
+
+.env.production*

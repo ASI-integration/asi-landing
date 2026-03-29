@@ -24,7 +24,8 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
+import { getUnitState } from '@/lib/ops/unit-state';
+import { evaluateReadinessWithOptionalIncident } from '@/lib/ops/mappers';
 import { getPropertyTemplates } from '@/lib/communication/templates';
 import { replyToTelegram } from '@/lib/telegram';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
@@ -116,9 +117,21 @@ async function processEligibleReservation(
   result: StayFlowRunnerResult,
 ): Promise<void> {
   // Re-evaluate readiness gate (state may have changed between unlock and this pass)
-  const gate = await evaluateCheckinReadiness(row.property_id);
+  const now = new Date().toISOString();
+  const cleanerInput = undefined;
 
-  if (!gate.allowed) {
+  const { ok: unitOk, state: unitState } = await getUnitState(row.property_id);
+  const evalResult = unitOk && unitState
+    ? evaluateReadinessWithOptionalIncident({ current: unitState, cleanerInput })
+    : null;
+
+  const gate = {
+    canProceed:     evalResult?.canProceed ?? false,
+    blocked_reason: unitState?.blocked_reason ?? (unitOk ? 'unit_not_ready' : 'unit_state_lookup_error'),
+    checked_at:     now,
+  };
+
+  if (!gate.canProceed) {
     // Gate failed — re-block so the system stays consistent
     await supabase
       .from('tg_guest_reservations')

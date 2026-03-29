@@ -1,0 +1,10 @@
+{
+  "update_id": 888888888,
+  "message": {
+    "message_id": 1,
+    "from": {"id": 12345, "is_bot": false, "first_name": "TestUser"},
+    "chat": {"id": -1003660481294, "type": "supergroup"},
+    "date": 1711111111,
+    "text": "Hello, I wanted to ask if you have any open positions or trial access."
+  }
+}

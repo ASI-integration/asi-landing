@@ -44,21 +44,31 @@ export default function Home() {
       {/* ── Header ── */}
       <header className="sticky top-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/60">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="text-2xl font-bold text-white tracking-tight">
-            ASI
-          </Link>
-          <div className="flex items-center gap-3">
+          {/* Left: brand + Who we are */}
+          <div className="flex items-center gap-6">
+            <Link href="/" className="text-2xl font-bold text-white tracking-tight">
+              ASI
+            </Link>
+            <a
+              href="#faq"
+              className="hidden sm:block text-sm font-medium text-slate-400 hover:text-white transition-colors"
+            >
+              О нас
+            </a>
+          </div>
+          {/* Right: Contacts + Login */}
+          <div className="flex items-center gap-4">
+            <a
+              href="mailto:support@asi-global.ru"
+              className="hidden sm:block text-sm font-medium text-slate-400 hover:text-white transition-colors"
+            >
+              Контакты
+            </a>
             <Link
               href="/login"
-              className="text-sm font-medium text-slate-400 hover:text-white transition-colors"
-            >
-              Войти
-            </Link>
-            <Link
-              href="/connect"
               className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
             >
-              Подключиться
+              Войти
             </Link>
           </div>
         </div>
@@ -87,22 +97,31 @@ export default function Home() {
               <span className="text-slate-400">на полном автопилоте.</span>
             </h1>
             <p className="mt-8 text-lg sm:text-xl text-slate-400 max-w-xl leading-relaxed">
-              Среди прочего, заменяем ваш операционный персонал одной нашей системой.
-              Автоматизируем весь процесс краткосрочной аренды целиком.
+              Один продукт вместо операционной команды — коммуникация с гостями,
+              платежи, бронирования и контроль задач.
             </p>
-            <div className="mt-10 flex flex-col sm:flex-row gap-4">
-              <a
-                href="#faq"
-                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
-              >
-                Как это работает
-              </a>
+            <div className="mt-10 flex flex-col sm:flex-row sm:flex-wrap gap-4 items-start sm:items-center">
               <Link
                 href="/connect"
-                className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
+                className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
               >
                 Подключиться
               </Link>
+              <a
+                href="#faq"
+                className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
+              >
+                Как это работает
+              </a>
+              <div className="flex flex-col gap-1">
+                <Link
+                  href="/ops-demo"
+                  className="inline-flex items-center justify-center px-8 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/8 hover:border-slate-500 transition-all text-base"
+                >
+                  Посмотреть, как система принимает решения
+                </Link>
+                <span className="text-xs text-slate-500 text-center">Интерактивный демо-режим</span>
+              </div>
             </div>
           </div>
         </section>

@@ -15,6 +15,9 @@
   },
   "nav": {
     "tagline": "Property Automation Platform",
+    "whoWeAre": "Who we are",
+    "contacts": "Contacts",
+    "login": "Log in",
     "howItWorks": "How it works",
     "features": "Capabilities",
     "useCases": "Use cases",
@@ -28,7 +31,7 @@
   },
   "hero": {
     "headline": "Intelligent guest communication for short-term rentals.",
-    "subheadline": "ASI handles guest messages from intent detection to resolution — reservation-aware, multilingual, with payments and operator escalation built in.",
+    "subheadline": "Guest messages, payments, and escalations — handled automatically.",
     "ctaSecondary": "See how it works",
     "emailPlaceholder": "Enter your email",
     "getStarted": "Get started",

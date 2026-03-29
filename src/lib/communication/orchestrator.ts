@@ -71,6 +71,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
 
   try {
+    // Keyword-based incident detection — runs before LLM
+    const INCIDENT_KEYWORDS = ['trash', 'dirty', 'party', 'damage'];
+    if (INCIDENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw))) {
+      updateContext(chatId, { incident: true, incident_type: 'property_issue', severity: 'high' });
+    }
+
     const classification = await classifyMessage(text);
     auditInbound({
       chat_id: chatId,
@@ -98,7 +104,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     let escalation = undefined;
     const adapter = getChannelAdapter(envelope.channel);
 
-    if (!safety.safe && safety.action === 'escalate_to_operator') {
+    if (ctx.incident) {
+      const incidentMsg =
+        'Thank you for letting us know.\n\n' +
+        'We are reviewing the situation.\n' +
+        'Our team will assess the apartment condition.\n\n' +
+        'Additional cleaning or damage charges may apply if necessary.\n\n' +
+        'We will get back to you shortly.';
+      replyText = adapter.formatResponse(incidentMsg, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      updateContext(chatId, { escalation_candidate: true });
+    } else if (!safety.safe && safety.action === 'escalate_to_operator') {
       const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
       escalation = createEscalationEvent({
         reason: safety.escalationReason || EscalationReason.RequiresOperator,

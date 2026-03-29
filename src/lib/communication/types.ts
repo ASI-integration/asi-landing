@@ -36,6 +36,10 @@ export interface ConversationContext {
   guestName?: string;
   reservationId?: string;
   lastMessageAt: Date;
+  incident?: boolean;
+  incident_type?: string;
+  severity?: string;
+  escalation_candidate?: boolean;
 }
 
 // ─── Payment Stub ─────────────────────────────────────────────────────────────
