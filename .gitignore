@@ -5,3 +5,4 @@ node_modules
 node_modules
 .vercel
 .claude/settings.local.json
+.env.production.pulled
