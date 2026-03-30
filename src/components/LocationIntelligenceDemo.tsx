@@ -699,6 +699,17 @@ function ResultCard({
             </div>
           </div>
         ))}
+        {/* Сигнал по цене — not yet connected to live data */}
+        <div className="opacity-35 pointer-events-none select-none">
+          <div className="flex justify-between mb-1">
+            <div>
+              <span className="text-xs text-slate-400">Сигнал по цене</span>
+              <span className="block text-[10px] text-slate-600 leading-tight mt-0.5">динамика рыночных ставок</span>
+            </div>
+            <span className="text-[10px] text-slate-600 self-start ml-3 shrink-0 italic">нет данных</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-slate-800/80 mt-1.5" />
+        </div>
       </div>
 
       {audienceScores.length > 0 && (
@@ -914,53 +925,51 @@ export function LocationIntelligenceDemo() {
           </div>
         </div>
 
+        {/* 2GIS / ASI slogan */}
+        <div className="mb-10 pl-1">
+          <p className="text-xl sm:text-2xl font-semibold leading-snug">
+            <span className="text-slate-200">2GIS показывает, что есть вокруг.</span>
+          </p>
+          <p className="text-xl sm:text-2xl font-semibold leading-snug mt-0.5">
+            <span className="text-indigo-400">ASI показывает, что это значит для вашего объекта.</span>
+          </p>
+        </div>
+
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
 
-          {/* ── left: form ── */}
-          <div>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <AddressInput
-                key={inputKey}
-                onSelect={addr => { setSelected(addr); setValidationErr(false); }}
-                onClear={() => { setSelected(null); }}
-                disabled={phase === 'loading'}
-              />
+          {phase === 'result' ? (<>
 
-              {validationErr && (
-                <p className="text-sm text-rose-400 px-1" role="alert">
-                  Выберите точный адрес из списка
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={phase === 'loading'}
-                className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99]"
-              >
-                {phase === 'loading' ? 'Идёт анализ...' : 'Рассчитать локацию'}
-              </button>
-            </form>
-
-            {phase === 'result' && (
+            {/* ── result left: real external data / map ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Внешние данные</span>
+                <span className="text-[10px] text-slate-700">· OpenStreetMap</span>
+              </div>
+              <RealMapPanel lat={selected!.lat} lon={selected!.lon} />
+              <div className="mt-3">
+                <p className="text-[11px] text-slate-500 mb-2 truncate">{selected?.value}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['Точка объекта', 'Транспортная сеть', 'Объекты вокруг', 'Расстояния'].map(tag => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-800">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
               <button
                 onClick={reset}
-                className="mt-4 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
+                className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
               >
                 Проверить другой адрес
               </button>
-            )}
+            </div>
 
-            {phase === 'idle' && (
-              <p className="mt-5 text-xs text-slate-600">
-                Демо-режим — результаты носят иллюстративный характер
-              </p>
-            )}
-          </div>
-
-          {/* ── right: map / result ── */}
-          <div>
-            {phase === 'result' ? (
-              band !== null && score !== null && (
+            {/* ── result right: ASI interpretation ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-400">ASI · Интерпретация</span>
+              </div>
+              {band !== null && score !== null && (
                 <ResultCard
                   address={selected?.value ?? ''}
                   score={score}
@@ -968,33 +977,73 @@ export function LocationIntelligenceDemo() {
                   metrics={metrics}
                   audienceScores={audienceScores}
                 />
-              )
-            ) : selected ? (
-              /* Real map panel — shown as soon as an address is selected.
-                 Loading overlay appears on top during analysis. */
-              <div className="relative">
-                <RealMapPanel lat={selected.lat} lon={selected.lon} />
-                {phase === 'loading' && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
-                    <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-5" />
-                    <p className="text-white font-semibold text-base">{LOADING_STEPS[step]}</p>
-                    <p className="mt-1.5 text-xs text-slate-500">по живым пространственным данным</p>
-                    <div className="flex gap-2 mt-5">
-                      {LOADING_STEPS.map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${i <= step ? 'bg-indigo-400' : 'bg-slate-700'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
+              )}
+            </div>
+
+          </>) : (<>
+
+            {/* ── left: form ── */}
+            <div>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                <AddressInput
+                  key={inputKey}
+                  onSelect={addr => { setSelected(addr); setValidationErr(false); }}
+                  onClear={() => { setSelected(null); }}
+                  disabled={phase === 'loading'}
+                />
+
+                {validationErr && (
+                  <p className="text-sm text-rose-400 px-1" role="alert">
+                    Выберите точный адрес из списка
+                  </p>
                 )}
-              </div>
-            ) : (
-              /* Decorative idle panel — shown before any address is selected */
-              <IdleMapPanel />
-            )}
-          </div>
+
+                <button
+                  type="submit"
+                  disabled={phase === 'loading'}
+                  className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  {phase === 'loading' ? 'Идёт анализ...' : 'Рассчитать локацию'}
+                </button>
+              </form>
+
+              {phase === 'idle' && (
+                <p className="mt-5 text-xs text-slate-600">
+                  Демо-режим — результаты носят иллюстративный характер
+                </p>
+              )}
+            </div>
+
+            {/* ── right: map ── */}
+            <div>
+              {selected ? (
+                /* Real map panel — shown as soon as an address is selected.
+                   Loading overlay appears on top during analysis. */
+                <div className="relative">
+                  <RealMapPanel lat={selected.lat} lon={selected.lon} />
+                  {phase === 'loading' && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
+                      <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-5" />
+                      <p className="text-white font-semibold text-base">{LOADING_STEPS[step]}</p>
+                      <p className="mt-1.5 text-xs text-slate-500">по живым пространственным данным</p>
+                      <div className="flex gap-2 mt-5">
+                        {LOADING_STEPS.map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${i <= step ? 'bg-indigo-400' : 'bg-slate-700'}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Decorative idle panel — shown before any address is selected */
+                <IdleMapPanel />
+              )}
+            </div>
+
+          </>)}
 
         </div>
 
