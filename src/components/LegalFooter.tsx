@@ -23,7 +23,7 @@ export function LegalFooter() {
               </Link>
             </div>
           </div>
-          <div>
+          <div className="space-y-1">
             <p>
               Email:{' '}
               <a
@@ -31,6 +31,17 @@ export function LegalFooter() {
                 className="hover:text-slate-300 transition-colors"
               >
                 support@asi-global.ru
+              </a>
+            </p>
+            <p>
+              Telegram:{' '}
+              <a
+                href="https://t.me/ASI_core_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-slate-300 transition-colors"
+              >
+                @ASI_core_bot
               </a>
             </p>
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { AsiCat } from './AsiCat';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -53,6 +54,50 @@ function deriveMetrics(score: number, h: number): Metric[] {
     const delta = (s % 25) - 12;
     return { label, value: Math.max(22, Math.min(97, score + delta)) };
   });
+}
+
+interface AudienceScore { label: string; value: number }
+
+const FACTOR_SUBLABELS: Record<string, string> = {
+  'Транспортная доступность': 'насколько удобно добираться',
+  'Плотность спроса': 'насколько активен спрос вокруг точки',
+  'Конкурентная активность': 'насколько насыщено окружение похожими объектами',
+  'Соответствие аудитории': 'насколько локация подходит под целевой сегмент',
+  'Притяжение района': 'насколько сам район создаёт поток',
+};
+
+function deriveAudienceScores(score: number, metrics: Metric[], h: number): AudienceScore[] {
+  const transport   = metrics[0]?.value ?? score;
+  const demand      = metrics[1]?.value ?? score;
+  const competition = metrics[2]?.value ?? score;
+  const audience    = metrics[3]?.value ?? score;
+  const district    = metrics[4]?.value ?? score;
+
+  let s = lcg(h ^ 0x5a3c);
+  const n1 = (s % 11) - 5; s = lcg(s);
+  const n2 = (s % 11) - 5; s = lcg(s);
+  const n3 = (s % 11) - 5; s = lcg(s);
+  const n4 = (s % 11) - 5;
+
+  const cl = (v: number) => Math.max(18, Math.min(97, Math.round(v)));
+
+  return [
+    { label: 'Командированные / B2B', value: cl(transport * 0.45 + audience * 0.35 + score * 0.20 + n1) },
+    { label: 'Бизнес-поездки',        value: cl(transport * 0.40 + demand * 0.30 + score * 0.20 + audience * 0.10 + n2) },
+    { label: 'Туристы',               value: cl(district * 0.45 + demand * 0.25 + (100 - competition) * 0.15 + score * 0.15 + n3) },
+    { label: 'Семьи',                 value: cl(district * 0.40 + (100 - competition) * 0.25 + (100 - transport) * 0.10 + score * 0.15 + demand * 0.10 + n4) },
+  ];
+}
+
+function getTopAudienceHint(audienceScores: AudienceScore[]): string {
+  if (!audienceScores.length) return '';
+  const sorted = [...audienceScores].sort((a, b) => b.value - a.value);
+  const top = sorted[0];
+  const second = sorted[1];
+  if (second && second.value >= top.value - 8) {
+    return `Сильнее всего: ${top.label} и ${second.label}`;
+  }
+  return `Сильнее всего: ${top.label}`;
 }
 
 type Band = {
@@ -182,15 +227,30 @@ const BLOBS = [
   { top: 62, left: 78, size: 75,  op: 0.16 },
 ];
 
-const SIGNAL_DOTS = [
-  { top: 28, left: 24 },
-  { top: 18, left: 70 },
-  { top: 52, left: 60 },
+// Pool of 16 possible dot positions — randomly cycle to avoid repetition
+const DOT_POOL = [
+  { top: 14, left: 12 }, { top: 11, left: 35 }, { top: 18, left: 58 }, { top: 12, left: 80 },
+  { top: 34, left: 22 }, { top: 40, left: 48 }, { top: 37, left: 72 }, { top: 31, left: 90 },
+  { top: 58, left: 15 }, { top: 62, left: 40 }, { top: 55, left: 65 }, { top: 61, left: 85 },
+  { top: 80, left: 28 }, { top: 76, left: 52 }, { top: 83, left: 74 }, { top: 78, left: 92 },
 ];
 
 // ── IdleMapPanel — shown before any address is selected ───────────────────────
 
 function IdleMapPanel() {
+  const [activeDots, setActiveDots] = useState<number[]>([]);
+
+  useEffect(() => {
+    function pick() {
+      const count = 2 + Math.floor(Math.random() * 3); // 2–4 dots
+      const shuffled = [...DOT_POOL.keys()].sort(() => Math.random() - 0.5);
+      setActiveDots(shuffled.slice(0, count));
+    }
+    pick();
+    const id = setInterval(pick, 1600);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <div
       className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
@@ -222,21 +282,56 @@ function IdleMapPanel() {
           />
         ))}
       </div>
-      {SIGNAL_DOTS.map((d, i) => (
-        <span
-          key={i}
-          className="absolute rounded-full bg-indigo-400 animate-ping pointer-events-none"
-          style={{
-            top: `${d.top}%`, left: `${d.left}%`,
-            width: 6, height: 6,
-            transform: 'translate(-50%, -50%)',
-            opacity: 0.35,
-            animationDuration: `${1.4 + i * 0.35}s`,
-          }}
-        />
-      ))}
-      <div className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-between">
-        <p className="text-xs text-slate-700">Выберите адрес для анализа</p>
+      {/* Dots at random positions from pool */}
+      {DOT_POOL.map((d, i) => {
+        const isActive = activeDots.includes(i);
+        return (
+          <span
+            key={i}
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              top: `${d.top}%`, left: `${d.left}%`,
+              width: isActive ? 7 : 4,
+              height: isActive ? 7 : 4,
+              transform: 'translate(-50%, -50%)',
+              background: isActive ? '#818cf8' : '#1e293b',
+              boxShadow: isActive ? '0 0 10px 4px rgba(99,102,241,0.35)' : 'none',
+              opacity: isActive ? 0.9 : 0.25,
+              transition: 'all 0.5s ease',
+            }}
+          />
+        );
+      })}
+      {/* Pulse rings on active dots */}
+      {activeDots.map((idx) => {
+        const d = DOT_POOL[idx];
+        return (
+          <span
+            key={`ring-${idx}`}
+            className="absolute rounded-full pointer-events-none animate-ping"
+            style={{
+              top: `${d.top}%`, left: `${d.left}%`,
+              width: 12, height: 12,
+              transform: 'translate(-50%, -50%)',
+              border: '1px solid rgba(99,102,241,0.5)',
+              animationDuration: `${1.2 + (idx % 5) * 0.3}s`,
+              opacity: 0.4,
+            }}
+          />
+        );
+      })}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="text-center px-6">
+          <div className="w-11 h-11 rounded-full border border-slate-700/60 bg-slate-900/70 flex items-center justify-center mx-auto mb-3">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M9 1.5C6.1 1.5 3.75 3.85 3.75 6.75c0 4.22 5.25 9.75 5.25 9.75s5.25-5.53 5.25-9.75C14.25 3.85 11.9 1.5 9 1.5zm0 7a2.25 2.25 0 110-4.5 2.25 2.25 0 010 4.5z" fill="rgba(99,102,241,0.45)"/>
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-slate-500">Введите адрес объекта</p>
+          <p className="mt-1.5 text-xs text-slate-700 leading-snug">Анализ начнётся после выбора<br/>точного адреса из списка</p>
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-end">
         <p className="text-xs text-slate-800 font-mono">ASI · spatial engine</p>
       </div>
     </div>
@@ -385,6 +480,14 @@ function AddressInput({
 
   return (
     <div ref={wrapRef} className="relative">
+      {locked && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+            <path d="M1.5 5.5L4.5 8.5L9.5 2.5" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-[0.18em]">Точный адрес выбран</span>
+        </div>
+      )}
       <div className="relative">
         <input
           type="text"
@@ -398,24 +501,34 @@ function AddressInput({
           aria-autocomplete="list"
           aria-expanded={open}
           aria-haspopup="listbox"
-          className={`w-full px-5 py-4 rounded-xl bg-slate-800/80 border text-base focus:outline-none focus:ring-2 transition-all disabled:opacity-50 ${
+          className={`w-full py-4 rounded-xl bg-slate-800/80 border text-base focus:outline-none focus:ring-2 transition-all disabled:opacity-50 ${
             locked
-              ? 'border-emerald-700/60 focus:ring-emerald-500/20 pr-12 text-emerald-300 cursor-default'
-              : 'border-slate-700 text-white placeholder-slate-500 focus:ring-white/15 focus:border-slate-600 pr-10'
+              ? 'border-emerald-700/60 focus:ring-emerald-500/20 pl-10 pr-12 text-emerald-300 cursor-default'
+              : 'border-slate-700 text-white placeholder-slate-500 focus:ring-white/15 focus:border-slate-600 px-5 pr-10'
           }`}
         />
+
+        {/* Check icon inside locked input */}
+        {locked && (
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+              <circle cx="7.5" cy="7.5" r="7" stroke="#34d399" strokeOpacity="0.35"/>
+              <path d="M4.5 7.5L6.5 9.5L10.5 5.5" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        )}
 
         {/* Clear button — only when locked and not disabled */}
         {locked && !disabled && (
           <button
             type="button"
             onClick={clear}
-            aria-label="Сменить адрес"
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition-all"
+            aria-label="Изменить адрес"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-all"
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="1" y1="1" x2="9" y2="9" />
-              <line x1="9" y1="1" x2="1" y2="9" />
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="1" y1="1" x2="8" y2="8" />
+              <line x1="8" y1="1" x2="1" y2="8" />
             </svg>
           </button>
         )}
@@ -471,24 +584,34 @@ function AddressInput({
 // ── ResultCard ────────────────────────────────────────────────────────────────
 
 function ResultCard({
-  address, score, band, metrics,
+  address, score, band, metrics, audienceScores,
 }: {
   address: string;
   score: number;
   band: Band;
   metrics: Metric[];
+  audienceScores: AudienceScore[];
 }) {
   const [animated, setAnimated] = useState(false);
+  const [entryVisible, setEntryVisible] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setAnimated(true), 80);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => setEntryVisible(true), 30);
+    const t2 = setTimeout(() => setAnimated(true), 100);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   const dashFill = animated ? (score / 100) * RING_C : 0;
 
   return (
-    <div className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}>
+    <div
+      className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
+      style={{
+        opacity: entryVisible ? 1 : 0,
+        transform: entryVisible ? 'translateY(0)' : 'translateY(10px)',
+        transition: 'opacity 0.45s ease, transform 0.45s ease',
+      }}
+    >
       <div className="p-5 sm:p-6 flex items-center gap-5 border-b border-slate-800/60">
         <svg
           width="116" height="116" viewBox="0 0 116 116"
@@ -527,22 +650,43 @@ function ResultCard({
         </svg>
 
         <div className="min-w-0">
-          <p className={`text-xl sm:text-2xl font-bold ${band.textColor}`}>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-2">Итог анализа</p>
+          <p className={`text-xl sm:text-2xl font-bold leading-tight ${band.textColor}`}>
             {band.label}
           </p>
-          <p className="mt-1.5 text-sm text-slate-400 leading-snug">{band.desc}</p>
-          <p className="mt-2.5 text-xs text-slate-600 truncate">{address}</p>
+          <p className="mt-2 text-sm text-slate-400 leading-snug">{band.desc}</p>
+          {audienceScores.length > 0 && (
+            <p className="mt-1.5 text-[10px] text-slate-500 leading-snug">
+              {getTopAudienceHint(audienceScores)}
+            </p>
+          )}
+          <p
+            className="mt-3 text-xs text-slate-500 leading-snug"
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+          >
+            {address}
+          </p>
         </div>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="px-5 pt-4 pb-0">
+        <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em]">Факторы локации</p>
+      </div>
+      <div className="px-5 pb-5 pt-3.5 space-y-3.5">
         {metrics.map(m => (
           <div key={m.label}>
-            <div className="flex justify-between mb-1.5">
-              <span className="text-xs text-slate-400">{m.label}</span>
-              <span className="text-xs font-semibold text-slate-300">{m.value}</span>
+            <div className="flex justify-between mb-1">
+              <div>
+                <span className="text-xs text-slate-400">{m.label}</span>
+                {FACTOR_SUBLABELS[m.label] && (
+                  <span className="block text-[10px] text-slate-600 leading-tight mt-0.5">
+                    {FACTOR_SUBLABELS[m.label]}
+                  </span>
+                )}
+              </div>
+              <span className="text-xs font-semibold text-slate-300 self-start ml-3 shrink-0">{m.value}</span>
             </div>
-            <div className="h-1.5 rounded-full bg-slate-800/80">
+            <div className="h-1.5 rounded-full bg-slate-800/80 mt-1.5">
               <div
                 className={`h-full rounded-full ${band.bar}`}
                 style={{
@@ -556,6 +700,35 @@ function ResultCard({
           </div>
         ))}
       </div>
+
+      {audienceScores.length > 0 && (
+        <>
+          <div className="px-5 pt-3 pb-0 border-t border-slate-800/60">
+            <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em]">Подходит для аудиторий</p>
+          </div>
+          <div className="px-5 pb-5 pt-3.5 space-y-3">
+            {audienceScores.map(a => (
+              <div key={a.label}>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-xs text-slate-400">{a.label}</span>
+                  <span className="text-xs font-semibold text-slate-300">{a.value}</span>
+                </div>
+                <div className="h-1 rounded-full bg-slate-800/80">
+                  <div
+                    className={`h-full rounded-full ${band.bar} opacity-70`}
+                    style={{
+                      width: animated ? `${a.value}%` : '0%',
+                      transition: animated
+                        ? 'width 1.05s cubic-bezier(0.4,0,0.2,1)'
+                        : 'none',
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -606,14 +779,15 @@ function InsightPanel({ score, metrics }: { score: number; metrics: Metric[] }) 
   ];
 
   return (
-    <div className="mt-12">
+    <div className="mt-14 pt-10 border-t border-slate-800/60">
+      <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.22em] mb-7">Детальный анализ</p>
       <div className="grid sm:grid-cols-3 gap-5">
         {blocks.map(block => (
           <div
             key={block.title}
             className="rounded-xl border border-slate-800 bg-slate-900/40 p-5"
           >
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-4 leading-tight">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em] mb-4 leading-tight">
               {block.title}
             </p>
             <ul className="space-y-2.5">
@@ -631,7 +805,7 @@ function InsightPanel({ score, metrics }: { score: number; metrics: Metric[] }) 
       {/* Honest location limitations layer */}
       <div className="mt-5 grid sm:grid-cols-2 gap-5">
         <div className={`rounded-xl border ${band.border} bg-slate-900/60 p-5`}>
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-4 leading-tight">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em] mb-4 leading-tight">
             Что важно понимать
           </p>
           <ul className="space-y-2.5">
@@ -645,7 +819,7 @@ function InsightPanel({ score, metrics }: { score: number; metrics: Metric[] }) 
         </div>
 
         <div className={`rounded-xl border ${band.border} bg-slate-900/60 p-5 flex flex-col`}>
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.18em] mb-4 leading-tight">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.18em] mb-4 leading-tight">
             Стратегический вывод
           </p>
           <p className={`text-sm font-medium leading-snug ${band.textColor}`}>
@@ -672,6 +846,7 @@ export function LocationIntelligenceDemo() {
   const [step, setStep] = useState(0);
   const [score, setScore] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [audienceScores, setAudienceScores] = useState<AudienceScore[]>([]);
   const [validationErr, setValidationErr] = useState(false);
   // Incrementing this key remounts AddressInput, resetting its internal state
   const [inputKey, setInputKey] = useState(0);
@@ -692,6 +867,7 @@ export function LocationIntelligenceDemo() {
     setPhase('idle');
     setScore(null);
     setMetrics([]);
+    setAudienceScores([]);
     setValidationErr(false);
     setInputKey(k => k + 1);
   }
@@ -706,8 +882,10 @@ export function LocationIntelligenceDemo() {
       } else {
         const h = simpleHash(selected.value.trim().toLowerCase());
         const s = scoreAddress(selected.value);
+        const m = deriveMetrics(s, h);
         setScore(s);
-        setMetrics(deriveMetrics(s, h));
+        setMetrics(m);
+        setAudienceScores(deriveAudienceScores(s, m, h));
         setPhase('result');
       }
     }, isLast ? 700 : 600);
@@ -717,32 +895,30 @@ export function LocationIntelligenceDemo() {
   const band = score !== null ? getBand(score) : null;
 
   return (
-    <section className="py-28 sm:py-36 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
+    <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
       <div className="max-w-5xl mx-auto">
 
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-5">
-          Локационная аналитика
-        </p>
+        {/* Section header with mascot */}
+        <div className="flex items-start gap-5 mb-10">
+          <AsiCat mode="location" size={72} className="shrink-0 mt-1" />
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
+              Демо 1 из 2
+            </p>
+            <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
+              Система понимает потенциал вашего объекта
+            </h2>
+            <p className="mt-2 text-slate-400 max-w-lg">
+              Введите адрес — и посмотрите, как ASI оценивает локацию: силу точки, окружение, спрос.
+            </p>
+          </div>
+        </div>
 
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
 
-          {/* ── left: copy + form ── */}
+          {/* ── left: form ── */}
           <div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-tight">
-              Проверьте потенциал локации вашего объекта
-            </h2>
-            <p className="mt-4 text-base font-medium text-slate-200 leading-snug">
-              Не разовый PDF по адресу, а живая локационная аналитика для реальных решений.
-            </p>
-            <p className="mt-4 text-base text-slate-400 leading-relaxed">
-              Введите адрес, и мы покажем, как система оценивает локацию в реальном
-              времени: силу точки, окружение и потенциал спроса.
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              По живым пространственным сигналам — точнее, чем статичные отчёты.
-            </p>
-
-            <form onSubmit={handleSubmit} className="mt-10 flex flex-col gap-3">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
               <AddressInput
                 key={inputKey}
                 onSelect={addr => { setSelected(addr); setValidationErr(false); }}
@@ -768,7 +944,7 @@ export function LocationIntelligenceDemo() {
             {phase === 'result' && (
               <button
                 onClick={reset}
-                className="mt-5 text-sm text-slate-500 hover:text-slate-300 transition-colors underline underline-offset-4"
+                className="mt-4 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
               >
                 Проверить другой адрес
               </button>
@@ -790,6 +966,7 @@ export function LocationIntelligenceDemo() {
                   score={score}
                   band={band}
                   metrics={metrics}
+                  audienceScores={audienceScores}
                 />
               )
             ) : selected ? (
@@ -798,10 +975,18 @@ export function LocationIntelligenceDemo() {
               <div className="relative">
                 <RealMapPanel lat={selected.lat} lon={selected.lon} />
                 {phase === 'loading' && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/70 rounded-2xl">
-                    <div className="w-7 h-7 border-2 border-slate-600 border-t-white rounded-full animate-spin mb-4" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
+                    <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-5" />
                     <p className="text-white font-semibold text-base">{LOADING_STEPS[step]}</p>
-                    <p className="mt-1 text-xs text-slate-500">по живым пространственным данным</p>
+                    <p className="mt-1.5 text-xs text-slate-500">по живым пространственным данным</p>
+                    <div className="flex gap-2 mt-5">
+                      {LOADING_STEPS.map((_, i) => (
+                        <div
+                          key={i}
+                          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${i <= step ? 'bg-indigo-400' : 'bg-slate-700'}`}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
