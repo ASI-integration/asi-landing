@@ -1,0 +1,2 @@
+Error: No existing credentials found. Please run `vercel login` or pass "--token"
+Learn More: https://err.sh/vercel/no-credentials-found

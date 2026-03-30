@@ -1,0 +1,80 @@
+Retrieving projectтАж
+Deploying asi-integrations-projects/asi-landing-new
+Inspect: https://vercel.com/asi-integrations-projects/asi-landing-new/J4xDibbasyq3jNvAWWK3Weo6adcG [2s]
+Production: https://asi-landing-bpaqnj0ub-asi-integrations-projects.vercel.app [2s]
+Building...
+Building...
+Building: Running build in Washington, D.C., USA (East) тАУ iad1
+Building: Build machine configuration: 2 cores, 8 GB
+Building: Retrieving list of deployment files...
+Building: Downloading 168 deployment files...
+Building: Restored build cache from previous deployment (5KGSXVJ1sSmJLyknEhX8cSznsS1T)
+Building: Running "vercel build"
+Building: Vercel CLI 50.35.0
+Building: Installing dependencies...
+Building: up to date in 1s
+Building: 172 packages are looking for funding
+Building: run `npm fund` for details
+Building: Detected Next.js version: 14.2.18
+Building: Running "npm run build"
+Building: > landing-asi@0.1.0 build
+Building: > next build
+Building: тЦ▓ Next.js 14.2.18
+Building: Creating an optimized production build ...
+Building: тЬУ Compiled successfully
+Building: Linting and checking validity of types ...
+Building: Collecting page data ...
+Building: Generating static pages (0/32) ...
+Building: Generating static pages (8/32)
+Building: Generating static pages (16/32)
+Building: Generating static pages (24/32)
+Building: тЬУ Generating static pages (32/32)
+Building: Finalizing page optimization ...
+Building: Collecting build traces ...
+Building: Route (app)                              Size     First Load JS
+Building: тФМ тЧЛ /                                    5.6 kB         99.5 kB
+Building: тФЬ тЧЛ /_not-found                          873 B            88 kB
+Building: тФЬ ╞Т /api/auth/login                      0 B                0 B
+Building: тФЬ ╞Т /api/auth/logout                     0 B                0 B
+Building: тФЬ ╞Т /api/auth/onboarding                 0 B                0 B
+Building: тФЬ ╞Т /api/auth/session                    0 B                0 B
+Building: тФЬ ╞Т /api/auth/signup                     0 B                0 B
+Building: тФЬ ╞Т /api/cron/check-trial                0 B                0 B
+Building: тФЬ ╞Т /api/payments/[id]/confirm           0 B                0 B
+Building: тФЬ ╞Т /api/payments/create                 0 B                0 B
+Building: тФЬ ╞Т /api/payments/webhook                0 B                0 B
+Building: тФЬ ╞Т /api/telegram/webhook                0 B                0 B
+Building: тФЬ ╞Т /api/webhooks/stripe                 0 B                0 B
+Building: тФЬ ╞Т /api/webhooks/yookassa               0 B                0 B
+Building: тФЬ ╞Т /api/yookassa/create-payment         0 B                0 B
+Building: тФЬ ╞Т /api/yookassa/webhook                0 B                0 B
+Building: тФЬ тЧЛ /connect                             2.4 kB          111 kB
+Building: тФЬ тЧЛ /contacts                            183 B          94.1 kB
+Building: тФЬ тЧЛ /dashboard                           1.72 kB        88.8 kB
+Building: тФЬ тЧЛ /dashboard/automations               462 B           102 kB
+Building: тФЬ тЧЛ /dashboard/billing                   896 B            88 kB
+Building: тФЬ тЧЛ /dashboard/properties                458 B           102 kB
+Building: тФЬ тЧЛ /dashboard/settings                  462 B           102 kB
+Building: тФЬ тЧЛ /legal                               183 B          94.1 kB
+Building: тФЬ тЧЛ /login                               1.55 kB         110 kB
+Building: тФЬ тЧЛ /offer                               183 B          94.1 kB
+Building: тФЬ тЧЛ /payments/cancel                     743 B          87.9 kB
+Building: тФЬ тЧЛ /payments/success                    744 B          87.9 kB
+Building: тФЬ тЧЛ /privacy                             183 B          94.1 kB
+Building: тФЬ тЧЛ /signup                              337 B          87.5 kB
+Building: тФФ тЧЛ /strategic-partnerships              7.18 kB         116 kB
+Building: + First Load JS shared by all            87.1 kB
+Building: тФЬ chunks/117-1724fa3c27156528.js       31.6 kB
+Building: тФЬ chunks/fd9d1056-b95a0c794e111475.js  53.6 kB
+Building: тФФ other shared chunks (total)          1.89 kB
+Building: тЧЛ  (Static)   prerendered as static content
+Building: ╞Т  (Dynamic)  server-rendered on demand
+Building: Traced Next.js server files in: 52.934ms
+Building: Created all serverless functions in: 186.899ms
+Building: Collected static files (public/, static/, .next/static): 9.193ms
+Building: Build Completed in /vercel/output [30s]
+Building: Deploying outputs...
+[2K[1A[2K[GProduction: https://asi-landing-bpaqnj0ub-asi-integrations-projects.vercel.app [51s]
+Completing...
+Aliased: https://www.asi-global.ru [57s]
+https://asi-landing-bpaqnj0ub-asi-integrations-projects.vercel.app

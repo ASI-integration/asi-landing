@@ -12,54 +12,184 @@ interface ChatMessage {
 interface Step {
   label: string;
   status: 'pending' | 'active' | 'done';
+  escalate?: boolean;
 }
 
-const PRESETS: Array<{
+interface Preset {
   label: string;
   userText: string;
   reply: string;
-  steps: number; // how many of 5 steps to show
   escalate: boolean;
-}> = [
+  stepLabels: string[];
+}
+
+const PRESETS: Preset[] = [
   {
-    label: 'Когда можно заехать?',
+    label: 'Когда заезд?',
     userText: 'Привет, в котором часу можно заехать?',
     reply: 'Заезд с 14:00. Если нужен ранний — напишите, я проверю доступность и согласую с управляющим.',
-    steps: 4,
     escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → check-in',
+      'Данные бронирования загружены',
+      'Правило заезда применено',
+      'Ответ подготовлен и отправлен',
+    ],
   },
   {
     label: 'Есть парковка?',
     userText: 'Есть ли парковка рядом?',
     reply: 'Да, есть закрытый двор. Код въезда пришлю за час до заезда вместе с инструкцией.',
-    steps: 3,
     escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → инфраструктура',
+      'Параметры объекта проверены',
+      'Инструкция по парковке найдена',
+      'Ответ подготовлен и отправлен',
+    ],
   },
   {
     label: 'Можно с животными?',
     userText: 'Можно привезти кота? Он маленький)',
-    reply: 'Животных берём — до 10 кг. Нужен залог 2 000 ₽, возвращаю после выезда в день выезда. Выставить счёт?',
-    steps: 4,
+    reply: 'Животных берём — до 10 кг. Нужен залог 2 000 ₽, возвращаю после выезда. Выставить счёт?',
     escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → доп. условие',
+      'Политика объекта проверена',
+      'Условие залога рассчитано',
+      'Запись добавлена в бронирование',
+      'Ответ подготовлен и отправлен',
+    ],
   },
   {
     label: 'Жалоба на шум',
     userText: 'Соседи сверху шумят всю ночь, уже 2:00. Невозможно спать.',
     reply: 'Понял, это недопустимо. Немедленно подключаю управляющего — он позвонит вам в течение нескольких минут.',
-    steps: 5,
     escalate: true,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → жалоба',
+      'Критичность оценена → срочно',
+      'Автоматический сценарий неприменим',
+      'Контекст упакован для оператора',
+      'Оператор уведомлён с полным контекстом',
+    ],
+  },
+  {
+    label: 'Код не работает',
+    userText: 'Код от замка не подходит, не могу войти. Уже стою у двери.',
+    reply: 'Сейчас разберусь. Резервный код: 4921. Если не поможет — подключаю управляющего немедленно.',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → доступ',
+      'Бронирование гостя верифицировано',
+      'Резервный код запрошен из хранилища',
+      'Код доступа отправлен гостю',
+      'Инцидент зафиксирован в системе',
+    ],
+  },
+  {
+    label: 'Нет интернета',
+    userText: 'Wi-Fi не работает, что делать?',
+    reply: 'Попробуйте перезагрузить роутер — он за телевизором. Пароль: home_apt_2024. Не поможет — сразу вызову техника.',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → техника',
+      'Инструкция по объекту загружена',
+      'Шаги самопомощи подобраны',
+      'Ответ подготовлен и отправлен',
+    ],
+  },
+  {
+    label: 'Продлить на день',
+    userText: 'Можно остаться ещё на одну ночь, завтра 26-го?',
+    reply: 'Проверяю... 26-е свободно. Стоимость 6 200 ₽. Выставить счёт сейчас?',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → продление',
+      'Доступность даты проверена',
+      'Тариф на доп. ночь рассчитан',
+      'Запрос на продление создан',
+      'Предложение отправлено гостю',
+    ],
+  },
+  {
+    label: 'Ранний выезд',
+    userText: 'Можно выехать в 10:00 вместо 12:00? Рейс ранний.',
+    reply: 'Конечно, ранний выезд в 10:00 согласован. Просто оставьте ключ в боксе у двери.',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → выезд',
+      'Расписание клининга проверено',
+      'Ранний выезд подтверждён',
+      'Инструкция по сдаче ключа отправлена',
+    ],
+  },
+  {
+    label: 'Нет горячей воды',
+    userText: 'Горячей воды нет уже час. Что случилось?',
+    reply: 'Проверяю по дому... Плановые работы до 15:00. Если к 15:30 не восстановится — немедленно сообщите.',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → коммунальная проблема',
+      'Статус по адресу запрошен',
+      'Данные о плановых работах получены',
+      'Ответ с уточнением сроков отправлен',
+      'Задача мониторинга поставлена',
+    ],
+  },
+  {
+    label: 'Скидка на следующий раз',
+    userText: 'Мы у вас уже третий раз — можно скидку на следующее бронирование?',
+    reply: 'Отмечаю вас как постоянных гостей. Промокод на 10% для следующего бронирования: LOYALTY10.',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → лояльность',
+      'История бронирований гостя проверена',
+      'Статус постоянного гостя подтверждён',
+      'Промокод сгенерирован',
+      'Профиль гостя обновлён',
+      'Промокод отправлен гостю',
+    ],
+  },
+  {
+    label: 'Сломался кран',
+    userText: 'В ванной течёт кран, не могу остановить.',
+    reply: 'Понял. Перекройте вентиль под раковиной (поворот вправо). Срочно вызываю сантехника — будет в течение часа.',
+    escalate: true,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → поломка',
+      'Критичность оценена → срочно',
+      'Первая помощь отправлена гостю',
+      'Заявка сантехнику создана',
+      'Оператор уведомлён с полным контекстом',
+    ],
+  },
+  {
+    label: 'Нужны полотенца',
+    userText: 'Можно попросить дополнительные полотенца?',
+    reply: 'Конечно. Оставлю запрос клинингу — доставят в течение 30 минут. Что-нибудь ещё нужно?',
+    escalate: false,
+    stepLabels: [
+      'Входящий запрос принят',
+      'Тип обращения определён → доп. комплектация',
+      'Доступность клинига проверена',
+      'Задача для клинига создана',
+      'Данные сохранены в системе',
+      'Ответ с подтверждением отправлен',
+    ],
   },
 ];
-
-const STEP_LABELS = [
-  'Сообщение принято',
-  'Детали уточнены',
-  'Данные собраны',
-  'Сценарий продвинут',
-  'Передано управляющему',
-];
-
-const STEP_DELAYS_MS = [400, 850, 1300, 1750, 2200];
 
 function now() {
   const d = new Date();
@@ -77,70 +207,70 @@ export function CommDemo() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [phase, setPhase] = useState<'idle' | 'processing' | 'done'>('idle');
   const [input, setInput] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [escalated, setEscalated] = useState(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
   const msgId = useRef(1);
 
+  // Scroll chat container (not the page) when messages update
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages, phase]);
 
   function clearTimers() {
     timerRefs.current.forEach(clearTimeout);
     timerRefs.current = [];
   }
 
-  function sendMessage(text: string, preset?: typeof PRESETS[number]) {
+  function sendMessage(text: string, preset?: Preset) {
     if (phase === 'processing') return;
     clearTimers();
 
     const userMsg: ChatMessage = { id: msgId.current++, role: 'guest', text };
     setMessages(prev => [...prev, userMsg]);
     setPhase('processing');
+    setEscalated(preset?.escalate ?? false);
 
-    const totalSteps = preset?.steps ?? 4;
-    const escalate = preset?.escalate ?? false;
+    const stepLabels = preset?.stepLabels ?? [
+      'Входящий запрос принят',
+      'Тип обращения определён',
+      'Ключевые данные извлечены',
+      'Сценарий обработки выбран',
+      'Ответ подготовлен и отправлен',
+    ];
 
-    // Build step list
-    const activeSteps: Step[] = STEP_LABELS.slice(0, escalate ? 5 : totalSteps).map(label => ({
+    const activeSteps: Step[] = stepLabels.map((label, i) => ({
       label,
-      status: 'pending',
+      status: 'pending' as const,
+      escalate: preset?.escalate && i === stepLabels.length - 1,
     }));
     setSteps(activeSteps);
 
-    // Animate steps
+    // Animate steps sequentially
     activeSteps.forEach((_, i) => {
+      const delay = 380 + i * 430;
       const t1 = setTimeout(() => {
-        setSteps(prev =>
-          prev.map((s, idx) =>
-            idx === i ? { ...s, status: 'active' } : s
-          )
-        );
-      }, STEP_DELAYS_MS[i]);
-
+        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'active' } : s));
+      }, delay);
       const t2 = setTimeout(() => {
-        setSteps(prev =>
-          prev.map((s, idx) =>
-            idx === i ? { ...s, status: 'done' } : s
-          )
-        );
-      }, STEP_DELAYS_MS[i] + 380);
-
+        setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'done' } : s));
+      }, delay + 360);
       timerRefs.current.push(t1, t2);
     });
 
-    // Bot reply after all steps
-    const replyDelay = STEP_DELAYS_MS[totalSteps - 1] + 700;
+    // Bot reply after all steps settle
+    const replyDelay = 380 + (stepLabels.length - 1) * 430 + 720;
     const replyText = preset?.reply ?? 'Принял. Уточняю детали и вернусь к вам в ближайшее время.';
     const t = setTimeout(() => {
-      const botMsg: ChatMessage = { id: msgId.current++, role: 'asi', text: replyText };
-      setMessages(prev => [...prev, botMsg]);
+      setMessages(prev => [...prev, { id: msgId.current++, role: 'asi', text: replyText }]);
       setPhase('done');
     }, replyDelay);
     timerRefs.current.push(t);
   }
 
-  function handlePreset(preset: typeof PRESETS[number]) {
+  function handlePreset(preset: Preset) {
     sendMessage(preset.userText, preset);
     setInput('');
   }
@@ -179,7 +309,7 @@ export function CommDemo() {
           {/* Left: chat */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden flex flex-col" style={{ minHeight: 460 }}>
             {/* Chat header */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800/80 bg-slate-900/80">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800/80 bg-slate-900/80 shrink-0">
               <div className="relative">
                 <div className="w-9 h-9 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-base">🤖</div>
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-slate-900" />
@@ -190,8 +320,12 @@ export function CommDemo() {
               </div>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 300 }}>
+            {/* Messages — scroll the container, not the page */}
+            <div
+              ref={chatContainerRef}
+              className="flex-1 overflow-y-auto p-4 space-y-3"
+              style={{ maxHeight: 300 }}
+            >
               {messages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.role === 'guest' ? 'justify-end' : 'justify-start'}`}>
                   <div
@@ -222,17 +356,16 @@ export function CommDemo() {
                   </div>
                 </div>
               )}
-
-              <div ref={chatEndRef} />
             </div>
 
             {/* Presets + input */}
-            <div className="border-t border-slate-800/80 p-3 space-y-2.5">
+            <div className="border-t border-slate-800/80 p-3 space-y-2.5 shrink-0">
               {phase !== 'processing' && (
                 <div className="flex flex-wrap gap-1.5">
                   {PRESETS.map(p => (
                     <button
                       key={p.label}
+                      type="button"
                       onClick={() => handlePreset(p)}
                       className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300 hover:bg-indigo-500/5 transition-all"
                     >
@@ -262,19 +395,19 @@ export function CommDemo() {
             </div>
           </div>
 
-          {/* Right: system log */}
+          {/* Right: internal processing */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 flex flex-col gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
                 Что происходит внутри
               </p>
               <p className="text-sm text-slate-500">
-                Каждое сообщение проходит через цепочку шагов — без участия человека.
+                Каждое сообщение проходит автоматическую цепочку шагов — без участия человека.
               </p>
             </div>
 
             {/* Steps */}
-            <div className="space-y-2.5 flex-1">
+            <div className="space-y-2 flex-1">
               {steps.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full py-10 text-center">
                   <div className="w-12 h-12 rounded-full border border-slate-800 flex items-center justify-center mb-3">
@@ -282,68 +415,80 @@ export function CommDemo() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                     </svg>
                   </div>
-                  <p className="text-sm text-slate-600">Отправьте сообщение,<br />чтобы увидеть процесс</p>
+                  <p className="text-sm text-slate-600">Выберите сценарий,<br />чтобы увидеть процесс</p>
                 </div>
               ) : (
-                steps.map((step, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 rounded-xl px-4 py-3 border transition-all duration-300 ${
-                      step.status === 'done'
-                        ? step.label === 'Передано управляющему'
-                          ? 'border-amber-700/40 bg-amber-900/10'
-                          : 'border-emerald-800/40 bg-emerald-900/10'
-                        : step.status === 'active'
-                        ? 'border-indigo-600/40 bg-indigo-900/10'
-                        : 'border-slate-800/60 bg-slate-900/30 opacity-40'
-                    }`}
-                  >
-                    {/* Status icon */}
-                    <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
-                      step.status === 'done'
-                        ? step.label === 'Передано управляющему'
-                          ? 'bg-amber-500/20'
-                          : 'bg-emerald-500/20'
-                        : step.status === 'active'
-                        ? 'bg-indigo-500/20'
-                        : 'bg-slate-800'
-                    }`}>
-                      {step.status === 'done' ? (
-                        step.label === 'Передано управляющему' ? (
-                          <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                          </svg>
+                steps.map((step, i) => {
+                  const isEscalateStep = step.escalate;
+                  return (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-3 rounded-xl px-4 py-2.5 border transition-all duration-300 ${
+                        step.status === 'done'
+                          ? isEscalateStep
+                            ? 'border-amber-700/40 bg-amber-900/10'
+                            : 'border-emerald-800/40 bg-emerald-900/10'
+                          : step.status === 'active'
+                          ? 'border-indigo-600/40 bg-indigo-900/10'
+                          : 'border-slate-800/60 bg-slate-900/30 opacity-35'
+                      }`}
+                    >
+                      {/* Status icon */}
+                      <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                        step.status === 'done'
+                          ? isEscalateStep ? 'bg-amber-500/20' : 'bg-emerald-500/20'
+                          : step.status === 'active'
+                          ? 'bg-indigo-500/20'
+                          : 'bg-slate-800'
+                      }`}>
+                        {step.status === 'done' ? (
+                          isEscalateStep ? (
+                            <svg className="w-3 h-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3 h-3 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                          )
+                        ) : step.status === 'active' ? (
+                          <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
                         ) : (
-                          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                          </svg>
-                        )
-                      ) : step.status === 'active' ? (
-                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-                      ) : (
-                        <span className="w-2 h-2 rounded-full bg-slate-700" />
-                      )}
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-700" />
+                        )}
+                      </div>
+
+                      {/* Step number + label */}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] font-mono shrink-0 tabular-nums ${
+                          step.status === 'done'
+                            ? isEscalateStep ? 'text-amber-600' : 'text-emerald-700'
+                            : step.status === 'active'
+                            ? 'text-indigo-600'
+                            : 'text-slate-700'
+                        }`}>
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                        <span className={`text-sm font-medium truncate ${
+                          step.status === 'done'
+                            ? isEscalateStep ? 'text-amber-300' : 'text-emerald-300'
+                            : step.status === 'active'
+                            ? 'text-indigo-300'
+                            : 'text-slate-600'
+                        }`}>
+                          {step.label}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`text-sm font-medium ${
-                      step.status === 'done'
-                        ? step.label === 'Передано управляющему'
-                          ? 'text-amber-300'
-                          : 'text-emerald-300'
-                        : step.status === 'active'
-                        ? 'text-indigo-300'
-                        : 'text-slate-600'
-                    }`}>
-                      {step.label}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             {/* Bottom note */}
             {phase === 'done' && (
               <p className="text-xs text-slate-600 text-center border-t border-slate-800/60 pt-3">
-                {steps.some(s => s.label === 'Передано управляющему')
+                {escalated
                   ? 'Нестандартная ситуация — оператор подключён с полным контекстом.'
                   : 'Запрос обработан автоматически. Управляющий не потребовался.'}
               </p>
