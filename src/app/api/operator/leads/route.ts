@@ -1,22 +1,25 @@
 /**
- * /api/operator/leads
+ * /api/operator/leads — server-side proxy to ASI-automation-core
  *
- * Operator lead review API — backed by ops_tasks.
- * Protected: requires an active iron-session (logged-in user).
+ * asi-landing is a thin UI layer. This route:
+ *   1. Validates the operator's iron-session (UI auth guard)
+ *   2. Forwards the request to ASI-automation-core with server-to-server auth
+ *   3. Returns the response verbatim (adapter note: contracts are identical)
  *
- * GET  /api/operator/leads
- *   Returns all guest_issue and escalated ops_tasks in newest-first order.
- *   Query params: status=open|in_progress|resolved|canceled  (optional)
+ * ASI-automation-core is the single source of truth for ops_tasks / leads.
+ * No direct Supabase access here.
+ *
+ * GET  /api/operator/leads[?status=open|in_progress|resolved|canceled]
+ *   → { ok: true, leads: Lead[] }
  *
  * PATCH /api/operator/leads
  *   Body: { task_id, task_status?, operator_note?, follow_up_at? }
- *   Updates the task and returns the updated row.
+ *   → { ok: true, lead: Lead }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
-import { OpsTaskStatus } from '@/lib/ops/tasks';
+import { fetchLeads, patchLead } from '@/lib/core-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,37 +40,16 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const statusFilter = searchParams.get('status');
+  const status = searchParams.get('status') ?? undefined;
 
-  // Validate status filter
-  const validStatuses = Object.values(OpsTaskStatus) as string[];
-  if (statusFilter && !validStatuses.includes(statusFilter)) {
-    return NextResponse.json(
-      { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
-      { status: 400 },
-    );
+  try {
+    const result = await fetchLeads(status);
+    return NextResponse.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[operator/leads] GET proxy error: ${msg}`);
+    return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
-
-  // Fetch guest_issue tasks (primary lead type) ordered newest-first
-  let query = supabase
-    .from('ops_tasks')
-    .select('*')
-    .in('task_type', ['guest_issue', 'checkin_ready'])
-    .order('created_at', { ascending: false })
-    .limit(200);
-
-  if (statusFilter) {
-    query = query.eq('task_status', statusFilter) as typeof query;
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error(`[operator/leads] GET error: ${error.message}`);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, leads: data ?? [] });
 }
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
@@ -91,42 +73,22 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'task_id required' }, { status: 400 });
   }
 
-  const validStatuses = Object.values(OpsTaskStatus) as string[];
-  if (task_status !== undefined && !validStatuses.includes(task_status as string)) {
-    return NextResponse.json(
-      { error: `Invalid task_status. Must be one of: ${validStatuses.join(', ')}` },
-      { status: 400 },
+  try {
+    const result = await patchLead({
+      task_id,
+      ...(task_status  !== undefined && { task_status:   String(task_status)  }),
+      ...(operator_note !== undefined && { operator_note: String(operator_note) }),
+      ...(follow_up_at  !== undefined && { follow_up_at:  String(follow_up_at)  }),
+    });
+
+    console.log(
+      `[operator/leads] PATCH task_id=${task_id} status=${task_status ?? 'unchanged'} by user=${session.userId}`,
     );
+
+    return NextResponse.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[operator/leads] PATCH proxy error task_id=${task_id}: ${msg}`);
+    return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
-
-  const now = new Date().toISOString();
-  const updates: Record<string, unknown> = { updated_at: now };
-
-  if (task_status !== undefined)  updates.task_status  = task_status;
-  if (operator_note !== undefined) updates.operator_note = operator_note;
-  if (follow_up_at !== undefined)  updates.follow_up_at  = follow_up_at;
-
-  if (task_status === OpsTaskStatus.Resolved) {
-    updates.resolved_at = now;
-  }
-
-  const { data, error } = await supabase
-    .from('ops_tasks')
-    .update(updates)
-    .eq('id', task_id)
-    .select('*')
-    .maybeSingle();
-
-  if (error) {
-    console.error(`[operator/leads] PATCH error task_id=${task_id}: ${error.message}`);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
-  if (!data) {
-    return NextResponse.json({ ok: false, error: 'task_not_found' }, { status: 404 });
-  }
-
-  console.log(`[operator/leads] PATCH task_id=${task_id} status=${task_status ?? 'unchanged'} by user=${session.userId}`);
-
-  return NextResponse.json({ ok: true, lead: data });
 }
