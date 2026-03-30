@@ -148,7 +148,7 @@ export async function analyzeLocation(
   if (typeof lat === 'number' && typeof lon === 'number') {
     return corePost<Record<string, unknown>>(
       '/api/location-intelligence/analyze/coordinates',
-      { address, lat, lon },
+      { address, lat, lng: lon },
     );
   }
   return corePost<Record<string, unknown>>(
