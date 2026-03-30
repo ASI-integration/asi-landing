@@ -73,17 +73,55 @@ export interface ClassifyResult {
 
 // ─── Telegram Update (minimal surface we actually use) ────────────────────────
 
+/** A single Telegram PhotoSize object (smallest usable subset). */
+export interface TelegramPhotoSize {
+  file_id:        string;
+  file_unique_id: string;
+  width:          number;
+  height:         number;
+  file_size?:     number;
+}
+
+/** A Telegram Document (file) object. */
+export interface TelegramDocument {
+  file_id:        string;
+  file_unique_id: string;
+  file_name?:     string;
+  mime_type?:     string;
+  file_size?:     number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
   from?: { language_code?: string };
   text?: string;
+  /** Array of photo sizes — Telegram always sends smallest → largest. */
+  photo?: TelegramPhotoSize[];
+  /** Generic document / file attachment. */
+  document?: TelegramDocument;
+  /** Caption for photo/document messages. */
+  caption?: string;
 }
 
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+}
+
+/**
+ * Normalised attachment descriptor stored in ops_tasks.attachment_refs
+ * and displayed in the operator leads page.
+ */
+export interface TelegramAttachmentRef {
+  type:      'photo' | 'document' | 'note';
+  label:     string;
+  file_id?:  string;
+  /** Resolved download URL — only available if file is fetched via Bot API */
+  url?:      string;
+  caption?:  string;
+  file_size?: number;
 }
 
 // ─── Conversation Persistence ─────────────────────────────────────────────────

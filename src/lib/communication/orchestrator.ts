@@ -350,19 +350,115 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 }
 
 // Keep backward compatibility for Telegram Webhook
-import { TelegramUpdate } from './types';
+import { TelegramUpdate, TelegramAttachmentRef } from './types';
+
+/**
+ * Build a human-readable text summary of any attachments in the message,
+ * and collect attachment refs for the operator leads page.
+ *
+ * Telegram sends photo arrays (smallest→largest). We use the largest size.
+ * The file_id lets operators retrieve the actual file via:
+ *   GET https://api.telegram.org/bot<TOKEN>/getFile?file_id=...
+ */
+function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
+  textHint: string;
+  refs: TelegramAttachmentRef[];
+} {
+  const refs: TelegramAttachmentRef[] = [];
+
+  if (message.photo && message.photo.length > 0) {
+    const largest = message.photo[message.photo.length - 1];
+    refs.push({
+      type:      'photo',
+      label:     `Фото ${largest.width}×${largest.height}px`,
+      file_id:   largest.file_id,
+      caption:   message.caption ?? undefined,
+      file_size: largest.file_size,
+    });
+  }
+
+  if (message.document) {
+    const doc = message.document;
+    refs.push({
+      type:      'document',
+      label:     doc.file_name ?? 'Документ',
+      file_id:   doc.file_id,
+      caption:   message.caption ?? undefined,
+      file_size: doc.file_size,
+    });
+  }
+
+  if (message.caption && refs.length === 0) {
+    refs.push({ type: 'note', label: 'Подпись', caption: message.caption });
+  }
+
+  const parts: string[] = [];
+  if (message.photo)    parts.push('[фото]');
+  if (message.document) parts.push(`[файл: ${message.document.file_name ?? 'документ'}]`);
+  if (message.caption)  parts.push(`Подпись: ${message.caption}`);
+
+  return { textHint: parts.join(' '), refs };
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
   const message = update.message ?? update.edited_message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
+
+  const { textHint, refs } = extractAttachments(message);
+  const baseText = message.text ?? message.caption ?? '';
+  // If message has attachments but no text, synthesise a description so the
+  // orchestrator can still classify and create an ops task.
+  const messageText = baseText || textHint || '';
 
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
     externalUserId: message.chat.id.toString(),
     chatId: message.chat.id.toString(),
-    messageText: message.text || '',
+    messageText,
     receivedAt: new Date(),
     update_id: update.update_id,
+    metadata: refs.length > 0 ? { attachments: refs } : undefined,
   };
 
-  return processMessage(envelope);
+  const result = await processMessage(envelope);
+
+  // If there were attachments, append them to the most recently created ops task
+  // for this chat so the operator can see what was sent on the leads page.
+  if (refs.length > 0) {
+    appendAttachmentsToLatestTask(message.chat.id, refs).catch(() => {});
+  }
+
+  return result;
+}
+
+/**
+ * Best-effort: find the most recent open ops_task for this chat_id and
+ * append attachment_refs so the operator sees them on the leads page.
+ */
+async function appendAttachmentsToLatestTask(
+  chatId: number,
+  refs: TelegramAttachmentRef[],
+): Promise<void> {
+  const { data } = await supabase
+    .from('ops_tasks')
+    .select('id, attachment_refs')
+    .eq('chat_id', chatId)
+    .in('task_status', ['open', 'in_progress'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) return;
+
+  const existing: TelegramAttachmentRef[] = Array.isArray(data.attachment_refs)
+    ? (data.attachment_refs as TelegramAttachmentRef[])
+    : [];
+
+  await supabase
+    .from('ops_tasks')
+    .update({
+      attachment_refs: [...existing, ...refs],
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', data.id);
 }
