@@ -2,8 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { AsiCat } from './AsiCat';
+import {
+  MAGNET_CATEGORIES,
+  CATEGORY_MAX_SHOW,
+  CATEGORY_COLOR,
+  fetchOsmData,
+  buildAnalysis,
+  getBand,
+  formatDist,
+  projectToSVG,
+} from '@/lib/location';
+import type { LocationAnalysis, Band } from '@/lib/location';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── UI-only types ─────────────────────────────────────────────────────────────
 
 interface Suggestion {
   value: string;
@@ -17,479 +28,9 @@ interface SelectedAddress {
   lon: number;
 }
 
-// ── Magnet category config (easily extendable) ────────────────────────────────
-// Add new categories here — the rest of the system picks them up automatically.
-
-type PermanenceType = 'permanent' | 'semi' | 'temporary';
-
-interface MagnetCategory {
-  id: string;
-  label: string;             // Russian label shown in UI
-  icon: string;              // short badge text
-  weight: number;            // 1–10, demand importance for short-term rental
-  permanenceType: PermanenceType; // demand source stability
-}
-
-export const MAGNET_CATEGORIES: MagnetCategory[] = [
-  { id: 'metro',         label: 'Метро',                    icon: 'М',  weight: 10, permanenceType: 'permanent' },
-  { id: 'transport',     label: 'Остановки транспорта',     icon: 'А',  weight: 5,  permanenceType: 'permanent' },
-  { id: 'attraction',    label: 'Достопримечательности',    icon: '★',  weight: 8,  permanenceType: 'permanent' },
-  { id: 'business',      label: 'Бизнес-центры',            icon: 'Б',  weight: 6,  permanenceType: 'permanent' },
-  { id: 'entertainment', label: 'Развлечения',               icon: '▶',  weight: 5,  permanenceType: 'semi'      },
-  { id: 'shopping',      label: 'Супермаркеты / ТЦ',        icon: '⊞',  weight: 4,  permanenceType: 'permanent' },
-  { id: 'food',          label: 'Кафе и рестораны',         icon: '◈',  weight: 3,  permanenceType: 'semi'      },
-];
-
-// Search radius per category (meters)
-const CATEGORY_RADIUS: Record<string, number> = {
-  metro:         1200,
-  transport:     600,
-  attraction:    1000,
-  business:      700,
-  entertainment: 800,
-  shopping:      700,
-  food:          500,
-};
-
-// Max items shown per category in the UI
-const CATEGORY_MAX_SHOW: Record<string, number> = {
-  metro:         3,
-  transport:     4,
-  attraction:    3,
-  business:      3,
-  entertainment: 3,
-  shopping:      3,
-  food:          4,
-};
-
-const COMPETITOR_RADIUS = 800;
-
-// ── Gravity / attraction model config ─────────────────────────────────────────
-// All weights and decay params are here — tune without touching logic.
-
-const PERMANENCE_MULTIPLIER: Record<PermanenceType, number> = {
-  permanent: 1.3,   // stable, year-round demand sources
-  semi:      1.0,   // mostly stable, some seasonal variation
-  temporary: 0.65,  // event-based or short-lived
-};
-
-const GRAVITY_CONFIG = {
-  // Smooth decay: factor = 1 / (1 + (dist/refDist)^power)
-  // 0m → 1.0 | refDist → ~0.5 | 2×refDist → ~0.2
-  distanceDecayRefDist: 400,    // meters — half-attraction distance
-  distanceDecayPower:   1.5,    // curve steepness
-
-  // Cluster: several strong magnets close together = demand zone
-  clusterRadius:     600,       // search radius (meters)
-  clusterMinMagnets:   3,       // min magnets to qualify as cluster
-  clusterBonusMax:    15,       // max bonus points from cluster effect
-
-  // Competitor pressure
-  competitorBaseWeight:   3,    // pressure per competitor
-  competitorDensityGain:  0.15, // multiplier gain per close competitor
-  competitorDensityMax:   0.9,  // cap on density multiplier
-  competitorCloseRadius:  500,  // "close" threshold (meters)
-  competitorPressureMax:  22,   // cap on total pressure
-
-  scoreScale: 3.5,              // final calibration before capping
-} as const;
-
-// ── OSM / Overpass types ───────────────────────────────────────────────────────
-
-interface OSMElement {
-  type: 'node' | 'way' | 'relation';
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
-}
-
-interface MagnetItem {
-  categoryId: string;
-  categoryLabel: string;
-  icon: string;
-  name: string;
-  distance: number;        // meters
-  weight: number;
-  permanenceType: PermanenceType;
-  attractionScore: number; // computed gravity attraction
-}
-
-interface CompetitorItem {
-  name: string;
-  distance: number;
-}
-
-interface GravityExplanation {
-  dominantMagnets: string[];
-  strongestZoneLabel: string;
-  competitorPressureLevel: 'низкое' | 'среднее' | 'высокое';
-  demandDistribution: 'concentrated' | 'split' | 'weak';
-  clusterDetected: boolean;
-  clusterSize: number;
-  scoreBreakdown: { attraction: number; competitorPressure: number; clusterBonus: number };
-}
-
-interface LocationAnalysis {
-  magnets: MagnetItem[];
-  magnetCountByCategory: Record<string, number>;
-  competitors: CompetitorItem[];
-  evergreenIndex: number;
-  conclusion: string;
-  gravityExplanation: GravityExplanation;
-}
-
-// ── Distance helpers ───────────────────────────────────────────────────────────
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function formatDist(m: number): string {
-  return m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1)} км`;
-}
-
-/** Smooth distance decay: 1 / (1 + (dist/refDist)^power) — continuous gravity model */
-function distanceDecaySmooth(meters: number): number {
-  const { distanceDecayRefDist, distanceDecayPower } = GRAVITY_CONFIG;
-  return 1 / (1 + Math.pow(meters / distanceDecayRefDist, distanceDecayPower));
-}
-
-// ── Overpass API — fetch real nearby objects ───────────────────────────────────
-
-async function fetchOverpass(lat: number, lon: number): Promise<OSMElement[]> {
-  // Hardcoded query for reliability (no regex, just explicit tag=value pairs)
-  const parts = [
-    // Transport magnets
-    `node["railway"="subway_entrance"](around:${CATEGORY_RADIUS.metro},${lat},${lon});`,
-    `node["highway"="bus_stop"](around:${CATEGORY_RADIUS.transport},${lat},${lon});`,
-    `node["public_transport"="stop_position"](around:${CATEGORY_RADIUS.transport},${lat},${lon});`,
-    // Attractions
-    `node["tourism"="attraction"](around:${CATEGORY_RADIUS.attraction},${lat},${lon});`,
-    `node["historic"="monument"](around:${CATEGORY_RADIUS.attraction},${lat},${lon});`,
-    `node["historic"="memorial"](around:${CATEGORY_RADIUS.attraction},${lat},${lon});`,
-    // Business
-    `node["office"="yes"]["name"](around:${CATEGORY_RADIUS.business},${lat},${lon});`,
-    `node["office"="company"]["name"](around:${CATEGORY_RADIUS.business},${lat},${lon});`,
-    // Entertainment
-    `node["amenity"="cinema"](around:${CATEGORY_RADIUS.entertainment},${lat},${lon});`,
-    `node["amenity"="theatre"](around:${CATEGORY_RADIUS.entertainment},${lat},${lon});`,
-    `node["amenity"="arts_centre"](around:${CATEGORY_RADIUS.entertainment},${lat},${lon});`,
-    `node["amenity"="nightclub"](around:${CATEGORY_RADIUS.entertainment},${lat},${lon});`,
-    // Shopping
-    `node["shop"="supermarket"](around:${CATEGORY_RADIUS.shopping},${lat},${lon});`,
-    `node["shop"="mall"](around:${CATEGORY_RADIUS.shopping},${lat},${lon});`,
-    `node["shop"="department_store"](around:${CATEGORY_RADIUS.shopping},${lat},${lon});`,
-    // Food
-    `node["amenity"="restaurant"](around:${CATEGORY_RADIUS.food},${lat},${lon});`,
-    `node["amenity"="cafe"](around:${CATEGORY_RADIUS.food},${lat},${lon});`,
-    `node["amenity"="fast_food"](around:${CATEGORY_RADIUS.food},${lat},${lon});`,
-    // Competitors (short-term rental proxies)
-    `node["tourism"="hotel"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-    `node["tourism"="apartment"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-    `node["tourism"="guest_house"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-    `node["tourism"="hostel"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-    `way["tourism"="hotel"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-    `way["tourism"="apartment"](around:${COMPETITOR_RADIUS},${lat},${lon});`,
-  ];
-
-  const query = `[out:json][timeout:14];(${parts.join('')});out center;`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-      signal: controller.signal,
-    });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return (json.elements ?? []) as OSMElement[];
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** Map raw OSM element to a category id + display name */
-function classifyElement(el: OSMElement): { categoryId: string; name: string } | null {
-  const t = el.tags ?? {};
-
-  if (t.railway === 'subway_entrance')
-    return { categoryId: 'metro', name: t.name || 'Метро' };
-
-  if (t.highway === 'bus_stop' || t.public_transport === 'stop_position')
-    return { categoryId: 'transport', name: t.name || 'Остановка' };
-
-  if (t.tourism === 'attraction' || t.historic === 'monument' || t.historic === 'memorial')
-    return { categoryId: 'attraction', name: t.name || 'Достопримечательность' };
-
-  if (t.office && t.name)
-    return { categoryId: 'business', name: t.name };
-
-  if (t.amenity === 'cinema' || t.amenity === 'theatre' || t.amenity === 'arts_centre' || t.amenity === 'nightclub')
-    return { categoryId: 'entertainment', name: t.name || t.amenity || 'Развлечение' };
-
-  if (t.shop === 'supermarket' || t.shop === 'mall' || t.shop === 'department_store')
-    return { categoryId: 'shopping', name: t.name || 'Магазин' };
-
-  if (t.amenity === 'restaurant' || t.amenity === 'cafe' || t.amenity === 'fast_food')
-    return { categoryId: 'food', name: t.name || t.amenity || 'Кафе' };
-
-  if (t.tourism === 'hotel' || t.tourism === 'apartment' || t.tourism === 'guest_house' || t.tourism === 'hostel')
-    return { categoryId: 'competitor', name: t.name || t.tourism || 'Объект аренды' };
-
-  return null;
-}
-
-function buildAnalysis(elements: OSMElement[], lat: number, lon: number): LocationAnalysis {
-  const byCategory: Record<string, MagnetItem[]> = {};
-  const competitors: CompetitorItem[] = [];
-
-  for (const el of elements) {
-    const elLat = el.lat ?? el.center?.lat;
-    const elLon = el.lon ?? el.center?.lon;
-    if (!elLat || !elLon) continue;
-
-    const classified = classifyElement(el);
-    if (!classified) continue;
-
-    const dist = haversineMeters(lat, lon, elLat, elLon);
-
-    if (classified.categoryId === 'competitor') {
-      competitors.push({ name: classified.name, distance: dist });
-      continue;
-    }
-
-    const cat = MAGNET_CATEGORIES.find(c => c.id === classified.categoryId);
-    if (!cat) continue;
-
-    if (!byCategory[classified.categoryId]) byCategory[classified.categoryId] = [];
-    byCategory[classified.categoryId].push({
-      categoryId: cat.id,
-      categoryLabel: cat.label,
-      icon: cat.icon,
-      name: classified.name,
-      distance: dist,
-      weight: cat.weight,
-      permanenceType: cat.permanenceType,
-      attractionScore: calcMagnetAttraction(cat.weight, cat.permanenceType, dist),
-    });
-  }
-
-  // Sort each category by distance; track total count; slice to maxShow
-  const magnets: MagnetItem[] = [];
-  const magnetCountByCategory: Record<string, number> = {};
-
-  for (const cat of MAGNET_CATEGORIES) {
-    const items = (byCategory[cat.id] ?? []).sort((a, b) => a.distance - b.distance);
-    magnetCountByCategory[cat.id] = items.length;
-    magnets.push(...items.slice(0, CATEGORY_MAX_SHOW[cat.id] ?? 3));
-  }
-
-  competitors.sort((a, b) => a.distance - b.distance);
-
-  const { index: evergreenIndex, gravityExplanation } = calcEvergreenIndex(magnets, competitors);
-  const conclusion = generateConclusion(evergreenIndex, magnets, competitors, magnetCountByCategory, gravityExplanation);
-
-  return { magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation };
-}
-
-// ── Gravity / Attraction Engine ────────────────────────────────────────────────
-// Internal scoring model. Public attribution: методика курса Ярослава Стригунова.
-
-/** Per-magnet attraction: category weight × permanence multiplier × distance decay */
-function calcMagnetAttraction(weight: number, permanenceType: PermanenceType, distance: number): number {
-  return weight * PERMANENCE_MULTIPLIER[permanenceType] * distanceDecaySmooth(distance);
-}
-
-/** Competitor pressure: distance-decayed sum amplified by close-competitor density */
-function calcCompetitorPressure(competitors: CompetitorItem[]): number {
-  if (competitors.length === 0) return 0;
-  let pressure = 0;
-  for (const c of competitors) {
-    pressure += GRAVITY_CONFIG.competitorBaseWeight * distanceDecaySmooth(c.distance);
-  }
-  const closeCount = competitors.filter(c => c.distance <= GRAVITY_CONFIG.competitorCloseRadius).length;
-  const densityMul = 1 + Math.min(closeCount * GRAVITY_CONFIG.competitorDensityGain, GRAVITY_CONFIG.competitorDensityMax);
-  return Math.min(pressure * densityMul, GRAVITY_CONFIG.competitorPressureMax);
-}
-
-/** Cluster bonus: dense magnet groups signal one strong demand zone */
-function calcClusterBonus(magnets: MagnetItem[]): { bonus: number; clusterSize: number } {
-  const nearby = magnets.filter(m => m.distance <= GRAVITY_CONFIG.clusterRadius);
-  const clusterSize = nearby.length;
-  if (clusterSize < GRAVITY_CONFIG.clusterMinMagnets) return { bonus: 0, clusterSize };
-  const bonus = Math.min(
-    GRAVITY_CONFIG.clusterBonusMax,
-    (clusterSize - GRAVITY_CONFIG.clusterMinMagnets + 1) * 2.5,
-  );
-  return { bonus, clusterSize };
-}
-
-/** Demand distribution: concentrated around one type, split across zones, or too weak */
-function detectDemandDistribution(magnets: MagnetItem[]): 'concentrated' | 'split' | 'weak' {
-  if (magnets.length < 2) return 'weak';
-  const total = magnets.reduce((s, m) => s + m.attractionScore, 0);
-  if (total === 0) return 'weak';
-  const byCategory: Record<string, number> = {};
-  for (const m of magnets) {
-    byCategory[m.categoryId] = (byCategory[m.categoryId] ?? 0) + m.attractionScore;
-  }
-  const maxShare = Math.max(...Object.values(byCategory)) / total;
-  if (maxShare >= 0.55) return 'concentrated';
-  if (Object.keys(byCategory).length >= 3) return 'split';
-  return 'weak';
-}
-
-/** Combined gravity index and explanation fields */
-function calcEvergreenIndex(
-  magnets: MagnetItem[],
-  competitors: CompetitorItem[],
-): { index: number; gravityExplanation: GravityExplanation } {
-  const emptyExplanation: GravityExplanation = {
-    dominantMagnets: [],
-    strongestZoneLabel: '',
-    competitorPressureLevel: 'низкое',
-    demandDistribution: 'weak',
-    clusterDetected: false,
-    clusterSize: 0,
-    scoreBreakdown: { attraction: 0, competitorPressure: 0, clusterBonus: 0 },
-  };
-  if (magnets.length === 0) return { index: 0, gravityExplanation: emptyExplanation };
-
-  // Attraction scores already computed per-magnet in buildAnalysis
-  const totalAttraction = magnets.reduce((s, m) => s + m.attractionScore, 0);
-  const competitorPressure = calcCompetitorPressure(competitors);
-  const { bonus: clusterBonus, clusterSize } = calcClusterBonus(magnets);
-
-  const rawScore =
-    totalAttraction * GRAVITY_CONFIG.scoreScale
-    - competitorPressure
-    + clusterBonus;
-
-  const index = Math.max(5, Math.min(96, Math.round(rawScore)));
-
-  const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
-  const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
-  const strongestZoneLabel = sorted[0]?.categoryLabel ?? '';
-  const demandDistribution = detectDemandDistribution(magnets);
-  const competitorPressureLevel: GravityExplanation['competitorPressureLevel'] =
-    competitorPressure < 6 ? 'низкое' : competitorPressure < 14 ? 'среднее' : 'высокое';
-
-  return {
-    index,
-    gravityExplanation: {
-      dominantMagnets,
-      strongestZoneLabel,
-      competitorPressureLevel,
-      demandDistribution,
-      clusterDetected: clusterSize >= GRAVITY_CONFIG.clusterMinMagnets,
-      clusterSize,
-      scoreBreakdown: {
-        attraction: Math.round(totalAttraction * GRAVITY_CONFIG.scoreScale),
-        competitorPressure: Math.round(competitorPressure),
-        clusterBonus: Math.round(clusterBonus),
-      },
-    },
-  };
-}
-
-// ── Conclusion generator ───────────────────────────────────────────────────────
-
-function generateConclusion(
-  idx: number,
-  magnets: MagnetItem[],
-  competitors: CompetitorItem[],
-  countByCategory: Record<string, number>,
-  gravity: GravityExplanation,
-): string {
-  if (magnets.length === 0) return '';
-
-  const hasMetro       = (countByCategory.metro ?? 0) > 0;
-  const hasAttractions = (countByCategory.attraction ?? 0) > 0;
-  const hasBusiness    = (countByCategory.business ?? 0) > 0;
-
-  const splitNote = gravity.demandDistribution === 'split'
-    ? ' Спрос распределён между несколькими зонами притяжения.'
-    : gravity.clusterDetected
-      ? ' Рядом сформирована зона устойчивого спроса.'
-      : '';
-
-  const compNote = gravity.competitorPressureLevel === 'высокое'
-    ? ' Конкуренция высокая — важна упаковка и дифференциация объекта.'
-    : gravity.competitorPressureLevel === 'среднее'
-      ? ' Конкуренция умеренная.'
-      : '';
-
-  if (idx >= 70) {
-    const driver = hasMetro
-      ? 'Метро рядом — устойчивый поток гостей.'
-      : hasAttractions
-        ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
-        : 'Насыщенное окружение создаёт постоянный трафик.';
-    return `Сильная локация для посуточной аренды. ${driver}${splitNote}${compNote}`;
-  }
-
-  if (idx >= 45) {
-    const note = !hasMetro && !hasBusiness
-      ? 'Транспортная доступность — ключевой фактор усиления.'
-      : 'Окружение поддерживает умеренный спрос.';
-    return `Рабочая локация. ${note}${splitNote}${compNote} Результат во многом определяется упаковкой и каналами продаж.`;
-  }
-
-  return `Магниты вокруг ограничены.${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
-}
-
-// ── Band (score bracket) ───────────────────────────────────────────────────────
-
-type Band = {
-  label: string;
-  textColor: string;
-  stroke: string;
-  border: string;
-  bg: string;
-  bar: string;
-};
-
-function getBand(idx: number): Band {
-  if (idx >= 70) return {
-    label: 'Сильная локация',
-    textColor: 'text-emerald-400', stroke: '#34d399',
-    border: 'border-emerald-700/40', bg: 'bg-emerald-900/10', bar: 'bg-emerald-500',
-  };
-  if (idx >= 45) return {
-    label: 'Средняя локация',
-    textColor: 'text-amber-400', stroke: '#fbbf24',
-    border: 'border-amber-700/40', bg: 'bg-amber-900/10', bar: 'bg-amber-500',
-  };
-  if (idx > 0) return {
-    label: 'Требует усиления',
-    textColor: 'text-rose-400', stroke: '#f87171',
-    border: 'border-rose-700/40', bg: 'bg-rose-900/10', bar: 'bg-rose-500',
-  };
-  return {
-    label: 'Нет данных',
-    textColor: 'text-slate-400', stroke: '#475569',
-    border: 'border-slate-700/40', bg: 'bg-slate-900/10', bar: 'bg-slate-600',
-  };
-}
+type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 
 // ── Address suggestion fetch ───────────────────────────────────────────────────
-
-type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 
 async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
   try {
@@ -504,7 +45,7 @@ async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[];
   }
 }
 
-// ── Idle map panel ────────────────────────────────────────────────────────────
+// ── Idle map panel ─────────────────────────────────────────────────────────────
 
 const BLOBS = [
   { top: 28, left: 24, size: 130, op: 0.18 },
@@ -616,16 +157,8 @@ function IdleMapPanel() {
 
 // ── Yandex Map Panel ──────────────────────────────────────────────────────────
 
-function YandexMapPanel({
-  lat, lon, loading,
-}: {
-  lat: number;
-  lon: number;
-  loading: boolean;
-}) {
-  // Official Yandex Maps iframe embed URL
+function YandexMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
   const src = `https://yandex.ru/maps/?ll=${lon},${lat}&z=16&pt=${lon},${lat},pm2rdm&l=map&origin=constructor&from=api-maps`;
-
   return (
     <div
       className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
@@ -648,6 +181,168 @@ function YandexMapPanel({
           <p className="mt-1 text-xs text-slate-500">реальные объекты вокруг адреса</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Influence Heatmap Panel ───────────────────────────────────────────────────
+// SVG visualization of computed attraction + competitor pressure.
+// Every point is derived from real OSM-detected objects and real scores — no decoration.
+
+const SVG_W = 400;
+const SVG_H = 280;
+
+function InfluenceHeatmapPanel({
+  analysis,
+  subjectLat,
+  subjectLon,
+}: {
+  analysis: LocationAnalysis;
+  subjectLat: number;
+  subjectLon: number;
+}) {
+  const { heatmapPoints } = analysis;
+
+  if (heatmapPoints.length === 0) return null;
+
+  const { projected, subjectXY } = projectToSVG(
+    heatmapPoints,
+    subjectLat,
+    subjectLon,
+    SVG_W,
+    SVG_H,
+  );
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
+      {/* Header */}
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-800/60">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-400">
+          ASI · Карта влияния
+        </span>
+        <span className="text-[10px] text-slate-700">· реальные значения</span>
+      </div>
+
+      {/* SVG heatmap */}
+      <svg
+        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+        width="100%"
+        height={SVG_H}
+        style={{ display: 'block', background: '#080c14' }}
+        aria-label="Карта притяжения локации"
+      >
+        <defs>
+          {/* Blur filter for halo glow */}
+          <filter id="halo-blur" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="10" result="blur" />
+          </filter>
+          <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          {/* Subject marker glow */}
+          <filter id="subject-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        {/* Grid lines (faint) */}
+        {[0.25, 0.5, 0.75].map(f => (
+          <g key={f}>
+            <line x1={SVG_W * f} y1={0} x2={SVG_W * f} y2={SVG_H} stroke="rgba(255,255,255,0.025)" strokeWidth="1" />
+            <line x1={0} y1={SVG_H * f} x2={SVG_W} y2={SVG_H * f} stroke="rgba(255,255,255,0.025)" strokeWidth="1" />
+          </g>
+        ))}
+
+        {/* ── Halo layer (blurred, behind dots) ── */}
+        {projected.map((p, i) => {
+          const color = p.type === 'competitor'
+            ? CATEGORY_COLOR.competitor
+            : CATEGORY_COLOR[p.categoryId] ?? '#818cf8';
+          // Halo radius: 18–52px, scaled by intensity
+          const haloR = 18 + p.intensity * 34;
+          return (
+            <circle
+              key={`halo-${i}`}
+              cx={p.x} cy={p.y}
+              r={haloR}
+              fill={color}
+              opacity={0.08 + p.intensity * 0.14}
+              filter="url(#halo-blur)"
+            />
+          );
+        })}
+
+        {/* ── Dot layer (sharp markers) ── */}
+        {projected.map((p, i) => {
+          const color = p.type === 'competitor'
+            ? CATEGORY_COLOR.competitor
+            : CATEGORY_COLOR[p.categoryId] ?? '#818cf8';
+          // Dot size: 3–8px scaled by intensity
+          const r = 3 + p.intensity * 5;
+          return (
+            <circle
+              key={`dot-${i}`}
+              cx={p.x} cy={p.y}
+              r={r}
+              fill={color}
+              opacity={0.55 + p.intensity * 0.45}
+              filter="url(#dot-glow)"
+            />
+          );
+        })}
+
+        {/* ── Subject property (center) ── */}
+        {/* Outer pulse ring */}
+        <circle
+          cx={subjectXY.x} cy={subjectXY.y}
+          r={14}
+          fill="none"
+          stroke="rgba(255,255,255,0.12)"
+          strokeWidth="1"
+        />
+        {/* Glow fill */}
+        <circle
+          cx={subjectXY.x} cy={subjectXY.y}
+          r={8}
+          fill="white"
+          opacity={0.15}
+          filter="url(#subject-glow)"
+        />
+        {/* Solid dot */}
+        <circle
+          cx={subjectXY.x} cy={subjectXY.y}
+          r={5}
+          fill="white"
+          opacity={0.95}
+        />
+
+        {/* ── Legend ── */}
+        <g transform={`translate(${SVG_W - 110}, ${SVG_H - 60})`}>
+          <rect x={0} y={0} width={104} height={52} rx={6} fill="rgba(15,20,30,0.85)" />
+          {/* Magnet */}
+          <circle cx={12} cy={14} r={4} fill="#818cf8" opacity={0.8} />
+          <text x={20} y={18} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Магниты притяжения</text>
+          {/* Competitor */}
+          <circle cx={12} cy={30} r={4} fill="#f87171" opacity={0.8} />
+          <text x={20} y={34} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Конкуренты</text>
+          {/* Subject */}
+          <circle cx={12} cy={46} r={3} fill="white" opacity={0.9} />
+          <text x={20} y={50} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Ваш объект</text>
+        </g>
+      </svg>
+
+      {/* Caption */}
+      <div className="px-4 py-2.5 flex flex-wrap gap-x-4 gap-y-1">
+        <span className="text-[10px] text-slate-600">
+          Яркость и размер — сила притяжения по расчёту ASI
+        </span>
+        <span className="text-[10px] text-slate-700">
+          {heatmapPoints.filter(p => p.type === 'magnet').length} магнитов ·{' '}
+          {heatmapPoints.filter(p => p.type === 'competitor').length} конкурентов
+        </span>
+      </div>
     </div>
   );
 }
@@ -839,13 +534,7 @@ function AddressInput({
 const RING_R = 46;
 const RING_C = 2 * Math.PI * RING_R;
 
-function EvergreenRing({
-  index, band, animated,
-}: {
-  index: number;
-  band: Band;
-  animated: boolean;
-}) {
+function EvergreenRing({ index, band, animated }: { index: number; band: Band; animated: boolean }) {
   const fill = animated ? (index / 100) * RING_C : 0;
   return (
     <svg width="108" height="108" viewBox="0 0 108 108" className="shrink-0" aria-hidden="true">
@@ -876,13 +565,17 @@ function EvergreenRing({
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
 function ASIPanel({
-  analysis, address, animated,
+  analysis,
+  address,
+  animated,
 }: {
   analysis: LocationAnalysis;
   address: string;
   animated: boolean;
 }) {
-  const { magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation } = analysis;
+  const {
+    magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation,
+  } = analysis;
   const band = getBand(evergreenIndex);
   const [visible, setVisible] = useState(false);
 
@@ -891,8 +584,7 @@ function ASIPanel({
     return () => clearTimeout(t);
   }, []);
 
-  // Group shown magnets by category
-  const magnetGroups: Record<string, MagnetItem[]> = {};
+  const magnetGroups: Record<string, typeof magnets> = {};
   for (const m of magnets) {
     if (!magnetGroups[m.categoryId]) magnetGroups[m.categoryId] = [];
     magnetGroups[m.categoryId].push(m);
@@ -910,16 +602,12 @@ function ASIPanel({
         transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}
     >
-      {/* ── Header: index ring + verdict ── */}
+      {/* Header: index ring + verdict */}
       <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
         <EvergreenRing index={evergreenIndex} band={band} animated={animated} />
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">
-            Итог анализа
-          </p>
-          <p className={`text-xl font-bold leading-tight ${band.textColor}`}>
-            {band.label}
-          </p>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">Итог анализа</p>
+          <p className={`text-xl font-bold leading-tight ${band.textColor}`}>{band.label}</p>
           {conclusion && (
             <p className="mt-2 text-xs text-slate-400 leading-snug">{conclusion}</p>
           )}
@@ -933,7 +621,7 @@ function ASIPanel({
         </div>
       </div>
 
-      {/* ── Gravity insight ── */}
+      {/* Gravity insight */}
       {hasMagnets && gravityExplanation.dominantMagnets.length > 0 && (
         <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
           <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
@@ -982,7 +670,7 @@ function ASIPanel({
         </div>
       )}
 
-      {/* ── Magnets ── */}
+      {/* Magnets */}
       {hasMagnets && (
         <div className="px-5 pt-4 pb-3">
           <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
@@ -995,9 +683,11 @@ function ASIPanel({
               if (!items || items.length === 0) return null;
               return (
                 <div key={cat.id}>
-                  {/* Category header */}
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-800/60 px-1.5 py-0.5 rounded">
+                    <span
+                      className="text-[10px] font-mono font-bold text-slate-600 bg-slate-800/60 px-1.5 py-0.5 rounded"
+                      style={{ color: CATEGORY_COLOR[cat.id] }}
+                    >
                       {cat.icon}
                     </span>
                     <span className="text-[11px] font-semibold text-slate-400">{cat.label}</span>
@@ -1006,20 +696,11 @@ function ASIPanel({
                         +{totalCount - (CATEGORY_MAX_SHOW[cat.id] ?? 3)} ещё
                       </span>
                     )}
-                    <span className="ml-auto text-[10px] text-slate-700">
-                      вес {cat.weight}/10
-                    </span>
+                    <span className="ml-auto text-[10px] text-slate-700">вес {cat.weight}/10</span>
                   </div>
-                  {/* Items */}
                   {items.map((m, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between pl-5 py-0.5"
-                    >
-                      <span
-                        className="text-xs text-slate-400 truncate mr-2"
-                        style={{ maxWidth: 180 }}
-                      >
+                    <div key={i} className="flex items-center justify-between pl-5 py-0.5">
+                      <span className="text-xs text-slate-400 truncate mr-2" style={{ maxWidth: 180 }}>
                         {m.name}
                       </span>
                       <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">
@@ -1034,13 +715,12 @@ function ASIPanel({
         </div>
       )}
 
-      {/* ── Competitors ── */}
+      {/* Competitors */}
       {hasCompetitors && (
         <div className="px-5 pt-3 pb-4 border-t border-slate-800/40">
           <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
             Конкуренты в окружении
           </p>
-          {/* Stats row */}
           <div className="flex gap-5 mb-3">
             <div>
               <p className="text-base font-bold text-slate-200 tabular-nums">{competitors.length}</p>
@@ -1054,38 +734,25 @@ function ASIPanel({
             </div>
             <div>
               <p className="text-base font-bold text-slate-200 tabular-nums">
-                {formatDist(
-                  Math.round(competitors.reduce((s, c) => s + c.distance, 0) / competitors.length)
-                )}
+                {formatDist(Math.round(competitors.reduce((s, c) => s + c.distance, 0) / competitors.length))}
               </p>
               <p className="text-[10px] text-slate-500 mt-0.5">ср. расстояние</p>
             </div>
           </div>
-          {/* Closest competitors list */}
           <div className="space-y-0.5">
             {competitors.slice(0, 5).map((c, i) => (
               <div key={i} className="flex items-center justify-between py-0.5">
-                <span
-                  className="text-xs text-slate-400 truncate mr-2"
-                  style={{ maxWidth: 180 }}
-                >
-                  {c.name}
-                </span>
-                <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">
-                  {formatDist(c.distance)}
-                </span>
+                <span className="text-xs text-slate-400 truncate mr-2" style={{ maxWidth: 180 }}>{c.name}</span>
+                <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
               </div>
             ))}
             {competitors.length > 5 && (
-              <p className="text-[10px] text-slate-700 mt-1 pl-0">
-                +{competitors.length - 5} ещё
-              </p>
+              <p className="text-[10px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
             )}
           </div>
         </div>
       )}
 
-      {/* No data state */}
       {!hasMagnets && !hasCompetitors && (
         <div className="px-5 py-4">
           <p className="text-xs text-slate-600">
@@ -1135,28 +802,26 @@ export function LocationIntelligenceDemo() {
     setInputKey(k => k + 1);
   }
 
-  // Loading: step ticker + Overpass fetch
+  // Loading: step ticker + OSM fetch + analysis
   useEffect(() => {
     if (phase !== 'loading' || !selected) return;
     let cancelled = false;
 
-    // Step ticker
     const tickers = LOADING_STEPS.map((_, i) =>
-      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 900)
+      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 900),
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
-    fetchOverpass(selected.lat, selected.lon).then(elements => {
+    fetchOsmData(selected.lat, selected.lon).then(elements => {
       if (cancelled) return;
       const result = buildAnalysis(elements, selected.lat, selected.lon);
       const elapsed = Date.now() - fetchStart;
-      const minDelay = 2500;
       setTimeout(() => {
         if (cancelled) return;
         setAnalysis(result);
         setPhase('result');
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
-      }, Math.max(0, minDelay - elapsed));
+      }, Math.max(0, 2500 - elapsed));
     });
 
     return () => {
@@ -1173,9 +838,7 @@ export function LocationIntelligenceDemo() {
         <div className="flex items-start gap-5 mb-10">
           <AsiCat mode="location" size={72} className="shrink-0 mt-1" />
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
-              Демо 1 из 2
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">Демо 1 из 2</p>
             <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
               Система понимает потенциал вашего объекта
             </h2>
@@ -1199,7 +862,7 @@ export function LocationIntelligenceDemo() {
         {phase === 'result' && analysis ? (
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
 
-            {/* Left: Yandex map */}
+            {/* Left: Yandex map + influence heatmap */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
@@ -1218,6 +881,14 @@ export function LocationIntelligenceDemo() {
                   ))}
                 </div>
               </div>
+
+              {/* Influence heatmap — real calculation, not decoration */}
+              <InfluenceHeatmapPanel
+                analysis={analysis}
+                subjectLat={selected!.lat}
+                subjectLon={selected!.lon}
+              />
+
               <button
                 onClick={reset}
                 className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
