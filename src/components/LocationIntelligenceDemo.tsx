@@ -6,7 +6,6 @@ import {
   MAGNET_CATEGORIES,
   CATEGORY_MAX_SHOW,
   CATEGORY_COLOR,
-  fetchOsmData,
   buildAnalysis,
   getBand,
   formatDist,
@@ -42,6 +41,21 @@ async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[];
     return { suggestions, status };
   } catch {
     return { suggestions: [], status: 'error' };
+  }
+}
+
+async function fetchLocationAnalysis(lat: number, lon: number): Promise<LocationAnalysis | null> {
+  try {
+    const res = await fetch('/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { analysis?: LocationAnalysis };
+    return data.analysis ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -155,10 +169,13 @@ function IdleMapPanel() {
   );
 }
 
-// ── Yandex Map Panel ──────────────────────────────────────────────────────────
+// ── OSM Map Panel ─────────────────────────────────────────────────────────────
 
-function YandexMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
-  const src = `https://yandex.ru/maps/?ll=${lon},${lat}&z=16&pt=${lon},${lat},pm2rdm&l=map&origin=constructor&from=api-maps`;
+function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
+  const deltaLat = 0.008;
+  const deltaLon = 0.014;
+  const bbox = `${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}`;
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
   return (
     <div
       className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
@@ -170,7 +187,7 @@ function YandexMapPanel({ lat, lon, loading }: { lat: number; lon: number; loadi
         height="100%"
         frameBorder="0"
         allowFullScreen
-        title="Карта окружения объекта — Яндекс Карты"
+        title="Карта окружения объекта — OpenStreetMap"
         loading="lazy"
         style={{ display: 'block' }}
       />
@@ -802,7 +819,7 @@ export function LocationIntelligenceDemo() {
     setInputKey(k => k + 1);
   }
 
-  // Loading: step ticker + OSM fetch + analysis
+  // Loading: step ticker + server-side OSM fetch + analysis
   useEffect(() => {
     if (phase !== 'loading' || !selected) return;
     let cancelled = false;
@@ -812,13 +829,13 @@ export function LocationIntelligenceDemo() {
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
-    fetchOsmData(selected.lat, selected.lon).then(elements => {
+    fetchLocationAnalysis(selected.lat, selected.lon).then(result => {
       if (cancelled) return;
-      const result = buildAnalysis(elements, selected.lat, selected.lon);
+      const resolved = result ?? buildAnalysis([], selected.lat, selected.lon);
       const elapsed = Date.now() - fetchStart;
       setTimeout(() => {
         if (cancelled) return;
-        setAnalysis(result);
+        setAnalysis(resolved);
         setPhase('result');
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
       }, Math.max(0, 2500 - elapsed));
@@ -862,15 +879,15 @@ export function LocationIntelligenceDemo() {
         {phase === 'result' && analysis ? (
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
 
-            {/* Left: Yandex map + influence heatmap */}
+            {/* Left: OSM map + influence heatmap */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Карта окружения
                 </span>
-                <span className="text-[10px] text-slate-700">· Яндекс Карты</span>
+                <span className="text-[10px] text-slate-700">· OpenStreetMap</span>
               </div>
-              <YandexMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
+              <OSMMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
               <div className="mt-3">
                 <p className="text-[11px] text-slate-500 mb-2 truncate">{selected?.value}</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -940,7 +957,7 @@ export function LocationIntelligenceDemo() {
               </form>
               {phase === 'idle' && (
                 <p className="mt-5 text-xs text-slate-600">
-                  Используются реальные данные OpenStreetMap / Яндекс Карты
+                  Используются реальные данные OpenStreetMap
                 </p>
               )}
             </div>
@@ -948,7 +965,7 @@ export function LocationIntelligenceDemo() {
             {/* Right: map */}
             <div>
               {selected ? (
-                <YandexMapPanel lat={selected.lat} lon={selected.lon} loading={phase === 'loading'} />
+                <OSMMapPanel lat={selected.lat} lon={selected.lon} loading={phase === 'loading'} />
               ) : (
                 <IdleMapPanel />
               )}
