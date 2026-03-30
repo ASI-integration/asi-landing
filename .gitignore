@@ -11,3 +11,11 @@ node_modules
 
 .env.production*
 .claude/settings.local.json
+.claude/settings.local.json
+.vexp/
+supabase/.temp/
+*.tsbuildinfo
+test_out*.txt
+var_*.txt
+vercel_*.txt
+test_webhook.ps1
