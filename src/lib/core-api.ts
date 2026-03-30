@@ -11,8 +11,9 @@
  *
  * ASI-automation-core must validate the Authorization header on:
  *   GET  /api/operator/leads
- *   PATCH /api/operator/leads
- *   POST /api/location-analyze
+ *   PATCH /api/operator/leads/[leadId]
+ *   POST /api/location-intelligence/analyze/address
+ *   POST /api/location-intelligence/analyze/coordinates
  */
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -79,17 +80,17 @@ async function corePost<T>(path: string, body: unknown): Promise<T> {
 // ─── Lead types ───────────────────────────────────────────────────────────────
 
 export interface CoreLead {
-  id:              string;
+  leadId:          string;
   property_id:     string;
   reservation_id:  string | null;
   chat_id:         number | null;
   task_type:       string;
-  task_status:     string;
+  status:          string;
   title:           string;
   description:     string | null;
   priority:        string;
-  operator_note:   string | null;
-  follow_up_at:    string | null;
+  internalNote:    string | null;
+  followUpNeeded:  string | null;
   attachment_refs: unknown[] | null;
   source_event:    string | null;
   trigger_reason:  string | null;
@@ -98,10 +99,10 @@ export interface CoreLead {
 }
 
 export interface LeadPatch {
-  task_id:        string;
-  task_status?:   string;
-  operator_note?: string;
-  follow_up_at?:  string;
+  leadId:          string;
+  status?:         string;
+  internalNote?:   string;
+  followUpNeeded?: string;
 }
 
 // ─── Lead operations ──────────────────────────────────────────────────────────
@@ -119,25 +120,39 @@ export async function fetchLeads(
 
 /**
  * Update a lead in ASI-automation-core.
- * Mirrors PATCH /api/operator/leads contract: { ok, lead }
+ * Calls PATCH /api/operator/leads/[leadId] with { status, internalNote, followUpNeeded }.
  */
 export async function patchLead(
   patch: LeadPatch,
 ): Promise<{ ok: boolean; lead: CoreLead }> {
-  return corePatch<{ ok: boolean; lead: CoreLead }>('/api/operator/leads', patch);
+  const { leadId, ...body } = patch;
+  return corePatch<{ ok: boolean; lead: CoreLead }>(
+    `/api/operator/leads/${encodeURIComponent(leadId)}`,
+    body,
+  );
 }
 
 // ─── Location analysis ────────────────────────────────────────────────────────
 
 /**
  * Request location analysis from ASI-automation-core.
- * Mirrors POST /api/location-analyze contract:
- *   { source, address, lat, lon, score, band, bandLabel, metrics, audienceScores }
+ * Uses /api/location-intelligence/analyze/coordinates when lat+lon are provided,
+ * otherwise /api/location-intelligence/analyze/address.
+ * Returns: { source, address, lat, lon, score, band, bandLabel, metrics, audienceScores }
  */
 export async function analyzeLocation(
   address: string,
   lat?: number | null,
   lon?: number | null,
 ): Promise<Record<string, unknown>> {
-  return corePost<Record<string, unknown>>('/api/location-analyze', { address, lat, lon });
+  if (typeof lat === 'number' && typeof lon === 'number') {
+    return corePost<Record<string, unknown>>(
+      '/api/location-intelligence/analyze/coordinates',
+      { address, lat, lon },
+    );
+  }
+  return corePost<Record<string, unknown>>(
+    '/api/location-intelligence/analyze/address',
+    { address },
+  );
 }

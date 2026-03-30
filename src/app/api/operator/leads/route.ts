@@ -13,8 +13,9 @@
  *   → { ok: true, leads: Lead[] }
  *
  * PATCH /api/operator/leads
- *   Body: { task_id, task_status?, operator_note?, follow_up_at? }
+ *   Body: { leadId, status?, internalNote?, followUpNeeded? }
  *   → { ok: true, lead: Lead }
+ *   Proxy forwards to core: PATCH /api/operator/leads/[leadId]
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -67,28 +68,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { task_id, task_status, operator_note, follow_up_at } = body;
+  const { leadId, status, internalNote, followUpNeeded } = body;
 
-  if (typeof task_id !== 'string' || !task_id) {
-    return NextResponse.json({ error: 'task_id required' }, { status: 400 });
+  if (typeof leadId !== 'string' || !leadId) {
+    return NextResponse.json({ error: 'leadId required' }, { status: 400 });
   }
 
   try {
     const result = await patchLead({
-      task_id,
-      ...(task_status  !== undefined && { task_status:   String(task_status)  }),
-      ...(operator_note !== undefined && { operator_note: String(operator_note) }),
-      ...(follow_up_at  !== undefined && { follow_up_at:  String(follow_up_at)  }),
+      leadId,
+      ...(status        !== undefined && { status:        String(status)        }),
+      ...(internalNote  !== undefined && { internalNote:  String(internalNote)  }),
+      ...(followUpNeeded !== undefined && { followUpNeeded: String(followUpNeeded) }),
     });
 
     console.log(
-      `[operator/leads] PATCH task_id=${task_id} status=${task_status ?? 'unchanged'} by user=${session.userId}`,
+      `[operator/leads] PATCH leadId=${leadId} status=${status ?? 'unchanged'} by user=${session.userId}`,
     );
 
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[operator/leads] PATCH proxy error task_id=${task_id}: ${msg}`);
+    console.error(`[operator/leads] PATCH proxy error leadId=${leadId}: ${msg}`);
     return NextResponse.json({ ok: false, error: msg }, { status: 502 });
   }
 }

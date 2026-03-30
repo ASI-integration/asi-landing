@@ -20,22 +20,22 @@ import { useState, useEffect, useCallback } from 'react';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Lead {
-  id:             string;
-  property_id:    string;
-  reservation_id: string | null;
-  chat_id:        number | null;
-  task_type:      string;
-  task_status:    string;
-  title:          string;
-  description:    string | null;
-  priority:       string;
-  operator_note:  string | null;
-  follow_up_at:   string | null;
+  leadId:          string;
+  property_id:     string;
+  reservation_id:  string | null;
+  chat_id:         number | null;
+  task_type:       string;
+  status:          string;
+  title:           string;
+  description:     string | null;
+  priority:        string;
+  internalNote:    string | null;
+  followUpNeeded:  string | null;
   attachment_refs: AttachmentRef[] | null;
-  source_event:   string | null;
-  trigger_reason: string | null;
-  created_at:     string;
-  updated_at:     string;
+  source_event:    string | null;
+  trigger_reason:  string | null;
+  created_at:      string;
+  updated_at:      string;
 }
 
 interface AttachmentRef {
@@ -115,19 +115,19 @@ export default function OperatorLeadsPage() {
 
   // ── Update lead ──────────────────────────────────────────────────────────────
   async function updateLead(
-    taskId: string,
-    patch: { task_status?: string; operator_note?: string; follow_up_at?: string },
+    leadId: string,
+    patch: { status?: string; internalNote?: string; followUpNeeded?: string },
   ) {
-    setSaving(taskId);
+    setSaving(leadId);
     try {
       const res = await fetch('/api/operator/leads', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ task_id: taskId, ...patch }),
+        body:    JSON.stringify({ leadId, ...patch }),
       });
       const data = await res.json() as { ok: boolean; lead?: Lead };
       if (data.ok && data.lead) {
-        setLeads(prev => prev.map(l => l.id === taskId ? data.lead! : l));
+        setLeads(prev => prev.map(l => l.leadId === leadId ? data.lead! : l));
       }
     } finally {
       setSaving(null);
@@ -263,19 +263,19 @@ export default function OperatorLeadsPage() {
         ) : (
           <div className="space-y-3">
             {leads.map(lead => (
-              <div key={lead.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div key={lead.leadId} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 {/* Summary row */}
                 <button
                   className="w-full text-left px-5 py-4 flex items-start gap-4 hover:bg-slate-50 transition-colors"
-                  onClick={() => setExpandedId(expandedId === lead.id ? null : lead.id)}
+                  onClick={() => setExpandedId(expandedId === lead.leadId ? null : lead.leadId)}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PRIORITY_COLOR[lead.priority] ?? 'bg-gray-100 text-gray-600'}`}>
                         {lead.priority}
                       </span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[lead.task_status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {STATUS_LABELS[lead.task_status] ?? lead.task_status}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {STATUS_LABELS[lead.status] ?? lead.status}
                       </span>
                       {lead.attachment_refs && lead.attachment_refs.length > 0 && (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
@@ -296,7 +296,7 @@ export default function OperatorLeadsPage() {
                 </button>
 
                 {/* Expanded detail */}
-                {expandedId === lead.id && (
+                {expandedId === lead.leadId && (
                   <div className="border-t border-slate-100 px-5 py-4 space-y-4 bg-slate-50/40">
 
                     {/* Attachments */}
@@ -330,10 +330,10 @@ export default function OperatorLeadsPage() {
                         {['open', 'in_progress', 'resolved'].map(s => (
                           <button
                             key={s}
-                            disabled={lead.task_status === s || saving === lead.id}
-                            onClick={() => void updateLead(lead.id, { task_status: s })}
+                            disabled={lead.status === s || saving === lead.leadId}
+                            onClick={() => void updateLead(lead.leadId, { status: s })}
                             className={`text-xs px-3 py-1.5 rounded-lg border transition-colors font-medium ${
-                              lead.task_status === s
+                              lead.status === s
                                 ? 'bg-slate-900 text-white border-slate-900'
                                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                             } disabled:opacity-40`}
@@ -349,8 +349,8 @@ export default function OperatorLeadsPage() {
                       <p className="text-xs font-semibold text-slate-500 mb-2">Заметка оператора</p>
                       <textarea
                         rows={2}
-                        value={editNote[lead.id] ?? lead.operator_note ?? ''}
-                        onChange={e => setEditNote(prev => ({ ...prev, [lead.id]: e.target.value }))}
+                        value={editNote[lead.leadId] ?? lead.internalNote ?? ''}
+                        onChange={e => setEditNote(prev => ({ ...prev, [lead.leadId]: e.target.value }))}
                         className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white"
                         placeholder="Добавить заметку..."
                       />
@@ -361,8 +361,8 @@ export default function OperatorLeadsPage() {
                       <p className="text-xs font-semibold text-slate-500 mb-2">Follow-up</p>
                       <input
                         type="datetime-local"
-                        value={editFollowUp[lead.id] ?? (lead.follow_up_at ? lead.follow_up_at.slice(0, 16) : '')}
-                        onChange={e => setEditFollowUp(prev => ({ ...prev, [lead.id]: e.target.value }))}
+                        value={editFollowUp[lead.leadId] ?? (lead.followUpNeeded ? lead.followUpNeeded.slice(0, 16) : '')}
+                        onChange={e => setEditFollowUp(prev => ({ ...prev, [lead.leadId]: e.target.value }))}
                         className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"
                       />
                     </div>
@@ -370,16 +370,16 @@ export default function OperatorLeadsPage() {
                     {/* Save */}
                     <div className="flex justify-end">
                       <button
-                        disabled={saving === lead.id}
-                        onClick={() => void updateLead(lead.id, {
-                          operator_note: editNote[lead.id] ?? lead.operator_note ?? undefined,
-                          follow_up_at:  editFollowUp[lead.id]
-                            ? new Date(editFollowUp[lead.id]).toISOString()
+                        disabled={saving === lead.leadId}
+                        onClick={() => void updateLead(lead.leadId, {
+                          internalNote:  editNote[lead.leadId] ?? lead.internalNote ?? undefined,
+                          followUpNeeded: editFollowUp[lead.leadId]
+                            ? new Date(editFollowUp[lead.leadId]).toISOString()
                             : undefined,
                         })}
                         className="text-sm px-4 py-2 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-700 disabled:opacity-40 transition-colors"
                       >
-                        {saving === lead.id ? 'Сохранение...' : 'Сохранить'}
+                        {saving === lead.leadId ? 'Сохранение...' : 'Сохранить'}
                       </button>
                     </div>
                   </div>
