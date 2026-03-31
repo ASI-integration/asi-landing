@@ -6,12 +6,20 @@
 
 export type PermanenceType = 'permanent' | 'semi' | 'temporary';
 
+/** Catchment / scope level of a demand object */
+export type ScopeLevel = 'local' | 'district' | 'city' | 'regional' | 'federal';
+
+/** Strength class: drives peripheral penalty and cluster qualification */
+export type StrengthClass = 'strong' | 'medium' | 'weak';
+
 export interface MagnetCategory {
   id: string;
   label: string;           // Russian UI label
   icon: string;            // short badge text
   weight: number;          // 1–10
   permanenceType: PermanenceType;
+  scopeLevel: ScopeLevel;
+  strengthClass: StrengthClass;
 }
 
 export interface OSMElement {
@@ -34,6 +42,8 @@ export interface MagnetItem {
   distance: number;        // meters from subject
   weight: number;
   permanenceType: PermanenceType;
+  scopeLevel: ScopeLevel;
+  strengthClass: StrengthClass;
   attractionScore: number; // ASI computed gravity score
 }
 
@@ -52,6 +62,7 @@ export interface GravityExplanation {
   strongestZoneLabel: string;
   competitorPressureLevel: 'низкое' | 'среднее' | 'высокое';
   demandDistribution: 'concentrated' | 'split' | 'weak';
+  demandType: DemandType;
   clusterDetected: boolean;
   clusterSize: number;
   scoreBreakdown: { attraction: number; competitorPressure: number; clusterBonus: number };
@@ -69,6 +80,9 @@ export interface HeatmapPoint {
 
 export type ScoreBand = 'strong' | 'medium' | 'weak' | 'none';
 
+/** Demand-type classification: which category of visitor/tenant driver dominates */
+export type DemandType = 'tourism-led' | 'business-led' | 'transport-led' | 'mixed';
+
 export interface Band {
   label: string;
   scoreBand: ScoreBand;
@@ -77,6 +91,22 @@ export interface Band {
   border: string;
   bg: string;
   bar: string;
+}
+
+// ── Cache / freshness layer ───────────────────────────────────────────────────
+
+/** How current a cached analysis result is */
+export type AnalysisFreshness = 'fresh' | 'stale';
+
+/** Metadata attached to every analysis API response */
+export interface AnalysisMeta {
+  freshness: AnalysisFreshness;
+  /** ISO timestamp of the last successful live fetch */
+  updatedAt: string;
+  /** Provider that produced the result, e.g. 'osm-overpass' */
+  source: string;
+  /** true when the response body came from cache, not a live fetch */
+  cached: boolean;
 }
 
 /** Full structured output of the gravity engine */
@@ -92,6 +122,7 @@ export interface LocationAnalysis {
 
   // ASI interpretation
   gravityExplanation: GravityExplanation;
+  demandType: DemandType;
   strongestMagnets: MagnetItem[];
   clusterZones: MagnetItem[][];
   splitDemand: boolean;

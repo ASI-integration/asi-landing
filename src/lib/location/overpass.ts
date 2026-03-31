@@ -27,52 +27,65 @@ function makeAround(filter: string, radius: number, lat: number, lon: number, al
 
 function buildClauses(lat: number, lon: number, radiusScale: number, broad: boolean): string[] {
   const selectors: QuerySelector[] = [
-    // Transport magnets
-    { filter: '"railway"="subway_entrance"', radius: CATEGORY_RADIUS.metro, includeInStrict: true },
-    { filter: '"station"="subway"', radius: CATEGORY_RADIUS.metro, includeInStrict: false },
-    { filter: '"railway"="station"', radius: CATEGORY_RADIUS.metro, includeInStrict: false },
-    { filter: '"highway"="bus_stop"', radius: CATEGORY_RADIUS.transport, includeInStrict: true },
-    { filter: '"public_transport"="stop_position"', radius: CATEGORY_RADIUS.transport, includeInStrict: true },
-    { filter: '"public_transport"="platform"', radius: CATEGORY_RADIUS.transport, includeInStrict: false },
-    { filter: '"railway"="tram_stop"', radius: CATEGORY_RADIUS.transport, includeInStrict: false },
+    // ── Strong: Metro ────────────────────────────────────────────────────────
+    // Only genuine subway/underground systems. Generic railway=station is classified
+    // separately as railway_station (medium) — see below.
+    { filter: '"railway"="subway_entrance"', radius: CATEGORY_RADIUS.metro,           includeInStrict: true  },
+    { filter: '"station"="subway"',          radius: CATEGORY_RADIUS.metro,           includeInStrict: true  },
 
-    // Attractions
+    // ── Medium: Railway stations (commuter / intercity / regional rail) ───────
+    // Deliberately not strong — a suburban rail stop in a peripheral district
+    // must not produce the same score impact as a real city-centre metro station.
+    { filter: '"railway"="station"',         radius: CATEGORY_RADIUS.railway_station, includeInStrict: true  },
+    { filter: '"railway"="halt"',            radius: CATEGORY_RADIUS.railway_station, includeInStrict: false },
+
+    // ── Strong: Attractions (major tourism, monuments) ───────────────────────
+    // Excludes local memorials and parks — those do not drive stable rental demand.
     { filter: '"tourism"="attraction"', radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
-    { filter: '"historic"="monument"', radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
-    { filter: '"historic"="memorial"', radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
-    { filter: '"tourism"="museum"', radius: CATEGORY_RADIUS.attraction, includeInStrict: false },
-    { filter: '"tourism"="gallery"', radius: CATEGORY_RADIUS.attraction, includeInStrict: false },
-    { filter: '"leisure"="park"', radius: CATEGORY_RADIUS.attraction, includeInStrict: false },
+    { filter: '"historic"="monument"',  radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
+    { filter: '"tourism"="museum"',     radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
+    { filter: '"tourism"="gallery"',    radius: CATEGORY_RADIUS.attraction, includeInStrict: false },
 
-    // Business
-    { filter: '"office"', radius: CATEGORY_RADIUS.business, includeInStrict: true },
-    { filter: '"amenity"="bank"', radius: CATEGORY_RADIUS.business, includeInStrict: false },
-    { filter: '"amenity"="university"', radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    // ── Strong: Universities ─────────────────────────────────────────────────
+    { filter: '"amenity"="university"', radius: CATEGORY_RADIUS.university, includeInStrict: true },
+    { filter: '"amenity"="college"',    radius: CATEGORY_RADIUS.university, includeInStrict: false },
 
-    // Entertainment
-    { filter: '"amenity"="cinema"', radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
-    { filter: '"amenity"="theatre"', radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
-    { filter: '"amenity"="arts_centre"', radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
-    { filter: '"amenity"="nightclub"', radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
-    { filter: '"leisure"="sports_centre"', radius: CATEGORY_RADIUS.entertainment, includeInStrict: false },
+    // ── Medium: Entertainment (city-scale venues) ────────────────────────────
+    // Sports centres intentionally excluded — they are local, not city-scale.
+    { filter: '"amenity"="cinema"',     radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
+    { filter: '"amenity"="theatre"',    radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
+    { filter: '"amenity"="arts_centre"',radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
+    { filter: '"amenity"="nightclub"',  radius: CATEGORY_RADIUS.entertainment, includeInStrict: false },
 
-    // Shopping
-    { filter: '"shop"="supermarket"', radius: CATEGORY_RADIUS.shopping, includeInStrict: true },
-    { filter: '"shop"="mall"', radius: CATEGORY_RADIUS.shopping, includeInStrict: true },
-    { filter: '"shop"="department_store"', radius: CATEGORY_RADIUS.shopping, includeInStrict: true },
+    // ── Medium: Shopping major (malls / department stores) ───────────────────
+    { filter: '"shop"="mall"',             radius: CATEGORY_RADIUS.shopping_major, includeInStrict: true },
+    { filter: '"shop"="department_store"', radius: CATEGORY_RADIUS.shopping_major, includeInStrict: true },
 
-    // Food
+    // ── Medium: Business (offices — district-level) ──────────────────────────
+    { filter: '"office"',           radius: CATEGORY_RADIUS.business, includeInStrict: true },
+    { filter: '"amenity"="bank"',   radius: CATEGORY_RADIUS.business, includeInStrict: false },
+
+    // ── Weak: Transport (local bus/tram stops) ───────────────────────────────
+    { filter: '"highway"="bus_stop"',              radius: CATEGORY_RADIUS.transport, includeInStrict: true },
+    { filter: '"public_transport"="stop_position"',radius: CATEGORY_RADIUS.transport, includeInStrict: true },
+    { filter: '"public_transport"="platform"',     radius: CATEGORY_RADIUS.transport, includeInStrict: false },
+    { filter: '"railway"="tram_stop"',             radius: CATEGORY_RADIUS.transport, includeInStrict: false },
+
+    // ── Weak: Shopping local (supermarkets) ──────────────────────────────────
+    { filter: '"shop"="supermarket"', radius: CATEGORY_RADIUS.shopping_local, includeInStrict: true },
+
+    // ── Weak: Food (local cafes / restaurants) ───────────────────────────────
     { filter: '"amenity"="restaurant"', radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="cafe"', radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="fast_food"', radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="bar"', radius: CATEGORY_RADIUS.food, includeInStrict: false },
+    { filter: '"amenity"="cafe"',       radius: CATEGORY_RADIUS.food, includeInStrict: true },
+    { filter: '"amenity"="fast_food"',  radius: CATEGORY_RADIUS.food, includeInStrict: true },
+    { filter: '"amenity"="bar"',        radius: CATEGORY_RADIUS.food, includeInStrict: false },
 
-    // Competitors
-    { filter: '"tourism"="hotel"', radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="apartment"', radius: COMPETITOR_RADIUS, includeInStrict: true },
+    // ── Competitors ──────────────────────────────────────────────────────────
+    { filter: '"tourism"="hotel"',       radius: COMPETITOR_RADIUS, includeInStrict: true },
+    { filter: '"tourism"="apartment"',   radius: COMPETITOR_RADIUS, includeInStrict: true },
     { filter: '"tourism"="guest_house"', radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="hostel"', radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="motel"', radius: COMPETITOR_RADIUS, includeInStrict: false },
+    { filter: '"tourism"="hostel"',      radius: COMPETITOR_RADIUS, includeInStrict: true },
+    { filter: '"tourism"="motel"',       radius: COMPETITOR_RADIUS, includeInStrict: false },
   ];
 
   const parts: string[] = [];
@@ -155,59 +168,82 @@ async function fetchOsmByBatches(clauses: string[]): Promise<{ elements: OSMElem
   return { elements: dedupeElements(all), hadProviderFailure };
 }
 
-export async function fetchOsmData(lat: number, lon: number): Promise<OSMElement[]> {
+export interface OsmFetchResult {
+  elements: OSMElement[];
+  hadProviderFailure: boolean;
+}
+
+export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchResult> {
   const strictClauses = buildClauses(lat, lon, 1, false);
   const strictResult = await fetchOsmByBatches(strictClauses);
   const strictElements = dedupeElements(strictResult.elements);
 
-  // If strict filters return too little, retry with wider radii and broader category sources.
+  // If strict filters return enough data, skip the broader fallback.
   if (strictElements.length >= 12) {
-    return strictElements;
+    return { elements: strictElements, hadProviderFailure: strictResult.hadProviderFailure };
   }
 
   const fallbackClauses = buildClauses(lat, lon, 1.4, true);
   const fallbackResult = await fetchOsmByBatches(fallbackClauses);
   const merged = dedupeElements([...strictElements, ...fallbackResult.elements]);
+  const hadProviderFailure = strictResult.hadProviderFailure || fallbackResult.hadProviderFailure;
 
-  if (merged.length === 0 && (strictResult.hadProviderFailure || fallbackResult.hadProviderFailure)) {
+  if (merged.length === 0 && hadProviderFailure) {
     console.warn(`[location-demo] overpass_failed lat=${lat} lon=${lon}`);
   }
 
-  return merged;
+  return { elements: merged, hadProviderFailure };
 }
 
 /** Map a raw OSM element to a category id + display name, or null if unrecognised */
 export function classifyElement(el: OSMElement): { categoryId: string; name: string } | null {
   const t = el.tags ?? {};
 
-  if (t.railway === 'subway_entrance' || t.station === 'subway' || (t.railway === 'station' && t.subway !== 'no'))
+  // ── Strong magnets ──────────────────────────────────────────────────────────
+  // Metro: only actual subway systems (underground rapid transit).
+  // railway=station alone is NOT sufficient — that covers commuter/intercity rail
+  // which belongs in the railway_station category below.
+  if (t.railway === 'subway_entrance' || t.station === 'subway')
     return { categoryId: 'metro', name: t.name || 'Метро' };
 
+  // Major tourism/cultural objects only — local memorials and parks excluded
+  if (t.tourism === 'attraction' || t.tourism === 'museum' || t.tourism === 'gallery' || t.historic === 'monument')
+    return { categoryId: 'attraction', name: t.name || 'Достопримечательность' };
+
+  if (t.amenity === 'university' || t.amenity === 'college')
+    return { categoryId: 'university', name: t.name || 'Университет' };
+
+  // ── Medium: Railway stations (commuter / intercity / regional) ───────────────
+  // Classified AFTER metro so station=subway is never double-matched here.
+  // railway=halt covers minor stopping points on commuter lines.
+  if (t.railway === 'station' || t.railway === 'halt')
+    return { categoryId: 'railway_station', name: t.name || 'Станция' };
+
+  // ── Medium magnets ──────────────────────────────────────────────────────────
+  // City-scale entertainment only (sports centres are local — not classified)
+  if (t.amenity === 'cinema' || t.amenity === 'theatre' || t.amenity === 'arts_centre' || t.amenity === 'nightclub')
+    return { categoryId: 'entertainment', name: t.name || t.amenity || 'Развлечение' };
+
+  // Large shopping formats (city-scale draw)
+  if (t.shop === 'mall' || t.shop === 'department_store')
+    return { categoryId: 'shopping_major', name: t.name || 'ТЦ' };
+
+  // Offices and banks — district/medium level (not strong demand generators)
+  if (t.office || t.amenity === 'bank')
+    return { categoryId: 'business', name: t.name || 'Офис' };
+
+  // ── Weak local service objects ──────────────────────────────────────────────
   if (t.highway === 'bus_stop' || t.public_transport === 'stop_position' || t.public_transport === 'platform' || t.railway === 'tram_stop')
     return { categoryId: 'transport', name: t.name || 'Остановка' };
 
-  if (
-    t.tourism === 'attraction'
-    || t.tourism === 'museum'
-    || t.tourism === 'gallery'
-    || t.historic === 'monument'
-    || t.historic === 'memorial'
-    || t.leisure === 'park'
-  )
-    return { categoryId: 'attraction', name: t.name || 'Достопримечательность' };
-
-  if (t.office || t.amenity === 'bank' || t.amenity === 'university')
-    return { categoryId: 'business', name: t.name || 'Бизнес-объект' };
-
-  if (t.amenity === 'cinema' || t.amenity === 'theatre' || t.amenity === 'arts_centre' || t.amenity === 'nightclub' || t.leisure === 'sports_centre')
-    return { categoryId: 'entertainment', name: t.name || t.amenity || 'Развлечение' };
-
-  if (t.shop === 'supermarket' || t.shop === 'mall' || t.shop === 'department_store' || Boolean(t.shop))
-    return { categoryId: 'shopping', name: t.name || 'Магазин' };
+  // Supermarkets — local service, not a city-scale draw
+  if (t.shop === 'supermarket' || Boolean(t.shop))
+    return { categoryId: 'shopping_local', name: t.name || 'Магазин' };
 
   if (t.amenity === 'restaurant' || t.amenity === 'cafe' || t.amenity === 'fast_food' || t.amenity === 'bar' || t.amenity === 'pub')
     return { categoryId: 'food', name: t.name || t.amenity || 'Кафе' };
 
+  // ── Competitors ─────────────────────────────────────────────────────────────
   if (t.tourism === 'hotel' || t.tourism === 'apartment' || t.tourism === 'guest_house' || t.tourism === 'hostel' || t.tourism === 'motel')
     return { categoryId: 'competitor', name: t.name || t.tourism || 'Объект аренды' };
 
