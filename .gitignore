@@ -2,15 +2,9 @@ node_modules
 .next
 .env
 .env.local
-node_modules
 .vercel
-
 .env.production.pulled
-
-.env.production.pulled
-
 .env.production*
-.claude/settings.local.json
 .claude/settings.local.json
 .vexp/
 supabase/.temp/
