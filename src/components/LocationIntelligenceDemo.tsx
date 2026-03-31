@@ -11,7 +11,17 @@ import {
   projectToSVG,
   patchLegacyLocationAnalysis,
 } from '@/lib/location';
-import type { LocationAnalysis, Band, AnalysisMeta, FootTrafficModifierTier } from '@/lib/location';
+import type {
+  LocationAnalysis,
+  Band,
+  AnalysisMeta,
+  FootTrafficModifierTier,
+  DemandType,
+} from '@/lib/location';
+import {
+  useLocationTelemetryOptional,
+  type LocationTelemetrySnapshot,
+} from '@/context/landing-location-telemetry';
 
 // ── UI-only types ─────────────────────────────────────────────────────────────
 
@@ -93,6 +103,73 @@ function formatUpdatedAtReadableRu(iso: string): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+  });
+}
+
+function demandTypeRu(d: DemandType): string {
+  const map: Record<DemandType, string> = {
+    'tourism-led': 'туризм',
+    'business-led': 'деловой',
+    'transport-led': 'транзит',
+    'mixed': 'смешанный',
+  };
+  return map[d];
+}
+
+function sourceDataRu(meta: AnalysisMeta | null): string {
+  if (!meta) return 'локальный расчёт (без метаданных сервера)';
+  const fromCache = meta.cached;
+  const refreshing = Boolean(meta.refreshing);
+  const isStale = meta.freshness === 'stale';
+  if (fromCache) {
+    if (refreshing && isStale) return 'кэш / идёт обновление';
+    return 'кэш';
+  }
+  return 'свежая выгрузка';
+}
+
+function dataFreshnessRu(meta: AnalysisMeta | null): string {
+  if (!meta) return 'Данные актуальны';
+  const refreshing = Boolean(meta.refreshing);
+  const isStale = meta.freshness === 'stale';
+  if (refreshing && isStale) return 'Данные обновляются';
+  if (isStale) return 'Снимок не самый свежий';
+  return 'Данные актуальны';
+}
+
+function truncateForLog(s: string, max = 52): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+function emitAnalysisTelemetry(
+  pushLine: (entry: { badge: string; text: string; kind: 'ok' | 'info' | 'warn' }) => void,
+  updateSnapshot: (patch: Partial<LocationTelemetrySnapshot>) => void,
+  analysis: LocationAnalysis,
+  meta: AnalysisMeta | null,
+) {
+  pushLine({ badge: 'SRC', text: `источник данных: ${sourceDataRu(meta)}`, kind: 'ok' });
+  pushLine({ badge: 'MAG', text: `найдено магнитов: ${analysis.magnets.length}`, kind: 'info' });
+  pushLine({ badge: 'CMP', text: `найдено конкурентов: ${analysis.competitors.length}`, kind: 'info' });
+  pushLine({ badge: 'DM', text: `тип спроса: ${demandTypeRu(analysis.demandType)}`, kind: 'info' });
+  pushLine({
+    badge: 'IDX',
+    text: `индекс локации обновлён · ${analysis.evergreenIndex}`,
+    kind: 'ok',
+  });
+  const fresh = dataFreshnessRu(meta);
+  const freshKind: 'ok' | 'warn' = fresh === 'Данные актуальны' ? 'ok' : 'warn';
+  pushLine({ badge: '···', text: fresh, kind: freshKind });
+  if (meta?.usedFallbackQuery) {
+    pushLine({ badge: '⚠', text: 'часть запросов к картам выполнена в упрощённом режиме', kind: 'warn' });
+  }
+  updateSnapshot({
+    evergreenIndex: analysis.evergreenIndex,
+    magnetCount: analysis.magnets.length,
+    competitorCount: analysis.competitors.length,
+    demandTypeLabel: demandTypeRu(analysis.demandType),
+    dataStatusLabel: fresh,
   });
 }
 
@@ -950,6 +1027,9 @@ const LOADING_STEPS = [
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function LocationIntelligenceDemo() {
+  const locTel = useLocationTelemetryOptional();
+  const locTelRef = useRef(locTel);
+  locTelRef.current = locTel;
   const [selected, setSelected] = useState<SelectedAddress | null>(null);
   const [phase, setPhase] = useState<'idle' | 'loading' | 'result'>('idle');
   const [step, setStep] = useState(0);
@@ -963,6 +1043,7 @@ export function LocationIntelligenceDemo() {
     e.preventDefault();
     if (!selected) { setValidationErr(true); return; }
     setValidationErr(false);
+    locTel?.pushLine({ badge: 'RUN', text: 'расчёт запущен', kind: 'info' });
     setPhase('loading');
     setStep(0);
     setAnalysis(null);
@@ -978,6 +1059,7 @@ export function LocationIntelligenceDemo() {
     setAnimated(false);
     setValidationErr(false);
     setInputKey(k => k + 1);
+    locTel?.resetTelemetry();
   }
 
   // Loading: step ticker + server-side OSM fetch + analysis
@@ -1000,6 +1082,10 @@ export function LocationIntelligenceDemo() {
         setAnalysis(resolvedAnalysis);
         setAnalysisMeta(resolvedMeta);
         setPhase('result');
+        const tel = locTelRef.current;
+        if (tel) {
+          emitAnalysisTelemetry(tel.pushLine, tel.updateSnapshot, resolvedAnalysis, resolvedMeta);
+        }
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
       }, Math.max(0, 2500 - elapsed));
     });
@@ -1021,7 +1107,7 @@ export function LocationIntelligenceDemo() {
               Система понимает потенциал вашего объекта
             </h2>
             <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
-              Введите ваш адрес — и посмотрите, как ASI оценивает локацию: магниты, конкурентов и индекс вечной локации.
+              Введите ваш адрес — и посмотрите, какие магниты и конкуренты реально влияют на ваш объект.
             </p>
           </div>
 
@@ -1030,7 +1116,7 @@ export function LocationIntelligenceDemo() {
               Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.
             </p>
             <p className="text-base sm:text-lg text-slate-400 leading-relaxed">
-              То есть показывают, где у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
+              То есть показывают, куда у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
             </p>
           </div>
         </div>
@@ -1099,7 +1185,15 @@ export function LocationIntelligenceDemo() {
               <form onSubmit={handleSubmit} className="flex flex-col gap-3">
                 <AddressInput
                   key={inputKey}
-                  onSelect={addr => { setSelected(addr); setValidationErr(false); }}
+                  onSelect={addr => {
+                    setSelected(addr);
+                    setValidationErr(false);
+                    locTel?.pushLine({
+                      badge: 'ADR',
+                      text: `адрес выбран · ${truncateForLog(addr.value)}`,
+                      kind: 'info',
+                    });
+                  }}
                   onClear={() => setSelected(null)}
                   disabled={phase === 'loading'}
                 />

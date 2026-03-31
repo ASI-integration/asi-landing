@@ -1,137 +1,83 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useLocationTelemetryOptional, type TelemetryLogEntry } from '@/context/landing-location-telemetry';
 
-interface LogEntry {
-  id: number;
-  timestamp: string;
-  badge: string;
-  text: string;
-  kind: 'ok' | 'event' | 'warn' | 'pay';
-}
+const BADGE_COLORS: Record<TelemetryLogEntry['kind'], string> = {
+  ok: 'text-emerald-400/90',
+  info: 'text-slate-400',
+  warn: 'text-amber-400/90',
+};
 
-const EVENT_POOL: Array<{ badge: string; text: string; kind: LogEntry['kind'] }> = [
-  { badge: 'MSG',  text: 'гость · Арбатская · время заезда запрошено',   kind: 'event' },
-  { badge: '✓',   text: 'ответ отправлен · 0.4s',                         kind: 'ok'    },
-  { badge: 'MSG',  text: 'код доступа · объект #2 · запрошен',            kind: 'event' },
-  { badge: '✓',   text: 'инструкция отправлена гостю',                    kind: 'ok'    },
-  { badge: 'PAY',  text: 'доплата · поздний выезд · выставлен счёт',     kind: 'pay'   },
-  { badge: '✓',   text: '3 200 ₽ · платёж принят',                       kind: 'ok'    },
-  { badge: 'CLN',  text: 'клининг закрыт · Сокол · статус OK',           kind: 'event' },
-  { badge: '✓',   text: 'следующий заезд через 3ч · подтверждено',       kind: 'ok'    },
-  { badge: 'MSG',  text: 'продление +2 дня · объект #4 · запрос',        kind: 'event' },
-  { badge: '✓',   text: 'доступность подтверждена · бронь обновлена',    kind: 'ok'    },
-  { badge: 'MSG',  text: 'запрос парковки · Коломенская',                 kind: 'event' },
-  { badge: '✓',   text: 'код двора выслан · 0.3s',                       kind: 'ok'    },
-  { badge: '⚠',   text: 'шум · объект #7 · оператор подключён',          kind: 'warn'  },
-  { badge: 'SCH',  text: 'расписание клининга обновлено автоматически',   kind: 'event' },
-  { badge: 'MSG',  text: 'гость · Речной вокзал · нет Wi-Fi',            kind: 'event' },
-  { badge: '✓',   text: 'инструкция отправлена · 0.5s',                  kind: 'ok'    },
-  { badge: 'PAY',  text: 'залог за животное · 2 000 ₽ · счёт создан',   kind: 'pay'   },
-  { badge: '✓',   text: 'счёт отправлен гостю',                          kind: 'ok'    },
-  { badge: 'MSG',  text: 'ранний заезд · согласован · объект #3',        kind: 'event' },
-  { badge: '✓',   text: 'расписание клининга скорректировано',           kind: 'ok'    },
-  { badge: 'MSG',  text: 'гость запрашивает скидку · история проверена', kind: 'event' },
-  { badge: '✓',   text: 'промокод LOYALTY10 выслан',                     kind: 'ok'    },
-];
-
-function makeTimestamp(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  const s = d.getSeconds().toString().padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
-
-const BADGE_COLORS: Record<LogEntry['kind'], string> = {
-  ok:    'text-emerald-400/90',
-  event: 'text-slate-400',
-  warn:  'text-amber-400/90',
-  pay:   'text-amber-300/90',
+const IDLE_ENTRY: TelemetryLogEntry = {
+  id: -1,
+  timestamp: '',
+  badge: '···',
+  text: 'Сигналы анализа появятся здесь после расчёта в демо локации ниже.',
+  kind: 'info',
 };
 
 export function HeroMonitor() {
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [score, setScore] = useState(87);
-  const [ops, setOps] = useState(47);
-  const poolIdx = useRef(0);
-  const entryId = useRef(0);
-  const frameRef = useRef(0);
+  const tel = useLocationTelemetryOptional();
+  const entries = tel?.entries ?? [];
+  const snapshot = tel?.snapshot ?? {
+    evergreenIndex: null,
+    magnetCount: null,
+    competitorCount: null,
+    demandTypeLabel: null,
+    dataStatusLabel: null,
+  };
 
-  // Pre-populate log
-  useEffect(() => {
-    const now = Date.now();
-    const initial: LogEntry[] = [];
-    for (let i = 7; i >= 0; i--) {
-      const ev = EVENT_POOL[poolIdx.current % EVENT_POOL.length];
-      poolIdx.current++;
-      initial.push({ id: entryId.current++, timestamp: makeTimestamp(now - i * 2100), ...ev });
-    }
-    setLog(initial);
-  }, []);
+  const visibleLog = entries.length > 0 ? entries.slice(-4) : [IDLE_ENTRY];
+  const hasLiveSignals = entries.length > 0;
 
-  // Stream new events
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const ev = EVENT_POOL[poolIdx.current % EVENT_POOL.length];
-      poolIdx.current++;
-      setLog(prev => [...prev.slice(-12), {
-        id: entryId.current++,
-        timestamp: makeTimestamp(Date.now()),
-        ...ev,
-      }]);
-    }, 1700);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Bump counters
-  useEffect(() => {
-    const ticker = setInterval(() => {
-      frameRef.current += 1;
-      if (frameRef.current % 7 === 0) setScore(s => Math.min(99, s + Math.floor(Math.random() * 2)));
-      if (frameRef.current % 3 === 0) setOps(o => o + 1);
-    }, 1200);
-    return () => clearInterval(ticker);
-  }, []);
-
-  const visibleLog = log.slice(-4);
+  const indexLabel = snapshot.evergreenIndex != null ? String(snapshot.evergreenIndex) : '—';
+  const magnetLabel = snapshot.magnetCount != null ? String(snapshot.magnetCount) : '—';
+  const competitorLabel = snapshot.competitorCount != null ? String(snapshot.competitorCount) : '—';
+  const demandLabel = snapshot.demandTypeLabel ?? '—';
+  const statusLabel = snapshot.dataStatusLabel ?? (hasLiveSignals ? '—' : 'ожидание расчёта');
 
   return (
     <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-900/80 shadow-2xl shadow-black/60 overflow-hidden backdrop-blur-sm">
-      {/* Window chrome */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/90 bg-slate-950/60">
         <span className="h-2.5 w-2.5 rounded-full bg-rose-500/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
         <span className="ml-3 text-xs font-mono text-slate-500 truncate select-none">
-          asi.system · activity log
+          asi.location · журнал анализа
         </span>
         <span className="ml-auto flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-mono text-emerald-500">live</span>
+          {hasLiveSignals ? (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400/90" />
+              <span className="text-xs font-mono text-slate-500">демо</span>
+            </>
+          ) : (
+            <>
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+              <span className="text-xs font-mono text-slate-600">idle</span>
+            </>
+          )}
         </span>
       </div>
 
-      {/* Body */}
       <div className="p-4 sm:p-5 grid grid-cols-5 gap-4" style={{ minHeight: 360 }}>
 
-        {/* Left: live log feed */}
         <div
           className="col-span-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-4 py-4 flex flex-col overflow-hidden"
           style={{ minHeight: 300 }}
         >
           <p className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.2em] text-slate-500 mb-3 shrink-0">
-            системный журнал · все объекты
+            сигналы расчёта локации
           </p>
           <div className="flex-1 flex flex-col justify-end gap-0 overflow-hidden min-h-0">
             {visibleLog.map((entry, i) => (
               <div
                 key={entry.id}
                 className="flex items-start gap-2 min-w-0 py-2 border-b border-slate-800/40 last:border-0"
-                style={{ opacity: 0.45 + 0.18 * i }}
+                style={{ opacity: entries.length > 0 ? 0.45 + 0.18 * i : 0.85 }}
               >
                 <span className="text-xs font-mono text-slate-500 shrink-0 tabular-nums w-[58px] pt-0.5">
-                  {entry.timestamp}
+                  {entry.timestamp || '·····'}
                 </span>
                 <span className={`text-xs font-mono font-bold shrink-0 w-9 pt-0.5 ${BADGE_COLORS[entry.kind]}`}>
                   {entry.badge}
@@ -144,47 +90,57 @@ export function HeroMonitor() {
           </div>
         </div>
 
-        {/* Right: stats */}
         <div className="col-span-2 flex flex-col gap-2.5">
 
-          {/* Score card */}
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Индекс объекта</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Индекс вечной локации</p>
             <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-3xl font-bold text-white tabular-nums">{score}</span>
+              <span className="text-3xl font-bold text-white tabular-nums">{indexLabel}</span>
               <span className="text-xs text-slate-600">/ 100</span>
             </div>
             <div className="mt-2 h-1 rounded-full bg-slate-800 overflow-hidden">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-700"
-                style={{ width: `${score}%` }}
+                className="h-full rounded-full bg-indigo-500 transition-all duration-700"
+                style={{
+                  width: snapshot.evergreenIndex != null ? `${Math.min(100, Math.max(0, snapshot.evergreenIndex))}%` : '0%',
+                }}
               />
             </div>
           </div>
 
-          {/* Ops counter */}
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Операций сегодня</p>
-            <p className="text-2xl font-bold text-indigo-400 tabular-nums mt-0.5">{ops}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Окружение OSM</p>
+            <div className="flex gap-4 mt-1.5">
+              <div>
+                <p className="text-[10px] font-mono text-slate-600">магниты</p>
+                <p className="text-xl font-bold text-indigo-400 tabular-nums">{magnetLabel}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-mono text-slate-600">конкуренты</p>
+                <p className="text-xl font-bold text-slate-300 tabular-nums">{competitorLabel}</p>
+              </div>
+            </div>
           </div>
 
-          {/* System status */}
           <div className="flex-1 rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-2">Статус</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-2">Спрос и данные</p>
             <div className="space-y-1.5">
-              {[
-                { label: 'ИИ-ядро',       ok: true },
-                { label: 'Каналы связи',  ok: true },
-                { label: 'Интеграции',    ok: true },
-              ].map(item => (
-                <div key={item.label} className="flex items-center gap-1.5">
-                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${item.ok ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                  <span className="text-[10px] font-mono text-slate-500 truncate">{item.label}</span>
-                  <span className={`ml-auto text-[9px] font-mono shrink-0 ${item.ok ? 'text-emerald-600' : 'text-amber-500'}`}>
-                    {item.ok ? 'OK' : 'warn'}
-                  </span>
-                </div>
-              ))}
+              <div className="flex items-start gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1 bg-sky-500/80" />
+                <span className="text-[10px] font-mono text-slate-500 leading-snug">
+                  Тип спроса: <span className="text-slate-400">{demandLabel}</span>
+                </span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full shrink-0 mt-1 ${
+                    statusLabel.includes('актуальн') ? 'bg-emerald-500' : statusLabel.includes('обновля') ? 'bg-amber-400' : 'bg-slate-500'
+                  }`}
+                />
+                <span className="text-[10px] font-mono text-slate-500 leading-snug">
+                  <span className="text-slate-400">{statusLabel}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 // Public API of the location gravity engine
 
 export type {
+  DemandType,
   PermanenceType,
   MagnetCategory,
   OSMElement,

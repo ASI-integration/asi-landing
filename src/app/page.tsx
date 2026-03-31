@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { CommDemo } from '@/components/CommDemo';
 import { HeroMonitor } from '@/components/HeroMonitor';
+import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
 /* ─── Telegram SVG icon ────────────────────────────────────────────────────── */
 function TgIcon({ className = 'w-5 h-5' }: { className?: string }) {
@@ -79,6 +80,7 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function Home() {
   return (
+    <LocationTelemetryProvider>
     <div className="min-h-screen bg-slate-950">
 
       {/* ── Header ── */}
@@ -302,5 +304,6 @@ export default function Home() {
       </footer>
 
     </div>
+    </LocationTelemetryProvider>
   );
 }
