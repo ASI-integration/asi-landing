@@ -11,7 +11,7 @@ import {
   formatDist,
   projectToSVG,
 } from '@/lib/location';
-import type { LocationAnalysis, Band } from '@/lib/location';
+import type { LocationAnalysis, Band, AnalysisMeta } from '@/lib/location';
 
 // ── UI-only types ─────────────────────────────────────────────────────────────
 
@@ -44,7 +44,10 @@ async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[];
   }
 }
 
-async function fetchLocationAnalysis(lat: number, lon: number): Promise<LocationAnalysis | null> {
+async function fetchLocationAnalysis(
+  lat: number,
+  lon: number,
+): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
   try {
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
@@ -52,11 +55,84 @@ async function fetchLocationAnalysis(lat: number, lon: number): Promise<Location
       body: JSON.stringify({ lat, lon }),
     });
     if (!res.ok) return null;
-    const data = await res.json() as { analysis?: LocationAnalysis };
-    return data.analysis ?? null;
+    const data = await res.json() as { analysis?: LocationAnalysis; meta?: AnalysisMeta };
+    if (!data.analysis) return null;
+    const meta: AnalysisMeta = data.meta ?? {
+      freshness: 'fresh',
+      updatedAt: new Date().toISOString(),
+      source: 'osm-overpass',
+      cached: false,
+    };
+    return { analysis: data.analysis, meta };
   } catch {
     return null;
   }
+}
+
+function formatUpdatedRelativeRu(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const m = Math.floor((Date.now() - t) / 60000);
+  if (m < 1) return 'Обновлено только что';
+  if (m < 60) return `Обновлено ${m} мин. назад`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `Обновлено ${h} ч. назад`;
+  return `Обновлено ${new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function formatUpdatedAtReadableRu(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
+  const isStale = meta.freshness === 'stale';
+  const refreshing = Boolean(meta.refreshing);
+  const fromCache = meta.cached;
+
+  let statusLabel: string;
+  let statusClass: string;
+  if (refreshing && isStale) {
+    statusLabel = 'Данные обновляются';
+    statusClass = 'text-amber-400';
+  } else if (isStale) {
+    statusLabel = 'Снимок не самый свежий';
+    statusClass = 'text-slate-400';
+  } else {
+    statusLabel = 'Данные актуальны';
+    statusClass = 'text-emerald-400';
+  }
+
+  const sourceKind = fromCache
+    ? (refreshing && isStale ? 'кэш (идёт обновление)' : 'кэш')
+    : 'свежая выгрузка';
+  const baseSource = 'OpenStreetMap';
+
+  return (
+    <div className="px-5 py-2.5 border-b border-slate-800/50 bg-slate-950/30">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={`text-[11px] font-semibold ${statusClass}`}>{statusLabel}</span>
+        <span className="text-[10px] text-slate-500">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-500 leading-snug">
+        <span className="text-slate-600">Время снимка: </span>
+        {formatUpdatedAtReadableRu(meta.updatedAt)}
+      </p>
+      <p className="mt-0.5 text-[10px] text-slate-500 leading-snug">
+        Источник: {baseSource} · {sourceKind}
+        {meta.usedFallbackQuery ? (
+          <span className="text-slate-600"> · часть сервисов была недоступна</span>
+        ) : null}
+      </p>
+    </div>
+  );
 }
 
 // ── Idle map panel ─────────────────────────────────────────────────────────────
@@ -585,10 +661,12 @@ function ASIPanel({
   analysis,
   address,
   animated,
+  meta,
 }: {
   analysis: LocationAnalysis;
   address: string;
   animated: boolean;
+  meta: AnalysisMeta | null;
 }) {
   const {
     magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation,
@@ -619,6 +697,7 @@ function ASIPanel({
         transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}
     >
+      {meta ? <AnalysisFreshnessStrip meta={meta} /> : null}
       {/* Header: index ring + verdict */}
       <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
         <EvergreenRing index={evergreenIndex} band={band} animated={animated} />
@@ -796,6 +875,7 @@ export function LocationIntelligenceDemo() {
   const [phase, setPhase] = useState<'idle' | 'loading' | 'result'>('idle');
   const [step, setStep] = useState(0);
   const [analysis, setAnalysis] = useState<LocationAnalysis | null>(null);
+  const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
   const [animated, setAnimated] = useState(false);
   const [validationErr, setValidationErr] = useState(false);
   const [inputKey, setInputKey] = useState(0);
@@ -807,6 +887,7 @@ export function LocationIntelligenceDemo() {
     setPhase('loading');
     setStep(0);
     setAnalysis(null);
+    setAnalysisMeta(null);
     setAnimated(false);
   }
 
@@ -814,6 +895,7 @@ export function LocationIntelligenceDemo() {
     setSelected(null);
     setPhase('idle');
     setAnalysis(null);
+    setAnalysisMeta(null);
     setAnimated(false);
     setValidationErr(false);
     setInputKey(k => k + 1);
@@ -831,11 +913,13 @@ export function LocationIntelligenceDemo() {
     const fetchStart = Date.now();
     fetchLocationAnalysis(selected.lat, selected.lon).then(result => {
       if (cancelled) return;
-      const resolved = result ?? buildAnalysis([], selected.lat, selected.lon);
+      const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon);
+      const resolvedMeta = result?.meta ?? null;
       const elapsed = Date.now() - fetchStart;
       setTimeout(() => {
         if (cancelled) return;
-        setAnalysis(resolved);
+        setAnalysis(resolvedAnalysis);
+        setAnalysisMeta(resolvedMeta);
         setPhase('result');
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
       }, Math.max(0, 2500 - elapsed));
@@ -925,6 +1009,7 @@ export function LocationIntelligenceDemo() {
                 analysis={analysis}
                 address={selected?.value ?? ''}
                 animated={animated}
+                meta={analysisMeta}
               />
             </div>
 

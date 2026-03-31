@@ -107,6 +107,10 @@ export interface AnalysisMeta {
   source: string;
   /** true when the response body came from cache, not a live fetch */
   cached: boolean;
+  /** Stale cache returned while a background live refresh is in flight */
+  refreshing?: boolean;
+  /** Live fetch used a reduced Overpass query after primary queries failed */
+  usedFallbackQuery?: boolean;
 }
 
 /** Full structured output of the gravity engine */

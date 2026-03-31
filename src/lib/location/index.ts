@@ -31,7 +31,8 @@ export type { OsmFetchResult } from './overpass';
 // ── Provider interfaces ────────────────────────────────────────────────────────
 export type { MagnetProvider, MagnetFetchResult, GeocodingProvider, GeocodeResult, MapDisplayProvider } from './providers/types';
 export { osmOverpassProvider } from './providers/osm-overpass';
-export { nominatimGeocodingProvider } from './providers/geocoding';
+export { nominatimGeocodingProvider, geocodeWithFallback } from './providers/geocoding';
+export type { GeocodeAttemptStatus } from './providers/geocoding';
 
 export {
   haversineMeters,

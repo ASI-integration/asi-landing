@@ -6,7 +6,7 @@
  * if the address has already been analysed we return the cached coords
  * without hitting Nominatim.
  *
- * On cache miss the Nominatim geocoding provider is used.
+ * On cache miss: Nominatim, then Photon (Komoot) if the first fails or returns empty.
  * The result (coords + displayName) is returned to the caller so they can
  * proceed to POST /api/location-demo-analyze with the resolved lat/lon.
  *
@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { normalizeAddress, cacheGetByAddress } from '@/lib/location/cache';
-import { nominatimGeocodingProvider } from '@/lib/location/providers/geocoding';
+import { geocodeWithFallback } from '@/lib/location/providers/geocoding';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,8 +45,8 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ── Geocode via Nominatim ──────────────────────────────────────────────────
-  const result = await nominatimGeocodingProvider.geocode(rawAddress);
+  // ── Geocode chain (Nominatim → Photon) ─────────────────────────────────────
+  const { result } = await geocodeWithFallback(rawAddress);
 
   if (!result) {
     return NextResponse.json(

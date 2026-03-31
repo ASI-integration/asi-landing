@@ -171,6 +171,30 @@ async function fetchOsmByBatches(clauses: string[]): Promise<{ elements: OSMElem
 export interface OsmFetchResult {
   elements: OSMElement[];
   hadProviderFailure: boolean;
+  /** Primary full query failed across endpoints; a smaller query recovered data */
+  usedFallbackQuery?: boolean;
+}
+
+/** Reduced query: fewer selectors, single batch — last resort when full pipeline fails */
+function buildMinimalClauses(lat: number, lon: number): string[] {
+  const r = (meters: number, filter: string) => makeAround(filter, meters, lat, lon, true);
+  return [
+    ...r(CATEGORY_RADIUS.metro, '"railway"="subway_entrance"'),
+    ...r(CATEGORY_RADIUS.metro, '"station"="subway"'),
+    ...r(CATEGORY_RADIUS.attraction, '"tourism"="attraction"'),
+    ...r(COMPETITOR_RADIUS, '"tourism"="hotel"'),
+    ...r(COMPETITOR_RADIUS, '"tourism"="guest_house"'),
+  ];
+}
+
+async function fetchOsmDataMinimal(lat: number, lon: number): Promise<OsmFetchResult> {
+  const clauses = buildMinimalClauses(lat, lon);
+  const result = await fetchOverpassQuery(buildQuery(clauses));
+  return {
+    elements: result.elements,
+    hadProviderFailure: result.hadProviderFailure,
+    usedFallbackQuery: true,
+  };
 }
 
 export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchResult> {
@@ -189,7 +213,21 @@ export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchRe
   const hadProviderFailure = strictResult.hadProviderFailure || fallbackResult.hadProviderFailure;
 
   if (merged.length === 0 && hadProviderFailure) {
-    console.warn(`[location-demo] overpass_failed lat=${lat} lon=${lon}`);
+    console.warn(
+      `[location] magnet_provider primary_exhausted lat=${lat} lon=${lon} trying=minimal_overpass`,
+    );
+    const minimal = await fetchOsmDataMinimal(lat, lon);
+    if (minimal.elements.length > 0) {
+      console.warn(
+        `[location] magnet_provider status=recovered via=minimal_overpass count=${minimal.elements.length}`,
+      );
+      return {
+        elements: dedupeElements(minimal.elements),
+        hadProviderFailure: minimal.hadProviderFailure,
+        usedFallbackQuery: true,
+      };
+    }
+    console.warn(`[location] magnet_provider status=all_failed lat=${lat} lon=${lon}`);
   }
 
   return { elements: merged, hadProviderFailure };

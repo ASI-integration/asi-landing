@@ -15,6 +15,8 @@ export interface MagnetFetchResult {
   elements: OSMElement[];
   /** true when every endpoint failed (no data retrieved) */
   hadProviderFailure: boolean;
+  /** True when a reduced Overpass query recovered after primary failures */
+  usedFallbackQuery?: boolean;
 }
 
 /**

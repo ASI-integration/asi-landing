@@ -5,14 +5,16 @@ import type { AnalysisMeta } from '@/lib/location/types';
 
 export const dynamic = 'force-dynamic';
 
-const PROVIDER_SOURCE = 'osm-overpass';
+function sourceLabel(usedFallback: boolean | undefined): string {
+  return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';
+}
 
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
-    const { elements } = await fetchOsmData(lat, lon);
+    const { elements, usedFallbackQuery } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon);
-    await cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
+    await cacheSet(lat, lon, analysis, sourceLabel(usedFallbackQuery), elements.length);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[location-demo-analyze] background_refresh_failed lat=${lat} lon=${lon}: ${message}`);
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date(cached.entry.updatedAt).toISOString(),
         source: cached.entry.source,
         cached: true,
+        ...(cached.freshness === 'stale' ? { refreshing: true } : {}),
       };
 
       // Return cached result immediately — no "Нет данных" when data exists.
@@ -55,15 +58,26 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
-    const { elements } = await fetchOsmData(lat, lon);
+    const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon);
-    await cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
+    const src = sourceLabel(usedFallbackQuery);
+    await cacheSet(lat, lon, analysis, src, elements.length);
+
+    if (usedFallbackQuery) {
+      console.warn(`[location-demo-analyze] magnet_provider used_fallback_query count=${elements.length}`);
+    }
+    if (elements.length === 0) {
+      console.warn(
+        `[location-demo-analyze] magnet_provider status=${hadProviderFailure ? 'unavailable' : 'empty_area'} lat=${lat} lon=${lon}`,
+      );
+    }
 
     const meta: AnalysisMeta = {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
-      source: PROVIDER_SOURCE,
+      source: src,
       cached: false,
+      ...(usedFallbackQuery ? { usedFallbackQuery: true } : {}),
     };
 
     return NextResponse.json({
