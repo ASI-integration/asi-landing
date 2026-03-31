@@ -12,7 +12,7 @@ async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
     const { elements } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon);
-    cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
+    await cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[location-demo-analyze] background_refresh_failed lat=${lat} lon=${lon}: ${message}`);
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Cache check ────────────────────────────────────────────────────────────
-    const cached = cacheGet(lat, lon);
+    const cached = await cacheGet(lat, lon);
 
     if (cached) {
       const meta: AnalysisMeta = {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
     const { elements } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon);
-    cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
+    await cacheSet(lat, lon, analysis, PROVIDER_SOURCE, elements.length);
 
     const meta: AnalysisMeta = {
       freshness: 'fresh',

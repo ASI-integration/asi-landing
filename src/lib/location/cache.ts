@@ -1,8 +1,17 @@
-// ── Location analysis in-memory cache ─────────────────────────────────────────
-// Keys: rounded coordinates (4 decimal places ≈ 11 m precision) + optional address.
-// For production replace the Map with Redis/Upstash — the interface stays the same.
+// ── Location analysis persistent cache ────────────────────────────────────────
+// Backed by Supabase table `location_analysis_cache`.
+// Schema: scripts/migrations/001_location_analysis_cache.sql
+//
+// Keys:
+//   coord_key   — rounded coordinates "lat4,lon4" (≈11 m precision, PRIMARY KEY)
+//   address_key — normalised address string (optional secondary lookup)
+//
+// Freshness windows:
+//   FRESH_TTL_MS  — results within this window are served as-is (fresh)
+//   MAX_STALE_MS  — rows older than this are evicted on read
 
 import type { LocationAnalysis, AnalysisFreshness } from './types';
+import { supabase } from '@/lib/supabase';
 
 /** 10 minutes: results within this window are considered fresh */
 const FRESH_TTL_MS = 10 * 60 * 1000;
@@ -15,6 +24,9 @@ interface CacheEntry {
   updatedAt: number;
   source: string;
   elementsCount: number;
+  /** Resolved coordinates — available when the entry was found by address lookup */
+  lat?: number;
+  lon?: number;
 }
 
 export interface CacheResult {
@@ -22,12 +34,22 @@ export interface CacheResult {
   freshness: AnalysisFreshness;
 }
 
-// Primary store: "lat4,lon4" → entry
-const coordStore = new Map<string, CacheEntry>();
-// Secondary index: normalised address string → coord key
-const addressIndex = new Map<string, string>();
+// ── Row shape as returned by Supabase ────────────────────────────────────────
 
-function makeCoordKey(lat: number, lon: number): string {
+interface CacheRow {
+  coord_key: string;
+  lat: number;
+  lon: number;
+  address_key: string | null;
+  analysis: LocationAnalysis;
+  elements_count: number;
+  source: string;
+  updated_at: string;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+export function makeCoordKey(lat: number, lon: number): string {
   return `${lat.toFixed(4)},${lon.toFixed(4)}`;
 }
 
@@ -35,57 +57,114 @@ export function normalizeAddress(address: string): string {
   return address.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function readEntry(key: string): CacheResult | null {
-  const entry = coordStore.get(key);
-  if (!entry) return null;
-  const age = Date.now() - entry.updatedAt;
-  if (age > MAX_STALE_MS) {
-    coordStore.delete(key);
-    return null;
-  }
+function rowToResult(row: CacheRow): CacheResult | null {
+  const updatedAt = new Date(row.updated_at).getTime();
+  const age = Date.now() - updatedAt;
+  if (age > MAX_STALE_MS) return null;
   const freshness: AnalysisFreshness = age < FRESH_TTL_MS ? 'fresh' : 'stale';
-  return { entry, freshness };
+  return {
+    entry: {
+      analysis: row.analysis,
+      updatedAt,
+      source: row.source,
+      elementsCount: row.elements_count,
+      lat: row.lat,
+      lon: row.lon,
+    },
+    freshness,
+  };
 }
 
+// ── Public API ────────────────────────────────────────────────────────────────
+
 /** Look up by coordinates. Returns null on miss or expired entry. */
-export function cacheGet(lat: number, lon: number): CacheResult | null {
-  return readEntry(makeCoordKey(lat, lon));
+export async function cacheGet(lat: number, lon: number): Promise<CacheResult | null> {
+  try {
+    const { data, error } = await supabase
+      .from('location_analysis_cache')
+      .select('coord_key, lat, lon, address_key, analysis, elements_count, source, updated_at')
+      .eq('coord_key', makeCoordKey(lat, lon))
+      .maybeSingle<CacheRow>();
+
+    if (error || !data) return null;
+
+    const result = rowToResult(data);
+    if (!result) {
+      // Evict stale row
+      await supabase
+        .from('location_analysis_cache')
+        .delete()
+        .eq('coord_key', data.coord_key);
+    }
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 /** Look up by normalized address string. Returns null on miss. */
-export function cacheGetByAddress(address: string): CacheResult | null {
-  const key = addressIndex.get(normalizeAddress(address));
-  if (!key) return null;
-  const result = readEntry(key);
-  if (!result) {
-    addressIndex.delete(normalizeAddress(address));
+export async function cacheGetByAddress(address: string): Promise<CacheResult | null> {
+  try {
+    const { data, error } = await supabase
+      .from('location_analysis_cache')
+      .select('coord_key, lat, lon, address_key, analysis, elements_count, source, updated_at')
+      .eq('address_key', normalizeAddress(address))
+      .maybeSingle<CacheRow>();
+
+    if (error || !data) return null;
+
+    const result = rowToResult(data);
+    if (!result) {
+      await supabase
+        .from('location_analysis_cache')
+        .delete()
+        .eq('coord_key', data.coord_key);
+    }
+    return result;
+  } catch {
+    return null;
   }
-  return result;
 }
 
 /** Store a live-fetched result. Pass address to also index by address. */
-export function cacheSet(
+export async function cacheSet(
   lat: number,
   lon: number,
   analysis: LocationAnalysis,
   source: string,
   elementsCount: number,
   address?: string,
-): void {
-  const key = makeCoordKey(lat, lon);
-  coordStore.set(key, { analysis, updatedAt: Date.now(), source, elementsCount });
-  if (address) {
-    addressIndex.set(normalizeAddress(address), key);
+): Promise<void> {
+  try {
+    await supabase
+      .from('location_analysis_cache')
+      .upsert(
+        {
+          coord_key: makeCoordKey(lat, lon),
+          lat,
+          lon,
+          analysis,
+          elements_count: elementsCount,
+          source,
+          updated_at: new Date().toISOString(),
+          ...(address != null ? { address_key: normalizeAddress(address) } : {}),
+        },
+        { onConflict: 'coord_key' },
+      );
+  } catch {
+    // Non-fatal: cache miss is acceptable, scoring still works
   }
 }
 
-/** Evict all entries older than MAX_STALE_MS. Call periodically if needed. */
-export function cachePurgeExpired(): void {
-  const now = Date.now();
-  for (const [key, entry] of coordStore) {
-    if (now - entry.updatedAt > MAX_STALE_MS) coordStore.delete(key);
-  }
-  for (const [addr, key] of addressIndex) {
-    if (!coordStore.has(key)) addressIndex.delete(addr);
+/** Evict all entries older than MAX_STALE_MS. Safe to call periodically. */
+export async function cachePurgeExpired(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - MAX_STALE_MS).toISOString();
+    await supabase
+      .from('location_analysis_cache')
+      .delete()
+      .lt('updated_at', cutoff);
+  } catch {
+    // Best-effort purge — ignore failures
   }
 }
