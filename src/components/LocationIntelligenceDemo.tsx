@@ -14,7 +14,6 @@ import type {
   MagnetItem,
   Band,
   AnalysisMeta,
-  FootTrafficModifierTier,
   DemandType,
 } from '@/lib/location';
 import {
@@ -196,21 +195,10 @@ function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
   const baseSource = 'OpenStreetMap';
 
   return (
-    <div className="px-5 py-2.5 border-b border-slate-800/50 bg-slate-950/30">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className={`text-[19px] font-semibold ${statusClass}`}>{statusLabel}</span>
-        <span className="text-[17px] text-slate-500">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
-      </div>
-      <p className="mt-1 text-[17px] text-slate-500 leading-snug">
-        <span className="text-slate-600">Время снимка: </span>
-        {formatUpdatedAtReadableRu(meta.updatedAt)}
-      </p>
-      <p className="mt-0.5 text-[17px] text-slate-500 leading-snug">
-        Источник: {baseSource} · {sourceKind}
-        {meta.usedFallbackQuery ? (
-          <span className="text-slate-600"> · часть сервисов была недоступна</span>
-        ) : null}
-      </p>
+    <div className="px-5 py-2 border-b border-slate-800/40 bg-slate-950/30 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+      <span className={`text-[11px] font-semibold uppercase tracking-[0.15em] ${statusClass}`}>{statusLabel}</span>
+      <span className="text-[11px] text-slate-600">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
+      <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ' · упрощённый режим' : ''}</span>
     </div>
   );
 }
@@ -325,7 +313,110 @@ function IdleMapPanel() {
   );
 }
 
-// ── OSM Map Panel ─────────────────────────────────────────────────────────────
+// ── Map loading overlay (shared) ─────────────────────────────────────────────
+
+function MapLoadingOverlay() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
+      <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-4" />
+      <p className="text-white font-semibold text-sm">Запрашиваем окружение...</p>
+      <p className="mt-1 text-xs text-slate-500">реальные объекты вокруг адреса</p>
+    </div>
+  );
+}
+
+// ── 2GIS Map Panel ────────────────────────────────────────────────────────────
+// Primary map. Two render paths:
+//   1. NEXT_PUBLIC_TWOGIS_API_KEY set  → MapGL JS SDK canvas (mapgl.2gis.com/api/js/v1)
+//   2. No key                          → 2GIS iframe embed (real 2GIS tiles, no key needed)
+// OSMMapPanel below is the last-resort fallback if 2GIS embed itself errors.
+
+function TwoGISMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
+  const apiKey = process.env.NEXT_PUBLIC_TWOGIS_API_KEY;
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [sdkError, setSdkError] = useState(false);
+  const [sdkReady, setSdkReady] = useState(false);
+
+  useEffect(() => {
+    if (!apiKey || !mapContainerRef.current) return;
+
+    let mapInstance: { destroy: () => void } | null = null;
+    let scriptEl: HTMLScriptElement | null = null;
+
+    const existingScript = document.getElementById('mapgl-api-script');
+    const initMap = () => {
+      try {
+        const w = window as unknown as { mapgl: { Map: new (el: HTMLDivElement, opts: object) => { destroy: () => void }; Marker: new (map: object, opts: object) => void } };
+        mapInstance = new w.mapgl.Map(mapContainerRef.current!, {
+          center: [lon, lat],
+          zoom: 16,
+          key: apiKey,
+        });
+        new w.mapgl.Marker(mapInstance, { coordinates: [lon, lat] });
+        setSdkReady(true);
+      } catch {
+        setSdkError(true);
+      }
+    };
+
+    if (existingScript) {
+      initMap();
+    } else {
+      scriptEl = document.createElement('script');
+      scriptEl.id = 'mapgl-api-script';
+      scriptEl.src = 'https://mapgl.2gis.com/api/js/v1';
+      scriptEl.onload = initMap;
+      scriptEl.onerror = () => setSdkError(true);
+      document.head.appendChild(scriptEl);
+    }
+
+    return () => {
+      mapInstance?.destroy();
+    };
+  }, [lat, lon, apiKey]);
+
+  // Path 1: MapGL SDK
+  if (apiKey && !sdkError) {
+    return (
+      <div
+        className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
+        style={{ height: 420 }}
+      >
+        <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+        {(!sdkReady || loading) && <MapLoadingOverlay />}
+      </div>
+    );
+  }
+
+  // Path 2: 2GIS iframe embed (no key required — real 2GIS tiles)
+  const embedSrc =
+    `https://widgets.2gis.com/maps` +
+    `?q=${lat},${lon}` +
+    `&map_options[center]=${lon},${lat}` +
+    `&map_options[zoom]=16` +
+    `&lang=ru_RU`;
+
+  return (
+    <div
+      className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
+      style={{ height: 420 }}
+    >
+      <iframe
+        src={embedSrc}
+        width="100%"
+        height="100%"
+        frameBorder="0"
+        allowFullScreen
+        title="Карта окружения объекта — 2GIS"
+        loading="lazy"
+        style={{ display: 'block' }}
+      />
+      {loading && <MapLoadingOverlay />}
+    </div>
+  );
+}
+
+// ── OSM Map Panel (fallback only) ─────────────────────────────────────────────
 
 function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
   const deltaLat = 0.005;
@@ -347,13 +438,7 @@ function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading:
         loading="lazy"
         style={{ display: 'block' }}
       />
-      {loading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
-          <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-4" />
-          <p className="text-white font-semibold text-sm">Запрашиваем окружение...</p>
-          <p className="mt-1 text-xs text-slate-500">реальные объекты вокруг адреса</p>
-        </div>
-      )}
+      {loading && <MapLoadingOverlay />}
     </div>
   );
 }
@@ -365,11 +450,6 @@ function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading:
 const SVG_W = 400;
 const SVG_H = 280;
 
-function footTrafficTierRu(tier: FootTrafficModifierTier): string {
-  if (tier === 'strong') return 'усиливает заметно';
-  if (tier === 'moderate') return 'усиливает умеренно';
-  return 'усиливает слабо';
-}
 
 function InfluenceHeatmapPanel({
   analysis,
@@ -826,8 +906,7 @@ function ASIPanel({
   meta: AnalysisMeta | null;
 }) {
   const {
-    magnets, competitors, evergreenIndex, conclusion, gravityExplanation,
-    accessibilityStops, footTraffic,
+    magnets, evergreenIndex, conclusion, gravityExplanation, footTraffic,
   } = analysis;
   const band = getBand(evergreenIndex);
   const [visible, setVisible] = useState(false);
@@ -839,7 +918,6 @@ function ASIPanel({
   }, []);
 
   const hasMagnets = magnets.length > 0;
-  const hasCompetitors = competitors.length > 0;
 
   return (
     <div
@@ -870,87 +948,53 @@ function ASIPanel({
         </div>
       </div>
 
-      {/* Gravity insight */}
-      {hasMagnets && gravityExplanation.dominantMagnets.length > 0 && (
-        <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
-            Анализ притяжения
-          </p>
-          <div className="space-y-2">
+      {/* Analytics: gravity signals + foot traffic — combined compact grid */}
+      {hasMagnets && (
+        <div className="px-5 py-4 border-b border-slate-800/40">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-3">
             {gravityExplanation.strongestZoneLabel && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-[18px] text-slate-600 shrink-0 w-48">Ключевая зона</span>
-                <span className="text-[20px] text-slate-300">{gravityExplanation.strongestZoneLabel}</span>
+              <div className="col-span-2">
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Ключевая зона</p>
+                <p className="text-[17px] text-slate-300">{gravityExplanation.strongestZoneLabel}</p>
               </div>
             )}
             {gravityExplanation.dominantMagnets[0] && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-[18px] text-slate-600 shrink-0 w-48">Главный магнит</span>
-                <span className="text-[20px] text-slate-300 truncate" style={{ maxWidth: 260 }}>
-                  {gravityExplanation.dominantMagnets[0]}
-                </span>
+              <div className="col-span-2">
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Главный магнит</p>
+                <p className="text-[17px] text-slate-300 truncate">{gravityExplanation.dominantMagnets[0]}</p>
               </div>
             )}
-            <div className="flex items-baseline gap-2">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Давление конкурентов</span>
-              <span className={`text-[20px] font-medium ${
+            <div>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Конкуренты</p>
+              <p className={`text-[17px] font-medium ${
                 gravityExplanation.competitorPressureLevel === 'высокое' ? 'text-rose-400'
                 : gravityExplanation.competitorPressureLevel === 'среднее' ? 'text-amber-400'
                 : 'text-emerald-400'
-              }`}>
-                {gravityExplanation.competitorPressureLevel}
-              </span>
+              }`}>{gravityExplanation.competitorPressureLevel}</p>
             </div>
             {gravityExplanation.clusterDetected && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-[18px] text-slate-600 shrink-0 w-48">Зона спроса</span>
-                <span className="text-[20px] text-slate-300">
-                  кластер · {gravityExplanation.clusterSize} объектов рядом
-                </span>
-              </div>
-            )}
-            {gravityExplanation.demandDistribution === 'split' && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-[18px] text-slate-600 shrink-0 w-48">Распределение</span>
-                <span className="text-[20px] text-slate-400">спрос разделён между зонами</span>
+              <div>
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Кластер</p>
+                <p className="text-[17px] text-slate-300">{gravityExplanation.clusterSize} рядом</p>
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {hasMagnets && (
-        <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
-            Поток людей вокруг объекта
-          </p>
-          <p className="text-[17px] text-slate-500 leading-snug mb-3">
-            ASI учитывает не просто движение людей, а понимает, есть ли вокруг вашей локации реальный целевой поток. Для этого система точно определяет все значимые точки притяжения вокруг объекта и оценивает их влияние.
-          </p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-3 mt-3 pt-3 border-t border-slate-800/40">
             <div>
-              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Плотность движения</p>
-              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.movementDensityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Плотность</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.movementDensityRu}</p>
             </div>
             <div>
-              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Активность зоны</p>
-              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.zoneActivityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Активность зоны</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.zoneActivityRu}</p>
             </div>
             <div>
-              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Устойчивость потока</p>
-              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.flowStabilityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Устойчивость</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.flowStabilityRu}</p>
             </div>
             <div>
-              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Целевой поток</p>
-              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.flowCharacterRu}</p>
-            </div>
-            <div className="col-span-2 pt-2 border-t border-slate-800/40">
-              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Влияние на оценку локации</p>
-              <p className="text-[19px] text-slate-300 font-medium">
-                {gravityExplanation.scoreBreakdown.trafficBoost > 0
-                  ? `+${gravityExplanation.scoreBreakdown.trafficBoost} · ${footTrafficTierRu(footTraffic.modifierTier)}`
-                  : 'не влияет'}
-              </p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Целевой поток</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.flowCharacterRu}</p>
             </div>
           </div>
         </div>
@@ -1017,70 +1061,7 @@ function ASIPanel({
         );
       })()}
 
-      {accessibilityStops.length > 0 && (
-        <div className="px-5 pt-3 pb-3 border-t border-slate-800/40">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2">
-            Остановки и платформы
-          </p>
-          <p className="text-[17px] text-slate-500 leading-snug mb-3">
-            Учитываются как слабый модификатор доступности, а не как магниты годового спроса в модели ASI.
-          </p>
-          <div className="space-y-1">
-            {accessibilityStops.map((s, i) => (
-              <div key={i} className="flex items-center justify-between pl-1 py-0.5">
-                <span className="text-[19px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{s.name}</span>
-                <span className="text-[19px] text-slate-500 shrink-0 tabular-nums">{formatDist(s.distance)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Competitors */}
-      {hasCompetitors && (
-        <div className="px-5 pt-3 pb-4 border-t border-slate-800/40">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2">
-            Конкуренты в окружении
-          </p>
-          <div className="mb-3 px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-800/60">
-            <p className="text-[15px] text-slate-600 leading-snug">
-              <span className="text-slate-500 font-medium">Источник — OpenStreetMap.</span>{' '}
-              Система видит объекты гостиничного типа: отели, хостелы, апарт-отели. Это часть рынка краткосрочной аренды, но не весь рынок. Данные платформ бронирования (Airbnb, Ostrovok и др.) требуют отдельного подключения.
-            </p>
-          </div>
-          <div className="flex gap-5 mb-3">
-            <div>
-              <p className="text-3xl font-bold text-slate-200 tabular-nums">{competitors.length}</p>
-              <p className="text-[16px] text-slate-500 mt-0.5">карт. объектов</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-slate-200 tabular-nums">
-                {competitors.filter(c => c.distance <= 500).length}
-              </p>
-              <p className="text-[16px] text-slate-500 mt-0.5">в 500 м</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold text-slate-200 tabular-nums">
-                {formatDist(Math.round(competitors.reduce((s, c) => s + c.distance, 0) / competitors.length))}
-              </p>
-              <p className="text-[16px] text-slate-500 mt-0.5">ср. расстояние</p>
-            </div>
-          </div>
-          <div className="space-y-1">
-            {competitors.slice(0, 5).map((c, i) => (
-              <div key={i} className="flex items-center justify-between py-0.5">
-                <span className="text-[19px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{c.name}</span>
-                <span className="text-[19px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
-              </div>
-            ))}
-            {competitors.length > 5 && (
-              <p className="text-[17px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {!hasMagnets && !hasCompetitors && accessibilityStops.length === 0 && (
+      {!hasMagnets && (
         <div className="px-5 py-4">
           <p className="text-[22px] text-slate-600">
             По этому адресу объектов в базе OpenStreetMap не найдено.
@@ -1195,6 +1176,16 @@ export function LocationIntelligenceDemo() {
               То есть показывают, куда у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
             </p>
           </div>
+
+          {/* Trust attribution — left-aligned, near the explanatory text */}
+          <div className="flex items-start gap-3 pt-1">
+            <div className="w-px self-stretch bg-indigo-800/40 shrink-0" />
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Методика построена на логике оценки локации из курса{' '}
+              <span className="text-slate-300 font-medium">Ярослава Стригунова</span>
+              {' '}и адаптирована под автоматизированный расчёт.
+            </p>
+          </div>
         </div>
 
         {/* ── RESULT PHASE ── */}
@@ -1207,9 +1198,9 @@ export function LocationIntelligenceDemo() {
                 <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Карта окружения
                 </span>
-                <span className="text-[17px] text-slate-700">· OpenStreetMap</span>
+                <span className="text-[17px] text-slate-700">· 2GIS</span>
               </div>
-              <OSMMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
+              <TwoGISMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
               <div className="mt-3">
                 <p className="text-[20px] text-slate-500 mb-2 truncate">{selected?.value}</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -1296,7 +1287,7 @@ export function LocationIntelligenceDemo() {
             {/* Right: map */}
             <div>
               {selected ? (
-                <OSMMapPanel lat={selected.lat} lon={selected.lon} loading={phase === 'loading'} />
+                <TwoGISMapPanel lat={selected.lat} lon={selected.lon} loading={phase === 'loading'} />
               ) : (
                 <IdleMapPanel />
               )}
@@ -1305,14 +1296,6 @@ export function LocationIntelligenceDemo() {
           </div>
         )}
 
-        {/* Attribution */}
-        <div className="mt-12 px-6 py-4 rounded-xl border border-slate-800/60 bg-slate-900/40 max-w-xl mx-auto text-center">
-          <p className="text-[17px] text-slate-400 leading-relaxed">
-            Методика ASI построена на логике оценки локации, изученной в курсе{' '}
-            <span className="text-slate-200 font-semibold">Ярослава Стригунова</span>
-            , и адаптирована под автоматизированный расчёт.
-          </p>
-        </div>
 
       </div>
     </section>
