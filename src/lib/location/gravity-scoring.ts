@@ -119,6 +119,7 @@ export function calcEvergreenIndex(
     strongestZoneLabel: '',
     competitorPressureLevel: 'низкое',
     demandDistribution: 'weak',
+    demandType: 'mixed',
     clusterDetected: false,
     clusterSize: 0,
     scoreBreakdown: { attraction: 0, competitorPressure: 0, clusterBonus: 0 },
@@ -151,6 +152,7 @@ export function calcEvergreenIndex(
       strongestZoneLabel,
       competitorPressureLevel,
       demandDistribution,
+      demandType: 'mixed',
       clusterDetected: clusterSize >= GRAVITY_CONFIG.clusterMinMagnets,
       clusterSize,
       scoreBreakdown: {
@@ -198,6 +200,8 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
       distance: dist,
       weight: cat.weight,
       permanenceType: cat.permanenceType,
+      scopeLevel: cat.scopeLevel,
+      strengthClass: cat.strengthClass,
       attractionScore: calcMagnetAttraction(cat.weight, cat.permanenceType, dist),
     });
   }
@@ -237,6 +241,7 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     magnetCountByCategory,
     competitors,
     gravityExplanation,
+    demandType: gravityExplanation.demandType,
     strongestMagnets,
     clusterZones,
     splitDemand: gravityExplanation.demandDistribution === 'split',

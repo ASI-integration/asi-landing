@@ -4,13 +4,13 @@ import type { MagnetCategory, PermanenceType } from './types';
 // Add new categories here — the rest of the engine picks them up automatically.
 
 export const MAGNET_CATEGORIES: MagnetCategory[] = [
-  { id: 'metro',         label: 'Метро',                 icon: 'М',  weight: 10, permanenceType: 'permanent' },
-  { id: 'transport',     label: 'Остановки транспорта',  icon: 'А',  weight: 5,  permanenceType: 'permanent' },
-  { id: 'attraction',    label: 'Достопримечательности', icon: '★',  weight: 8,  permanenceType: 'permanent' },
-  { id: 'business',      label: 'Бизнес-центры',         icon: 'Б',  weight: 6,  permanenceType: 'permanent' },
-  { id: 'entertainment', label: 'Развлечения',            icon: '▶',  weight: 5,  permanenceType: 'semi'      },
-  { id: 'shopping',      label: 'Супермаркеты / ТЦ',     icon: '⊞',  weight: 4,  permanenceType: 'permanent' },
-  { id: 'food',          label: 'Кафе и рестораны',      icon: '◈',  weight: 3,  permanenceType: 'semi'      },
+  { id: 'metro',         label: 'Метро',                 icon: 'М',  weight: 10, permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
+  { id: 'transport',     label: 'Остановки транспорта',  icon: 'А',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
+  { id: 'attraction',    label: 'Достопримечательности', icon: '★',  weight: 8,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
+  { id: 'business',      label: 'Бизнес-центры',         icon: 'Б',  weight: 6,  permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
+  { id: 'entertainment', label: 'Развлечения',            icon: '▶',  weight: 5,  permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'shopping',      label: 'Супермаркеты / ТЦ',     icon: '⊞',  weight: 4,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'food',          label: 'Кафе и рестораны',      icon: '◈',  weight: 3,  permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
 ];
 
 // OSM search radius per category (meters)
