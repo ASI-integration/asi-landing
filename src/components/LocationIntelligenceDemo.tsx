@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  MAGNET_CATEGORIES,
-  CATEGORY_MAX_SHOW,
   CATEGORY_COLOR,
   buildAnalysis,
   getBand,
@@ -13,6 +11,7 @@ import {
 } from '@/lib/location';
 import type {
   LocationAnalysis,
+  MagnetItem,
   Band,
   AnalysisMeta,
   FootTrafficModifierTier,
@@ -329,8 +328,8 @@ function IdleMapPanel() {
 // ── OSM Map Panel ─────────────────────────────────────────────────────────────
 
 function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
-  const deltaLat = 0.008;
-  const deltaLon = 0.014;
+  const deltaLat = 0.005;
+  const deltaLon = 0.009;
   const bbox = `${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}`;
   const src = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
   return (
@@ -367,9 +366,9 @@ const SVG_W = 400;
 const SVG_H = 280;
 
 function footTrafficTierRu(tier: FootTrafficModifierTier): string {
-  if (tier === 'strong') return 'заметное усиление';
-  if (tier === 'moderate') return 'умеренное усиление';
-  return 'слабое усиление';
+  if (tier === 'strong') return 'усиливает заметно';
+  if (tier === 'moderate') return 'усиливает умеренно';
+  return 'усиливает слабо';
 }
 
 function InfluenceHeatmapPanel({
@@ -752,6 +751,67 @@ function EvergreenRing({ index, band, animated }: { index: number; band: Band; a
   );
 }
 
+// ── Magnet filtering + deduplication ─────────────────────────────────────────
+
+const MAGNET_WHY: Record<string, string> = {
+  metro:           'региональный поток',
+  railway_station: 'транспортный узел',
+  attraction:      'туристический спрос',
+  university:      'образовательный поток',
+  education_local: 'локальный спрос',
+  entertainment:   'досуговый трафик',
+  shopping_major:  'торговый поток',
+  shopping_local:  'жилая активность',
+  business:        'деловой трафик',
+  food:            'локальная активность',
+};
+
+const STREET_NOISE_KEYWORDS = [
+  'улица', ' ул.', ' ул ', ' ул,',
+  'проспект', ' пр.', ' пр ',
+  'набережная', 'наб.',
+  'переулок', ' пер.', ' пер ',
+  'бульвар', 'б-р',
+  'шоссе', ' ш.',
+  'проезд', 'площадь', ' пл.',
+  'аллея', 'тупик',
+];
+
+function isStreetNoise(name: string): boolean {
+  const lower = name.toLowerCase();
+  return STREET_NOISE_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function normalizeMetroName(name: string): string {
+  return name
+    .replace(/\s*(входа?|выходы?|выхода?)\s*[№#]?\s*\d*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getFilteredMagnets(magnets: MagnetItem[], limit: number): MagnetItem[] {
+  const filtered = magnets.filter(m => !isStreetNoise(m.name));
+
+  const metroByStation = new Map<string, MagnetItem>();
+  const nonMetro: MagnetItem[] = [];
+
+  for (const m of filtered) {
+    if (m.categoryId === 'metro') {
+      const key = normalizeMetroName(m.name);
+      const existing = metroByStation.get(key);
+      if (!existing || m.distance < existing.distance) {
+        metroByStation.set(key, { ...m, name: key || m.name });
+      }
+    } else {
+      nonMetro.push(m);
+    }
+  }
+
+  const all = [...metroByStation.values(), ...nonMetro];
+  all.sort((a, b) => b.attractionScore - a.attractionScore);
+  return all.slice(0, limit);
+}
+
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
 function ASIPanel({
@@ -766,22 +826,17 @@ function ASIPanel({
   meta: AnalysisMeta | null;
 }) {
   const {
-    magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation,
+    magnets, competitors, evergreenIndex, conclusion, gravityExplanation,
     accessibilityStops, footTraffic,
   } = analysis;
   const band = getBand(evergreenIndex);
   const [visible, setVisible] = useState(false);
+  const [magnetExpanded, setMagnetExpanded] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
     return () => clearTimeout(t);
   }, []);
-
-  const magnetGroups: Record<string, typeof magnets> = {};
-  for (const m of magnets) {
-    if (!magnetGroups[m.categoryId]) magnetGroups[m.categoryId] = [];
-    magnetGroups[m.categoryId].push(m);
-  }
 
   const hasMagnets = magnets.length > 0;
   const hasCompetitors = competitors.length > 0;
@@ -870,82 +925,97 @@ function ASIPanel({
             Поток людей вокруг объекта
           </p>
           <p className="text-[17px] text-slate-500 leading-snug mb-3">
-            Оценка не строится на «голом» трафике: движение усиливает индекс только там, где уже есть
-            убедительные магниты — при сильном транзите без целевого прихода усиление остаётся скромным.
+            ASI учитывает не просто движение людей, а понимает, есть ли вокруг вашей локации реальный целевой поток. Для этого система точно определяет все значимые точки притяжения вокруг объекта и оценивает их влияние.
           </p>
-          <div className="space-y-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Плотность движения</span>
-              <span className="text-[20px] text-slate-300">{footTraffic.movementDensityRu}</span>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div>
+              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Плотность движения</p>
+              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.movementDensityRu}</p>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Активность зоны</span>
-              <span className="text-[20px] text-slate-300">{footTraffic.zoneActivityRu}</span>
+            <div>
+              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Активность зоны</p>
+              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.zoneActivityRu}</p>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Устойчивость потока</span>
-              <span className="text-[20px] text-slate-300">{footTraffic.flowStabilityRu}</span>
+            <div>
+              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Устойчивость потока</p>
+              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.flowStabilityRu}</p>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Целевой и транзитный поток</span>
-              <span className="text-[20px] text-slate-300">{footTraffic.flowCharacterRu}</span>
+            <div>
+              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Целевой поток</p>
+              <p className="text-[19px] text-slate-300 font-medium">{footTraffic.flowCharacterRu}</p>
             </div>
-            <div className="flex items-baseline gap-2 pt-1">
-              <span className="text-[18px] text-slate-600 shrink-0 w-48">Вклад в индекс</span>
-              <span className="text-[20px] text-slate-300">
+            <div className="col-span-2 pt-2 border-t border-slate-800/40">
+              <p className="text-[15px] text-slate-600 uppercase tracking-[0.12em] mb-0.5">Влияние на оценку локации</p>
+              <p className="text-[19px] text-slate-300 font-medium">
                 {gravityExplanation.scoreBreakdown.trafficBoost > 0
                   ? `+${gravityExplanation.scoreBreakdown.trafficBoost} · ${footTrafficTierRu(footTraffic.modifierTier)}`
-                  : `нет · ${footTrafficTierRu(footTraffic.modifierTier)}`}
-              </span>
+                  : 'не влияет'}
+              </p>
             </div>
           </div>
         </div>
       )}
 
       {/* Magnets */}
-      {hasMagnets && (
-        <div className="px-5 pt-4 pb-3">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
-            Магниты вокруг объекта
-          </p>
-          <div className="space-y-4">
-            {MAGNET_CATEGORIES.map(cat => {
-              const items = magnetGroups[cat.id];
-              const totalCount = magnetCountByCategory[cat.id] ?? 0;
-              if (!items || items.length === 0) return null;
-              return (
-                <div key={cat.id}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span
-                      className="text-[18px] font-mono font-bold text-slate-600 bg-slate-800/60 px-2 py-0.5 rounded"
-                      style={{ color: CATEGORY_COLOR[cat.id] }}
-                    >
-                      {cat.icon}
-                    </span>
-                    <span className="text-[20px] font-semibold text-slate-400">{cat.label}</span>
-                    {totalCount > (CATEGORY_MAX_SHOW[cat.id] ?? 3) && (
-                      <span className="text-[17px] text-slate-700 ml-0.5">
-                        +{totalCount - (CATEGORY_MAX_SHOW[cat.id] ?? 3)} ещё
-                      </span>
-                    )}
-                    <span className="ml-auto text-[17px] text-slate-700">вес {cat.weight}</span>
+      {hasMagnets && (() => {
+        const MAGNET_DEFAULT_LIMIT = 6;
+        const allFiltered = getFilteredMagnets(magnets, magnets.length);
+        const shown = magnetExpanded
+          ? allFiltered
+          : allFiltered.slice(0, MAGNET_DEFAULT_LIMIT);
+        const hiddenCount = allFiltered.length - MAGNET_DEFAULT_LIMIT;
+        return (
+          <div className="px-5 pt-4 pb-3">
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em]">
+                Магниты вокруг объекта
+              </p>
+              <span className="text-[16px] text-slate-700">{allFiltered.length} значимых</span>
+            </div>
+            <div className="space-y-0">
+              {shown.map((m, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 py-2 border-b border-slate-800/30 last:border-0"
+                >
+                  <span
+                    className="mt-0.5 shrink-0 w-6 h-6 flex items-center justify-center rounded text-[14px] font-bold bg-slate-800/60"
+                    style={{ color: CATEGORY_COLOR[m.categoryId] }}
+                  >
+                    {m.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[19px] text-slate-300 leading-snug truncate">{m.name}</p>
+                    <p className="text-[15px] text-slate-600 mt-0.5">
+                      {m.categoryLabel}
+                      {MAGNET_WHY[m.categoryId] ? ` · ${MAGNET_WHY[m.categoryId]}` : ''}
+                    </p>
                   </div>
-                  {items.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between pl-5 py-1">
-                      <span className="text-[20px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>
-                        {m.name}
-                      </span>
-                      <span className="text-[20px] text-slate-500 shrink-0 tabular-nums">
-                        {formatDist(m.distance)}
-                      </span>
-                    </div>
-                  ))}
+                  <span className="text-[17px] text-slate-500 shrink-0 tabular-nums mt-0.5">
+                    {formatDist(m.distance)}
+                  </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            {!magnetExpanded && hiddenCount > 0 && (
+              <button
+                onClick={() => setMagnetExpanded(true)}
+                className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                Показать ещё {hiddenCount} магнитов
+              </button>
+            )}
+            {magnetExpanded && allFiltered.length > MAGNET_DEFAULT_LIMIT && (
+              <button
+                onClick={() => setMagnetExpanded(false)}
+                className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                Свернуть
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {accessibilityStops.length > 0 && (
         <div className="px-5 pt-3 pb-3 border-t border-slate-800/40">
@@ -969,36 +1039,42 @@ function ASIPanel({
       {/* Competitors */}
       {hasCompetitors && (
         <div className="px-5 pt-3 pb-4 border-t border-slate-800/40">
-          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2">
             Конкуренты в окружении
           </p>
+          <div className="mb-3 px-3 py-2 rounded-lg bg-slate-900/60 border border-slate-800/60">
+            <p className="text-[15px] text-slate-600 leading-snug">
+              <span className="text-slate-500 font-medium">Источник — OpenStreetMap.</span>{' '}
+              Система видит объекты гостиничного типа: отели, хостелы, апарт-отели. Это часть рынка краткосрочной аренды, но не весь рынок. Данные платформ бронирования (Airbnb, Ostrovok и др.) требуют отдельного подключения.
+            </p>
+          </div>
           <div className="flex gap-5 mb-3">
             <div>
               <p className="text-3xl font-bold text-slate-200 tabular-nums">{competitors.length}</p>
-              <p className="text-[17px] text-slate-500 mt-0.5">всего</p>
+              <p className="text-[16px] text-slate-500 mt-0.5">карт. объектов</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-slate-200 tabular-nums">
                 {competitors.filter(c => c.distance <= 500).length}
               </p>
-              <p className="text-[17px] text-slate-500 mt-0.5">в 500 м</p>
+              <p className="text-[16px] text-slate-500 mt-0.5">в 500 м</p>
             </div>
             <div>
               <p className="text-3xl font-bold text-slate-200 tabular-nums">
                 {formatDist(Math.round(competitors.reduce((s, c) => s + c.distance, 0) / competitors.length))}
               </p>
-              <p className="text-[17px] text-slate-500 mt-0.5">ср. расстояние</p>
+              <p className="text-[16px] text-slate-500 mt-0.5">ср. расстояние</p>
             </div>
           </div>
           <div className="space-y-1">
             {competitors.slice(0, 5).map((c, i) => (
               <div key={i} className="flex items-center justify-between py-0.5">
-                <span className="text-[20px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{c.name}</span>
-                <span className="text-[20px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
+                <span className="text-[19px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{c.name}</span>
+                <span className="text-[19px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
               </div>
             ))}
             {competitors.length > 5 && (
-              <p className="text-[18px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
+              <p className="text-[17px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
             )}
           </div>
         </div>
@@ -1230,9 +1306,13 @@ export function LocationIntelligenceDemo() {
         )}
 
         {/* Attribution */}
-        <p className="mt-10 text-[11px] text-slate-500 text-center leading-relaxed max-w-lg mx-auto">
-          Методика ASI построена на логике оценки локации, изученной в курсе Ярослава Стригунова, и адаптирована под автоматизированный расчёт.
-        </p>
+        <div className="mt-12 px-6 py-4 rounded-xl border border-slate-800/60 bg-slate-900/40 max-w-xl mx-auto text-center">
+          <p className="text-[17px] text-slate-400 leading-relaxed">
+            Методика ASI построена на логике оценки локации, изученной в курсе{' '}
+            <span className="text-slate-200 font-semibold">Ярослава Стригунова</span>
+            , и адаптирована под автоматизированный расчёт.
+          </p>
+        </div>
 
       </div>
     </section>
