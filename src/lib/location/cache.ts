@@ -12,6 +12,7 @@
 
 import type { LocationAnalysis, AnalysisFreshness } from './types';
 import { supabase } from '@/lib/supabase';
+import { patchLegacyLocationAnalysis } from './foot-traffic';
 
 /** 10 minutes: results within this window are considered fresh */
 const FRESH_TTL_MS = 10 * 60 * 1000;
@@ -62,9 +63,13 @@ function rowToResult(row: CacheRow): CacheResult | null {
   const age = Date.now() - updatedAt;
   if (age > MAX_STALE_MS) return null;
   const freshness: AnalysisFreshness = age < FRESH_TTL_MS ? 'fresh' : 'stale';
+  const analysis = patchLegacyLocationAnalysis({
+    ...row.analysis,
+    accessibilityStops: row.analysis.accessibilityStops ?? [],
+  });
   return {
     entry: {
-      analysis: row.analysis,
+      analysis,
       updatedAt,
       source: row.source,
       elementsCount: row.elements_count,

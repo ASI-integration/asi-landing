@@ -55,7 +55,34 @@ export interface CompetitorItem {
   distance: number;        // meters from subject
 }
 
+/** Bus/tram/platform stops — used for small accessibility bonus only, not demand magnets */
+export interface AccessibilityStopItem {
+  name: string;
+  distance: number;
+}
+
 // ── ASI interpretation layer ──────────────────────────────────────────────────
+
+export type FootTrafficModifierTier = 'weak' | 'moderate' | 'strong';
+
+/** Foot-traffic modifier — human face in Russian only (see demo copy). */
+export interface FootTrafficSummary {
+  modifierTier: FootTrafficModifierTier;
+  /** Rounded index points added on top of magnet line (capped). */
+  boostPoints: number;
+  movementDensityRu: string;
+  zoneActivityRu: string;
+  flowStabilityRu: string;
+  flowCharacterRu: string;
+  transitVsTarget: {
+    transitShare: number;
+    localActiveShare: number;
+    destinationShare: number;
+  };
+  /** Internal 0–1 for heatmap shaping (not for literal UI display). */
+  stability01: number;
+  concentration01: number;
+}
 
 export interface GravityExplanation {
   dominantMagnets: string[];
@@ -65,7 +92,12 @@ export interface GravityExplanation {
   demandType: DemandType;
   clusterDetected: boolean;
   clusterSize: number;
-  scoreBreakdown: { attraction: number; competitorPressure: number; clusterBonus: number };
+  scoreBreakdown: {
+    attraction: number;
+    competitorPressure: number;
+    clusterBonus: number;
+    trafficBoost: number;
+  };
 }
 
 /** Normalized intensity point for heatmap rendering */
@@ -122,6 +154,8 @@ export interface LocationAnalysis {
   // Detected objects (real-world data)
   magnets: MagnetItem[];
   magnetCountByCategory: Record<string, number>;
+  /** Public-transport stops near the property — informational + tiny accessibility bonus */
+  accessibilityStops: AccessibilityStopItem[];
   competitors: CompetitorItem[];
 
   // ASI interpretation
@@ -131,6 +165,9 @@ export interface LocationAnalysis {
   clusterZones: MagnetItem[][];
   splitDemand: boolean;
   competitorPressure: number;
+
+  /** Поток людей: подтверждает сильную локацию только вместе с магнитами. */
+  footTraffic: FootTrafficSummary;
 
   // Computed visualization data
   heatmapPoints: HeatmapPoint[];

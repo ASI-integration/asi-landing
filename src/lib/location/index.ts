@@ -7,12 +7,15 @@ export type {
   MagnetItem,
   CompetitorItem,
   GravityExplanation,
+  FootTrafficSummary,
+  FootTrafficModifierTier,
   HeatmapPoint,
   ScoreBand,
   Band,
   LocationAnalysis,
   AnalysisFreshness,
   AnalysisMeta,
+  AccessibilityStopItem,
 } from './types';
 
 export {
@@ -51,3 +54,9 @@ export { getBand, bandFromScoreBand, generateConclusion } from './explanation';
 
 export { computeHeatmap, projectToSVG } from './heatmap';
 export type { ProjectedPoint } from './heatmap';
+
+export {
+  patchLegacyLocationAnalysis,
+  emptyFootTrafficSummary,
+} from './foot-traffic';
+export type { FootTrafficHeatmapFactors } from './foot-traffic';

@@ -48,7 +48,10 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
 
     // ── Strong: Universities ─────────────────────────────────────────────────
     { filter: '"amenity"="university"', radius: CATEGORY_RADIUS.university, includeInStrict: true },
-    { filter: '"amenity"="college"',    radius: CATEGORY_RADIUS.university, includeInStrict: false },
+    { filter: '"amenity"="college"',    radius: CATEGORY_RADIUS.education_local, includeInStrict: false },
+
+    // Major surface transit hubs (not mere stop positions)
+    { filter: '"amenity"="bus_station"', radius: CATEGORY_RADIUS.railway_station, includeInStrict: true },
 
     // ── Medium: Entertainment (city-scale venues) ────────────────────────────
     // Sports centres intentionally excluded — they are local, not city-scale.
@@ -65,11 +68,11 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"office"',           radius: CATEGORY_RADIUS.business, includeInStrict: true },
     { filter: '"amenity"="bank"',   radius: CATEGORY_RADIUS.business, includeInStrict: false },
 
-    // ── Weak: Transport (local bus/tram stops) ───────────────────────────────
-    { filter: '"highway"="bus_stop"',              radius: CATEGORY_RADIUS.transport, includeInStrict: true },
-    { filter: '"public_transport"="stop_position"',radius: CATEGORY_RADIUS.transport, includeInStrict: true },
-    { filter: '"public_transport"="platform"',     radius: CATEGORY_RADIUS.transport, includeInStrict: false },
-    { filter: '"railway"="tram_stop"',             radius: CATEGORY_RADIUS.transport, includeInStrict: false },
+    // ── Accessibility only: local stops / platforms (weak bonus, not demand magnets)
+    { filter: '"highway"="bus_stop"',               radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true },
+    { filter: '"public_transport"="stop_position"', radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true },
+    { filter: '"public_transport"="platform"',     radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: false },
+    { filter: '"railway"="tram_stop"',              radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: false },
 
     // ── Weak: Shopping local (supermarkets) ──────────────────────────────────
     { filter: '"shop"="supermarket"', radius: CATEGORY_RADIUS.shopping_local, includeInStrict: true },
@@ -248,12 +251,18 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.tourism === 'attraction' || t.tourism === 'museum' || t.tourism === 'gallery' || t.historic === 'monument')
     return { categoryId: 'attraction', name: t.name || 'Достопримечательность' };
 
-  if (t.amenity === 'university' || t.amenity === 'college')
+  if (t.amenity === 'university')
     return { categoryId: 'university', name: t.name || 'Университет' };
 
-  // ── Medium: Railway stations (commuter / intercity / regional) ───────────────
+  // Vocational / local colleges — neighborhood infrastructure, not city-scale pull
+  if (t.amenity === 'college')
+    return { categoryId: 'education_local', name: t.name || 'Колледж' };
+
+  // ── Medium: Railway stations + major bus hubs (commuter / intercity) ─────────
   // Classified AFTER metro so station=subway is never double-matched here.
-  // railway=halt covers minor stopping points on commuter lines.
+  if (t.amenity === 'bus_station')
+    return { categoryId: 'railway_station', name: t.name || 'Транспортный узел' };
+
   if (t.railway === 'station' || t.railway === 'halt')
     return { categoryId: 'railway_station', name: t.name || 'Станция' };
 
@@ -270,12 +279,12 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.office || t.amenity === 'bank')
     return { categoryId: 'business', name: t.name || 'Офис' };
 
-  // ── Weak local service objects ──────────────────────────────────────────────
+  // ── Accessibility: stop positions only (not scored as attraction magnets) ───
   if (t.highway === 'bus_stop' || t.public_transport === 'stop_position' || t.public_transport === 'platform' || t.railway === 'tram_stop')
-    return { categoryId: 'transport', name: t.name || 'Остановка' };
+    return { categoryId: 'accessibility_stop', name: t.name || 'Остановка' };
 
-  // Supermarkets — local service, not a city-scale draw
-  if (t.shop === 'supermarket' || Boolean(t.shop))
+  // Everyday retail — only formats that imply recurring household visits
+  if (t.shop === 'supermarket' || t.shop === 'convenience')
     return { categoryId: 'shopping_local', name: t.name || 'Магазин' };
 
   if (t.amenity === 'restaurant' || t.amenity === 'cafe' || t.amenity === 'fast_food' || t.amenity === 'bar' || t.amenity === 'pub')

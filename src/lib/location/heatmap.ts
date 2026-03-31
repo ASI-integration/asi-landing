@@ -9,6 +9,7 @@
 import type { MagnetItem, CompetitorItem, HeatmapPoint } from './types';
 import { GRAVITY_CONFIG } from './config';
 import { distanceDecaySmooth } from './gravity-scoring';
+import type { FootTrafficHeatmapFactors } from './foot-traffic';
 
 /**
  * Compute heatmap points from detected magnets and competitors.
@@ -16,26 +17,44 @@ import { distanceDecaySmooth } from './gravity-scoring';
  * Magnet points: intensity = attractionScore / maxAttraction
  * Competitor points: intensity = per-competitor pressure / maxCompPressure
  *
- * Both scales are independent so magnets and competitors are separately
- * normalised — each fills the 0–1 range for its own type.
+ * Magnet intensities blend attraction with local concentration, stability, and
+ * destination-aligned flow — so the halo reflects «живые» зоны у реальных магнитов,
+ * not raw crowding alone.
  */
 export function computeHeatmap(
   magnets: MagnetItem[],
   competitors: CompetitorItem[],
+  traffic: FootTrafficHeatmapFactors | null = null,
 ): HeatmapPoint[] {
   const points: HeatmapPoint[] = [];
 
   // ── Magnet influence points ──────────────────────────────────────────────
   if (magnets.length > 0) {
     const maxAttraction = Math.max(...magnets.map(m => m.attractionScore), 0.001);
+    const stab = traffic?.stability01 ?? 0.5;
+    const destShare = traffic?.destinationShare ?? 0.45;
     for (const m of magnets) {
+      const key = `${m.lat}|${m.lon}|${m.categoryId}`;
+      const neigh = traffic?.neighborDensityByKey.get(key) ?? 0.35;
+      const destW =
+        m.strengthClass === 'strong' || m.strengthClass === 'medium'
+          ? 0.92 + 0.08 * destShare
+          : 0.72 + 0.2 * destShare;
+      const flowBlend =
+        (0.5 + 0.5 * stab) *
+        (0.6 + 0.4 * neigh) *
+        destW;
       points.push({
         lat:       m.lat,
         lon:       m.lon,
-        intensity: m.attractionScore / maxAttraction,
+        intensity: (m.attractionScore / maxAttraction) * flowBlend,
         type:      'magnet',
         categoryId: m.categoryId,
       });
+    }
+    const maxI = Math.max(...points.filter(p => p.type === 'magnet').map(p => p.intensity), 0.001);
+    for (const p of points) {
+      if (p.type === 'magnet') p.intensity = p.intensity / maxI;
     }
   }
 

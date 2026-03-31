@@ -10,8 +10,9 @@ import {
   getBand,
   formatDist,
   projectToSVG,
+  patchLegacyLocationAnalysis,
 } from '@/lib/location';
-import type { LocationAnalysis, Band, AnalysisMeta } from '@/lib/location';
+import type { LocationAnalysis, Band, AnalysisMeta, FootTrafficModifierTier } from '@/lib/location';
 
 // ── UI-only types ─────────────────────────────────────────────────────────────
 
@@ -57,13 +58,17 @@ async function fetchLocationAnalysis(
     if (!res.ok) return null;
     const data = await res.json() as { analysis?: LocationAnalysis; meta?: AnalysisMeta };
     if (!data.analysis) return null;
+    const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
+      ...data.analysis,
+      accessibilityStops: data.analysis.accessibilityStops ?? [],
+    });
     const meta: AnalysisMeta = data.meta ?? {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
       source: 'osm-overpass',
       cached: false,
     };
-    return { analysis: data.analysis, meta };
+    return { analysis, meta };
   } catch {
     return null;
   }
@@ -118,14 +123,14 @@ function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
   return (
     <div className="px-5 py-2.5 border-b border-slate-800/50 bg-slate-950/30">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className={`text-[11px] font-semibold ${statusClass}`}>{statusLabel}</span>
-        <span className="text-[10px] text-slate-500">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
+        <span className={`text-[19px] font-semibold ${statusClass}`}>{statusLabel}</span>
+        <span className="text-[17px] text-slate-500">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
       </div>
-      <p className="mt-1 text-[10px] text-slate-500 leading-snug">
+      <p className="mt-1 text-[17px] text-slate-500 leading-snug">
         <span className="text-slate-600">Время снимка: </span>
         {formatUpdatedAtReadableRu(meta.updatedAt)}
       </p>
-      <p className="mt-0.5 text-[10px] text-slate-500 leading-snug">
+      <p className="mt-0.5 text-[17px] text-slate-500 leading-snug">
         Источник: {baseSource} · {sourceKind}
         {meta.usedFallbackQuery ? (
           <span className="text-slate-600"> · часть сервисов была недоступна</span>
@@ -285,6 +290,12 @@ function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading:
 const SVG_W = 400;
 const SVG_H = 280;
 
+function footTrafficTierRu(tier: FootTrafficModifierTier): string {
+  if (tier === 'strong') return 'заметное усиление';
+  if (tier === 'moderate') return 'умеренное усиление';
+  return 'слабое усиление';
+}
+
 function InfluenceHeatmapPanel({
   analysis,
   subjectLat,
@@ -294,7 +305,7 @@ function InfluenceHeatmapPanel({
   subjectLat: number;
   subjectLon: number;
 }) {
-  const { heatmapPoints } = analysis;
+  const { heatmapPoints, footTraffic } = analysis;
 
   if (heatmapPoints.length === 0) return null;
 
@@ -310,10 +321,10 @@ function InfluenceHeatmapPanel({
     <div className="mt-4 rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
       {/* Header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-800/60">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-400">
+        <span className="text-[18px] font-semibold uppercase tracking-[0.2em] text-indigo-400">
           ASI · Карта влияния
         </span>
-        <span className="text-[10px] text-slate-700">· реальные значения</span>
+        <span className="text-[17px] text-slate-700">· реальные значения</span>
       </div>
 
       {/* SVG heatmap */}
@@ -412,29 +423,37 @@ function InfluenceHeatmapPanel({
         />
 
         {/* ── Legend ── */}
-        <g transform={`translate(${SVG_W - 110}, ${SVG_H - 60})`}>
-          <rect x={0} y={0} width={104} height={52} rx={6} fill="rgba(15,20,30,0.85)" />
+        <g transform={`translate(${SVG_W - 124}, ${SVG_H - 72})`}>
+          <rect x={0} y={0} width={118} height={62} rx={6} fill="rgba(15,20,30,0.85)" />
           {/* Magnet */}
-          <circle cx={12} cy={14} r={4} fill="#818cf8" opacity={0.8} />
-          <text x={20} y={18} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Магниты притяжения</text>
+          <circle cx={12} cy={16} r={4} fill="#818cf8" opacity={0.8} />
+          <text x={20} y={20} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Магниты</text>
           {/* Competitor */}
-          <circle cx={12} cy={30} r={4} fill="#f87171" opacity={0.8} />
-          <text x={20} y={34} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Конкуренты</text>
+          <circle cx={12} cy={36} r={4} fill="#f87171" opacity={0.8} />
+          <text x={20} y={40} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Конкуренты</text>
           {/* Subject */}
-          <circle cx={12} cy={46} r={3} fill="white" opacity={0.9} />
-          <text x={20} y={50} fill="rgba(148,163,184,0.8)" fontSize="8.5" fontFamily="inherit">Ваш объект</text>
+          <circle cx={12} cy={54} r={3} fill="white" opacity={0.9} />
+          <text x={20} y={58} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Ваш объект</text>
         </g>
       </svg>
 
       {/* Caption */}
-      <div className="px-4 py-2.5 flex flex-wrap gap-x-4 gap-y-1">
-        <span className="text-[10px] text-slate-600">
-          Яркость и размер — сила притяжения по расчёту ASI
-        </span>
-        <span className="text-[10px] text-slate-700">
-          {heatmapPoints.filter(p => p.type === 'magnet').length} магнитов ·{' '}
-          {heatmapPoints.filter(p => p.type === 'competitor').length} конкурентов
-        </span>
+      <div className="px-4 py-2.5 space-y-1">
+        <p className="text-[18px] text-slate-500 leading-snug">
+          Тепло карты связано с магнитами и зоной: плотность и концентрация у реальных точек притяжения,
+          устойчивость потока и то, насколько движение похоже на{' '}
+          <span className="text-slate-400">целевой приход</span>, а не только на{' '}
+          <span className="text-slate-400">транзит</span>.
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <span className="text-[17px] text-slate-700">
+            {heatmapPoints.filter(p => p.type === 'magnet').length} магнитов ·{' '}
+            {heatmapPoints.filter(p => p.type === 'competitor').length} конкурентов
+          </span>
+          <span className="text-[17px] text-slate-600">
+            активность зоны — {footTraffic.zoneActivityRu} · устойчивость — {footTraffic.flowStabilityRu}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -624,31 +643,33 @@ function AddressInput({
 
 // ── Evergreen ring SVG ────────────────────────────────────────────────────────
 
-const RING_R = 46;
+const RING_R = 52;
 const RING_C = 2 * Math.PI * RING_R;
+const RING_VB = 120;
 
 function EvergreenRing({ index, band, animated }: { index: number; band: Band; animated: boolean }) {
   const fill = animated ? (index / 100) * RING_C : 0;
+  const c = RING_VB / 2;
   return (
-    <svg width="108" height="108" viewBox="0 0 108 108" className="shrink-0" aria-hidden="true">
-      <circle cx="54" cy="54" r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7" />
+    <svg width={RING_VB} height={RING_VB} viewBox={`0 0 ${RING_VB} ${RING_VB}`} className="shrink-0" aria-hidden="true">
+      <circle cx={c} cy={c} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
       <circle
-        cx="54" cy="54" r={RING_R}
+        cx={c} cy={c} r={RING_R}
         fill="none"
         stroke={band.stroke}
-        strokeWidth="7"
+        strokeWidth="8"
         strokeLinecap="round"
         strokeDasharray={`${fill} ${RING_C}`}
-        transform="rotate(-90 54 54)"
+        transform={`rotate(-90 ${c} ${c})`}
         style={{ transition: animated ? 'stroke-dasharray 1.0s cubic-bezier(0.4,0,0.2,1)' : 'none' }}
       />
-      <text x="54" y="49" textAnchor="middle" fill="white" fontSize="21" fontWeight="700" fontFamily="inherit">
+      <text x={c} y={c - 8} textAnchor="middle" fill="white" fontSize="38" fontWeight="700" fontFamily="inherit">
         {index > 0 ? index : '—'}
       </text>
-      <text x="54" y="63" textAnchor="middle" fill="rgb(100,116,139)" fontSize="8.5" fontFamily="inherit">
+      <text x={c} y={c + 14} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
         Индекс вечной
       </text>
-      <text x="54" y="74" textAnchor="middle" fill="rgb(100,116,139)" fontSize="8.5" fontFamily="inherit">
+      <text x={c} y={c + 34} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
         локации
       </text>
     </svg>
@@ -670,6 +691,7 @@ function ASIPanel({
 }) {
   const {
     magnets, magnetCountByCategory, competitors, evergreenIndex, conclusion, gravityExplanation,
+    accessibilityStops, footTraffic,
   } = analysis;
   const band = getBand(evergreenIndex);
   const [visible, setVisible] = useState(false);
@@ -702,13 +724,13 @@ function ASIPanel({
       <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
         <EvergreenRing index={evergreenIndex} band={band} animated={animated} />
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">Итог анализа</p>
-          <p className={`text-xl font-bold leading-tight ${band.textColor}`}>{band.label}</p>
+          <p className="text-[18px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">Итог анализа</p>
+          <p className={`text-4xl font-bold leading-tight ${band.textColor}`}>{band.label}</p>
           {conclusion && (
-            <p className="mt-2 text-xs text-slate-400 leading-snug">{conclusion}</p>
+            <p className="mt-2 text-[22px] text-slate-400 leading-snug">{conclusion}</p>
           )}
           <p
-            className="mt-2 text-[10px] text-slate-600 leading-snug"
+            className="mt-2 text-[18px] text-slate-600 leading-snug"
             style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
             title={address}
           >
@@ -720,27 +742,27 @@ function ASIPanel({
       {/* Gravity insight */}
       {hasMagnets && gravityExplanation.dominantMagnets.length > 0 && (
         <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
-          <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
             Анализ притяжения
           </p>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {gravityExplanation.strongestZoneLabel && (
               <div className="flex items-baseline gap-2">
-                <span className="text-[10px] text-slate-600 shrink-0 w-36">Ключевая зона</span>
-                <span className="text-[11px] text-slate-300">{gravityExplanation.strongestZoneLabel}</span>
+                <span className="text-[18px] text-slate-600 shrink-0 w-48">Ключевая зона</span>
+                <span className="text-[20px] text-slate-300">{gravityExplanation.strongestZoneLabel}</span>
               </div>
             )}
             {gravityExplanation.dominantMagnets[0] && (
               <div className="flex items-baseline gap-2">
-                <span className="text-[10px] text-slate-600 shrink-0 w-36">Главный магнит</span>
-                <span className="text-[11px] text-slate-300 truncate" style={{ maxWidth: 160 }}>
+                <span className="text-[18px] text-slate-600 shrink-0 w-48">Главный магнит</span>
+                <span className="text-[20px] text-slate-300 truncate" style={{ maxWidth: 260 }}>
                   {gravityExplanation.dominantMagnets[0]}
                 </span>
               </div>
             )}
             <div className="flex items-baseline gap-2">
-              <span className="text-[10px] text-slate-600 shrink-0 w-36">Давление конкурентов</span>
-              <span className={`text-[11px] font-medium ${
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Давление конкурентов</span>
+              <span className={`text-[20px] font-medium ${
                 gravityExplanation.competitorPressureLevel === 'высокое' ? 'text-rose-400'
                 : gravityExplanation.competitorPressureLevel === 'среднее' ? 'text-amber-400'
                 : 'text-emerald-400'
@@ -750,18 +772,56 @@ function ASIPanel({
             </div>
             {gravityExplanation.clusterDetected && (
               <div className="flex items-baseline gap-2">
-                <span className="text-[10px] text-slate-600 shrink-0 w-36">Зона спроса</span>
-                <span className="text-[11px] text-slate-300">
+                <span className="text-[18px] text-slate-600 shrink-0 w-48">Зона спроса</span>
+                <span className="text-[20px] text-slate-300">
                   кластер · {gravityExplanation.clusterSize} объектов рядом
                 </span>
               </div>
             )}
             {gravityExplanation.demandDistribution === 'split' && (
               <div className="flex items-baseline gap-2">
-                <span className="text-[10px] text-slate-600 shrink-0 w-36">Распределение</span>
-                <span className="text-[11px] text-slate-400">спрос разделён между зонами</span>
+                <span className="text-[18px] text-slate-600 shrink-0 w-48">Распределение</span>
+                <span className="text-[20px] text-slate-400">спрос разделён между зонами</span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {hasMagnets && (
+        <div className="px-5 pt-4 pb-3 border-b border-slate-800/40">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2.5">
+            Поток людей вокруг объекта
+          </p>
+          <p className="text-[17px] text-slate-500 leading-snug mb-3">
+            Оценка не строится на «голом» трафике: движение усиливает индекс только там, где уже есть
+            убедительные магниты — при сильном транзите без целевого прихода усиление остаётся скромным.
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Плотность движения</span>
+              <span className="text-[20px] text-slate-300">{footTraffic.movementDensityRu}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Активность зоны</span>
+              <span className="text-[20px] text-slate-300">{footTraffic.zoneActivityRu}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Устойчивость потока</span>
+              <span className="text-[20px] text-slate-300">{footTraffic.flowStabilityRu}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Целевой и транзитный поток</span>
+              <span className="text-[20px] text-slate-300">{footTraffic.flowCharacterRu}</span>
+            </div>
+            <div className="flex items-baseline gap-2 pt-1">
+              <span className="text-[18px] text-slate-600 shrink-0 w-48">Вклад в индекс</span>
+              <span className="text-[20px] text-slate-300">
+                {gravityExplanation.scoreBreakdown.trafficBoost > 0
+                  ? `+${gravityExplanation.scoreBreakdown.trafficBoost} · ${footTrafficTierRu(footTraffic.modifierTier)}`
+                  : `нет · ${footTrafficTierRu(footTraffic.modifierTier)}`}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -769,37 +829,37 @@ function ASIPanel({
       {/* Magnets */}
       {hasMagnets && (
         <div className="px-5 pt-4 pb-3">
-          <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
             Магниты вокруг объекта
           </p>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {MAGNET_CATEGORIES.map(cat => {
               const items = magnetGroups[cat.id];
               const totalCount = magnetCountByCategory[cat.id] ?? 0;
               if (!items || items.length === 0) return null;
               return (
                 <div key={cat.id}>
-                  <div className="flex items-center gap-1.5 mb-1">
+                  <div className="flex items-center gap-2 mb-1.5">
                     <span
-                      className="text-[10px] font-mono font-bold text-slate-600 bg-slate-800/60 px-1.5 py-0.5 rounded"
+                      className="text-[18px] font-mono font-bold text-slate-600 bg-slate-800/60 px-2 py-0.5 rounded"
                       style={{ color: CATEGORY_COLOR[cat.id] }}
                     >
                       {cat.icon}
                     </span>
-                    <span className="text-[11px] font-semibold text-slate-400">{cat.label}</span>
+                    <span className="text-[20px] font-semibold text-slate-400">{cat.label}</span>
                     {totalCount > (CATEGORY_MAX_SHOW[cat.id] ?? 3) && (
-                      <span className="text-[10px] text-slate-700 ml-0.5">
+                      <span className="text-[17px] text-slate-700 ml-0.5">
                         +{totalCount - (CATEGORY_MAX_SHOW[cat.id] ?? 3)} ещё
                       </span>
                     )}
-                    <span className="ml-auto text-[10px] text-slate-700">вес {cat.weight}/10</span>
+                    <span className="ml-auto text-[17px] text-slate-700">вес {cat.weight}</span>
                   </div>
                   {items.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between pl-5 py-0.5">
-                      <span className="text-xs text-slate-400 truncate mr-2" style={{ maxWidth: 180 }}>
+                    <div key={i} className="flex items-center justify-between pl-5 py-1">
+                      <span className="text-[20px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>
                         {m.name}
                       </span>
-                      <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">
+                      <span className="text-[20px] text-slate-500 shrink-0 tabular-nums">
                         {formatDist(m.distance)}
                       </span>
                     </div>
@@ -811,47 +871,66 @@ function ASIPanel({
         </div>
       )}
 
+      {accessibilityStops.length > 0 && (
+        <div className="px-5 pt-3 pb-3 border-t border-slate-800/40">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-2">
+            Остановки и платформы
+          </p>
+          <p className="text-[17px] text-slate-500 leading-snug mb-3">
+            Учитываются как слабый модификатор доступности, а не как магниты годового спроса в модели ASI.
+          </p>
+          <div className="space-y-1">
+            {accessibilityStops.map((s, i) => (
+              <div key={i} className="flex items-center justify-between pl-1 py-0.5">
+                <span className="text-[19px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{s.name}</span>
+                <span className="text-[19px] text-slate-500 shrink-0 tabular-nums">{formatDist(s.distance)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Competitors */}
       {hasCompetitors && (
         <div className="px-5 pt-3 pb-4 border-t border-slate-800/40">
-          <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
+          <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em] mb-3">
             Конкуренты в окружении
           </p>
           <div className="flex gap-5 mb-3">
             <div>
-              <p className="text-base font-bold text-slate-200 tabular-nums">{competitors.length}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">всего</p>
+              <p className="text-3xl font-bold text-slate-200 tabular-nums">{competitors.length}</p>
+              <p className="text-[17px] text-slate-500 mt-0.5">всего</p>
             </div>
             <div>
-              <p className="text-base font-bold text-slate-200 tabular-nums">
+              <p className="text-3xl font-bold text-slate-200 tabular-nums">
                 {competitors.filter(c => c.distance <= 500).length}
               </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">в 500 м</p>
+              <p className="text-[17px] text-slate-500 mt-0.5">в 500 м</p>
             </div>
             <div>
-              <p className="text-base font-bold text-slate-200 tabular-nums">
+              <p className="text-3xl font-bold text-slate-200 tabular-nums">
                 {formatDist(Math.round(competitors.reduce((s, c) => s + c.distance, 0) / competitors.length))}
               </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">ср. расстояние</p>
+              <p className="text-[17px] text-slate-500 mt-0.5">ср. расстояние</p>
             </div>
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {competitors.slice(0, 5).map((c, i) => (
               <div key={i} className="flex items-center justify-between py-0.5">
-                <span className="text-xs text-slate-400 truncate mr-2" style={{ maxWidth: 180 }}>{c.name}</span>
-                <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
+                <span className="text-[20px] text-slate-400 truncate mr-2" style={{ maxWidth: 300 }}>{c.name}</span>
+                <span className="text-[20px] text-slate-500 shrink-0 tabular-nums">{formatDist(c.distance)}</span>
               </div>
             ))}
             {competitors.length > 5 && (
-              <p className="text-[10px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
+              <p className="text-[18px] text-slate-700 mt-1">+{competitors.length - 5} ещё</p>
             )}
           </div>
         </div>
       )}
 
-      {!hasMagnets && !hasCompetitors && (
+      {!hasMagnets && !hasCompetitors && accessibilityStops.length === 0 && (
         <div className="px-5 py-4">
-          <p className="text-xs text-slate-600">
+          <p className="text-[22px] text-slate-600">
             По этому адресу объектов в базе OpenStreetMap не найдено.
           </p>
         </div>
@@ -866,6 +945,7 @@ const LOADING_STEPS = [
   'Запрашиваем окружение...',
   'Рассчитываем притяжение...',
   'Анализируем конкурентов...',
+  'Соотносим поток людей с магнитами...',
 ];
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -959,6 +1039,15 @@ export function LocationIntelligenceDemo() {
           </p>
         </div>
 
+        <div className="mb-10 max-w-2xl space-y-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-300">
+          <p className="font-semibold text-slate-200">
+            Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.
+          </p>
+          <p>
+            То есть показывают, где у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
+          </p>
+        </div>
+
         {/* ── RESULT PHASE ── */}
         {phase === 'result' && analysis ? (
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
@@ -966,17 +1055,17 @@ export function LocationIntelligenceDemo() {
             {/* Left: OSM map + influence heatmap */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Карта окружения
                 </span>
-                <span className="text-[10px] text-slate-700">· OpenStreetMap</span>
+                <span className="text-[17px] text-slate-700">· OpenStreetMap</span>
               </div>
               <OSMMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
               <div className="mt-3">
-                <p className="text-[11px] text-slate-500 mb-2 truncate">{selected?.value}</p>
+                <p className="text-[20px] text-slate-500 mb-2 truncate">{selected?.value}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {['Объект на карте', 'Транспорт', 'Объекты вокруг', 'Реальная карта'].map(tag => (
-                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-800">
+                    <span key={tag} className="text-[17px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-800">
                       {tag}
                     </span>
                   ))}
@@ -1001,7 +1090,7 @@ export function LocationIntelligenceDemo() {
             {/* Right: ASI analysis */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+                <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
                   ASI · Анализ локации
                 </span>
               </div>

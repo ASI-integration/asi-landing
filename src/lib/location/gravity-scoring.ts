@@ -12,6 +12,8 @@ import type {
   LocationAnalysis,
   OSMElement,
   ScoreBand,
+  AccessibilityStopItem,
+  FootTrafficSummary,
 } from './types';
 import {
   MAGNET_CATEGORIES,
@@ -22,6 +24,7 @@ import {
 import { classifyElement } from './overpass';
 import { computeHeatmap } from './heatmap';
 import { generateConclusion } from './explanation';
+import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatmapFactors } from './foot-traffic';
 
 // ── Distance helpers ──────────────────────────────────────────────────────────
 
@@ -70,14 +73,21 @@ export function calcCompetitorPressure(competitors: CompetitorItem[]): number {
   return Math.min(pressure * densityMul, GRAVITY_CONFIG.competitorPressureMax);
 }
 
-/** Cluster bonus: dense magnet groups signal a strong demand zone */
+/** True magnets that can form a demand zone — not pure neighborhood filler (weak/local) */
+function isDestinationMagnet(m: MagnetItem): boolean {
+  return m.strengthClass === 'strong' || m.strengthClass === 'medium';
+}
+
+/** Cluster bonus: only when several *destination* magnets sit near the subject */
 export function calcClusterBonus(magnets: MagnetItem[]): { bonus: number; clusterSize: number } {
-  const nearby = magnets.filter(m => m.distance <= GRAVITY_CONFIG.clusterRadius);
+  const nearby = magnets.filter(
+    m => m.distance <= GRAVITY_CONFIG.clusterRadius && isDestinationMagnet(m),
+  );
   const clusterSize = nearby.length;
-  if (clusterSize < GRAVITY_CONFIG.clusterMinMagnets) return { bonus: 0, clusterSize };
+  if (clusterSize < GRAVITY_CONFIG.clusterMinMagnets) return { bonus: 0, clusterSize: 0 };
   const bonus = Math.min(
     GRAVITY_CONFIG.clusterBonusMax,
-    (clusterSize - GRAVITY_CONFIG.clusterMinMagnets + 1) * 2.5,
+    (clusterSize - GRAVITY_CONFIG.clusterMinMagnets + 1) * 1.9,
   );
   return { bonus, clusterSize };
 }
@@ -101,19 +111,34 @@ export function detectDemandDistribution(magnets: MagnetItem[]): 'concentrated' 
 
 /** Group magnets into spatial clusters (each cluster = array of MagnetItems) */
 export function detectClusterZones(magnets: MagnetItem[]): MagnetItem[][] {
-  if (magnets.length < GRAVITY_CONFIG.clusterMinMagnets) return [];
-  const nearby = magnets.filter(m => m.distance <= GRAVITY_CONFIG.clusterRadius);
+  const nearby = magnets.filter(
+    m => m.distance <= GRAVITY_CONFIG.clusterRadius && isDestinationMagnet(m),
+  );
   if (nearby.length < GRAVITY_CONFIG.clusterMinMagnets) return [];
-  // Simple single-zone approach: all close magnets form one cluster
   return [nearby];
+}
+
+function calcAccessibilityBonus(stopCount: number): number {
+  if (stopCount <= 0) return 0;
+  return Math.min(
+    GRAVITY_CONFIG.accessibilityBonusMax,
+    Math.log1p(stopCount) * GRAVITY_CONFIG.accessibilityBonusScale,
+  );
 }
 
 // ── Composite evergreen index ─────────────────────────────────────────────────
 
 export function calcEvergreenIndex(
   magnets: MagnetItem[],
-  competitors: CompetitorItem[],
-): { index: number; gravityExplanation: GravityExplanation; competitorPressureValue: number } {
+       competitors: CompetitorItem[],
+       accessibilityStopCount: number = 0,
+): {
+  index: number;
+  gravityExplanation: GravityExplanation;
+  competitorPressureValue: number;
+  footTraffic: FootTrafficSummary;
+  heatmapFactors: FootTrafficHeatmapFactors;
+} {
   const empty: GravityExplanation = {
     dominantMagnets: [],
     strongestZoneLabel: '',
@@ -122,43 +147,86 @@ export function calcEvergreenIndex(
     demandType: 'mixed',
     clusterDetected: false,
     clusterSize: 0,
-    scoreBreakdown: { attraction: 0, competitorPressure: 0, clusterBonus: 0 },
+    scoreBreakdown: { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 },
   };
-  if (magnets.length === 0) return { index: 0, gravityExplanation: empty, competitorPressureValue: 0 };
+  const accessibilityBonus = calcAccessibilityBonus(accessibilityStopCount);
+  const emptyFactors: FootTrafficHeatmapFactors = {
+    stability01: 0.2,
+    concentration01: 0.25,
+    destinationShare: 0,
+    neighborDensityByKey: new Map(),
+  };
+  if (magnets.length === 0) {
+    const competitorPressureValue = calcCompetitorPressure(competitors);
+    const rawScore = -competitorPressureValue + accessibilityBonus;
+    const index = Math.max(5, Math.min(96, Math.round(rawScore)));
+    return {
+      index,
+      competitorPressureValue,
+      footTraffic: emptyFootTrafficSummary(),
+      heatmapFactors: emptyFactors,
+      gravityExplanation: {
+        ...empty,
+        competitorPressureLevel:
+          competitorPressureValue < 6 ? 'низкое' : competitorPressureValue < 14 ? 'среднее' : 'высокое',
+        scoreBreakdown: {
+          attraction: 0,
+          competitorPressure: Math.round(competitorPressureValue),
+          clusterBonus: 0,
+          trafficBoost: 0,
+        },
+      },
+    };
+  }
 
   const totalAttraction = magnets.reduce((s, m) => s + m.attractionScore, 0);
   const competitorPressureValue = calcCompetitorPressure(competitors);
   const { bonus: clusterBonus, clusterSize } = calcClusterBonus(magnets);
 
-  const rawScore =
+  const rawBaseScore =
     totalAttraction * GRAVITY_CONFIG.scoreScale
     - competitorPressureValue
-    + clusterBonus;
+    + clusterBonus
+    + accessibilityBonus;
 
+  const demandDistribution = detectDemandDistribution(magnets);
+  const clusterDetected = clusterSize >= GRAVITY_CONFIG.clusterMinMagnets;
+  const baseAttractionScaled = totalAttraction * GRAVITY_CONFIG.scoreScale;
+
+  const { summary: footTraffic, boostRaw, factors: heatmapFactors } = computeFootTrafficLayer(
+    magnets,
+    accessibilityStopCount,
+    { clusterDetected, clusterSize, demandDistribution },
+    baseAttractionScaled,
+  );
+
+  const rawScore = rawBaseScore + boostRaw;
   const index = Math.max(5, Math.min(96, Math.round(rawScore)));
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
   const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
   const strongestZoneLabel = sorted[0]?.categoryLabel ?? '';
-  const demandDistribution = detectDemandDistribution(magnets);
   const competitorPressureLevel: GravityExplanation['competitorPressureLevel'] =
     competitorPressureValue < 6 ? 'низкое' : competitorPressureValue < 14 ? 'среднее' : 'высокое';
 
   return {
     index,
     competitorPressureValue,
+    footTraffic,
+    heatmapFactors,
     gravityExplanation: {
       dominantMagnets,
       strongestZoneLabel,
       competitorPressureLevel,
       demandDistribution,
       demandType: 'mixed',
-      clusterDetected: clusterSize >= GRAVITY_CONFIG.clusterMinMagnets,
+      clusterDetected,
       clusterSize,
       scoreBreakdown: {
         attraction: Math.round(totalAttraction * GRAVITY_CONFIG.scoreScale),
         competitorPressure: Math.round(competitorPressureValue),
         clusterBonus: Math.round(clusterBonus),
+        trafficBoost: boostRaw,
       },
     },
   };
@@ -166,10 +234,24 @@ export function calcEvergreenIndex(
 
 // ── Main analysis builder ─────────────────────────────────────────────────────
 
+function dedupeAccessibilityStops(stops: AccessibilityStopItem[]): AccessibilityStopItem[] {
+  const seen = new Set<string>();
+  const out: AccessibilityStopItem[] = [];
+  const sorted = [...stops].sort((a, b) => a.distance - b.distance);
+  for (const s of sorted) {
+    const key = `${s.name}|${Math.round(s.distance / 40)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
 /** Build the full LocationAnalysis from raw OSM elements + subject coordinates */
 export function buildAnalysis(elements: OSMElement[], lat: number, lon: number): LocationAnalysis {
   const byCategory: Record<string, MagnetItem[]> = {};
   const competitors: CompetitorItem[] = [];
+  const accessibilityStops: AccessibilityStopItem[] = [];
 
   for (const el of elements) {
     const elLat = el.lat ?? el.center?.lat;
@@ -183,6 +265,11 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
 
     if (classified.categoryId === 'competitor') {
       competitors.push({ name: classified.name, lat: elLat, lon: elLon, distance: dist });
+      continue;
+    }
+
+    if (classified.categoryId === 'accessibility_stop') {
+      accessibilityStops.push({ name: classified.name, distance: dist });
       continue;
     }
 
@@ -206,6 +293,23 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     });
   }
 
+  const foodItems = byCategory.food;
+  if (foodItems && foodItems.length > 0) {
+    const clusteredCount = foodItems.filter(
+      f => f.distance <= GRAVITY_CONFIG.foodClusterRadius,
+    ).length;
+    if (clusteredCount >= GRAVITY_CONFIG.foodClusterMinCount) {
+      const w = GRAVITY_CONFIG.foodClusterWeight;
+      for (const item of foodItems) {
+        if (item.distance > GRAVITY_CONFIG.foodClusterRadius + 90) continue;
+        item.weight = w;
+        item.strengthClass = 'medium';
+        item.scopeLevel = 'district';
+        item.attractionScore = calcMagnetAttraction(w, item.permanenceType, item.distance);
+      }
+    }
+  }
+
   // Sort each category by distance; slice to maxShow
   const magnets: MagnetItem[] = [];
   const magnetCountByCategory: Record<string, number> = {};
@@ -218,8 +322,15 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
 
   competitors.sort((a, b) => a.distance - b.distance);
 
-  const { index: evergreenIndex, gravityExplanation, competitorPressureValue } =
-    calcEvergreenIndex(magnets, competitors);
+  const accessibilityDeduped = dedupeAccessibilityStops(accessibilityStops);
+  const {
+    index: evergreenIndex,
+    gravityExplanation,
+    competitorPressureValue,
+    footTraffic,
+    heatmapFactors,
+  } =
+    calcEvergreenIndex(magnets, competitors, accessibilityDeduped.length);
 
   const scoreBand: ScoreBand =
     evergreenIndex >= 70 ? 'strong' : evergreenIndex >= 45 ? 'medium' : evergreenIndex > 0 ? 'weak' : 'none';
@@ -232,13 +343,14 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     evergreenIndex, magnets, competitors, magnetCountByCategory, gravityExplanation,
   );
 
-  const heatmapPoints = computeHeatmap(magnets, competitors);
+  const heatmapPoints = computeHeatmap(magnets, competitors, heatmapFactors);
 
   return {
     evergreenIndex,
     scoreBand,
     magnets,
     magnetCountByCategory,
+    accessibilityStops: accessibilityDeduped.slice(0, 12),
     competitors,
     gravityExplanation,
     demandType: gravityExplanation.demandType,
@@ -246,6 +358,7 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     clusterZones,
     splitDemand: gravityExplanation.demandDistribution === 'split',
     competitorPressure: competitorPressureValue,
+    footTraffic,
     heatmapPoints,
     conclusion,
   };
