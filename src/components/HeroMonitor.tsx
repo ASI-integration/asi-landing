@@ -75,7 +75,7 @@ export function HeroMonitor() {
     const interval = setInterval(() => {
       const ev = EVENT_POOL[poolIdx.current % EVENT_POOL.length];
       poolIdx.current++;
-      setLog(prev => [...prev.slice(-14), {
+      setLog(prev => [...prev.slice(-12), {
         id: entryId.current++,
         timestamp: makeTimestamp(Date.now()),
         ...ev,
@@ -94,49 +94,49 @@ export function HeroMonitor() {
     return () => clearInterval(ticker);
   }, []);
 
-  const visibleLog = log.slice(-7);
+  const visibleLog = log.slice(-4);
 
   return (
     <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-900/80 shadow-2xl shadow-black/60 overflow-hidden backdrop-blur-sm">
       {/* Window chrome */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800/90 bg-slate-950/60">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/90 bg-slate-950/60">
         <span className="h-2.5 w-2.5 rounded-full bg-rose-500/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
-        <span className="ml-3 text-[10px] font-mono text-slate-600 truncate select-none">
+        <span className="ml-3 text-xs font-mono text-slate-500 truncate select-none">
           asi.system · activity log
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-mono text-emerald-600">live</span>
+          <span className="text-xs font-mono text-emerald-500">live</span>
         </span>
       </div>
 
       {/* Body */}
-      <div className="p-3 sm:p-4 grid grid-cols-5 gap-3" style={{ minHeight: 300 }}>
+      <div className="p-4 sm:p-5 grid grid-cols-5 gap-4" style={{ minHeight: 360 }}>
 
         {/* Left: live log feed */}
         <div
-          className="col-span-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-3 py-2.5 flex flex-col overflow-hidden"
-          style={{ minHeight: 260 }}
+          className="col-span-3 rounded-xl border border-slate-800/60 bg-slate-950/50 px-4 py-4 flex flex-col overflow-hidden"
+          style={{ minHeight: 300 }}
         >
-          <p className="text-[9px] font-mono uppercase tracking-widest text-slate-700 mb-2 shrink-0">
+          <p className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.2em] text-slate-500 mb-3 shrink-0">
             системный журнал · все объекты
           </p>
-          <div className="flex-1 space-y-1.5 overflow-hidden">
+          <div className="flex-1 flex flex-col justify-end gap-0 overflow-hidden min-h-0">
             {visibleLog.map((entry, i) => (
               <div
                 key={entry.id}
-                className="flex items-baseline gap-1.5 min-w-0"
-                style={{ opacity: 0.35 + 0.095 * i }}
+                className="flex items-start gap-2 min-w-0 py-2 border-b border-slate-800/40 last:border-0"
+                style={{ opacity: 0.45 + 0.18 * i }}
               >
-                <span className="text-[9px] font-mono text-slate-700 shrink-0 tabular-nums w-[52px]">
+                <span className="text-xs font-mono text-slate-500 shrink-0 tabular-nums w-[58px] pt-0.5">
                   {entry.timestamp}
                 </span>
-                <span className={`text-[9px] font-mono font-bold shrink-0 w-7 ${BADGE_COLORS[entry.kind]}`}>
+                <span className={`text-xs font-mono font-bold shrink-0 w-9 pt-0.5 ${BADGE_COLORS[entry.kind]}`}>
                   {entry.badge}
                 </span>
-                <span className={`text-[10px] font-mono leading-tight truncate ${BADGE_COLORS[entry.kind]}`}>
+                <span className={`text-sm sm:text-[15px] font-mono leading-snug break-words ${BADGE_COLORS[entry.kind]}`}>
                   {entry.text}
                 </span>
               </div>

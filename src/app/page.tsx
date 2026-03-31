@@ -3,8 +3,6 @@ import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo'
 import { CommDemo } from '@/components/CommDemo';
 import { HeroMonitor } from '@/components/HeroMonitor';
 import { FaqAccordion } from '@/components/FaqAccordion';
-import { AsiCat } from '@/components/AsiCat';
-
 /* ─── Telegram SVG icon ────────────────────────────────────────────────────── */
 function TgIcon({ className = 'w-5 h-5' }: { className?: string }) {
   return (

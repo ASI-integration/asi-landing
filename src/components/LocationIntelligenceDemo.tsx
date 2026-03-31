@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { AsiCat } from './AsiCat';
 import {
   MAGNET_CATEGORIES,
   CATEGORY_MAX_SHOW,
@@ -242,8 +241,8 @@ function IdleMapPanel() {
               <path d="M9 1.5C6.1 1.5 3.75 3.85 3.75 6.75c0 4.22 5.25 9.75 5.25 9.75s5.25-5.53 5.25-9.75C14.25 3.85 11.9 1.5 9 1.5zm0 7a2.25 2.25 0 110-4.5 2.25 2.25 0 010 4.5z" fill="rgba(99,102,241,0.45)" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-slate-500">Введите адрес объекта</p>
-          <p className="mt-1.5 text-xs text-slate-700 leading-snug">Анализ начнётся после выбора<br />точного адреса из списка</p>
+          <p className="text-base font-medium text-slate-400">Введите ваш адрес объекта</p>
+          <p className="mt-2 text-sm text-slate-600 leading-relaxed">Анализ начнётся после выбора точного адреса из списка</p>
         </div>
       </div>
     </div>
@@ -568,7 +567,7 @@ function AddressInput({
           value={locked ? lockedValue : text}
           onChange={locked ? () => undefined : handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Введите адрес объекта"
+          placeholder="Введите ваш адрес объекта"
           disabled={disabled}
           readOnly={locked}
           autoComplete="off"
@@ -1013,39 +1012,27 @@ export function LocationIntelligenceDemo() {
 
   return (
     <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-5xl mx-auto text-left">
 
-        {/* Section header */}
-        <div className="flex items-start gap-5 mb-10">
-          <AsiCat mode="location" size={72} className="shrink-0 mt-1" />
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">Демо 1 из 2</p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
+        {/* Section header + marketing — left-aligned, clear hierarchy */}
+        <div className="mb-12 max-w-2xl space-y-6">
+          <div className="space-y-4">
+            <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
               Система понимает потенциал вашего объекта
             </h2>
-            <p className="mt-2 text-slate-400 max-w-lg">
-              Введите адрес — и посмотрите, как ASI оценивает локацию: магниты, конкурентов и индекс вечной локации.
+            <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
+              Введите ваш адрес — и посмотрите, как ASI оценивает локацию: магниты, конкурентов и индекс вечной локации.
             </p>
           </div>
-        </div>
 
-        {/* Slogan */}
-        <div className="mb-10 pl-1">
-          <p className="text-xl sm:text-2xl font-semibold leading-snug">
-            <span className="text-slate-200">Карта показывает, что находится вокруг.</span>
-          </p>
-          <p className="text-xl sm:text-2xl font-semibold leading-snug mt-0.5">
-            <span className="text-indigo-400">ASI показывает, как это влияет на ваш объект.</span>
-          </p>
-        </div>
-
-        <div className="mb-10 max-w-2xl space-y-1.5 text-sm sm:text-[15px] leading-relaxed text-slate-300">
-          <p className="font-semibold text-slate-200">
-            Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.
-          </p>
-          <p>
-            То есть показывают, где у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
-          </p>
+          <div className="space-y-3 pt-2 border-t border-slate-800/80">
+            <p className="text-xl sm:text-2xl font-semibold text-slate-100 leading-snug">
+              Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.
+            </p>
+            <p className="text-base sm:text-lg text-slate-400 leading-relaxed">
+              То есть показывают, где у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
+            </p>
+          </div>
         </div>
 
         {/* ── RESULT PHASE ── */}

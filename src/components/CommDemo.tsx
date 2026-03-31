@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { AsiCat } from './AsiCat';
 
 interface ChatMessage {
   id: number;
@@ -288,19 +287,13 @@ export function CommDemo() {
       <div className="max-w-5xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-start gap-5 mb-10">
-          <AsiCat mode="comm" size={72} className="shrink-0 mt-1" />
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
-              Демо 2 из 2
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-white leading-tight">
-              Система сама ведёт диалог
-            </h2>
-            <p className="mt-2 text-slate-400 max-w-lg">
-              Выберите сообщение — и посмотрите, как ASI обрабатывает запрос, не тревожа управляющего.
-            </p>
-          </div>
+        <div className="mb-10 max-w-2xl text-left space-y-4">
+          <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
+            Система сама ведёт диалог
+          </h2>
+          <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
+            Выберите сообщение — и посмотрите, как ASI обрабатывает запрос, не тревожа управляющего.
+          </p>
         </div>
 
         {/* Two-panel layout */}
