@@ -1,0 +1,906 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-03-30T19:41:21Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 394740448,
+  "lat": 57.8127950,
+  "lon": 28.3381920,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Хлебная слобода",
+    "opening_hours": "Mo-Th 09:00-21:00; Fr-Sa 09:00-23:00; Su 11:00-23:00"
+  }
+},
+{
+  "type": "node",
+  "id": 462847809,
+  "lat": 57.8150550,
+  "lon": 28.3412673,
+  "tags": {
+    "historic": "memorial",
+    "memorial": "statue",
+    "name": "С. М. Киров",
+    "tourism": "attraction",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 462847813,
+  "lat": 57.8166031,
+  "lon": 28.3407461,
+  "tags": {
+    "historic": "memorial",
+    "memorial": "bust",
+    "name": "М. И. Кутузов",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 462847816,
+  "lat": 57.8140646,
+  "lon": 28.3459836,
+  "tags": {
+    "historic": "memorial",
+    "memorial": "statue",
+    "name": "Пушкин и Арина Родионовна",
+    "start_date": "1983",
+    "tourism": "attraction",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 466214741,
+  "lat": 57.8154770,
+  "lon": 28.3404260,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Лакомка",
+    "opening_hours": "Mo-Fr 09:00-20:00; Sa 10:00-20:00; Su 10:00-19:00"
+  }
+},
+{
+  "type": "node",
+  "id": 803818497,
+  "lat": 57.8163039,
+  "lon": 28.3349277,
+  "tags": {
+    "description": "Памятник княгине Ольге, установлен к 1100-летию со дня основания города. Работа скульптора Вячеслава Клыкова",
+    "height": "4.5",
+    "historic": "memorial",
+    "memorial": "statue",
+    "name": "Памятник княгине Ольге",
+    "start_date": "2003",
+    "tourism": "attraction",
+    "wikidata": "Q4343518"
+  }
+},
+{
+  "type": "node",
+  "id": 803818616,
+  "lat": 57.8136041,
+  "lon": 28.3473829,
+  "tags": {
+    "name": "Октябрьская",
+    "smoking": "no",
+    "start_date": "1937",
+    "tourism": "hotel"
+  }
+},
+{
+  "type": "node",
+  "id": 805168398,
+  "lat": 57.8187736,
+  "lon": 28.3319869,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "площадь Ленина",
+    "public_transport": "platform",
+    "shelter": "yes",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 805168406,
+  "lat": 57.8200794,
+  "lon": 28.3317958,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "Площадь Ленина",
+    "public_transport": "platform",
+    "shelter": "yes",
+    "tactile_paving": "no",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 805168409,
+  "lat": 57.8204945,
+  "lon": 28.3310243,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "Площадь Ленина",
+    "public_transport": "platform",
+    "shelter": "no",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 864422913,
+  "lat": 57.8077015,
+  "lon": 28.3398354,
+  "tags": {
+    "historic": "memorial",
+    "memorial": "stele",
+    "name": "Стела \"Город воинской славы\"",
+    "tourism": "attraction",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 880461920,
+  "lat": 57.8187383,
+  "lon": 28.3317409,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Вот, блин!Кафе",
+    "opening_hours": "Mo-Su 11:00-23:00",
+    "takeaway": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 908248661,
+  "lat": 57.8157013,
+  "lon": 28.3371308,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "Детский парк",
+    "public_transport": "platform",
+    "shelter": "no",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 908248671,
+  "lat": 57.8153957,
+  "lon": 28.3392842,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "Детский парк",
+    "public_transport": "platform",
+    "shelter": "yes",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 908248673,
+  "lat": 57.8138986,
+  "lon": 28.3452184,
+  "tags": {
+    "bench": "yes",
+    "bin": "yes",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "yes",
+    "name": "Летний сад",
+    "public_transport": "platform",
+    "shelter": "yes",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 908248686,
+  "lat": 57.8136328,
+  "lon": 28.3458246,
+  "tags": {
+    "bench": "yes",
+    "bin": "no",
+    "bus": "yes",
+    "highway": "bus_stop",
+    "lit": "no",
+    "name": "Летний сад",
+    "public_transport": "platform",
+    "shelter": "no",
+    "tactile_paving": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 921202508,
+  "lat": 57.8169479,
+  "lon": 28.3382890,
+  "tags": {
+    "amenity": "cafe",
+    "full_name": "Столовая Бульваръ",
+    "name": "Бульваръ",
+    "opening_hours": "Mo-Su 08:00-22:00",
+    "operator": "ООО «Барракуда»",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 923343500,
+  "lat": 57.8080189,
+  "lon": 28.3383684,
+  "tags": {
+    "historic": "memorial",
+    "memorial": "war_memorial",
+    "name": "Аллея героев",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 923343525,
+  "lat": 57.8087327,
+  "lon": 28.3393657,
+  "tags": {
+    "historic": "memorial",
+    "material": "stone",
+    "memorial": "stele",
+    "name": "Памятник партизанам",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 938557508,
+  "lat": 57.8167101,
+  "lon": 28.3233218,
+  "tags": {
+    "amenity": "university",
+    "branch": "Псковский филиал",
+    "name": "МОСА",
+    "official_name": "Московская открытая социальная академия"
+  }
+},
+{
+  "type": "node",
+  "id": 998181277,
+  "lat": 57.8191595,
+  "lon": 28.3376926,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Ахтамар",
+    "opening_hours": "Mo-Su 11:00-06:00"
+  }
+},
+{
+  "type": "node",
+  "id": 1008457767,
+  "lat": 57.8160720,
+  "lon": 28.3369209,
+  "tags": {
+    "addr:city": "Псков",
+    "air_conditioning": "yes",
+    "amenity": "restaurant",
+    "cuisine": "japanese",
+    "delivery": "yes",
+    "internet_access": "wlan",
+    "level": "0",
+    "name": "Васаби",
+    "opening_hours": "Mo-Su 11:00-22:30",
+    "outdoor_seating": "no",
+    "phone": "8-8112-29-14-32",
+    "smoking": "no",
+    "website": "https://wasabico.ru/pskov/",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 1106004386,
+  "lat": 57.8180801,
+  "lon": 28.3426311,
+  "tags": {
+    "amenity": "cafe",
+    "cuisine": "pizza",
+    "name": "Моя Италия",
+    "opening_hours": "Su-Th 11:00-23:00; Fr-Sa 11:00-24:00",
+    "operator": "ООО «Пиццерия»",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
+  "id": 1192521086,
+  "lat": 57.8190511,
+  "lon": 28.3348906,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Столов'КА",
+    "opening_hours": "Mo-Su 08:00-16:00"
+  }
+},
+{
+  "type": "node",
+  "id": 1192521591,
+  "lat": 57.8179657,
+  "lon": 28.3355362,
+  "tags": {
+    "name": "Музей-квартира В.И. Ленина",
+    "opening_hours": "Tu-Su 11:00-18:00; Tu[-1] off",
+    "operator": "Псковский государственный объединённый историко-архитектурный и художественный музей-заповедник",
+    "tourism": "museum"
+  }
+},
+{
+  "type": "node",
+  "id": 1192521857,
+  "lat": 57.8182371,
+  "lon": 28.3399168,
+  "tags": {
+    "addr:city": "Псков",
+    "amenity": "cafe",
+    "name": "Кафетерий",
+    "opening_hours": "Mo-Su 08:30-18:00",
+    "operator": "ООО «Зеда»"
+  }
+},
+{
+  "type": "node",
+  "id": 1192522210,
+  "lat": 57.8166974,
+  "lon": 28.3377900,
+  "tags": {
+    "name": "Музей-квартира архитектора Ю.П. Спегальского",
+    "opening_hours": "Tu-Sa 11:00-18:00; Tu[-1] off",
+    "operator": "Псковский государственный объединённый историко-архитектурный и художественный музей-заповедник",
+    "tourism": "museum",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 1247213711,
+  "lat": 57.8210136,
+  "lon": 28.3431551,
+  "tags": {
+    "name": "Каркушин Дом",
+    "tourism": "hotel",
+    "website": "http://www.karkushin-dom.ru/",
+    "wheelchair": "limited"
+  }
+},
+{
+  "type": "node",
+  "id": 1329891550,
+  "lat": 57.8164389,
+  "lon": 28.3366183,
+  "tags": {
+    "addr:city": "Псков",
+    "addr:housenumber": "12",
+    "addr:street": "Октябрьский проспект",
+    "amenity": "cafe",
+    "check_date": "2022-05-14",
+    "cuisine": "pizza",
+    "internet_access": "wlan",
+    "internet_access:fee": "customers",
+    "name": "Моя Италия",
+    "payment:mastercard": "yes",
+    "payment:visa": "yes",
+    "takeaway": "yes",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 1425126044,
+  "lat": 57.8194064,
+  "lon": 28.3421208,
+  "tags": {
+    "name": "Колос",
+    "tourism": "hotel",
+    "website": "https://pskovkolos.ru/",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 1433488846,
+  "lat": 57.8170308,
+  "lon": 28.3444315,
+  "tags": {
+    "amenity": "cafe"
+  }
+},
+{
+  "type": "node",
+  "id": 1441964033,
+  "lat": 57.8141156,
+  "lon": 28.3429570,
+  "tags": {
+    "addr:city": "Псков",
+    "addr:housenumber": "15",
+    "addr:postcode": "180000",
+    "addr:street": "Октябрьский проспект",
+    "amenity": "cafe",
+    "brand": "Traveler's Coffee",
+    "brand:wikidata": "Q4051716",
+    "brand:wikipedia": "ru:Traveler’s Coffee",
+    "contact:phone": "+7 8112 201011",
+    "contact:website": "http://www.travelerscoffee.ru",
+    "cuisine": "coffee_shop",
+    "name": "Traveler's Coffee",
+    "opening_hours": "Mo-Su 08:00-23:00",
+    "takeaway": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 1507688959,
+  "lat": 57.8153891,
+  "lon": 28.3403494,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Fazer",
+    "opening_hours": "Mo-Su 08:00-20:00"
+  }
+},
+{
+  "type": "node",
+  "id": 1539085039,
+  "lat": 57.8192384,
+  "lon": 28.3304275,
+  "tags": {
+    "bus": "yes",
+    "highway": "bus_stop",
+    "name": "площадь Ленина",
+    "public_transport": "platform",
+    "shelter": "no",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 2968541694,
+  "lat": 57.8184011,
+  "lon": 28.3511345,
+  "tags": {
+    "historic": "monument"
+  }
+},
+{
+  "type": "node",
+  "id": 3748842999,
+  "lat": 57.8229711,
+  "lon": 28.3393449,
+  "tags": {
+    "name": "Зонт и чемодан",
+    "tourism": "attraction",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 4176691489,
+  "lat": 57.8163133,
+  "lon": 28.3301369,
+  "tags": {
+    "amenity": "cafe",
+    "cuisine": "coffee_shop;barbecue;burger;chicken;grill;russian;tea",
+    "name": "Кафе \"Причал\"",
+    "opening_hours": "Su-Th 12:00-24:00; Fr-Sa 12:00-01:00",
+    "phone": "+7 921 0018404"
+  }
+},
+{
+  "type": "node",
+  "id": 4278691792,
+  "lat": 57.8141763,
+  "lon": 28.3345128,
+  "tags": {
+    "amenity": "cafe",
+    "cuisine": "cake;coffee_shop",
+    "internet_access": "wlan",
+    "name": "Бодрый день",
+    "opening_hours": "Mo-Fr 08:30-21:00; Sa-Su 10:00-21:00"
+  }
+},
+{
+  "type": "node",
+  "id": 4359468891,
+  "lat": 57.8136705,
+  "lon": 28.3390483,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Чудо-Вафли",
+    "name:ru": "Чудо-Вафли",
+    "opening_hours": "Mo-Su 09:00-21:00"
+  }
+},
+{
+  "type": "node",
+  "id": 4362227052,
+  "lat": 57.8108056,
+  "lon": 28.3372688,
+  "tags": {
+    "addr:housenumber": "3",
+    "addr:postcode": "180000",
+    "addr:street": "улица Некрасова",
+    "name": "Двор Подзноева",
+    "tourism": "hotel",
+    "website": "http://www.dvorpodznoeva.ru"
+  }
+},
+{
+  "type": "node",
+  "id": 4379002389,
+  "lat": 57.8163757,
+  "lon": 28.3332767,
+  "tags": {
+    "addr:housenumber": "7А",
+    "addr:street": "Октябрьский проспект",
+    "name": "Музей «Два Капитана»",
+    "tourism": "museum"
+  }
+},
+{
+  "type": "node",
+  "id": 4463735992,
+  "lat": 57.8166355,
+  "lon": 28.3323741,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Пирогов",
+    "name:ru": "Пирогов"
+  }
+},
+{
+  "type": "node",
+  "id": 4759280130,
+  "lat": 57.8144581,
+  "lon": 28.3399630,
+  "tags": {
+    "addr:city": "Псков",
+    "addr:housenumber": "17",
+    "addr:postcode": "180000",
+    "addr:street": "улица Некрасова",
+    "amenity": "cafe",
+    "cuisine": "donut",
+    "name": "Псковские пончики",
+    "opening_hours": "09:00-21:00"
+  }
+},
+{
+  "type": "node",
+  "id": 5124338925,
+  "lat": 57.8133064,
+  "lon": 28.3367011,
+  "tags": {
+    "addr:housenumber": "3",
+    "amenity": "restaurant",
+    "name": "Дом Подзноева"
+  }
+},
+{
+  "type": "node",
+  "id": 5226832369,
+  "lat": 57.8167889,
+  "lon": 28.3381466,
+  "tags": {
+    "amenity": "cafe",
+    "capacity": "4",
+    "coffee": "yes",
+    "name": "Бодрый день"
+  }
+},
+{
+  "type": "node",
+  "id": 5870966686,
+  "lat": 57.8104412,
+  "lon": 28.3370969,
+  "tags": {
+    "name": "Двор Подзноева",
+    "tourism": "hotel"
+  }
+},
+{
+  "type": "node",
+  "id": 6300858285,
+  "lat": 57.8184830,
+  "lon": 28.3318772,
+  "tags": {
+    "name": "Здоровый Город",
+    "tourism": "hostel",
+    "website": "http://www.pskovhostel.ru/"
+  }
+},
+{
+  "type": "node",
+  "id": 6577223437,
+  "lat": 57.8200624,
+  "lon": 28.3328028,
+  "tags": {
+    "amenity": "cafe",
+    "name": "DKP"
+  }
+},
+{
+  "type": "node",
+  "id": 6731769974,
+  "lat": 57.8137741,
+  "lon": 28.3440342,
+  "tags": {
+    "addr:housenumber": "42",
+    "addr:street": "улица Свердлова",
+    "amenity": "restaurant",
+    "cuisine": "international",
+    "diet:vegan": "yes",
+    "diet:vegetarian": "yes",
+    "name": "Fabric Café",
+    "opening_hours": "Mo-Th 10:00-23:00; Fr 10:00-00:00; Sa 00:00-01:00, 12:00-00:00; Su 00:00-01:00, 12:00-23:00"
+  }
+},
+{
+  "type": "node",
+  "id": 7121009987,
+  "lat": 57.8177881,
+  "lon": 28.3361010,
+  "tags": {
+    "amenity": "cafe",
+    "cuisine": "cake;bagel;coffee_shop",
+    "name": "Два пекаря, пекарня-кофейня",
+    "opening_hours": "Mo-Su 08:00-21:00"
+  }
+},
+{
+  "type": "node",
+  "id": 7285799885,
+  "lat": 57.8159851,
+  "lon": 28.3330630,
+  "tags": {
+    "amenity": "university",
+    "description": "Работаем с 09: 00-17.00 Пн-Пт ул.Советская 15 а., каб.37 (3 этаж) ",
+    "name": "Институт профобразования \"Эксперт\"",
+    "recycling:batteries": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 7294143821,
+  "lat": 57.8133832,
+  "lon": 28.3408264,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Гоголь-Моголь"
+  }
+},
+{
+  "type": "node",
+  "id": 7929089385,
+  "lat": 57.8187203,
+  "lon": 28.3393450,
+  "tags": {
+    "addr:postcode": "180000",
+    "amenity": "cafe",
+    "cuisine": "breakfast;coffee_shop;pancake;russian",
+    "email": "milk_and_cookies@inbox.ru",
+    "name:en": "Milk and Cookies",
+    "opening_hours": "Mo-Fr 09:00-20:00; Sa-Su 10:00-20:00",
+    "phone": "+7 811 2201601",
+    "website": "https://www.milkandcookies-psk.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 9901689213,
+  "lat": 57.8202644,
+  "lon": 28.3360174,
+  "tags": {
+    "bus": "yes",
+    "highway": "bus_stop",
+    "name": "улица Воровского",
+    "public_transport": "platform"
+  }
+},
+{
+  "type": "node",
+  "id": 9901689215,
+  "lat": 57.8179516,
+  "lon": 28.3442639,
+  "tags": {
+    "bus": "yes",
+    "highway": "bus_stop",
+    "name": "улица Гоголя",
+    "public_transport": "platform"
+  }
+},
+{
+  "type": "node",
+  "id": 10121215019,
+  "lat": 57.8178921,
+  "lon": 28.3357987,
+  "tags": {
+    "name": "Музей оккупации Псковской области 1941-1944",
+    "opening_hours": "Mo-Fr 10:00-18:00",
+    "source": "https://pln-pskov.ru/culture/464359.html",
+    "tourism": "museum"
+  }
+},
+{
+  "type": "node",
+  "id": 10121215023,
+  "lat": 57.8177158,
+  "lon": 28.3349244,
+  "tags": {
+    "name": "Дом Иоганна Гитца",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 10121215025,
+  "lat": 57.8178496,
+  "lon": 28.3357703,
+  "tags": {
+    "name": "Доходный дом И.И. Чернова",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 10121215026,
+  "lat": 57.8164316,
+  "lon": 28.3361909,
+  "tags": {
+    "name": "Дом Клюге",
+    "tourism": "attraction",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 10914001205,
+  "lat": 57.8130160,
+  "lon": 28.3239651,
+  "tags": {
+    "name": "Jazz",
+    "tourism": "hostel"
+  }
+},
+{
+  "type": "node",
+  "id": 10969705205,
+  "lat": 57.8119506,
+  "lon": 28.3447520,
+  "tags": {
+    "name": "Машиностроитель",
+    "name:en": "Mashinostroitel",
+    "opening_hours": "24/7",
+    "phone": "8 (8112) 50-00-26",
+    "tourism": "hotel"
+  }
+},
+{
+  "type": "node",
+  "id": 11037829996,
+  "lat": 57.8174612,
+  "lon": 28.3310823,
+  "tags": {
+    "amenity": "cafe",
+    "level": "-1",
+    "name": "Грот",
+    "outdoor_seating": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 11065718006,
+  "lat": 57.8164326,
+  "lon": 28.3362093,
+  "tags": {
+    "amenity": "restaurant",
+    "cuisine": "italian",
+    "indoor_seating": "yes",
+    "name": "Mama Roma",
+    "opening_hours": "Mo-Su 11:00-23:00",
+    "outdoor_seating": "sidewalk",
+    "payment:credit_cards": "yes",
+    "payment:debit_cards": "yes",
+    "phone": "+78112600003",
+    "website": "https://www.mamaroma.ru/",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 11388394169,
+  "lat": 57.8201920,
+  "lon": 28.3286002,
+  "tags": {
+    "name": "Россия начинается здесь",
+    "reservation": "no",
+    "tourism": "attraction"
+  }
+},
+{
+  "type": "node",
+  "id": 11782317259,
+  "lat": 57.8174429,
+  "lon": 28.3225077,
+  "tags": {
+    "air_conditioning": "yes",
+    "capacity": "40",
+    "contact:vk": "https://vk.com/hostel60",
+    "internet_access": "wlan",
+    "name": "Hostel60",
+    "tourism": "hostel"
+  }
+},
+{
+  "type": "node",
+  "id": 12031242869,
+  "lat": 57.8162150,
+  "lon": 28.3365960,
+  "tags": {
+    "amenity": "restaurant",
+    "internet_access": "wlan",
+    "name": "Eaters",
+    "opening_hours": "Mo-Su 11:00-22:00"
+  }
+},
+{
+  "type": "node",
+  "id": 12770701001,
+  "lat": 57.8156059,
+  "lon": 28.3385269,
+  "tags": {
+    "amenity": "cafe",
+    "name": "Крафт кофе бар"
+  }
+},
+{
+  "type": "node",
+  "id": 12833445301,
+  "lat": 57.8162767,
+  "lon": 28.3364724,
+  "tags": {
+    "addr:housenumber": "12",
+    "addr:street": "Октябрьский проспект",
+    "amenity": "cafe",
+    "cuisine": "coffee_shop",
+    "name": "Кофейня Drops"
+  }
+}
+
+  ]
+}
