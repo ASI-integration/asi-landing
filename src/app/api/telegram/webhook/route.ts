@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auditError } from '@/lib/communication/audit';
 import { processUpdate } from '@/lib/communication/orchestrator';
+import { flushBackgroundTasks } from '@/lib/communication/background';
 import { TelegramUpdate } from '@/lib/communication/types';
 
 /**
@@ -57,6 +58,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ── 3. Delegate to orchestrator ───────────────────────────────────────────
   await processUpdate(update);
 
-  // ── 4. Always 200 ─────────────────────────────────────────────────────────
+  // ── 4. Flush background tasks before the serverless function exits ────────
+  await flushBackgroundTasks();
+
+  // ── 5. Always 200 ─────────────────────────────────────────────────────────
   return NextResponse.json({ ok: true });
 }
