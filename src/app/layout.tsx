@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { LegalFooter } from '@/components/LegalFooter';
 
 export const metadata: Metadata = {
@@ -15,10 +16,12 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="antialiased">
-        <div className="flex flex-col min-h-screen">
-          <div className="flex-1">{children}</div>
-          <LegalFooter />
-        </div>
+        <LanguageProvider>
+          <div className="flex flex-col min-h-screen">
+            <div className="flex-1">{children}</div>
+            <LegalFooter />
+          </div>
+        </LanguageProvider>
       </body>
     </html>
   );
