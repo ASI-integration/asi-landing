@@ -36,6 +36,7 @@ interface Suggestion {
   value: string;
   lat: string | null;
   lon: string | null;
+  placeId?: string;
 }
 
 interface SelectedAddress {
@@ -49,16 +50,30 @@ type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 // ── Address suggestion fetch ───────────────────────────────────────────────────
 
 async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
-  try {
-    const res = await fetch(`/api/address-suggest?q=${encodeURIComponent(q)}`);
-    if (!res.ok) return { suggestions: [], status: 'error' };
-    const data = await res.json();
-    const suggestions = (data.suggestions ?? []) as Suggestion[];
-    const status: SuggestStatus = data.status ?? (suggestions.length > 0 ? 'ok' : 'no_results');
-    return { suggestions, status };
-  } catch {
-    return { suggestions: [], status: 'error' };
-  }
+  return new Promise((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google;
+    if (!google?.maps?.places?.AutocompleteService) {
+      resolve({ suggestions: [], status: 'no_key' });
+      return;
+    }
+    const svc = new google.maps.places.AutocompleteService();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    svc.getPlacePredictions({ input: q }, (predictions: any[] | null, status: string) => {
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) {
+        resolve({ suggestions: [], status: 'no_results' });
+        return;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const suggestions: Suggestion[] = predictions.map((p: any) => ({
+        value: p.description,
+        lat: null,
+        lon: null,
+        placeId: p.place_id,
+      }));
+      resolve({ suggestions, status: 'ok' });
+    });
+  });
 }
 
 async function fetchLocationAnalysis(
@@ -697,14 +712,32 @@ function AddressInput({
   }
 
   function pick(s: Suggestion) {
-    if (!s.lat || !s.lon) return;
-    setLocked(true);
-    setLockedValue(s.value);
-    setText('');
-    setSuggestions([]);
-    setOpen(false);
-    setSuggestStatus('idle');
-    onSelect({ value: s.value, lat: parseFloat(s.lat), lon: parseFloat(s.lon) });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const google = (window as any).google;
+
+    const doSelect = (lat: number, lon: number) => {
+      setLocked(true);
+      setLockedValue(s.value);
+      setText('');
+      setSuggestions([]);
+      setOpen(false);
+      setSuggestStatus('idle');
+      onSelect({ value: s.value, lat, lon });
+    };
+
+    if (s.lat && s.lon) {
+      doSelect(parseFloat(s.lat), parseFloat(s.lon));
+      return;
+    }
+
+    if (!s.placeId || !google?.maps?.places?.PlacesService) return;
+    const div = document.createElement('div');
+    const svc = new google.maps.places.PlacesService(div);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    svc.getDetails({ placeId: s.placeId, fields: ['geometry'] }, (place: any, status: string) => {
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !place?.geometry?.location) return;
+      doSelect(place.geometry.location.lat(), place.geometry.location.lng());
+    });
   }
 
   function clear() {
