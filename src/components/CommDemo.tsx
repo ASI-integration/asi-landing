@@ -24,168 +24,168 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   {
-    label: 'Когда заезд?',
-    userText: 'Привет, в котором часу можно заехать?',
-    reply: 'Заезд с 14:00. Если нужен ранний — напишите, я проверю доступность и согласую с управляющим.',
+    label: 'Check-in time?',
+    userText: 'Hi, what time can I check in?',
+    reply: 'Check-in from 14:00. If you need early arrival — let me know and I\'ll check availability with the manager.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → check-in',
-      'Данные бронирования загружены',
-      'Правило заезда применено',
-      'Ответ подготовлен и отправлен',
+      'Inbound request received',
+      'Intent classified → check-in',
+      'Booking data loaded',
+      'Check-in rule applied',
+      'Reply prepared and sent',
     ],
   },
   {
-    label: 'Есть парковка?',
-    userText: 'Есть ли парковка рядом?',
-    reply: 'Да, есть закрытый двор. Код въезда пришлю за час до заезда вместе с инструкцией.',
+    label: 'Is there parking?',
+    userText: 'Is there parking nearby?',
+    reply: 'Yes, there\'s a secured courtyard. I\'ll send the gate code one hour before check-in along with the instructions.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → инфраструктура',
-      'Параметры объекта проверены',
-      'Инструкция по парковке найдена',
-      'Ответ подготовлен и отправлен',
+      'Inbound request received',
+      'Intent classified → infrastructure',
+      'Property parameters checked',
+      'Parking instructions retrieved',
+      'Reply prepared and sent',
     ],
   },
   {
-    label: 'Можно с животными?',
-    userText: 'Можно привезти кота? Он маленький)',
-    reply: 'Животных берём — до 10 кг. Нужен залог 2 000 ₽, возвращаю после выезда. Выставить счёт?',
+    label: 'Pets allowed?',
+    userText: 'Can I bring my cat? He\'s small :)',
+    reply: 'Pets welcome — up to 10 kg. A $30 refundable deposit is required, returned after checkout. Shall I send an invoice?',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → доп. условие',
-      'Политика объекта проверена',
-      'Условие залога рассчитано',
-      'Запись добавлена в бронирование',
-      'Ответ подготовлен и отправлен',
+      'Inbound request received',
+      'Intent classified → additional terms',
+      'Property policy checked',
+      'Deposit condition calculated',
+      'Entry added to booking',
+      'Reply prepared and sent',
     ],
   },
   {
-    label: 'Жалоба на шум',
-    userText: 'Соседи сверху шумят всю ночь, уже 2:00. Невозможно спать.',
-    reply: 'Понял, это недопустимо. Немедленно подключаю управляющего — он позвонит вам в течение нескольких минут.',
+    label: 'Noise complaint',
+    userText: 'Neighbours upstairs are making noise all night, it\'s 2 AM. Impossible to sleep.',
+    reply: 'Understood — this is unacceptable. Connecting the manager immediately; they will call you within a few minutes.',
     escalate: true,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → жалоба',
-      'Критичность оценена → срочно',
-      'Автоматический сценарий неприменим',
-      'Контекст упакован для оператора',
-      'Оператор уведомлён с полным контекстом',
+      'Inbound request received',
+      'Intent classified → complaint',
+      'Severity assessed → urgent',
+      'Automated scenario not applicable',
+      'Context packaged for operator',
+      'Operator notified with full context',
     ],
   },
   {
-    label: 'Код не работает',
-    userText: 'Код от замка не подходит, не могу войти. Уже стою у двери.',
-    reply: 'Сейчас разберусь. Резервный код: 4921. Если не поможет — подключаю управляющего немедленно.',
+    label: 'Lock code not working',
+    userText: 'The door code doesn\'t work, I can\'t get in. I\'m standing outside.',
+    reply: 'On it. Backup code: 4921. If that doesn\'t work — I\'m calling the manager right now.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → доступ',
-      'Бронирование гостя верифицировано',
-      'Резервный код запрошен из хранилища',
-      'Код доступа отправлен гостю',
-      'Инцидент зафиксирован в системе',
+      'Inbound request received',
+      'Intent classified → access',
+      'Guest booking verified',
+      'Backup code retrieved from vault',
+      'Access code sent to guest',
+      'Incident logged in system',
     ],
   },
   {
-    label: 'Нет интернета',
-    userText: 'Wi-Fi не работает, что делать?',
-    reply: 'Попробуйте перезагрузить роутер — он за телевизором. Пароль: home_apt_2024. Не поможет — сразу вызову техника.',
+    label: 'No Wi-Fi',
+    userText: 'The Wi-Fi isn\'t working, what should I do?',
+    reply: 'Try restarting the router — it\'s behind the TV. Password: home_apt_2024. If that fails I\'ll dispatch a technician.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → техника',
-      'Инструкция по объекту загружена',
-      'Шаги самопомощи подобраны',
-      'Ответ подготовлен и отправлен',
+      'Inbound request received',
+      'Intent classified → technical',
+      'Property manual loaded',
+      'Guest instructions selected',
+      'Reply prepared and sent',
     ],
   },
   {
-    label: 'Продлить на день',
-    userText: 'Можно остаться ещё на одну ночь, завтра 26-го?',
-    reply: 'Проверяю... 26-е свободно. Стоимость 6 200 ₽. Выставить счёт сейчас?',
+    label: 'Extend by one night',
+    userText: 'Can I stay one more night, tomorrow the 26th?',
+    reply: 'Checking... The 26th is free. Rate: $85. Shall I issue the invoice now?',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → продление',
-      'Доступность даты проверена',
-      'Тариф на доп. ночь рассчитан',
-      'Запрос на продление создан',
-      'Предложение отправлено гостю',
+      'Inbound request received',
+      'Intent classified → extension',
+      'Date availability checked',
+      'Extra night rate calculated',
+      'Extension request created',
+      'Offer sent to guest',
     ],
   },
   {
-    label: 'Ранний выезд',
-    userText: 'Можно выехать в 10:00 вместо 12:00? Рейс ранний.',
-    reply: 'Конечно, ранний выезд в 10:00 согласован. Просто оставьте ключ в боксе у двери.',
+    label: 'Early check-out',
+    userText: 'Can I check out at 10:00 instead of 12:00? Early flight.',
+    reply: 'Of course, early check-out at 10:00 confirmed. Just leave the key in the lockbox by the door.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → выезд',
-      'Расписание клининга проверено',
-      'Ранний выезд подтверждён',
-      'Инструкция по сдаче ключа отправлена',
+      'Inbound request received',
+      'Intent classified → check-out',
+      'Cleaning schedule checked',
+      'Early check-out confirmed',
+      'Key return instructions sent',
     ],
   },
   {
-    label: 'Нет горячей воды',
-    userText: 'Горячей воды нет уже час. Что случилось?',
-    reply: 'Проверяю по дому... Плановые работы до 15:00. Если к 15:30 не восстановится — немедленно сообщите.',
+    label: 'No hot water',
+    userText: 'There\'s been no hot water for an hour. What happened?',
+    reply: 'Checking building status... Scheduled maintenance until 15:00. If it\'s not restored by 15:30 — let me know immediately.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → коммунальная проблема',
-      'Статус по адресу запрошен',
-      'Данные о плановых работах получены',
-      'Ответ с уточнением сроков отправлен',
-      'Задача мониторинга поставлена',
+      'Inbound request received',
+      'Intent classified → utility issue',
+      'Address status queried',
+      'Scheduled maintenance data retrieved',
+      'Reply with timeline sent',
+      'Monitoring task created',
     ],
   },
   {
-    label: 'Скидка на следующий раз',
-    userText: 'Мы у вас уже третий раз — можно скидку на следующее бронирование?',
-    reply: 'Отмечаю вас как постоянных гостей. Промокод на 10% для следующего бронирования: LOYALTY10.',
+    label: 'Loyalty discount',
+    userText: 'This is our third stay — can we get a discount for the next booking?',
+    reply: 'Marking you as a returning guest. Here\'s a 10% promo code for your next booking: LOYALTY10.',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → лояльность',
-      'История бронирований гостя проверена',
-      'Статус постоянного гостя подтверждён',
-      'Промокод сгенерирован',
-      'Профиль гостя обновлён',
-      'Промокод отправлен гостю',
+      'Inbound request received',
+      'Intent classified → loyalty',
+      'Guest booking history checked',
+      'Returning guest status confirmed',
+      'Promo code generated',
+      'Guest profile updated',
+      'Promo code sent to guest',
     ],
   },
   {
-    label: 'Сломался кран',
-    userText: 'В ванной течёт кран, не могу остановить.',
-    reply: 'Понял. Перекройте вентиль под раковиной (поворот вправо). Срочно вызываю сантехника — будет в течение часа.',
+    label: 'Leaking tap',
+    userText: 'The tap in the bathroom is leaking and I can\'t stop it.',
+    reply: 'Got it. Turn off the valve under the sink (turn right). I\'m dispatching a plumber urgently — they\'ll arrive within an hour.',
     escalate: true,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → поломка',
-      'Критичность оценена → срочно',
-      'Первая помощь отправлена гостю',
-      'Заявка сантехнику создана',
-      'Оператор уведомлён с полным контекстом',
+      'Inbound request received',
+      'Intent classified → maintenance',
+      'Severity assessed → urgent',
+      'First-aid instructions sent to guest',
+      'Plumber work order created',
+      'Operator notified with full context',
     ],
   },
   {
-    label: 'Нужны полотенца',
-    userText: 'Можно попросить дополнительные полотенца?',
-    reply: 'Конечно. Оставлю запрос клинингу — доставят в течение 30 минут. Что-нибудь ещё нужно?',
+    label: 'Extra towels',
+    userText: 'Could I get some extra towels?',
+    reply: 'Of course. I\'ll flag this for housekeeping — they\'ll deliver within 30 minutes. Anything else you need?',
     escalate: false,
     stepLabels: [
-      'Входящий запрос принят',
-      'Тип обращения определён → доп. комплектация',
-      'Доступность клинига проверена',
-      'Задача для клинига создана',
-      'Данные сохранены в системе',
-      'Ответ с подтверждением отправлен',
+      'Inbound request received',
+      'Intent classified → supplies',
+      'Housekeeping availability checked',
+      'Task created for housekeeping',
+      'Data saved in system',
+      'Confirmation reply sent',
     ],
   },
 ];
@@ -200,7 +200,7 @@ export function CommDemo() {
     {
       id: 0,
       role: 'asi',
-      text: 'Здравствуйте! Я система управления объектом ASI. Чем могу помочь?',
+      text: 'ASI — guest automation is live. Pick a scenario or type a message; I run the full chain.',
     },
   ]);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -233,11 +233,11 @@ export function CommDemo() {
     setEscalated(preset?.escalate ?? false);
 
     const stepLabels = preset?.stepLabels ?? [
-      'Входящий запрос принят',
-      'Тип обращения определён',
-      'Ключевые данные извлечены',
-      'Сценарий обработки выбран',
-      'Ответ подготовлен и отправлен',
+      'Inbound request received',
+      'Intent classified',
+      'Key data extracted',
+      'Processing scenario selected',
+      'Reply prepared and sent',
     ];
 
     const activeSteps: Step[] = stepLabels.map((label, i) => ({
@@ -261,7 +261,7 @@ export function CommDemo() {
 
     // Bot reply after all steps settle
     const replyDelay = 380 + (stepLabels.length - 1) * 430 + 720;
-    const replyText = preset?.reply ?? 'Принял. Уточняю детали и вернусь к вам в ближайшее время.';
+    const replyText = preset?.reply ?? 'Received. Running the execution chain now.';
     const t = setTimeout(() => {
       setMessages(prev => [...prev, { id: msgId.current++, role: 'asi', text: replyText }]);
       setPhase('done');
@@ -289,10 +289,10 @@ export function CommDemo() {
         {/* Header */}
         <div className="mb-10 max-w-2xl text-left space-y-4">
           <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
-            Система сама ведёт диалог
+            Guest conversations execute automatically
           </h2>
           <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
-            Выберите сообщение — и посмотрите, как ASI обрабатывает запрос, не тревожа управляющего.
+            Pick a scenario — watch ASI run the full chain with no manager in the loop.
           </p>
         </div>
 
@@ -309,7 +309,7 @@ export function CommDemo() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-white">ASI</p>
-                <p className="text-[11px] text-emerald-400">в сети · отвечает мгновенно</p>
+                <p className="text-[11px] text-emerald-400">online · instant replies</p>
               </div>
             </div>
 
@@ -372,7 +372,7 @@ export function CommDemo() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   disabled={phase === 'processing'}
-                  placeholder="Или напишите своё сообщение..."
+                  placeholder="Or type your own message..."
                   className="flex-1 bg-slate-800/60 border border-slate-700/60 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 outline-none focus:border-indigo-500/50 disabled:opacity-50 transition-colors"
                 />
                 <button
@@ -392,10 +392,10 @@ export function CommDemo() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 flex flex-col gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
-                Что происходит внутри
+                What happens inside
               </p>
               <p className="text-sm text-slate-500">
-                Каждое сообщение проходит автоматическую цепочку шагов — без участия человека.
+                Every message runs through an automated execution chain — no human in the default path.
               </p>
             </div>
 
@@ -408,7 +408,7 @@ export function CommDemo() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                     </svg>
                   </div>
-                  <p className="text-sm text-slate-600">Выберите сценарий,<br />чтобы увидеть процесс</p>
+                  <p className="text-sm text-slate-600">Select a scenario<br />to see the process</p>
                 </div>
               ) : (
                 steps.map((step, i) => {
@@ -482,8 +482,8 @@ export function CommDemo() {
             {phase === 'done' && (
               <p className="text-xs text-slate-600 text-center border-t border-slate-800/60 pt-3">
                 {escalated
-                  ? 'Нестандартная ситуация — оператор подключён с полным контекстом.'
-                  : 'Запрос обработан автоматически. Управляющий не потребовался.'}
+                  ? 'Edge case — operator connected with full context.'
+                  : 'Request handled automatically. No manager needed.'}
               </p>
             )}
           </div>

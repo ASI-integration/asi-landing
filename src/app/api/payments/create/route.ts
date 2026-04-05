@@ -2,11 +2,12 @@ import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { legalConfig } from '@/config/legal';
 import { getYooKassaCredentials, getYooKassaReturnUrl } from '@/lib/payments/yookassa-env';
 
-const PAYMENT_DESCRIPTION = 'Подписка на ASI — Тариф Автопилот';
-/** Реквизиты продавца для текста позиции чека (54-ФЗ) */
-const RECEIPT_SELLER = 'Реутова Юлия Игоревна, ИНН 235307941957';
+const PAYMENT_DESCRIPTION = 'ASI — Autopilot plan subscription';
+/** Seller line on receipt item (no tax IDs in global product copy). */
+const RECEIPT_SELLER = legalConfig.name;
 
 export async function POST(req: Request) {
   const creds = getYooKassaCredentials();
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     if (userErr || !userRow?.email) {
       console.error('[payments/create] user email for receipt', userErr);
       return NextResponse.json(
-        { error: 'Нужен email в профиле для формирования чека' },
+        { error: 'Profile email is required to issue a receipt' },
         { status: 400 }
       );
     }

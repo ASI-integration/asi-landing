@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push:*)",
+      "Bash(vercel whoami:*)",
+      "Bash(vercel project:*)",
+      "Bash(vercel inspect:*)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''token:'''',list\\(d.get\\(''''token'''',''''''''\\)[:8]\\)\\)\")",
+      "Read(//c/Users/Admin/AppData/Roaming/com.vercel.cli//**)",
+      "Bash(TOKEN=\"vca_6CbNkTvB2aprXm3tssiOY6Yet2Lu8RAyWkPb5t4lMUukDhVKGv0kXOZW\" TEAM=\"team_VYsj34iPEakC4hUzpYaDH8Ib\" DEPLOY_ID=\"dpl_GPEAHWFPRJzBJoAErBnkspnf5gFG\" __NEW_LINE_8c707b8ade3b6c99__ curl -s \"https://api.vercel.com/v2/deployments/$DEPLOY_ID/events?teamId=$TEAM&limit=200\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}

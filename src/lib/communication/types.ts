@@ -1,3 +1,126 @@
+// ─── Conversation Domain Model ────────────────────────────────────────────────
+
+export enum ConversationState {
+  New              = 'new',
+  Qualifying       = 'qualifying',
+  AwaitingResponse = 'awaiting_response',
+  Engaged          = 'engaged',
+  NeedsOperator    = 'needs_operator',
+  Converted        = 'converted',
+  Dropped          = 'dropped',
+}
+
+export interface Conversation {
+  id: string;
+  channel: string;           // 'telegram' | 'whatsapp' | 'email'
+  contactId: string;
+  leadId?: string;
+  reservationId?: string;
+  propertyId?: string;
+  status: 'active' | 'paused' | 'closed' | 'escalated';
+  currentState: ConversationState;
+  lastMessageAt: string;     // ISO
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Message Domain Model ────────────────────────────────────────────────────
+
+export enum MessageDirection {
+  Inbound  = 'inbound',
+  Outbound = 'outbound',
+}
+
+export enum MessageType {
+  Text    = 'text',
+  Image   = 'image',
+  Voice   = 'voice',
+  System  = 'system',
+}
+
+export enum DeliveryStatus {
+  Pending   = 'pending',
+  Sent      = 'sent',
+  Delivered = 'delivered',
+  Failed    = 'failed',
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  direction: MessageDirection;
+  type: MessageType;
+  content: string;
+  meta?: Record<string, unknown>;   // raw provider payload
+  deliveryStatus: DeliveryStatus;
+  providerMessageId?: string;
+  createdAt: string;
+}
+
+// ─── Routing ──────────────────────────────────────────────────────────────────
+
+export type RouteType = 'AUTO_REPLY' | 'SCENARIO' | 'ESCALATE' | 'ACTION';
+
+export type ScenarioType =
+  | 'pricing'
+  | 'check_in'
+  | 'check_out'
+  | 'ops_emergency'
+  | 'payment';
+
+export interface RouteDecision {
+  type: RouteType;
+  scenario?: ScenarioType;
+  /** Human-readable reason, useful for audit trail */
+  reason: string;
+  /** Confidence that the route is correct (0–1) */
+  confidence: number;
+}
+
+// ─── Integration Events ───────────────────────────────────────────────────────
+
+export type CommEventType =
+  | 'conversation.started'
+  | 'message.received'
+  | 'message.sent'
+  | 'conversation.escalated'
+  | 'lead.created'
+  | 'reservation.linked'
+  | 'conversation.state_changed';
+
+export interface CommEvent {
+  type: CommEventType;
+  conversationId?: string;
+  chatId?: number;
+  channel?: string;
+  payload: Record<string, unknown>;
+  ts: string;   // ISO
+}
+
+// ─── Delivery ─────────────────────────────────────────────────────────────────
+
+export interface DeliveryResult {
+  sent: boolean;
+  attempts: number;
+  providerMessageId?: string;
+  error?: string;
+}
+
+// ─── Handoff Mode ─────────────────────────────────────────────────────────────
+
+export type HandoffMode = 'AUTO' | 'ASSISTED' | 'MANUAL';
+
+export interface PendingMessage {
+  id: string;
+  chatId: number;
+  conversationId?: string;
+  draftText: string;
+  context: string;             // brief summary of why it was drafted
+  status: 'pending' | 'approved' | 'rejected' | 'sent';
+  createdAt: string;
+  resolvedAt?: string;
+}
+
 // ─── Language ─────────────────────────────────────────────────────────────────
 
 export type Lang = 'zh' | 'en' | 'es' | 'ar' | 'fr' | 'de' | 'ru';

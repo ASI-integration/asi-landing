@@ -18,7 +18,7 @@ import type { TelegramUpdate } from '../types';
 
 // ─── Controllable checkin gate mock ──────────────────────────────────────────
 
-let mockGateResult = { allowed: true, unit_state: 'ready', blocked_reason: null, checked_at: new Date().toISOString() };
+let mockGateResult = { allowed: true, unit_state: 'ready', blocked_reason: undefined as string | undefined, checked_at: new Date().toISOString() };
 vi.mock('@/lib/ops/checkin-gate', () => ({
   evaluateCheckinReadiness: async () => mockGateResult,
 }));
@@ -147,7 +147,7 @@ describe('orchestrator: check-in gate', () => {
     mockGateResult = {
       allowed: true,
       unit_state: 'ready',
-      blocked_reason: null,
+      blocked_reason: undefined,
       checked_at: new Date().toISOString(),
     };
   });
@@ -214,7 +214,7 @@ describe('orchestrator: check-in gate', () => {
     mockGateResult = {
       allowed: true,
       unit_state: 'ready',
-      blocked_reason: null,
+      blocked_reason: undefined,
       checked_at: new Date().toISOString(),
     };
 
@@ -258,7 +258,7 @@ describe('orchestrator: check-in gate', () => {
     mockGateResult = {
       allowed: true,
       unit_state: 'ready',
-      blocked_reason: null,
+      blocked_reason: undefined,
       checked_at: new Date().toISOString(),
     };
 

@@ -3,8 +3,8 @@ import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
-  title: 'Контакты и поддержка — ASI',
-  description: 'Свяжитесь с командой ASI Integrations по email или через Telegram-ассистента.',
+  title: 'Contact & Support — ASI',
+  description: 'Reach the ASI Integrations team by email or via the Telegram assistant.',
 };
 
 export default function ContactsPage() {
@@ -16,17 +16,17 @@ export default function ContactsPage() {
           href="/"
           className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
         >
-          ← На главную
+          ← Back to home
         </Link>
       </div>
 
       {/* Header */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-14 pb-4">
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
-          Контакты и поддержка
+          Contact &amp; Support
         </h1>
         <p className="mt-4 text-slate-400 text-base leading-relaxed max-w-xl">
-          Мы отвечаем в течение одного рабочего дня. Выберите удобный способ связи.
+          We respond within one business day. Choose a contact method below.
         </p>
       </div>
 
@@ -68,14 +68,14 @@ export default function ContactsPage() {
             </a>
           </div>
           <p className="text-sm text-slate-400 leading-relaxed">
-            Основной канал связи. Укажите в теме письма название объекта или номер аккаунта —
-            это ускорит обработку запроса.
+            Primary support channel. Include your property name or account number in the subject
+            line to speed up processing.
           </p>
           <a
             href={`mailto:${productSupportEmail}`}
             className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors"
           >
-            Написать письмо
+            Send email
           </a>
         </div>
 
@@ -105,8 +105,8 @@ export default function ContactsPage() {
             </a>
           </div>
           <p className="text-sm text-slate-400 leading-relaxed">
-            ИИ-ассистент ASI отвечает круглосуточно: поможет с настройкой, ответит на вопросы
-            по тарифам и передаст сложный запрос оператору.
+            ASI AI assistant available 24/7 — helps with setup, answers pricing questions,
+            and escalates complex requests to the team.
           </p>
           <a
             href="https://t.me/ASI_core_bot"
@@ -114,7 +114,7 @@ export default function ContactsPage() {
             rel="noopener noreferrer"
             className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-600 transition-colors"
           >
-            Открыть в Telegram
+            Open in Telegram
           </a>
         </div>
       </div>
@@ -137,10 +137,10 @@ export default function ContactsPage() {
             />
           </svg>
           <p className="text-sm text-slate-400 leading-relaxed">
-            <span className="text-slate-200 font-medium">Режим работы:</span> обработка заявок —
-            в течение одного рабочего дня (пн–пт, 9:00–18:00 МСК). Это соответствует условиям{' '}
+            <span className="text-slate-200 font-medium">Business hours:</span> support requests
+            are handled within one business day (Mon–Fri, 9:00–18:00 UTC+3). This aligns with our{' '}
             <Link href="/offer" className="text-slate-300 hover:text-white underline underline-offset-2 transition-colors">
-              публичной оферты
+              terms of service
             </Link>
             .
           </p>
@@ -155,26 +155,22 @@ export default function ContactsPage() {
       {/* Legal requisites */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 mt-10 pb-20">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-5">
-          Реквизиты
+          Legal entity
         </p>
         <div className="rounded-2xl bg-slate-900 border border-slate-800 px-7 py-6 space-y-2 text-sm text-slate-400">
+          <p className="text-slate-200 font-semibold">{legalConfig.name}</p>
           <p>
-            <span className="text-slate-200 font-semibold">{legalConfig.name}</span>
-          </p>
-          <p>Самозанятый · ИНН: <span className="text-slate-200 font-medium">{legalConfig.inn}</span></p>
-          <p>г. Санкт-Петербург, Россия</p>
-          <p>
-            E-mail (правовые вопросы):{' '}
+            Email:{' '}
             <a href={`mailto:${legalConfig.email}`} className="text-slate-300 hover:text-white transition-colors">
               {legalConfig.email}
             </a>
           </p>
           <div className="pt-3 mt-3 border-t border-slate-800 flex flex-wrap gap-4 text-xs">
             <Link href="/offer" className="text-slate-500 hover:text-slate-300 transition-colors">
-              Публичная оферта
+              Terms of Service
             </Link>
             <Link href="/privacy" className="text-slate-500 hover:text-slate-300 transition-colors">
-              Политика конфиденциальности
+              Privacy Policy
             </Link>
           </div>
         </div>

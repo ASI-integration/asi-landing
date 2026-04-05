@@ -21,19 +21,55 @@ const MODULES = [
     id: 'real-estate',
     name: 'Real Estate Autopilot',
     status: 'ACTIVE' as const,
-    desc: 'Automates guest communication, operations, payments, and control.',
+    desc: 'Runs guest communication, operations, payments, and control end to end.',
   },
   {
     id: 'security',
     name: 'Security Autopilot',
     status: 'COMING SOON' as const,
-    desc: 'Monitors events, manages access, and triggers automated incident response.',
+    desc: 'Monitors events, runs access rules, and executes incident response automatically.',
   },
   {
     id: 'market',
     name: 'Market Automation',
     status: 'COMING SOON' as const,
-    desc: 'Automates customer flows, transactions, and operational workflows.',
+    desc: 'Runs customer flows, transactions, and operational workflows without a separate ops desk.',
+  },
+];
+
+/* ─── What gets automated (hero-adjacent) ───────────────────────────────────── */
+const AUTOMATED_ITEMS = [
+  {
+    title: 'Guest communication',
+    desc: 'AI replies instantly, 24/7 — replaces front desk and inbox coverage.',
+  },
+  {
+    title: 'Listing management',
+    desc: 'Creation, updates, and sync across channels — replaces listing admin work.',
+  },
+  {
+    title: 'Pricing',
+    desc: 'Auto-adjusts from demand signals — replaces manual rate desk work.',
+  },
+  {
+    title: 'Booking handling',
+    desc: 'Confirmations and calendar execution — replaces booking coordinator roles.',
+  },
+  {
+    title: 'Reviews',
+    desc: 'Requests and responses run on policy — replaces reputation busywork.',
+  },
+  {
+    title: 'Issue handling',
+    desc: 'AI resolves most cases to completion — replaces first-line support.',
+  },
+  {
+    title: 'Channel sync',
+    desc: 'Works with platforms; replaces channel managers and spreadsheet ops.',
+  },
+  {
+    title: 'Financial tracking',
+    desc: 'Income, performance, and forecasting roll up automatically — replaces ops reporting.',
   },
 ];
 
@@ -42,12 +78,12 @@ const CARDS = [
   {
     icon: '📥',
     title: 'Customer communication',
-    desc: 'Handles inbound requests around the clock. No delays, no missed messages.',
+    desc: 'Runs inbound guest messaging around the clock — no delays, no missed threads.',
   },
   {
     icon: '📋',
     title: 'Data collection & intake',
-    desc: 'Qualifies leads, collects required details, and prepares everything before any human steps in.',
+    desc: 'Executes qualification and data capture end to end — replaces intake staff.',
   },
   {
     icon: '🔄',
@@ -62,12 +98,12 @@ const CARDS = [
   {
     icon: '📊',
     title: 'Dynamic pricing',
-    desc: 'Rates adjust to demand, competition, and load. Maximum revenue without manual work.',
+    desc: 'Rates move with demand, competition, and load — without a revenue manager in the loop.',
   },
   {
     icon: '🔔',
-    title: 'Human control, on demand',
-    desc: 'Edge cases are escalated to an operator with full context. Everything else — handled.',
+    title: 'Rare operator handoff',
+    desc: 'True edge cases route to a person with full context. Everything else executes automatically.',
   },
   {
     icon: '🔒',
@@ -134,11 +170,12 @@ export default function Home() {
           <div className="flex items-center gap-3 sm:gap-4">
             <a
               href={`mailto:${productSupportEmail}`}
-              className="hidden lg:block text-sm text-slate-400 hover:text-white transition-colors"
+              className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
+              title={productSupportEmail}
             >
               {productSupportEmail}
             </a>
-            <span className="hidden lg:block w-px h-4 bg-slate-800" />
+            <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
             <a
               href="https://t.me/ASI_core_bot"
               target="_blank"
@@ -185,31 +222,30 @@ export default function Home() {
 
             {/* Left: text */}
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-2">
-                ASI — AI-powered operational infrastructure
-              </p>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                  ASI — full operational automation
+                </p>
+                <span className="inline-flex items-center rounded-full border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide text-indigo-200">
+                  Up to 99% automation
+                </span>
+              </div>
               <p className="text-sm text-slate-500 mb-5">
-                One platform. Multiple autonomous systems.
+                One system replaces the ops layer — not a dashboard, not a channel manager.
               </p>
               <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
                 Your business
                 <br />
                 <span className="text-slate-400">runs itself.</span>
               </h1>
-              <p className="mt-5 text-base font-semibold text-indigo-300 tracking-wide">
-                Up to 99% of operations handled without human involvement.
+              <p className="mt-4 text-lg text-slate-300 max-w-md leading-relaxed font-medium">
+                Full automation — execution and control, not software you operate.
               </p>
-              <p className="mt-4 text-lg text-slate-400 max-w-md leading-relaxed">
-                AI system that replaces operational work, execution, and control.
-              </p>
-              <p className="mt-3 text-sm text-slate-500">
-                Used in real estate, hospitality, corporate housing, and distributed operations.
-              </p>
-              <p className="mt-1.5 text-sm text-slate-600">
-                Built for individual operators and large-scale portfolios alike.
+              <p className="mt-3 text-base text-slate-400 max-w-md leading-relaxed">
+                Replaces the roles that used to run bookings, inbox, listings, rates, and coordination.
               </p>
               <p className="mt-4 text-xs text-slate-600 tracking-wide">
-                Designed for reliability, control, and scale.
+                Built for reliability, control, and scale.
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3 items-start">
@@ -240,6 +276,73 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ── What actually gets automated ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+              What actually gets automated
+            </h2>
+            <p className="text-slate-400 mb-10 text-lg">
+              Not tools. Not dashboards. Operations.
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {AUTOMATED_ITEMS.map((item) => (
+                <div
+                  key={item.title}
+                  className="p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                >
+                  <h3 className="font-semibold text-white text-sm leading-snug">{item.title}</h3>
+                  <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Positioning ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-8">
+              Not another tool
+            </h2>
+            <ul className="space-y-3 text-slate-400 text-base leading-relaxed">
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                Channel managers → still need manual control
+              </li>
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                CRMs → still need operators
+              </li>
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                “Automation” point products → partial coverage
+              </li>
+              <li className="pt-2 text-slate-200 font-medium">
+                <span className="text-emerald-500/90" aria-hidden>✅ </span>
+                ASI → replaces the operational layer entirely
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {/* ── Scale ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
+              Built for any scale
+            </h2>
+            <ul className="space-y-2 text-slate-400 text-base leading-relaxed">
+              <li>1 apartment → fully automated</li>
+              <li>10 units → no staff needed</li>
+              <li>100+ units → centralized AI control</li>
+            </ul>
+            <p className="mt-8 text-xs text-slate-600 text-center sm:text-left">
+              Used in real estate, hospitality, corporate housing, and distributed operations.
+            </p>
+          </div>
+        </section>
+
         {/* ── Location demo ── */}
         <div id="location-demo">
           <LocationIntelligenceDemo />
@@ -252,10 +355,10 @@ export default function Home() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              What the platform does
+              Execution layer
             </h2>
             <p className="text-slate-500 mb-10">
-              Everything that normally requires an ops team — now runs automatically.
+              Work that used to sit with an ops team — the system runs it end to end.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {CARDS.map((card) => (
@@ -279,7 +382,7 @@ export default function Home() {
               Platform modules
             </h2>
             <p className="text-slate-500 mb-10">
-              Independent systems, one infrastructure.
+              Autonomous systems on one infrastructure — each runs its domain.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               {MODULES.map((mod) => {
@@ -339,7 +442,7 @@ export default function Home() {
               See it running on your business
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              We'll demo the platform on a real workflow. Confirmed within one business day.
+              We run the product on a real workflow so you see execution, not slides. Confirmed within one business day.
             </p>
             <Link
               href="/connect"

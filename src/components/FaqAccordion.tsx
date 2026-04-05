@@ -5,7 +5,7 @@ import { useState } from 'react';
 const FAQ_EN = [
   {
     q: "What do you mean by '99% automation'? What's left for me to do?",
-    a: "After setup, you only need to handle two things manually: configure your property to ASI's recommendations and hire line staff (housekeepers, maintenance). Everything else — guest communication, calendar management, cleaning coordination — the system handles automatically.",
+    a: "After setup, you only run two things manually: configure your property to ASI's recommendations and hire line staff (housekeepers, maintenance). Everything else — guest communication, calendar management, cleaning coordination — the system executes automatically.",
   },
   {
     q: 'Security: how are access codes and payment data stored?',
@@ -17,15 +17,15 @@ const FAQ_EN = [
   },
   {
     q: 'I already have a Channel Manager. Why do I need ASI?',
-    a: "ASI isn't just overbooking sync. We have a built-in smart Channel Manager. First, the system pulls in all your current channels via API. Then, once your property is positioned for the right audience, ASI automatically shifts away from underperforming channels, keeping only the most profitable ones. The system manages occupancy on its own — replacing a dedicated revenue manager.",
+    a: 'A channel manager is software you still steer. ASI runs the operational layer: listings, sync, occupancy, and channel decisions execute automatically against your rules. You are not replacing one dashboard with another — you are replacing the people and manual control that sat on top of the channel stack.',
   },
   {
     q: 'How does the system handle pricing? Will it replace a revenue manager?',
-    a: "ASI doesn't work like a professional revenue manager — it works better. No person can manually balance hundreds of variables in real time: competitor pricing, local events, OTA algorithms, and historical demand data. The system dynamically manages rates for your target audience, maximizing occupancy based on math, not guesswork.",
+    a: 'Yes — dynamically, in real time. Competitor pricing, local events, OTA signals, and historical demand feed the model; the system adjusts rates and availability automatically. That is the revenue-manager function, executed continuously without a person reconciling spreadsheets.',
   },
   {
     q: 'I only have a few apartments. Is this system too complex for me?',
-    a: "On the contrary — ASI lets you scale much faster through 99% automation. As you grow, you won't need to expand headcount by hiring booking agents, administrators, or dispatchers. Eliminating even one booking agent means an immediate and significant reduction in operating costs.",
+    a: "On the contrary — 99% automation means the portfolio can grow without adding booking agents, administrators, or dispatchers. Eliminating even one booking role is an immediate cut in operating cost.",
   },
   {
     q: 'How does check-in work? Do I need smart locks?',
@@ -41,18 +41,18 @@ const FAQ_EN = [
   },
   {
     q: 'How does ASI pay for itself so quickly?',
-    a: 'Three factors: first, complete savings on labor costs. Second, the built-in channel manager saves money on third-party services. Third, automated pricing and selection of the most profitable OTA channels eliminates vacancies and increases average revenue per booking.',
+    a: 'Three factors: labor no longer scales with booking volume; channel and listing execution run inside ASI instead of extra subscriptions; automated pricing and channel mix remove manual vacancy risk and lift revenue per stay.',
   },
   {
     q: 'How is ASI fundamentally different from existing CRM and PMS solutions?',
-    a: "Any traditional CRM or Channel Manager is just an interface where you or your staff have to do the work. ASI is an active system. The software works for you. It's a digital autopilot that lets owners focus on strategy while properties manage themselves.",
+    a: 'CRMs and most PMS layers are interfaces: your staff still performs the work inside them. ASI executes the work — guest comms, bookings, tasks, and coordination run automatically. Owners keep strategy and asset decisions; the operational layer runs without that headcount.',
   },
 ];
 
 const FAQ_RU = [
   {
     q: 'Что вы имеете в виду под «99% автоматизации»? Что остается делать мне?',
-    a: 'После запуска системы вам остается вручную делать только две вещи: упаковать объект по рекомендациям ASI и нанять линейный персонал (горничных, хоум-мастеров). Всю остальную операционную работу — от общения с гостями и управления календарями до координации клининга — система забирает на себя.',
+    a: 'После запуска вручную остаются две зоны: упаковать объект по рекомендациям ASI и нанять линейный персонал (горничных, хоум-мастеров). Всё остальное — общение с гостями, календари, координация клининга — система исполняет автоматически.',
   },
   {
     q: 'Безопасность: как хранятся пароли от квартир и платежные данные?',
@@ -64,15 +64,15 @@ const FAQ_RU = [
   },
   {
     q: 'У меня уже есть менеджер каналов (Channel Manager). Зачем мне ASI?',
-    a: 'ASI — это не просто синхронизация от овербукинга. У нас встроен свой умный Channel Manager. Сначала система по API подтягивает все ваши текущие площадки. Затем, когда объект упакован под нужную аудиторию, ASI сама уводит его с неэффективных каналов, оставляя только самые прибыльные. Система сама управляет загрузкой, заменяя дорогого ревеню-менеджера.',
+    a: 'Менеджер каналов — это ПО, которым вы всё равно управляете вручную. ASI исполняет операционный слой: объявления, синхронизацию, загрузку и решения по каналам автоматически по вашим правилам. Вы не меняете один дашборд на другой — вы убираете людей и ручной контроль поверх стека каналов.',
   },
   {
     q: 'Как система выстраивает ценообразование? Заменит ли она ревеню-менеджера?',
-    a: 'ASI не работает как профессиональный ревеню-менеджер — она работает лучше. Физически ни один человек не в состоянии ежеминутно сводить сотни переменных: динамику цен конкурентов, локальные мероприятия, алгоритмы OTA и исторические данные спроса. Система динамически управляет тарифами под вашу ЦА, гарантируя максимальную загрузку и опираясь на математику, а не на догадки.',
+    a: 'Да — динамически и в реальном времени. Цены конкурентов, локальные события, сигналы OTA и история спроса идут в модель; система сама двигает тарифы и доступность. Это функция ревеню-менеджера, выполняемая непрерывно без человека со сводными таблицами.',
   },
   {
     q: 'У меня всего несколько квартир. Не слишком ли это сложная система?',
-    a: 'Наоборот, именно ASI позволяет масштабировать бизнес значительно быстрее за счёт 99% автоматизации. Вам не придётся по мере роста раздувать штат: нанимать бронистов, администраторов и диспетчеров. Отказ от одного только брониста в России — это моментальное сокращение операционных расходов примерно на 80 000 рублей в месяц.',
+    a: 'Наоборот: при 99% автоматизации портфель растёт без бронистов, администраторов и диспетчеров. Отказ от одной такой роли — сразу меньше операционных расходов (в РФ один бронист часто порядка 80 000 ₽ в месяц).',
   },
   {
     q: 'Как происходит заселение? Нужно ли мне ставить умные замки?',
@@ -88,11 +88,11 @@ const FAQ_RU = [
   },
   {
     q: 'За счёт чего ASI так быстро окупает свою стоимость?',
-    a: 'За счёт трёх факторов. Первое: полная экономия на фонде оплаты труда. Второе: встроенный менеджер каналов экономит деньги на сторонних сервисах. Третье: автоматическое ценообразование и отбор самых прибыльных OTA-площадок исключают простои и увеличивают средний чек.',
+    a: 'Три фактора: фонд оплаты труда больше не растёт вместе с объёмом броней; объявления и синхронизация по каналам исполняются внутри ASI без отдельных подписок; автоматическое ценообразование и микс каналов убирают ручной риск простоев и поднимают выручку за заезд.',
   },
   {
     q: 'Чем ASI кардинально отличается от существующих CRM и PMS на рынке?',
-    a: 'Любая классическая CRM или Channel Manager — это просто интерфейс, в котором вы или ваши сотрудники должны работать. ASI — это активная система. Программа работает за вас. Это цифровой автопилот, который позволяет владельцу заниматься стратегией, пока объекты сдаются сами.',
+    a: 'CRM и большинство PMS — интерфейсы: персонал всё равно выполняет работу внутри них. ASI исполняет работу — коммуникации, бронирования, задачи и координация идут автоматически. Стратегию и решения по активам оставляете себе; операционный слой крутится без этого штата.',
   },
 ];
 

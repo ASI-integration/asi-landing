@@ -3,8 +3,8 @@ import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
-  title: 'Правовая информация — ASI',
-  description: 'Юридическая информация и условия использования сервиса ASI.',
+  title: 'Legal Information — ASI',
+  description: 'Legal information and terms of use for the ASI service.',
 };
 
 export default function LegalPage() {
@@ -12,26 +12,25 @@ export default function LegalPage() {
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
         <Link href="/" className="text-slate-600 hover:text-slate-900 text-sm mb-8 inline-block">
-          ← На главную
+          ← Back to home
         </Link>
 
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          Правовая информация
+          Legal Information
         </h1>
 
         <div className="mt-8 space-y-6 text-slate-700 text-sm leading-relaxed">
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">ИП или самозанятый:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Service provider:</h2>
             <p>{legalConfig.name}</p>
-            <p>ИНН: {legalConfig.inn}</p>
             <p>
-              Контакт для правовых и официальных вопросов:{' '}
+              Legal &amp; official inquiries:{' '}
               <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
                 {legalConfig.email}
               </a>
             </p>
             <p>
-              Поддержка сервиса ASI:{' '}
+              ASI product support:{' '}
               <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
                 {productSupportEmail}
               </a>
@@ -40,20 +39,20 @@ export default function LegalPage() {
           </section>
 
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">Описание услуги:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Service description:</h2>
             <p>
-              ASI — SaaS-платформа для автоматизации управления объектами краткосрочной аренды.
-              Сервис предоставляет инструменты автоматизации бронирований, коммуникации и аналитики.
+              ASI is a SaaS platform for automating short-term rental property management.
+              The service provides tools for booking automation, guest communication, and analytics.
             </p>
           </section>
 
           <section>
-            <h2 className="font-semibold text-slate-900 mb-2">Условия оказания услуг:</h2>
+            <h2 className="font-semibold text-slate-900 mb-2">Terms of service:</h2>
             <ul className="list-disc pl-5 space-y-2">
-              <li>Подписка оплачивается ежемесячно.</li>
-              <li>Бесплатный пробный период — 14 дней.</li>
-              <li>Отмена возможна в любой момент.</li>
-              <li>Возврат средств не предусмотрен после начала платного периода.</li>
+              <li>Subscription is billed monthly.</li>
+              <li>Free trial period — 14 days.</li>
+              <li>Cancellation is available at any time.</li>
+              <li>Refunds are not provided after the paid period begins.</li>
             </ul>
           </section>
         </div>

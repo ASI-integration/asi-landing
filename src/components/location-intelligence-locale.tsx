@@ -148,12 +148,12 @@ export const LOC_COPY: Record<
       'Aligning footfall with magnets…',
     ],
     runStarted: 'Run started',
-    sectionTitle: 'The system understands your property’s potential',
+    sectionTitle: 'Location analysis runs automatically',
     sectionLead:
-      'Enter your address and see which demand magnets and competitors actually shape your location.',
-    sectionSub1: 'ASI algorithms estimate not just footfall, but intent-aligned demand.',
+      'Enter an address — magnets, competitors, and demand scores execute without a manual research stack.',
+    sectionSub1: 'ASI runs the scoring pipeline; you get execution-ready signals, not a slide deck to interpret.',
     sectionSub2:
-      'They highlight where people have a real reason to travel, stop, and book your property.',
+      'Surfaces where intent-aligned demand concentrates — inputs listing and pricing can act on.',
     attribution: (
       <>
         Methodology draws on location-evaluation logic from{' '}
@@ -220,12 +220,12 @@ export const LOC_COPY: Record<
       'Соотносим поток людей с магнитами…',
     ],
     runStarted: 'расчёт запущен',
-    sectionTitle: 'Система понимает потенциал вашего объекта',
+    sectionTitle: 'Анализ локации выполняется автоматически',
     sectionLead:
-      'Введите ваш адрес — и посмотрите, какие магниты и конкуренты реально влияют на ваш объект.',
-    sectionSub1: 'Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.',
+      'Введите адрес — магниты, конкуренты и оценка спроса считаются без ручного «исследования в Excel».',
+    sectionSub1: 'ASI прогоняет расчёт; вы получаете сигналы для исполнения, а не презентацию для разбора.',
     sectionSub2:
-      'То есть показывают, куда у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.',
+      'Показывает, где сосредоточен целевой спрос — входы для объявлений и ценообразования.',
     attribution: (
       <>
         Методика построена на логике оценки локации из курса{' '}

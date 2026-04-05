@@ -23,6 +23,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { runInBackground } from './background';
 
 // ─── Status Values ───────────────────────────────────────────────────────────
 
@@ -145,21 +146,19 @@ export async function transitionSessionStatus(
   console.log(`[SessionStatus] chatId=${chatId} ${current} → ${newStatus}`);
 
   // Best-effort Supabase write — gracefully ignores missing column.
-  supabase
-    .from('tg_conversation_sessions')
-    .upsert(
-      {
+  runInBackground({
+      correlationId: String(chatId),
+      module: 'session-status',
+      taskName: 'transitionSessionStatus_db',
+      triggerId: String(chatId),
+    }, async () => {
+      const { error } = await supabase.from('tg_conversation_sessions').upsert({
         chat_id: chatId,
         status: newStatus,
         status_updated_at: now.toISOString(),
         updated_at: now.toISOString(),
-      },
-      { onConflict: 'chat_id', ignoreDuplicates: false },
-    )
-    .then(({ error }) => {
-      if (error) {
-        console.warn(`[SessionStatus] Supabase write failed chatId=${chatId}: ${error.message}`);
-      }
+      }, { onConflict: 'chat_id', ignoreDuplicates: false });
+      if (error) throw new Error(`Supabase write failed chatId=${chatId}: ${error.message}`);
     });
 }
 

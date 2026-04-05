@@ -5,8 +5,8 @@ import { LegalFooter } from '@/components/LegalFooter';
 import { LocalePathSync } from '@/components/LocalePathSync';
 
 export const metadata: Metadata = {
-  title: 'ASI — AI-powered operational infrastructure',
-  description: 'Autonomous AI platform for real estate and hospitality operations. Guest communication, payments, reservations, and task control — without additional headcount.',
+  title: 'ASI — Full operational automation',
+  description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
 };
 
 export default function RootLayout({

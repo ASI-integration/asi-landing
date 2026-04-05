@@ -3,8 +3,8 @@ import { productSupportEmail } from '@/config/contact';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
-  title: 'Политика конфиденциальности — ASI',
-  description: 'Политика обработки персональных данных сервиса ASI Integrations.',
+  title: 'Privacy Policy — ASI',
+  description: 'Privacy and personal data processing policy for ASI Integrations.',
 };
 
 export default function PrivacyPage() {
@@ -12,50 +12,41 @@ export default function PrivacyPage() {
     <div className="min-h-screen bg-white">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
         <Link href="/" className="text-slate-500 hover:text-slate-900 text-sm mb-10 inline-block">
-          ← На главную
+          ← Back to home
         </Link>
 
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-          Политика конфиденциальности
+          Privacy Policy
         </h1>
-        <p className="mt-3 text-slate-500 text-sm">Дата вступления в силу: 1 января 2026 г.</p>
+        <p className="mt-3 text-slate-500 text-sm">Effective date: 1 January 2026</p>
 
         <div className="mt-10 space-y-8 text-slate-700 text-sm leading-relaxed">
 
-          {/* 1. Оператор */}
+          {/* 1. Controller */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              1. Оператор персональных данных
+              1. Data Controller
             </h2>
             <p>
-              Настоящая Политика конфиденциальности распространяется на сайт{' '}
-              <span className="font-medium text-slate-900">asi-global.ru</span> и сервис ASI
-              Integrations.
+              This Privacy Policy applies to the ASI Integrations service and its associated websites.
             </p>
             <div className="mt-3 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
               <p>
-                <span className="font-medium text-slate-900">Оператор:</span>{' '}
+                <span className="font-medium text-slate-900">Controller:</span>{' '}
                 {legalConfig.name}
               </p>
               <p>
-                <span className="font-medium text-slate-900">Статус:</span>{' '}
+                <span className="font-medium text-slate-900">Status:</span>{' '}
                 {legalConfig.status}
               </p>
               <p>
-                <span className="font-medium text-slate-900">ИНН:</span> {legalConfig.inn}
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">Местонахождение:</span>{' '}
-                г. Санкт-Петербург, Россия
-              </p>
-              <p>
-                <span className="font-medium text-slate-900">E-mail (правовые вопросы):</span>{' '}
+                <span className="font-medium text-slate-900">Legal inquiries:</span>{' '}
                 <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
                   {legalConfig.email}
                 </a>
               </p>
               <p>
-                <span className="font-medium text-slate-900">E-mail (поддержка):</span>{' '}
+                <span className="font-medium text-slate-900">Product support:</span>{' '}
                 <a href={`mailto:${productSupportEmail}`} className="text-slate-900 hover:underline">
                   {productSupportEmail}
                 </a>
@@ -63,84 +54,83 @@ export default function PrivacyPage() {
             </div>
           </section>
 
-          {/* 2. Какие данные собираем */}
+          {/* 2. Data we collect */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              2. Какие данные мы собираем
+              2. Data We Collect
             </h2>
             <p>
-              Мы собираем только те данные, которые необходимы для работы сервиса:
+              We collect only the data necessary to provide the service:
             </p>
             <ul className="mt-3 list-disc pl-5 space-y-1.5">
-              <li>Имя и фамилия (для идентификации аккаунта).</li>
-              <li>Адрес электронной почты (для входа и связи).</li>
-              <li>Номер телефона и/или Telegram (для оперативной связи, по желанию).</li>
-              <li>Данные об объектах недвижимости (адрес, тип, количество — для настройки сервиса).</li>
-              <li>Платёжные данные — обрабатываются исключительно платёжным агрегатором ЮKassa; оператор не хранит данные банковских карт.</li>
+              <li>First and last name (for account identification).</li>
+              <li>Email address (for login and communication).</li>
+              <li>Phone number and/or Telegram handle (for operational contact, optional).</li>
+              <li>Property details (address, type, count — for service configuration).</li>
+              <li>Payment data — processed exclusively by our payment provider; we do not store card details.</li>
             </ul>
           </section>
 
-          {/* 3. Цели обработки */}
+          {/* 3. Purpose */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              3. Цели обработки персональных данных
+              3. Purpose of Processing
             </h2>
             <ul className="list-disc pl-5 space-y-1.5">
-              <li>Идентификация пользователя и предоставление доступа к сервису ASI.</li>
-              <li>Настройка аккаунта и объектов недвижимости в системе.</li>
-              <li>Связь с пользователем по техническим, платёжным и организационным вопросам.</li>
-              <li>Обработка платежей и выставление счетов через ЮKassa.</li>
-              <li>Исполнение обязательств по публичной оферте.</li>
-              <li>Соблюдение требований законодательства РФ.</li>
+              <li>User identification and provisioning of access to the ASI service.</li>
+              <li>Account and property configuration in the system.</li>
+              <li>Communication with users on technical, billing, and operational matters.</li>
+              <li>Payment processing and invoicing via the payment provider.</li>
+              <li>Fulfilling obligations under the Terms of Service.</li>
+              <li>Compliance with applicable laws.</li>
             </ul>
           </section>
 
-          {/* 4. Передача данных третьим лицам */}
+          {/* 4. Third parties */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              4. Передача данных третьим лицам
+              4. Sharing with Third Parties
             </h2>
             <p>
-              Мы не передаём персональные данные третьим лицам, за исключением следующих случаев:
+              We do not sell or share personal data with third parties, except:
             </p>
             <ul className="mt-3 list-disc pl-5 space-y-1.5">
               <li>
-                <span className="font-medium text-slate-900">ЮKassa</span> — платёжный агрегатор
-                для проведения транзакций (в объёме, необходимом для обработки платежа).
+                <span className="font-medium text-slate-900">Payment processor</span> — data shared
+                strictly to the extent necessary to process a transaction.
               </li>
               <li>
-                Случаи, прямо предусмотренные законодательством Российской Федерации (по запросу
-                уполномоченных органов).
+                Where required by applicable law or in response to a lawful request by a public authority.
               </li>
             </ul>
           </section>
 
-          {/* 5. Хранение и защита */}
+          {/* 5. Storage & security */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              5. Хранение и защита данных
+              5. Storage &amp; Security
             </h2>
             <p>
-              Данные хранятся на защищённых серверах с использованием шифрования (TLS/HTTPS).
-              Срок хранения персональных данных — в течение срока действия аккаунта и 3 лет после
-              его удаления либо до момента отзыва согласия пользователем.
+              Data is stored on secured servers using encryption (TLS/HTTPS). Personal data is
+              retained for the lifetime of the account and for 3 years after deletion, or until
+              consent is withdrawn by the user.
             </p>
           </section>
 
-          {/* 6. Права пользователя */}
+          {/* 6. Your rights */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              6. Права пользователя
+              6. Your Rights
             </h2>
-            <p>В соответствии с Федеральным законом № 152-ФЗ «О персональных данных» вы вправе:</p>
+            <p>You have the right to:</p>
             <ul className="mt-3 list-disc pl-5 space-y-1.5">
-              <li>Получить сведения об обрабатываемых персональных данных.</li>
-              <li>Потребовать исправления неточных данных.</li>
-              <li>Потребовать удаления данных («право на забвение»).</li>
-              <li>Отозвать согласие на обработку персональных данных.</li>
+              <li>Access the personal data we hold about you.</li>
+              <li>Request correction of inaccurate data.</li>
+              <li>Request deletion of your data ("right to be forgotten").</li>
+              <li>Withdraw consent to data processing at any time.</li>
             </ul>
             <p className="mt-3">
-              Для реализации прав направьте запрос на{' '}
+              To exercise your rights, send a request to{' '}
               <a href={`mailto:${legalConfig.email}`} className="text-slate-900 hover:underline">
                 {legalConfig.email}
               </a>
@@ -150,23 +140,22 @@ export default function PrivacyPage() {
 
           {/* 7. Cookies */}
           <section>
-            <h2 className="text-base font-semibold text-slate-900 mb-3">7. Файлы cookie</h2>
+            <h2 className="text-base font-semibold text-slate-900 mb-3">7. Cookies</h2>
             <p>
-              Сайт использует технические cookie, необходимые для работы аутентификации и сохранения
-              пользовательских настроек. Аналитические или рекламные cookie не используются.
+              The site uses technical cookies required for authentication and saving user preferences.
+              No analytics or advertising cookies are used.
             </p>
           </section>
 
-          {/* 8. Изменения */}
+          {/* 8. Policy updates */}
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">
-              8. Изменения политики
+              8. Policy Updates
             </h2>
             <p>
-              Оператор вправе вносить изменения в настоящую Политику. Актуальная версия всегда
-              доступна по адресу{' '}
-              <span className="font-medium text-slate-900">asi-global.ru/privacy</span>. Продолжение
-              использования сервиса после публикации изменений означает согласие с новой редакцией.
+              We may update this Privacy Policy from time to time. The current version is always
+              available at <span className="font-medium text-slate-900">guestautopilot.com/privacy</span>.
+              Continued use of the service after an update constitutes acceptance of the revised policy.
             </p>
           </section>
 
@@ -174,7 +163,7 @@ export default function PrivacyPage() {
 
         <div className="mt-12 pt-8 border-t border-slate-200">
           <Link href="/offer" className="text-slate-500 hover:text-slate-900 text-sm">
-            Публичная оферта →
+            Terms of Service →
           </Link>
         </div>
       </div>

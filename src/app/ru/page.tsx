@@ -21,19 +21,55 @@ const MODULES = [
     id: 'real-estate',
     name: 'Автопилот для недвижимости',
     status: 'ACTIVE' as const,
-    desc: 'Автоматизирует общение с гостями, операции, платежи и контроль.',
+    desc: 'Ведёт коммуникации с гостями, операции, платежи и контроль от начала до конца.',
   },
   {
     id: 'security',
     name: 'Автопилот безопасности',
     status: 'COMING SOON' as const,
-    desc: 'Мониторинг событий, управление доступом и автоматическое реагирование на инциденты.',
+    desc: 'Мониторит события, исполняет правила доступа и автоматически реагирует на инциденты.',
   },
   {
     id: 'market',
     name: 'Автоматизация рынка',
     status: 'COMING SOON' as const,
-    desc: 'Автоматизирует клиентские потоки, транзакции и операционные процессы.',
+    desc: 'Ведёт клиентские потоки, транзакции и операционные процессы без отдельного операционного стола.',
+  },
+];
+
+/* ─── Что автоматизируется (после hero) ─────────────────────────────────────── */
+const AUTOMATED_ITEMS = [
+  {
+    title: 'Коммуникация с гостями',
+    desc: 'ИИ отвечает мгновенно, 24/7 — заменяет стойку и мониторинг почты.',
+  },
+  {
+    title: 'Управление объявлениями',
+    desc: 'Создание, обновления и синхронизация по каналам — заменяет администратора листингов.',
+  },
+  {
+    title: 'Ценообразование',
+    desc: 'Автоматически подстраивается под сигналы спроса — заменяет ручной тарифный стол.',
+  },
+  {
+    title: 'Обработка бронирований',
+    desc: 'Подтверждения и календарь исполняются автоматически — заменяет координатора броней.',
+  },
+  {
+    title: 'Отзывы',
+    desc: 'Запросы и ответы по политике — заменяет ручную работу с репутацией.',
+  },
+  {
+    title: 'Инциденты и вопросы',
+    desc: 'ИИ доводит большинство кейсов до решения — заменяет первую линию поддержки.',
+  },
+  {
+    title: 'Синхронизация каналов',
+    desc: 'Работает с площадками; заменяет менеджеров каналов и табличный операционный контур.',
+  },
+  {
+    title: 'Финансовый учёт',
+    desc: 'Доход, показатели и прогнозы собираются автоматически — заменяет операционную отчётность.',
   },
 ];
 
@@ -42,37 +78,37 @@ const CARDS = [
   {
     icon: '📥',
     title: 'Коммуникация с гостями',
-    desc: 'Обрабатывает входящие запросы круглосуточно. Без задержек, без пропущенных сообщений.',
+    desc: 'Ведёт входящие обращения гостей круглосуточно — без задержек и пропущенных тредов.',
   },
   {
     icon: '📋',
     title: 'Сбор данных и приём заявок',
-    desc: 'Квалифицирует лиды, собирает нужные данные и подготавливает всё до вмешательства человека.',
+    desc: 'Исполняет квалификацию и сбор данных целиком — заменяет сотрудника на приёме.',
   },
   {
     icon: '🔄',
     title: 'Рабочие процессы и расписание',
-    desc: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает их автоматически.',
+    desc: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает автоматически.',
   },
   {
     icon: '💳',
     title: 'Платежи и монетизация',
-    desc: 'Доплаты, поздний выезд, дополнительные услуги — счёт выставляется в чате, оплата в один клик.',
+    desc: 'Доплаты, поздний выезд, дополнительные услуги — счёт в чате, оплата в один клик.',
   },
   {
     icon: '📊',
     title: 'Динамическое ценообразование',
-    desc: 'Тарифы адаптируются к спросу, конкурентам и загрузке. Максимальный доход без ручной работы.',
+    desc: 'Тарифы двигаются со спросом, конкурентами и загрузкой — без ревеню-менеджера в контуре.',
   },
   {
     icon: '🔔',
-    title: 'Контроль оператора по запросу',
-    desc: 'Нестандартные случаи передаются оператору с полным контекстом. Всё остальное — система.',
+    title: 'Редкий вызов оператора',
+    desc: 'Истинные исключения уходят человеку с полным контекстом. Всё остальное исполняется автоматически.',
   },
   {
     icon: '🔒',
     title: 'Безопасность и контроль доступа',
-    desc: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматизированные сценарии реагирования.',
+    desc: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматические сценарии реагирования.',
   },
 ];
 
@@ -133,11 +169,12 @@ export default function HomeRu() {
           <div className="flex items-center gap-3 sm:gap-4">
             <a
               href={`mailto:${productSupportEmail}`}
-              className="hidden lg:block text-sm text-slate-400 hover:text-white transition-colors"
+              className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
+              title={productSupportEmail}
             >
               {productSupportEmail}
             </a>
-            <span className="hidden lg:block w-px h-4 bg-slate-800" />
+            <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
             <a
               href="https://t.me/ASI_core_bot"
               target="_blank"
@@ -184,28 +221,27 @@ export default function HomeRu() {
 
             {/* Left: text */}
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-2">
-                ASI — операционная инфраструктура на базе ИИ
-              </p>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
+                  ASI — полная операционная автоматизация
+                </p>
+                <span className="inline-flex items-center rounded-full border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide text-indigo-200">
+                  До 99% автоматизации
+                </span>
+              </div>
               <p className="text-sm text-slate-500 mb-5">
-                Одна платформа. Несколько автономных систем.
+                Одна система заменяет операционный слой — не дашборд и не менеджер каналов.
               </p>
               <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
                 Ваш бизнес
                 <br />
                 <span className="text-slate-400">работает сам.</span>
               </h1>
-              <p className="mt-5 text-base font-semibold text-indigo-300 tracking-wide">
-                До 99% операций без участия человека.
+              <p className="mt-4 text-lg text-slate-300 max-w-md leading-relaxed font-medium">
+                Полная автоматизация — исполнение и контроль, а не ПО, которым вы крутите вручную.
               </p>
-              <p className="mt-4 text-lg text-slate-400 max-w-md leading-relaxed">
-                ИИ-система, которая заменяет операционную работу, исполнение и контроль.
-              </p>
-              <p className="mt-3 text-sm text-slate-500">
-                Применяется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
-              </p>
-              <p className="mt-1.5 text-sm text-slate-600">
-                Создана для индивидуальных операторов и крупных портфелей.
+              <p className="mt-3 text-base text-slate-400 max-w-md leading-relaxed">
+                Заменяет роли, которые вели брони, почту, объявления, тарифы и координацию.
               </p>
               <p className="mt-4 text-xs text-slate-600 tracking-wide">
                 Надёжность, контроль и масштаб.
@@ -239,6 +275,73 @@ export default function HomeRu() {
           </div>
         </section>
 
+        {/* ── Что реально автоматизируется ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+              Что реально автоматизируется
+            </h2>
+            <p className="text-slate-400 mb-10 text-lg">
+              Не инструменты. Не дашборды. Операции.
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {AUTOMATED_ITEMS.map((item) => (
+                <div
+                  key={item.title}
+                  className="p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                >
+                  <h3 className="font-semibold text-white text-sm leading-snug">{item.title}</h3>
+                  <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Позиционирование ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-8">
+              Не очередной инструмент
+            </h2>
+            <ul className="space-y-3 text-slate-400 text-base leading-relaxed">
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                Менеджеры каналов → всё равно нужен ручной контроль
+              </li>
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                CRM → всё равно нужны операторы
+              </li>
+              <li>
+                <span className="text-slate-500" aria-hidden>❌ </span>
+                Точечные продукты «автоматизации» → частичное покрытие
+              </li>
+              <li className="pt-2 text-slate-200 font-medium">
+                <span className="text-emerald-500/90" aria-hidden>✅ </span>
+                ASI → заменяет операционный слой целиком
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {/* ── Масштаб ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
+              Под любой масштаб
+            </h2>
+            <ul className="space-y-2 text-slate-400 text-base leading-relaxed">
+              <li>1 квартира → полностью автоматизировано</li>
+              <li>10 объектов → персонал не нужен</li>
+              <li>100+ объектов → централизованное управление ИИ</li>
+            </ul>
+            <p className="mt-8 text-xs text-slate-600 text-center sm:text-left">
+              Используется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
+            </p>
+          </div>
+        </section>
+
         {/* ── Location demo ── */}
         <div id="location-demo">
           <LocationIntelligenceDemo locale="ru" />
@@ -251,10 +354,10 @@ export default function HomeRu() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              Что делает платформа
+              Слой исполнения
             </h2>
             <p className="text-slate-500 mb-10">
-              Всё, что обычно требует операционного отдела — теперь работает автоматически.
+              Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {CARDS.map((card) => (
@@ -278,7 +381,7 @@ export default function HomeRu() {
               Модули платформы
             </h2>
             <p className="text-slate-500 mb-10">
-              Независимые системы, единая инфраструктура.
+              Автономные системы на одной инфраструктуре — каждая ведёт свой домен.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               {MODULES.map((mod) => {
@@ -338,7 +441,7 @@ export default function HomeRu() {
               Посмотрите на реальном примере
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              Покажем платформу в работе на реальном сценарии. Подтверждение — в течение одного рабочего дня.
+              Прогоним продукт на реальном сценарии — увидите исполнение, а не слайды. Подтверждение — в течение одного рабочего дня.
             </p>
             <Link
               href="/connect"
