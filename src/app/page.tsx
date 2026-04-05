@@ -18,21 +18,21 @@ function TgIcon({ className = 'w-5 h-5' }: { className?: string }) {
 const MODULES = [
   {
     id: 'real-estate',
-    name: 'Real Estate Autopilot',
+    name: 'Автопилот для недвижимости',
     status: 'ACTIVE' as const,
-    desc: 'Automates guest communication, operations, payments, and control.',
+    desc: 'Автоматизирует общение с гостями, операции, платежи и контроль.',
   },
   {
     id: 'security',
-    name: 'Security Autopilot',
+    name: 'Автопилот безопасности',
     status: 'COMING SOON' as const,
-    desc: 'Monitors events, manages access, and triggers automated incident response.',
+    desc: 'Мониторинг событий, управление доступом и автоматическое реагирование на инциденты.',
   },
   {
     id: 'market',
-    name: 'Market Automation',
+    name: 'Автоматизация рынка',
     status: 'COMING SOON' as const,
-    desc: 'Automates customer flows, transactions, and operational workflows.',
+    desc: 'Автоматизирует клиентские потоки, транзакции и операционные процессы.',
   },
 ];
 
@@ -40,41 +40,40 @@ const MODULES = [
 const CARDS = [
   {
     icon: '📥',
-    title: 'Customer communication',
-    desc: 'Handles inbound requests around the clock. No delays, no missed messages.',
+    title: 'Коммуникация с гостями',
+    desc: 'Обрабатывает входящие запросы круглосуточно. Без задержек, без пропущенных сообщений.',
   },
   {
     icon: '📋',
-    title: 'Data collection & intake',
-    desc: 'Qualifies leads, collects required details, and prepares everything before any human steps in.',
+    title: 'Сбор данных и приём заявок',
+    desc: 'Квалифицирует лиды, собирает нужные данные и подготавливает всё до вмешательства человека.',
   },
   {
     icon: '🔄',
-    title: 'Workflow & scheduling',
-    desc: 'Access codes, cleaning, recurring tasks — the system executes and closes them automatically.',
+    title: 'Рабочие процессы и расписание',
+    desc: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает их автоматически.',
   },
   {
     icon: '💳',
-    title: 'Payments & monetization',
-    desc: 'Upsells, late checkouts, add-ons — invoiced in chat, paid in one tap.',
+    title: 'Платежи и монетизация',
+    desc: 'Доплаты, поздний выезд, дополнительные услуги — счёт выставляется в чате, оплата в один клик.',
   },
   {
     icon: '📊',
-    title: 'Dynamic pricing',
-    desc: 'Rates adjust to demand, competition, and load. Maximum revenue without manual work.',
+    title: 'Динамическое ценообразование',
+    desc: 'Тарифы адаптируются к спросу, конкурентам и загрузке. Максимальный доход без ручной работы.',
   },
   {
     icon: '🔔',
-    title: 'Human control, on demand',
-    desc: 'Edge cases are escalated to an operator with full context. Everything else — handled.',
+    title: 'Контроль оператора по запросу',
+    desc: 'Нестандартные случаи передаются оператору с полным контекстом. Всё остальное — система.',
   },
   {
     icon: '🔒',
-    title: 'Security & access control',
-    desc: 'Real-time monitoring, access control, incident detection, and automated response workflows.',
+    title: 'Безопасность и контроль доступа',
+    desc: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматизированные сценарии реагирования.',
   },
 ];
-
 
 /* ─── Contacts ──────────────────────────────────────────────────────────────── */
 function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) {
@@ -122,10 +121,10 @@ export default function Home() {
               ASI
             </Link>
             <a href="#platform-modules" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              Platform
+              Платформа
             </a>
             <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              How it works
+              Как это работает
             </a>
           </div>
 
@@ -151,7 +150,7 @@ export default function Home() {
               href="/login"
               className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
             >
-              Log in
+              Войти
             </Link>
           </div>
         </div>
@@ -180,30 +179,30 @@ export default function Home() {
             {/* Left: text */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 mb-2">
-                ASI — AI-powered operational infrastructure
+                ASI — операционная инфраструктура на базе ИИ
               </p>
               <p className="text-sm text-slate-500 mb-5">
-                One platform. Multiple autonomous systems.
+                Одна платформа. Несколько автономных систем.
               </p>
               <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
-                Your business
+                Ваш бизнес
                 <br />
-                <span className="text-slate-400">runs itself.</span>
+                <span className="text-slate-400">работает сам.</span>
               </h1>
               <p className="mt-5 text-base font-semibold text-indigo-300 tracking-wide">
-                Up to 99% of operations handled without human involvement.
+                До 99% операций без участия человека.
               </p>
               <p className="mt-4 text-lg text-slate-400 max-w-md leading-relaxed">
-                AI system that replaces operational work, execution, and control.
+                ИИ-система, которая заменяет операционную работу, исполнение и контроль.
               </p>
               <p className="mt-3 text-sm text-slate-500">
-                Used in real estate, hospitality, corporate housing, and distributed operations.
+                Применяется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
               </p>
               <p className="mt-1.5 text-sm text-slate-600">
-                Built for individual operators and large-scale portfolios alike.
+                Создана для индивидуальных операторов и крупных портфелей.
               </p>
               <p className="mt-4 text-xs text-slate-600 tracking-wide">
-                Designed for reliability, control, and scale.
+                Надёжность, контроль и масштаб.
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3 items-start">
@@ -211,19 +210,19 @@ export default function Home() {
                   href="/connect"
                   className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
                 >
-                  Book a demo
+                  Записаться на демо
                 </Link>
                 <a
                   href="#location-demo"
                   className="inline-flex items-center justify-center px-7 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
                 >
-                  See it in action
+                  Посмотреть в действии
                 </a>
               </div>
 
               {/* Social proof */}
               <p className="mt-6 text-sm text-slate-600">
-                Decides · responds · executes · no headcount required
+                Решает · отвечает · исполняет · без найма персонала
               </p>
             </div>
 
@@ -246,10 +245,10 @@ export default function Home() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              What the platform does
+              Что делает платформа
             </h2>
             <p className="text-slate-500 mb-10">
-              Everything that normally requires an ops team — now runs automatically.
+              Всё, что обычно требует операционного отдела — теперь работает автоматически.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {CARDS.map((card) => (
@@ -270,10 +269,10 @@ export default function Home() {
         <section id="platform-modules" className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              Platform modules
+              Модули платформы
             </h2>
             <p className="text-slate-500 mb-10">
-              Independent systems, one infrastructure.
+              Независимые системы, единая инфраструктура.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
               {MODULES.map((mod) => {
@@ -298,7 +297,7 @@ export default function Home() {
                             : 'bg-slate-800 text-slate-500 border border-slate-700'
                         }`}
                       >
-                        {mod.status}
+                        {isActive ? 'АКТИВНО' : 'СКОРО'}
                       </span>
                     </div>
                     <p className={`text-sm leading-relaxed ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
@@ -315,13 +314,13 @@ export default function Home() {
         <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
-              How the automation works
+              Как работает автоматизация
             </h2>
             <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
-              Direct answers — no marketing, no jargon.
+              Прямые ответы — без маркетинга, без жаргона.
             </p>
             <div className="mt-10">
-              <FaqAccordion />
+              <FaqAccordion lang="ru" />
             </div>
           </div>
         </section>
@@ -330,27 +329,27 @@ export default function Home() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-white">
-              See it running on your business
+              Посмотрите на реальном примере
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              We'll demo the platform on a real workflow. Confirmed within one business day.
+              Покажем платформу в работе на реальном сценарии. Подтверждение — в течение одного рабочего дня.
             </p>
             <Link
               href="/connect"
               className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-lg"
             >
-              Book a demo
+              Записаться на демо
             </Link>
-            <p className="mt-4 text-sm text-slate-600">No commitment. Straight answers.</p>
+            <p className="mt-4 text-sm text-slate-600">Без обязательств. Прямые ответы.</p>
 
             {/* Contacts below CTA */}
             <div className="mt-10 pt-8 border-t border-slate-800/60">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 mb-5">
-                Or reach out directly
+                Или напишите напрямую
               </p>
               <ContactLinks />
               <p className="mt-4 text-xs text-slate-600">
-                Mon–Fri, 9:00–18:00 MSK · usually faster
+                Пн–Пт, 9:00–18:00 МСК · обычно быстрее
               </p>
             </div>
           </div>
@@ -387,9 +386,9 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-            <Link href="/privacy" className="text-slate-600 hover:text-slate-400 text-xs">Privacy</Link>
-            <Link href="/offer" className="text-slate-600 hover:text-slate-400 text-xs">Terms</Link>
-            <Link href="/legal" className="text-slate-600 hover:text-slate-400 text-xs">Legal</Link>
+            <Link href="/privacy" className="text-slate-600 hover:text-slate-400 text-xs">Конфиденциальность</Link>
+            <Link href="/offer" className="text-slate-600 hover:text-slate-400 text-xs">Условия</Link>
+            <Link href="/legal" className="text-slate-600 hover:text-slate-400 text-xs">Правовые документы</Link>
           </div>
         </div>
       </footer>
