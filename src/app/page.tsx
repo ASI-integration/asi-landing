@@ -190,7 +190,10 @@ export default function Home() {
                 <br />
                 <span className="text-slate-400">runs itself.</span>
               </h1>
-              <p className="mt-6 text-lg text-slate-400 max-w-md leading-relaxed">
+              <p className="mt-5 text-base font-semibold text-indigo-300 tracking-wide">
+                Up to 99% of operations handled without human involvement.
+              </p>
+              <p className="mt-4 text-lg text-slate-400 max-w-md leading-relaxed">
                 AI system that replaces operational work, execution, and control.
               </p>
               <p className="mt-3 text-sm text-slate-500">
