@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import Script from 'next/script';
 import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { LegalFooter } from '@/components/LegalFooter';
 import { LocalePathSync } from '@/components/LocalePathSync';
@@ -18,6 +19,10 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <LanguageProvider>
+          <Script
+            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
+            strategy="beforeInteractive"
+          />
           <LocalePathSync />
           <div className="flex flex-col min-h-screen">
             <div className="flex-1">{children}</div>
