@@ -20,6 +20,15 @@ import {
   useLocationTelemetryOptional,
   type LocationTelemetrySnapshot,
 } from '@/context/landing-location-telemetry';
+import {
+  LOC_COPY,
+  footTrafficForLocale,
+  competitorLabel,
+  magnetCategoryLabel,
+  magnetWhy,
+  type LocDemoLocale,
+} from '@/components/location-intelligence-locale';
+import { generateConclusion } from '@/lib/location';
 
 // ── UI-only types ─────────────────────────────────────────────────────────────
 
@@ -85,17 +94,17 @@ function formatUpdatedRelativeRu(iso: string): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '';
   const m = Math.floor((Date.now() - t) / 60000);
-  if (m < 1) return 'Обновлено только что';
-  if (m < 60) return `Обновлено ${m} мин. назад`;
+  if (m < 1) return 'Just updated';
+  if (m < 60) return `Updated ${m} min ago`;
   const h = Math.floor(m / 60);
-  if (h < 48) return `Обновлено ${h} ч. назад`;
-  return `Обновлено ${new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  if (h < 48) return `Updated ${h} h ago`;
+  return `Updated ${new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function formatUpdatedAtReadableRu(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString('ru-RU', {
+  return d.toLocaleString('en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -106,33 +115,33 @@ function formatUpdatedAtReadableRu(iso: string): string {
 
 function demandTypeRu(d: DemandType): string {
   const map: Record<DemandType, string> = {
-    'tourism-led': 'туризм',
-    'business-led': 'деловой',
-    'transport-led': 'транзит',
-    'mixed': 'смешанный',
+    'tourism-led': 'tourism',
+    'business-led': 'business',
+    'transport-led': 'transit',
+    'mixed': 'mixed',
   };
   return map[d];
 }
 
 function sourceDataRu(meta: AnalysisMeta | null): string {
-  if (!meta) return 'локальный расчёт (без метаданных сервера)';
+  if (!meta) return 'local calculation (no server metadata)';
   const fromCache = meta.cached;
   const refreshing = Boolean(meta.refreshing);
   const isStale = meta.freshness === 'stale';
   if (fromCache) {
-    if (refreshing && isStale) return 'кэш / идёт обновление';
-    return 'кэш';
+    if (refreshing && isStale) return 'cache / updating';
+    return 'cache';
   }
-  return 'свежая выгрузка';
+  return 'fresh data';
 }
 
 function dataFreshnessRu(meta: AnalysisMeta | null): string {
-  if (!meta) return 'Данные актуальны';
+  if (!meta) return 'Data current';
   const refreshing = Boolean(meta.refreshing);
   const isStale = meta.freshness === 'stale';
-  if (refreshing && isStale) return 'Данные обновляются';
-  if (isStale) return 'Снимок не самый свежий';
-  return 'Данные актуальны';
+  if (refreshing && isStale) return 'Data updating';
+  if (isStale) return 'Snapshot slightly stale';
+  return 'Data current';
 }
 
 function truncateForLog(s: string, max = 52): string {
@@ -147,20 +156,20 @@ function emitAnalysisTelemetry(
   analysis: LocationAnalysis,
   meta: AnalysisMeta | null,
 ) {
-  pushLine({ badge: 'SRC', text: `источник данных: ${sourceDataRu(meta)}`, kind: 'ok' });
-  pushLine({ badge: 'MAG', text: `найдено магнитов: ${analysis.magnets.length}`, kind: 'info' });
-  pushLine({ badge: 'CMP', text: `найдено конкурентов: ${analysis.competitors.length}`, kind: 'info' });
-  pushLine({ badge: 'DM', text: `тип спроса: ${demandTypeRu(analysis.demandType)}`, kind: 'info' });
+  pushLine({ badge: 'SRC', text: `data source: ${sourceDataRu(meta)}`, kind: 'ok' });
+  pushLine({ badge: 'MAG', text: `magnets found: ${analysis.magnets.length}`, kind: 'info' });
+  pushLine({ badge: 'CMP', text: `competitors found: ${analysis.competitors.length}`, kind: 'info' });
+  pushLine({ badge: 'DM', text: `demand type: ${demandTypeRu(analysis.demandType)}`, kind: 'info' });
   pushLine({
     badge: 'IDX',
-    text: `индекс локации обновлён · ${analysis.evergreenIndex}`,
+    text: `location index updated · ${analysis.evergreenIndex}`,
     kind: 'ok',
   });
   const fresh = dataFreshnessRu(meta);
-  const freshKind: 'ok' | 'warn' = fresh === 'Данные актуальны' ? 'ok' : 'warn';
+  const freshKind: 'ok' | 'warn' = fresh === 'Data current' ? 'ok' : 'warn';
   pushLine({ badge: '···', text: fresh, kind: freshKind });
   if (meta?.usedFallbackQuery) {
-    pushLine({ badge: '⚠', text: 'часть запросов к картам выполнена в упрощённом режиме', kind: 'warn' });
+    pushLine({ badge: '⚠', text: 'some map queries ran in simplified mode', kind: 'warn' });
   }
   updateSnapshot({
     evergreenIndex: analysis.evergreenIndex,
@@ -179,26 +188,26 @@ function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
   let statusLabel: string;
   let statusClass: string;
   if (refreshing && isStale) {
-    statusLabel = 'Данные обновляются';
+    statusLabel = 'Data updating';
     statusClass = 'text-amber-400';
   } else if (isStale) {
-    statusLabel = 'Снимок не самый свежий';
+    statusLabel = 'Snapshot slightly stale';
     statusClass = 'text-slate-400';
   } else {
-    statusLabel = 'Данные актуальны';
+    statusLabel = 'Data current';
     statusClass = 'text-emerald-400';
   }
 
   const sourceKind = fromCache
-    ? (refreshing && isStale ? 'кэш (идёт обновление)' : 'кэш')
-    : 'свежая выгрузка';
+    ? (refreshing && isStale ? 'cache (updating)' : 'cache')
+    : 'fresh data';
   const baseSource = 'OpenStreetMap';
 
   return (
     <div className="px-5 py-2 border-b border-slate-800/40 bg-slate-950/30 flex flex-wrap items-center gap-x-3 gap-y-0.5">
       <span className={`text-[11px] font-semibold uppercase tracking-[0.15em] ${statusClass}`}>{statusLabel}</span>
       <span className="text-[11px] text-slate-600">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
-      <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ' · упрощённый режим' : ''}</span>
+      <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ' · simplified mode' : ''}</span>
     </div>
   );
 }
@@ -305,8 +314,8 @@ function IdleMapPanel() {
               <path d="M9 1.5C6.1 1.5 3.75 3.85 3.75 6.75c0 4.22 5.25 9.75 5.25 9.75s5.25-5.53 5.25-9.75C14.25 3.85 11.9 1.5 9 1.5zm0 7a2.25 2.25 0 110-4.5 2.25 2.25 0 010 4.5z" fill="rgba(99,102,241,0.45)" />
             </svg>
           </div>
-          <p className="text-base font-medium text-slate-400">Введите ваш адрес объекта</p>
-          <p className="mt-2 text-sm text-slate-600 leading-relaxed">Анализ начнётся после выбора точного адреса из списка</p>
+          <p className="text-base font-medium text-slate-400">Enter your property address</p>
+          <p className="mt-2 text-sm text-slate-600 leading-relaxed">Analysis starts after you select an exact address from the list</p>
         </div>
       </div>
     </div>
@@ -315,12 +324,12 @@ function IdleMapPanel() {
 
 // ── Map loading overlay (shared) ─────────────────────────────────────────────
 
-function MapLoadingOverlay() {
+function MapLoadingOverlay({ c }: { c: (typeof LOC_COPY)['en'] }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
       <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-4" />
-      <p className="text-white font-semibold text-sm">Запрашиваем окружение...</p>
-      <p className="mt-1 text-xs text-slate-500">реальные объекты вокруг адреса</p>
+      <p className="text-white font-semibold text-sm">{c.mapLoadingTitle}</p>
+      <p className="mt-1 text-xs text-slate-500">{c.mapLoadingSub}</p>
     </div>
   );
 }
@@ -331,7 +340,19 @@ function MapLoadingOverlay() {
 //   2. No key                          → 2GIS iframe embed (real 2GIS tiles, no key needed)
 // OSMMapPanel below is the last-resort fallback if 2GIS embed itself errors.
 
-function TwoGISMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
+function TwoGISMapPanel({
+  lat,
+  lon,
+  loading,
+  locale,
+  c,
+}: {
+  lat: number;
+  lon: number;
+  loading: boolean;
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
+}) {
   const apiKey = process.env.NEXT_PUBLIC_TWOGIS_API_KEY;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [sdkError, setSdkError] = useState(false);
@@ -383,7 +404,7 @@ function TwoGISMapPanel({ lat, lon, loading }: { lat: number; lon: number; loadi
         style={{ height: 420 }}
       >
         <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
-        {(!sdkReady || loading) && <MapLoadingOverlay />}
+        {(!sdkReady || loading) && <MapLoadingOverlay c={c} />}
       </div>
     );
   }
@@ -394,7 +415,7 @@ function TwoGISMapPanel({ lat, lon, loading }: { lat: number; lon: number; loadi
     `?q=${lat},${lon}` +
     `&map_options[center]=${lon},${lat}` +
     `&map_options[zoom]=16` +
-    `&lang=ru_RU`;
+    `&lang=${locale === 'ru' ? 'ru_RU' : 'en_US'}`;
 
   return (
     <div
@@ -407,18 +428,28 @@ function TwoGISMapPanel({ lat, lon, loading }: { lat: number; lon: number; loadi
         height="100%"
         frameBorder="0"
         allowFullScreen
-        title="Карта окружения объекта — 2GIS"
+        title={c.mapTitle2gis}
         loading="lazy"
         style={{ display: 'block' }}
       />
-      {loading && <MapLoadingOverlay />}
+      {loading && <MapLoadingOverlay c={c} />}
     </div>
   );
 }
 
 // ── OSM Map Panel (fallback only) ─────────────────────────────────────────────
 
-function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading: boolean }) {
+function OSMMapPanel({
+  lat,
+  lon,
+  loading,
+  c,
+}: {
+  lat: number;
+  lon: number;
+  loading: boolean;
+  c: (typeof LOC_COPY)['en'];
+}) {
   const deltaLat = 0.005;
   const deltaLon = 0.009;
   const bbox = `${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}`;
@@ -434,11 +465,11 @@ function OSMMapPanel({ lat, lon, loading }: { lat: number; lon: number; loading:
         height="100%"
         frameBorder="0"
         allowFullScreen
-        title="Карта окружения объекта — OpenStreetMap"
+        title={c.mapTitleOsm}
         loading="lazy"
         style={{ display: 'block' }}
       />
-      {loading && <MapLoadingOverlay />}
+      {loading && <MapLoadingOverlay c={c} />}
     </div>
   );
 }
@@ -455,12 +486,17 @@ function InfluenceHeatmapPanel({
   analysis,
   subjectLat,
   subjectLon,
+  locale,
+  c,
 }: {
   analysis: LocationAnalysis;
   subjectLat: number;
   subjectLon: number;
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
 }) {
-  const { heatmapPoints, footTraffic } = analysis;
+  const { heatmapPoints } = analysis;
+  const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
 
   if (heatmapPoints.length === 0) return null;
 
@@ -477,9 +513,9 @@ function InfluenceHeatmapPanel({
       {/* Header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-800/60">
         <span className="text-[18px] font-semibold uppercase tracking-[0.2em] text-indigo-400">
-          ASI · Карта влияния
+          {c.heatmapHeader}
         </span>
-        <span className="text-[17px] text-slate-700">· реальные значения</span>
+        <span className="text-[17px] text-slate-700">{c.heatmapSub}</span>
       </div>
 
       {/* SVG heatmap */}
@@ -488,7 +524,7 @@ function InfluenceHeatmapPanel({
         width="100%"
         height={SVG_H}
         style={{ display: 'block', background: '#080c14' }}
-        aria-label="Карта притяжения локации"
+        aria-label={c.heatmapAria}
       >
         <defs>
           {/* Blur filter for halo glow */}
@@ -582,31 +618,30 @@ function InfluenceHeatmapPanel({
           <rect x={0} y={0} width={118} height={62} rx={6} fill="rgba(15,20,30,0.85)" />
           {/* Magnet */}
           <circle cx={12} cy={16} r={4} fill="#818cf8" opacity={0.8} />
-          <text x={20} y={20} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Магниты</text>
+          <text x={20} y={20} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">{c.legendMagnets}</text>
           {/* Competitor */}
           <circle cx={12} cy={36} r={4} fill="#f87171" opacity={0.8} />
-          <text x={20} y={40} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Конкуренты</text>
+          <text x={20} y={40} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">{c.legendCompetitors}</text>
           {/* Subject */}
           <circle cx={12} cy={54} r={3} fill="white" opacity={0.9} />
-          <text x={20} y={58} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">Ваш объект</text>
+          <text x={20} y={58} fill="rgba(148,163,184,0.8)" fontSize="14" fontFamily="inherit">{c.legendSubject}</text>
         </g>
       </svg>
 
       {/* Caption */}
       <div className="px-4 py-2.5 space-y-1">
         <p className="text-[18px] text-slate-500 leading-snug">
-          Тепло карты связано с магнитами и зоной: плотность и концентрация у реальных точек притяжения,
-          устойчивость потока и то, насколько движение похоже на{' '}
-          <span className="text-slate-400">целевой приход</span>, а не только на{' '}
-          <span className="text-slate-400">транзит</span>.
+          {c.heatmapCaption}
         </p>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-[17px] text-slate-700">
-            {heatmapPoints.filter(p => p.type === 'magnet').length} магнитов ·{' '}
-            {heatmapPoints.filter(p => p.type === 'competitor').length} конкурентов
+            {c.heatmapCounts(
+              heatmapPoints.filter(p => p.type === 'magnet').length,
+              heatmapPoints.filter(p => p.type === 'competitor').length,
+            )}
           </span>
           <span className="text-[17px] text-slate-600">
-            активность зоны — {footTraffic.zoneActivityRu} · устойчивость — {footTraffic.flowStabilityRu}
+            {c.zoneActivityLine(footTraffic.zoneActivity, footTraffic.flowStability)}
           </span>
         </div>
       </div>
@@ -620,10 +655,12 @@ function AddressInput({
   onSelect,
   onClear,
   disabled,
+  c,
 }: {
   onSelect: (addr: SelectedAddress) => void;
   onClear: () => void;
   disabled: boolean;
+  c: (typeof LOC_COPY)['en'];
 }) {
   const [text, setText] = useState('');
   const [locked, setLocked] = useState(false);
@@ -714,7 +751,7 @@ function AddressInput({
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
             <path d="M1.5 5.5L4.5 8.5L9.5 2.5" stroke="#34d399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-[0.18em]">Точный адрес выбран</span>
+          <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-[0.18em]">{c.addressLocked}</span>
         </div>
       )}
       <div className="relative">
@@ -723,7 +760,7 @@ function AddressInput({
           value={locked ? lockedValue : text}
           onChange={locked ? () => undefined : handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Введите ваш адрес объекта"
+          placeholder={c.addressPlaceholder}
           disabled={disabled}
           readOnly={locked}
           autoComplete="off"
@@ -748,7 +785,7 @@ function AddressInput({
           <button
             type="button"
             onClick={clear}
-            aria-label="Изменить адрес"
+            aria-label={c.changeAddressAria}
             className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-all"
           >
             <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -787,9 +824,9 @@ function AddressInput({
 
       {!locked && !open && !fetching && text.trim().length >= 2 && (
         suggestStatus === 'no_results' ? (
-          <p className="mt-1.5 px-1 text-xs text-slate-500">Адрес не найден — попробуйте уточнить запрос</p>
+          <p className="mt-1.5 px-1 text-xs text-slate-500">{c.addrNotFound}</p>
         ) : (suggestStatus === 'no_key' || suggestStatus === 'error') ? (
-          <p className="mt-1.5 px-1 text-xs text-slate-500">Подсказки временно недоступны</p>
+          <p className="mt-1.5 px-1 text-xs text-slate-500">{c.suggestUnavailable}</p>
         ) : null
       )}
     </div>
@@ -802,49 +839,46 @@ const RING_R = 52;
 const RING_C = 2 * Math.PI * RING_R;
 const RING_VB = 120;
 
-function EvergreenRing({ index, band, animated }: { index: number; band: Band; animated: boolean }) {
+function EvergreenRing({
+  index,
+  band,
+  animated,
+  copy,
+}: {
+  index: number;
+  band: Band;
+  animated: boolean;
+  copy: (typeof LOC_COPY)['en'];
+}) {
   const fill = animated ? (index / 100) * RING_C : 0;
-  const c = RING_VB / 2;
+  const cx = RING_VB / 2;
   return (
     <svg width={RING_VB} height={RING_VB} viewBox={`0 0 ${RING_VB} ${RING_VB}`} className="shrink-0" aria-hidden="true">
-      <circle cx={c} cy={c} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+      <circle cx={cx} cy={cx} r={RING_R} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
       <circle
-        cx={c} cy={c} r={RING_R}
+        cx={cx} cy={cx} r={RING_R}
         fill="none"
         stroke={band.stroke}
         strokeWidth="8"
         strokeLinecap="round"
         strokeDasharray={`${fill} ${RING_C}`}
-        transform={`rotate(-90 ${c} ${c})`}
+        transform={`rotate(-90 ${cx} ${cx})`}
         style={{ transition: animated ? 'stroke-dasharray 1.0s cubic-bezier(0.4,0,0.2,1)' : 'none' }}
       />
-      <text x={c} y={c - 8} textAnchor="middle" fill="white" fontSize="38" fontWeight="700" fontFamily="inherit">
+      <text x={cx} y={cx - 8} textAnchor="middle" fill="white" fontSize="38" fontWeight="700" fontFamily="inherit">
         {index > 0 ? index : '—'}
       </text>
-      <text x={c} y={c + 14} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
-        Индекс вечной
+      <text x={cx} y={cx + 14} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
+        {copy.evergreenLine1}
       </text>
-      <text x={c} y={c + 34} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
-        локации
+      <text x={cx} y={cx + 34} textAnchor="middle" fill="rgb(100,116,139)" fontSize="15" fontFamily="inherit">
+        {copy.evergreenLine2}
       </text>
     </svg>
   );
 }
 
 // ── Magnet filtering + deduplication ─────────────────────────────────────────
-
-const MAGNET_WHY: Record<string, string> = {
-  metro:           'региональный поток',
-  railway_station: 'транспортный узел',
-  attraction:      'туристический спрос',
-  university:      'образовательный поток',
-  education_local: 'локальный спрос',
-  entertainment:   'досуговый трафик',
-  shopping_major:  'торговый поток',
-  shopping_local:  'жилая активность',
-  business:        'деловой трафик',
-  food:            'локальная активность',
-};
 
 const STREET_NOISE_KEYWORDS = [
   'улица', ' ул.', ' ул ', ' ул,',
@@ -855,6 +889,13 @@ const STREET_NOISE_KEYWORDS = [
   'шоссе', ' ш.',
   'проезд', 'площадь', ' пл.',
   'аллея', 'тупик',
+  'street', ' st.', ' st ', ' st,',
+  'avenue', ' ave.', ' ave ',
+  'road', ' rd.', ' rd ',
+  'boulevard', ' blvd',
+  'lane', ' ln.',
+  'drive', ' dr.',
+  'way', 'place', 'pl.',
 ];
 
 function isStreetNoise(name: string): boolean {
@@ -899,15 +940,31 @@ function ASIPanel({
   address,
   animated,
   meta,
+  locale,
+  c,
 }: {
   analysis: LocationAnalysis;
   address: string;
   animated: boolean;
   meta: AnalysisMeta | null;
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
 }) {
   const {
-    magnets, evergreenIndex, conclusion, gravityExplanation, footTraffic,
+    magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
+  const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
+  const conclusion =
+    locale === 'ru'
+      ? generateConclusion(
+          evergreenIndex,
+          magnets,
+          competitors,
+          magnetCountByCategory,
+          gravityExplanation,
+          'ru',
+        )
+      : analysis.conclusion;
   const band = getBand(evergreenIndex);
   const [visible, setVisible] = useState(false);
   const [magnetExpanded, setMagnetExpanded] = useState(false);
@@ -931,13 +988,13 @@ function ASIPanel({
       {meta ? <AnalysisFreshnessStrip meta={meta} /> : null}
       {/* Header: index ring + verdict */}
       <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
-        <EvergreenRing index={evergreenIndex} band={band} animated={animated} />
+        <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
         <div className="min-w-0">
-          <p className="text-[18px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">Итог анализа</p>
+          <p className="text-[18px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">{c.analysisHeader}</p>
           <p className={`text-4xl font-bold leading-tight ${band.textColor}`}>{band.label}</p>
-          {conclusion && (
+          {conclusion ? (
             <p className="mt-2 text-[22px] text-slate-400 leading-snug">{conclusion}</p>
-          )}
+          ) : null}
           <p
             className="mt-2 text-[18px] text-slate-600 leading-snug"
             style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
@@ -954,47 +1011,47 @@ function ASIPanel({
           <div className="grid grid-cols-2 gap-x-5 gap-y-3">
             {gravityExplanation.strongestZoneLabel && (
               <div className="col-span-2">
-                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Ключевая зона</p>
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.keyZone}</p>
                 <p className="text-[17px] text-slate-300">{gravityExplanation.strongestZoneLabel}</p>
               </div>
             )}
             {gravityExplanation.dominantMagnets[0] && (
               <div className="col-span-2">
-                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Главный магнит</p>
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.topMagnet}</p>
                 <p className="text-[17px] text-slate-300 truncate">{gravityExplanation.dominantMagnets[0]}</p>
               </div>
             )}
             <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Конкуренты</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.competitors}</p>
               <p className={`text-[17px] font-medium ${
-                gravityExplanation.competitorPressureLevel === 'высокое' ? 'text-rose-400'
-                : gravityExplanation.competitorPressureLevel === 'среднее' ? 'text-amber-400'
+                gravityExplanation.competitorPressureLevel === 'high' ? 'text-rose-400'
+                : gravityExplanation.competitorPressureLevel === 'medium' ? 'text-amber-400'
                 : 'text-emerald-400'
-              }`}>{gravityExplanation.competitorPressureLevel}</p>
+              }`}>{competitorLabel(gravityExplanation.competitorPressureLevel, locale)}</p>
             </div>
             {gravityExplanation.clusterDetected && (
               <div>
-                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Кластер</p>
-                <p className="text-[17px] text-slate-300">{gravityExplanation.clusterSize} рядом</p>
+                <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.cluster}</p>
+                <p className="text-[17px] text-slate-300">{c.nearbySuffix(gravityExplanation.clusterSize)}</p>
               </div>
             )}
           </div>
           <div className="grid grid-cols-2 gap-x-5 gap-y-3 mt-3 pt-3 border-t border-slate-800/40">
             <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Плотность</p>
-              <p className="text-[17px] text-slate-300">{footTraffic.movementDensityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.density}</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.movementDensity}</p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Активность зоны</p>
-              <p className="text-[17px] text-slate-300">{footTraffic.zoneActivityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.zoneActivity}</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.zoneActivity}</p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Устойчивость</p>
-              <p className="text-[17px] text-slate-300">{footTraffic.flowStabilityRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.stability}</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.flowStability}</p>
             </div>
             <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">Целевой поток</p>
-              <p className="text-[17px] text-slate-300">{footTraffic.flowCharacterRu}</p>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">{c.targetFlow}</p>
+              <p className="text-[17px] text-slate-300">{footTraffic.flowCharacter}</p>
             </div>
           </div>
         </div>
@@ -1012,9 +1069,9 @@ function ASIPanel({
           <div className="px-5 pt-4 pb-3">
             <div className="flex items-baseline justify-between mb-3">
               <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em]">
-                Магниты вокруг объекта
+                {c.magnetsAround}
               </p>
-              <span className="text-[16px] text-slate-700">{allFiltered.length} значимых</span>
+              <span className="text-[16px] text-slate-700">{c.significantCount(allFiltered.length)}</span>
             </div>
             <div className="space-y-0">
               {shown.map((m, i) => (
@@ -1031,8 +1088,15 @@ function ASIPanel({
                   <div className="min-w-0 flex-1">
                     <p className="text-[19px] text-slate-300 leading-snug truncate">{m.name}</p>
                     <p className="text-[15px] text-slate-600 mt-0.5">
-                      {m.categoryLabel}
-                      {MAGNET_WHY[m.categoryId] ? ` · ${MAGNET_WHY[m.categoryId]}` : ''}
+                      {(() => {
+                        const why = magnetWhy(m.categoryId, locale);
+                        return (
+                          <>
+                            {magnetCategoryLabel(m.categoryId, locale)}
+                            {why ? ` · ${why}` : ''}
+                          </>
+                        );
+                      })()}
                     </p>
                   </div>
                   <span className="text-[17px] text-slate-500 shrink-0 tabular-nums mt-0.5">
@@ -1046,7 +1110,7 @@ function ASIPanel({
                 onClick={() => setMagnetExpanded(true)}
                 className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
               >
-                Показать ещё {hiddenCount} магнитов
+                {c.showMoreMagnets(hiddenCount)}
               </button>
             )}
             {magnetExpanded && allFiltered.length > MAGNET_DEFAULT_LIMIT && (
@@ -1054,7 +1118,7 @@ function ASIPanel({
                 onClick={() => setMagnetExpanded(false)}
                 className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
               >
-                Свернуть
+                {c.collapse}
               </button>
             )}
           </div>
@@ -1064,7 +1128,7 @@ function ASIPanel({
       {!hasMagnets && (
         <div className="px-5 py-4">
           <p className="text-[22px] text-slate-600">
-            По этому адресу объектов в базе OpenStreetMap не найдено.
+            {c.noOsm}
           </p>
         </div>
       )}
@@ -1072,18 +1136,10 @@ function ASIPanel({
   );
 }
 
-// ── Loading steps ─────────────────────────────────────────────────────────────
-
-const LOADING_STEPS = [
-  'Запрашиваем окружение...',
-  'Рассчитываем притяжение...',
-  'Анализируем конкурентов...',
-  'Соотносим поток людей с магнитами...',
-];
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function LocationIntelligenceDemo() {
+export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLocale }) {
+  const c = LOC_COPY[locale];
   const locTel = useLocationTelemetryOptional();
   const locTelRef = useRef(locTel);
   locTelRef.current = locTel;
@@ -1100,7 +1156,7 @@ export function LocationIntelligenceDemo() {
     e.preventDefault();
     if (!selected) { setValidationErr(true); return; }
     setValidationErr(false);
-    locTel?.pushLine({ badge: 'RUN', text: 'расчёт запущен', kind: 'info' });
+    locTel?.pushLine({ badge: 'RUN', text: c.runStarted, kind: 'info' });
     setPhase('loading');
     setStep(0);
     setAnalysis(null);
@@ -1124,7 +1180,7 @@ export function LocationIntelligenceDemo() {
     if (phase !== 'loading' || !selected) return;
     let cancelled = false;
 
-    const tickers = LOADING_STEPS.map((_, i) =>
+    const tickers = c.loadingSteps.map((_, i) =>
       i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 900),
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
@@ -1151,7 +1207,7 @@ export function LocationIntelligenceDemo() {
       cancelled = true;
       tickers.forEach(clearTimeout);
     };
-  }, [phase, selected]);
+  }, [phase, selected, c.loadingSteps]);
 
   return (
     <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
@@ -1161,19 +1217,19 @@ export function LocationIntelligenceDemo() {
         <div className="mb-12 max-w-2xl space-y-6">
           <div className="space-y-4">
             <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
-              Система понимает потенциал вашего объекта
+              {c.sectionTitle}
             </h2>
             <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
-              Введите ваш адрес — и посмотрите, какие магниты и конкуренты реально влияют на ваш объект.
+              {c.sectionLead}
             </p>
           </div>
 
           <div className="space-y-3 pt-2 border-t border-slate-800/80">
             <p className="text-xl sm:text-2xl font-semibold text-slate-100 leading-snug">
-              Алгоритмы ASI просчитывают не просто поток людей, а целевой спрос.
+              {c.sectionSub1}
             </p>
             <p className="text-base sm:text-lg text-slate-400 leading-relaxed">
-              То есть показывают, куда у людей есть реальная причина ехать, останавливаться и бронировать именно ваш объект.
+              {c.sectionSub2}
             </p>
           </div>
 
@@ -1181,9 +1237,7 @@ export function LocationIntelligenceDemo() {
           <div className="flex items-start gap-3 pt-1">
             <div className="w-px self-stretch bg-indigo-800/40 shrink-0" />
             <p className="text-sm text-slate-500 leading-relaxed">
-              Методика построена на логике оценки локации из курса{' '}
-              <span className="text-slate-300 font-medium">Ярослава Стригунова</span>
-              {' '}и адаптирована под автоматизированный расчёт.
+              {c.attribution}
             </p>
           </div>
         </div>
@@ -1196,15 +1250,21 @@ export function LocationIntelligenceDemo() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                  Карта окружения
+                  {c.envMapTitle}
                 </span>
                 <span className="text-[17px] text-slate-700">· 2GIS</span>
               </div>
-              <TwoGISMapPanel lat={selected!.lat} lon={selected!.lon} loading={false} />
+              <TwoGISMapPanel
+                lat={selected!.lat}
+                lon={selected!.lon}
+                loading={false}
+                locale={locale}
+                c={c}
+              />
               <div className="mt-3">
                 <p className="text-[20px] text-slate-500 mb-2 truncate">{selected?.value}</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {['Объект на карте', 'Транспорт', 'Объекты вокруг', 'Реальная карта'].map(tag => (
+                  {c.tags.map(tag => (
                     <span key={tag} className="text-[17px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-800">
                       {tag}
                     </span>
@@ -1217,13 +1277,15 @@ export function LocationIntelligenceDemo() {
                 analysis={analysis}
                 subjectLat={selected!.lat}
                 subjectLon={selected!.lon}
+                locale={locale}
+                c={c}
               />
 
               <button
                 onClick={reset}
                 className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
               >
-                Проверить другой адрес
+                {c.tryAnother}
               </button>
             </div>
 
@@ -1231,7 +1293,7 @@ export function LocationIntelligenceDemo() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
-                  ASI · Анализ локации
+                  {c.asiPanelTitle}
                 </span>
               </div>
               <ASIPanel
@@ -1239,6 +1301,8 @@ export function LocationIntelligenceDemo() {
                 address={selected?.value ?? ''}
                 animated={animated}
                 meta={analysisMeta}
+                locale={locale}
+                c={c}
               />
             </div>
 
@@ -1257,16 +1321,17 @@ export function LocationIntelligenceDemo() {
                     setValidationErr(false);
                     locTel?.pushLine({
                       badge: 'ADR',
-                      text: `адрес выбран · ${truncateForLog(addr.value)}`,
+                      text: c.addrChosenLog(truncateForLog(addr.value)),
                       kind: 'info',
                     });
                   }}
                   onClear={() => setSelected(null)}
                   disabled={phase === 'loading'}
+                  c={c}
                 />
                 {validationErr && (
                   <p className="text-sm text-rose-400 px-1" role="alert">
-                    Выберите точный адрес из списка
+                    {c.pickAddressErr}
                   </p>
                 )}
                 <button
@@ -1274,12 +1339,12 @@ export function LocationIntelligenceDemo() {
                   disabled={phase === 'loading'}
                   className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99]"
                 >
-                  {phase === 'loading' ? LOADING_STEPS[step] : 'Рассчитать локацию'}
+                  {phase === 'loading' ? c.loadingSteps[step] : c.submitIdle}
                 </button>
               </form>
               {phase === 'idle' && (
                 <p className="mt-5 text-xs text-slate-600">
-                  Используются реальные данные OpenStreetMap
+                  {c.osmNote}
                 </p>
               )}
             </div>
@@ -1287,7 +1352,13 @@ export function LocationIntelligenceDemo() {
             {/* Right: map */}
             <div>
               {selected ? (
-                <TwoGISMapPanel lat={selected.lat} lon={selected.lon} loading={phase === 'loading'} />
+                <TwoGISMapPanel
+                  lat={selected.lat}
+                  lon={selected.lon}
+                  loading={phase === 'loading'}
+                  locale={locale}
+                  c={c}
+                />
               ) : (
                 <IdleMapPanel />
               )}

@@ -50,9 +50,11 @@ import { getPropertyTemplates } from './templates';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
 import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 import { supabase } from '@/lib/supabase';
+import { runInBackground } from './background';
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
+  const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
 
   // Idempotency: drop duplicate update_ids
@@ -68,7 +70,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
 
   // Mark session active on first processed message (fire-and-forget — never blocks reply).
-  transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
+  runInBackground(
+    { correlationId: corrId, module: 'orchestrator', taskName: 'transitionSessionStatus', triggerId: String(chatId) },
+    () => transitionSessionStatus(chatId, SessionStatus.Active),
+  );
 
   try {
     // Keyword-based incident detection — runs before LLM
@@ -101,7 +106,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     let replyText: string;
     let llmSucceeded = false;
-    let escalation = undefined;
+    let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
 
     if (ctx.incident) {
@@ -127,19 +132,25 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
       // Ops task: policy escalation → guest_issue (fire-and-forget)
-      createOpsTask({
-        property_id: commContext.reservation.propertyId ?? 'unknown',
-        reservation_id: commContext.reservation.reservationId ?? null,
-        chat_id: chatId,
-        task_type: OpsTaskType.GuestIssue,
-        title: `Guest issue escalated: ${escalation.reason}`,
-        description: escalation.summary,
-        priority: OpsTaskPriority.Urgent,
-        source_event: 'escalation_policy',
-        trigger_reason: escalation.reason,
-      }).then(({ task_id }) => {
-        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
-      }).catch(() => {});
+      runInBackground(
+        { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_EscalatePolicy', triggerId: String(chatId) },
+        async () => {
+          const { task_id } = await createOpsTask({
+            property_id: commContext.reservation.propertyId ?? 'unknown',
+            reservation_id: commContext.reservation.reservationId ?? null,
+            chat_id: chatId,
+            task_type: OpsTaskType.GuestIssue,
+            title: `Guest issue escalated: ${escalation!.reason}`,
+            description: escalation!.summary,
+            priority: OpsTaskPriority.Urgent,
+            source_event: 'escalation_policy',
+            trigger_reason: escalation!.reason,
+          });
+          if (task_id) {
+            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+          }
+        },
+      );
       const escalationBase = "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -156,21 +167,28 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         replyText = adapter.formatResponse(templates.pre_checkin_template, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
         // Timeline: gate passed
-        appendTimelineEvent(identity.guestId, {
-          type: 'checkin_gate_passed',
-          property_id: propertyId!,
-          reservation_id: commContext.reservation.reservationId ?? null,
-          ts: new Date(),
-        }).catch(() => {});
+        runInBackground(
+          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_CheckinPassed', triggerId: identity.guestId },
+          () => appendTimelineEvent(identity.guestId, {
+            type: 'checkin_gate_passed',
+            property_id: propertyId!,
+            reservation_id: commContext.reservation.reservationId ?? null,
+            ts: new Date(),
+          }),
+        );
         // Seal pre_checkin_sent_at so the stay-flow runner never double-sends (best-effort)
         if (commContext.reservation.reservationId) {
           const resId = commContext.reservation.reservationId;
-          Promise.resolve().then(() =>
-            supabase
-              .from('tg_guest_reservations')
-              .update({ pre_checkin_sent_at: new Date().toISOString() })
-              .eq('id', resId)
-          ).catch(() => {});
+          runInBackground(
+            { correlationId: corrId, module: 'orchestrator', taskName: 'update_pre_checkin_sent_at', triggerId: resId },
+            async () => {
+              const { error } = await supabase
+                .from('tg_guest_reservations')
+                .update({ pre_checkin_sent_at: new Date().toISOString() })
+                .eq('id', resId);
+              if (error) throw new Error(error.message);
+            },
+          );
         }
       } else {
         // Unit NOT ready — send safe holding message, never check-in instructions
@@ -181,41 +199,59 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         llmSucceeded = true; // no LLM fallback needed — we have a deterministic safe reply
 
         // Timeline: gate blocked
-        appendTimelineEvent(identity.guestId, {
-          type: 'stay_flow_readiness_blocked',
-          property_id: propertyId!,
-          blocked_reason: gateResult.blocked_reason ?? 'unit_not_ready',
-          reservation_id: commContext.reservation.reservationId ?? null,
-          ts: new Date(),
-        }).catch(() => {});
+        runInBackground(
+          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_ReadinessBlocked', triggerId: identity.guestId },
+          () => appendTimelineEvent(identity.guestId, {
+            type: 'stay_flow_readiness_blocked',
+            property_id: propertyId!,
+            blocked_reason: gateResult.blocked_reason ?? 'unit_not_ready',
+            reservation_id: commContext.reservation.reservationId ?? null,
+            ts: new Date(),
+          }),
+        );
 
         // Persist blocked state on reservation (best-effort)
         if (commContext.reservation.reservationId) {
-          Promise.resolve(
-            supabase
-              .from('tg_guest_reservations')
-              .update({
-                readiness_blocked: true,
-                readiness_block_reason: gateResult.blocked_reason,
-                readiness_checked_at: gateResult.checked_at,
-              })
-              .eq('id', commContext.reservation.reservationId)
-          ).catch(() => {});
+          runInBackground(
+            {
+              correlationId: corrId,
+              module:        'orchestrator',
+              taskName:      'update_readiness_blocked',
+              triggerId:     commContext.reservation.reservationId ?? undefined,
+            },
+            async () => {
+              const { error } = await supabase
+                .from('tg_guest_reservations')
+                .update({
+                  readiness_blocked:       true,
+                  readiness_block_reason:  gateResult.blocked_reason,
+                  readiness_checked_at:    gateResult.checked_at,
+                })
+                .eq('id', commContext.reservation.reservationId);
+              if (error) throw new Error(error.message);
+            },
+          );
         }
 
         // Ops task: check-in blocked (idempotent via dedup_key)
-        createOpsTask({
-          property_id: propertyId ?? 'unknown',
-          reservation_id: commContext.reservation.reservationId ?? null,
-          chat_id: chatId,
-          task_type: OpsTaskType.CheckinReady,
-          title: `Check-in blocked: ${gateResult.blocked_reason}`,
-          description: `Guest asked for check-in info but unit is not ready. Reason: ${gateResult.blocked_reason}. Unit state: ${gateResult.unit_state ?? 'unknown'}.`,
-          priority: OpsTaskPriority.Urgent,
-          source_event: 'checkin_gate_blocked',
-          trigger_reason: gateResult.blocked_reason ?? 'unit_not_ready',
-          dedup_key: `checkin_gate_blocked:${commContext.reservation.reservationId ?? propertyId ?? 'unknown'}`,
-        }).catch(() => {});
+        runInBackground(
+          { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_CheckinBlocked', triggerId: String(chatId) },
+          async () => {
+            const { error } = await createOpsTask({
+              property_id: propertyId ?? 'unknown',
+              reservation_id: commContext.reservation.reservationId ?? null,
+              chat_id: chatId,
+              task_type: OpsTaskType.CheckinReady,
+              title: `Check-in blocked: ${gateResult.blocked_reason}`,
+              description: `Guest asked for check-in info but unit is not ready. Reason: ${gateResult.blocked_reason}. Unit state: ${gateResult.unit_state ?? 'unknown'}.`,
+              priority: OpsTaskPriority.Urgent,
+              source_event: 'checkin_gate_blocked',
+              trigger_reason: gateResult.blocked_reason ?? 'unit_not_ready',
+              dedup_key: `checkin_gate_blocked:${commContext.reservation.reservationId ?? propertyId ?? 'unknown'}`,
+            });
+            if (error) throw new Error(error);
+          },
+        );
       }
     } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
@@ -282,35 +318,49 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
       await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
       // Ops task: LLM-fallback escalation → guest_issue (fire-and-forget)
-      createOpsTask({
-        property_id: commContext.reservation.propertyId ?? 'unknown',
-        reservation_id: commContext.reservation.reservationId ?? null,
-        chat_id: chatId,
-        task_type: OpsTaskType.GuestIssue,
-        title: `Guest issue escalated: ${reason}`,
-        description: escalation.summary,
-        priority: classification.slots.isUrgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
-        source_event: 'escalation_llm_fallback',
-        trigger_reason: reason,
-      }).then(({ task_id }) => {
-        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
-      }).catch(() => {});
+      runInBackground(
+        { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_LLMFallback', triggerId: String(chatId) },
+        async () => {
+          const { task_id, error } = await createOpsTask({
+            property_id: commContext.reservation.propertyId ?? 'unknown',
+            reservation_id: commContext.reservation.reservationId ?? null,
+            chat_id: chatId,
+            task_type: OpsTaskType.GuestIssue,
+            title: `Guest issue escalated: ${reason}`,
+            description: escalation!.summary,
+            priority: classification.slots.isUrgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+            source_event: 'escalation_llm_fallback',
+            trigger_reason: reason,
+          });
+          if (error) throw new Error(error);
+          if (task_id) {
+            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+          }
+        },
+      );
     }
 
     // Ops task: checkout intent → checkout task (fire-and-forget)
     if (intentResult.intent === IntentCategory.CheckOut && commContext.reservation.propertyId) {
-      createOpsTask({
-        property_id: commContext.reservation.propertyId,
-        reservation_id: commContext.reservation.reservationId ?? null,
-        chat_id: chatId,
-        task_type: OpsTaskType.Checkout,
-        title: 'Guest checkout',
-        priority: OpsTaskPriority.Normal,
-        source_event: 'checkout_intent',
-        trigger_reason: 'checkout_message_sent',
-      }).then(({ task_id }) => {
-        appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.Checkout, task_id, ts: new Date() });
-      }).catch(() => {});
+      runInBackground(
+        { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_Checkout', triggerId: String(chatId) },
+        async () => {
+          const { task_id, error } = await createOpsTask({
+            property_id: commContext.reservation.propertyId!,
+            reservation_id: commContext.reservation.reservationId ?? null,
+            chat_id: chatId,
+            task_type: OpsTaskType.Checkout,
+            title: 'Guest checkout',
+            priority: OpsTaskPriority.Normal,
+            source_event: 'checkout_intent',
+            trigger_reason: 'checkout_message_sent',
+          });
+          if (error) throw new Error(error);
+          if (task_id) {
+            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.Checkout, task_id, ts: new Date() });
+          }
+        },
+      );
     }
 
     // Send the response abstractly
@@ -370,7 +420,7 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
     const largest = message.photo[message.photo.length - 1];
     refs.push({
       type:      'photo',
-      label:     `Фото ${largest.width}×${largest.height}px`,
+      label:     `Photo ${largest.width}×${largest.height}px`,
       file_id:   largest.file_id,
       caption:   message.caption ?? undefined,
       file_size: largest.file_size,
@@ -381,7 +431,7 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
     const doc = message.document;
     refs.push({
       type:      'document',
-      label:     doc.file_name ?? 'Документ',
+      label:     doc.file_name ?? 'Document',
       file_id:   doc.file_id,
       caption:   message.caption ?? undefined,
       file_size: doc.file_size,
@@ -389,13 +439,13 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
   }
 
   if (message.caption && refs.length === 0) {
-    refs.push({ type: 'note', label: 'Подпись', caption: message.caption });
+    refs.push({ type: 'note', label: 'Caption', caption: message.caption });
   }
 
   const parts: string[] = [];
-  if (message.photo)    parts.push('[фото]');
-  if (message.document) parts.push(`[файл: ${message.document.file_name ?? 'документ'}]`);
-  if (message.caption)  parts.push(`Подпись: ${message.caption}`);
+  if (message.photo)    parts.push('[photo]');
+  if (message.document) parts.push(`[file: ${message.document.file_name ?? 'document'}]`);
+  if (message.caption)  parts.push(`Caption: ${message.caption}`);
 
   return { textHint: parts.join(' '), refs };
 }
@@ -425,7 +475,10 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   // If there were attachments, append them to the most recently created ops task
   // for this chat so the operator can see what was sent on the leads page.
   if (refs.length > 0) {
-    appendAttachmentsToLatestTask(message.chat.id, refs).catch(() => {});
+    runInBackground(
+      { correlationId: String(update.update_id), module: 'orchestrator', taskName: 'appendAttachmentsToLatestTask', triggerId: String(message.chat.id) },
+      () => appendAttachmentsToLatestTask(message.chat.id, refs),
+    );
   }
 
   return result;

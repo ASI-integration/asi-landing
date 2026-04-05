@@ -61,11 +61,11 @@ export function scoreAddress(value: string): number {
 
 export function deriveMetrics(score: number, h: number): Metric[] {
   const LABELS = [
-    'Транспортная доступность',
-    'Плотность спроса',
-    'Конкурентная активность',
-    'Соответствие аудитории',
-    'Притяжение района',
+    'Transit access',
+    'Demand density',
+    'Competitive activity',
+    'Audience fit',
+    'Neighborhood pull',
   ];
   let s = h;
   return LABELS.map(label => {
@@ -95,29 +95,29 @@ export function deriveAudienceScores(
   const cl = (v: number) => Math.max(18, Math.min(97, Math.round(v)));
 
   return [
-    { label: 'Командированные / B2B', value: cl(transport * 0.45 + audience * 0.35 + score * 0.20 + n1) },
-    { label: 'Бизнес-поездки',        value: cl(transport * 0.40 + demand * 0.30 + score * 0.20 + audience * 0.10 + n2) },
-    { label: 'Туристы',               value: cl(district * 0.45 + demand * 0.25 + (100 - competition) * 0.15 + score * 0.15 + n3) },
-    { label: 'Семьи',                 value: cl(district * 0.40 + (100 - competition) * 0.25 + (100 - transport) * 0.10 + score * 0.15 + demand * 0.10 + n4) },
+    { label: 'Corporate / B2B', value: cl(transport * 0.45 + audience * 0.35 + score * 0.20 + n1) },
+    { label: 'Business travel', value: cl(transport * 0.40 + demand * 0.30 + score * 0.20 + audience * 0.10 + n2) },
+    { label: 'Leisure tourists', value: cl(district * 0.45 + demand * 0.25 + (100 - competition) * 0.15 + score * 0.15 + n3) },
+    { label: 'Families', value: cl(district * 0.40 + (100 - competition) * 0.25 + (100 - transport) * 0.10 + score * 0.15 + demand * 0.10 + n4) },
   ];
 }
 
 export function getBand(score: number): Band {
   if (score >= 70) return {
-    label: 'Сильная локация', labelEn: 'strong',
-    desc: 'Высокий спрос, развитая инфраструктура, хорошая видимость.',
+    label: 'Strong location', labelEn: 'strong',
+    desc: 'High demand, solid infrastructure, good visibility.',
     textColor: 'text-emerald-400', stroke: '#34d399',
     border: 'border-emerald-700/40', bg: 'bg-emerald-900/10', bar: 'bg-emerald-500',
   };
   if (score >= 45) return {
-    label: 'Средняя локация', labelEn: 'medium',
-    desc: 'Умеренный потенциал. Есть пространство для усиления.',
+    label: 'Average location', labelEn: 'medium',
+    desc: 'Moderate potential. Room to strengthen positioning.',
     textColor: 'text-amber-400', stroke: '#fbbf24',
     border: 'border-amber-700/40', bg: 'bg-amber-900/10', bar: 'bg-amber-500',
   };
   return {
-    label: 'Требует усиления', labelEn: 'weak',
-    desc: 'Спрос ограничен. Рекомендуется усиление каналами и упаковкой.',
+    label: 'Needs strengthening', labelEn: 'weak',
+    desc: 'Limited demand signals. Improve channels and positioning.',
     textColor: 'text-rose-400', stroke: '#f87171',
     border: 'border-rose-700/40', bg: 'bg-rose-900/10', bar: 'bg-rose-500',
   };

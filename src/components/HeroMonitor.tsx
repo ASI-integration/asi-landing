@@ -12,7 +12,7 @@ const IDLE_ENTRY: TelemetryLogEntry = {
   id: -1,
   timestamp: '',
   badge: '···',
-  text: 'Сигналы анализа появятся здесь после расчёта в демо локации ниже.',
+  text: 'Analysis signals will appear here after running the demo location below.',
   kind: 'info',
 };
 
@@ -34,7 +34,7 @@ export function HeroMonitor() {
   const magnetLabel = snapshot.magnetCount != null ? String(snapshot.magnetCount) : '—';
   const competitorLabel = snapshot.competitorCount != null ? String(snapshot.competitorCount) : '—';
   const demandLabel = snapshot.demandTypeLabel ?? '—';
-  const statusLabel = snapshot.dataStatusLabel ?? (hasLiveSignals ? '—' : 'ожидание расчёта');
+  const statusLabel = snapshot.dataStatusLabel ?? (hasLiveSignals ? '—' : 'awaiting calculation');
 
   return (
     <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-900/80 shadow-2xl shadow-black/60 overflow-hidden backdrop-blur-sm">
@@ -43,13 +43,13 @@ export function HeroMonitor() {
         <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
         <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
         <span className="ml-3 text-xs font-mono text-slate-500 truncate select-none">
-          asi.location · журнал анализа
+          asi.location · analysis log
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           {hasLiveSignals ? (
             <>
               <span className="h-1.5 w-1.5 rounded-full bg-sky-400/90" />
-              <span className="text-xs font-mono text-slate-500">демо</span>
+              <span className="text-xs font-mono text-slate-500">demo</span>
             </>
           ) : (
             <>
@@ -67,7 +67,7 @@ export function HeroMonitor() {
           style={{ minHeight: 300 }}
         >
           <p className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.2em] text-slate-500 mb-3 shrink-0">
-            сигналы расчёта локации
+            location analysis signals
           </p>
           <div className="flex-1 flex flex-col justify-end gap-0 overflow-hidden min-h-0">
             {visibleLog.map((entry, i) => (
@@ -93,7 +93,7 @@ export function HeroMonitor() {
         <div className="col-span-2 flex flex-col gap-2.5">
 
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Индекс вечной локации</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Evergreen Location Index</p>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-3xl font-bold text-white tabular-nums">{indexLabel}</span>
               <span className="text-xs text-slate-600">/ 100</span>
@@ -109,32 +109,32 @@ export function HeroMonitor() {
           </div>
 
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Окружение OSM</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">OSM Environment</p>
             <div className="flex gap-4 mt-1.5">
               <div>
-                <p className="text-[10px] font-mono text-slate-600">магниты</p>
+                <p className="text-[10px] font-mono text-slate-600">magnets</p>
                 <p className="text-xl font-bold text-indigo-400 tabular-nums">{magnetLabel}</p>
               </div>
               <div>
-                <p className="text-[10px] font-mono text-slate-600">конкуренты</p>
+                <p className="text-[10px] font-mono text-slate-600">competitors</p>
                 <p className="text-xl font-bold text-slate-300 tabular-nums">{competitorLabel}</p>
               </div>
             </div>
           </div>
 
           <div className="flex-1 rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-2">Спрос и данные</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-2">Demand &amp; Data</p>
             <div className="space-y-1.5">
               <div className="flex items-start gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1 bg-sky-500/80" />
                 <span className="text-[10px] font-mono text-slate-500 leading-snug">
-                  Тип спроса: <span className="text-slate-400">{demandLabel}</span>
+                  Demand type: <span className="text-slate-400">{demandLabel}</span>
                 </span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span
                   className={`h-1.5 w-1.5 rounded-full shrink-0 mt-1 ${
-                    statusLabel.includes('актуальн') ? 'bg-emerald-500' : statusLabel.includes('обновля') ? 'bg-amber-400' : 'bg-slate-500'
+                    statusLabel.includes('current') || statusLabel.includes('fresh') ? 'bg-emerald-500' : statusLabel.includes('updat') || statusLabel.includes('stale') ? 'bg-amber-400' : 'bg-slate-500'
                   }`}
                 />
                 <span className="text-[10px] font-mono text-slate-500 leading-snug">

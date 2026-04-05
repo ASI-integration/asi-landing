@@ -21,37 +21,92 @@ export function emptyFootTrafficSummary(): FootTrafficSummary {
   return {
     modifierTier: 'weak',
     boostPoints: 0,
-    movementDensityRu: 'низкая',
-    zoneActivityRu: 'спокойная',
-    flowStabilityRu: 'нестабильная',
-    flowCharacterRu: 'заметный транзитный поток',
+    movementDensity: 'low',
+    zoneActivity: 'calm',
+    flowStability: 'unstable',
+    flowCharacter: 'transit-heavy footfall',
     transitVsTarget: { transitShare: 0, localActiveShare: 0, destinationShare: 0 },
     stability01: 0.2,
     concentration01: 0.25,
   };
 }
 
+const RU_DENSITY: Record<string, string> = {
+  низкая: 'low', умеренная: 'moderate', высокая: 'high',
+};
+const RU_ACTIVITY: Record<string, string> = {
+  спокойная: 'calm', умеренная: 'moderate', 'оживлённая': 'busy',
+};
+const RU_STABILITY: Record<string, string> = {
+  нестабильная: 'unstable', средняя: 'moderate', устойчивая: 'stable',
+};
+const RU_FLOW: Record<string, string> = {
+  'преобладает целевой поток': 'destination-led footfall',
+  'смесь целевого и транзитного потока': 'mixed destination and transit',
+  'заметный транзитный поток': 'transit-heavy footfall',
+};
+
+function normalizeFootTrafficFields(ft: FootTrafficSummary | null | undefined): FootTrafficSummary {
+  const base = emptyFootTrafficSummary();
+  if (!ft) return base;
+  const legacy = ft as FootTrafficSummary & {
+    movementDensityRu?: string;
+    zoneActivityRu?: string;
+    flowStabilityRu?: string;
+    flowCharacterRu?: string;
+  };
+  if (typeof legacy.movementDensity === 'string' && !legacy.movementDensityRu) {
+    return {
+      modifierTier: ft.modifierTier ?? base.modifierTier,
+      boostPoints: ft.boostPoints ?? base.boostPoints,
+      movementDensity: legacy.movementDensity,
+      zoneActivity: legacy.zoneActivity ?? base.zoneActivity,
+      flowStability: legacy.flowStability ?? base.flowStability,
+      flowCharacter: legacy.flowCharacter ?? base.flowCharacter,
+      transitVsTarget: ft.transitVsTarget ?? base.transitVsTarget,
+      stability01: ft.stability01 ?? base.stability01,
+      concentration01: ft.concentration01 ?? base.concentration01,
+    };
+  }
+  return {
+    ...base,
+    ...ft,
+    movementDensity: RU_DENSITY[legacy.movementDensityRu ?? ''] ?? legacy.movementDensity ?? base.movementDensity,
+    zoneActivity: RU_ACTIVITY[legacy.zoneActivityRu ?? ''] ?? legacy.zoneActivity ?? base.zoneActivity,
+    flowStability: RU_STABILITY[legacy.flowStabilityRu ?? ''] ?? legacy.flowStability ?? base.flowStability,
+    flowCharacter: RU_FLOW[legacy.flowCharacterRu ?? ''] ?? legacy.flowCharacter ?? base.flowCharacter,
+  };
+}
+
+export function normalizeCompetitorPressureLevel(
+  v: string | undefined,
+): GravityExplanation['competitorPressureLevel'] {
+  if (v === 'low' || v === 'medium' || v === 'high') return v;
+  if (v === 'низкое') return 'low';
+  if (v === 'среднее') return 'medium';
+  if (v === 'высокое') return 'high';
+  return 'low';
+}
+
 export function patchLegacyLocationAnalysis(a: LocationAnalysis): LocationAnalysis {
   const ge = a.gravityExplanation;
-  const sb = ge?.scoreBreakdown;
-  if (a.footTraffic && sb && typeof sb.trafficBoost === 'number') return a;
-  const base = sb ?? { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 };
+  const sb = ge?.scoreBreakdown ?? { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 };
   return {
     ...a,
-    footTraffic: a.footTraffic ?? emptyFootTrafficSummary(),
+    footTraffic: normalizeFootTrafficFields(a.footTraffic),
     gravityExplanation: {
       dominantMagnets: ge?.dominantMagnets ?? [],
       strongestZoneLabel: ge?.strongestZoneLabel ?? '',
-      competitorPressureLevel: ge?.competitorPressureLevel ?? 'низкое',
+      competitorPressureLevel: normalizeCompetitorPressureLevel(ge?.competitorPressureLevel as string),
       demandDistribution: ge?.demandDistribution ?? 'weak',
       demandType: ge?.demandType ?? 'mixed',
       clusterDetected: ge?.clusterDetected ?? false,
       clusterSize: ge?.clusterSize ?? 0,
       scoreBreakdown: {
-        attraction: base.attraction,
-        competitorPressure: base.competitorPressure,
-        clusterBonus: base.clusterBonus,
-        trafficBoost: typeof base.trafficBoost === 'number' ? base.trafficBoost : 0,
+        attraction: sb.attraction,
+        competitorPressure: sb.competitorPressure,
+        clusterBonus: sb.clusterBonus,
+        trafficBoost: typeof sb.trafficBoost === 'number' ? sb.trafficBoost : 0,
       },
     },
   };
@@ -113,32 +168,26 @@ function triadLabels(
   activity01: number,
   stability01: number,
   destinationShare: number,
-): Pick<
-  FootTrafficSummary,
-  | 'movementDensityRu'
-  | 'zoneActivityRu'
-  | 'flowStabilityRu'
-  | 'flowCharacterRu'
-> {
+): Pick<FootTrafficSummary, 'movementDensity' | 'zoneActivity' | 'flowStability' | 'flowCharacter'> {
   const dens =
-    density01 < 0.28 ? 'низкая' : density01 < 0.55 ? 'умеренная' : 'высокая';
+    density01 < 0.28 ? 'low' : density01 < 0.55 ? 'moderate' : 'high';
   const act =
-    activity01 < 0.3 ? 'спокойная' : activity01 < 0.58 ? 'умеренная' : 'оживлённая';
+    activity01 < 0.3 ? 'calm' : activity01 < 0.58 ? 'moderate' : 'busy';
   const stab =
-    stability01 < 0.35 ? 'нестабильная' : stability01 < 0.65 ? 'средняя' : 'устойчивая';
+    stability01 < 0.35 ? 'unstable' : stability01 < 0.65 ? 'moderate' : 'stable';
   let flow: string;
   if (destinationShare >= 0.46) {
-    flow = 'преобладает целевой поток';
+    flow = 'destination-led footfall';
   } else if (destinationShare >= 0.3) {
-    flow = 'смесь целевого и транзитного потока';
+    flow = 'mixed destination and transit';
   } else {
-    flow = 'заметный транзитный поток';
+    flow = 'transit-heavy footfall';
   }
   return {
-    movementDensityRu: dens,
-    zoneActivityRu: act,
-    flowStabilityRu: stab,
-    flowCharacterRu: flow,
+    movementDensity: dens,
+    zoneActivity: act,
+    flowStability: stab,
+    flowCharacter: flow,
   };
 }
 

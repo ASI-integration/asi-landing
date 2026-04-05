@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { productSupportEmail } from '@/config/contact';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { CommDemo } from '@/components/CommDemo';
 import { HeroMonitor } from '@/components/HeroMonitor';
@@ -93,13 +94,13 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
         @ASI_core_bot
       </a>
       <a
-        href="mailto:support@asi-global.ru"
+        href={`mailto:${productSupportEmail}`}
         className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-all"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
         </svg>
-        support@asi-global.ru
+        {productSupportEmail}
       </a>
     </div>
   );
@@ -131,10 +132,10 @@ export default function HomeRu() {
           {/* Right: contacts + Telegram + Lang + Login */}
           <div className="flex items-center gap-3 sm:gap-4">
             <a
-              href="mailto:support@asi-global.ru"
+              href={`mailto:${productSupportEmail}`}
               className="hidden lg:block text-sm text-slate-400 hover:text-white transition-colors"
             >
-              support@asi-global.ru
+              {productSupportEmail}
             </a>
             <span className="hidden lg:block w-px h-4 bg-slate-800" />
             <a
@@ -240,7 +241,7 @@ export default function HomeRu() {
 
         {/* ── Location demo ── */}
         <div id="location-demo">
-          <LocationIntelligenceDemo />
+          <LocationIntelligenceDemo locale="ru" />
         </div>
 
         {/* ── Communication demo ── */}
@@ -383,10 +384,10 @@ export default function HomeRu() {
             </a>
             <span className="hidden sm:block w-px h-3 bg-slate-800" />
             <a
-              href="mailto:support@asi-global.ru"
+              href={`mailto:${productSupportEmail}`}
               className="text-slate-400 hover:text-white transition-colors"
             >
-              support@asi-global.ru
+              {productSupportEmail}
             </a>
           </div>
 

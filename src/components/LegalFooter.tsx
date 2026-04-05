@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { productSupportEmail } from '@/config/contact';
 
 export function LegalFooter() {
   return (
@@ -6,20 +7,20 @@ export function LegalFooter() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 text-sm leading-relaxed">
         <div className="flex flex-col md:flex-row justify-between gap-6">
           <div>
-            <p className="font-semibold text-slate-300">Реутова Юлия Игоревна</p>
-            <p className="mt-1">ИНН: 235307941957</p>
+            <p className="font-semibold text-slate-300">ASI Integrations</p>
+            <p className="mt-1">Individual service provider</p>
           </div>
           <div className="space-y-1">
-            <p>© 2026 ASI Integrations. Все права защищены.</p>
+            <p>© {new Date().getFullYear()} ASI Integrations. All rights reserved.</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <Link href="/privacy" className="hover:text-slate-300 transition-colors">
-                Политика конфиденциальности
+                Privacy Policy
               </Link>
               <Link href="/offer" className="hover:text-slate-300 transition-colors">
-                Оферта
+                Terms of Service
               </Link>
               <Link href="/contacts" className="hover:text-slate-300 transition-colors">
-                Контакты
+                Contact
               </Link>
             </div>
           </div>
@@ -27,10 +28,10 @@ export function LegalFooter() {
             <p>
               Email:{' '}
               <a
-                href="mailto:support@asi-global.ru"
+                href={`mailto:${productSupportEmail}`}
                 className="hover:text-slate-300 transition-colors"
               >
-                support@asi-global.ru
+                {productSupportEmail}
               </a>
             </p>
             <p>

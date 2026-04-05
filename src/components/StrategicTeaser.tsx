@@ -19,7 +19,7 @@ const COPY: Record<Locale, any> = {
 
 export function StrategicTeaser() {
   const { locale } = useTranslation();
-  const t = COPY[locale] || COPY['ru'];
+  const t = COPY[locale] || COPY['en'];
 
   return (
     <section className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-900 border-t border-slate-800">

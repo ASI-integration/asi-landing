@@ -1,13 +1,14 @@
+import { productSupportEmail } from './contact';
+
 /**
  * Shared legal/entity data for footer, legal, offer, and privacy pages.
  * `email` is the legal / official contact-of-record (not product support).
  */
 export const legalConfig = {
-  name: 'Реутова Юлия Игоревна',
-  inn: '235307941957',
-  email: 'Glaigmaltas@ya.ru',
-  status: 'Самозанятый',
+  name: 'ASI Integrations',
+  email: productSupportEmail,
+  status: 'Individual service provider',
 } as const;
 
-/** One-line legal footer text for RU only: ИНН · Name */
-export const legalFooterLine = `ИНН ${legalConfig.inn} · ${legalConfig.name}`;
+/** One-line legal footer text */
+export const legalFooterLine = `${legalConfig.name}`;

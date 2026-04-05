@@ -23,10 +23,10 @@ function TrafficLights({ a, b, c }: { a: Traffic; b: Traffic; c: Traffic }) {
 }
 
 const OBJECTS: { name: string; meta: string; lights: [Traffic, Traffic, Traffic] }[] = [
-  { name: 'Лофт, Арбатская', meta: 'Активное бронирование', lights: ['ok', 'ok', 'ok'] },
-  { name: 'Студия «Сокол»', meta: 'Выезд сегодня', lights: ['ok', 'warn', 'ok'] },
-  { name: 'Дуплекс Сколково', meta: 'Клининг', lights: ['ok', 'ok', 'warn'] },
-  { name: 'Сеть «Сезон»', meta: '4 объекта', lights: ['warn', 'ok', 'ok'] },
+  { name: 'Loft, Central District', meta: 'Active booking', lights: ['ok', 'ok', 'ok'] },
+  { name: 'Studio «Falcon»', meta: 'Check-out today', lights: ['ok', 'warn', 'ok'] },
+  { name: 'Duplex Westside', meta: 'Cleaning', lights: ['ok', 'ok', 'warn'] },
+  { name: 'Portfolio «Season»', meta: '4 properties', lights: ['warn', 'ok', 'ok'] },
 ];
 
 export function AutopilotInterfaceMock() {
@@ -61,13 +61,13 @@ export function AutopilotInterfaceMock() {
       <div className="relative max-w-6xl mx-auto">
         <div className="text-center max-w-2xl mx-auto mb-12">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-            Интерфейс
+            Interface
           </p>
           <h2
             id="autopilot-interface-heading"
             className="mt-2 text-3xl sm:text-4xl font-bold text-white tracking-tight"
           >
-            Интерфейс Автопилота
+            Autopilot Interface
           </h2>
         </div>
 
@@ -78,7 +78,7 @@ export function AutopilotInterfaceMock() {
             <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
             <span className="ml-3 text-[11px] font-mono text-slate-500 truncate">
-              dashboard.asi.app / объект
+              dashboard.asi.app / property
             </span>
           </div>
 
@@ -87,7 +87,7 @@ export function AutopilotInterfaceMock() {
             <div className="lg:col-span-3 flex flex-col min-h-0 rounded-xl border border-slate-800/90 bg-slate-950/50">
               <div className="px-4 py-3 border-b border-slate-800/80">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Объекты
+                  Properties
                 </h3>
               </div>
               <ul className="p-2 space-y-1 flex-1">
@@ -116,11 +116,11 @@ export function AutopilotInterfaceMock() {
               <div className="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Индекс Вечнозелености
+                    Evergreen Index
                   </h3>
-                  <p className="text-sm text-slate-400 mt-1">Лофт, Арбатская · 30 дней</p>
+                  <p className="text-sm text-slate-400 mt-1">Loft, Central District · 30 days</p>
                 </div>
-                <span className="text-xs text-emerald-400/90 font-medium">+4.2 к прошлому месяцу</span>
+                <span className="text-xs text-emerald-400/90 font-medium">+4.2 vs last month</span>
               </div>
               <div className="p-4 sm:p-5 flex-1 flex flex-col">
                 <div className="flex items-baseline gap-2">
@@ -130,8 +130,8 @@ export function AutopilotInterfaceMock() {
                   <span className="text-slate-500 text-sm">/ 100</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500 max-w-md leading-relaxed">
-                  Сводный показатель загрузки, маржи и стабильности отзывов. Выше — объект
-                  стабильно монетизируется без ручных корректировок.
+                  Composite score of occupancy, margin, and review stability. Higher means the
+                  property monetises consistently without manual adjustments.
                 </p>
 
                 {/* faux chart */}
@@ -148,8 +148,8 @@ export function AutopilotInterfaceMock() {
                     ))}
                   </div>
                   <div className="mt-2 flex justify-between text-[10px] text-slate-600 font-mono uppercase tracking-wide">
-                    <span>1 нед</span>
-                    <span>сейчас</span>
+                    <span>1 wk</span>
+                    <span>now</span>
                   </div>
                 </div>
               </div>
@@ -159,7 +159,7 @@ export function AutopilotInterfaceMock() {
             <div className="lg:col-span-3 flex flex-col rounded-xl border border-slate-800/90 bg-slate-950/50">
               <div className="px-4 py-3 border-b border-slate-800/80">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Интеграции
+                  Integrations
                 </h3>
               </div>
               <div className="p-4 space-y-3 flex-1">
@@ -168,31 +168,31 @@ export function AutopilotInterfaceMock() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-slate-100">Stripe</span>
                     <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/25">
-                      Активен
+                      Active
                     </span>
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">Платежи и возвраты</p>
+                  <p className="mt-1.5 text-xs text-slate-500">Payments &amp; refunds</p>
                 </div>
 
                 {/* YooKassa — green when subscription is active, amber otherwise */}
                 <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-slate-100">ЮKassa</span>
+                    <span className="text-sm font-medium text-slate-100">YooKassa</span>
                     {yookassaActive ? (
                       <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/25">
-                        Активна
+                        Active
                       </span>
                     ) : (
                       <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/25">
-                        Настройка
+                        Setup
                       </span>
                     )}
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">СБП и карты РФ</p>
+                  <p className="mt-1.5 text-xs text-slate-500">Local payment methods</p>
                 </div>
 
                 <p className="text-[11px] text-slate-600 leading-relaxed pt-1">
-                  Статусы обновляются при сохранении ключей и прохождении тестового платежа.
+                  Statuses update when keys are saved and a test payment passes.
                 </p>
               </div>
             </div>

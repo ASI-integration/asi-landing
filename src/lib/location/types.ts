@@ -14,7 +14,10 @@ export type StrengthClass = 'strong' | 'medium' | 'weak';
 
 export interface MagnetCategory {
   id: string;
-  label: string;           // Russian UI label
+  /** English display label (default for API / global site) */
+  label: string;
+  /** Russian label for /ru UI */
+  labelRu: string;
   icon: string;            // short badge text
   weight: number;          // 1–10
   permanenceType: PermanenceType;
@@ -65,15 +68,15 @@ export interface AccessibilityStopItem {
 
 export type FootTrafficModifierTier = 'weak' | 'moderate' | 'strong';
 
-/** Foot-traffic modifier — human face in Russian only (see demo copy). */
+/** Foot-traffic modifier — human-readable labels (English from engine; /ru UI translates if needed). */
 export interface FootTrafficSummary {
   modifierTier: FootTrafficModifierTier;
   /** Rounded index points added on top of magnet line (capped). */
   boostPoints: number;
-  movementDensityRu: string;
-  zoneActivityRu: string;
-  flowStabilityRu: string;
-  flowCharacterRu: string;
+  movementDensity: string;
+  zoneActivity: string;
+  flowStability: string;
+  flowCharacter: string;
   transitVsTarget: {
     transitShare: number;
     localActiveShare: number;
@@ -87,7 +90,7 @@ export interface FootTrafficSummary {
 export interface GravityExplanation {
   dominantMagnets: string[];
   strongestZoneLabel: string;
-  competitorPressureLevel: 'низкое' | 'среднее' | 'высокое';
+  competitorPressureLevel: 'low' | 'medium' | 'high';
   demandDistribution: 'concentrated' | 'split' | 'weak';
   demandType: DemandType;
   clusterDetected: boolean;
@@ -166,7 +169,7 @@ export interface LocationAnalysis {
   splitDemand: boolean;
   competitorPressure: number;
 
-  /** Поток людей: подтверждает сильную локацию только вместе с магнитами. */
+  /** Foot-traffic layer — confirms strong locations together with magnets. */
   footTraffic: FootTrafficSummary;
 
   // Computed visualization data

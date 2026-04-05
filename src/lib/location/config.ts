@@ -5,16 +5,16 @@ import type { MagnetCategory, PermanenceType } from './types';
 // not listed here — they go to accessibilityStops + a tiny capped bonus only.
 
 export const MAGNET_CATEGORIES: MagnetCategory[] = [
-  { id: 'metro',            label: 'Метро',                         icon: 'М',  weight: 9,  permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
-  { id: 'railway_station',  label: 'Ж/д и крупные транспортные узлы', icon: 'Ж',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
-  { id: 'attraction',       label: 'Достопримечательности',         icon: '★',  weight: 8,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
-  { id: 'university',       label: 'Университеты',                icon: 'У',  weight: 6,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'education_local',  label: 'Локальные учебные заведения',   icon: 'у',  weight: 1.5, permanenceType: 'permanent', scopeLevel: 'local', strengthClass: 'weak' },
-  { id: 'entertainment',    label: 'Развлечения',                   icon: '▶',  weight: 5,  permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'shopping_major',   label: 'ТЦ и крупная розница',          icon: '⊞',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'shopping_local',   label: 'Супермаркеты',                 icon: '+',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
-  { id: 'business',         label: 'Офисы и бизнес',               icon: 'Б',  weight: 2.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'weak' },
-  { id: 'food',             label: 'Кафе и рестораны',             icon: '◈',  weight: 1,  permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
+  { id: 'metro',            label: 'Metro',                         labelRu: 'Метро',                         icon: 'М',  weight: 9,  permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
+  { id: 'railway_station',  label: 'Rail & major transit hubs',     labelRu: 'Ж/д и крупные транспортные узлы', icon: 'Ж',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
+  { id: 'attraction',       label: 'Attractions',                   labelRu: 'Достопримечательности',         icon: '★',  weight: 8,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
+  { id: 'university',       label: 'Universities',                  labelRu: 'Университеты',                icon: 'У',  weight: 6,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'education_local',  label: 'Local schools',                 labelRu: 'Локальные учебные заведения',   icon: 'у',  weight: 1.5, permanenceType: 'permanent', scopeLevel: 'local', strengthClass: 'weak' },
+  { id: 'entertainment',    label: 'Entertainment',                 labelRu: 'Развлечения',                   icon: '▶',  weight: 5,  permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'shopping_major',   label: 'Malls & major retail',          labelRu: 'ТЦ и крупная розница',          icon: '⊞',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'shopping_local',   label: 'Supermarkets',                  labelRu: 'Супермаркеты',                 icon: '+',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
+  { id: 'business',         label: 'Offices & business',            labelRu: 'Офисы и бизнес',               icon: 'Б',  weight: 2.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'weak' },
+  { id: 'food',             label: 'Cafés & restaurants',         labelRu: 'Кафе и рестораны',             icon: '◈',  weight: 1,  permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
 ];
 
 // OSM search radius per category (meters)

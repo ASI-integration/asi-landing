@@ -2,7 +2,7 @@
  * Gravity / Evergreen scoring engine — pure functions, no I/O.
  *
  * Internal model based on location analysis methodology.
- * Public attribution: методика курса Ярослава Стригунова.
+ * Public attribution: methodology inspired by Yaroslav Strigunov’s location course.
  */
 
 import type {
@@ -40,7 +40,7 @@ export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: 
 }
 
 export function formatDist(m: number): string {
-  return m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1)} км`;
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
 /** Smooth distance decay: 1 / (1 + (dist/refDist)^power)
@@ -142,7 +142,7 @@ export function calcEvergreenIndex(
   const empty: GravityExplanation = {
     dominantMagnets: [],
     strongestZoneLabel: '',
-    competitorPressureLevel: 'низкое',
+    competitorPressureLevel: 'low',
     demandDistribution: 'weak',
     demandType: 'mixed',
     clusterDetected: false,
@@ -168,7 +168,7 @@ export function calcEvergreenIndex(
       gravityExplanation: {
         ...empty,
         competitorPressureLevel:
-          competitorPressureValue < 6 ? 'низкое' : competitorPressureValue < 14 ? 'среднее' : 'высокое',
+          competitorPressureValue < 6 ? 'low' : competitorPressureValue < 14 ? 'medium' : 'high',
         scoreBreakdown: {
           attraction: 0,
           competitorPressure: Math.round(competitorPressureValue),
@@ -207,7 +207,7 @@ export function calcEvergreenIndex(
   const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
   const strongestZoneLabel = sorted[0]?.categoryLabel ?? '';
   const competitorPressureLevel: GravityExplanation['competitorPressureLevel'] =
-    competitorPressureValue < 6 ? 'низкое' : competitorPressureValue < 14 ? 'среднее' : 'высокое';
+    competitorPressureValue < 6 ? 'low' : competitorPressureValue < 14 ? 'medium' : 'high';
 
   return {
     index,

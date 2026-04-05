@@ -4,7 +4,7 @@ import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand } 
 
 export function getBand(idx: number): Band {
   if (idx >= 70) return {
-    label: 'Сильная локация',
+    label: 'Strong location',
     scoreBand: 'strong',
     textColor: 'text-emerald-400',
     stroke: '#34d399',
@@ -13,7 +13,7 @@ export function getBand(idx: number): Band {
     bar: 'bg-emerald-500',
   };
   if (idx >= 45) return {
-    label: 'Средняя локация',
+    label: 'Solid location',
     scoreBand: 'medium',
     textColor: 'text-amber-400',
     stroke: '#fbbf24',
@@ -22,7 +22,7 @@ export function getBand(idx: number): Band {
     bar: 'bg-amber-500',
   };
   if (idx > 0) return {
-    label: 'Требует усиления',
+    label: 'Needs strengthening',
     scoreBand: 'weak',
     textColor: 'text-rose-400',
     stroke: '#f87171',
@@ -31,7 +31,7 @@ export function getBand(idx: number): Band {
     bar: 'bg-rose-500',
   };
   return {
-    label: 'Нет данных',
+    label: 'No data',
     scoreBand: 'none',
     textColor: 'text-slate-400',
     stroke: '#475569',
@@ -59,6 +59,7 @@ export function generateConclusion(
   _competitors: CompetitorItem[],
   countByCategory: Record<string, number>,
   gravity: GravityExplanation,
+  locale: 'en' | 'ru' = 'en',
 ): string {
   if (magnets.length === 0) return '';
 
@@ -66,33 +67,61 @@ export function generateConclusion(
   const hasAttractions = (countByCategory.attraction ?? 0) > 0;
   const hasBusiness    = (countByCategory.business ?? 0) > 0;
 
+  if (locale === 'ru') {
+    const splitNote = gravity.demandDistribution === 'split'
+      ? ' Спрос распределён между несколькими зонами притяжения.'
+      : gravity.clusterDetected
+        ? ' Рядом сформирована зона устойчивого спроса.'
+        : '';
+    const compNote = gravity.competitorPressureLevel === 'high'
+      ? ' Конкуренция высокая — важна упаковка и дифференциация объекта.'
+      : gravity.competitorPressureLevel === 'medium'
+        ? ' Конкуренция умеренная.'
+        : '';
+    if (idx >= 70) {
+      const driver = hasMetro
+        ? 'Метро рядом — устойчивый поток гостей.'
+        : hasAttractions
+          ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
+          : 'Насыщенное окружение создаёт постоянный трафик.';
+      return `Сильная локация для посуточной аренды. ${driver}${splitNote}${compNote}`;
+    }
+    if (idx >= 45) {
+      const note = !hasMetro && !hasBusiness
+        ? 'Транспортная доступность — ключевой фактор усиления.'
+        : 'Окружение поддерживает умеренный спрос.';
+      return `Рабочая локация. ${note}${splitNote}${compNote} Результат во многом определяется упаковкой и каналами продаж.`;
+    }
+    return `Магниты вокруг ограничены.${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
+  }
+
   const splitNote = gravity.demandDistribution === 'split'
-    ? ' Спрос распределён между несколькими зонами притяжения.'
+    ? ' Demand is spread across several attraction zones.'
     : gravity.clusterDetected
-      ? ' Рядом сформирована зона устойчивого спроса.'
+      ? ' A stable demand cluster sits nearby.'
       : '';
 
-  const compNote = gravity.competitorPressureLevel === 'высокое'
-    ? ' Конкуренция высокая — важна упаковка и дифференциация объекта.'
-    : gravity.competitorPressureLevel === 'среднее'
-      ? ' Конкуренция умеренная.'
+  const compNote = gravity.competitorPressureLevel === 'high'
+    ? ' Competition is high — positioning and differentiation matter.'
+    : gravity.competitorPressureLevel === 'medium'
+      ? ' Competition is moderate.'
       : '';
 
   if (idx >= 70) {
     const driver = hasMetro
-      ? 'Метро рядом — устойчивый поток гостей.'
+      ? 'Metro nearby drives a steady guest flow.'
       : hasAttractions
-        ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
-        : 'Насыщенное окружение создаёт постоянный трафик.';
-    return `Сильная локация для посуточной аренды. ${driver}${splitNote}${compNote}`;
+        ? 'Proximity to attractions supports consistent demand.'
+        : 'A dense amenity mix keeps footfall active.';
+    return `Strong short-term rental location. ${driver}${splitNote}${compNote}`;
   }
 
   if (idx >= 45) {
     const note = !hasMetro && !hasBusiness
-      ? 'Транспортная доступность — ключевой фактор усиления.'
-      : 'Окружение поддерживает умеренный спрос.';
-    return `Рабочая локация. ${note}${splitNote}${compNote} Результат во многом определяется упаковкой и каналами продаж.`;
+      ? 'Transit access is the main lever to improve performance.'
+      : 'The surroundings support moderate demand.';
+    return `Workable location. ${note}${splitNote}${compNote} Results still depend heavily on positioning and distribution channels.`;
   }
 
-  return `Магниты вокруг ограничены.${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
+  return `Nearby demand magnets are limited.${splitNote} Focus on niche positioning and channel mix.`;
 }

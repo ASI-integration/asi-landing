@@ -29,7 +29,7 @@ const COPY: Record<Locale, any> = {
     ],
     sec3Title: "Why this makes practical sense",
     sec3Body: "Even with a small number of properties, a significant portion of resources goes into manual management, bookings, coordination, control, and external services. Our goal is to transfer a substantial part of these processes into a single automated contour to reduce operational load, decrease reliance on staff, and cut costs on the external stack.",
-    sec3Callout: "Even for 5 properties, basic booking and management functions can cost approximately 100,000–150,000 rubles per month for just two roles, excluding cleaning, maintenance, and other expenses. Automation here means not only convenience but potential savings, scalability, and margin growth.",
+    sec3Callout: "Even for five properties, basic booking and management work often means a substantial monthly labor cost for just two roles, before cleaning, maintenance, and other expenses. Automation can reduce that load and support scalability and margin growth.",
     sec4Title: "Who might be interested",
     sec4Body1: "This format might be interesting to:",
     sec4List: [
@@ -123,7 +123,7 @@ const COPY: Record<Locale, any> = {
 
 export function StrategicLanding() {
   const { locale } = useTranslation();
-  const t = COPY[locale] || COPY['ru'];
+  const t = COPY[locale] || COPY['en'];
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();

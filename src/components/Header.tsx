@@ -2,11 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useTranslation } from '@/i18n/useTranslation';
 
 export function Header() {
   const [open, setOpen] = useState(false);
-  const { t, locale, setLocale } = useTranslation();
+  const pathname = usePathname();
+  const onRu = Boolean(pathname?.startsWith('/ru'));
+  const { t } = useTranslation();
 
   return (
     <header className="sticky top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/60">
@@ -30,19 +33,19 @@ export function Header() {
         {/* Right: Locale + Contacts + Login */}
         <div className="hidden md:flex items-center gap-4">
           <div className="flex items-center gap-1 text-slate-500 text-sm">
-            <button
-              onClick={() => setLocale('en')}
-              className={`px-2 py-1 rounded transition-colors ${locale === 'en' ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
+            <Link
+              href="/"
+              className={`px-2 py-1 rounded transition-colors ${!onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
             >
               EN
-            </button>
+            </Link>
             <span>|</span>
-            <button
-              onClick={() => setLocale('ru')}
-              className={`px-2 py-1 rounded transition-colors ${locale === 'ru' ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
+            <Link
+              href="/ru"
+              className={`px-2 py-1 rounded transition-colors ${onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
             >
               RU
-            </button>
+            </Link>
           </div>
           <a
             href={`mailto:${t('contact.supportEmail')}`}
@@ -82,8 +85,8 @@ export function Header() {
           <a href="#pricing" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.pricing')}</a>
           <a href="#faq" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.faq')}</a>
           <div className="flex gap-2">
-            <button onClick={() => setLocale('en')} className={`px-2 py-1 text-sm rounded ${locale === 'en' ? 'font-semibold bg-slate-100' : ''}`}>EN</button>
-            <button onClick={() => setLocale('ru')} className={`px-2 py-1 text-sm rounded ${locale === 'ru' ? 'font-semibold bg-slate-100' : ''}`}>RU</button>
+            <Link href="/" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${!onRu ? 'font-semibold bg-slate-100' : ''}`}>EN</Link>
+            <Link href="/ru" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</Link>
           </div>
           <a
             href={`mailto:${t('contact.supportEmail')}`}

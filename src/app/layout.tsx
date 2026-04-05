@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { LegalFooter } from '@/components/LegalFooter';
+import { LocalePathSync } from '@/components/LocalePathSync';
 
 export const metadata: Metadata = {
   title: 'ASI — AI-powered operational infrastructure',
@@ -17,6 +18,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <LanguageProvider>
+          <LocalePathSync />
           <div className="flex flex-col min-h-screen">
             <div className="flex-1">{children}</div>
             <LegalFooter />

@@ -1,4 +1,4 @@
 /**
  * Product / billing / technical support. Keep in sync with `contact.supportEmail` in i18n JSON.
  */
-export const productSupportEmail = 'support@asi-global.ru';
+export const productSupportEmail = 'support@asi-integrations.com';
