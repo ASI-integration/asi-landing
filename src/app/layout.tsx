@@ -4,8 +4,8 @@ import { LanguageProvider } from '@/i18n/LanguageProvider';
 import { LegalFooter } from '@/components/LegalFooter';
 
 export const metadata: Metadata = {
-  title: 'ASI — Объект недвижимости на автопилоте',
-  description: 'Платформа автоматизации объектов недвижимости. Коммуникация с гостями, сбор платежей, управление бронированиями и контроль задач — без найма дополнительного персонала.',
+  title: 'ASI — AI-powered operational infrastructure',
+  description: 'Autonomous AI platform for real estate and hospitality operations. Guest communication, payments, reservations, and task control — without additional headcount.',
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
+    <html lang="en">
       <body className="antialiased">
         <LanguageProvider>
           <div className="flex flex-col min-h-screen">

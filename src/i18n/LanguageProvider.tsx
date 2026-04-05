@@ -39,7 +39,7 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('ru');
+  const [locale, setLocaleState] = useState<Locale>('en');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -83,7 +83,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ locale: mounted ? locale : 'ru', setLocale, t, get }),
+    () => ({ locale: mounted ? locale : 'en', setLocale, t, get }),
     [locale, mounted, setLocale, t, get]
   );
 
