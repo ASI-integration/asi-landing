@@ -2,7 +2,54 @@
 
 import { useState } from 'react';
 
-const FAQ_ITEMS = [
+const FAQ_EN = [
+  {
+    q: "What do you mean by '99% automation'? What's left for me to do?",
+    a: "After setup, you only need to handle two things manually: configure your property to ASI's recommendations and hire line staff (housekeepers, maintenance). Everything else — guest communication, calendar management, cleaning coordination — the system handles automatically.",
+  },
+  {
+    q: 'Security: how are access codes and payment data stored?',
+    a: "Guest payment data is never stored in ASI — it's processed encrypted on the bank's side and we receive only one-time tokens. Lock codes and Wi-Fi credentials are stored in a secure encrypted vault with encryption at rest and strict access control. The system only issues them as part of automated workflows, masking them in logs and interfaces.",
+  },
+  {
+    q: 'Is ASI suitable for B2B: property networks, agencies, and management companies?',
+    a: 'Yes. The platform is built for property portfolios: a unified dashboard, role-based access, and transparent operational visibility for each unit. Onboarding and billing can be structured under a legal entity contract — no need to maintain separate operational staff per property.',
+  },
+  {
+    q: 'I already have a Channel Manager. Why do I need ASI?',
+    a: "ASI isn't just overbooking sync. We have a built-in smart Channel Manager. First, the system pulls in all your current channels via API. Then, once your property is positioned for the right audience, ASI automatically shifts away from underperforming channels, keeping only the most profitable ones. The system manages occupancy on its own — replacing a dedicated revenue manager.",
+  },
+  {
+    q: 'How does the system handle pricing? Will it replace a revenue manager?',
+    a: "ASI doesn't work like a professional revenue manager — it works better. No person can manually balance hundreds of variables in real time: competitor pricing, local events, OTA algorithms, and historical demand data. The system dynamically manages rates for your target audience, maximizing occupancy based on math, not guesswork.",
+  },
+  {
+    q: 'I only have a few apartments. Is this system too complex for me?',
+    a: "On the contrary — ASI lets you scale much faster through 99% automation. As you grow, you won't need to expand headcount by hiring booking agents, administrators, or dispatchers. Eliminating even one booking agent means an immediate and significant reduction in operating costs.",
+  },
+  {
+    q: 'How does check-in work? Do I need smart locks?',
+    a: 'We strongly recommend installing electronic locks — ASI then generates unique PIN codes for each guest automatically. However, the system is flexible: if you currently use mechanical keys or key boxes, we can easily configure the process around them.',
+  },
+  {
+    q: 'How do I track cleaning and maintenance work?',
+    a: "The system automatically assigns tasks to housekeepers with precise timing right after a guest checks out. We're also developing an internal database and rating system for line staff to recommend the best specialists.",
+  },
+  {
+    q: 'Does the system protect against problematic guests?',
+    a: 'Future ASI updates will include a global guest blacklist, allowing the system to screen out problematic guests at the booking stage — those who exploit platform policies by filing false complaints to get refunds.',
+  },
+  {
+    q: 'How does ASI pay for itself so quickly?',
+    a: 'Three factors: first, complete savings on labor costs. Second, the built-in channel manager saves money on third-party services. Third, automated pricing and selection of the most profitable OTA channels eliminates vacancies and increases average revenue per booking.',
+  },
+  {
+    q: 'How is ASI fundamentally different from existing CRM and PMS solutions?',
+    a: "Any traditional CRM or Channel Manager is just an interface where you or your staff have to do the work. ASI is an active system. The software works for you. It's a digital autopilot that lets owners focus on strategy while properties manage themselves.",
+  },
+];
+
+const FAQ_RU = [
   {
     q: 'Что вы имеете в виду под «99% автоматизации»? Что остается делать мне?',
     a: 'После запуска системы вам остается вручную делать только две вещи: упаковать объект по рекомендациям ASI и нанять линейный персонал (горничных, хоум-мастеров). Всю остальную операционную работу — от общения с гостями и управления календарями до координации клининга — система забирает на себя.',
@@ -49,8 +96,9 @@ const FAQ_ITEMS = [
   },
 ];
 
-export function FaqAccordion() {
+export function FaqAccordion({ lang = 'en' }: { lang?: 'en' | 'ru' }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const FAQ_ITEMS = lang === 'ru' ? FAQ_RU : FAQ_EN;
 
   return (
     <div className="space-y-2">
