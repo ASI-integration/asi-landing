@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   CATEGORY_COLOR,
   buildAnalysis,
@@ -1196,6 +1197,7 @@ function ASIPanel({
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
 }) {
+  const router = useRouter();
   const {
     magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
@@ -1320,7 +1322,7 @@ function ASIPanel({
           Get detailed revenue model, pricing strategy, and demand analysis for this location.
         </p>
         <button
-          onClick={() => console.log('open_paywall')}
+          onClick={() => router.push('/report')}
           className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
         >
           Start analyzing properties

@@ -279,7 +279,7 @@ export default function Home() {
 
         {/* ── Feature quick-nav ── */}
         <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-4 gap-3">
             <a
               href="#scale"
               className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
@@ -298,6 +298,15 @@ export default function Home() {
                 Channel manager and OTA connection
               </span>
             </a>
+            <Link
+              href="/ota"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-indigo-500/35 bg-indigo-950/20 hover:border-indigo-400/60 hover:bg-indigo-950/30 transition-all"
+            >
+              <span className="text-2xl shrink-0">🔌</span>
+              <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors leading-snug">
+                Connect OTA
+              </span>
+            </Link>
             <a
               href="#finances"
               className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
