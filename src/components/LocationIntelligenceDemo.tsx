@@ -79,12 +79,14 @@ async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[];
 async function fetchLocationAnalysis(
   lat: number,
   lon: number,
+  signal?: AbortSignal,
 ): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
   try {
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lat, lon }),
+      signal,
     });
     if (!res.ok) return null;
     const data = await res.json() as { analysis?: LocationAnalysis; meta?: AnalysisMeta };
@@ -411,8 +413,11 @@ function TwoGISMapPanel({
     };
   }, [lat, lon, apiKey]);
 
+  // Silent fail: if SDK errored, show nothing (no error text)
+  if (apiKey && sdkError) return null;
+
   // Path 1: MapGL SDK
-  if (apiKey && !sdkError) {
+  if (apiKey) {
     return (
       <div
         className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
@@ -966,6 +971,59 @@ function getFilteredMagnets(magnets: MagnetItem[], limit: number): MagnetItem[] 
   return all.slice(0, limit);
 }
 
+// ── Score factor generator ────────────────────────────────────────────────────
+
+function generateScoreFactors(analysis: LocationAnalysis, locale: LocDemoLocale): string[] {
+  const { magnets, magnetCountByCategory, gravityExplanation, demandType, accessibilityStops } = analysis;
+  const factors: string[] = [];
+
+  // Transit
+  const hasMetro = (magnetCountByCategory.metro ?? 0) > 0;
+  const transitStops = accessibilityStops?.length ?? 0;
+  if (hasMetro) {
+    factors.push(locale === 'ru' ? 'Метро в шаговой доступности' : 'Metro station within walking distance');
+  } else if (transitStops === 0 && !hasMetro) {
+    factors.push(locale === 'ru' ? 'Слабая транспортная связность' : 'Weak transport connectivity');
+  } else {
+    factors.push(locale === 'ru' ? 'Базовый общественный транспорт в зоне' : 'Basic transit options in the area');
+  }
+
+  // Attractions
+  const attractionCount = magnetCountByCategory.attraction ?? 0;
+  if (attractionCount >= 3) {
+    factors.push(locale === 'ru' ? 'Несколько достопримечательностей поблизости' : 'Multiple nearby attractions drive tourist demand');
+  } else if (attractionCount === 0) {
+    factors.push(locale === 'ru' ? 'Рядом мало достопримечательностей' : 'Limited nearby attractions');
+  }
+
+  // Demand type / seasonality
+  if (demandType === 'tourism-led') {
+    factors.push(locale === 'ru' ? 'Туристический спрос — сезонные пики трафика' : 'Seasonal traffic patterns — peaks in tourist season');
+  } else if (demandType === 'business-led') {
+    factors.push(locale === 'ru' ? 'Деловой спрос — стабильные бронирования круглый год' : 'Business-driven demand — stable year-round bookings');
+  } else if (demandType === 'transport-led') {
+    factors.push(locale === 'ru' ? 'Транзитный трафик — временный профиль гостей' : 'Transit-driven footfall — transient guest profile');
+  } else {
+    factors.push(locale === 'ru' ? 'Смешанный спрос — сбалансированный профиль бронирований' : 'Mixed demand — balanced booking profile');
+  }
+
+  // Competitor pressure
+  if (gravityExplanation.competitorPressureLevel === 'high') {
+    factors.push(locale === 'ru' ? 'Высокая конкуренция — важна упаковка и дифференциация' : 'High local competition — pricing and positioning critical');
+  } else if (gravityExplanation.competitorPressureLevel === 'low') {
+    factors.push(locale === 'ru' ? 'Низкая конкуренция — рыночная ниша в этой зоне' : 'Low competition — market gap available in this zone');
+  }
+
+  // Magnet density
+  if (magnets.length >= 8) {
+    factors.push(locale === 'ru' ? 'Насыщенная инфраструктура обеспечивает стабильный трафик' : 'Dense amenity mix supports consistent footfall');
+  } else if (magnets.length <= 2) {
+    factors.push(locale === 'ru' ? 'Мало магнитов спроса поблизости' : 'Low tourist demand — few demand generators nearby');
+  }
+
+  return factors.slice(0, 5);
+}
+
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
 function ASIPanel({
@@ -999,6 +1057,12 @@ function ASIPanel({
         )
       : analysis.conclusion;
   const band = getBand(evergreenIndex);
+  const strategy =
+    evergreenIndex <= 6 ? 'mid_term' : evergreenIndex <= 7.5 ? 'hybrid' : 'short_term';
+  const strategyPoints =
+    strategy === 'mid_term' ? c.strategyMidTerm
+    : strategy === 'hybrid' ? c.strategyHybrid
+    : c.strategyShortTerm;
   const [visible, setVisible] = useState(false);
   const [magnetExpanded, setMagnetExpanded] = useState(false);
 
@@ -1036,6 +1100,68 @@ function ASIPanel({
             {address}
           </p>
         </div>
+      </div>
+
+      {/* Why this score? */}
+      {(() => {
+        const factors = generateScoreFactors(analysis, locale);
+        if (factors.length === 0) return null;
+        return (
+          <div className="px-5 py-4 border-b border-slate-800/40">
+            <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+              {locale === 'ru' ? 'Почему такой балл?' : 'Why this score?'}
+            </p>
+            <ul className="space-y-1.5">
+              {factors.map((factor, i) => (
+                <li key={i} className="flex items-start gap-2 text-[15px] text-slate-400 leading-snug">
+                  <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                  {factor}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
+
+      {/* Recommended Strategy */}
+      <div className="px-5 py-4 border-b border-slate-800/40">
+        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">{c.strategyTitle}</p>
+        <ul className="space-y-2">
+          {strategyPoints.map((point, i) => (
+            <li key={i} className="flex items-start gap-2 text-[16px] text-slate-400 leading-snug">
+              <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+              {point}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Estimated Monthly Income */}
+      <div className="px-5 py-5 border-b border-slate-800/40">
+        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">Estimated Monthly Income</p>
+        <p className="text-[28px] font-bold text-slate-100 leading-none tracking-tight">
+          {strategy === 'mid_term' ? '$1,800 – $3,200'
+           : strategy === 'hybrid' ? '$2,500 – $4,500'
+           : '$3,500 – $7,000'}
+          <span className="text-[18px] font-semibold text-slate-400"> / mo</span>
+        </p>
+        <p className="text-[12px] text-slate-400 mt-1.5">Before expenses and management fees</p>
+        <p className="text-[12px] text-slate-500 mt-0.5">Based on typical demand patterns</p>
+      </div>
+
+      {/* CTA — lead capture */}
+      <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
+        <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">Want a full breakdown?</p>
+        <p className="text-[14px] text-slate-400 leading-snug mb-4">
+          Get detailed revenue model, pricing strategy, and demand analysis for this location.
+        </p>
+        <button
+          onClick={() => console.log('open_paywall')}
+          className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white text-slate-900 text-[14px] font-semibold tracking-wide transition-colors"
+        >
+          Get Full Revenue Breakdown
+        </button>
+        <p className="mt-2 text-sm text-slate-500 text-center">Full analysis доступен по подписке ($20–50/month)</p>
       </div>
 
       {/* Analytics: gravity signals + foot traffic — combined compact grid */}
@@ -1158,16 +1284,18 @@ function ASIPanel({
         );
       })()}
 
-      {!hasMagnets && (
-        <div className="px-5 py-4">
-          <p className="text-[22px] text-slate-600">
-            {c.noOsm}
-          </p>
-        </div>
-      )}
     </div>
   );
 }
+
+// ── Map button tooltips ───────────────────────────────────────────────────────
+
+const TAG_TOOLTIPS = [
+  'Show exact property location on the map',
+  'View nearby transport options (roads, public transit)',
+  'Show nearby demand generators (restaurants, stores, hotels)',
+  'Open full interactive map in a new tab',
+];
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
@@ -1184,6 +1312,17 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
   const [animated, setAnimated] = useState(false);
   const [validationErr, setValidationErr] = useState(false);
   const [inputKey, setInputKey] = useState(0);
+  const [activeTag, setActiveTag] = useState<number | null>(null);
+  const [mapFeedback, setMapFeedback] = useState<string | null>(null);
+  const mapFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapDivRef = useRef<HTMLDivElement>(null);
+  const heatmapDivRef = useRef<HTMLDivElement>(null);
+
+  function showMapFeedback(msg: string) {
+    if (mapFeedbackTimerRef.current) clearTimeout(mapFeedbackTimerRef.current);
+    setMapFeedback(msg);
+    mapFeedbackTimerRef.current = setTimeout(() => setMapFeedback(null), 2000);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1205,6 +1344,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
     setAnimated(false);
     setValidationErr(false);
     setInputKey(k => k + 1);
+    setActiveTag(null);
     locTel?.resetTelemetry();
   }
 
@@ -1212,13 +1352,16 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
   useEffect(() => {
     if (phase !== 'loading' || !selected) return;
     let cancelled = false;
+    const controller = new AbortController();
+    const abortTimeout = setTimeout(() => controller.abort(), 5000);
 
     const tickers = c.loadingSteps.map((_, i) =>
-      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 900),
+      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 1000),
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
-    fetchLocationAnalysis(selected.lat, selected.lon).then(result => {
+    fetchLocationAnalysis(selected.lat, selected.lon, controller.signal).then(result => {
+      clearTimeout(abortTimeout);
       if (cancelled) return;
       const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon);
       const resolvedMeta = result?.meta ?? null;
@@ -1233,11 +1376,13 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
           emitAnalysisTelemetry(tel.pushLine, tel.updateSnapshot, resolvedAnalysis, resolvedMeta);
         }
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
-      }, Math.max(0, 2500 - elapsed));
+      }, Math.max(0, 3000 - elapsed));
     });
 
     return () => {
       cancelled = true;
+      controller.abort();
+      clearTimeout(abortTimeout);
       tickers.forEach(clearTimeout);
     };
   }, [phase, selected, c.loadingSteps]);
@@ -1287,32 +1432,68 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                 </span>
                 <span className="text-[17px] text-slate-700">· 2GIS</span>
               </div>
-              <TwoGISMapPanel
-                lat={selected!.lat}
-                lon={selected!.lon}
-                loading={false}
-                locale={locale}
-                c={c}
-              />
+              {mapFeedback && (
+                <div className="text-sm text-slate-400 mb-2 transition-opacity">
+                  {mapFeedback}
+                </div>
+              )}
+              <div ref={mapDivRef}>
+                <TwoGISMapPanel
+                  lat={selected!.lat}
+                  lon={selected!.lon}
+                  loading={false}
+                  locale={locale}
+                  c={c}
+                />
+              </div>
               <div className="mt-3">
                 <p className="text-[20px] text-slate-500 mb-2 truncate">{selected?.value}</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {c.tags.map(tag => (
-                    <span key={tag} className="text-[17px] px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-500 border border-slate-800">
+                  {c.tags.map((tag, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      title={TAG_TOOLTIPS[i]}
+                      onClick={() => {
+                        if (i === 0) {
+                          setActiveTag(0);
+                          showMapFeedback('Showing property location...');
+                          mapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } else if (i === 1) {
+                          setActiveTag(1);
+                          showMapFeedback('Showing transport routes...');
+                          if (selected) window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`, '_blank');
+                        } else if (i === 2) {
+                          setActiveTag(2);
+                          showMapFeedback('Showing nearby places...');
+                          heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        } else {
+                          showMapFeedback('Opening full map...');
+                          if (selected) window.open(`https://www.google.com/maps?q=${encodeURIComponent(selected.value)}`, '_blank');
+                        }
+                      }}
+                      className={`text-[17px] px-2 py-0.5 rounded-full border transition-all cursor-pointer hover:brightness-125 ${
+                        activeTag === i
+                          ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700/60'
+                          : 'bg-slate-800/80 text-slate-500 border-slate-800 hover:text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
                       {tag}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
 
               {/* Influence heatmap — real calculation, not decoration */}
-              <InfluenceHeatmapPanel
-                analysis={analysis}
-                subjectLat={selected!.lat}
-                subjectLon={selected!.lon}
-                locale={locale}
-                c={c}
-              />
+              <div ref={heatmapDivRef}>
+                <InfluenceHeatmapPanel
+                  analysis={analysis}
+                  subjectLat={selected!.lat}
+                  subjectLon={selected!.lon}
+                  locale={locale}
+                  c={c}
+                />
+              </div>
 
               <button
                 onClick={reset}
