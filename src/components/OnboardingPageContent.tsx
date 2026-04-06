@@ -1,287 +1,30 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useTranslation } from '@/i18n/useTranslation';
-//
+
 const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
 
-const inputClass =
-  'w-full px-5 py-3.5 text-lg bg-slate-800/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent';
-
-function BulletList({ items }: { items: string[] }) {
-  return (
-    <ul className="mt-3 space-y-1.5 text-slate-400 text-lg leading-relaxed">
-      {items.map((item, i) => (
-        <li key={i} className="flex gap-2">
-          <span className="text-slate-600 shrink-0">•</span>
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function OnboardingPageContent() {
-  const { t } = useTranslation();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [telegram, setTelegram] = useState('');
-  const [objectsCount, setObjectsCount] = useState('');
-  const [comment, setComment] = useState('');
+export default function OnboardingPageContent() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
-  const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!name.trim()) {
-      setError(t('onboarding.errorNameRequired'));
-      return;
-    }
-    if (!email.trim()) {
-      setError(t('onboarding.errorEmailRequired'));
-      return;
-    }
-    if (!isValidEmail(email)) {
-      setError(t('onboarding.errorEmailInvalid'));
-      return;
-    }
-
+  const handleCheckout = () => {
     setLoading(true);
-
-    const formData = {
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim() || undefined,
-      telegram: telegram.trim() || undefined,
-      objectsCount: objectsCount.trim() || undefined,
-      comment: comment.trim() || undefined,
-    };
-    console.log('[ASI] Form submission:', formData);
-
-    // Redirect to Stripe with email prefilled
-    const stripeUrl = `${STRIPE_PAYMENT_LINK}?prefilled_email=${encodeURIComponent(email.trim())}`;
-    window.open(stripeUrl, '_blank', 'noopener,noreferrer');
-    setLoading(false);
+    window.location.href = STRIPE_PAYMENT_LINK;
   };
 
-  const afterBullets = [
-    t('onboarding.afterBullet1'),
-    t('onboarding.afterBullet2'),
-    t('onboarding.afterBullet3'),
-    t('onboarding.afterBullet4'),
-    t('onboarding.afterBullet5'),
-  ];
-  const forWhomBullets = [
-    t('onboarding.forWhomBullet1'),
-    t('onboarding.forWhomBullet2'),
-    t('onboarding.forWhomBullet3'),
-    t('onboarding.forWhomBullet4'),
-    t('onboarding.forWhomBullet5'),
-    t('onboarding.forWhomBullet6'),
-  ];
-  const trustPills = [
-    t('onboarding.trustPill1'),
-    t('onboarding.trustPill2'),
-    t('onboarding.trustPill3'),
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
-      <Link
-        href="/"
-        className="absolute top-6 left-6 text-3xl font-bold text-white tracking-tight z-10"
-      >
-        ASI
-      </Link>
+    <div className="min-h-screen flex items-center justify-center bg-black text-white">
+      <div className="p-8 rounded-2xl bg-gray-900 shadow-xl text-center">
+        <h1 className="text-2xl mb-4">ASI Global</h1>
+        <p className="mb-6 text-gray-400">Access the platform</p>
 
-      <div className="flex-1 flex items-start justify-center px-4 sm:px-6 pt-16 pb-20">
-        <div className="w-full max-w-5xl">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight text-center">
-            {t('onboarding.pageTitle')}
-          </h1>
-          <p className="mt-3 text-slate-400 text-center text-lg sm:text-xl max-w-xl mx-auto">
-            {t('onboarding.subtitle')}
-          </p>
-
-          {/* Trust pills above the form */}
-          <div className="mt-8 flex flex-wrap justify-center gap-2 sm:gap-3">
-            {trustPills.map((text, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center px-4 py-2 rounded-full text-base font-medium text-slate-300 bg-slate-800/60 border border-slate-700"
-              >
-                {text}
-              </span>
-            ))}
-          </div>
-
-          <div className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-10 lg:gap-12">
-            {/* Left: form */}
-            <div className="lg:col-span-2 space-y-8">
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="name" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.nameLabel')}
-                  </label>
-                  <input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={t('onboarding.namePlaceholder')}
-                    className={inputClass}
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="email" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.emailLabel')}
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={t('onboarding.emailPlaceholder')}
-                    className={inputClass}
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="phone" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.phoneLabel')}{' '}
-                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
-                  </label>
-                  <input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder={t('onboarding.phonePlaceholder')}
-                    className={inputClass}
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="telegram" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.telegramLabel')}{' '}
-                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
-                  </label>
-                  <input
-                    id="telegram"
-                    type="text"
-                    value={telegram}
-                    onChange={(e) => setTelegram(e.target.value)}
-                    placeholder={t('onboarding.telegramPlaceholder')}
-                    className={inputClass}
-                    disabled={loading}
-                  />
-                </div>
-                <p className="text-sm text-slate-500/80 -mt-1">
-                  {t('onboarding.contactPreferred')}
-                </p>
-                <p className="text-sm text-slate-500/80">
-                  {t('onboarding.contactsHelperNote')}
-                </p>
-                <div>
-                  <label htmlFor="objectsCount" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.objectsCountLabel')}
-                  </label>
-                  <input
-                    id="objectsCount"
-                    type="text"
-                    inputMode="numeric"
-                    value={objectsCount}
-                    onChange={(e) => setObjectsCount(e.target.value)}
-                    placeholder={t('onboarding.objectsCountPlaceholder')}
-                    className={inputClass}
-                    disabled={loading}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="comment" className="block text-base font-medium text-slate-300 mb-1">
-                    {t('onboarding.commentLabel')}{' '}
-                    <span className="text-slate-500 font-normal">{t('onboarding.optional')}</span>
-                  </label>
-                  <textarea
-                    id="comment"
-                    rows={3}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder={t('onboarding.commentPlaceholder')}
-                    className={`${inputClass} resize-none`}
-                    disabled={loading}
-                  />
-                </div>
-
-                {error && <p className="text-base text-red-400">{error}</p>}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center px-6 py-4 text-lg bg-white text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      {t('cta.startTrial')}
-                    </span>
-                  ) : (
-                    t('cta.startTrial')
-                  )}
-                </button>
-                <p className="text-center text-sm text-slate-500/80">
-                  {t('onboarding.ctaSecondary')}
-                </p>
-              </form>
-            </div>
-
-            {/* Right: onboarding explanation and trust blocks */}
-            <div className="lg:col-span-3 space-y-8 lg:pt-0 pt-6 border-t border-slate-800 lg:border-t-0 lg:pl-8 lg:border-l border-slate-800">
-              <section>
-                <h2 className="text-2xl font-semibold text-white">
-                  {t('onboarding.afterTitle')}
-                </h2>
-                <p className="mt-2 text-slate-400 text-lg leading-relaxed">
-                  {t('onboarding.afterText')}
-                </p>
-                <BulletList items={afterBullets} />
-              </section>
-
-              <section className="p-5 sm:p-6 bg-slate-900/60 rounded-xl border border-slate-800">
-                <h2 className="text-2xl font-semibold text-white">
-                  {t('onboarding.financeTitle')}
-                </h2>
-                <p className="mt-2 text-slate-400 text-lg leading-relaxed">
-                  {t('onboarding.financeText')}
-                </p>
-                <p className="mt-3 text-slate-500/80 text-sm italic">
-                  {t('onboarding.financeNote')}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="text-2xl font-semibold text-white">
-                  {t('onboarding.forWhomTitle')}
-                </h2>
-                <BulletList items={forWhomBullets} />
-              </section>
-            </div>
-          </div>
-
-          <p className="mt-12 text-center text-sm text-slate-500/70 max-w-xl mx-auto">
-            {t('onboarding.trustNoteBottom')}
-          </p>
-        </div>
+        <button
+          onClick={handleCheckout}
+          disabled={loading}
+          className="px-6 py-3 bg-white text-black rounded-xl hover:opacity-80"
+        >
+          {loading ? 'Redirecting...' : 'Buy Access'}
+        </button>
       </div>
     </div>
   );
