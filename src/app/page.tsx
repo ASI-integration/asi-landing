@@ -1,8 +1,7 @@
 import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 
-// TODO: Replace with your actual Stripe Payment Link
-const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/REPLACE_ME';
+const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
 import { CommDemo } from '@/components/CommDemo';
 import { HeroMonitor } from '@/components/HeroMonitor';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
