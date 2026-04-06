@@ -259,12 +259,6 @@ export default function Home() {
                 >
                   Get Access — $10
                 </a>
-                <Link
-                  href="/connect"
-                  className="inline-flex items-center justify-center px-7 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
-                >
-                  Book a demo
-                </Link>
               </div>
               <p className="mt-3 text-xs text-slate-600">
                 One-time payment · Instant access · No subscription required
@@ -482,7 +476,7 @@ export default function Home() {
               Start automating today
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              Get full access to ASI for $10. Or book a demo to see execution on your real workflow first.
+              Get full access to ASI for $10.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
               <a
@@ -493,12 +487,6 @@ export default function Home() {
               >
                 Get Access — $10
               </a>
-              <Link
-                href="/connect"
-                className="inline-flex items-center justify-center px-8 py-5 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
-              >
-                Book a demo
-              </Link>
             </div>
             <p className="mt-4 text-sm text-slate-600">One-time payment · Instant access · No commitment required</p>
 
