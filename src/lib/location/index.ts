@@ -61,3 +61,10 @@ export {
   emptyFootTrafficSummary,
 } from './foot-traffic';
 export type { FootTrafficHeatmapFactors } from './foot-traffic';
+
+export { fetchCompetitorData } from './competitors';
+export type {
+  MarketListing,
+  CompetitorMarketData,
+  CompetitorFetchOptions,
+} from './competitors';

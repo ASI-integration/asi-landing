@@ -9,7 +9,12 @@
       "Read(//c/Users/Admin/AppData/Roaming/com.vercel.cli//**)",
       "Bash(TOKEN=\"vca_6CbNkTvB2aprXm3tssiOY6Yet2Lu8RAyWkPb5t4lMUukDhVKGv0kXOZW\" TEAM=\"team_VYsj34iPEakC4hUzpYaDH8Ib\" DEPLOY_ID=\"dpl_GPEAHWFPRJzBJoAErBnkspnf5gFG\" __NEW_LINE_8c707b8ade3b6c99__ curl -s \"https://api.vercel.com/v2/deployments/$DEPLOY_ID/events?teamId=$TEAM&limit=200\" -H \"Authorization: Bearer $TOKEN\")",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(xargs grep:*)",
+      "mcp__vexp__run_pipeline",
+      "Read(//c/projects/asi-landing/**)",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

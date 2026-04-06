@@ -116,7 +116,7 @@ export function AutopilotInterfaceMock() {
               <div className="px-4 py-3 border-b border-slate-800/80 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Evergreen Index
+                    Location Score
                   </h3>
                   <p className="text-sm text-slate-400 mt-1">Loft, Central District · 30 days</p>
                 </div>

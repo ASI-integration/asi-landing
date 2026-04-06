@@ -22,13 +22,13 @@ export function getBand(idx: number): Band {
     bar: 'bg-amber-500',
   };
   if (idx > 0) return {
-    label: 'Needs strengthening',
+    label: 'Needs optimization',
     scoreBand: 'weak',
-    textColor: 'text-rose-400',
-    stroke: '#f87171',
-    border: 'border-rose-700/40',
-    bg: 'bg-rose-900/10',
-    bar: 'bg-rose-500',
+    textColor: 'text-yellow-400',
+    stroke: '#facc15',
+    border: 'border-yellow-700/40',
+    bg: 'bg-yellow-900/10',
+    bar: 'bg-yellow-500',
   };
   return {
     label: 'No data',

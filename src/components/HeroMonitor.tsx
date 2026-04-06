@@ -93,7 +93,7 @@ export function HeroMonitor() {
         <div className="col-span-2 flex flex-col gap-2.5">
 
           <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Evergreen Location Index</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Location Score</p>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-3xl font-bold text-white tabular-nums">{indexLabel}</span>
               <span className="text-xs text-slate-600">/ 100</span>

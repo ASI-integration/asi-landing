@@ -1,5 +1,8 @@
 import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
+
+// TODO: Replace with your actual Stripe Payment Link
+const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/REPLACE_ME';
 import { CommDemo } from '@/components/CommDemo';
 import { HeroMonitor } from '@/components/HeroMonitor';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
@@ -249,19 +252,24 @@ export default function Home() {
               </p>
 
               <div className="mt-8 flex flex-col sm:flex-row gap-3 items-start">
+                <a
+                  href={STRIPE_PAYMENT_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-base"
+                >
+                  Get Access — $10
+                </a>
                 <Link
                   href="/connect"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
+                  className="inline-flex items-center justify-center px-7 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
                 >
                   Book a demo
                 </Link>
-                <a
-                  href="#location-demo"
-                  className="inline-flex items-center justify-center px-7 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
-                >
-                  See it in action
-                </a>
               </div>
+              <p className="mt-3 text-xs text-slate-600">
+                One-time payment · Instant access · No subscription required
+              </p>
 
               {/* Social proof */}
               <p className="mt-6 text-sm text-slate-600">
@@ -273,6 +281,39 @@ export default function Home() {
             <div className="w-full">
               <HeroMonitor />
             </div>
+          </div>
+        </section>
+
+        {/* ── Feature quick-nav ── */}
+        <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
+          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <a
+              href="#scale"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">📈</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                From 1 property to a scalable portfolio
+              </span>
+            </a>
+            <a
+              href="#platform-modules"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">🔄</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                Channel manager and OTA connection
+              </span>
+            </a>
+            <a
+              href="#finances"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">💰</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                Your finances under your control
+              </span>
+            </a>
           </div>
         </section>
 
@@ -327,7 +368,7 @@ export default function Home() {
         </section>
 
         {/* ── Scale ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="scale" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
               Built for any scale
@@ -352,7 +393,7 @@ export default function Home() {
         <CommDemo />
 
         {/* ── What the platform does ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+        <section id="finances" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               Execution layer
@@ -439,18 +480,28 @@ export default function Home() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-white">
-              See it running on your business
+              Start automating today
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              We run the product on a real workflow so you see execution, not slides. Confirmed within one business day.
+              Get full access to ASI for $10. Or book a demo to see execution on your real workflow first.
             </p>
-            <Link
-              href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-lg"
-            >
-              Book a demo
-            </Link>
-            <p className="mt-4 text-sm text-slate-600">No commitment. Straight answers.</p>
+            <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+              <a
+                href={STRIPE_PAYMENT_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-lg"
+              >
+                Get Access — $10
+              </a>
+              <Link
+                href="/connect"
+                className="inline-flex items-center justify-center px-8 py-5 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
+              >
+                Book a demo
+              </Link>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">One-time payment · Instant access · No commitment required</p>
 
             {/* Contacts below CTA */}
             <div className="mt-10 pt-8 border-t border-slate-800/60">

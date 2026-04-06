@@ -116,10 +116,10 @@ export function getBand(score: number): Band {
     border: 'border-amber-700/40', bg: 'bg-amber-900/10', bar: 'bg-amber-500',
   };
   return {
-    label: 'Needs strengthening', labelEn: 'weak',
+    label: 'Needs optimization', labelEn: 'weak',
     desc: 'Limited demand signals. Improve channels and positioning.',
-    textColor: 'text-rose-400', stroke: '#f87171',
-    border: 'border-rose-700/40', bg: 'bg-rose-900/10', bar: 'bg-rose-500',
+    textColor: 'text-yellow-400', stroke: '#facc15',
+    border: 'border-yellow-700/40', bg: 'bg-yellow-900/10', bar: 'bg-yellow-500',
   };
 }
 

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
+//
+const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
 
 const inputClass =
   'w-full px-5 py-3.5 text-lg bg-slate-800/60 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent';
@@ -22,7 +23,6 @@ function BulletList({ items }: { items: string[] }) {
 }
 
 export function OnboardingPageContent() {
-  const router = useRouter();
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -35,7 +35,7 @@ export function OnboardingPageContent() {
 
   const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -53,34 +53,21 @@ export function OnboardingPageContent() {
     }
 
     setLoading(true);
-    try {
-      const res = await fetch('/api/auth/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          phone: phone.trim() || undefined,
-          telegram: telegram.trim() || undefined,
-          objectsCount: objectsCount.trim() || undefined,
-          comment: comment.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(
-          data.error === 'Email already registered'
-            ? t('onboarding.errorEmailExists')
-            : data.error || t('onboarding.errorGeneric')
-        );
-        return;
-      }
-      router.push('/dashboard');
-    } catch {
-      setError(t('onboarding.errorGeneric'));
-    } finally {
-      setLoading(false);
-    }
+
+    const formData = {
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim() || undefined,
+      telegram: telegram.trim() || undefined,
+      objectsCount: objectsCount.trim() || undefined,
+      comment: comment.trim() || undefined,
+    };
+    console.log('[ASI] Form submission:', formData);
+
+    // Redirect to Stripe with email prefilled
+    const stripeUrl = `${STRIPE_PAYMENT_LINK}?prefilled_email=${encodeURIComponent(email.trim())}`;
+    window.open(stripeUrl, '_blank', 'noopener,noreferrer');
+    setLoading(false);
   };
 
   const afterBullets = [
