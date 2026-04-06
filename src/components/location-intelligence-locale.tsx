@@ -87,7 +87,6 @@ export const LOC_COPY: Record<
     sectionLead: string;
     sectionSub1: string;
     sectionSub2: string;
-    attribution: ReactNode;
     envMapTitle: string;
     tags: string[];
     tryAnother: string;
@@ -157,13 +156,6 @@ export const LOC_COPY: Record<
     sectionSub1: 'ASI runs the scoring pipeline; you get execution-ready signals, not a slide deck to interpret.',
     sectionSub2:
       'Surfaces where intent-aligned demand concentrates — inputs listing and pricing can act on.',
-    attribution: (
-      <>
-        Methodology draws on location-evaluation logic from{' '}
-        <span className="text-slate-300 font-medium">Yaroslav Strigunov&apos;s</span> course, adapted for automated
-        scoring.
-      </>
-    ),
     envMapTitle: 'Surroundings map',
     tags: ['Show Property', 'Transport', 'Nearby Places', 'Open Map'],
     tryAnother: 'Try another address',
@@ -244,13 +236,6 @@ export const LOC_COPY: Record<
     sectionSub1: 'ASI прогоняет расчёт; вы получаете сигналы для исполнения, а не презентацию для разбора.',
     sectionSub2:
       'Показывает, где сосредоточен целевой спрос — входы для объявлений и ценообразования.',
-    attribution: (
-      <>
-        Методика построена на логике оценки локации из курса{' '}
-        <span className="text-slate-300 font-medium">Ярослава Стригунова</span>
-        {' '}и адаптирована под автоматизированный расчёт.
-      </>
-    ),
     envMapTitle: 'Карта окружения',
     tags: ['Показать объект', 'Транспорт', 'Места рядом', 'Открыть карту'],
     tryAnother: 'Проверить другой адрес',

@@ -361,7 +361,7 @@ function TwoGISMapPanel({
   lat,
   lon,
   loading,
-  locale,
+  locale: _locale,
   c,
 }: {
   lat: number;
@@ -429,13 +429,11 @@ function TwoGISMapPanel({
     );
   }
 
-  // Path 2: 2GIS iframe embed (no key required — real 2GIS tiles)
-  const embedSrc =
-    `https://widgets.2gis.com/maps` +
-    `?q=${lat},${lon}` +
-    `&map_options[center]=${lon},${lat}` +
-    `&map_options[zoom]=16` +
-    `&lang=${locale === 'ru' ? 'ru_RU' : 'en_US'}`;
+  // Path 2: OSM iframe (reliable fallback when no 2GIS SDK key)
+  const deltaLat = 0.005;
+  const deltaLon = 0.009;
+  const bbox = `${lon - deltaLon},${lat - deltaLat},${lon + deltaLon},${lat + deltaLat}`;
+  const osmSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
 
   return (
     <div
@@ -443,12 +441,12 @@ function TwoGISMapPanel({
       style={{ height: 420 }}
     >
       <iframe
-        src={embedSrc}
+        src={osmSrc}
         width="100%"
         height="100%"
         frameBorder="0"
         allowFullScreen
-        title={c.mapTitle2gis}
+        title={c.mapTitleOsm}
         loading="lazy"
         style={{ display: 'block' }}
       />
@@ -1411,13 +1409,6 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
             </p>
           </div>
 
-          {/* Trust attribution — left-aligned, near the explanatory text */}
-          <div className="flex items-start gap-3 pt-1">
-            <div className="w-px self-stretch bg-indigo-800/40 shrink-0" />
-            <p className="text-sm text-slate-500 leading-relaxed">
-              {c.attribution}
-            </p>
-          </div>
         </div>
 
         {/* ── RESULT PHASE ── */}
