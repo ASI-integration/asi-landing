@@ -15,7 +15,19 @@
       "Read(//c/projects/asi-landing/**)",
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx --prefix /c/projects/asi-landing next build)"
+      "Bash(npx --prefix /c/projects/asi-landing next build)",
+      "Bash(vercel --prod --yes)",
+      "Bash(find /c/projects/asi-landing -type f \\\\\\(-name *.ts -o -name *.js -o -name *.py \\\\\\))",
+      "Bash(find /c/projects/asi-landing -name *.ts -o -name *.js -o -name *.py)",
+      "Bash(find /c/projects/asi-landing -name *.ts -newer /c/projects/asi-landing/package.json)",
+      "Bash(find /c/projects/asi-landing/supabase -type f -name *.ts)",
+      "Bash(find /c/projects/ASI-automation-core/scalable-fastapi-backend/canon -name *.py -o -name *.ts -o -name *.js)",
+      "Bash(find /c/projects/ASI-automation-core/scalable-fastapi-backend/backend-nest/src -name *.ts)",
+      "Bash(find /c/projects/ASI-automation-core/apps/web/app/api -type f -name *.ts)",
+      "Bash(find /c/projects/ASI-automation-core/apps/web -name *.ts -o -name *.js)",
+      "Bash(find /c/projects/ASI-automation-core/scalable-fastapi-backend -name *.py)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npx vercel:*)"
     ]
   }
 }

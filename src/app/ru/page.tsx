@@ -418,7 +418,7 @@ export default function HomeRu() {
             <div className="grid sm:grid-cols-3 gap-6">
 
               {/* Small */}
-              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col">
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px]">
                 <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-full border border-emerald-500/20">
                   🟢 Small (1–3 объекта)
                 </span>
@@ -432,16 +432,11 @@ export default function HomeRu() {
                   <li>✓ Динамическое ценообразование</li>
                   <li>✓ Поддержка через Telegram</li>
                 </ul>
-                <Link
-                  href="/connect"
-                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold border border-slate-600 text-slate-200 hover:bg-slate-800 hover:border-slate-500 transition-all text-sm"
-                >
-                  Записаться на демо
-                </Link>
+                <div className="mt-6" aria-hidden />
               </div>
 
               {/* Growth */}
-              <div className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col">
+              <div className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col min-h-[420px]">
                 <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
                   🟡 Growth (4–10 объектов)
                 </span>
@@ -455,16 +450,11 @@ export default function HomeRu() {
                   <li>✓ Аналитика и отчётность</li>
                   <li>✓ Приоритетная поддержка</li>
                 </ul>
-                <Link
-                  href="/connect"
-                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-all text-sm shadow-lg shadow-white/10"
-                >
-                  Записаться на демо
-                </Link>
+                <div className="mt-6" aria-hidden />
               </div>
 
               {/* Enterprise */}
-              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col">
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px]">
                 <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
                   🔵 Enterprise (10+ объектов)
                 </span>
@@ -477,14 +467,18 @@ export default function HomeRu() {
                   <li>✓ Договор с юрлицом</li>
                   <li>✓ Выделенная поддержка</li>
                 </ul>
-                <a
-                  href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Enterprise — индивидуальные условия')}`}
-                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold border border-slate-600 text-slate-200 hover:bg-slate-800 hover:border-slate-500 transition-all text-sm"
-                >
-                  Связаться — индивидуальные условия
-                </a>
+                <div className="mt-6" aria-hidden />
               </div>
 
+            </div>
+
+            <div className="mt-10 pt-8 border-t border-slate-800/60 flex justify-center">
+              <a
+                href="#location-demo"
+                className="inline-flex items-center justify-center px-10 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02]"
+              >
+                Посмотреть в действии
+              </a>
             </div>
           </div>
         </section>
