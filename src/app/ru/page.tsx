@@ -227,54 +227,35 @@ export default function HomeRu() {
         }} />
 
         {/* ── Feature quick-nav ── */}
-        <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <a
-              href="#scale"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
-            >
-              <span className="text-2xl shrink-0">📈</span>
-              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                От 1 квартиры до 100+ объектов
-              </span>
-            </a>
-            <a
-              href="#platform-modules"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
-            >
-              <span className="text-2xl shrink-0">🔄</span>
-              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                Синхронизация с площадками
-              </span>
-            </a>
-            <a
-              href="#pricing"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-indigo-500/35 bg-indigo-950/20 hover:border-indigo-400/60 hover:bg-indigo-950/30 transition-all"
-            >
-              <span className="text-2xl shrink-0">💰</span>
-              <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors leading-snug">
-                Тарифы
-              </span>
-            </a>
-            <a
-              href="#faq"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
-            >
-              <span className="text-2xl shrink-0">🤖</span>
-              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                Как это работает
-              </span>
-            </a>
+        <section className="py-4 px-4 sm:px-6 bg-slate-950 border-t border-b border-slate-800/60">
+          <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {[
+              { href: '#scale',            icon: '📈', label: 'От 1 до 100+ объектов' },
+              { href: '#platform-modules', icon: '🔄', label: 'Синхронизация площадок' },
+              { href: '#pricing',          icon: '💰', label: 'Тарифы' },
+              { href: '#faq',              icon: '🤖', label: 'Как это работает' },
+            ].map(({ href, icon, label }) => (
+              <a
+                key={href}
+                href={href}
+                className="group flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+              >
+                <span className="text-xl sm:text-2xl shrink-0">{icon}</span>
+                <span className="text-xs sm:text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                  {label}
+                </span>
+              </a>
+            ))}
           </div>
         </section>
 
         {/* ── Что реально автоматизируется ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
               Что реально автоматизируется
             </h2>
-            <p className="text-slate-400 mb-10 text-lg">
+            <p className="text-slate-400 text-lg mb-10">
               Не инструменты. Не дашборды. Операции.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -292,7 +273,7 @@ export default function HomeRu() {
         </section>
 
         {/* ── Позиционирование ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-8">
               Не очередной инструмент
@@ -319,17 +300,27 @@ export default function HomeRu() {
         </section>
 
         {/* ── Масштаб ── */}
-        <section id="scale" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="scale" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
               Под любой масштаб
             </h2>
-            <ul className="space-y-2 text-slate-400 text-base leading-relaxed">
-              <li>1 квартира → полностью автоматизировано</li>
-              <li>10 объектов → персонал не нужен</li>
-              <li>100+ объектов → централизованное управление ИИ</li>
-            </ul>
-            <p className="mt-8 text-xs text-slate-600 text-center sm:text-left">
+            <p className="text-slate-400 text-lg mb-8">
+              Система растёт вместе с портфелем — без найма и без смены инструментов.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {[
+                { scale: '1 объект',     note: 'Полная автоматизация с первого дня' },
+                { scale: '10 объектов',  note: 'Работает без операционного персонала' },
+                { scale: '100+ объектов', note: 'Централизованное управление через ИИ' },
+              ].map(({ scale, note }) => (
+                <div key={scale} className="p-5 rounded-xl border border-slate-800 bg-slate-900/60">
+                  <p className="text-white font-semibold text-base">{scale}</p>
+                  <p className="mt-1 text-sm text-slate-400 leading-relaxed">{note}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-xs text-slate-600">
               Используется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
             </p>
           </div>
@@ -346,10 +337,10 @@ export default function HomeRu() {
         {/* ── What the platform does ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
               Слой исполнения
             </h2>
-            <p className="text-slate-500 mb-10">
+            <p className="text-slate-400 text-lg mb-10">
               Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -370,10 +361,10 @@ export default function HomeRu() {
         {/* ── Platform modules ── */}
         <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
               Модули платформы
             </h2>
-            <p className="text-slate-500 mb-10">
+            <p className="text-slate-400 text-lg mb-10">
               Автономные системы на одной инфраструктуре — каждая ведёт свой домен.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
@@ -415,16 +406,15 @@ export default function HomeRu() {
         {/* ── Тарифы ── */}
         <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
               Тарифы
             </h2>
-            <p className="text-slate-400 mb-1.5 text-lg">
+            <p className="text-slate-400 text-lg leading-relaxed mb-2">
               Фиксированная стоимость. Без расширения штата.
             </p>
-            <p className="text-slate-500 text-sm mb-2">
-              Коммуникация с гостями, платежи, бронирования и контроль задач — без найма.
+            <p className="text-slate-500 text-sm mb-10">
+              Коммуникация с гостями, платежи, бронирования и контроль задач — без найма. Цена за 1 объект в месяц.
             </p>
-            <p className="text-xs text-slate-600 mb-10">Цена указана за 1 объект в месяц</p>
             <div className="grid sm:grid-cols-3 gap-6">
 
               {/* Small */}
