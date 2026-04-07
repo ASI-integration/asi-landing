@@ -61,5 +61,5 @@ export async function replyToTelegram(chatId: number | string, text: string): Pr
   }
 
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  return sendWithRetry(url, { chat_id: chatId, text });
+  return sendWithRetry(url, { chat_id: chatId, text, reply_markup: { remove_keyboard: true } });
 }
