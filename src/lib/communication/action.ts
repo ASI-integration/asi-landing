@@ -48,10 +48,9 @@ export function evaluateActionSafety(
   // 4. Low confidence Intent
   if (intentResult.confidence < 0.6) {
     return {
-      safe: false,
-      action: 'escalate_to_operator',
-      reason: `Low intent confidence (${intentResult.confidence}). Escalating.`,
-      escalationReason: EscalationReason.LLMUncertain,
+      safe: true,
+      action: 'ask_clarifying_question',
+      reason: `Low intent confidence (${intentResult.confidence}). Asking clarifying question instead of escalating.`,
     };
   }
 

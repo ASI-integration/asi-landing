@@ -10,8 +10,9 @@ export class TelegramAdapter implements ChannelAdapter {
     if (isNaN(chatId)) return false;
 
     try {
-      await replyToTelegram(chatId, content);
-      return true;
+      // `replyToTelegram()` returns boolean (it does not throw on HTTP/network failure),
+      // so we must propagate that result to the orchestrator.
+      return await replyToTelegram(chatId, content);
     } catch (e) {
       console.error('[TelegramAdapter] Failed to send message', e);
       return false;

@@ -25,6 +25,59 @@ export async function detectIntent(text: string): Promise<IntentResult> {
     return { intent: IntentCategory.Unknown, confidence: 1.0 };
   }
 
+  // If no LLM key is configured, fall back to a deterministic heuristic.
+  // This is important for RU-only runtime environments where we still need
+  // stable operational routing even when LLM is disabled.
+  const llmKeyPresent = Boolean(
+    (process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? '').trim() ||
+      (process.env.LLM_FALLBACK_API_KEY ?? '').trim(),
+  );
+
+  if (!llmKeyPresent) {
+    const n = text.toLowerCase();
+
+    // Access / check-in
+    if (
+      n.includes('код') ||
+      n.includes('доступ') ||
+      n.includes('замок') ||
+      n.includes('ключ') ||
+      n.includes('как заселиться') ||
+      n.includes('как попасть') ||
+      n.includes('как войти') ||
+      n.includes('заезд') ||
+      n.includes('засел')
+    ) {
+      return { intent: IntentCategory.CheckInInfo, confidence: 0.78 };
+    }
+
+    // Checkout / late checkout
+    if (n.includes('выезд') || n.includes('высел') || n.includes('поздний выезд') || n.includes('late checkout')) {
+      return { intent: IntentCategory.CheckOut, confidence: 0.72 };
+    }
+
+    // Issues
+    if (
+      n.includes('не работает') ||
+      n.includes('не открывается') ||
+      n.includes('проблем') ||
+      n.includes('ошибк') ||
+      n.includes('сломал') ||
+      n.includes('срочно') ||
+      n.includes('авар')
+    ) {
+      return { intent: IntentCategory.IssueReport, confidence: 0.7 };
+    }
+
+    // Pricing / booking inquiry
+    if (n.includes('цена') || n.includes('стоимость') || n.includes('заброни') || n.includes('бронь')) {
+      return { intent: IntentCategory.BookingInquiry, confidence: 0.65 };
+    }
+
+    // Default: unknown but not zero, so we prefer clarifying question over escalation.
+    return { intent: IntentCategory.Unknown, confidence: 0.55 };
+  }
+
   try {
     const raw = await callLLM({
       systemPrompt: INTENT_PROMPT,

@@ -1,7 +1,36 @@
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+/**
+ * Important: do NOT read env once at module load.
+ * In Vercel/Next serverless builds, module-scope env reads can be surprisingly
+ * sticky across build/runtime boundaries. Always read on call.
+ */
+function getTelegramBotToken(): string | null {
+  const t = process.env.TELEGRAM_BOT_TOKEN;
+  return t && t.trim().length > 0 ? t.trim() : null;
+}
 
-const SEND_TIMEOUT_MS = 8000;
+function getTelegramChatId(): string | null {
+  const t = process.env.TELEGRAM_CHAT_ID;
+  return t && t.trim().length > 0 ? t.trim() : null;
+}
+
+const SEND_TIMEOUT_MS = (() => {
+  const raw = process.env.TELEGRAM_HTTP_TIMEOUT_MS;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 8000;
+})();
+
+type TelegramApiResponse =
+  | { ok: true; result?: { message_id?: number } }
+  | { ok: false; error_code?: number; description?: string };
+
+function outboundDebugEnabled(): boolean {
+  return process.env.TELEGRAM_OUTBOUND_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1';
+}
+
+function safePreview(text: string, max = 200): string {
+  const t = String(text ?? '');
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
 
 async function sendWithTimeout(
   url: string,
@@ -19,11 +48,66 @@ async function sendWithTimeout(
       signal: controller.signal,
     });
 
+    const rawText = await res.text();
+    let parsed: TelegramApiResponse | null = null;
+    try {
+      parsed = JSON.parse(rawText) as TelegramApiResponse;
+    } catch {
+      parsed = null;
+    }
+
+    const chat_id = body?.chat_id;
+    const tgOk = parsed?.ok;
+
+    // Telegram can return HTTP 200 with { ok:false, ... } for API-level errors.
+    const success = res.ok && tgOk !== false;
+
+    if (outboundDebugEnabled()) {
+      const desc =
+        parsed && parsed.ok === false
+          ? { error_code: parsed.error_code ?? null, description: parsed.description ?? null }
+          : null;
+      const msgId = parsed && parsed.ok === true ? parsed.result?.message_id ?? null : null;
+      console.log('[Telegram] sendMessage result', {
+        attempt,
+        http_status: res.status,
+        chat_id: typeof chat_id === 'string' || typeof chat_id === 'number' ? String(chat_id) : null,
+        tg_ok: typeof tgOk === 'boolean' ? tgOk : null,
+        message_id: msgId,
+        error: desc,
+      });
+    }
+
     if (!res.ok) {
-      console.error(`[Telegram] Send failed (attempt=${attempt}):`, await res.text());
+      console.error('[Telegram] sendMessage http failure', {
+        attempt,
+        http_status: res.status,
+        body_preview: safePreview(rawText, 500),
+      });
       return false;
     }
-    return true;
+
+    if (parsed && parsed.ok === false) {
+      console.error('[Telegram] sendMessage api failure', {
+        attempt,
+        http_status: res.status,
+        error_code: parsed.error_code ?? null,
+        description: parsed.description ?? null,
+      });
+      return false;
+    }
+
+    if (!parsed) {
+      // Unexpected non-JSON response: treat as failure to avoid false positives.
+      console.error('[Telegram] sendMessage unexpected response', {
+        attempt,
+        http_status: res.status,
+        body_preview: safePreview(rawText, 500),
+      });
+      return false;
+    }
+
+    return success;
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
       console.error(`[Telegram] Outbound timeout after ${SEND_TIMEOUT_MS}ms (attempt=${attempt})`);
@@ -45,21 +129,57 @@ async function sendWithRetry(url: string, body: Record<string, unknown>): Promis
 }
 
 export async function sendTelegramMessage(text: string): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  const TELEGRAM_CHAT_ID = getTelegramChatId();
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
     return false;
   }
 
+  if (process.env.TELEGRAM_DRY_RUN === '1') {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] DRY_RUN sendTelegramMessage suppressed', {
+        chat_id: String(TELEGRAM_CHAT_ID),
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  return sendWithRetry(url, { chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' });
+  // Keep global ops notifications simple/plain. If HTML is needed in the future,
+  // add escaping and an explicit parse_mode flag.
+  return sendWithRetry(url, { chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true });
 }
 
 export async function replyToTelegram(chatId: number | string, text: string): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
     return false;
   }
 
+  if (process.env.TELEGRAM_DRY_RUN === '1') {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] DRY_RUN reply suppressed', {
+        chat_id: String(chatId),
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  return sendWithRetry(url, { chat_id: chatId, text, reply_markup: { remove_keyboard: true } });
+  if (outboundDebugEnabled()) {
+    console.log('[Telegram] reply attempt', {
+      chat_id: String(chatId),
+      text_preview: safePreview(String(text ?? ''), 160),
+    });
+  }
+  return sendWithRetry(url, {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    reply_markup: { remove_keyboard: true },
+  });
 }

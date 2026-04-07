@@ -158,6 +158,12 @@ export interface ConversationContext {
   lastIntent?: IntentCategory;
   guestName?: string;
   reservationId?: string;
+  /** RU staff-group bridge: operator-provided booking reference (reservation_ref). */
+  bookingReference?: string;
+  /** RU staff-group bridge: operator-provided property clue (address / name / location). */
+  propertyLocation?: string;
+  /** RU staff-group bridge: operator-provided check-in date (YYYY-MM-DD). */
+  checkInDate?: string;
   lastMessageAt: Date;
   incident?: boolean;
   incident_type?: string;
@@ -341,6 +347,11 @@ export interface ProcessResult {
   chat_id?: number;
   category?: MessageCategory;
   escalation?: EscalationEvent;
+  /**
+   * Optional: included for RU Telegram verification / dry-run harnesses.
+   * In production replies are still sent via the channel adapter.
+   */
+  reply?: string;
 }
 
 // ─── Phase 2 ──────────────────────────────────────────────────────────────────

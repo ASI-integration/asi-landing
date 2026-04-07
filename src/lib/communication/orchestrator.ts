@@ -56,6 +56,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const update_id = envelope.update_id ?? Date.now();
   const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
+  const ruDebug = process.env.RU_TELEGRAM_DEBUG === '1' && envelope.channel === 'telegram';
 
   // Idempotency: drop duplicate update_ids
   if (checkAndMark(update_id)) {
@@ -76,6 +77,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   );
 
   try {
+    // RU Telegram: log runtime-critical env state (never print secrets).
+    if (ruDebug) {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      console.log('[ru:tg] runtime.env', {
+        chat_id: chatId,
+        update_id,
+        has_bot_token: Boolean(token && token.trim().length > 0),
+        dry_run: process.env.TELEGRAM_DRY_RUN === '1',
+        outbound_debug: process.env.TELEGRAM_OUTBOUND_DEBUG === '1',
+        node_env: process.env.NODE_ENV ?? null,
+        vercel_env: process.env.VERCEL_ENV ?? null,
+      });
+    }
     // Keyword-based incident detection — runs before LLM
     const INCIDENT_KEYWORDS = ['trash', 'dirty', 'party', 'damage'];
     if (INCIDENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw))) {
@@ -83,6 +97,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     const classification = await classifyMessage(text);
+    if (process.env.RU_TELEGRAM_FORCE_RU === '1' && envelope.channel === 'telegram') {
+      classification.lang = 'ru';
+    }
     auditInbound({
       chat_id: chatId,
       update_id,
@@ -100,16 +117,52 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Fetch per-property templates (null when none set or on any error)
     const propertyId = commContext.reservation.propertyId;
     const templates = propertyId ? await getPropertyTemplates(propertyId) : null;
+    const llmEnabled = Boolean((process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? '').trim() || (process.env.LLM_FALLBACK_API_KEY ?? '').trim());
+    if (ruDebug) {
+      console.log('[ru:tg] context.assembled', {
+        chat_id: chatId,
+        update_id,
+        category: classification.category,
+        lang: classification.lang,
+        intent: intentResult.intent,
+        intent_confidence: intentResult.confidence,
+        reservation_status: commContext.reservation.status,
+        reservation_confidence: commContext.reservation.confidence,
+        reservation_id: commContext.reservation.reservationId ?? null,
+        property_id: commContext.reservation.propertyId ?? null,
+        templates_loaded: Boolean(templates),
+        llm_enabled: llmEnabled,
+      });
+    }
 
     // Action Policy Guard
     const safety = evaluateActionSafety(commContext, text);
 
     let replyText: string;
     let llmSucceeded = false;
+    let usedPath: 'deterministic' | 'llm' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
 
-    if (ctx.incident) {
+    // Staff-group operational bridge: group chat doesn't have guest chat_id,
+    // so if we still can't match a reservation, ask one short clarifying question.
+    const staffNeedsContext =
+      envelope.channel === 'telegram' &&
+      chatId < 0 &&
+      commContext.reservation.status !== 'matched' &&
+      classification.category !== 'start';
+
+    if (classification.category === 'start') {
+      replyText = adapter.formatResponse(deterministicReply(classification), commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+    } else if (staffNeedsContext) {
+      replyText =
+        'Чтобы привязать вопрос к бронированию, пришлите одним сообщением: ' +
+        '№ брони (reservation_ref) ИЛИ адрес/локацию объекта, плюс дату заезда и имя гостя.';
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+    } else if (ctx.incident) {
       const incidentMsg =
         'Thank you for letting us know.\n\n' +
         'We are reviewing the situation.\n' +
@@ -118,6 +171,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         'We will get back to you shortly.';
       replyText = adapter.formatResponse(incidentMsg, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
+      usedPath = 'deterministic';
       updateContext(chatId, { escalation_candidate: true });
     } else if (!safety.safe && safety.action === 'escalate_to_operator') {
       const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
@@ -151,11 +205,34 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           }
         },
       );
-      const escalationBase = "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
+      const escalationBase =
+        classification.lang === 'ru'
+          ? 'Не могу безопасно ответить автоматически. Передал(а) запрос в операционный поток — вернёмся с ответом.'
+          : "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
         : escalationBase;
       replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
+      usedPath = 'deterministic';
+    } else if (safety.action === 'ask_clarifying_question') {
+      const askRu =
+        'Уточните, пожалуйста: объект/адрес, имя гостя и дата/время заезда. ' +
+        'Если проблема с доступом — что именно на замке/двери и есть ли код?';
+      const askEn =
+        'Quick уточнение: property/address, guest name, and check-in date/time. ' +
+        'If it’s an access issue: what exactly fails (lock/door) and do you have a code?';
+      replyText = adapter.formatResponse(classification.lang === 'ru' ? askRu : askEn, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+    } else if (intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
+      const ru =
+        'Чтобы помочь с заселением/кодом доступа, пришлите: объект/адрес, имя гостя и дату/время заезда. ' +
+        'Если есть — номер брони/код бронирования.';
+      const en =
+        'To help with check-in/access code, send: property/address, guest name, and check-in date/time (plus booking reference if you have it).';
+      replyText = adapter.formatResponse(classification.lang === 'ru' ? ru : en, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
     } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
       // ── Check-in readiness gate ──────────────────────────────────────
       const gateResult = propertyId
@@ -166,6 +243,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         // Unit is ready — deliver check-in instructions normally
         replyText = adapter.formatResponse(templates.pre_checkin_template, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
+        usedPath = 'deterministic';
         // Timeline: gate passed
         runInBackground(
           { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_CheckinPassed', triggerId: identity.guestId },
@@ -197,6 +275,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         const holdingMsg = classification.lang === 'ru' ? holdingRu : holdingEn;
         replyText = adapter.formatResponse(holdingMsg, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true; // no LLM fallback needed — we have a deterministic safe reply
+        usedPath = 'deterministic';
 
         // Timeline: gate blocked
         runInBackground(
@@ -256,6 +335,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
+      usedPath = 'deterministic';
     } else if (safety.action === 'trigger_payment_request') {
       const payment = await createPaymentRequest({
         amount: 100,
@@ -274,17 +354,27 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         : `Please complete your payment using this link: ${paymentUrl}`;
       replyText = adapter.formatResponse(linkStr, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
+      usedPath = 'deterministic';
     } else {
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
         : null;
-      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
-      const llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
+      let llmReply: string | null = null;
+      if (llmEnabled) {
+        const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
+        llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
+        usedPath = 'llm';
+        llmSucceeded = llmReply !== null;
+      } else {
+        usedPath = 'deterministic';
+        llmSucceeded = true; // we intentionally skipped LLM
+      }
 
-      llmSucceeded = llmReply !== null;
       const rawFallback = llmReply ?? deterministicReply(classification);
       replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
-      auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
+      if (llmEnabled) {
+        auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
+      }
     }
 
     updateContext(chatId, { lastIntent: intentResult.intent });
@@ -299,6 +389,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         lang: classification.lang,
       }),
     ]);
+
+    // Persist the assistant turn BEFORE attempting outbound delivery.
+    // This fixes the observed gap where user turns exist but assistant turns
+    // are missing because delivery threw/failed before saveAssistantTurn.
+    //
+    // If delivery later fails, the turn is still recorded for ops debugging.
+    await saveAssistantTurn({
+      chat_id: chatId,
+      update_id,
+      reply: replyText,
+      category: classification.category,
+      lang: classification.lang,
+    });
 
     if (!escalation && shouldEscalate(classification, llmSucceeded)) {
       const reason = deriveEscalationReason(classification, llmSucceeded);
@@ -365,7 +468,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // Send the response abstractly
     const targetId = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
-    const sent = await adapter.sendMessage(targetId, replyText);
+    if (ruDebug) {
+      console.log('[ru:tg] reply.computed', {
+        chat_id: chatId,
+        update_id,
+        used_path: usedPath,
+        llm_succeeded: llmSucceeded,
+        reply_len: replyText.length,
+      });
+    }
+
+    const isDryRun = process.env.TELEGRAM_DRY_RUN === '1' && envelope.channel === 'telegram';
+    const sent = isDryRun ? true : await adapter.sendMessage(targetId, replyText);
     if (!sent) throw new Error('Adapter failed to send message');
     await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
 
@@ -377,20 +491,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       detail: escalation ? `escalated:${escalation.reason}` : undefined,
     });
 
-    await saveAssistantTurn({
-      chat_id: chatId,
-      update_id,
-      reply: replyText,
-      category: classification.category,
-      lang: classification.lang,
-    });
-
     return {
       outcome: ProcessOutcome.Replied,
       update_id,
       chat_id: chatId,
       category: classification.category,
       escalation,
+      reply: replyText,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
