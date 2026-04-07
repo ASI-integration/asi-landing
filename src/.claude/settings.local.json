@@ -14,7 +14,8 @@
       "mcp__vexp__run_pipeline",
       "Read(//c/projects/asi-landing/**)",
       "Bash(npm run:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx --prefix /c/projects/asi-landing next build)"
     ]
   }
 }

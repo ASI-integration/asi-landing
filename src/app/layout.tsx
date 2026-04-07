@@ -8,6 +8,12 @@ import { LocalePathSync } from '@/components/LocalePathSync';
 export const metadata: Metadata = {
   title: 'ASI — Full operational automation',
   description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
+  alternates: {
+    languages: {
+      en: 'https://asi-global.com',
+      ru: 'https://asi-global.ru',
+    },
+  },
 };
 
 export default function RootLayout({

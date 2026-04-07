@@ -12,8 +12,6 @@ import {
 import type { Locale } from './useTranslation';
 import { dictionaries } from './dictionaries';
 
-const STORAGE_KEY = 'asi-locale';
-
 type Dict = Record<string, unknown>;
 
 function getNested(obj: Record<string, unknown>, path: string): unknown {
@@ -38,15 +36,18 @@ type LanguageContextValue = {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
+/** Derive locale from hostname: *.ru → 'ru', everything else → 'en'. */
+function getLocaleFromHostname(): Locale {
+  if (typeof window === 'undefined') return 'en';
+  return window.location.hostname.endsWith('.ru') ? 'ru' : 'en';
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('en');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as Locale | null;
-    if (saved === 'en' || saved === 'ru') {
-      setLocaleState(saved);
-    }
+    setLocaleState(getLocaleFromHostname());
     setMounted(true);
   }, []);
 
@@ -61,9 +62,6 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const setLocale = useCallback((lang: Locale) => {
     setLocaleState(lang);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, lang);
-    }
   }, []);
 
   const t = useCallback(
