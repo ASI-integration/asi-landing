@@ -162,6 +162,9 @@ export default function HomeRu() {
             <a href="#platform-modules" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
               Платформа
             </a>
+            <a href="#pricing" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+              Тарифы
+            </a>
             <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
               Как это работает
             </a>
@@ -362,6 +365,84 @@ export default function HomeRu() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Тарифы ── */}
+        <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+              Тарифы
+            </h2>
+            <p className="text-slate-400 mb-1.5 text-lg">
+              Фиксированная стоимость. Без расширения штата.
+            </p>
+            <p className="text-slate-500 text-sm mb-2">
+              Коммуникация с гостями, платежи, бронирования и контроль задач — без найма.
+            </p>
+            <p className="text-xs text-slate-600 mb-10">Цена указана за 1 объект в месяц</p>
+            <div className="grid sm:grid-cols-3 gap-6">
+
+              {/* Small */}
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col">
+                <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-full border border-emerald-500/20">
+                  🟢 Small (1–3 объекта)
+                </span>
+                <p className="mt-4 text-xl font-semibold text-white">
+                  12 900 ₽<span className="text-sm font-normal text-slate-400"> / объект / месяц</span>
+                </p>
+                <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
+                  <li>✓ Полный доступ к системе</li>
+                  <li>✓ Поддержка через Telegram</li>
+                </ul>
+                <Link
+                  href="/connect"
+                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold border border-slate-600 text-slate-200 hover:bg-slate-800 hover:border-slate-500 transition-all text-sm"
+                >
+                  Записаться на демо
+                </Link>
+              </div>
+
+              {/* Growth */}
+              <div className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col">
+                <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
+                  🟡 Growth (4–10 объектов)
+                </span>
+                <p className="mt-4 text-xl font-semibold text-white">
+                  8 900 ₽<span className="text-sm font-normal text-slate-300"> / объект / месяц</span>
+                </p>
+                <ul className="mt-4 space-y-2 text-slate-300 text-sm flex-1">
+                  <li>✓ Полный доступ</li>
+                  <li>✓ Приоритетная поддержка</li>
+                </ul>
+                <Link
+                  href="/connect"
+                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold bg-white text-slate-900 hover:bg-slate-100 transition-all text-sm shadow-lg shadow-white/10"
+                >
+                  Записаться на демо
+                </Link>
+              </div>
+
+              {/* Enterprise */}
+              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col">
+                <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
+                  🔵 Enterprise (10+ объектов)
+                </span>
+                <p className="mt-4 text-xl font-semibold text-white">
+                  Индивидуальные условия
+                </p>
+                <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
+                  <li>✓ Индивидуальный объём, тарифы и поддержка</li>
+                </ul>
+                <a
+                  href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Enterprise — индивидуальные условия')}`}
+                  className="mt-6 block text-center py-3.5 rounded-xl font-semibold border border-slate-600 text-slate-200 hover:bg-slate-800 hover:border-slate-500 transition-all text-sm"
+                >
+                  Связаться — индивидуальные условия
+                </a>
+              </div>
+
             </div>
           </div>
         </section>
