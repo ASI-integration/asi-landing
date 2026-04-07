@@ -5,6 +5,58 @@ export interface StaffClues {
   checkInDate?: string; // YYYY-MM-DD
 }
 
+/** Four operational scenarios a staff-group message can fall into. */
+export type StaffScenario =
+  | 'booking_access'   // check-in, door codes, access request
+  | 'late_checkout'    // guest staying late, late-checkout request
+  | 'urgent_access'    // broken lock, can't get in, emergency
+  | 'unknown';         // general / not classified
+
+/** Map an intent string to one of the four staff scenarios. */
+export function detectStaffScenario(intent: string): StaffScenario {
+  switch (intent) {
+    case 'check_in_info':
+    case 'booking_inquiry':
+      return 'booking_access';
+    case 'check_out':
+      return 'late_checkout';
+    case 'issue_report':
+      return 'urgent_access';
+    default:
+      return 'unknown';
+  }
+}
+
+/**
+ * Returns true when the accumulated clues are sufficient to proceed with a
+ * contextual reply without asking the operator for more info.
+ *
+ * Minimal bar: booking reference alone, or property + (date OR guest name).
+ */
+export function hasMinimalStaffClues(clues: StaffClues): boolean {
+  if (clues.bookingReference) return true;
+  if (clues.propertyLocation && (clues.checkInDate || clues.guestName)) return true;
+  return false;
+}
+
+/**
+ * Returns ONE short Russian clarifying question tailored to the scenario.
+ * Replaces the old generic multi-field prompt.
+ */
+export function buildStaffClarifyQuestion(scenario: StaffScenario): string {
+  switch (scenario) {
+    case 'booking_access':
+      return 'Укажите № брони или адрес объекта + дату заезда — подберу данные.';
+    case 'late_checkout':
+      return 'Объект или № брони, и до какого времени нужен поздний выезд?';
+    case 'urgent_access':
+      return 'Адрес объекта и что именно не открывается — замок, код, домофон?';
+    case 'unknown':
+    default:
+      return 'Уточните объект или № брони — отвечу по существу.';
+  }
+}
+
 function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }

@@ -35,6 +35,12 @@ import {
 } from './types';
 
 import { getContext, updateContext } from './memory';
+import {
+  extractStaffClues,
+  hasMinimalStaffClues,
+  buildStaffClarifyQuestion,
+  detectStaffScenario,
+} from './staff-bridge';
 import { detectIntent } from './intent';
 import { createPaymentRequest } from '@/lib/payments/factory';
 import { callLLM } from '@/lib/openai';
@@ -111,6 +117,26 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const intentResult = await detectIntent(text);
     const ctx = getContext(chatId);
 
+    // ── Staff-group clue accumulation ──────────────────────────────────────────
+    // Extract operator-provided booking/property clues from the current message
+    // and merge with anything already stored in the conversation context.
+    const currentClues = extractStaffClues(text);
+    const mergedClues = {
+      bookingReference: ctx.bookingReference ?? currentClues.bookingReference,
+      propertyLocation: ctx.propertyLocation ?? currentClues.propertyLocation,
+      guestName:        ctx.guestName        ?? currentClues.guestName,
+      checkInDate:      ctx.checkInDate      ?? currentClues.checkInDate,
+    };
+    // Persist any newly extracted clues so second-turn replies can use them.
+    if (currentClues.bookingReference || currentClues.propertyLocation || currentClues.guestName || currentClues.checkInDate) {
+      updateContext(chatId, {
+        ...(currentClues.bookingReference ? { bookingReference: currentClues.bookingReference } : {}),
+        ...(currentClues.propertyLocation ? { propertyLocation: currentClues.propertyLocation } : {}),
+        ...(currentClues.guestName        ? { guestName:        currentClues.guestName        } : {}),
+        ...(currentClues.checkInDate      ? { checkInDate:      currentClues.checkInDate      } : {}),
+      });
+    }
+
     // Assembly
     const commContext = await buildCommunicationContext(chatId, text, intentResult, []);
 
@@ -132,6 +158,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         property_id: commContext.reservation.propertyId ?? null,
         templates_loaded: Boolean(templates),
         llm_enabled: llmEnabled,
+        staff_clues: mergedClues,
       });
     }
 
@@ -144,22 +171,24 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
 
-    // Staff-group operational bridge: group chat doesn't have guest chat_id,
-    // so if we still can't match a reservation, ask one short clarifying question.
+    // Staff-group operational bridge: group chat (chatId < 0) without a matched
+    // reservation. Only ask a clarifying question when we STILL don't have
+    // enough booking/property clues — once clues arrive, fall through to the
+    // normal LLM/deterministic path so the reply is actually contextual.
     const staffNeedsContext =
       envelope.channel === 'telegram' &&
       chatId < 0 &&
       commContext.reservation.status !== 'matched' &&
-      classification.category !== 'start';
+      classification.category !== 'start' &&
+      !hasMinimalStaffClues(mergedClues);
 
     if (classification.category === 'start') {
       replyText = adapter.formatResponse(deterministicReply(classification), commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (staffNeedsContext) {
-      replyText =
-        'Чтобы привязать вопрос к бронированию, пришлите одним сообщением: ' +
-        '№ брони (reservation_ref) ИЛИ адрес/локацию объекта, плюс дату заезда и имя гостя.';
+      const scenario = detectStaffScenario(intentResult.intent);
+      replyText = buildStaffClarifyQuestion(scenario);
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (ctx.incident) {
