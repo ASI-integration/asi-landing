@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
+import { HeroSection } from '@/components/HeroSection';
 
 const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
 import { CommDemo } from '@/components/CommDemo';
-import { HeroMonitor } from '@/components/HeroMonitor';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
@@ -190,7 +190,7 @@ export default function Home() {
             <div className="flex items-center gap-1 text-sm">
               <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
               <span className="text-slate-700">|</span>
-              <Link href="/ru" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</Link>
+              <a href="https://asi-global.ru" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
             </div>
             <Link
               href="/login"
@@ -205,77 +205,23 @@ export default function Home() {
       <main>
 
         {/* ── Hero ── */}
-        <section className="relative overflow-hidden bg-slate-900 py-16 sm:py-20 px-4 sm:px-6">
-          <div
-            className="absolute inset-0 opacity-[0.035]"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-              backgroundSize: '60px 60px',
-            }}
-          />
-          {/* Ambient glow */}
-          <div
-            className="pointer-events-none absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.06]"
-            style={{ background: 'radial-gradient(circle, #6366f1, transparent 70%)' }}
-          />
-
-          <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
-
-            {/* Left: text */}
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
-                  ASI — full operational automation
-                </p>
-                <span className="inline-flex items-center rounded-full border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide text-indigo-200">
-                  Up to 99% automation
-                </span>
-              </div>
-              <p className="text-sm text-slate-500 mb-5">
-                One system replaces the ops layer — not a dashboard, not a channel manager.
-              </p>
-              <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
-                Your business
-                <br />
-                <span className="text-slate-400">runs itself.</span>
-              </h1>
-              <p className="mt-4 text-lg text-slate-300 max-w-md leading-relaxed font-medium">
-                Full automation — execution and control, not software you operate.
-              </p>
-              <p className="mt-3 text-base text-slate-400 max-w-md leading-relaxed">
-                Replaces the roles that used to run bookings, inbox, listings, rates, and coordination.
-              </p>
-              <p className="mt-4 text-xs text-slate-600 tracking-wide">
-                Built for reliability, control, and scale.
-              </p>
-
-              <div className="mt-8 flex flex-col sm:flex-row gap-3 items-start">
-                <a
-                  href={STRIPE_PAYMENT_LINK}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-base"
-                >
-                  Get Access — $10
-                </a>
-              </div>
-              <p className="mt-3 text-xs text-slate-600">
-                One-time payment · Instant access · No subscription required
-              </p>
-
-              {/* Social proof */}
-              <p className="mt-6 text-sm text-slate-600">
-                Decides · responds · executes · no headcount required
-              </p>
-            </div>
-
-            {/* Right: monitor */}
-            <div className="w-full">
-              <HeroMonitor />
-            </div>
-          </div>
-        </section>
+        <HeroSection content={{
+          aboutLabel: 'About us',
+          aboutHeadline: 'Operational Automation System',
+          aboutBody: 'ASI is not a dashboard or software you configure. It is execution infrastructure — an AI-driven operational layer that runs your property portfolio end to end, without a staff or management overhead.',
+          aboutPoints: [
+            'Not a dashboard',
+            'Not software you manually operate',
+            'Replaces the manual ops layer entirely',
+          ],
+          detailsLabel: 'Our details',
+          loginLabel: 'Log in',
+          loginHref: '/login',
+          offerHeadline: <>Your business <span className="text-slate-300">runs itself.</span></>,
+          offerSub: <>Earn passive income from your property<br className="hidden sm:block" /> without dealing with operations or paying staff</>,
+          ctaLabel: 'Get access',
+          ctaHref: STRIPE_PAYMENT_LINK,
+        }} />
 
         {/* ── Feature quick-nav ── */}
         <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">

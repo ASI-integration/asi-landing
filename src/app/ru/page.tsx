@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { CommDemo } from '@/components/CommDemo';
-import { HeroMonitor } from '@/components/HeroMonitor';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
+import { HeroSection } from '@/components/HeroSection';
+
+const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
 
 /* ─── Telegram SVG icon ────────────────────────────────────────────────────── */
 function TgIcon({ className = 'w-5 h-5' }: { className?: string }) {
@@ -185,7 +187,7 @@ export default function HomeRu() {
               Telegram
             </a>
             <div className="flex items-center gap-1 text-sm">
-              <Link href="/" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">EN</Link>
+              <a href="https://asi-global.com" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">EN</a>
               <span className="text-slate-700">|</span>
               <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">RU</span>
             </div>
@@ -202,78 +204,23 @@ export default function HomeRu() {
       <main>
 
         {/* ── Hero ── */}
-        <section className="relative overflow-hidden bg-slate-900 py-16 sm:py-20 px-4 sm:px-6">
-          <div
-            className="absolute inset-0 opacity-[0.035]"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.15) 1px, transparent 1px)',
-              backgroundSize: '60px 60px',
-            }}
-          />
-          {/* Ambient glow */}
-          <div
-            className="pointer-events-none absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.06]"
-            style={{ background: 'radial-gradient(circle, #6366f1, transparent 70%)' }}
-          />
-
-          <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 items-center">
-
-            {/* Left: text */}
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">
-                  ASI — полная операционная автоматизация
-                </p>
-                <span className="inline-flex items-center rounded-full border border-indigo-500/45 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] sm:text-xs font-bold uppercase tracking-wide text-indigo-200">
-                  До 99% автоматизации
-                </span>
-              </div>
-              <p className="text-sm text-slate-500 mb-5">
-                Одна система заменяет операционный слой — не дашборд и не менеджер каналов.
-              </p>
-              <h1 className="text-4xl sm:text-5xl font-bold text-white tracking-tight leading-tight">
-                Ваш бизнес
-                <br />
-                <span className="text-slate-400">работает сам.</span>
-              </h1>
-              <p className="mt-4 text-lg text-slate-300 max-w-md leading-relaxed font-medium">
-                Полная автоматизация — исполнение и контроль, а не ПО, которым вы крутите вручную.
-              </p>
-              <p className="mt-3 text-base text-slate-400 max-w-md leading-relaxed">
-                Заменяет роли, которые вели брони, почту, объявления, тарифы и координацию.
-              </p>
-              <p className="mt-4 text-xs text-slate-600 tracking-wide">
-                Надёжность, контроль и масштаб.
-              </p>
-
-              <div className="mt-8 flex flex-col sm:flex-row gap-3 items-start">
-                <Link
-                  href="/connect"
-                  className="inline-flex items-center justify-center px-8 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-base"
-                >
-                  Записаться на демо
-                </Link>
-                <a
-                  href="#location-demo"
-                  className="inline-flex items-center justify-center px-7 py-4 border border-slate-700 text-white font-semibold rounded-xl hover:bg-white/5 hover:border-slate-500 transition-all text-base"
-                >
-                  Посмотреть в действии
-                </a>
-              </div>
-
-              {/* Social proof */}
-              <p className="mt-6 text-sm text-slate-600">
-                Решает · отвечает · исполняет · без найма персонала
-              </p>
-            </div>
-
-            {/* Right: monitor */}
-            <div className="w-full">
-              <HeroMonitor />
-            </div>
-          </div>
-        </section>
+        <HeroSection content={{
+          aboutLabel: 'О системе',
+          aboutHeadline: 'Система операционной автоматизации',
+          aboutBody: 'ASI — это не дашборд и не ПО, которым вы управляете вручную. Это операционная инфраструктура: ИИ-слой, который ведёт ваш портфель объектов от начала до конца — без персонала и ручного контроля.',
+          aboutPoints: [
+            'Не дашборд',
+            'Не ПО для ручного управления',
+            'Заменяет операционный слой целиком',
+          ],
+          detailsLabel: 'Контакты',
+          loginLabel: 'Войти',
+          loginHref: '/login',
+          offerHeadline: <>Ваш бизнес <span className="text-slate-300">работает сам.</span></>,
+          offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
+          ctaLabel: 'Получить доступ',
+          ctaHref: STRIPE_PAYMENT_LINK,
+        }} />
 
         {/* ── Что реально автоматизируется ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
