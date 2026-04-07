@@ -25,13 +25,14 @@ export interface HeroContent {
   offerSub: React.ReactNode;
   ctaLabel: string;
   ctaHref: string;
+  ctaExternal?: boolean;
 }
 
 export function HeroSection({ content }: { content: HeroContent }) {
   const {
     aboutLabel, aboutHeadline, aboutBody, aboutPoints,
     detailsLabel, loginLabel, loginHref,
-    offerHeadline, offerSub, ctaLabel, ctaHref,
+    offerHeadline, offerSub, ctaLabel, ctaHref, ctaExternal = true,
   } = content;
 
   return (
@@ -122,8 +123,7 @@ export function HeroSection({ content }: { content: HeroContent }) {
           <div className="mt-10 flex justify-center">
             <a
               href={ctaHref}
-              target="_blank"
-              rel="noopener noreferrer"
+              {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               className="inline-flex items-center justify-center px-10 py-4 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-base sm:text-lg"
             >
               {ctaLabel}

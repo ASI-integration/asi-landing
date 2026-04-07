@@ -6,7 +6,7 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { HeroSection } from '@/components/HeroSection';
 
-const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
+const DEMO_LINK = '/connect';
 
 /* ─── Telegram SVG icon ────────────────────────────────────────────────────── */
 function TgIcon({ className = 'w-5 h-5' }: { className?: string }) {
@@ -221,9 +221,52 @@ export default function HomeRu() {
           loginHref: '/login',
           offerHeadline: <>Ваш бизнес <span className="text-slate-300">работает сам.</span></>,
           offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
-          ctaLabel: 'Получить доступ',
-          ctaHref: STRIPE_PAYMENT_LINK,
+          ctaLabel: 'Записаться на демо',
+          ctaHref: DEMO_LINK,
+          ctaExternal: false,
         }} />
+
+        {/* ── Feature quick-nav ── */}
+        <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
+          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <a
+              href="#scale"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">📈</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                От 1 квартиры до 100+ объектов
+              </span>
+            </a>
+            <a
+              href="#platform-modules"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">🔄</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                Синхронизация с площадками
+              </span>
+            </a>
+            <a
+              href="#pricing"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-indigo-500/35 bg-indigo-950/20 hover:border-indigo-400/60 hover:bg-indigo-950/30 transition-all"
+            >
+              <span className="text-2xl shrink-0">💰</span>
+              <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors leading-snug">
+                Тарифы
+              </span>
+            </a>
+            <a
+              href="#faq"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">🤖</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                Как это работает
+              </span>
+            </a>
+          </div>
+        </section>
 
         {/* ── Что реально автоматизируется ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
@@ -276,7 +319,7 @@ export default function HomeRu() {
         </section>
 
         {/* ── Масштаб ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="scale" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6">
               Под любой масштаб
@@ -325,7 +368,7 @@ export default function HomeRu() {
         </section>
 
         {/* ── Platform modules ── */}
-        <section id="platform-modules" className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               Модули платформы
@@ -394,6 +437,9 @@ export default function HomeRu() {
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
                   <li>✓ Полный доступ к системе</li>
+                  <li>✓ Коммуникация с гостями 24/7</li>
+                  <li>✓ Управление бронированиями</li>
+                  <li>✓ Динамическое ценообразование</li>
                   <li>✓ Поддержка через Telegram</li>
                 </ul>
                 <Link
@@ -413,7 +459,10 @@ export default function HomeRu() {
                   8 900 ₽<span className="text-sm font-normal text-slate-300"> / объект / месяц</span>
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-300 text-sm flex-1">
-                  <li>✓ Полный доступ</li>
+                  <li>✓ Всё из Small</li>
+                  <li>✓ Управление портфелем объектов</li>
+                  <li>✓ Синхронизация каналов</li>
+                  <li>✓ Аналитика и отчётность</li>
                   <li>✓ Приоритетная поддержка</li>
                 </ul>
                 <Link
@@ -433,7 +482,10 @@ export default function HomeRu() {
                   Индивидуальные условия
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
-                  <li>✓ Индивидуальный объём, тарифы и поддержка</li>
+                  <li>✓ Всё из Growth</li>
+                  <li>✓ Индивидуальный объём и тарифы</li>
+                  <li>✓ Договор с юрлицом</li>
+                  <li>✓ Выделенная поддержка</li>
                 </ul>
                 <a
                   href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Enterprise — индивидуальные условия')}`}
