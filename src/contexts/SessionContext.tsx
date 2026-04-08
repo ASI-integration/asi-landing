@@ -5,6 +5,14 @@ import { createContext, useContext, useState, useCallback, useEffect } from 'rea
 type Session = {
   user: { id: string; email: string };
   subscription: { status: string } | null;
+  account: {
+    id: string;
+    name: string;
+    plan_code: string;
+    subscription_status: string;
+    trial_started_at: string | null;
+    trial_ends_at: string | null;
+  } | null;
 };
 
 const SessionContext = createContext<{
@@ -21,7 +29,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch('/api/auth/session');
     const data = await res.json();
     if (data.user) {
-      setSession({ user: data.user, subscription: data.subscription });
+      setSession({ user: data.user, subscription: data.subscription, account: data.account ?? null });
     } else {
       setSession(null);
     }

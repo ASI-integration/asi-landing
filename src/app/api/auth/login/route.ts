@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
+import { ensureAccountForUser } from '@/lib/accounts';
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
+    const { email, password, plan } = await req.json();
     if (!email?.trim() || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
     }
@@ -31,6 +32,13 @@ export async function POST(req: Request) {
     session.userId = user.id;
     session.email = user.email;
     await session.save();
+
+    await ensureAccountForUser({
+      userId: user.id,
+      email: user.email,
+      selectedPlan: plan,
+      trialDays: 7,
+    });
 
     return NextResponse.json({ ok: true, userId: user.id });
   } catch (err) {

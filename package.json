@@ -15,6 +15,7 @@
     "@react-google-maps/api": "^2.20.8",
     "@supabase/supabase-js": "^2.97.0",
     "bcryptjs": "^3.0.3",
+    "google-auth-library": "^10.3.0",
     "iron-session": "^8.0.4",
     "maplibre-gl": "^5.21.1",
     "next": "14.2.18",

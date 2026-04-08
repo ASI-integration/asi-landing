@@ -8,10 +8,11 @@ export function middleware(request: NextRequest) {
   const isRuDomain = host.endsWith('.ru');
   const isComDomain = !isRuDomain; // localhost, .com, vercel previews → EN
 
-  // .ru domain → must be on /ru path
-  if (isRuDomain && !pathname.startsWith('/ru')) {
+  // .ru domain → keep RU landing at /ru, but don't force-prefix every route.
+  // Otherwise routes like /connect and /dashboard would become /ru/connect and 404.
+  if (isRuDomain && pathname === '/') {
     const url = request.nextUrl.clone();
-    url.pathname = '/ru' + (pathname === '/' ? '' : pathname);
+    url.pathname = '/ru';
     return NextResponse.redirect(url, { status: 301 });
   }
 
