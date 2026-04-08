@@ -1,7 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import OnboardingPageContent from '@/components/OnboardingPageContent';
 
 export default function ConnectPage() {
-  return <OnboardingPageContent />;
+  return (
+    <Suspense fallback={null}>
+      <OnboardingPageContent />
+    </Suspense>
+  );
 }

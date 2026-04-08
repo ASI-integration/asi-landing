@@ -418,67 +418,79 @@ export default function HomeRu() {
             <div className="grid sm:grid-cols-3 gap-6">
 
               {/* Small */}
-              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px]">
+              <Link
+                href="/connect?plan=small"
+                className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                aria-label="Выбрать тариф Small"
+              >
                 <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-full border border-emerald-500/20">
-                  🟢 Small (1–3 объекта)
+                  🟢 Small
                 </span>
                 <p className="mt-4 text-xl font-semibold text-white">
-                  12 900 ₽<span className="text-sm font-normal text-slate-400"> / объект / месяц</span>
+                  12 900 ₽ / объект / месяц
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  1–3 объекта
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
-                  <li>✓ Полный доступ к системе</li>
-                  <li>✓ Коммуникация с гостями 24/7</li>
-                  <li>✓ Управление бронированиями</li>
-                  <li>✓ Динамическое ценообразование</li>
-                  <li>✓ Поддержка через Telegram</li>
+                  <li>Базовая автоматизация коммуникации</li>
+                  <li>Обработка типовых запросов гостей</li>
+                  <li>Единый канал взаимодействия</li>
+                  <li>Подходит для небольшого числа объектов</li>
                 </ul>
                 <div className="mt-6" aria-hidden />
-              </div>
+              </Link>
 
               {/* Growth */}
-              <div className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col min-h-[420px]">
+              <Link
+                href="/connect?plan=growth"
+                className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                aria-label="Выбрать тариф Growth"
+              >
                 <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
-                  🟡 Growth (4–10 объектов)
+                  🟡 Growth
                 </span>
                 <p className="mt-4 text-xl font-semibold text-white">
-                  8 900 ₽<span className="text-sm font-normal text-slate-300"> / объект / месяц</span>
+                  8 900 ₽ / объект / месяц
+                </p>
+                <p className="mt-1 text-sm text-slate-300">
+                  4–10 объектов
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-300 text-sm flex-1">
-                  <li>✓ Всё из Small</li>
-                  <li>✓ Управление портфелем объектов</li>
-                  <li>✓ Синхронизация каналов</li>
-                  <li>✓ Аналитика и отчётность</li>
-                  <li>✓ Приоритетная поддержка</li>
+                  <li>Всё из Small</li>
+                  <li>Для растущего портфеля объектов</li>
+                  <li>Масштабирование коммуникации и бронирований</li>
+                  <li>Больше сценариев автоматизации</li>
+                  <li>Подходит для активных операторов</li>
                 </ul>
                 <div className="mt-6" aria-hidden />
-              </div>
+              </Link>
 
               {/* Enterprise */}
-              <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px]">
+              <Link
+                href="/connect?plan=enterprise"
+                className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                aria-label="Выбрать тариф Enterprise"
+              >
                 <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
-                  🔵 Enterprise (10+ объектов)
+                  🔵 Enterprise
                 </span>
                 <p className="mt-4 text-xl font-semibold text-white">
-                  Индивидуальные условия
+                  6 900 ₽ / объект / месяц
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  от 20 объектов
                 </p>
                 <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
-                  <li>✓ Всё из Growth</li>
-                  <li>✓ Индивидуальный объём и тарифы</li>
-                  <li>✓ Договор с юрлицом</li>
-                  <li>✓ Выделенная поддержка</li>
+                  <li>Всё из Growth</li>
+                  <li>Для крупных портфелей объектов</li>
+                  <li>Централизованное управление коммуникацией и бронированиями</li>
+                  <li>Масштабирование операционного контура</li>
+                  <li>Подходит для операторов и управляющих компаний</li>
                 </ul>
                 <div className="mt-6" aria-hidden />
-              </div>
+              </Link>
 
-            </div>
-
-            <div className="mt-10 pt-8 border-t border-slate-800/60 flex justify-center">
-              <a
-                href="#location-demo"
-                className="inline-flex items-center justify-center px-10 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02]"
-              >
-                Посмотреть в действии
-              </a>
             </div>
           </div>
         </section>
