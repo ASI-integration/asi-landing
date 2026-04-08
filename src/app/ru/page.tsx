@@ -5,6 +5,8 @@ import { CommDemo } from '@/components/CommDemo';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { HeroSection } from '@/components/HeroSection';
+import { ThemeProvider } from '@/theme/ThemeProvider';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 const DEMO_LINK = '/connect';
 
@@ -126,16 +128,18 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
         href="https://t.me/ASI_core_bot"
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-sm hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
+        aria-label="Telegram"
+        title="Telegram"
+        className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
       >
         <TgIcon />
-        @ASI_core_bot
+        <span className="sr-only">Telegram</span>
       </a>
       <a
         href={`mailto:${productSupportEmail}`}
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-white font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-all"
+        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text)] font-semibold text-sm hover:bg-[var(--t-surface-2)] transition-all"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[var(--t-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
         </svg>
         {productSupportEmail}
@@ -148,24 +152,24 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
 export default function HomeRu() {
   return (
     <LocationTelemetryProvider>
-    <div className="min-h-screen bg-slate-950">
+    <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/60">
+      <header className="sticky top-0 z-50 bg-[color-mix(in_srgb,var(--t-bg)_92%,transparent)] backdrop-blur-md border-b border-[var(--t-border)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
 
           {/* Brand + nav */}
           <div className="flex items-center gap-6">
-            <Link href="/ru" className="text-2xl font-bold text-white tracking-tight shrink-0">
+            <Link href="/ru" className="text-2xl font-bold text-[var(--t-text)] tracking-tight shrink-0">
               ASI
             </Link>
-            <a href="#platform-modules" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+            <a href="#platform-modules" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
               Платформа
             </a>
-            <a href="#pricing" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+            <a href="#pricing" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
               Тарифы
             </a>
-            <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+            <a href="#faq" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
               Как это работает
             </a>
           </div>
@@ -174,29 +178,32 @@ export default function HomeRu() {
           <div className="flex items-center gap-3 sm:gap-4">
             <a
               href={`mailto:${productSupportEmail}`}
-              className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors truncate max-w-[11rem] md:max-w-none"
+              className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors truncate max-w-[11rem] md:max-w-none"
               title={productSupportEmail}
             >
               {productSupportEmail}
             </a>
-            <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
+            <span className="hidden sm:block w-px h-4 bg-[var(--t-border)] shrink-0" />
             <a
               href="https://t.me/ASI_core_bot"
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
+              aria-label="Telegram"
+              title="Telegram"
+              className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
             >
               <TgIcon className="w-4 h-4 shrink-0" />
-              Telegram
+              <span className="sr-only">Telegram</span>
             </a>
             <div className="flex items-center gap-1 text-sm">
-              <a href="https://asi-global.com" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">EN</a>
-              <span className="text-slate-700">|</span>
-              <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">RU</span>
+              <a href="https://asi-global.com" className="px-2 py-1 rounded text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">EN</a>
+              <span className="text-[var(--t-border)]">|</span>
+              <span className="px-2 py-1 rounded font-semibold text-[var(--t-text)] bg-[var(--t-surface-2)] border border-[var(--t-border)]">RU</span>
             </div>
+            <ThemeSwitcher />
             <Link
               href="/login"
-              className="inline-flex items-center justify-center px-4 py-2 bg-white text-slate-900 text-sm font-semibold rounded-lg hover:bg-slate-100 transition-colors shadow-sm"
+              className="inline-flex items-center justify-center px-4 py-2 bg-[var(--t-accent)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--t-accent-hover)] transition-colors shadow-sm"
             >
               Войти
             </Link>
@@ -219,15 +226,15 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: <>Ваш бизнес <span className="text-slate-300">работает сам.</span></>,
+          offerHeadline: <>Ваш бизнес <span className="text-[var(--t-text-2)]">работает сам.</span></>,
           offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
           ctaLabel: 'Записаться на демо',
           ctaHref: DEMO_LINK,
           ctaExternal: false,
-        }} />
+        }} telegramVariant="icon" />
 
         {/* ── Feature quick-nav ── */}
-        <section className="py-4 px-4 sm:px-6 bg-slate-950 border-t border-b border-slate-800/60">
+        <section className="py-4 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-b border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
               { href: '#scale',            icon: '📈', label: 'От 1 до 100+ объектов' },
@@ -238,10 +245,10 @@ export default function HomeRu() {
               <a
                 key={href}
                 href={href}
-                className="group flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+                className="group flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-3.5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all"
               >
                 <span className="text-xl sm:text-2xl shrink-0">{icon}</span>
-                <span className="text-xs sm:text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                <span className="text-xs sm:text-sm font-medium text-[var(--t-text-2)] group-hover:text-[var(--t-text)] transition-colors leading-snug">
                   {label}
                 </span>
               </a>
@@ -250,22 +257,22 @@ export default function HomeRu() {
         </section>
 
         {/* ── Что реально автоматизируется ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Что реально автоматизируется
             </h2>
-            <p className="text-slate-400 text-lg mb-10">
+            <p className="text-[var(--t-muted)] text-lg mb-10">
               Не инструменты. Не дашборды. Операции.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {AUTOMATED_ITEMS.map((item) => (
                 <div
                   key={item.title}
-                  className="p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all"
                 >
-                  <h3 className="font-semibold text-white text-sm leading-snug">{item.title}</h3>
-                  <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{item.desc}</p>
+                  <h3 className="font-semibold text-[var(--t-text)] text-sm leading-snug">{item.title}</h3>
+                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
                 </div>
               ))}
             </div>
@@ -273,25 +280,25 @@ export default function HomeRu() {
         </section>
 
         {/* ── Позиционирование ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-8">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-8">
               Не очередной инструмент
             </h2>
-            <ul className="space-y-3 text-slate-400 text-base leading-relaxed">
+            <ul className="space-y-3 text-[var(--t-text-2)] text-base leading-relaxed">
               <li>
-                <span className="text-slate-500" aria-hidden>❌ </span>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
                 Менеджеры каналов → всё равно нужен ручной контроль
               </li>
               <li>
-                <span className="text-slate-500" aria-hidden>❌ </span>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
                 CRM → всё равно нужны операторы
               </li>
               <li>
-                <span className="text-slate-500" aria-hidden>❌ </span>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
                 Точечные продукты «автоматизации» → частичное покрытие
               </li>
-              <li className="pt-2 text-slate-200 font-medium">
+              <li className="pt-2 text-[var(--t-text)] font-medium">
                 <span className="text-emerald-500/90" aria-hidden>✅ </span>
                 ASI → заменяет операционный слой целиком
               </li>
@@ -300,12 +307,12 @@ export default function HomeRu() {
         </section>
 
         {/* ── Масштаб ── */}
-        <section id="scale" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="scale" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Под любой масштаб
             </h2>
-            <p className="text-slate-400 text-lg mb-8">
+            <p className="text-[var(--t-muted)] text-lg mb-8">
               Система растёт вместе с портфелем — без найма и без смены инструментов.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
@@ -314,13 +321,13 @@ export default function HomeRu() {
                 { scale: '10 объектов',  note: 'Работает без операционного персонала' },
                 { scale: '100+ объектов', note: 'Централизованное управление через ИИ' },
               ].map(({ scale, note }) => (
-                <div key={scale} className="p-5 rounded-xl border border-slate-800 bg-slate-900/60">
-                  <p className="text-white font-semibold text-base">{scale}</p>
-                  <p className="mt-1 text-sm text-slate-400 leading-relaxed">{note}</p>
+                <div key={scale} className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                  <p className="text-[var(--t-text)] font-semibold text-base">{scale}</p>
+                  <p className="mt-1 text-sm text-[var(--t-muted)] leading-relaxed">{note}</p>
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-xs text-slate-600">
+            <p className="mt-6 text-xs text-[var(--t-muted)]">
               Используется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
             </p>
           </div>
@@ -335,23 +342,23 @@ export default function HomeRu() {
         <CommDemo />
 
         {/* ── What the platform does ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Слой исполнения
             </h2>
-            <p className="text-slate-400 text-lg mb-10">
+            <p className="text-[var(--t-muted)] text-lg mb-10">
               Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {CARDS.map((card) => (
                 <div
                   key={card.title}
-                  className="p-5 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all"
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all"
                 >
                   <span className="text-2xl" aria-hidden>{card.icon}</span>
-                  <h3 className="mt-3 font-semibold text-white text-sm leading-snug">{card.title}</h3>
-                  <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{card.desc}</p>
+                  <h3 className="mt-3 font-semibold text-[var(--t-text)] text-sm leading-snug">{card.title}</h3>
+                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{card.desc}</p>
                 </div>
               ))}
             </div>
@@ -359,12 +366,12 @@ export default function HomeRu() {
         </section>
 
         {/* ── Platform modules ── */}
-        <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Модули платформы
             </h2>
-            <p className="text-slate-400 text-lg mb-10">
+            <p className="text-[var(--t-muted)] text-lg mb-10">
               Автономные системы на одной инфраструктуре — каждая ведёт свой домен.
             </p>
             <div className="grid sm:grid-cols-3 gap-4">
@@ -375,25 +382,25 @@ export default function HomeRu() {
                     key={mod.id}
                     className={`p-6 rounded-xl border transition-all ${
                       isActive
-                        ? 'border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40'
-                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'
+                        ? 'border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)]'
+                        : 'border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3 mb-4">
-                      <h3 className={`font-semibold text-sm leading-snug ${isActive ? 'text-white' : 'text-slate-400'}`}>
+                      <h3 className={`font-semibold text-sm leading-snug ${isActive ? 'text-[var(--t-text)]' : 'text-[var(--t-text-2)]'}`}>
                         {mod.name}
                       </h3>
                       <span
                         className={`shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
                           isActive
-                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                            : 'bg-slate-800 text-slate-500 border border-slate-700'
+                            ? 'bg-[color-mix(in_srgb,var(--t-accent)_18%,transparent)] text-[var(--t-text)] border border-[color:var(--t-accent)]'
+                            : 'bg-[var(--t-surface-2)] text-[var(--t-muted)] border border-[var(--t-border)]'
                         }`}
                       >
                         {isActive ? 'АКТИВНО' : 'СКОРО'}
                       </span>
                     </div>
-                    <p className={`text-sm leading-relaxed ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <p className={`text-sm leading-relaxed ${isActive ? 'text-[var(--t-text-2)]' : 'text-[var(--t-muted)]'}`}>
                       {mod.desc}
                     </p>
                   </div>
@@ -404,15 +411,15 @@ export default function HomeRu() {
         </section>
 
         {/* ── Тарифы ── */}
-        <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
+        <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Тарифы
             </h2>
-            <p className="text-slate-400 text-lg leading-relaxed mb-2">
+            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-2">
               Фиксированная стоимость. Без расширения штата.
             </p>
-            <p className="text-slate-500 text-sm mb-10">
+            <p className="text-[var(--t-muted)] text-sm mb-10">
               Коммуникация с гостями, платежи, бронирования и контроль задач — без найма. Цена за 1 объект в месяц.
             </p>
             <div className="grid sm:grid-cols-3 gap-6">
@@ -420,19 +427,19 @@ export default function HomeRu() {
               {/* Small */}
               <Link
                 href="/connect?plan=small"
-                className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                aria-label="Выбрать тариф Small"
+                className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                aria-label="Выбрать тариф Базовый"
               >
                 <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-full border border-emerald-500/20">
-                  🟢 Small
+                  🟢 Базовый
                 </span>
-                <p className="mt-4 text-xl font-semibold text-white">
+                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
                   12 900 ₽ / объект / месяц
                 </p>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-sm text-[var(--t-muted)]">
                   1–3 объекта
                 </p>
-                <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
+                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
                   <li>Базовая автоматизация коммуникации</li>
                   <li>Обработка типовых запросов гостей</li>
                   <li>Единый канал взаимодействия</li>
@@ -444,20 +451,20 @@ export default function HomeRu() {
               {/* Growth */}
               <Link
                 href="/connect?plan=growth"
-                className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                aria-label="Выбрать тариф Growth"
+                className="p-6 rounded-xl border border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                aria-label="Выбрать тариф Масштабирование"
               >
                 <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
-                  🟡 Growth
+                  🟡 Масштабирование
                 </span>
-                <p className="mt-4 text-xl font-semibold text-white">
+                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
                   8 900 ₽ / объект / месяц
                 </p>
-                <p className="mt-1 text-sm text-slate-300">
+                <p className="mt-1 text-sm text-[var(--t-text-2)]">
                   4–10 объектов
                 </p>
-                <ul className="mt-4 space-y-2 text-slate-300 text-sm flex-1">
-                  <li>Всё из Small</li>
+                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
+                  <li>Включает возможности базового тарифа</li>
                   <li>Для растущего портфеля объектов</li>
                   <li>Масштабирование коммуникации и бронирований</li>
                   <li>Больше сценариев автоматизации</li>
@@ -469,20 +476,20 @@ export default function HomeRu() {
               {/* Enterprise */}
               <Link
                 href="/connect?plan=enterprise"
-                className="p-6 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                aria-label="Выбрать тариф Enterprise"
+                className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                aria-label="Выбрать тариф Крупный портфель"
               >
                 <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
-                  🔵 Enterprise
+                  🔵 Крупный портфель
                 </span>
-                <p className="mt-4 text-xl font-semibold text-white">
+                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
                   6 900 ₽ / объект / месяц
                 </p>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-sm text-[var(--t-muted)]">
                   от 20 объектов
                 </p>
-                <ul className="mt-4 space-y-2 text-slate-400 text-sm flex-1">
-                  <li>Всё из Growth</li>
+                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
+                  <li>Включает возможности тарифа для масштабирования</li>
                   <li>Для крупных портфелей объектов</li>
                   <li>Централизованное управление коммуникацией и бронированиями</li>
                   <li>Масштабирование операционного контура</li>
@@ -496,12 +503,12 @@ export default function HomeRu() {
         </section>
 
         {/* ── FAQ ── */}
-        <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+        <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] text-center tracking-tight">
               Как работает автоматизация
             </h2>
-            <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
+            <p className="mt-3 text-center text-sm text-[var(--t-muted)] max-w-xl mx-auto">
               Прямые ответы — без маркетинга, без жаргона.
             </p>
             <div className="mt-10">
@@ -511,29 +518,29 @@ export default function HomeRu() {
         </section>
 
         {/* ── CTA + contacts ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60">
+        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
           <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)]">
               Посмотрите на реальном примере
             </h2>
-            <p className="mt-4 text-slate-400 text-lg">
+            <p className="mt-4 text-[var(--t-text-2)] text-lg">
               Прогоним продукт на реальном сценарии — увидите исполнение, а не слайды. Подтверждение — в течение одного рабочего дня.
             </p>
             <Link
               href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 transition-all shadow-lg shadow-white/10 hover:scale-[1.02] text-lg"
+              className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-lg"
             >
               Записаться на демо
             </Link>
-            <p className="mt-4 text-sm text-slate-600">Без обязательств. Прямые ответы.</p>
+            <p className="mt-4 text-sm text-[var(--t-muted)]">Без обязательств. Прямые ответы.</p>
 
             {/* Contacts below CTA */}
-            <div className="mt-10 pt-8 border-t border-slate-800/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 mb-5">
+            <div className="mt-10 pt-8 border-t border-[var(--t-border)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)] mb-5">
                 Или напишите напрямую
               </p>
               <ContactLinks />
-              <p className="mt-4 text-xs text-slate-600">
+              <p className="mt-4 text-xs text-[var(--t-muted)]">
                 Пн–Пт, 9:00–18:00 МСК · обычно быстрее
               </p>
             </div>
@@ -543,11 +550,11 @@ export default function HomeRu() {
       </main>
 
       {/* ── Footer ── */}
-      <footer className="py-8 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
+      <footer className="py-8 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
-            <span className="text-white font-bold text-lg">ASI</span>
-            <span className="text-xs text-slate-600">© {new Date().getFullYear()}</span>
+            <span className="text-[var(--t-text)] font-bold text-lg">ASI</span>
+            <span className="text-xs text-[var(--t-muted)]">© {new Date().getFullYear()}</span>
           </div>
 
           {/* Contacts in footer */}
@@ -556,29 +563,38 @@ export default function HomeRu() {
               href="https://t.me/ASI_core_bot"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-slate-400 hover:text-sky-300 transition-colors"
+              aria-label="Telegram"
+              title="Telegram"
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
             >
               <TgIcon className="w-4 h-4" />
-              @ASI_core_bot
+              <span className="sr-only">Telegram</span>
             </a>
-            <span className="hidden sm:block w-px h-3 bg-slate-800" />
+            <span className="hidden sm:block w-px h-3 bg-[var(--t-border)]" />
             <a
               href={`mailto:${productSupportEmail}`}
-              className="text-slate-400 hover:text-white transition-colors"
+              className="text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors"
             >
               {productSupportEmail}
             </a>
           </div>
 
+          {/* Company/legal info (RU) */}
+          <div className="text-xs text-[var(--t-muted)] text-center sm:text-right leading-relaxed">
+            <div className="text-[var(--t-muted)]">Automation System Integrations</div>
+            <div className="text-[var(--t-muted)]">Реутова Ю.И.</div>
+            <div className="text-[var(--t-muted)]">ИНН: 235307941957</div>
+          </div>
+
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-            <Link href="/privacy" className="text-slate-600 hover:text-slate-400 text-xs">Конфиденциальность</Link>
-            <Link href="/offer" className="text-slate-600 hover:text-slate-400 text-xs">Условия</Link>
-            <Link href="/legal" className="text-slate-600 hover:text-slate-400 text-xs">Правовые документы</Link>
+            <Link href="/privacy" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Конфиденциальность</Link>
+            <Link href="/offer" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Условия</Link>
+            <Link href="/legal" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Правовые документы</Link>
           </div>
         </div>
       </footer>
 
-    </div>
+    </ThemeProvider>
     </LocationTelemetryProvider>
   );
 }

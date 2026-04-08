@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import Script from 'next/script';
 import { LanguageProvider } from '@/i18n/LanguageProvider';
-import { LegalFooter } from '@/components/LegalFooter';
+import { FooterGate } from '@/components/FooterGate';
 import { LocalePathSync } from '@/components/LocalePathSync';
 
 export const metadata: Metadata = {
@@ -32,7 +32,7 @@ export default function RootLayout({
           <LocalePathSync />
           <div className="flex flex-col min-h-screen">
             <div className="flex-1">{children}</div>
-            <LegalFooter />
+            <FooterGate />
           </div>
         </LanguageProvider>
       </body>

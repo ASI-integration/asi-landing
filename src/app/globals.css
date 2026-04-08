@@ -2,6 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
+/* -------------------------------------------------------------------------- */
+/* Theme tokens (RU-scoped via [data-theme])                                  */
+/* -------------------------------------------------------------------------- */
+
+/* Default values live on [data-theme="light"] (first-time visitors). */
+[data-theme="light"] {
+  --t-bg: #F8FAFC;
+  --t-surface: #FFFFFF;
+  --t-surface-2: #F1F5F9;
+  --t-text: #0F172A;
+  --t-text-2: #334155;
+  --t-muted: #64748B;
+  --t-border: #E2E8F0;
+  --t-accent: #312E81;
+  --t-accent-hover: #1E1B4B;
+}
+
+[data-theme="midnight"] {
+  --t-bg: #020617;
+  --t-surface: #0F172A;
+  --t-surface-2: #111827;
+  --t-text: #F8FAFC;
+  --t-text-2: #CBD5E1;
+  --t-muted: #94A3B8;
+  --t-border: #1E293B;
+  --t-accent: #6366F1;
+  --t-accent-hover: #818CF8;
+}
+
+[data-theme="soft-blue"] {
+  --t-bg: #EFF6FF;
+  --t-surface: #FFFFFF;
+  --t-surface-2: #DBEAFE;
+  --t-text: #0F172A;
+  --t-text-2: #1E3A8A;
+  --t-muted: #475569;
+  --t-border: #BFDBFE;
+  --t-accent: #1D4ED8;
+  --t-accent-hover: #1E40AF;
+}
+
+[data-theme] {
+  background-color: var(--t-bg);
+  color: var(--t-text);
+  color-scheme: light;
+}
+
+[data-theme="midnight"] {
+  color-scheme: dark;
+}
+
+.theme-transition,
+.theme-transition * {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    fill 180ms ease,
+    stroke 180ms ease;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
