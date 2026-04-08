@@ -58,11 +58,19 @@ import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 import { supabase } from '@/lib/supabase';
 import { runInBackground } from './background';
 
+function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
+  if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
+  if (process.env.RU_TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
+  if (process.env.TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
+  return false;
+}
+
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
   const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
   const ruDebug = process.env.RU_TELEGRAM_DEBUG === '1' && envelope.channel === 'telegram';
+  const pipeDebug = pipelineDebugEnabled(envelope);
 
   // Idempotency: drop duplicate update_ids
   if (checkAndMark(update_id)) {
@@ -73,6 +81,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   // Resolve unified identity
   const identity = await createOrMergeIdentity(envelope);
   const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
+  if (pipeDebug) {
+    console.log('[comm:pipeline] message.received', {
+      corr_id: corrId,
+      update_id,
+      channel: envelope.channel,
+      chat_id: chatId,
+      text_len: text.length,
+      has_metadata: Boolean(envelope.metadata),
+    });
+  }
   
   await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
 
@@ -106,6 +124,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (process.env.RU_TELEGRAM_FORCE_RU === '1' && envelope.channel === 'telegram') {
       classification.lang = 'ru';
     }
+    if (pipeDebug) {
+      console.log('[comm:pipeline] classification.done', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        category: classification.category,
+        lang: classification.lang,
+        slots: classification.slots,
+      });
+    }
     auditInbound({
       chat_id: chatId,
       update_id,
@@ -115,7 +143,25 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     });
 
     const intentResult = await detectIntent(text);
+    if (pipeDebug) {
+      console.log('[comm:pipeline] intent.done', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        intent: intentResult.intent,
+        confidence: intentResult.confidence,
+      });
+    }
     const ctx = getContext(chatId);
+    if (pipeDebug) {
+      console.log('[comm:pipeline] memory.loaded', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        has_last_intent: Boolean(ctx.lastIntent),
+        incident: Boolean(ctx.incident),
+      });
+    }
 
     // ── Staff-group clue accumulation ──────────────────────────────────────────
     // Extract operator-provided booking/property clues from the current message
@@ -143,7 +189,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Fetch per-property templates (null when none set or on any error)
     const propertyId = commContext.reservation.propertyId;
     const templates = propertyId ? await getPropertyTemplates(propertyId) : null;
-    const llmEnabled = Boolean((process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? '').trim() || (process.env.LLM_FALLBACK_API_KEY ?? '').trim());
     if (ruDebug) {
       console.log('[ru:tg] context.assembled', {
         chat_id: chatId,
@@ -157,13 +202,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reservation_id: commContext.reservation.reservationId ?? null,
         property_id: commContext.reservation.propertyId ?? null,
         templates_loaded: Boolean(templates),
-        llm_enabled: llmEnabled,
         staff_clues: mergedClues,
       });
     }
 
     // Action Policy Guard
     const safety = evaluateActionSafety(commContext, text);
+    if (pipeDebug) {
+      console.log('[comm:pipeline] action.selected', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        safe: safety.safe,
+        action: safety.action,
+        reason: safety.reason ?? null,
+        escalation_reason: safety.escalationReason ?? null,
+      });
+    }
 
     let replyText: string;
     let llmSucceeded = false;
@@ -389,21 +444,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
         : null;
       let llmReply: string | null = null;
-      if (llmEnabled) {
-        const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
-        llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
-        usedPath = 'llm';
-        llmSucceeded = llmReply !== null;
-      } else {
-        usedPath = 'deterministic';
-        llmSucceeded = true; // we intentionally skipped LLM
-      }
+      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
+      llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
+      usedPath = 'llm';
+      llmSucceeded = llmReply !== null;
 
       const rawFallback = llmReply ?? deterministicReply(classification);
       replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
-      if (llmEnabled) {
-        auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
-      }
+      auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
     }
 
     updateContext(chatId, { lastIntent: intentResult.intent });
@@ -508,7 +556,27 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     const isDryRun = process.env.TELEGRAM_DRY_RUN === '1' && envelope.channel === 'telegram';
+    if (pipeDebug) {
+      console.log('[comm:pipeline] outbound.dispatch', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        channel: envelope.channel,
+        target_id: String(targetId),
+        dry_run: isDryRun,
+        reply_len: replyText.length,
+      });
+    }
     const sent = isDryRun ? true : await adapter.sendMessage(targetId, replyText);
+    if (pipeDebug) {
+      console.log('[comm:pipeline] outbound.result', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        channel: envelope.channel,
+        sent,
+      });
+    }
     if (!sent) throw new Error('Adapter failed to send message');
     await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
 

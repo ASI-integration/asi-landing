@@ -41,7 +41,7 @@ export async function POST(req: Request): Promise<Response> {
   const message = update?.message ?? update?.edited_message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
-  if (process.env.TELEGRAM_DEBUG === '1') {
+  if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
     console.log('[tg:webhook] inbound', {
       update_id: update?.update_id,
       chat_id: chatId,
@@ -52,7 +52,7 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     const result = await processUpdate(update);
-    if (process.env.TELEGRAM_DEBUG === '1') {
+    if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {
         outcome: result.outcome,
         update_id: result.update_id,
