@@ -165,9 +165,9 @@ export default function ReportPage() {
       <section className="py-14 sm:py-16 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
         <div className="max-w-5xl mx-auto">
           <p className="text-sm text-slate-400">
-            This is exactly the kind of output you’ll get — clear, simple, and actionable.
+            This is exactly the kind of output you&apos;ll get — clear, simple, and actionable.
           </p>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Example of what you'll see</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Example of what you&apos;ll see</h2>
 
           <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-6 sm:p-7">
             <ul className="space-y-2 text-sm sm:text-base text-slate-200 leading-relaxed">

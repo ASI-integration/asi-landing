@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from '@/i18n/useTranslation';
 
 interface ChatMessage {
   id: number;
@@ -22,185 +23,22 @@ interface Preset {
   stepLabels: string[];
 }
 
-const PRESETS: Preset[] = [
-  {
-    label: 'Check-in time?',
-    userText: 'Hi, what time can I check in?',
-    reply: 'Check-in from 14:00. If you need early arrival — let me know and I\'ll check availability with the manager.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → check-in',
-      'Booking data loaded',
-      'Check-in rule applied',
-      'Reply prepared and sent',
-    ],
-  },
-  {
-    label: 'Is there parking?',
-    userText: 'Is there parking nearby?',
-    reply: 'Yes, there\'s a secured courtyard. I\'ll send the gate code one hour before check-in along with the instructions.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → infrastructure',
-      'Property parameters checked',
-      'Parking instructions retrieved',
-      'Reply prepared and sent',
-    ],
-  },
-  {
-    label: 'Pets allowed?',
-    userText: 'Can I bring my cat? He\'s small :)',
-    reply: 'Pets welcome — up to 10 kg. A $30 refundable deposit is required, returned after checkout. Shall I send an invoice?',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → additional terms',
-      'Property policy checked',
-      'Deposit condition calculated',
-      'Entry added to booking',
-      'Reply prepared and sent',
-    ],
-  },
-  {
-    label: 'Noise complaint',
-    userText: 'Neighbours upstairs are making noise all night, it\'s 2 AM. Impossible to sleep.',
-    reply: 'Understood — this is unacceptable. Connecting the manager immediately; they will call you within a few minutes.',
-    escalate: true,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → complaint',
-      'Severity assessed → urgent',
-      'Automated scenario not applicable',
-      'Context packaged for operator',
-      'Operator notified with full context',
-    ],
-  },
-  {
-    label: 'Lock code not working',
-    userText: 'The door code doesn\'t work, I can\'t get in. I\'m standing outside.',
-    reply: 'On it. Backup code: 4921. If that doesn\'t work — I\'m calling the manager right now.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → access',
-      'Guest booking verified',
-      'Backup code retrieved from vault',
-      'Access code sent to guest',
-      'Incident logged in system',
-    ],
-  },
-  {
-    label: 'No Wi-Fi',
-    userText: 'The Wi-Fi isn\'t working, what should I do?',
-    reply: 'Try restarting the router — it\'s behind the TV. Password: home_apt_2024. If that fails I\'ll dispatch a technician.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → technical',
-      'Property manual loaded',
-      'Guest instructions selected',
-      'Reply prepared and sent',
-    ],
-  },
-  {
-    label: 'Extend by one night',
-    userText: 'Can I stay one more night, tomorrow the 26th?',
-    reply: 'Checking... The 26th is free. Rate: $85. Shall I issue the invoice now?',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → extension',
-      'Date availability checked',
-      'Extra night rate calculated',
-      'Extension request created',
-      'Offer sent to guest',
-    ],
-  },
-  {
-    label: 'Early check-out',
-    userText: 'Can I check out at 10:00 instead of 12:00? Early flight.',
-    reply: 'Of course, early check-out at 10:00 confirmed. Just leave the key in the lockbox by the door.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → check-out',
-      'Cleaning schedule checked',
-      'Early check-out confirmed',
-      'Key return instructions sent',
-    ],
-  },
-  {
-    label: 'No hot water',
-    userText: 'There\'s been no hot water for an hour. What happened?',
-    reply: 'Checking building status... Scheduled maintenance until 15:00. If it\'s not restored by 15:30 — let me know immediately.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → utility issue',
-      'Address status queried',
-      'Scheduled maintenance data retrieved',
-      'Reply with timeline sent',
-      'Monitoring task created',
-    ],
-  },
-  {
-    label: 'Loyalty discount',
-    userText: 'This is our third stay — can we get a discount for the next booking?',
-    reply: 'Marking you as a returning guest. Here\'s a 10% promo code for your next booking: LOYALTY10.',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → loyalty',
-      'Guest booking history checked',
-      'Returning guest status confirmed',
-      'Promo code generated',
-      'Guest profile updated',
-      'Promo code sent to guest',
-    ],
-  },
-  {
-    label: 'Leaking tap',
-    userText: 'The tap in the bathroom is leaking and I can\'t stop it.',
-    reply: 'Got it. Turn off the valve under the sink (turn right). I\'m dispatching a plumber urgently — they\'ll arrive within an hour.',
-    escalate: true,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → maintenance',
-      'Severity assessed → urgent',
-      'First-aid instructions sent to guest',
-      'Plumber work order created',
-      'Operator notified with full context',
-    ],
-  },
-  {
-    label: 'Extra towels',
-    userText: 'Could I get some extra towels?',
-    reply: 'Of course. I\'ll flag this for housekeeping — they\'ll deliver within 30 minutes. Anything else you need?',
-    escalate: false,
-    stepLabels: [
-      'Inbound request received',
-      'Intent classified → supplies',
-      'Housekeeping availability checked',
-      'Task created for housekeeping',
-      'Data saved in system',
-      'Confirmation reply sent',
-    ],
-  },
-];
-
 function now() {
   const d = new Date();
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
 export function CommDemo() {
+  const { t, get } = useTranslation();
+
+  const presets = (get<Preset[]>('commDemo.presets') ?? []).filter(Boolean);
+  const defaultStepLabels = get<string[]>('commDemo.defaultSteps') ?? [];
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 0,
       role: 'asi',
-      text: 'ASI — guest automation is live. Pick a scenario or type a message; I run the full chain.',
+      text: t('commDemo.botIntro'),
     },
   ]);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -232,13 +70,7 @@ export function CommDemo() {
     setPhase('processing');
     setEscalated(preset?.escalate ?? false);
 
-    const stepLabels = preset?.stepLabels ?? [
-      'Inbound request received',
-      'Intent classified',
-      'Key data extracted',
-      'Processing scenario selected',
-      'Reply prepared and sent',
-    ];
+    const stepLabels = preset?.stepLabels?.length ? preset.stepLabels : defaultStepLabels;
 
     const activeSteps: Step[] = stepLabels.map((label, i) => ({
       label,
@@ -261,12 +93,12 @@ export function CommDemo() {
 
     // Bot reply after all steps settle
     const replyDelay = 380 + (stepLabels.length - 1) * 430 + 720;
-    const replyText = preset?.reply ?? 'Received. Running the execution chain now.';
-    const t = setTimeout(() => {
+    const replyText = preset?.reply ?? t('commDemo.defaultReply');
+    const timer = setTimeout(() => {
       setMessages(prev => [...prev, { id: msgId.current++, role: 'asi', text: replyText }]);
       setPhase('done');
     }, replyDelay);
-    timerRefs.current.push(t);
+    timerRefs.current.push(timer);
   }
 
   function handlePreset(preset: Preset) {
@@ -289,10 +121,10 @@ export function CommDemo() {
         {/* Header */}
         <div className="mb-10 max-w-2xl text-left space-y-4">
           <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
-            Guest conversations execute automatically
+            {t('commDemo.title')}
           </h2>
           <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
-            Pick a scenario — watch ASI run the full chain with no manager in the loop.
+            {t('commDemo.subtitle')}
           </p>
         </div>
 
@@ -309,7 +141,7 @@ export function CommDemo() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-white">ASI</p>
-                <p className="text-[11px] text-emerald-400">online · instant replies</p>
+                <p className="text-[11px] text-emerald-400">{t('commDemo.statusOnline')}</p>
               </div>
             </div>
 
@@ -355,7 +187,7 @@ export function CommDemo() {
             <div className="border-t border-slate-800/80 p-3 space-y-2.5 shrink-0">
               {phase !== 'processing' && (
                 <div className="flex flex-wrap gap-1.5">
-                  {PRESETS.map(p => (
+                  {presets.map(p => (
                     <button
                       key={p.label}
                       type="button"
@@ -372,7 +204,7 @@ export function CommDemo() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   disabled={phase === 'processing'}
-                  placeholder="Or type your own message..."
+                  placeholder={t('commDemo.inputPlaceholder')}
                   className="flex-1 bg-slate-800/60 border border-slate-700/60 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 outline-none focus:border-indigo-500/50 disabled:opacity-50 transition-colors"
                 />
                 <button
@@ -392,10 +224,10 @@ export function CommDemo() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 flex flex-col gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
-                What happens inside
+                {t('commDemo.insideTitle')}
               </p>
               <p className="text-sm text-slate-500">
-                Every message runs through an automated execution chain — no human in the default path.
+                {t('commDemo.insideSubtitle')}
               </p>
             </div>
 
@@ -408,7 +240,11 @@ export function CommDemo() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                     </svg>
                   </div>
-                  <p className="text-sm text-slate-600">Select a scenario<br />to see the process</p>
+                  <p className="text-sm text-slate-600">
+                    {t('commDemo.emptyStateLine1')}
+                    <br />
+                    {t('commDemo.emptyStateLine2')}
+                  </p>
                 </div>
               ) : (
                 steps.map((step, i) => {
@@ -482,8 +318,8 @@ export function CommDemo() {
             {phase === 'done' && (
               <p className="text-xs text-slate-600 text-center border-t border-slate-800/60 pt-3">
                 {escalated
-                  ? 'Edge case — operator connected with full context.'
-                  : 'Request handled automatically. No manager needed.'}
+                  ? t('commDemo.doneNoteEscalated')
+                  : t('commDemo.doneNoteAuto')}
               </p>
             )}
           </div>

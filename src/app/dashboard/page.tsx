@@ -2,6 +2,7 @@
 
 import { useTranslation } from '@/i18n/useTranslation';
 import { useSession } from '@/contexts/SessionContext';
+import { useEffect, useMemo, useState } from 'react';
 
 function formatDateRu(iso: string | null) {
   if (!iso) return '—';
@@ -21,6 +22,50 @@ export default function DashboardPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const account = session?.account ?? null;
+  const [vkStatus, setVkStatus] = useState<'not_connected' | 'pending' | 'connected' | 'error'>('not_connected');
+  const [vkErrorHint, setVkErrorHint] = useState<string | null>(null);
+
+  const vkBadge = useMemo(() => {
+    if (vkStatus === 'connected') return { label: 'Подключено', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (vkStatus === 'pending') return { label: 'Ожидает подтверждения', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+    if (vkStatus === 'error') return { label: 'Ошибка', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+    return { label: 'Не подключено', cls: 'bg-slate-50 text-slate-700 border-slate-200' };
+  }, [vkStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch('/api/channels', { method: 'GET' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const channels = Array.isArray(data?.channels) ? data.channels : [];
+        const vk = channels.find((c: any) => c?.type === 'vk') ?? null;
+        if (!vk) {
+          if (!cancelled) {
+            setVkStatus('not_connected');
+            setVkErrorHint(null);
+          }
+          return;
+        }
+        const status = String(vk.status || '').toLowerCase();
+        const mapped =
+          status === 'connected' ? 'connected' :
+          status === 'pending' ? 'pending' :
+          status === 'error' ? 'error' :
+          'not_connected';
+        if (!cancelled) {
+          setVkStatus(mapped);
+          const lastErr = vk?.settings_json?.last_error;
+          setVkErrorHint(typeof lastErr === 'string' && lastErr.trim() ? lastErr : null);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -84,14 +129,42 @@ export default function DashboardPage() {
             <p className="mt-1 text-xs text-slate-600">Запросить подключение Email‑канала.</p>
             <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">support@asi-global.ru</p>
           </a>
-          <a
-            href="mailto:support@asi-global.ru?subject=Подключение%20VK%20канала"
-            className="group rounded-xl border border-slate-200 p-4 hover:border-slate-400 hover:bg-slate-50 transition-all"
-          >
-            <p className="text-sm font-semibold text-slate-900">VK</p>
-            <p className="mt-1 text-xs text-slate-600">Запросить подключение VK‑канала.</p>
-            <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">support@asi-global.ru</p>
-          </a>
+          <div className="rounded-xl border border-slate-200 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">VK</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Подключите VK через OAuth (v1).
+                </p>
+              </div>
+              <span className={`text-[11px] px-2 py-1 rounded-full border ${vkBadge.cls}`}>
+                {vkBadge.label}
+              </span>
+            </div>
+
+            {vkStatus === 'error' && vkErrorHint ? (
+              <p className="mt-2 text-xs text-rose-700">
+                {vkErrorHint}
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex items-center gap-2">
+              <a
+                href="/api/connect/vk/start"
+                className="inline-flex items-center justify-center rounded-lg bg-slate-900 text-white text-xs px-3 py-2 hover:bg-slate-800 transition-colors"
+              >
+                {vkStatus === 'connected' ? 'Переподключить' : 'Подключить VK'}
+              </a>
+              <a
+                href="https://vk.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-slate-600 hover:text-slate-900"
+              >
+                Открыть VK
+              </a>
+            </div>
+          </div>
         </div>
       </div>
 

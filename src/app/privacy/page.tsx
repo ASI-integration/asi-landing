@@ -126,7 +126,7 @@ export default function PrivacyPage() {
             <ul className="mt-3 list-disc pl-5 space-y-1.5">
               <li>Access the personal data we hold about you.</li>
               <li>Request correction of inaccurate data.</li>
-              <li>Request deletion of your data ("right to be forgotten").</li>
+              <li>Request deletion of your data (&quot;right to be forgotten&quot;).</li>
               <li>Withdraw consent to data processing at any time.</li>
             </ul>
             <p className="mt-3">

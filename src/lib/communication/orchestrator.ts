@@ -58,29 +58,120 @@ import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 import { supabase } from '@/lib/supabase';
 import { runInBackground } from './background';
 
+function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
+  if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
+  if (process.env.RU_TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
+  if (process.env.TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
+  return false;
+}
+
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
   const update_id = envelope.update_id ?? Date.now();
   const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
   const ruDebug = process.env.RU_TELEGRAM_DEBUG === '1' && envelope.channel === 'telegram';
+  const pipeDebug = pipelineDebugEnabled(envelope);
+
+  const cpEnabled = pipeDebug || envelope.channel === 'telegram';
+  const cp = (checkpoint: string, extra?: Record<string, unknown>) => {
+    if (!cpEnabled) return;
+    try {
+      console.log('[comm:checkpoint]', {
+        corr_id: corrId,
+        update_id,
+        channel: envelope.channel,
+        ...extra,
+        checkpoint,
+        ts: new Date().toISOString(),
+      });
+    } catch {
+      // Never let debug logging break processing
+    }
+  };
+
+  const withAwaitCheckpoint = async <T>(
+    name: string,
+    fn: () => Promise<T>,
+    extra?: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<T> => {
+    const startedAt = Date.now();
+    cp(`${name}.start`, extra);
+    try {
+      let p = fn();
+      if (timeoutMs && timeoutMs > 0) {
+        p = Promise.race([
+          p,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`${name} timed out after ${timeoutMs}ms`)), timeoutMs),
+          ),
+        ]);
+      }
+      const result = await p;
+      cp(`${name}.done`, { ...(extra ?? {}), ms: Date.now() - startedAt });
+      return result;
+    } catch (err) {
+      const detail = err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : { message: String(err) };
+      cp(`${name}.error`, { ...(extra ?? {}), ms: Date.now() - startedAt, error: detail });
+      throw err;
+    }
+  };
 
   // Idempotency: drop duplicate update_ids
+  cp('entered.processMessage', {
+    has_message_text: Boolean(envelope.messageText && envelope.messageText.length > 0),
+    text_len: text.length,
+    has_metadata: Boolean(envelope.metadata),
+    env_comm_pipeline_debug: process.env.COMM_PIPELINE_DEBUG ?? null,
+    env_ru_telegram_debug: process.env.RU_TELEGRAM_DEBUG ?? null,
+    env_telegram_debug: process.env.TELEGRAM_DEBUG ?? null,
+    env_node_env: process.env.NODE_ENV ?? null,
+    env_vercel_env: process.env.VERCEL_ENV ?? null,
+  });
+
+  cp('idempotency.check.start');
   if (checkAndMark(update_id)) {
+    cp('idempotency.duplicate.returning');
     auditDuplicate({ chat_id: 0, update_id });
     return { outcome: ProcessOutcome.Duplicate, update_id };
   }
+  cp('idempotency.check.done');
 
   // Resolve unified identity
-  const identity = await createOrMergeIdentity(envelope);
+  const identity = await withAwaitCheckpoint('identity.resolve', () => createOrMergeIdentity(envelope), {
+    has_chat_id: Boolean(envelope.chatId),
+    has_external_user_id: Boolean(envelope.externalUserId),
+  });
+
   const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
+  cp('channel.resolved', { chat_id: chatId });
+  cp('text.extracted', { chat_id: chatId, text_len: text.length });
+
+  if (pipeDebug) {
+    console.log('[comm:pipeline] message.received', {
+      corr_id: corrId,
+      update_id,
+      channel: envelope.channel,
+      chat_id: chatId,
+      text_len: text.length,
+      has_metadata: Boolean(envelope.metadata),
+    });
+  }
   
-  await appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt });
+  await withAwaitCheckpoint(
+    'timeline.inbound.append',
+    () => appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt }),
+    { chat_id: chatId },
+    15_000,
+  );
 
   // Mark session active on first processed message (fire-and-forget — never blocks reply).
+  cp('session.active.mark.fire_and_forget.start', { chat_id: chatId });
   runInBackground(
     { correlationId: corrId, module: 'orchestrator', taskName: 'transitionSessionStatus', triggerId: String(chatId) },
     () => transitionSessionStatus(chatId, SessionStatus.Active),
   );
+  cp('session.active.mark.fire_and_forget.queued', { chat_id: chatId });
 
   try {
     // RU Telegram: log runtime-critical env state (never print secrets).
@@ -92,19 +183,37 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         has_bot_token: Boolean(token && token.trim().length > 0),
         dry_run: process.env.TELEGRAM_DRY_RUN === '1',
         outbound_debug: process.env.TELEGRAM_OUTBOUND_DEBUG === '1',
+        comm_pipeline_debug: process.env.COMM_PIPELINE_DEBUG ?? null,
+        ru_telegram_debug: process.env.RU_TELEGRAM_DEBUG ?? null,
+        telegram_debug: process.env.TELEGRAM_DEBUG ?? null,
         node_env: process.env.NODE_ENV ?? null,
         vercel_env: process.env.VERCEL_ENV ?? null,
       });
     }
     // Keyword-based incident detection — runs before LLM
+    cp('envelope.validated', { chat_id: chatId }); // basic shape is already assumed by caller; this marks post-identity sanity point
+    cp('classifier.precheck.keywords.start', { chat_id: chatId });
     const INCIDENT_KEYWORDS = ['trash', 'dirty', 'party', 'damage'];
     if (INCIDENT_KEYWORDS.some(kw => text.toLowerCase().includes(kw))) {
       updateContext(chatId, { incident: true, incident_type: 'property_issue', severity: 'high' });
     }
+    cp('classifier.precheck.keywords.done', { chat_id: chatId });
 
-    const classification = await classifyMessage(text);
+    cp('classifier.start', { chat_id: chatId });
+    const classification = await withAwaitCheckpoint('classifier.await', () => classifyMessage(text), { chat_id: chatId }, 30_000);
+    cp('classifier.done', { chat_id: chatId, category: classification.category, lang: classification.lang });
     if (process.env.RU_TELEGRAM_FORCE_RU === '1' && envelope.channel === 'telegram') {
       classification.lang = 'ru';
+    }
+    if (pipeDebug) {
+      console.log('[comm:pipeline] classification.done', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        category: classification.category,
+        lang: classification.lang,
+        slots: classification.slots,
+      });
     }
     auditInbound({
       chat_id: chatId,
@@ -114,8 +223,30 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       lang: classification.lang,
     });
 
-    const intentResult = await detectIntent(text);
+    cp('intent.start', { chat_id: chatId });
+    const intentResult = await withAwaitCheckpoint('intent.await', () => detectIntent(text), { chat_id: chatId }, 30_000);
+    cp('intent.done', { chat_id: chatId, intent: intentResult.intent, confidence: intentResult.confidence });
+    if (pipeDebug) {
+      console.log('[comm:pipeline] intent.done', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        intent: intentResult.intent,
+        confidence: intentResult.confidence,
+      });
+    }
+    cp('memory/context.load.start', { chat_id: chatId });
     const ctx = getContext(chatId);
+    cp('memory/context.load.done', { chat_id: chatId });
+    if (pipeDebug) {
+      console.log('[comm:pipeline] memory.loaded', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        has_last_intent: Boolean(ctx.lastIntent),
+        incident: Boolean(ctx.incident),
+      });
+    }
 
     // ── Staff-group clue accumulation ──────────────────────────────────────────
     // Extract operator-provided booking/property clues from the current message
@@ -138,12 +269,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Assembly
-    const commContext = await buildCommunicationContext(chatId, text, intentResult, []);
+    cp('memory/context.build.start', { chat_id: chatId });
+    const commContext = await withAwaitCheckpoint(
+      'memory/context.build.await',
+      () => buildCommunicationContext(chatId, text, intentResult, []),
+      { chat_id: chatId },
+      45_000,
+    );
+    cp('memory/context.build.done', { chat_id: chatId });
 
     // Fetch per-property templates (null when none set or on any error)
     const propertyId = commContext.reservation.propertyId;
-    const templates = propertyId ? await getPropertyTemplates(propertyId) : null;
-    const llmEnabled = Boolean((process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? '').trim() || (process.env.LLM_FALLBACK_API_KEY ?? '').trim());
+    const templates = propertyId
+      ? await withAwaitCheckpoint('templates.load.await', () => getPropertyTemplates(propertyId), { chat_id: chatId, property_id: propertyId }, 15_000)
+      : null;
+    cp('templates.loaded', { chat_id: chatId, property_id: propertyId ?? null, templates_loaded: Boolean(templates) });
     if (ruDebug) {
       console.log('[ru:tg] context.assembled', {
         chat_id: chatId,
@@ -157,19 +297,32 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reservation_id: commContext.reservation.reservationId ?? null,
         property_id: commContext.reservation.propertyId ?? null,
         templates_loaded: Boolean(templates),
-        llm_enabled: llmEnabled,
         staff_clues: mergedClues,
       });
     }
 
     // Action Policy Guard
+    cp('action_selection.start', { chat_id: chatId });
     const safety = evaluateActionSafety(commContext, text);
+    cp('action_selection.done', { chat_id: chatId, safe: safety.safe, action: safety.action });
+    if (pipeDebug) {
+      console.log('[comm:pipeline] action.selected', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        safe: safety.safe,
+        action: safety.action,
+        reason: safety.reason ?? null,
+        escalation_reason: safety.escalationReason ?? null,
+      });
+    }
 
     let replyText: string;
     let llmSucceeded = false;
     let usedPath: 'deterministic' | 'llm' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
+    cp('channel.adapter.resolved', { chat_id: chatId });
 
     // Staff-group operational bridge: group chat (chatId < 0) without a matched
     // reservation. Only ask a clarifying question when we STILL don't have
@@ -183,15 +336,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       !hasMinimalStaffClues(mergedClues);
 
     if (classification.category === 'start') {
+      cp('branch.start_message', { chat_id: chatId });
       replyText = adapter.formatResponse(deterministicReply(classification), commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (staffNeedsContext) {
+      cp('branch.staff_needs_context', { chat_id: chatId });
       const scenario = detectStaffScenario(intentResult.intent);
       replyText = buildStaffClarifyQuestion(scenario);
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (ctx.incident) {
+      cp('branch.incident', { chat_id: chatId });
       const incidentMsg =
         'Thank you for letting us know.\n\n' +
         'We are reviewing the situation.\n' +
@@ -203,6 +359,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       updateContext(chatId, { escalation_candidate: true });
     } else if (!safety.safe && safety.action === 'escalate_to_operator') {
+      cp('branch.policy_escalation.start', { chat_id: chatId });
       const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
       escalation = createEscalationEvent({
         reason: safety.escalationReason || EscalationReason.RequiresOperator,
@@ -212,8 +369,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         summary: handoff.reasonForEscalation,
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
-      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
-      await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
+      await withAwaitCheckpoint(
+        'timeline.escalation.append',
+        () => appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation!.summary, ts: new Date() }),
+        { chat_id: chatId },
+        15_000,
+      );
+      await withAwaitCheckpoint(
+        'session.transition.operator_review_required',
+        () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+        { chat_id: chatId },
+        15_000,
+      );
       // Ops task: policy escalation → guest_issue (fire-and-forget)
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_EscalatePolicy', triggerId: String(chatId) },
@@ -243,7 +410,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         : escalationBase;
       replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
       usedPath = 'deterministic';
+      cp('branch.policy_escalation.done', { chat_id: chatId });
     } else if (safety.action === 'ask_clarifying_question') {
+      cp('branch.ask_clarifying_question', { chat_id: chatId });
       const askRu =
         'Уточните, пожалуйста: объект/адрес, имя гостя и дата/время заезда. ' +
         'Если проблема с доступом — что именно на замке/двери и есть ли код?';
@@ -254,6 +423,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
+      cp('branch.checkininfo.no_template', { chat_id: chatId });
       const ru =
         'Чтобы помочь с заселением/кодом доступа, пришлите: объект/адрес, имя гостя и дату/время заезда. ' +
         'Если есть — номер брони/код бронирования.';
@@ -263,9 +433,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
+      cp('branch.provide_check_in_instructions.start', { chat_id: chatId });
       // ── Check-in readiness gate ──────────────────────────────────────
       const gateResult = propertyId
-        ? await evaluateCheckinReadiness(propertyId)
+        ? await withAwaitCheckpoint(
+            'checkin_gate.await',
+            () => evaluateCheckinReadiness(propertyId),
+            { chat_id: chatId, property_id: propertyId },
+            15_000,
+          )
         : { allowed: false, unit_state: null, blocked_reason: 'no_property_id', checked_at: new Date().toISOString() };
 
       if (gateResult.allowed) {
@@ -361,11 +537,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           },
         );
       }
+      cp('branch.provide_check_in_instructions.done', { chat_id: chatId, allowed: gateResult.allowed });
     } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
+      cp('branch.provide_checkout_instructions', { chat_id: chatId });
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
     } else if (safety.action === 'trigger_payment_request') {
+      cp('branch.trigger_payment_request.start', { chat_id: chatId });
       const payment = await createPaymentRequest({
         amount: 100,
         currency: classification.lang === 'ru' ? 'RUB' : 'USD',
@@ -375,7 +554,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         propertyId: commContext.reservation.propertyId,
       });
       const paymentExpiresAt = payment.expiresAt ?? new Date(Date.now() + 30 * 60 * 1000);
-      await transitionSessionStatus(chatId, SessionStatus.PaymentPending, { paymentExpiresAt });
+      await withAwaitCheckpoint(
+        'session.transition.payment_pending',
+        () => transitionSessionStatus(chatId, SessionStatus.PaymentPending, { paymentExpiresAt }),
+        { chat_id: chatId },
+        15_000,
+      );
       setPaymentExpiry(chatId, paymentExpiresAt);
       const paymentUrl = payment.paymentUrl;
       const linkStr = classification.lang === 'ru'
@@ -384,55 +568,74 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(linkStr, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
+      cp('branch.trigger_payment_request.done', { chat_id: chatId });
     } else {
+      cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
         : null;
       let llmReply: string | null = null;
-      if (llmEnabled) {
-        const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
-        llmReply = await callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt });
-        usedPath = 'llm';
-        llmSucceeded = llmReply !== null;
-      } else {
-        usedPath = 'deterministic';
-        llmSucceeded = true; // we intentionally skipped LLM
-      }
+      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
+      llmReply = await withAwaitCheckpoint(
+        'llm.call.await',
+        () => callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt }),
+        { chat_id: chatId },
+        Number(process.env.LLM_TIMEOUT_MS ?? 20000) + 10_000,
+      );
+      usedPath = 'llm';
+      llmSucceeded = llmReply !== null;
 
       const rawFallback = llmReply ?? deterministicReply(classification);
       replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
-      if (llmEnabled) {
-        auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
-      }
+      auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
+      cp('branch.llm.done', { chat_id: chatId, llm_succeeded: llmSucceeded });
     }
 
     updateContext(chatId, { lastIntent: intentResult.intent });
+    cp('memory/context.update.last_intent.done', { chat_id: chatId });
 
-    await Promise.allSettled([
-      upsertSession(chatId),
-      saveUserTurn({
-        chat_id: chatId,
-        update_id,
-        text,
-        category: classification.category,
-        lang: classification.lang,
-      }),
-    ]);
+    cp('persistence.user_turn.start', { chat_id: chatId });
+    await withAwaitCheckpoint(
+      'persistence.user_turn.await',
+      () =>
+        Promise.allSettled([
+          upsertSession(chatId),
+          saveUserTurn({
+            chat_id: chatId,
+            update_id,
+            text,
+            category: classification.category,
+            lang: classification.lang,
+          }),
+        ]),
+      { chat_id: chatId },
+      20_000,
+    );
+    cp('persistence.user_turn.done', { chat_id: chatId });
 
     // Persist the assistant turn BEFORE attempting outbound delivery.
     // This fixes the observed gap where user turns exist but assistant turns
     // are missing because delivery threw/failed before saveAssistantTurn.
     //
     // If delivery later fails, the turn is still recorded for ops debugging.
-    await saveAssistantTurn({
-      chat_id: chatId,
-      update_id,
-      reply: replyText,
-      category: classification.category,
-      lang: classification.lang,
-    });
+    cp('persistence.assistant_turn.start', { chat_id: chatId });
+    await withAwaitCheckpoint(
+      'persistence.assistant_turn.await',
+      () =>
+        saveAssistantTurn({
+          chat_id: chatId,
+          update_id,
+          reply: replyText,
+          category: classification.category,
+          lang: classification.lang,
+        }),
+      { chat_id: chatId },
+      20_000,
+    );
+    cp('persistence.assistant_turn.done', { chat_id: chatId });
 
     if (!escalation && shouldEscalate(classification, llmSucceeded)) {
+      cp('escalation.post_reply.start', { chat_id: chatId });
       const reason = deriveEscalationReason(classification, llmSucceeded);
       const handoff = buildOperatorHandoff(commContext, text, 'escalate_to_operator', 'LLM fallback triggered');
       escalation = createEscalationEvent({
@@ -442,13 +645,24 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         classification,
         summary: `category=${classification.category} llm=${llmSucceeded} urgent=${classification.slots.isUrgent}`,
       });
+      const esc = escalation;
       auditEscalation({
         chat_id: chatId,
         update_id,
         detail: `reason=${reason} category=${classification.category}`,
       });
-      await appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation.summary, ts: new Date() });
-      await transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired);
+      await withAwaitCheckpoint(
+        'timeline.escalation_post_reply.append',
+        () => appendTimelineEvent(identity.guestId, { type: 'escalation', reason: esc.summary, ts: new Date() }),
+        { chat_id: chatId },
+        15_000,
+      );
+      await withAwaitCheckpoint(
+        'session.transition.operator_review_required_post_reply',
+        () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+        { chat_id: chatId },
+        15_000,
+      );
       // Ops task: LLM-fallback escalation → guest_issue (fire-and-forget)
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_LLMFallback', triggerId: String(chatId) },
@@ -470,10 +684,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           }
         },
       );
+      cp('escalation.post_reply.done', { chat_id: chatId, reason });
     }
 
     // Ops task: checkout intent → checkout task (fire-and-forget)
     if (intentResult.intent === IntentCategory.CheckOut && commContext.reservation.propertyId) {
+      cp('ops.checkout_task.fire_and_forget.queued', { chat_id: chatId, property_id: commContext.reservation.propertyId });
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_Checkout', triggerId: String(chatId) },
         async () => {
@@ -497,6 +713,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // Send the response abstractly
     const targetId = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+    cp('outbound.dispatch.start', { chat_id: chatId, target_id: String(targetId), used_path: usedPath, llm_succeeded: llmSucceeded, reply_len: replyText.length });
     if (ruDebug) {
       console.log('[ru:tg] reply.computed', {
         chat_id: chatId,
@@ -508,9 +725,42 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     const isDryRun = process.env.TELEGRAM_DRY_RUN === '1' && envelope.channel === 'telegram';
-    const sent = isDryRun ? true : await adapter.sendMessage(targetId, replyText);
+    if (pipeDebug) {
+      console.log('[comm:pipeline] outbound.dispatch', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        channel: envelope.channel,
+        target_id: String(targetId),
+        dry_run: isDryRun,
+        reply_len: replyText.length,
+      });
+    }
+    const sent = isDryRun
+      ? true
+      : await withAwaitCheckpoint(
+          'outbound.dispatch.await',
+          () => adapter.sendMessage(targetId, replyText),
+          { chat_id: chatId, target_id: String(targetId), channel: envelope.channel },
+          Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS ?? 10000) + 5_000,
+        );
+    if (pipeDebug) {
+      console.log('[comm:pipeline] outbound.result', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        channel: envelope.channel,
+        sent,
+      });
+    }
+    cp('outbound.dispatch.result', { chat_id: chatId, sent });
     if (!sent) throw new Error('Adapter failed to send message');
-    await appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() });
+    await withAwaitCheckpoint(
+      'timeline.outbound.append',
+      () => appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() }),
+      { chat_id: chatId },
+      15_000,
+    );
 
     auditOutbound({
       chat_id: chatId,
@@ -520,6 +770,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       detail: escalation ? `escalated:${escalation.reason}` : undefined,
     });
 
+    cp('processMessage.return.success', { chat_id: chatId, outcome: ProcessOutcome.Replied });
     return {
       outcome: ProcessOutcome.Replied,
       update_id,
@@ -530,6 +781,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    cp('processMessage.catch', { chat_id: chatId, error_detail: detail });
     auditError({ chat_id: chatId, update_id, detail });
     return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
   }

@@ -345,7 +345,7 @@ function PaywallModal({
 
         {/* What's included */}
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5 mb-6">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">What's included</p>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">What&apos;s included</p>
           <ul className="space-y-2">
             {includes.map((item) => (
               <li key={item} className="flex items-start gap-2.5">

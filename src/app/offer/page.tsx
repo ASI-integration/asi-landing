@@ -90,7 +90,7 @@ export default function OfferPage() {
           <section>
             <h2 className="text-base font-semibold text-slate-900 mb-3">4. Pricing &amp; Payment</h2>
             <p>
-              Pricing is published on the website and may be updated with at least 7 calendar days'
+              Pricing is published on the website and may be updated with at least 7 calendar days&apos;
               notice to existing subscribers before changes take effect.
             </p>
             <p className="mt-3">
@@ -112,7 +112,7 @@ export default function OfferPage() {
               <li>You may cancel at any time; access continues until the end of the paid period.</li>
               <li>
                 Refunds for unused periods are not provided, except where the service is unavailable
-                due to a fault on the provider's side for more than 72 consecutive hours.
+                due to a fault on the provider&apos;s side for more than 72 consecutive hours.
               </li>
             </ul>
           </section>

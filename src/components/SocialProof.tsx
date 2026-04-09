@@ -26,7 +26,7 @@ export function SocialProof() {
         <div className="mt-16 grid sm:grid-cols-2 gap-8">
           {testimonials.map((t, i) => (
             <blockquote key={i} className="p-6 bg-white rounded-xl border border-slate-200">
-              <p className="text-slate-700">"{t.quote}"</p>
+              <p className="text-slate-700">&ldquo;{t.quote}&rdquo;</p>
               <footer className="mt-4">
                 <cite className="font-semibold text-slate-900 not-italic">{t.author}</cite>
                 <span className="text-slate-500 text-sm"> — {t.role}</span>

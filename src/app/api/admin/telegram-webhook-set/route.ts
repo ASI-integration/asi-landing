@@ -26,7 +26,15 @@ export async function POST(req: Request) {
     ? body.url
     : 'https://asi-global.ru/api/telegram/webhook';
 
-  const secretToken = typeof body?.secret_token === 'string' ? body.secret_token : undefined;
+  // If the server expects TELEGRAM_WEBHOOK_SECRET but the webhook is set without
+  // secret_token, Telegram will not send the header and our webhook handler will
+  // 403 every request (Telegram treats 4xx as final). Default to the env secret.
+  const secretToken =
+    typeof body?.secret_token === 'string'
+      ? body.secret_token
+      : (process.env.TELEGRAM_WEBHOOK_SECRET && process.env.TELEGRAM_WEBHOOK_SECRET.trim().length > 0
+          ? process.env.TELEGRAM_WEBHOOK_SECRET.trim()
+          : undefined);
   const allowedUpdates = Array.isArray(body?.allowed_updates) ? body.allowed_updates : undefined;
 
   const payload: Record<string, unknown> = { url };
