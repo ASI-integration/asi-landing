@@ -27,6 +27,7 @@ export default function OnboardingPageContent() {
   );
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
+  const publicConfigFetchAttemptedRef = useRef(false);
 
   const selectedPlan = useMemo(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
@@ -70,7 +71,7 @@ export default function OnboardingPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [debugGoogle]);
+  }, [debugGoogle, googleClientId]);
 
   useEffect(() => {
     if (!selectedPlan) return;
@@ -138,12 +139,48 @@ export default function OnboardingPageContent() {
     setError('');
     setLoading(true);
     try {
+      if (debugGoogle) {
+        // eslint-disable-next-line no-console
+        console.info('[GoogleOAuth][/connect] click handler started', { hasClientId: Boolean(googleClientId) });
+      }
+
+      // If config wasn't available at click time, re-fetch once (protects against earlier transient failures).
+      if (!googleClientId && !publicConfigFetchAttemptedRef.current) {
+        publicConfigFetchAttemptedRef.current = true;
+        try {
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+          let res: Response;
+          try {
+            res = await fetch('/api/public-config', { method: 'GET', signal: controller.signal });
+          } finally {
+            window.clearTimeout(timeoutId);
+          }
+          const data = (await res.json()) as { googleClientId?: string };
+          const clientId = (data.googleClientId || '').trim();
+          setGoogleClientId(clientId);
+          if (debugGoogle) {
+            // eslint-disable-next-line no-console
+            console.info('[GoogleOAuth][/connect] click-time config fetched', { ok: res.ok, clientIdPresent: Boolean(clientId) });
+          }
+        } catch (e) {
+          if (debugGoogle) {
+            // eslint-disable-next-line no-console
+            console.info('[GoogleOAuth][/connect] click-time config fetch failed', e);
+          }
+        }
+      }
+
       if (!googleClientId) {
         setError('Вход через Google сейчас недоступен. Попробуйте позже или используйте email.');
         return;
       }
 
       await loadGoogleIdentityServices();
+      if (debugGoogle) {
+        // eslint-disable-next-line no-console
+        console.info('[GoogleOAuth][/connect] GIS script loaded');
+      }
       if (!window.google?.accounts?.id) {
         setError('Google авторизация недоступна. Попробуйте позже.');
         return;
@@ -161,6 +198,13 @@ export default function OnboardingPageContent() {
         window.google!.accounts!.id!.initialize({
           client_id: googleClientId,
           callback: (resp) => {
+            if (debugGoogle) {
+              // eslint-disable-next-line no-console
+              console.info('[GoogleOAuth][/connect] credential callback fired', {
+                hasCredential: Boolean(resp?.credential),
+                select_by: (resp as { select_by?: string } | undefined)?.select_by,
+              });
+            }
             const token = resp?.credential;
             credentialReceived = true;
             window.clearTimeout(timer);
@@ -175,6 +219,10 @@ export default function OnboardingPageContent() {
             }
           },
         });
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][/connect] google.accounts.id.initialize succeeded');
+        }
 
         // When the popup is dismissed (user closes Google chooser without selecting),
         // the callback never fires. Detect page focus returning to reset loading state.
@@ -212,6 +260,10 @@ export default function OnboardingPageContent() {
           } else {
             // renderButton produced nothing — fall through to prompt()
             window.removeEventListener('focus', onWindowFocus);
+            if (debugGoogle) {
+              // eslint-disable-next-line no-console
+              console.info('[GoogleOAuth][/connect] calling prompt() after renderButton');
+            }
             window.google!.accounts!.id!.prompt();
           }
           return;
@@ -225,13 +277,21 @@ export default function OnboardingPageContent() {
         window.google!.accounts!.id!.prompt();
       });
 
+      if (debugGoogle) {
+        // eslint-disable-next-line no-console
+        console.info('[GoogleOAuth][/connect] posting idToken to backend', { tokenLen: idToken.length });
+      }
       const res = await fetch('/api/auth/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken, plan: selectedPlanValue }),
+        body: JSON.stringify({ idToken, plan: selectedPlanValue, debug: debugGoogle }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.error('[GoogleOAuth][/connect] backend /api/auth/google failed', { status: res.status, data });
+        }
         setError(data.error || 'Ошибка входа через Google.');
         return;
       }
@@ -239,6 +299,10 @@ export default function OnboardingPageContent() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg !== 'dismissed') {
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.error('[GoogleOAuth][/connect] Google sign-in flow failed', err);
+        }
         setError('Не удалось войти через Google. Используйте email.');
       }
     } finally {
@@ -278,7 +342,7 @@ export default function OnboardingPageContent() {
               <button
                 type="button"
                 onClick={handleGoogle}
-                disabled={loading || googleConfigLoading}
+                disabled={loading || googleConfigLoading || !googleClientId}
                 className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Войти через Google

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
@@ -12,8 +13,11 @@ function randomPassword(): string {
 export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
+  let debug = false;
   try {
-    const { idToken, plan } = await req.json();
+    const body = (await req.json()) as { idToken?: string; plan?: unknown; debug?: boolean };
+    const { idToken, plan } = body;
+    debug = Boolean(body?.debug);
     if (!idToken) {
       return NextResponse.json({ error: 'idToken required' }, { status: 400 });
     }
@@ -30,6 +34,13 @@ export async function POST(req: Request) {
     });
 
     const payload = ticket.getPayload();
+    const aud = payload?.aud;
+    if (aud && aud !== clientId) {
+      return NextResponse.json(
+        { error: 'Google token audience mismatch', ...(debug ? { details: { expectedAud: clientId, receivedAud: aud } } : {}) },
+        { status: 401 }
+      );
+    }
     const email = payload?.email?.toLowerCase();
     if (!email) {
       return NextResponse.json({ error: 'Google account email missing' }, { status: 400 });
@@ -46,8 +57,8 @@ export async function POST(req: Request) {
     let userId = existing?.id as string | undefined;
 
     if (!userId) {
-      // users.password_hash is NOT NULL in current schema; we store a random value.
-      const passwordHash = randomPassword();
+      // users.password_hash is NOT NULL; create a valid bcrypt hash for compatibility with email login.
+      const passwordHash = await bcrypt.hash(randomPassword(), 10);
       const { data: created, error: createErr } = await supabase
         .from('users')
         .insert({ email, password_hash: passwordHash })
@@ -85,7 +96,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, userId });
   } catch (err) {
     console.error('[GoogleAuth]', err);
-    return NextResponse.json({ error: 'Google login failed' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'unknown_error';
+    return NextResponse.json(
+      { error: 'Google login failed', ...(debug && typeof message === 'string' ? { details: message } : {}) },
+      { status: 500 }
+    );
   }
 }
 
