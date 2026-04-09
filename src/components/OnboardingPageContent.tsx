@@ -19,14 +19,12 @@ export default function OnboardingPageContent() {
   const searchParams = useSearchParams();
   const isMountedRef = useRef(true);
 
-  // Initialize from build-time env immediately (avoids disabled flash when NEXT_PUBLIC_ is bundled).
-  // Falls back to /api/public-config fetch for runtime-only env setups.
-  const [googleClientId, setGoogleClientId] = useState<string>(
-    () => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim()
-  );
-  const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(
-    () => !(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim()
-  );
+  // OAuth redirect flow depends on SERVER env (client id + secret), not on build-time NEXT_PUBLIC_*.
+  // We must fetch runtime config to avoid client/server env mismatches and misleading enabled state.
+  const [googleOAuthConfigured, setGoogleOAuthConfigured] = useState<boolean>(false);
+  const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(true);
+  // Kept only for GIS fallback/debug; not used for enablement.
+  const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const publicConfigFetchAttemptedRef = useRef(false);
@@ -45,9 +43,6 @@ export default function OnboardingPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    // Skip the fetch entirely if we already have the client ID from the bundled env.
-    if (googleClientId) return;
-
     let cancelled = false;
     (async () => {
       try {
@@ -60,19 +55,30 @@ export default function OnboardingPageContent() {
         } finally {
           window.clearTimeout(timeoutId);
         }
-        const data = (await res.json()) as { googleClientId?: string };
+        const data = (await res.json()) as { googleClientId?: string; googleOAuthConfigured?: boolean };
         const clientId = (data.googleClientId || '').trim();
-        if (!cancelled && isMountedRef.current) setGoogleClientId(clientId);
+        const configured = Boolean(data.googleOAuthConfigured);
+        if (!cancelled && isMountedRef.current) {
+          setGoogleClientId(clientId);
+          setGoogleOAuthConfigured(configured);
+        }
         if (debugGoogle) {
           // eslint-disable-next-line no-console
-          console.info('[GoogleOAuth][/connect] runtime config loaded', { ok: res.ok, clientIdPresent: Boolean(clientId) });
+          console.info('[GoogleOAuth][/connect] runtime config loaded', {
+            ok: res.ok,
+            clientIdPresent: Boolean(clientId),
+            oauthConfigured: configured,
+          });
         }
       } catch (e) {
         if (debugGoogle) {
           // eslint-disable-next-line no-console
           console.info('[GoogleOAuth][/connect] runtime config fetch failed', e);
         }
-        if (!cancelled && isMountedRef.current) setGoogleClientId('');
+        if (!cancelled && isMountedRef.current) {
+          setGoogleClientId('');
+          setGoogleOAuthConfigured(false);
+        }
       } finally {
         // Always clear the loading flag once the request settles.
         // Guard only against true unmount, not effect re-runs.
@@ -82,7 +88,21 @@ export default function OnboardingPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [debugGoogle, googleClientId]);
+  }, [debugGoogle]);
+
+  const googleErrorParam = useMemo(() => (searchParams.get('google_error') || '').trim(), [searchParams]);
+  useEffect(() => {
+    if (!googleErrorParam) return;
+    if (googleErrorParam === 'not_configured') {
+      setError('Вход через Google сейчас недоступен (не настроено). Используйте email.');
+    } else if (googleErrorParam === 'bad_state') {
+      setError('Не удалось подтвердить вход через Google. Попробуйте ещё раз.');
+    } else if (googleErrorParam === 'missing_params') {
+      setError('Не удалось начать вход через Google. Попробуйте ещё раз.');
+    } else {
+      setError('Вход через Google не удался. Используйте email.');
+    }
+  }, [googleErrorParam]);
 
   useEffect(() => {
     if (!selectedPlan) return;
@@ -157,7 +177,12 @@ export default function OnboardingPageContent() {
     try {
       if (debugGoogle) {
         // eslint-disable-next-line no-console
-        console.info('[GoogleOAuth][/connect] click handler started', { hasClientId: Boolean(googleClientId) });
+        console.info('[GoogleOAuth][/connect] click handler started', { oauthConfigured: googleOAuthConfigured, hasClientId: Boolean(googleClientId) });
+      }
+
+      if (!googleOAuthConfigured) {
+        setError('Вход через Google сейчас недоступен (не настроено). Используйте email.');
+        return;
       }
 
       // Production-robust flow: full-page redirect OAuth (no popup / no lost user gesture).
@@ -368,11 +393,14 @@ export default function OnboardingPageContent() {
               <button
                 type="button"
                 onClick={handleGoogle}
-                disabled={loading || googleConfigLoading}
+                disabled={loading || googleConfigLoading || !googleOAuthConfigured}
                 className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? 'Открываем Google…' : 'Войти через Google'}
               </button>
+              {!googleConfigLoading && !googleOAuthConfigured ? (
+                <p className="mt-2 text-xs text-slate-600">Вход через Google временно недоступен (не настроено).</p>
+              ) : null}
               {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
               {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
               {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
