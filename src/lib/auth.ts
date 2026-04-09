@@ -4,6 +4,9 @@ import { cookies } from 'next/headers';
 export type SessionData = {
   userId: string;
   email: string;
+  // OAuth transient state (must not be relied on long-term)
+  googleOauthState?: string;
+  googleOauthPlan?: unknown;
 };
 
 const SESSION_OPTIONS = {

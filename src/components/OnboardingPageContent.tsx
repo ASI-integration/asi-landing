@@ -15,6 +15,7 @@ export default function OnboardingPageContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [googleStatus, setGoogleStatus] = useState<string>('');
   const searchParams = useSearchParams();
   const isMountedRef = useRef(true);
 
@@ -151,11 +152,22 @@ export default function OnboardingPageContent() {
 
   const handleGoogle = async () => {
     setError('');
+    setGoogleStatus('');
     setLoading(true);
     try {
       if (debugGoogle) {
         // eslint-disable-next-line no-console
         console.info('[GoogleOAuth][/connect] click handler started', { hasClientId: Boolean(googleClientId) });
+      }
+
+      // Production-robust flow: full-page redirect OAuth (no popup / no lost user gesture).
+      // We keep the GIS flow as a fallback only when redirect env isn't configured.
+      {
+        const debug = debugGoogle ? '1' : '0';
+        const url = `/api/auth/google/start?plan=${encodeURIComponent(String(selectedPlanValue))}&debug=${debug}`;
+        setGoogleStatus('Открываем Google…');
+        window.location.assign(url);
+        return;
       }
 
       // If config wasn't available at click time, re-fetch once (protects against earlier transient failures).
@@ -359,8 +371,10 @@ export default function OnboardingPageContent() {
                 disabled={loading || googleConfigLoading}
                 className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Войти через Google
+                {loading ? 'Открываем Google…' : 'Войти через Google'}
               </button>
+              {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
+              {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
               {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
               <div
                 ref={gsiButtonHostRef}
@@ -422,7 +436,6 @@ export default function OnboardingPageContent() {
                     disabled={loading}
                   />
                 </div>
-                {error && <p className="text-sm text-red-600">{error}</p>}
                 <button
                   type="submit"
                   disabled={loading}

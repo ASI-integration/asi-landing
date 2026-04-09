@@ -28,15 +28,25 @@ export async function ensureAccountForUser(opts: {
   const trialDays = typeof opts.trialDays === 'number' && opts.trialDays > 0 ? opts.trialDays : 7;
 
   // 1) Try to find existing membership -> account
-  const { data: membership, error: membershipErr } = await supabase
-    .from('account_members')
-    .select('account_id, role, accounts:account_id ( id, plan_code, trial_started_at, trial_ends_at, subscription_status )')
-    .eq('user_id', opts.userId)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (membershipErr) throw membershipErr;
+  let membership: any = null;
+  try {
+    const { data, error } = await supabase
+      .from('account_members')
+      .select('account_id, role, accounts:account_id ( id, plan_code, trial_started_at, trial_ends_at, subscription_status )')
+      .eq('user_id', opts.userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    membership = data;
+  } catch (e: any) {
+    const msg = typeof e?.message === 'string' ? e.message : '';
+    // Backward-compat: production DB may not have multitenant tables yet.
+    if (msg.includes('account_members') && (msg.includes('does not exist') || msg.includes('relation'))) {
+      return { accountId: 'legacy', created: false };
+    }
+    throw e;
+  }
 
   const now = new Date();
   const trialEnds = addDays(now, trialDays);
@@ -61,27 +71,35 @@ export async function ensureAccountForUser(opts: {
 
   // 3) Otherwise create account + membership
   const accountName = (opts.email || 'ASI workspace').split('@')[0]?.trim() || 'ASI workspace';
-  const { data: account, error: accountErr } = await supabase
-    .from('accounts')
-    .insert({
-      name: accountName,
-      plan_code: plan,
-      subscription_status: 'trial',
-      trial_started_at: now.toISOString(),
-      trial_ends_at: trialEnds.toISOString(),
-    })
-    .select('id')
-    .single();
+  try {
+    const { data: account, error: accountErr } = await supabase
+      .from('accounts')
+      .insert({
+        name: accountName,
+        plan_code: plan,
+        subscription_status: 'trial',
+        trial_started_at: now.toISOString(),
+        trial_ends_at: trialEnds.toISOString(),
+      })
+      .select('id')
+      .single();
 
-  if (accountErr) throw accountErr;
+    if (accountErr) throw accountErr;
 
-  const { error: memberErr } = await supabase.from('account_members').insert({
-    account_id: account.id,
-    user_id: opts.userId,
-    role: 'owner',
-  });
-  if (memberErr) throw memberErr;
+    const { error: memberErr } = await supabase.from('account_members').insert({
+      account_id: account.id,
+      user_id: opts.userId,
+      role: 'owner',
+    });
+    if (memberErr) throw memberErr;
 
-  return { accountId: account.id, created: true };
+    return { accountId: account.id, created: true };
+  } catch (e: any) {
+    const msg = typeof e?.message === 'string' ? e.message : '';
+    if ((msg.includes('accounts') || msg.includes('account_members')) && (msg.includes('does not exist') || msg.includes('relation'))) {
+      return { accountId: 'legacy', created: false };
+    }
+    throw e;
+  }
 }
 

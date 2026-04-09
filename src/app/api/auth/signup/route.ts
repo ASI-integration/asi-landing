@@ -5,6 +5,8 @@ import { getSession } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { ensureAccountForUser } from '@/lib/accounts';
 
+export const runtime = 'nodejs';
+
 export async function POST(req: Request) {
   let createdUserId: string | null = null;
   let debug = false;
@@ -49,16 +51,24 @@ export async function POST(req: Request) {
     const trialEnd = new Date(now);
     trialEnd.setDate(trialEnd.getDate() + 7);
 
-    const { error: subError } = await supabase.from('subscriptions').insert({
-      user_id: user.id,
-      status: 'trial',
-      trial_start: now.toISOString(),
-      trial_end: trialEnd.toISOString(),
-    });
+    const { error: subError } = await supabase.from('subscriptions').upsert(
+      {
+        user_id: user.id,
+        status: 'trial',
+        trial_start: now.toISOString(),
+        trial_end: trialEnd.toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
 
     if (subError) throw subError;
 
-    await sendTelegramMessage(`🆕 New trial user registered: ${user.email}`);
+    // Best-effort ops notification: must not block signup.
+    try {
+      await sendTelegramMessage(`🆕 New trial user registered: ${user.email}`);
+    } catch (e) {
+      console.warn('[Signup] telegram notify failed', e);
+    }
 
     await ensureAccountForUser({
       userId: user.id,
