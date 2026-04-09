@@ -11,26 +11,28 @@ export default function ConnectGooglePage() {
   } | null>(null);
 
   useEffect(() => {
-    const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
-    if (!clientId) {
-      setError('Google авторизация не настроена.');
-      return;
-    }
-
     const redirectUri = `${window.location.origin}/connect/google`;
     const debug = new URLSearchParams(window.location.search).get('debug') === '1';
-
-    if (debug) {
-      const info = { clientId, redirectUri };
-      setDebugInfo(info);
-      // eslint-disable-next-line no-console
-      console.info('[GoogleOAuth][debug]', info);
-      return;
-    }
 
     // Modern Google Sign-In (GIS). No redirect/implicit flow.
     (async () => {
       try {
+        const res = await fetch('/api/public-config', { method: 'GET' });
+        const data = (await res.json()) as { googleClientId?: string };
+        const clientId = (data.googleClientId || '').trim();
+        if (!clientId) {
+          setError('Google авторизация не настроена.');
+          return;
+        }
+
+        if (debug) {
+          const info = { clientId, redirectUri };
+          setDebugInfo(info);
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][debug]', info);
+          return;
+        }
+
         await loadGoogleIdentityServices();
         if (!window.google?.accounts?.id) {
           throw new Error('Google Identity Services unavailable');

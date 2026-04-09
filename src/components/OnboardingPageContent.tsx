@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
@@ -17,13 +17,44 @@ export default function OnboardingPageContent() {
   const [error, setError] = useState('');
   const searchParams = useSearchParams();
 
-  const googleClientId = useMemo(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim(), []);
+  const [googleClientId, setGoogleClientId] = useState<string>('');
+  const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(true);
+  const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
+  const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
 
   const selectedPlan = useMemo(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
     if (plan === 'small' || plan === 'growth' || plan === 'enterprise') return plan;
     return null;
   }, [searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setGoogleConfigLoading(true);
+        const res = await fetch('/api/public-config', { method: 'GET' });
+        const data = (await res.json()) as { googleClientId?: string };
+        const clientId = (data.googleClientId || '').trim();
+        if (!cancelled) setGoogleClientId(clientId);
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][/connect] runtime config loaded', { ok: res.ok, clientIdPresent: Boolean(clientId) });
+        }
+      } catch (e) {
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][/connect] runtime config fetch failed', e);
+        }
+        if (!cancelled) setGoogleClientId('');
+      } finally {
+        if (!cancelled) setGoogleConfigLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debugGoogle]);
 
   useEffect(() => {
     if (!selectedPlan) return;
@@ -92,7 +123,7 @@ export default function OnboardingPageContent() {
     setLoading(true);
     try {
       if (!googleClientId) {
-        setError('Google авторизация не настроена.');
+        setError('Вход через Google сейчас недоступен. Попробуйте позже или используйте email.');
         return;
       }
 
@@ -104,12 +135,21 @@ export default function OnboardingPageContent() {
 
       const idToken: string = await new Promise((resolve, reject) => {
         const timer = window.setTimeout(() => reject(new Error('timeout')), 2 * 60 * 1000);
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][/connect] GIS loaded, initializing');
+        }
+
         window.google!.accounts!.id!.initialize({
           client_id: googleClientId,
           callback: (resp) => {
             const token = resp?.credential;
             if (token) {
               window.clearTimeout(timer);
+              if (debugGoogle) {
+                // eslint-disable-next-line no-console
+                console.info('[GoogleOAuth][/connect] credential received');
+              }
               resolve(token);
             } else {
               window.clearTimeout(timer);
@@ -117,6 +157,34 @@ export default function OnboardingPageContent() {
             }
           },
         });
+
+        // Use a real GIS-rendered button under the hood (reliable click → chooser).
+        const host = gsiButtonHostRef.current;
+        if (host) {
+          host.innerHTML = '';
+          window.google!.accounts!.id!.renderButton(host, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: mode === 'signup' ? 'signup_with' : 'signin_with',
+            shape: 'pill',
+            logo_alignment: 'left',
+            width: '320',
+          });
+          const clickable = host.querySelector<HTMLElement>('[role="button"], button, div');
+          if (debugGoogle) {
+            // eslint-disable-next-line no-console
+            console.info('[GoogleOAuth][/connect] renderButton done', { hasClickable: Boolean(clickable) });
+          }
+          clickable?.click();
+          return;
+        }
+
+        // Fallback: One Tap prompt (may be blocked by browser settings).
+        if (debugGoogle) {
+          // eslint-disable-next-line no-console
+          console.info('[GoogleOAuth][/connect] no render host, using prompt() fallback');
+        }
         window.google!.accounts!.id!.prompt();
       });
 
@@ -170,14 +238,12 @@ export default function OnboardingPageContent() {
               <button
                 type="button"
                 onClick={handleGoogle}
-                disabled={loading || !googleClientId}
-                className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60"
+                disabled={loading || googleConfigLoading}
+                className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Войти через Google
               </button>
-              {!googleClientId && (
-                <p className="mt-2 text-xs text-red-600">Нужно настроить `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.</p>
-              )}
+              <div ref={gsiButtonHostRef} className="sr-only" aria-hidden="true" />
               <p className="mt-3 text-xs text-slate-500">
                 Мы создадим рабочее пространство и запустим 7‑дневный тест.
               </p>
