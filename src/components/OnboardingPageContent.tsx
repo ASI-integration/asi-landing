@@ -16,6 +16,7 @@ export default function OnboardingPageContent() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const searchParams = useSearchParams();
+  const isMountedRef = useRef(true);
 
   // Initialize from build-time env immediately (avoids disabled flash when NEXT_PUBLIC_ is bundled).
   // Falls back to /api/public-config fetch for runtime-only env setups.
@@ -28,6 +29,13 @@ export default function OnboardingPageContent() {
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const publicConfigFetchAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const selectedPlan = useMemo(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
@@ -53,7 +61,7 @@ export default function OnboardingPageContent() {
         }
         const data = (await res.json()) as { googleClientId?: string };
         const clientId = (data.googleClientId || '').trim();
-        if (!cancelled) setGoogleClientId(clientId);
+        if (!cancelled && isMountedRef.current) setGoogleClientId(clientId);
         if (debugGoogle) {
           // eslint-disable-next-line no-console
           console.info('[GoogleOAuth][/connect] runtime config loaded', { ok: res.ok, clientIdPresent: Boolean(clientId) });
@@ -63,9 +71,11 @@ export default function OnboardingPageContent() {
           // eslint-disable-next-line no-console
           console.info('[GoogleOAuth][/connect] runtime config fetch failed', e);
         }
-        if (!cancelled) setGoogleClientId('');
+        if (!cancelled && isMountedRef.current) setGoogleClientId('');
       } finally {
-        if (!cancelled) setGoogleConfigLoading(false);
+        // Always clear the loading flag once the request settles.
+        // Guard only against true unmount, not effect re-runs.
+        if (isMountedRef.current) setGoogleConfigLoading(false);
       }
     })();
     return () => {
