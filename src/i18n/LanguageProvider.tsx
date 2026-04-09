@@ -3,10 +3,10 @@
 import {
   createContext,
   useContext,
-  useState,
   useEffect,
   useCallback,
   useMemo,
+  useState,
   type ReactNode,
 } from 'react';
 import type { Locale } from './useTranslation';
@@ -36,19 +36,23 @@ type LanguageContextValue = {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
-/** Derive locale from hostname: *.ru → 'ru', everything else → 'en'. */
-function getLocaleFromHostname(): Locale {
+function getLocaleFromUrl(): Locale {
   if (typeof window === 'undefined') return 'en';
-  return window.location.hostname.endsWith('.ru') ? 'ru' : 'en';
+  const { hostname, pathname } = window.location;
+  // Prefer explicit path locale (used on asi-global.ru/ru).
+  if (pathname?.startsWith('/ru')) return 'ru';
+  // Fallback: dedicated RU host.
+  if (hostname?.endsWith('.ru')) return 'ru';
+  return 'en';
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('en');
-  const [mounted, setMounted] = useState(false);
+  // Compute initial locale synchronously to avoid sticky EN fallback on `/ru`.
+  const [locale, setLocaleState] = useState<Locale>(() => getLocaleFromUrl());
 
   useEffect(() => {
-    setLocaleState(getLocaleFromHostname());
-    setMounted(true);
+    // Re-evaluate after mount in case hydration path differs.
+    setLocaleState(getLocaleFromUrl());
   }, []);
 
   useEffect(() => {
@@ -81,8 +85,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ locale: mounted ? locale : 'en', setLocale, t, get }),
-    [locale, mounted, setLocale, t, get]
+    () => ({ locale, setLocale, t, get }),
+    [locale, setLocale, t, get]
   );
 
   return (
