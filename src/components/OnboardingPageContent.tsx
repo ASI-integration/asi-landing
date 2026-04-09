@@ -17,8 +17,14 @@ export default function OnboardingPageContent() {
   const [error, setError] = useState('');
   const searchParams = useSearchParams();
 
-  const [googleClientId, setGoogleClientId] = useState<string>('');
-  const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(true);
+  // Initialize from build-time env immediately (avoids disabled flash when NEXT_PUBLIC_ is bundled).
+  // Falls back to /api/public-config fetch for runtime-only env setups.
+  const [googleClientId, setGoogleClientId] = useState<string>(
+    () => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim()
+  );
+  const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(
+    () => !(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim()
+  );
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
 
@@ -29,11 +35,21 @@ export default function OnboardingPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    // Skip the fetch entirely if we already have the client ID from the bundled env.
+    if (googleClientId) return;
+
     let cancelled = false;
     (async () => {
       try {
         setGoogleConfigLoading(true);
-        const res = await fetch('/api/public-config', { method: 'GET' });
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+        let res: Response;
+        try {
+          res = await fetch('/api/public-config', { method: 'GET', signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
         const data = (await res.json()) as { googleClientId?: string };
         const clientId = (data.googleClientId || '').trim();
         if (!cancelled) setGoogleClientId(clientId);
@@ -135,6 +151,8 @@ export default function OnboardingPageContent() {
 
       const idToken: string = await new Promise((resolve, reject) => {
         const timer = window.setTimeout(() => reject(new Error('timeout')), 2 * 60 * 1000);
+        let credentialReceived = false;
+
         if (debugGoogle) {
           // eslint-disable-next-line no-console
           console.info('[GoogleOAuth][/connect] GIS loaded, initializing');
@@ -144,19 +162,32 @@ export default function OnboardingPageContent() {
           client_id: googleClientId,
           callback: (resp) => {
             const token = resp?.credential;
+            credentialReceived = true;
+            window.clearTimeout(timer);
             if (token) {
-              window.clearTimeout(timer);
               if (debugGoogle) {
                 // eslint-disable-next-line no-console
                 console.info('[GoogleOAuth][/connect] credential received');
               }
               resolve(token);
             } else {
-              window.clearTimeout(timer);
               reject(new Error('no_credential'));
             }
           },
         });
+
+        // When the popup is dismissed (user closes Google chooser without selecting),
+        // the callback never fires. Detect page focus returning to reset loading state.
+        const onWindowFocus = () => {
+          // Give GIS ~800ms to deliver the credential after focus returns.
+          window.setTimeout(() => {
+            if (!credentialReceived) {
+              window.clearTimeout(timer);
+              reject(new Error('dismissed'));
+            }
+          }, 800);
+        };
+        window.addEventListener('focus', onWindowFocus, { once: true });
 
         // Use a real GIS-rendered button under the hood (reliable click → chooser).
         const host = gsiButtonHostRef.current;
@@ -176,7 +207,13 @@ export default function OnboardingPageContent() {
             // eslint-disable-next-line no-console
             console.info('[GoogleOAuth][/connect] renderButton done', { hasClickable: Boolean(clickable) });
           }
-          clickable?.click();
+          if (clickable) {
+            clickable.click();
+          } else {
+            // renderButton produced nothing — fall through to prompt()
+            window.removeEventListener('focus', onWindowFocus);
+            window.google!.accounts!.id!.prompt();
+          }
           return;
         }
 
@@ -199,8 +236,11 @@ export default function OnboardingPageContent() {
         return;
       }
       router.push('/dashboard');
-    } catch {
-      setError('Не удалось войти через Google. Используйте email.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg !== 'dismissed') {
+        setError('Не удалось войти через Google. Используйте email.');
+      }
     } finally {
       setLoading(false);
     }
@@ -243,7 +283,12 @@ export default function OnboardingPageContent() {
               >
                 Войти через Google
               </button>
-              <div ref={gsiButtonHostRef} className="sr-only" aria-hidden="true" />
+              {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
+              <div
+                ref={gsiButtonHostRef}
+                aria-hidden="true"
+                style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '400px', height: '80px', overflow: 'visible' }}
+              />
               <p className="mt-3 text-xs text-slate-500">
                 Мы создадим рабочее пространство и запустим 7‑дневный тест.
               </p>
