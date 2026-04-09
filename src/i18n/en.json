@@ -29,6 +29,194 @@
     "subtitle": "A live walkthrough of the guest communication workflow — intent detection, reservation matching, response, and escalation.",
     "button": "Book a demo"
   },
+  "commDemo": {
+    "title": "Guest conversations execute automatically",
+    "subtitle": "Pick a scenario — watch ASI run the full chain with no manager in the loop.",
+    "botIntro": "ASI — guest automation is live. Pick a scenario or type a message; I run the full chain.",
+    "statusOnline": "online · instant replies",
+    "inputPlaceholder": "Or type your own message...",
+    "insideTitle": "What happens inside",
+    "insideSubtitle": "Every message runs through an automated execution chain — no human in the default path.",
+    "emptyStateLine1": "Select a scenario",
+    "emptyStateLine2": "to see the process",
+    "defaultReply": "Received. Running the execution chain now.",
+    "defaultSteps": [
+      "Inbound request received",
+      "Intent classified",
+      "Key data extracted",
+      "Processing scenario selected",
+      "Reply prepared and sent"
+    ],
+    "doneNoteEscalated": "Edge case — operator connected with full context.",
+    "doneNoteAuto": "Request handled automatically. No manager needed.",
+    "presets": [
+      {
+        "label": "Check-in time?",
+        "userText": "Hi, what time can I check in?",
+        "reply": "Check-in from 14:00. If you need early arrival — let me know and I'll check availability with the manager.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → check-in",
+          "Booking data loaded",
+          "Check-in rule applied",
+          "Reply prepared and sent"
+        ]
+      },
+      {
+        "label": "Is there parking?",
+        "userText": "Is there parking nearby?",
+        "reply": "Yes, there's a secured courtyard. I'll send the gate code one hour before check-in along with the instructions.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → infrastructure",
+          "Property parameters checked",
+          "Parking instructions retrieved",
+          "Reply prepared and sent"
+        ]
+      },
+      {
+        "label": "Pets allowed?",
+        "userText": "Can I bring my cat? He's small :)",
+        "reply": "Pets welcome — up to 10 kg. A $30 refundable deposit is required, returned after checkout. Shall I send an invoice?",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → additional terms",
+          "Property policy checked",
+          "Deposit condition calculated",
+          "Entry added to booking",
+          "Reply prepared and sent"
+        ]
+      },
+      {
+        "label": "Noise complaint",
+        "userText": "Neighbours upstairs are making noise all night, it's 2 AM. Impossible to sleep.",
+        "reply": "Understood — this is unacceptable. Connecting the manager immediately; they will call you within a few minutes.",
+        "escalate": true,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → complaint",
+          "Severity assessed → urgent",
+          "Automated scenario not applicable",
+          "Context packaged for operator",
+          "Operator notified with full context"
+        ]
+      },
+      {
+        "label": "Lock code not working",
+        "userText": "The door code doesn't work, I can't get in. I'm standing outside.",
+        "reply": "On it. Backup code: 4921. If that doesn't work — I'm calling the manager right now.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → access",
+          "Guest booking verified",
+          "Backup code retrieved from vault",
+          "Access code sent to guest",
+          "Incident logged in system"
+        ]
+      },
+      {
+        "label": "No Wi-Fi",
+        "userText": "The Wi-Fi isn't working, what should I do?",
+        "reply": "Try restarting the router — it's behind the TV. Password: home_apt_2024. If that fails I'll dispatch a technician.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → technical",
+          "Property manual loaded",
+          "Guest instructions selected",
+          "Reply prepared and sent"
+        ]
+      },
+      {
+        "label": "Extend by one night",
+        "userText": "Can I stay one more night, tomorrow the 26th?",
+        "reply": "Checking... The 26th is free. Rate: $85. Shall I issue the invoice now?",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → extension",
+          "Date availability checked",
+          "Extra night rate calculated",
+          "Extension request created",
+          "Offer sent to guest"
+        ]
+      },
+      {
+        "label": "Early check-out",
+        "userText": "Can I check out at 10:00 instead of 12:00? Early flight.",
+        "reply": "Of course, early check-out at 10:00 confirmed. Just leave the key in the lockbox by the door.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → check-out",
+          "Cleaning schedule checked",
+          "Early check-out confirmed",
+          "Key return instructions sent"
+        ]
+      },
+      {
+        "label": "No hot water",
+        "userText": "There's been no hot water for an hour. What happened?",
+        "reply": "Checking building status... Scheduled maintenance until 15:00. If it's not restored by 15:30 — let me know immediately.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → utility issue",
+          "Address status queried",
+          "Scheduled maintenance data retrieved",
+          "Reply with timeline sent",
+          "Monitoring task created"
+        ]
+      },
+      {
+        "label": "Loyalty discount",
+        "userText": "This is our third stay — can we get a discount for the next booking?",
+        "reply": "Marking you as a returning guest. Here's a 10% promo code for your next booking: LOYALTY10.",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → loyalty",
+          "Guest booking history checked",
+          "Returning guest status confirmed",
+          "Promo code generated",
+          "Guest profile updated",
+          "Promo code sent to guest"
+        ]
+      },
+      {
+        "label": "Leaking tap",
+        "userText": "The tap in the bathroom is leaking and I can't stop it.",
+        "reply": "Got it. Turn off the valve under the sink (turn right). I'm dispatching a plumber urgently — they'll arrive within an hour.",
+        "escalate": true,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → maintenance",
+          "Severity assessed → urgent",
+          "First-aid instructions sent to guest",
+          "Plumber work order created",
+          "Operator notified with full context"
+        ]
+      },
+      {
+        "label": "Extra towels",
+        "userText": "Could I get some extra towels?",
+        "reply": "Of course. I'll flag this for housekeeping — they'll deliver within 30 minutes. Anything else you need?",
+        "escalate": false,
+        "stepLabels": [
+          "Inbound request received",
+          "Intent classified → supplies",
+          "Housekeeping availability checked",
+          "Task created for housekeeping",
+          "Data saved in system",
+          "Confirmation reply sent"
+        ]
+      }
+    ]
+  },
   "hero": {
     "headline": "Intelligent guest communication for short-term rentals.",
     "subheadline": "Guest messages, payments, and escalations — handled automatically.",

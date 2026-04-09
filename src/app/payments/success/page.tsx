@@ -11,7 +11,7 @@ export default function PaymentSuccessPage() {
         </div>
         <h1 className="mb-2 text-xl font-bold">Payment Successful</h1>
         <p className="text-sm text-gray-600 mb-6">
-          Thank you! We've received your payment. Our bot has sent you a confirmation in Telegram. You can securely close this window.
+          Thank you! We&apos;ve received your payment. Our bot has sent you a confirmation in Telegram. You can securely close this window.
         </p>
         <button
           onClick={() => window.close()}
