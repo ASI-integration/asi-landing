@@ -1,48 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-
-// Minimal Google implicit flow helper page.
-// Uses Google OAuth "id_token" response in URL fragment and posts it back to opener.
-const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
-
-function buildAuthUrl(opts: { clientId: string; redirectUri: string; nonce: string; state?: string }) {
-  const u = new URL(GOOGLE_AUTH_ENDPOINT);
-  u.searchParams.set('client_id', opts.clientId);
-  u.searchParams.set('redirect_uri', opts.redirectUri);
-  u.searchParams.set('response_type', 'id_token');
-  u.searchParams.set('scope', 'openid email profile');
-  u.searchParams.set('prompt', 'select_account');
-  u.searchParams.set('nonce', opts.nonce);
-  if (opts.state) u.searchParams.set('state', opts.state);
-  return u.toString();
-}
+import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 
 export default function ConnectGooglePage() {
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<{
     clientId: string;
     redirectUri: string;
-    url: string;
   } | null>(null);
 
   const nonce = useMemo(() => Math.random().toString(36).slice(2), []);
 
   useEffect(() => {
-    const hash = window.location.hash || '';
-    if (hash.includes('id_token=')) {
-      const params = new URLSearchParams(hash.replace(/^#/, ''));
-      const idToken = params.get('id_token');
-      if (idToken && window.opener) {
-        window.opener.postMessage({ type: 'asi_google_id_token', idToken }, window.location.origin);
-        window.close();
-        return;
-      }
-      setError('Не удалось вернуть токен в основное окно.');
-      return;
-    }
-
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
     if (!clientId) {
       setError('Google авторизация не настроена.');
       return;
@@ -50,18 +21,47 @@ export default function ConnectGooglePage() {
 
     const redirectUri = `${window.location.origin}/connect/google`;
     const debug = new URLSearchParams(window.location.search).get('debug') === '1';
-    const state = new URLSearchParams(window.location.search).get('plan') || undefined;
-    const url = buildAuthUrl({ clientId, redirectUri, nonce, state });
 
     if (debug) {
-      const info = { clientId, redirectUri, url };
+      const info = { clientId, redirectUri };
       setDebugInfo(info);
       // eslint-disable-next-line no-console
       console.info('[GoogleOAuth][debug]', info);
       return;
     }
 
-    window.location.replace(url);
+    // Modern Google Sign-In (GIS). No redirect/implicit flow.
+    (async () => {
+      try {
+        await loadGoogleIdentityServices();
+        if (!window.google?.accounts?.id) {
+          throw new Error('Google Identity Services unavailable');
+        }
+
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (resp) => {
+            const idToken = resp?.credential;
+            if (!idToken) {
+              setError('Google не вернул токен. Попробуйте ещё раз.');
+              return;
+            }
+            if (window.opener) {
+              window.opener.postMessage({ type: 'asi_google_id_token', idToken }, window.location.origin);
+              window.close();
+              return;
+            }
+            setError('Не удалось вернуть токен в основное окно.');
+          },
+        });
+
+        // Trigger One Tap / browser-native prompt.
+        window.google.accounts.id.prompt();
+      } catch (e) {
+        console.error('[GoogleOAuth][GIS]', e);
+        setError('Не удалось открыть вход Google. Попробуйте ещё раз.');
+      }
+    })();
   }, [nonce]);
 
   return (
@@ -80,9 +80,6 @@ export default function ConnectGooglePage() {
               </div>
               <div>
                 <span className="font-semibold">redirect_uri:</span> {debugInfo.redirectUri}
-              </div>
-              <div>
-                <span className="font-semibold">google_url:</span> {debugInfo.url}
               </div>
             </div>
           </div>

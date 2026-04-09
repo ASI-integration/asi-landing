@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
+import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
@@ -88,35 +89,34 @@ export default function OnboardingPageContent() {
     setError('');
     setLoading(true);
     try {
-      // Minimal GIS button without heavy SDK:
-      // We open Google's "One Tap" style flow later; for now we use a popup to accounts.google.com
-      // and rely on an id_token returned via postMessage from a tiny redirect page.
-      //
-      // To keep this v1 minimal, we fall back to email signup if popup blocked.
-      const w = 520;
-      const h = 640;
-      const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - w) / 2));
-      const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - h) / 2));
-      const popup = window.open(
-        `/connect/google?plan=${encodeURIComponent(selectedPlanValue)}`,
-        'asi_google_auth',
-        `width=${w},height=${h},left=${left},top=${top}`
-      );
-      if (!popup) {
-        setError('Попап заблокирован. Разрешите попапы или используйте email.');
+      const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
+      if (!clientId) {
+        setError('Google авторизация не настроена.');
+        return;
+      }
+
+      await loadGoogleIdentityServices();
+      if (!window.google?.accounts?.id) {
+        setError('Google авторизация недоступна. Попробуйте позже.');
         return;
       }
 
       const idToken: string = await new Promise((resolve, reject) => {
         const timer = window.setTimeout(() => reject(new Error('timeout')), 2 * 60 * 1000);
-        function onMsg(ev: MessageEvent) {
-          if (ev?.data?.type === 'asi_google_id_token' && typeof ev.data.idToken === 'string') {
-            window.clearTimeout(timer);
-            window.removeEventListener('message', onMsg);
-            resolve(ev.data.idToken);
-          }
-        }
-        window.addEventListener('message', onMsg);
+        window.google!.accounts!.id!.initialize({
+          client_id: clientId,
+          callback: (resp) => {
+            const token = resp?.credential;
+            if (token) {
+              window.clearTimeout(timer);
+              resolve(token);
+            } else {
+              window.clearTimeout(timer);
+              reject(new Error('no_credential'));
+            }
+          },
+        });
+        window.google!.accounts!.id!.prompt();
       });
 
       const res = await fetch('/api/auth/google', {
