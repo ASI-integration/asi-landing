@@ -17,6 +17,8 @@ export default function OnboardingPageContent() {
   const [error, setError] = useState('');
   const searchParams = useSearchParams();
 
+  const googleClientId = useMemo(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim(), []);
+
   const selectedPlan = useMemo(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
     if (plan === 'small' || plan === 'growth' || plan === 'enterprise') return plan;
@@ -89,8 +91,7 @@ export default function OnboardingPageContent() {
     setError('');
     setLoading(true);
     try {
-      const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
-      if (!clientId) {
+      if (!googleClientId) {
         setError('Google авторизация не настроена.');
         return;
       }
@@ -104,7 +105,7 @@ export default function OnboardingPageContent() {
       const idToken: string = await new Promise((resolve, reject) => {
         const timer = window.setTimeout(() => reject(new Error('timeout')), 2 * 60 * 1000);
         window.google!.accounts!.id!.initialize({
-          client_id: clientId,
+          client_id: googleClientId,
           callback: (resp) => {
             const token = resp?.credential;
             if (token) {
@@ -169,11 +170,14 @@ export default function OnboardingPageContent() {
               <button
                 type="button"
                 onClick={handleGoogle}
-                disabled={loading}
+                disabled={loading || !googleClientId}
                 className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60"
               >
                 Войти через Google
               </button>
+              {!googleClientId && (
+                <p className="mt-2 text-xs text-red-600">Нужно настроить `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.</p>
+              )}
               <p className="mt-3 text-xs text-slate-500">
                 Мы создадим рабочее пространство и запустим 7‑дневный тест.
               </p>

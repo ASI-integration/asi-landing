@@ -10,8 +10,6 @@ export default function ConnectGooglePage() {
     redirectUri: string;
   } | null>(null);
 
-  const nonce = useMemo(() => Math.random().toString(36).slice(2), []);
-
   useEffect(() => {
     const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
     if (!clientId) {
@@ -62,7 +60,7 @@ export default function ConnectGooglePage() {
         setError('Не удалось открыть вход Google. Попробуйте ещё раз.');
       }
     })();
-  }, [nonce]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
