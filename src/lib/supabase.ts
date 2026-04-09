@@ -4,7 +4,9 @@ let _supabase: SupabaseClient | null = null;
 
 function getSupabase(): SupabaseClient {
   if (!_supabase) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    // Server routes should not require NEXT_PUBLIC_ vars to be present at runtime.
+    // Prefer SUPABASE_URL, but support the existing NEXT_PUBLIC_SUPABASE_URL.
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) throw new Error('Supabase env vars not configured');
     _supabase = createClient(url, key, { auth: { persistSession: false } });

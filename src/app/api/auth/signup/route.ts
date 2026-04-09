@@ -7,13 +7,22 @@ import { ensureAccountForUser } from '@/lib/accounts';
 
 export async function POST(req: Request) {
   let createdUserId: string | null = null;
+  let debug = false;
   try {
-    const { email, password, plan } = await req.json();
+    const body = (await req.json()) as { email?: string; password?: string; plan?: unknown; debug?: boolean };
+    const { email, password, plan } = body;
+    debug = Boolean(body?.debug);
     if (!email?.trim() || !password) {
-      return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'INVALID_INPUT', message: 'Укажите email и пароль.' },
+        { status: 400 }
+      );
     }
     if (password.length < 6) {
-      return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'WEAK_PASSWORD', message: 'Пароль должен быть минимум 6 символов.' },
+        { status: 400 }
+      );
     }
 
     const emailLower = email.trim().toLowerCase();
@@ -27,7 +36,10 @@ export async function POST(req: Request) {
 
     if (userError) {
       if (userError.code === '23505') {
-        return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
+        return NextResponse.json(
+          { error: 'EMAIL_TAKEN', message: 'Этот email уже зарегистрирован. Войдите, пожалуйста.' },
+          { status: 409 }
+        );
       }
       throw userError;
     }
@@ -63,6 +75,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, userId: user.id });
   } catch (err) {
     console.error('[Signup]', err);
+    const details = err instanceof Error ? err.message : String(err ?? 'unknown_error');
     // Best-effort cleanup: avoid leaving orphan users if later steps fail (e.g. missing migrations).
     if (createdUserId) {
       try {
@@ -76,6 +89,13 @@ export async function POST(req: Request) {
         console.error('[Signup] cleanup user failed', cleanupErr);
       }
     }
-    return NextResponse.json({ error: 'Signup failed' }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'SIGNUP_FAILED',
+        message: 'Не удалось зарегистрировать аккаунт. Попробуйте ещё раз позже или напишите в поддержку.',
+        ...(debug ? { details } : {}),
+      },
+      { status: 500 }
+    );
   }
 }

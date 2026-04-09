@@ -120,11 +120,15 @@ export default function OnboardingPageContent() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password, plan: selectedPlanValue }),
+        body: JSON.stringify({ email: email.trim(), password, plan: selectedPlanValue, debug: debugGoogle }),
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Ошибка авторизации.');
+        const msg =
+          (data && typeof data.message === 'string' && data.message.trim()) ||
+          (data && typeof data.error === 'string' && data.error.trim()) ||
+          'Ошибка авторизации.';
+        setError(msg);
         return;
       }
       router.push('/dashboard');
@@ -342,7 +346,7 @@ export default function OnboardingPageContent() {
               <button
                 type="button"
                 onClick={handleGoogle}
-                disabled={loading || googleConfigLoading || !googleClientId}
+                disabled={loading || googleConfigLoading}
                 className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Войти через Google
