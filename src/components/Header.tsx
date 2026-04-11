@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from '@/i18n/useTranslation';
+import { productSupportEmail } from '@/config/contact';
 
 export function Header() {
   const [open, setOpen] = useState(false);
@@ -48,7 +49,7 @@ export function Header() {
             </Link>
           </div>
           <a
-            href={`mailto:${t('contact.supportEmail')}`}
+            href={`mailto:${productSupportEmail}`}
             className="text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
           >
             {t('nav.contacts')}
@@ -89,7 +90,7 @@ export function Header() {
             <Link href="/ru" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</Link>
           </div>
           <a
-            href={`mailto:${t('contact.supportEmail')}`}
+            href={`mailto:${productSupportEmail}`}
             className="block text-sm text-slate-600 hover:text-slate-900 transition-colors"
             onClick={() => setOpen(false)}
           >

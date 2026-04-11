@@ -1,4 +1,6 @@
 /**
- * Product / billing / technical support. Keep in sync with `contact.supportEmail` in i18n JSON.
+ * Public support email for mailto links and legal copy.
+ * `NEXT_PUBLIC_*` is inlined at build time; set it on the server and rebuild to override.
  */
-export const productSupportEmail = 'support@asi-global.com';
+const fromEnv = (process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? '').trim();
+export const productSupportEmail = fromEnv || 'support@asi-global.ru';

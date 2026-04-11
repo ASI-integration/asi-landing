@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslation } from '@/i18n/useTranslation';
+import { productSupportEmail } from '@/config/contact';
 import { useSession } from '@/contexts/SessionContext';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -122,12 +123,12 @@ export default function DashboardPage() {
             <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">t.me/ASI_core_bot</p>
           </a>
           <a
-            href="mailto:support@asi-global.ru?subject=Подключение%20Email%20канала"
+            href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Подключение Email канала')}`}
             className="group rounded-xl border border-slate-200 p-4 hover:border-slate-400 hover:bg-slate-50 transition-all"
           >
             <p className="text-sm font-semibold text-slate-900">Email</p>
             <p className="mt-1 text-xs text-slate-600">Запросить подключение Email‑канала.</p>
-            <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">support@asi-global.ru</p>
+            <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">{productSupportEmail}</p>
           </a>
           <div className="rounded-xl border border-slate-200 p-4">
             <div className="flex items-start justify-between gap-3">

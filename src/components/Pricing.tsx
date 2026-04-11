@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
+import { productSupportEmail } from '@/config/contact';
 
 export function Pricing() {
   const { t } = useTranslation();
@@ -78,7 +79,7 @@ export function Pricing() {
               {t('pricing.pricePerObjectNote')}
             </p>
             <a
-              href={`mailto:${t('contact.supportEmail')}?subject=${encodeURIComponent('Enterprise pricing inquiry')}`}
+              href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Enterprise pricing inquiry')}`}
               className="mt-6 block text-center py-4 rounded-xl font-semibold border border-slate-900 text-slate-900 hover:bg-slate-50 transition-all duration-200 shadow-sm hover:shadow-md"
             >
               {t('pricing.enterpriseCta')}
