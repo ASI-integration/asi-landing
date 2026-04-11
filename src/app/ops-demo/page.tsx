@@ -1,3 +1,4 @@
+// ORPHAN PAGE — no incoming nav links. Candidate for removal once confirmed unused externally.
 'use client';
 
 import { useState } from 'react';
