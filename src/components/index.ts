@@ -1,16 +1,2 @@
 export { Header } from './Header';
-export { Hero } from './Hero';
-export { Problem } from './Problem';
-export { Solution } from './Solution';
-export { Features } from './Features';
-export { PlatformCapabilities } from './PlatformCapabilities';
-export { AsiDecisionMaking } from './AsiDecisionMaking';
-export { AsiVsSmartHomeSection } from './AsiVsSmartHomeSection';
-export { HowItWorks } from './HowItWorks';
-export { SocialProof } from './SocialProof';
-export { Pricing } from './Pricing';
-export { EconomicImpactSection } from './EconomicImpactSection';
-export { WhyStartNowSection } from './WhyStartNowSection';
-export { FAQ } from './FAQ';
-export { FinalCTA } from './FinalCTA';
 export { Footer } from './Footer';

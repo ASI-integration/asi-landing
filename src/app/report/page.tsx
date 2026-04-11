@@ -1,4 +1,4 @@
-const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
+import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 
 export default function ReportPage() {
   return (

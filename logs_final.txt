@@ -1,5 +1,0 @@
-Retrieving projectтАж
-Resolving deployment "asi-landing-new.vercel.app"
-Streaming logs for deployment dpl_AzVw9p8uh8rqBLqPM4fUoE3t4Z1k starting from 18:05:45.59
-
-waiting for new logs...

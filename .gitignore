@@ -15,3 +15,11 @@ test_out*.txt
 var_*.txt
 vercel_*.txt
 test_webhook.ps1
+# Dev/debug artifacts
+cookies_ru*.txt
+err.txt
+logs*.txt
+*.ps1
+mock_update*.json
+tsc.log
+TELEGRAM_MANUAL_TEST_CHECKLIST.md

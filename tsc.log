@@ -1,5 +1,0 @@
-src/lib/communication/__tests__/orchestrator-checkin-gate.test.ts(171,7): error TS2322: Type 'string' is not assignable to type 'null'.
-src/lib/communication/__tests__/orchestrator-checkin-gate.test.ts(189,7): error TS2322: Type 'string' is not assignable to type 'null'.
-src/lib/communication/__tests__/orchestrator-checkin-gate.test.ts(206,7): error TS2322: Type 'string' is not assignable to type 'null'.
-src/lib/communication/__tests__/orchestrator-checkin-gate.test.ts(233,7): error TS2322: Type 'string' is not assignable to type 'null'.
-src/lib/communication/__tests__/orchestrator-checkin-gate.test.ts(281,7): error TS2322: Type 'string' is not assignable to type 'null'.

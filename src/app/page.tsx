@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { HeroSection } from '@/components/HeroSection';
 
-const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/cNi5kxehp6JObmJbh47ss00';
+import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { CommDemo } from '@/components/CommDemo';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
@@ -164,7 +164,7 @@ export default function Home() {
               Platform
             </a>
             <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              How it works
+              FAQ
             </a>
           </div>
 
@@ -190,7 +190,7 @@ export default function Home() {
             <div className="flex items-center gap-1 text-sm">
               <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
               <span className="text-slate-700">|</span>
-              <a href="https://asi-global.ru" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
+              <a href="/ru" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
             </div>
             <Link
               href="/login"
@@ -452,7 +452,7 @@ export default function Home() {
               </p>
               <ContactLinks />
               <p className="mt-4 text-xs text-slate-600">
-                Mon–Fri, 9:00–18:00 MSK · usually faster
+                Mon–Fri, 9:00–18:00 UTC+3 · usually faster
               </p>
             </div>
           </div>
