@@ -70,17 +70,21 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // .ru domain → keep RU landing at /ru, but don't force-prefix every route.
-  // Otherwise routes like /connect and /dashboard would become /ru/connect and 404.
+  // .ru domain — serve RU landing at canonical `/`; legacy `/ru` redirects away.
+  // Rewrite keeps the URL at `/` so the browser never sees a redirect for the root.
+  // Only `/` and `/ru` (exact) are touched here; `/ru/*` sub-pages keep working as-is.
   if (isRuDomain && pathname === '/') {
-    const dest = new URL(`/ru${search}`, origin);
-    return NextResponse.redirect(dest, { status: 301 });
+    return NextResponse.rewrite(new URL(`/ru${search}`, request.url));
+  }
+  // Redirect the legacy bare `/ru` to `/` (302 — easy to roll back without CDN cache issues).
+  if (isRuDomain && (pathname === '/ru' || pathname === '/ru/')) {
+    return NextResponse.redirect(new URL(`/${search}`, origin), { status: 302 });
   }
 
   // .com domain → must NOT be on /ru path
-  if (isComDomain && pathname.startsWith('/ru')) {
-    const path = pathname.slice(3) || '/';
-    const dest = new URL(`${path === '/' ? '/' : path}${search}`, origin);
+  if (isComDomain && (pathname === '/ru' || pathname.startsWith('/ru/'))) {
+    const path = pathname === '/ru' ? '/' : pathname.slice(3) || '/';
+    const dest = new URL(`${path}${search}`, origin);
     return NextResponse.redirect(dest, { status: 301 });
   }
 

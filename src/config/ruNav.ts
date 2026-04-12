@@ -1,11 +1,13 @@
 import { ruComplianceRoutes } from '@/config/ruCompliance';
 
-/** Primary RU header destinations (landing sections match `src/app/ru/page.tsx`). */
+/** Primary RU header destinations (landing sections match `src/app/ru/page.tsx`).
+ *  On asi-global.ru, `/` is served via a rewrite to `app/ru/page.tsx`, so all
+ *  in-site links use `/` (not `/ru`) as the home anchor. */
 export const ruNavMainLinks = [
-  { href: '/ru', label: 'Главная' },
-  { href: '/ru#platform-modules', label: 'Платформа' },
-  { href: '/ru#faq', label: 'Как это работает' },
-  { href: '/ru#pricing', label: 'Тарифы' },
+  { href: '/', label: 'Главная' },
+  { href: '/#platform-modules', label: 'Платформа' },
+  { href: '/#faq', label: 'Как это работает' },
+  { href: '/#pricing', label: 'Тарифы' },
   { href: '/connect', label: 'Подключение' },
   { href: ruComplianceRoutes.contacts, label: 'Контакты' },
 ] as const;
