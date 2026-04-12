@@ -65,8 +65,44 @@ interface SelectedAddress {
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 
 // ── Address suggestion fetch ───────────────────────────────────────────────────
+// RU: server-side DaData via /api/address-suggest (no browser Google key / referrer).
+// EN: Google Places Autocomplete (legacy client path; guarded by timeout).
 
-async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
+const SUGGEST_RU_TIMEOUT_MS = 8_000;
+const SUGGEST_GOOGLE_TIMEOUT_MS = 10_000;
+
+async function fetchSuggestionsRu(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SUGGEST_RU_TIMEOUT_MS);
+  try {
+    const res = await fetch(`/api/address-suggest?q=${encodeURIComponent(q)}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    const data = (await res.json()) as {
+      suggestions?: Array<{ value: string; lat: string | null; lon: string | null }>;
+      status?: string;
+    };
+    if (!res.ok) {
+      return { suggestions: [], status: 'error' };
+    }
+    const suggestions: Suggestion[] = (data.suggestions ?? []).map(s => ({
+      value: s.value,
+      lat: s.lat,
+      lon: s.lon,
+    }));
+    if (data.status === 'no_key') return { suggestions: [], status: 'no_key' };
+    if (data.status === 'error') return { suggestions: [], status: 'error' };
+    if (suggestions.length === 0) return { suggestions: [], status: 'no_results' };
+    return { suggestions, status: 'ok' };
+  } catch {
+    return { suggestions: [], status: 'error' };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchSuggestionsGoogle(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
   return new Promise((resolve) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const google = (window as any).google;
@@ -74,9 +110,13 @@ async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[];
       resolve({ suggestions: [], status: 'no_key' });
       return;
     }
+    const timer = window.setTimeout(() => {
+      resolve({ suggestions: [], status: 'error' });
+    }, SUGGEST_GOOGLE_TIMEOUT_MS);
     const svc = new google.maps.places.AutocompleteService();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     svc.getPlacePredictions({ input: q }, (predictions: any[] | null, status: string) => {
+      clearTimeout(timer);
       if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) {
         resolve({ suggestions: [], status: 'no_results' });
         return;
@@ -831,11 +871,13 @@ function AddressInput({
   onSelect,
   onClear,
   disabled,
+  locale,
   c,
 }: {
   onSelect: (addr: SelectedAddress) => void;
   onClear: () => void;
   disabled: boolean;
+  locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
 }) {
   const [text, setText] = useState('');
@@ -858,11 +900,15 @@ function AddressInput({
     if (val.trim().length >= 2) {
       setFetching(true);
       debounceRef.current = setTimeout(async () => {
-        const result = await fetchSuggestions(val);
-        setSuggestions(result.suggestions);
-        setSuggestStatus(result.status);
-        setOpen(result.suggestions.length > 0);
-        setFetching(false);
+        try {
+          const result =
+            locale === 'ru' ? await fetchSuggestionsRu(val) : await fetchSuggestionsGoogle(val);
+          setSuggestions(result.suggestions);
+          setSuggestStatus(result.status);
+          setOpen(result.suggestions.length > 0);
+        } finally {
+          setFetching(false);
+        }
       }, 280);
     } else {
       setSuggestions([]);
@@ -872,7 +918,7 @@ function AddressInput({
     }
   }
 
-  function pick(s: Suggestion) {
+  async function pick(s: Suggestion) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const google = (window as any).google;
 
@@ -886,9 +932,32 @@ function AddressInput({
       onSelect({ value: s.value, lat, lon });
     };
 
-    if (s.lat && s.lon) {
-      doSelect(parseFloat(s.lat), parseFloat(s.lon));
-      return;
+    if (s.lat != null && s.lon != null && String(s.lat).trim() !== '' && String(s.lon).trim() !== '') {
+      const lat = parseFloat(String(s.lat));
+      const lon = parseFloat(String(s.lon));
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        doSelect(lat, lon);
+        return;
+      }
+    }
+
+    if (locale === 'ru' && s.value.trim()) {
+      try {
+        const res = await fetch('/api/location-geocode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: s.value }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { lat?: unknown; lon?: unknown };
+          if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+            doSelect(data.lat, data.lon);
+            return;
+          }
+        }
+      } catch {
+        /* fall through to Google or noop */
+      }
     }
 
     if (!s.placeId || !google?.maps?.places?.PlacesService) return;
@@ -922,7 +991,7 @@ function AddressInput({
       setActiveIdx(i => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && activeIdx >= 0) {
       e.preventDefault();
-      pick(suggestions[activeIdx]);
+      void pick(suggestions[activeIdx]);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -1005,7 +1074,7 @@ function AddressInput({
               role="option"
               aria-selected={activeIdx === i}
               onMouseEnter={() => setActiveIdx(i)}
-              onMouseDown={e => { e.preventDefault(); pick(s); }}
+              onMouseDown={e => { e.preventDefault(); void pick(s); }}
               className={`px-4 py-3 cursor-pointer text-sm leading-snug transition-colors ${
                 activeIdx === i ? 'bg-slate-700/80 text-white' : 'text-slate-300 hover:bg-slate-800/80'
               }`}
@@ -1717,6 +1786,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
               <form onSubmit={handleSubmit} className="flex flex-col gap-3">
                 <AddressInput
                   key={inputKey}
+                  locale={locale}
                   onSelect={addr => {
                     setSelected(addr);
                     setValidationErr(false);
