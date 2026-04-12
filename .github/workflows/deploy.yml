@@ -3,6 +3,7 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: deploy-main
@@ -11,6 +12,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # Injected into the remote SSH session via `envs` below; merged into `.env.production.live` before build.
+      YANDEX_MAPS_API_KEY: ${{ secrets.YANDEX_MAPS_API_KEY }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -18,12 +22,23 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          envs: YANDEX_MAPS_API_KEY
           script_stop: true
           script: |
             set -euo pipefail
             cd ~/asi-landing
             git fetch origin
             git reset --hard origin/main
+            if [ -n "${YANDEX_MAPS_API_KEY:-}" ]; then
+              tmp="$(mktemp)"
+              if [ -f .env.production.live ]; then
+                grep -v '^YANDEX_MAPS_API_KEY=' .env.production.live >"$tmp"
+              else
+                : >"$tmp"
+              fi
+              printf '%s\n' "YANDEX_MAPS_API_KEY=${YANDEX_MAPS_API_KEY}" >>"$tmp"
+              mv "$tmp" .env.production.live
+            fi
             cp .env.production.live .env.production.local
             npm ci
             npm run build
