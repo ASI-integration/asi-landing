@@ -4,6 +4,8 @@ import { cacheGet, cacheSet } from '@/lib/location/cache';
 import type { AnalysisMeta } from '@/lib/location/types';
 
 export const dynamic = 'force-dynamic';
+/** Allow slow Overpass batches on Vercel (default is often 10s). */
+export const maxDuration = 60;
 
 function sourceLabel(usedFallback: boolean | undefined): string {
   return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';

@@ -69,6 +69,8 @@ type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 
 const SUGGEST_TIMEOUT_MS = 8_000;
 const RESOLVE_TIMEOUT_MS = 12_000;
+/** Must allow Overpass + server cache work; short timeouts yield `buildAnalysis([])` fallback. */
+const LOCATION_ANALYSIS_FETCH_MS = 55_000;
 
 async function fetchAddressSuggestions(
   locale: LocDemoLocale,
@@ -1586,7 +1588,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
     if (phase !== 'loading' || !selected) return;
     let cancelled = false;
     const controller = new AbortController();
-    const abortTimeout = setTimeout(() => controller.abort(), 5000);
+    const abortTimeout = setTimeout(() => controller.abort(), LOCATION_ANALYSIS_FETCH_MS);
 
     const tickers = c.loadingSteps.map((_, i) =>
       i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 1000),
