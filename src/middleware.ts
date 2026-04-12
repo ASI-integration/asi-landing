@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { RU_SITE_ROOT_REL_PATHS } from '@/config/ruSitePaths';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 /** Hostname from Host / X-Forwarded-Host (handles ports, bracketed IPv6). */
@@ -70,16 +71,25 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // .ru domain → keep RU landing at /ru, but don't force-prefix every route.
-  // Otherwise routes like /connect and /dashboard would become /ru/connect and 404.
-  if (isRuDomain && pathname === '/') {
-    const dest = new URL(`/ru${search}`, origin);
+  // .ru domain → canonical public URLs live at `/` and top-level paths; `/ru` is legacy.
+  if (isRuDomain && (pathname === '/ru' || pathname.startsWith('/ru/'))) {
+    const rest = pathname === '/ru' ? '/' : pathname.slice(3) || '/';
+    const destPath = rest === '/' ? '/' : rest.startsWith('/') ? rest : `/${rest}`;
+    const dest = new URL(`${destPath}${search}`, origin);
     return NextResponse.redirect(dest, { status: 301 });
   }
 
+  // Serve existing `app/ru/*` pages at the site root on asi-global.ru (URL stays `/`, `/contacts`, …).
+  if (isRuDomain && pathname === '/') {
+    return NextResponse.rewrite(new URL(`/ru${search}`, request.url));
+  }
+  if (isRuDomain && (RU_SITE_ROOT_REL_PATHS as readonly string[]).includes(pathname)) {
+    return NextResponse.rewrite(new URL(`/ru${pathname}${search}`, request.url));
+  }
+
   // .com domain → must NOT be on /ru path
-  if (isComDomain && pathname.startsWith('/ru')) {
-    const path = pathname.slice(3) || '/';
+  if (isComDomain && (pathname === '/ru' || pathname.startsWith('/ru/'))) {
+    const path = pathname === '/ru' ? '/' : pathname.slice(3) || '/';
     const dest = new URL(`${path === '/' ? '/' : path}${search}`, origin);
     return NextResponse.redirect(dest, { status: 301 });
   }

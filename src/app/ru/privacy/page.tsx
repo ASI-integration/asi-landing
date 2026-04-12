@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
+import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata: Metadata = {
   title: 'Политика обработки персональных данных — ASI',
   description: 'Порядок обработки и защиты персональных данных пользователей.',
+  alternates: { canonical: `${RU_PUBLIC_ORIGIN}/privacy` },
 };
 
 export default function RuPrivacyPage() {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { productSupportEmail } from '@/config/contact';
+import { ruComplianceRoutes } from '@/config/ruCompliance';
 
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
@@ -470,7 +471,7 @@ export default function OnboardingPageContent() {
                     Запросить доступ по email
                   </a>
                   <a
-                    href="/ru/contacts"
+                    href={ruComplianceRoutes.contacts}
                     className="flex w-full items-center justify-center px-5 py-3 rounded-xl border border-slate-200 text-slate-800 font-medium hover:bg-slate-50"
                   >
                     Страница контактов

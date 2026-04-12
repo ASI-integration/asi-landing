@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
+import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata: Metadata = {
   title: 'Публичная оферта — ASI',
   description: 'Публичная оферта на оказание информационных и цифровых услуг.',
+  alternates: { canonical: `${RU_PUBLIC_ORIGIN}/offer` },
 };
 
 export default function RuOfferPage() {

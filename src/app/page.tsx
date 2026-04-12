@@ -8,6 +8,7 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { TgIcon } from '@/components/TgIcon';
+import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 /* ─── Platform modules ──────────────────────────────────────────────────────── */
 const MODULES = [
@@ -182,7 +183,7 @@ export default function Home() {
             <div className="flex items-center gap-1 text-sm">
               <span className="px-2 py-1 rounded font-semibold text-white bg-slate-800">EN</span>
               <span className="text-slate-700">|</span>
-              <a href="/ru" className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
+              <a href={`${RU_PUBLIC_ORIGIN}/`} className="px-2 py-1 rounded text-slate-400 hover:text-white transition-colors">RU</a>
             </div>
             <Link
               href="/login"

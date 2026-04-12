@@ -39,15 +39,14 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 function getLocaleFromUrl(): Locale {
   if (typeof window === 'undefined') return 'en';
   const { hostname, pathname } = window.location;
-  // Prefer explicit path locale (used on asi-global.ru/ru).
+  // Legacy `/ru/*` paths, or dedicated RU host (asi-global.ru).
   if (pathname?.startsWith('/ru')) return 'ru';
-  // Fallback: dedicated RU host.
   if (hostname?.endsWith('.ru')) return 'ru';
   return 'en';
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  // Compute initial locale synchronously to avoid sticky EN fallback on `/ru`.
+  // Compute initial locale synchronously to avoid sticky EN fallback on Russian URLs.
   const [locale, setLocaleState] = useState<Locale>(() => getLocaleFromUrl());
 
   useEffect(() => {
