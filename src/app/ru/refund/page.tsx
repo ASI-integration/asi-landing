@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata: Metadata = {
   title: 'Возврат и отказ от покупки — ASI',
   description: 'Порядок отказа от услуги и возврата денежных средств.',
-  alternates: { canonical: `${RU_PUBLIC_ORIGIN}/refund` },
 };
 
 export default function RuRefundPage() {

@@ -11,9 +11,8 @@ export const metadata: Metadata = {
   description: 'Full operational automation for real estate and hospitality: guest comms, listings, pricing, bookings, and execution — replaces the ops layer, not another tool.',
   alternates: {
     languages: {
-      'x-default': 'https://asi-global.com',
       en: 'https://asi-global.com',
-      ru: 'https://asi-global.ru/',
+      ru: 'https://asi-global.ru',
     },
   },
 };
@@ -29,7 +28,7 @@ export default async function RootLayout({
   const isRuHost = isRuRuntimeHost(hostnameFromHostHeader(raw));
 
   return (
-    <html lang={isRuHost ? 'ru' : 'en'} style={{ scrollBehavior: 'smooth' }}>
+    <html lang="en" style={{ scrollBehavior: 'smooth' }}>
       <body className="antialiased">
         <LanguageProvider>
           <LocalePathSync />

@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata: Metadata = {
   title: 'Контакты — ASI',
   description: 'Контакты исполнителя и порядок обращений пользователей.',
-  alternates: { canonical: `${RU_PUBLIC_ORIGIN}/contacts` },
 };
 
 export default function RuContactsPage() {

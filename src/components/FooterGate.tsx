@@ -2,16 +2,15 @@
 
 import { usePathname } from 'next/navigation';
 import { LegalFooter } from '@/components/LegalFooter';
-import { isRuPublicSurfacePath } from '@/config/ruSitePaths';
 
 export function FooterGate({ isRuHost }: { isRuHost: boolean }) {
   const pathname = usePathname() || '';
 
-  // Legacy `/ru/*` URLs redirect, but keep this guard for safety.
+  // RU area and RU legal pages provide their own footer.
   if (pathname === '/ru' || pathname.startsWith('/ru/')) return null;
 
-  // RU marketing, legal, and connect/report flows embed `RuComplianceFooter` (or equivalent).
-  if (isRuHost && isRuPublicSurfacePath(pathname)) return null;
+  // On the RU site, `/connect` and `/report` already include `RuComplianceFooter`.
+  if (isRuHost && (pathname === '/connect' || pathname.startsWith('/report'))) return null;
 
   return <LegalFooter ruSite={isRuHost} />;
 }

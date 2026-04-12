@@ -14,9 +14,9 @@ export const ruCompliance = {
 };
 
 export const ruComplianceRoutes = {
-  contacts: '/contacts',
-  payment: '/payment',
-  refund: '/refund',
-  privacy: '/privacy',
-  offer: '/offer',
+  contacts: '/ru/contacts',
+  payment: '/ru/payment',
+  refund: '/ru/refund',
+  privacy: '/ru/privacy',
+  offer: '/ru/offer',
 } as const;

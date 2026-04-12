@@ -2,10 +2,10 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
 
 /** Primary RU header destinations (landing sections match `src/app/ru/page.tsx`). */
 export const ruNavMainLinks = [
-  { href: '/', label: 'Главная' },
-  { href: '/#platform-modules', label: 'Платформа' },
-  { href: '/#faq', label: 'Как это работает' },
-  { href: '/#pricing', label: 'Тарифы' },
+  { href: '/ru', label: 'Главная' },
+  { href: '/ru#platform-modules', label: 'Платформа' },
+  { href: '/ru#faq', label: 'Как это работает' },
+  { href: '/ru#pricing', label: 'Тарифы' },
   { href: '/connect', label: 'Подключение' },
   { href: ruComplianceRoutes.contacts, label: 'Контакты' },
 ] as const;

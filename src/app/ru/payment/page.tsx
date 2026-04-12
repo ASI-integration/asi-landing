@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
 export const metadata: Metadata = {
   title: 'Оплата — ASI',
   description: 'Условия и порядок оплаты услуг сервиса.',
-  alternates: { canonical: `${RU_PUBLIC_ORIGIN}/payment` },
 };
 
 export default function RuPaymentPage() {
