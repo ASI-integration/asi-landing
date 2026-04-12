@@ -15,6 +15,7 @@ jobs:
     env:
       # Injected into the remote SSH session via `envs` below; merged into `.env.production.live` before build.
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
+      GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -22,23 +23,30 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: TWOGIS_CATALOG_API_KEY
+          envs: TWOGIS_CATALOG_API_KEY,GOOGLE_MAPS_SERVER_API_KEY
           script_stop: true
           script: |
             set -euo pipefail
             cd ~/asi-landing
             git fetch origin
             git reset --hard origin/main
-            if [ -n "${TWOGIS_CATALOG_API_KEY:-}" ]; then
+            merge_secret_into_env_file() {
+              key="$1"
+              val="$2"
+              if [ -z "${val:-}" ]; then
+                return 0
+              fi
               tmp="$(mktemp)"
               if [ -f .env.production.live ]; then
-                grep -v '^TWOGIS_CATALOG_API_KEY=' .env.production.live >"$tmp"
+                grep -v "^${key}=" .env.production.live >"$tmp" || true
               else
                 : >"$tmp"
               fi
-              printf '%s\n' "TWOGIS_CATALOG_API_KEY=${TWOGIS_CATALOG_API_KEY}" >>"$tmp"
+              printf '%s\n' "${key}=${val}" >>"$tmp"
               mv "$tmp" .env.production.live
-            fi
+            }
+            merge_secret_into_env_file TWOGIS_CATALOG_API_KEY "${TWOGIS_CATALOG_API_KEY:-}"
+            merge_secret_into_env_file GOOGLE_MAPS_SERVER_API_KEY "${GOOGLE_MAPS_SERVER_API_KEY:-}"
             cp .env.production.live .env.production.local
             npm ci
             npm run build
