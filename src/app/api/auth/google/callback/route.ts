@@ -8,6 +8,9 @@ import { ensureAccountForUser } from '@/lib/accounts';
 
 export const runtime = 'nodejs';
 
+// Must match Google Cloud Console OAuth redirect URI exactly.
+const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
+
 function getRequestOrigin(req: Request): string {
   const u = new URL(req.url);
   const proto = req.headers.get('x-forwarded-proto') || u.protocol.replace(':', '');
@@ -35,7 +38,12 @@ async function exchangeCodeForTokens(opts: {
 
   const data = (await res.json().catch(() => ({}))) as any;
   if (!res.ok) {
-    const msg = typeof data?.error_description === 'string' ? data.error_description : typeof data?.error === 'string' ? data.error : 'token_exchange_failed';
+    const msg =
+      typeof data?.error_description === 'string'
+        ? data.error_description
+        : typeof data?.error === 'string'
+          ? data.error
+          : 'token_exchange_failed';
     throw new Error(msg);
   }
   return data as { id_token?: string };
@@ -59,6 +67,19 @@ export async function GET(req: Request) {
     return NextResponse.redirect(u);
   };
 
+  console.info('[GoogleOAuth][callback] request', {
+    path: url.pathname,
+    hasCode: Boolean(code),
+    hasState: Boolean(state),
+    origin,
+    xfProto: req.headers.get('x-forwarded-proto'),
+    xfHost: req.headers.get('x-forwarded-host'),
+    host: req.headers.get('host'),
+    referer: req.headers.get('referer'),
+    userAgent: req.headers.get('user-agent'),
+    hasCookieHeader: Boolean(req.headers.get('cookie')),
+  });
+
   if (!code || !state) return fail('missing_params');
 
   const clientId = (process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
@@ -66,6 +87,11 @@ export async function GET(req: Request) {
   if (!clientId || !clientSecret) return fail('not_configured');
 
   const session = await getSession();
+  console.info('[GoogleOAuth][callback] session pre-check', {
+    hasUserId: Boolean(session.userId),
+    hasExpectedState: Boolean(session.googleOauthState),
+  });
+
   const expectedState = session.googleOauthState;
   const plan = session.googleOauthPlan;
   session.googleOauthState = undefined;
@@ -75,8 +101,12 @@ export async function GET(req: Request) {
   if (!expectedState || expectedState !== state) return fail('bad_state');
 
   try {
-    const redirectUri = `${origin}/api/auth/google/callback`;
-    const tokenResp = await exchangeCodeForTokens({ code, clientId, clientSecret, redirectUri });
+    const tokenResp = await exchangeCodeForTokens({
+      code,
+      clientId,
+      clientSecret,
+      redirectUri: GOOGLE_REDIRECT_URI,
+    });
     const idToken = (tokenResp.id_token || '').trim();
     if (!idToken) return fail('no_id_token');
 
@@ -125,6 +155,12 @@ export async function GET(req: Request) {
     session.email = email;
     await session.save();
 
+    console.info('[GoogleOAuth][callback] session created', {
+      userId,
+      email,
+      hasCookieHeaderAfterSave: Boolean(req.headers.get('cookie')),
+    });
+
     await ensureAccountForUser({
       userId: userId!,
       email,
@@ -132,7 +168,10 @@ export async function GET(req: Request) {
       trialDays: 7,
     });
 
-    if (debug) console.info('[GoogleOAuth][callback] ok', { userId });
+    console.info('[GoogleOAuth][callback] redirecting to dashboard', {
+      userId,
+      hasCookieHeader: Boolean(req.headers.get('cookie')),
+    });
     return NextResponse.redirect(new URL('/dashboard', origin));
   } catch (err) {
     console.error('[GoogleOAuth][callback]', err);
@@ -146,4 +185,3 @@ export async function GET(req: Request) {
     return fail('callback_failed');
   }
 }
-

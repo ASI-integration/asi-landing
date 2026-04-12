@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getSession } from '@/lib/auth';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
+const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
+
 function getRequestOrigin(req: Request): string {
   const u = new URL(req.url);
-  const proto = req.headers.get('x-forwarded-proto') || u.protocol.replace(':', '');
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || u.host;
+  const proto =
+    (req.headers.get('x-forwarded-proto') || u.protocol.replace(':', '') || 'https').split(',')[0]?.trim() ||
+    'https';
+  const host = (req.headers.get('x-forwarded-host') || req.headers.get('host') || u.host || '')
+    .split(',')[0]
+    ?.trim();
+  if (!host) return u.origin;
   return `${proto}://${host}`;
 }
 
@@ -30,18 +37,28 @@ export async function GET(req: Request) {
     return NextResponse.redirect(url);
   }
 
+  if (!isSessionSecretConfigured()) {
+    const url = new URL('/connect', getRequestOrigin(req));
+    url.searchParams.set('google_error', 'session_not_configured');
+    if (debug) url.searchParams.set('debugGoogle', '1');
+    return NextResponse.redirect(url);
+  }
+
   const origin = getRequestOrigin(req);
-  const redirectUri = `${origin}/api/auth/google/callback`;
   const state = crypto.randomBytes(16).toString('hex');
 
   const session = await getSession();
+  if (session.userId) {
+    if (debug) console.info('[GoogleOAuth][start] session exists; redirecting to dashboard', { userId: session.userId });
+    return NextResponse.redirect(new URL('/dashboard', origin));
+  }
   session.googleOauthState = state;
   session.googleOauthPlan = plan;
   await session.save();
 
   const url = googleAuthUrl({
     client_id: clientId,
-    redirect_uri: redirectUri,
+    redirect_uri: GOOGLE_REDIRECT_URI,
     response_type: 'code',
     scope: 'openid email profile',
     include_granted_scopes: 'true',
@@ -51,7 +68,12 @@ export async function GET(req: Request) {
   });
 
   if (debug) {
-    console.info('[GoogleOAuth][start]', { origin, redirectUri, hasClientId: Boolean(clientId), hasClientSecret: Boolean(clientSecret) });
+    console.info('[GoogleOAuth][start]', {
+      origin,
+      redirectUri: GOOGLE_REDIRECT_URI,
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+    });
   }
 
   return NextResponse.redirect(url);

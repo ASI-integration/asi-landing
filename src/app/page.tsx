@@ -198,60 +198,52 @@ export default function Home() {
 
         {/* ── Hero ── */}
         <HeroSection content={{
-          aboutLabel: 'About us',
-          aboutHeadline: 'Operational Automation System',
-          aboutBody: 'ASI is not a dashboard or software you configure. It is execution infrastructure — an AI-driven operational layer that runs your property portfolio end to end, without a staff or management overhead.',
+          aboutLabel: 'About',
+          aboutHeadline: 'AI Operational System for Short-Term Rentals',
+          aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
           aboutPoints: [
             'Not a dashboard',
-            'Not software you manually operate',
-            'Replaces the manual ops layer entirely',
+            'Not a tool you manage',
+            'Replaces your operational team',
           ],
-          detailsLabel: 'Our details',
+          detailsLabel: 'Contact',
           loginLabel: 'Log in',
           loginHref: '/login',
-          offerHeadline: <>Your business <span className="text-slate-300">runs itself.</span></>,
-          offerSub: <>Earn passive income from your property<br className="hidden sm:block" /> without dealing with operations or paying staff</>,
+          offerHeadline: <>Your rental property <span className="text-slate-300">runs itself.</span></>,
+          offerSub: <>AI operational system for short-term rental owners.<br className="hidden sm:block" /> No operations, no staff — just income.</>,
           ctaLabel: 'Get access',
           ctaHref: STRIPE_PAYMENT_LINK,
+          ctaSub: 'One-time payment · $10 · Instant access',
         }} />
 
         {/* ── Feature quick-nav ── */}
         <section className="py-5 px-4 sm:px-6 bg-slate-950 border-b border-slate-800/60">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-3">
             <a
               href="#scale"
               className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
             >
               <span className="text-2xl shrink-0">📈</span>
               <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                From 1 property to a scalable portfolio
+                Works for 1 property or 100+
               </span>
             </a>
-            <a
-              href="#platform-modules"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
-            >
-              <span className="text-2xl shrink-0">🔄</span>
-              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                Channel manager and OTA connection
-              </span>
-            </a>
-            <Link
-              href="/ota"
-              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-indigo-500/35 bg-indigo-950/20 hover:border-indigo-400/60 hover:bg-indigo-950/30 transition-all"
-            >
-              <span className="text-2xl shrink-0">🔌</span>
-              <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors leading-snug">
-                Connect OTA
-              </span>
-            </Link>
             <a
               href="#finances"
               className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
             >
-              <span className="text-2xl shrink-0">💰</span>
+              <span className="text-2xl shrink-0">🔄</span>
               <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                Your finances under your control
+                What it handles
+              </span>
+            </a>
+            <a
+              href="#faq"
+              className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
+            >
+              <span className="text-2xl shrink-0">🤖</span>
+              <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
+                How it works
               </span>
             </a>
           </div>
@@ -301,7 +293,7 @@ export default function Home() {
               </li>
               <li className="pt-2 text-slate-200 font-medium">
                 <span className="text-emerald-500/90" aria-hidden>✅ </span>
-                ASI → replaces the operational layer entirely
+                ASI → runs operations end to end, replacing the ops team entirely
               </li>
             </ul>
           </div>
@@ -336,10 +328,10 @@ export default function Home() {
         <section id="finances" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
-              Execution layer
+              What it handles
             </h2>
             <p className="text-slate-500 mb-10">
-              Work that used to sit with an ops team — the system runs it end to end.
+              Everything that used to sit with an ops team — the system runs it automatically.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {CARDS.map((card) => (
@@ -365,39 +357,29 @@ export default function Home() {
             <p className="text-slate-500 mb-10">
               Autonomous systems on one infrastructure — each runs its domain.
             </p>
-            <div className="grid sm:grid-cols-3 gap-4">
-              {MODULES.map((mod) => {
-                const isActive = mod.status === 'ACTIVE';
-                return (
-                  <div
-                    key={mod.id}
-                    className={`p-6 rounded-xl border transition-all ${
-                      isActive
-                        ? 'border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40'
-                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <h3 className={`font-semibold text-sm leading-snug ${isActive ? 'text-white' : 'text-slate-400'}`}>
-                        {mod.name}
-                      </h3>
-                      <span
-                        className={`shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                          isActive
-                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                            : 'bg-slate-800 text-slate-500 border border-slate-700'
-                        }`}
-                      >
-                        {mod.status}
-                      </span>
-                    </div>
-                    <p className={`text-sm leading-relaxed ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
-                      {mod.desc}
-                    </p>
+            <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
+              {MODULES.filter((m) => m.status === 'ACTIVE').map((mod) => (
+                <div
+                  key={mod.id}
+                  className="p-6 rounded-xl border border-indigo-500/50 bg-indigo-950/30 hover:border-indigo-400/70 hover:bg-indigo-950/40 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <h3 className="font-semibold text-sm leading-snug text-white">
+                      {mod.name}
+                    </h3>
+                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      {mod.status}
+                    </span>
                   </div>
-                );
-              })}
+                  <p className="text-sm leading-relaxed text-slate-300">
+                    {mod.desc}
+                  </p>
+                </div>
+              ))}
             </div>
+            <p className="mt-6 text-xs text-slate-600">
+              Security Autopilot and Market Automation — in development.
+            </p>
           </div>
         </section>
 
@@ -420,10 +402,10 @@ export default function Home() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-white">
-              Start automating today
+              Put your rental on autopilot
             </h2>
             <p className="mt-4 text-slate-400 text-lg">
-              Get full access to ASI for $10.
+              Full access to ASI. One payment, no subscription.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
               <a
@@ -433,6 +415,14 @@ export default function Home() {
                 className="inline-flex items-center justify-center px-10 py-5 bg-white text-slate-900 font-bold rounded-xl hover:bg-slate-100 active:scale-[0.98] transition-all shadow-lg shadow-white/10 hover:shadow-xl hover:shadow-white/20 hover:scale-[1.02] text-lg"
               >
                 Get Access — $10
+              </a>
+              <a
+                href="https://t.me/ASI_core_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
+              >
+                Book a demo
               </a>
             </div>
             <p className="mt-4 text-sm text-slate-600">One-time payment · Instant access · No commitment required</p>

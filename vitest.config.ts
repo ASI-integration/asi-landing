@@ -6,6 +6,13 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/__tests__/**/*.test.ts'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+      '**/.git/**',
+      '**/.claude/**',
+    ],
   },
   resolve: {
     alias: {

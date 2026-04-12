@@ -1,4 +1,5 @@
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
+import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuLegalTrustBlock } from '@/components/ru/RuLegalTrustBlock';
 
@@ -223,6 +224,7 @@ export default function ReportPage() {
         </div>
       </section>
 
+      <RuBottomQuickLinks tone="dark" />
       <RuComplianceFooter tone="dark" />
     </div>
   );

@@ -65,7 +65,7 @@ export default function ConnectGooglePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+    <div className="flex-1 bg-white flex items-center justify-center px-4 py-8">
       <div className="max-w-md w-full bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center">
         <h1 className="text-lg font-semibold text-slate-900">Вход через Google</h1>
         <p className="mt-2 text-sm text-slate-600">

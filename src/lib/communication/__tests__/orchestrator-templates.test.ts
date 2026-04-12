@@ -83,6 +83,7 @@ vi.mock('../reservation', () => ({
 }));
 
 import { processUpdate } from '../orchestrator';
+import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ function makeUpdate(text: string): TelegramUpdate {
 describe('orchestrator: property template usage', () => {
   beforeEach(() => {
     _resetForTesting();
+    __resetAutonomousSessionStoreForTests();
     mockReply.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
@@ -125,13 +127,15 @@ describe('orchestrator: property template usage', () => {
     expect(mockLLM).not.toHaveBeenCalled();
   });
 
-  it('falls back to LLM for CheckInInfo when pre_checkin_template is absent', async () => {
+  it('uses deterministic check-in clarify when pre_checkin_template is absent', async () => {
     mockTemplates = null;
     mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.CheckInInfo, confidence: 0.95 });
 
     const result = await processUpdate(makeUpdate('how do I check in'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(mockLLM).toHaveBeenCalledOnce();
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockReply.mock.calls[0];
+    expect(sentText).toMatch(/check-in|access|заселен/i);
   });
 
   // ── checkout template ───────────────────────────────────────────────────────

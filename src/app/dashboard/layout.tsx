@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from '@/i18n/useTranslation';
 import { SessionProvider, useSession } from '@/contexts/SessionContext';
 import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
@@ -61,12 +61,41 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 
 function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { t } = useTranslation();
-  const { session } = useSession();
+  const router = useRouter();
+  const { session, refresh } = useSession();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const email = session?.user?.email ?? t('dashboard.header.userEmail');
   const initial = email.charAt(0).toUpperCase();
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onPointerDown(e: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [menuOpen]);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      if (!res.ok) return;
+      await refresh();
+      setMenuOpen(false);
+      router.replace('/');
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   return (
-    <header className="h-[60px] bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6">
+    <header className="h-[60px] bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 relative z-30">
       <button
         type="button"
         onClick={onMenuClick}
@@ -77,10 +106,38 @@ function Header({ onMenuClick }: { onMenuClick: () => void }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <div className="flex-1 md:flex-none md:ml-auto flex items-center justify-end gap-3">
-        <span className="text-sm text-slate-600 hidden sm:inline">{email}</span>
-        <div className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-sm font-medium">
-          {initial}
+      <div className="flex-1 md:flex-none md:ml-auto flex items-center justify-end">
+        <div ref={menuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-sm font-medium hover:bg-slate-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            aria-label={t('dashboard.header.userMenu')}
+          >
+            {initial}
+          </button>
+          {menuOpen ? (
+            <div
+              role="menu"
+              aria-orientation="vertical"
+              className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-lg py-1 z-50"
+            >
+              <div className="px-4 py-3 text-sm text-slate-700 border-b border-slate-100 break-all" role="none">
+                {email}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={loggingOut}
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {t('dashboard.header.logout')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </header>

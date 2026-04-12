@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 /** Hostname from Host / X-Forwarded-Host (handles ports, bracketed IPv6). */
 function hostnameFromRequest(request: NextRequest): string {
@@ -14,11 +15,7 @@ function hostnameFromRequest(request: NextRequest): string {
       return '';
     }
   }
-  try {
-    return new URL(`http://${raw}`).hostname;
-  } catch {
-    return raw;
-  }
+  return hostnameFromHostHeader(raw);
 }
 
 /**
@@ -55,7 +52,7 @@ export function middleware(request: NextRequest) {
 
   // HOST_VARIANT=ru can be set in .env.production.live as a reliable fallback
   // when the upstream proxy does not forward the Host header correctly.
-  const isRuDomain = process.env.HOST_VARIANT === 'ru' || hostname.endsWith('.ru');
+  const isRuDomain = isRuRuntimeHost(hostname);
   const isComDomain = !isRuDomain; // localhost, .com, vercel previews → EN
 
   const origin = publicOrigin(request);

@@ -201,3 +201,15 @@ export function emitStateChanged(params: {
     chatId: params.chatId,
   });
 }
+
+export function emitSessionCompleted(params: {
+  conversationId?: string;
+  chatId: number;
+  channel: string;
+}): void {
+  emit('session.completed', {}, {
+    conversationId: params.conversationId,
+    chatId: params.chatId,
+    channel: params.channel,
+  });
+}

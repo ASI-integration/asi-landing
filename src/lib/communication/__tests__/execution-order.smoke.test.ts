@@ -205,18 +205,20 @@ vi.mock('@/lib/payments/factory', () => ({
 // ─── Audit ────────────────────────────────────────────────────────────────────
 
 vi.mock('../audit', () => ({
-  auditDuplicate:  () => {},
-  auditInbound:    () => {},
-  auditOutbound:   () => {},
-  auditLLM:        () => {},
-  auditEscalation: () => {},
-  auditError:      () => {},
-  auditLog:        () => {},
+  auditDuplicate:           () => {},
+  auditInbound:             () => {},
+  auditOutbound:            () => {},
+  auditLLM:                 () => {},
+  auditEscalation:          () => {},
+  auditAutonomousDecision:  () => {},
+  auditError:               () => {},
+  auditLog:                 () => {},
 }));
 
 // ─── Import under test ────────────────────────────────────────────────────────
 
 import { processUpdate } from '../orchestrator';
+import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -239,6 +241,7 @@ describe('execution order smoke test', () => {
     log.length = 0;
     bgPromises.length = 0;
     _resetForTesting();
+    __resetAutonomousSessionStoreForTests();
   });
 
   it('records every step in order: await steps finish before flush, background steps settle after', async () => {
@@ -283,15 +286,16 @@ describe('execution order smoke test', () => {
     const iBgStarts    = log.map((l, i) => l.includes('[background:start]') ? i : -1).filter(i => i >= 0);
     const iBgSettled   = log.map((l, i) => (l.includes('[background:done]') || l.includes('[background:fail]')) ? i : -1).filter(i => i >= 0);
 
-    // Awaited steps execute in order before flush
-    expect(iIdentity).toBeLessThan(iInbound);    // identity before inbound timeline
-    expect(iInbound).toBeLessThan(iLLM);         // inbound timeline before LLM
-    expect(iLLM).toBeLessThan(iUpsert);          // LLM before session save
-    expect(iUpsert).toBeLessThan(iSend);         // session save before delivery
-    expect(iUserTurn).toBeLessThan(iSend);       // user turn before delivery
-    expect(iSend).toBeLessThan(iOutbound);       // delivery before outbound timeline
-    expect(iOutbound).toBeLessThan(iAssistant);  // outbound timeline before assistant save
-    expect(iAssistant).toBeLessThan(iFlush);     // assistant save before flush boundary
+    // Awaited steps execute in order before flush (assistant turn is persisted before
+    // outbound delivery so failures after send still leave a DB trail — see orchestrator).
+    expect(iIdentity).toBeLessThan(iInbound);
+    expect(iInbound).toBeLessThan(iLLM);
+    expect(iLLM).toBeLessThan(iAssistant);
+    expect(iUpsert).toBeLessThan(iAssistant);
+    expect(iUserTurn).toBeLessThan(iAssistant);
+    expect(iAssistant).toBeLessThan(iSend);
+    expect(iSend).toBeLessThan(iOutbound);
+    expect(iOutbound).toBeLessThan(iFlush);
 
     // Background tasks are always *started* (fired) before flush boundary.
     iBgStarts.forEach(i => expect(i).toBeLessThan(iFlush));

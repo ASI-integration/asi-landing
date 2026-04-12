@@ -90,6 +90,20 @@ export function auditEscalation(params: {
   });
 }
 
+/** Rule-based autonomous layer: one line per decision for log pipelines. */
+export function auditAutonomousDecision(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.AutonomousDecision,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
 export function auditError(params: {
   chat_id?: number;
   update_id?: number;

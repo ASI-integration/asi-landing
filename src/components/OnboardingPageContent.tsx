@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
+import { productSupportEmail } from '@/config/contact';
 
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
@@ -22,6 +23,8 @@ export default function OnboardingPageContent() {
   // OAuth redirect flow depends on SERVER env (client id + secret), not on build-time NEXT_PUBLIC_*.
   // We must fetch runtime config to avoid client/server env mismatches and misleading enabled state.
   const [googleOAuthConfigured, setGoogleOAuthConfigured] = useState<boolean>(false);
+  /** Server hint: ready | missing_client_id | missing_client_secret — for UI/debug only. */
+  const [googleOAuthEnv, setGoogleOAuthEnv] = useState<string>('');
   const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(true);
   // Kept only for GIS fallback/debug; not used for enablement.
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
@@ -55,12 +58,18 @@ export default function OnboardingPageContent() {
         } finally {
           window.clearTimeout(timeoutId);
         }
-        const data = (await res.json()) as { googleClientId?: string; googleOAuthConfigured?: boolean };
+        const data = (await res.json()) as {
+          googleClientId?: string;
+          googleOAuthConfigured?: boolean;
+          googleOAuthEnv?: string;
+        };
         const clientId = (data.googleClientId || '').trim();
         const configured = Boolean(data.googleOAuthConfigured);
+        const envHint = typeof data.googleOAuthEnv === 'string' ? data.googleOAuthEnv : '';
         if (!cancelled && isMountedRef.current) {
           setGoogleClientId(clientId);
           setGoogleOAuthConfigured(configured);
+          setGoogleOAuthEnv(envHint);
         }
         if (debugGoogle) {
           // eslint-disable-next-line no-console
@@ -68,6 +77,7 @@ export default function OnboardingPageContent() {
             ok: res.ok,
             clientIdPresent: Boolean(clientId),
             oauthConfigured: configured,
+            googleOAuthEnv: envHint || undefined,
           });
         }
       } catch (e) {
@@ -78,6 +88,7 @@ export default function OnboardingPageContent() {
         if (!cancelled && isMountedRef.current) {
           setGoogleClientId('');
           setGoogleOAuthConfigured(false);
+          setGoogleOAuthEnv('');
         }
       } finally {
         // Always clear the loading flag once the request settles.
@@ -95,6 +106,8 @@ export default function OnboardingPageContent() {
     if (!googleErrorParam) return;
     if (googleErrorParam === 'not_configured') {
       setError('Вход через Google сейчас недоступен (не настроено). Используйте email.');
+    } else if (googleErrorParam === 'session_not_configured') {
+      setError('Вход через Google временно недоступен (сессия на сервере не настроена). Используйте email.');
     } else if (googleErrorParam === 'bad_state') {
       setError('Не удалось подтвердить вход через Google. Попробуйте ещё раз.');
     } else if (googleErrorParam === 'missing_params') {
@@ -136,6 +149,13 @@ export default function OnboardingPageContent() {
     if (selectedPlanValue === 'growth') return '8 900 ₽ / объект / месяц';
     return '6 900 ₽ / объект / месяц';
   }, [selectedPlanValue]);
+
+  const googleReady = googleOAuthConfigured && !googleConfigLoading;
+  const demoMailto = useMemo(
+    () =>
+      `mailto:${productSupportEmail}?subject=${encodeURIComponent('Доступ к демо / тест (7 дней)')}&body=${encodeURIComponent('Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n')}`,
+    [],
+  );
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,7 +382,7 @@ export default function OnboardingPageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-10">
+    <div className="w-full bg-transparent flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-2xl">
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
@@ -388,19 +408,78 @@ export default function OnboardingPageContent() {
           </div>
 
           <div className="mt-8 grid sm:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div
+              className="bg-white rounded-2xl border border-slate-200 p-5"
+              data-connect-google-status={googleReady ? 'ready' : googleConfigLoading ? 'checking' : 'unavailable'}
+              data-google-oauth-env={googleOAuthEnv || undefined}
+            >
               <p className="text-sm font-semibold text-slate-900">Быстрый вход</p>
-              <button
-                type="button"
-                onClick={handleGoogle}
-                disabled={loading || googleConfigLoading || !googleOAuthConfigured}
-                className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+              <p
+                className={`mt-2 flex items-center gap-2 text-xs font-medium ${
+                  googleConfigLoading ? 'text-slate-500' : googleReady ? 'text-emerald-800' : 'text-amber-900'
+                }`}
+                aria-live="polite"
               >
-                {loading ? 'Открываем Google…' : 'Войти через Google'}
-              </button>
-              {!googleConfigLoading && !googleOAuthConfigured ? (
-                <p className="mt-2 text-xs text-slate-600">Вход через Google временно недоступен (не настроено).</p>
-              ) : null}
+                <span
+                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                    googleConfigLoading ? 'bg-slate-400' : googleReady ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  aria-hidden
+                />
+                {googleConfigLoading
+                  ? 'Проверяем доступность Google…'
+                  : googleReady
+                    ? 'Google OAuth: доступен'
+                    : 'Google OAuth: недоступен — выберите другой способ'}
+              </p>
+
+              {googleConfigLoading ? (
+                <button
+                  type="button"
+                  disabled
+                  className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-200 text-slate-600 font-semibold cursor-wait"
+                >
+                  Проверяем…
+                </button>
+              ) : googleReady ? (
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  disabled={loading}
+                  className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Открываем Google…' : 'Войти через Google'}
+                </button>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-slate-600">
+                    Вход через Google сейчас выключен на сервере. Вы всё равно можете начать тест: напишите нам или зарегистрируйтесь по email справа.
+                  </p>
+                  <a
+                    href="https://t.me/ASI_core_bot"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex w-full items-center justify-center px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
+                  >
+                    Написать в Telegram
+                  </a>
+                  <a
+                    href={demoMailto}
+                    className="flex w-full items-center justify-center px-5 py-3 rounded-xl border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50"
+                  >
+                    Запросить доступ по email
+                  </a>
+                  <a
+                    href="/ru/contacts"
+                    className="flex w-full items-center justify-center px-5 py-3 rounded-xl border border-slate-200 text-slate-800 font-medium hover:bg-slate-50"
+                  >
+                    Страница контактов
+                  </a>
+                  <a href="#connect-email" className="block text-center text-sm text-slate-600 underline hover:text-slate-900">
+                    Или продолжить с паролем →
+                  </a>
+                </div>
+              )}
               {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
               {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
               {/* Off-screen, not clipped — GIS needs real dimensions to render and click */}
@@ -414,7 +493,7 @@ export default function OnboardingPageContent() {
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div id="connect-email" className="bg-white rounded-2xl border border-slate-200 p-5 scroll-mt-8">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">Email</p>
                 <div className="flex items-center gap-2">

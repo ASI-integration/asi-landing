@@ -24,7 +24,10 @@ jobs:
             cd ~/asi-landing
             git fetch origin
             git reset --hard origin/main
-            npm install
+            cp .env.production.live .env.production.local
+            npm ci
             npm run build
-            pm2 restart asi-landing
+            # Main site: this repo only (not automation-core apps/web).
+            pm2 startOrReload ecosystem.config.cjs --only asi-landing
+            pm2 save
             pm2 status

@@ -16,7 +16,7 @@ function getTelegramChatId(): string | null {
 const SEND_TIMEOUT_MS = (() => {
   const raw = process.env.TELEGRAM_HTTP_TIMEOUT_MS;
   const n = raw ? Number.parseInt(raw, 10) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 8000;
+  return Number.isFinite(n) && n > 0 ? n : 15000;
 })();
 
 type TelegramApiResponse =
@@ -120,12 +120,12 @@ async function sendWithTimeout(
   }
 }
 
-async function sendWithRetry(url: string, body: Record<string, unknown>): Promise<boolean> {
+async function sendOnce(url: string, body: Record<string, unknown>): Promise<boolean> {
   const ok = await sendWithTimeout(url, body, 1);
-  if (ok) return true;
-  // One retry for transient failures (timeout / network blip)
-  console.warn('[Telegram] Retrying send (attempt=2)');
-  return sendWithTimeout(url, body, 2);
+  if (!ok) {
+    console.error('[Telegram] Outbound send failed (single attempt); delivery layer controls retries');
+  }
+  return ok;
 }
 
 export async function sendTelegramMessage(text: string): Promise<boolean> {
@@ -149,7 +149,7 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   // Keep global ops notifications simple/plain. If HTML is needed in the future,
   // add escaping and an explicit parse_mode flag.
-  return sendWithRetry(url, { chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true });
+  return sendOnce(url, { chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true });
 }
 
 export async function replyToTelegram(chatId: number | string, text: string): Promise<boolean> {
@@ -176,7 +176,7 @@ export async function replyToTelegram(chatId: number | string, text: string): Pr
       text_preview: safePreview(String(text ?? ''), 160),
     });
   }
-  return sendWithRetry(url, {
+  return sendOnce(url, {
     chat_id: chatId,
     text,
     disable_web_page_preview: true,

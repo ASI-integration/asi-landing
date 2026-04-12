@@ -1,14 +1,17 @@
- 'use client';
+'use client';
 
- import { usePathname } from 'next/navigation';
- import { LegalFooter } from '@/components/LegalFooter';
+import { usePathname } from 'next/navigation';
+import { LegalFooter } from '@/components/LegalFooter';
 
- export function FooterGate() {
-   const pathname = usePathname() || '';
+export function FooterGate({ isRuHost }: { isRuHost: boolean }) {
+  const pathname = usePathname() || '';
 
-   // RU landing (`/ru`) renders its own RU-specific footer.
-   if (pathname === '/ru' || pathname.startsWith('/ru/')) return null;
+  // RU area and RU legal pages provide their own footer.
+  if (pathname === '/ru' || pathname.startsWith('/ru/')) return null;
 
-   return <LegalFooter />;
- }
+  // On the RU site, `/connect` and `/report` already include `RuComplianceFooter`.
+  if (isRuHost && (pathname === '/connect' || pathname.startsWith('/report'))) return null;
+
+  return <LegalFooter ruSite={isRuHost} />;
+}
 

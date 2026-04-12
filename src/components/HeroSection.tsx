@@ -18,6 +18,7 @@ export interface HeroContent {
   ctaLabel: string;
   ctaHref: string;
   ctaExternal?: boolean;
+  ctaSub?: string;
 }
 
 export function HeroSection({
@@ -30,7 +31,7 @@ export function HeroSection({
   const {
     aboutLabel, aboutHeadline, aboutBody, aboutPoints,
     detailsLabel, loginLabel, loginHref,
-    offerHeadline, offerSub, ctaLabel, ctaHref, ctaExternal = true,
+    offerHeadline, offerSub, ctaLabel, ctaHref, ctaExternal = true, ctaSub,
   } = content;
 
   return (
@@ -124,7 +125,7 @@ export function HeroSection({
           <p className="mt-6 text-xl sm:text-2xl text-[var(--t-text-2)] leading-snug">
             {offerSub}
           </p>
-          <div className="mt-10 flex justify-center">
+          <div className="mt-10 flex flex-col items-center gap-3">
             <a
               href={ctaHref}
               {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
@@ -132,6 +133,9 @@ export function HeroSection({
             >
               {ctaLabel}
             </a>
+            {ctaSub && (
+              <p className="text-xs text-[var(--t-muted)]">{ctaSub}</p>
+            )}
           </div>
         </div>
 

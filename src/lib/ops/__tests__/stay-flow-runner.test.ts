@@ -28,6 +28,8 @@ let lastUpdates: { id: string; payload: MockRow }[] = [];
 
 let mockGateAllowed = true;
 let mockGateBlockedReason: string | null = null;
+let mockGateAllowedSequence: boolean[] | null = null;
+let mockGateBlockedReasonSequence: (string | null)[] | null = null;
 
 let mockTemplates: { pre_checkin_template: string | null } | null = { pre_checkin_template: 'Check-in details: door code 1234' };
 
@@ -40,8 +42,50 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table !== 'tg_guest_reservations') {
+        const b: any = {
+          select: () => b,
+          eq: () => b,
+          is: () => b,
+          not: () => b,
+          order: () => b,
+          limit: () => b,
+          maybeSingle: async () => {
+            if (table === 'unit_state') {
+              return {
+                data: {
+                  id: 'unit_state_1',
+                  property_id: 'prop_A',
+                  current_state: 'ready',
+                  current_reservation_id: null,
+                  dirty: false,
+                  ready_for_checkin: true,
+                  blocked_reason: null,
+                  last_checkout_at: null,
+                  last_turnover_completed_at: null,
+                  updated_at: new Date().toISOString(),
+                },
+                error: null,
+              };
+            }
+            if (table === 'property_knowledge') {
+              return {
+                data: {
+                  active: true,
+                  check_in_instructions: 'ok',
+                  wifi_name: 'ok',
+                },
+                error: null,
+              };
+            }
+            return { data: null, error: null };
+          },
+          single: async () => ({ data: null, error: { message: 'not found' } }),
+          then: (resolve: (v: { data: MockRow[]; error: null }) => void) => resolve({ data: [], error: null }),
+        };
         return {
+          select: () => b,
           update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+          insert: async () => ({ error: null }),
         };
       }
 
@@ -68,6 +112,7 @@ vi.mock('@/lib/supabase', () => ({
             ordering = { col, asc: opts?.ascending ?? true };
             return b;
           },
+          maybeSingle: async () => ({ data: null, error: null }),
           then: (
             resolve: (v: { data: MockRow[] | null; error: { message: string } | null }) => void,
           ) => {
@@ -124,12 +169,34 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-vi.mock('@/lib/ops/checkin-gate', () => ({
-  evaluateCheckinReadiness: vi.fn(async (_propertyId: string) => ({
-    allowed:        mockGateAllowed,
-    unit_state:     mockGateAllowed ? 'ready' : 'blocked',
-    blocked_reason: mockGateAllowed ? null : (mockGateBlockedReason ?? 'unit_not_ready'),
-    checked_at:     new Date().toISOString(),
+vi.mock('@/lib/ops/unit-state', () => ({
+  getUnitState: vi.fn(async (_propertyId: string) => {
+    const allowed = mockGateAllowedSequence ? (mockGateAllowedSequence.shift() ?? mockGateAllowed) : mockGateAllowed;
+    const reason = mockGateBlockedReasonSequence
+      ? (mockGateBlockedReasonSequence.shift() ?? (allowed ? null : (mockGateBlockedReason ?? 'unit_not_ready')))
+      : (allowed ? null : (mockGateBlockedReason ?? 'unit_not_ready'));
+
+    return {
+      ok: true,
+      state: {
+        id: 'unit_state_1',
+        property_id: 'prop_A',
+        current_state: allowed ? 'ready' : 'blocked',
+        current_reservation_id: null,
+        dirty: false,
+        ready_for_checkin: allowed,
+        blocked_reason: reason,
+        last_checkout_at: null,
+        last_turnover_completed_at: null,
+        updated_at: new Date().toISOString(),
+      },
+    };
+  }),
+}));
+
+vi.mock('@/lib/ops/mappers', () => ({
+  evaluateReadinessWithOptionalIncident: vi.fn(({ current }: { current: { ready_for_checkin?: boolean } }) => ({
+    canProceed: Boolean(current?.ready_for_checkin),
   })),
 }));
 
@@ -185,6 +252,8 @@ beforeEach(() => {
   lastUpdates        = [];
   mockGateAllowed    = true;
   mockGateBlockedReason = null;
+  mockGateAllowedSequence = null;
+  mockGateBlockedReasonSequence = null;
   mockTemplates      = { pre_checkin_template: 'Check-in details: door code 1234' };
   mockSendSuccess    = true;
   sentMessages       = [];
@@ -357,11 +426,8 @@ describe('runStayFlowAdvancement', () => {
 
   it('processes reservations independently when one fails', async () => {
     // First res fails gate, second succeeds
-    const { evaluateCheckinReadiness } = await import('@/lib/ops/checkin-gate');
-    const mockFn = vi.mocked(evaluateCheckinReadiness);
-    mockFn
-      .mockResolvedValueOnce({ allowed: false, unit_state: 'blocked', blocked_reason: 'unit_dirty', checked_at: new Date().toISOString() })
-      .mockResolvedValueOnce({ allowed: true,  unit_state: 'ready',   blocked_reason: null,         checked_at: new Date().toISOString() });
+    mockGateAllowedSequence = [false, true];
+    mockGateBlockedReasonSequence = ['unit_dirty', null];
 
     mockReservations = [
       makeReservation({ id: 'res_1', chat_id: 100, check_in: NEAR_FUTURE }),

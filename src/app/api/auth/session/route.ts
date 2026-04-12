@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { getSession } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 export async function GET() {
+  const cookieHeader = headers().get('cookie') || '';
   const session = await getSession();
+  console.info('[Session] request', {
+    hasCookieHeader: Boolean(cookieHeader),
+    cookieLen: cookieHeader.length,
+    hasUserId: Boolean(session.userId),
+  });
   if (!session.userId) {
     return NextResponse.json({ user: null, subscription: null, account: null });
   }

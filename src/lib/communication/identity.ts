@@ -23,7 +23,10 @@ export interface UnifiedGuestIdentity {
   guestId: string;
   knownEmails: string[];
   knownPhones: string[];
+  /** Telegram chat IDs */
   knownChatIds: string[];
+  /** VK user IDs */
+  knownVkIds: string[];
   firstName?: string;
   lastName?: string;
 }
@@ -34,6 +37,7 @@ const identityCache = new Map<string, UnifiedGuestIdentity>();
 
 /** Additional lookup indexes so we don't scan the whole cache. */
 const byTelegramId = new Map<string, string>(); // telegramId → guestId
+const byVkId       = new Map<string, string>(); // vkUserId → guestId
 const byPhone      = new Map<string, string>(); // normalised phone → guestId
 const byEmail      = new Map<string, string>(); // lower email → guestId
 
@@ -71,6 +75,7 @@ export async function createOrMergeIdentity(
     knownEmails:  [],
     knownPhones:  [],
     knownChatIds: [],
+    knownVkIds:   [],
   };
 
   const merged = mergeLocalFields(identity, envelope);
@@ -85,7 +90,12 @@ export async function createOrMergeIdentity(
 // ─── Resolution Helpers ───────────────────────────────────────────────────────
 
 function lookupInCache(envelope: InboundMessageEnvelope): UnifiedGuestIdentity | null {
-  if (envelope.chatId) {
+  // VK: look up by externalUserId (vk_<userId>) before falling through to chatId
+  if (envelope.channel === 'vk' && envelope.externalUserId) {
+    const guestId = byVkId.get(envelope.externalUserId);
+    if (guestId) return identityCache.get(guestId) ?? null;
+  }
+  if (envelope.chatId && envelope.channel !== 'vk') {
     const guestId = byTelegramId.get(envelope.chatId);
     if (guestId) return identityCache.get(guestId) ?? null;
   }
@@ -104,13 +114,26 @@ async function resolveFromDB(
   envelope: InboundMessageEnvelope,
 ): Promise<UnifiedGuestIdentity | null> {
   try {
-    let query = supabase.from('tg_contacts').select('*');
-
-    // Try exact match on any available identifier
-    if (envelope.chatId) {
-      const { data } = await query.eq('telegram_id', envelope.chatId).maybeSingle();
+    // VK: look up by vk_id column (added in migration 20260410000001)
+    if (envelope.channel === 'vk' && envelope.externalUserId) {
+      const { data } = await supabase
+        .from('tg_contacts')
+        .select('*')
+        .eq('vk_id', envelope.externalUserId)
+        .maybeSingle();
       if (data) return cacheAndReturn(data);
     }
+
+    // Telegram / generic chatId
+    if (envelope.chatId && envelope.channel !== 'vk') {
+      const { data } = await supabase
+        .from('tg_contacts')
+        .select('*')
+        .eq('telegram_id', envelope.chatId)
+        .maybeSingle();
+      if (data) return cacheAndReturn(data);
+    }
+
     if (envelope.phoneNumber) {
       const { data } = await supabase
         .from('tg_contacts')
@@ -141,19 +164,21 @@ async function persistContact(
   envelope: InboundMessageEnvelope,
 ): Promise<void> {
   try {
-    await supabase.from('tg_contacts').upsert(
-      {
-        id:          identity.guestId,
-        telegram_id: envelope.chatId ?? null,
-        phone:       envelope.phoneNumber ? normalisePhone(envelope.phoneNumber) : null,
-        email:       envelope.email ? envelope.email.toLowerCase() : null,
-        first_name:  identity.firstName ?? null,
-        last_name:   identity.lastName ?? null,
-        created_at:  new Date().toISOString(),
-        updated_at:  new Date().toISOString(),
-      },
-      { onConflict: 'id', ignoreDuplicates: false },
-    );
+    const record: Record<string, unknown> = {
+      id:         identity.guestId,
+      phone:      envelope.phoneNumber ? normalisePhone(envelope.phoneNumber) : null,
+      email:      envelope.email ? envelope.email.toLowerCase() : null,
+      first_name: identity.firstName ?? null,
+      last_name:  identity.lastName ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (envelope.channel === 'vk') {
+      record.vk_id = envelope.externalUserId ?? null;
+    } else {
+      record.telegram_id = envelope.chatId ?? null;
+    }
+    await supabase.from('tg_contacts').upsert(record, { onConflict: 'id', ignoreDuplicates: false });
   } catch (err) {
     console.warn('[Identity] Failed to persist contact:', err);
   }
@@ -169,7 +194,11 @@ async function mergeAndPersist(
   // Update Supabase with any newly-seen identifiers (best-effort)
   try {
     const patch: Record<string, string | null> = { updated_at: new Date().toISOString() };
-    if (envelope.chatId && !identity.knownChatIds.includes(envelope.chatId)) {
+    if (envelope.channel === 'vk') {
+      if (envelope.externalUserId && !identity.knownChatIds.includes(envelope.externalUserId)) {
+        patch.vk_id = envelope.externalUserId;
+      }
+    } else if (envelope.chatId && !identity.knownChatIds.includes(envelope.chatId)) {
       patch.telegram_id = envelope.chatId;
     }
     if (envelope.phoneNumber && !identity.knownPhones.includes(normalisePhone(envelope.phoneNumber))) {
@@ -193,6 +222,7 @@ async function mergeAndPersist(
 function setInCache(identity: UnifiedGuestIdentity): void {
   identityCache.set(identity.guestId, identity);
   identity.knownChatIds.forEach(id => byTelegramId.set(id, identity.guestId));
+  identity.knownVkIds.forEach(id => byVkId.set(id, identity.guestId));
   identity.knownPhones.forEach(p => byPhone.set(p, identity.guestId));
   identity.knownEmails.forEach(e => byEmail.set(e, identity.guestId));
 }
@@ -201,7 +231,8 @@ function setInCache(identity: UnifiedGuestIdentity): void {
 function cacheAndReturn(row: any): UnifiedGuestIdentity {
   const identity: UnifiedGuestIdentity = {
     guestId:      row.id,
-    knownChatIds: row.telegram_id ? [row.telegram_id] : [],
+    knownChatIds: row.telegram_id ? [String(row.telegram_id)] : [],
+    knownVkIds:   row.vk_id ? [String(row.vk_id)] : [],
     knownPhones:  row.phone ? [row.phone] : [],
     knownEmails:  row.email ? [row.email] : [],
     firstName:    row.first_name ?? undefined,
@@ -215,11 +246,14 @@ function mergeLocalFields(
   identity: UnifiedGuestIdentity,
   envelope: InboundMessageEnvelope,
 ): UnifiedGuestIdentity {
-  const knownChatIds = [...identity.knownChatIds];
+  const knownChatIds = [...(identity.knownChatIds ?? [])];
+  const knownVkIds   = [...(identity.knownVkIds ?? [])];
   const knownPhones  = [...identity.knownPhones];
   const knownEmails  = [...identity.knownEmails];
 
-  if (envelope.chatId && !knownChatIds.includes(envelope.chatId)) {
+  if (envelope.channel === 'vk' && envelope.externalUserId) {
+    if (!knownVkIds.includes(envelope.externalUserId)) knownVkIds.push(envelope.externalUserId);
+  } else if (envelope.chatId && !knownChatIds.includes(envelope.chatId)) {
     knownChatIds.push(envelope.chatId);
   }
   if (envelope.phoneNumber) {
@@ -231,7 +265,7 @@ function mergeLocalFields(
     if (!knownEmails.includes(lower)) knownEmails.push(lower);
   }
 
-  return { ...identity, knownChatIds, knownPhones, knownEmails };
+  return { ...identity, knownChatIds, knownVkIds, knownPhones, knownEmails };
 }
 
 function normalisePhone(phone: string): string {

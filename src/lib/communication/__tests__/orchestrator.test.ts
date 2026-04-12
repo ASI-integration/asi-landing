@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { _resetForTesting } from '../idempotency';
-import { ProcessOutcome, TelegramUpdate, IntentCategory } from '../types';
+import { ProcessOutcome, TelegramUpdate, IntentCategory, EscalationReason } from '../types';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -15,10 +15,17 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-// Mock replyToTelegram to capture calls
-const mockReply = vi.fn().mockResolvedValue(true);
-vi.mock('@/lib/telegram', () => ({
-  replyToTelegram: (...args: unknown[]) => mockReply(...args),
+// Mock channel adapter sendMessage (delivery path)
+const mockSendMessage = vi.fn().mockResolvedValue(true);
+vi.mock('../channels', () => ({
+  getChannelAdapter: () => ({
+    channel: 'telegram',
+    normalizeInbound: async () => {
+      throw new Error('normalizeInbound not used in orchestrator unit tests');
+    },
+    sendMessage: (to: string, content: string) => mockSendMessage(to, content),
+    formatResponse: (rawMessage: string) => rawMessage,
+  }),
 }));
 
 // Mock callLLM — returns a string by default, can be overridden per test
@@ -57,6 +64,7 @@ vi.mock('../reservation', () => ({
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 import { processUpdate } from '../orchestrator';
+import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -78,7 +86,8 @@ function makeUpdate(text: string, languageCode = 'en'): TelegramUpdate {
 describe('processUpdate', () => {
   beforeEach(() => {
     _resetForTesting();
-    mockReply.mockClear();
+    __resetAutonomousSessionStoreForTests();
+    mockSendMessage.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
     mockDetectIntent.mockClear();
@@ -89,14 +98,14 @@ describe('processUpdate', () => {
   it('replies to a valid message and returns Replied outcome', async () => {
     const result = await processUpdate(makeUpdate('hello'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(mockReply).toHaveBeenCalledOnce();
+    expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
   it('sends the LLM reply when LLM succeeds on an issue', async () => {
     mockLLM.mockResolvedValue('LLM: issue acknowledged');
     const result = await processUpdate(makeUpdate('problem with the lock'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(mockReply).toHaveBeenCalledWith(42, 'LLM: issue acknowledged');
+    expect(mockSendMessage).toHaveBeenCalledWith('42', 'LLM: issue acknowledged');
   });
 
   it('escalates on low confidence intent', async () => {
@@ -104,23 +113,23 @@ describe('processUpdate', () => {
     const result = await processUpdate(makeUpdate('some weird message'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.escalation).toBeDefined();
-    expect(result.escalation?.reason).toBe('LLM_UNCERTAIN');
-    const [, sentText] = mockReply.mock.calls[0];
-    expect(sentText).toContain('review');
+    expect(result.escalation?.reason).toBe(EscalationReason.LowIntentConfidence);
+    const [, sentText] = mockSendMessage.mock.calls[0];
+    expect(sentText).toMatch(/review|ответом|операционный/i);
   });
 
   it('generates mock payment link on PaymentRequest intent', async () => {
     mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.PaymentRequest, confidence: 0.95 });
     const result = await processUpdate(makeUpdate('I want to pay'));
     expect(mockCreatePaymentRequest).toHaveBeenCalled();
-    const [, sentText] = mockReply.mock.calls[0];
+    const [, sentText] = mockSendMessage.mock.calls[0];
     expect(sentText).toContain('https://pay.test/pay_mock123');
   });
 
   it('falls back to deterministic reply when LLM returns null', async () => {
     mockLLM.mockResolvedValue(null);
     await processUpdate(makeUpdate('guest says wifi is broken'));
-    const [, sentText] = mockReply.mock.calls[0];
+    const [, sentText] = mockSendMessage.mock.calls[0];
     // Should be deterministic fallback text
     expect(typeof sentText).toBe('string');
     expect(sentText.length).toBeGreaterThan(0);
@@ -134,14 +143,14 @@ describe('processUpdate', () => {
     const second = await processUpdate(update);
     expect(second.outcome).toBe(ProcessOutcome.Duplicate);
     // Reply was sent exactly once
-    expect(mockReply).toHaveBeenCalledOnce();
+    expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
   it('returns Ignored for an update with no message', async () => {
     const update: TelegramUpdate = { update_id: nextUpdateId++ };
     const result = await processUpdate(update);
     expect(result.outcome).toBe(ProcessOutcome.Ignored);
-    expect(mockReply).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('creates an escalation event for urgent access issues based on slots', async () => {
@@ -152,7 +161,9 @@ describe('processUpdate', () => {
   });
 
   it('returns Error outcome but still does not throw when reply fails', async () => {
-    mockReply.mockRejectedValueOnce(new Error('Telegram API down'));
+    // Delivery layer treats `false` as failure and orchestrator returns Error outcome
+    // sendWithRetry will retry up to 3 times; force consistent failure
+    mockSendMessage.mockResolvedValue(false);
     const result = await processUpdate(makeUpdate('check-in tomorrow'));
     expect(result.outcome).toBe(ProcessOutcome.Error);
   });

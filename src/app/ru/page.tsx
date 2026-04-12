@@ -6,9 +6,10 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { HeroSection } from '@/components/HeroSection';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { TgIcon } from '@/components/TgIcon';
+import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
 const DEMO_LINK = '/connect';
 
@@ -147,62 +148,7 @@ export default function HomeRu() {
     <LocationTelemetryProvider>
     <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
 
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-50 bg-[color-mix(in_srgb,var(--t-bg)_92%,transparent)] backdrop-blur-md border-b border-[var(--t-border)]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
-
-          {/* Brand + nav */}
-          <div className="flex items-center gap-6">
-            <Link href="/ru" className="text-2xl font-bold text-[var(--t-text)] tracking-tight shrink-0">
-              ASI
-            </Link>
-            <a href="#platform-modules" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
-              Платформа
-            </a>
-            <a href="#pricing" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
-              Тарифы
-            </a>
-            <a href="#faq" className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">
-              Как это работает
-            </a>
-          </div>
-
-          {/* Right: contacts + Telegram + Lang + Login */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="hidden sm:block text-sm text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors truncate max-w-[11rem] md:max-w-none"
-              title={productSupportEmail}
-            >
-              {productSupportEmail}
-            </a>
-            <span className="hidden sm:block w-px h-4 bg-[var(--t-border)] shrink-0" />
-            <a
-              href="https://t.me/ASI_core_bot"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Telegram"
-              title="Telegram"
-              className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
-            >
-              <TgIcon className="w-4 h-4 shrink-0" />
-              <span className="sr-only">Telegram</span>
-            </a>
-            <div className="flex items-center gap-1 text-sm">
-              <a href="https://asi-global.com" className="px-2 py-1 rounded text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors">EN</a>
-              <span className="text-[var(--t-border)]">|</span>
-              <span className="px-2 py-1 rounded font-semibold text-[var(--t-text)] bg-[var(--t-surface-2)] border border-[var(--t-border)]">RU</span>
-            </div>
-            <ThemeSwitcher />
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center px-4 py-2 bg-[var(--t-accent)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--t-accent-hover)] transition-colors shadow-sm"
-            >
-              Войти
-            </Link>
-          </div>
-        </div>
-      </header>
+      <RuPublicNavHeader surface="theme" density="landing" />
 
       <main>
 
@@ -544,6 +490,7 @@ export default function HomeRu() {
 
       {/* ── Footer ── */}
       <footer>
+        <RuBottomQuickLinks tone="theme" />
         <div className="py-6 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
           <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-4">

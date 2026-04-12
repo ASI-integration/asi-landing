@@ -1,6 +1,6 @@
 {
   "contact": {
-    "supportEmail": "support@asi-global.com"
+    "supportEmail": "support@asi-global.ru"
   },
   "login": {
     "title": "Вход",
@@ -587,7 +587,9 @@
     "automationsSubtitle": "Настройка автоматизаций",
     "settingsSubtitle": "Аккаунт и настройки",
     "header": {
-      "userEmail": "user@example.com"
+      "userEmail": "user@example.com",
+      "userMenu": "Меню пользователя",
+      "logout": "Выйти"
     },
     "overview": {
       "title": "Обзор",

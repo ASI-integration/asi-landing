@@ -41,16 +41,32 @@ export async function POST(req: Request): Promise<Response> {
   const message = update?.message ?? update?.edited_message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
+  // Always log webhook receipt — minimal fields, no PII beyond chat_id
+  console.info('[tg:webhook] recv', {
+    update_id: update?.update_id,
+    chat_id: chatId,
+    has_voice: Boolean((message as any)?.voice),
+    has_audio: Boolean((message as any)?.audio),
+    has_text: Boolean(text),
+  });
   if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
+    const voice = (message as any)?.voice ?? null;
+    const audio = (message as any)?.audio ?? null;
     console.log('[tg:webhook] inbound', {
       update_id: update?.update_id,
       chat_id: chatId,
       text_preview: preview(text),
       has_message: Boolean(message),
+      has_voice: Boolean(voice),
+      has_audio: Boolean(audio),
+      voice_file_id: voice?.file_id ?? null,
+      voice_mime_type: voice?.mime_type ?? null,
+      voice_duration: voice?.duration ?? null,
     });
   }
 
   try {
+    // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)
     const result = await processUpdate(update);
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {

@@ -5,6 +5,7 @@ import {
   EscalationReason,
   IntentCategory,
 } from './types';
+import { getAutonomousIntentEscalationThreshold } from './escalation-engine';
 import { classifyIssuePriority } from './triage';
 import { extractSlots } from './classifier';
 
@@ -45,8 +46,9 @@ export function evaluateActionSafety(
     };
   }
 
-  // 4. Low confidence Intent
-  if (intentResult.confidence < 0.6) {
+  // 4. Low confidence intent — clarify only above autonomous escalation threshold
+  const autoEscFloor = getAutonomousIntentEscalationThreshold();
+  if (intentResult.confidence < 0.6 && intentResult.confidence >= autoEscFloor) {
     return {
       safe: true,
       action: 'ask_clarifying_question',

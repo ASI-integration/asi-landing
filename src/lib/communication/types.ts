@@ -84,6 +84,7 @@ export type CommEventType =
   | 'message.received'
   | 'message.sent'
   | 'conversation.escalated'
+  | 'session.completed'
   | 'lead.created'
   | 'reservation.linked'
   | 'conversation.state_changed';
@@ -220,6 +221,26 @@ export interface TelegramDocument {
   file_size?:     number;
 }
 
+/** Telegram Voice object (voice note). */
+export interface TelegramVoice {
+  file_id:        string;
+  file_unique_id: string;
+  duration:       number;
+  mime_type?:     string;
+  file_size?:     number;
+}
+
+/** Telegram Audio object (music/audio file). */
+export interface TelegramAudio {
+  file_id:        string;
+  file_unique_id: string;
+  duration:       number;
+  performer?:     string;
+  title?:         string;
+  mime_type?:     string;
+  file_size?:     number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
@@ -229,6 +250,10 @@ export interface TelegramMessage {
   photo?: TelegramPhotoSize[];
   /** Generic document / file attachment. */
   document?: TelegramDocument;
+  /** Voice note. */
+  voice?: TelegramVoice;
+  /** Audio file. */
+  audio?: TelegramAudio;
   /** Caption for photo/document messages. */
   caption?: string;
 }
@@ -244,13 +269,15 @@ export interface TelegramUpdate {
  * and displayed in the operator leads page.
  */
 export interface TelegramAttachmentRef {
-  type:      'photo' | 'document' | 'note';
+  type:      'photo' | 'document' | 'note' | 'voice' | 'audio';
   label:     string;
   file_id?:  string;
   /** Resolved download URL — only available if file is fetched via Bot API */
   url?:      string;
   caption?:  string;
   file_size?: number;
+  duration?: number;
+  transcript?: string;
 }
 
 // ─── Conversation Persistence ─────────────────────────────────────────────────
@@ -292,6 +319,7 @@ export enum AuditEventType {
   LLMCalled         = 'LLM_CALLED',
   LLMFallback       = 'LLM_FALLBACK',
   EscalationCreated = 'ESCALATION_CREATED',
+  AutonomousDecision = 'AUTONOMOUS_DECISION',
   PersistError      = 'PERSIST_ERROR',
   UnhandledError    = 'UNHANDLED_ERROR',
 }
@@ -320,6 +348,45 @@ export enum EscalationReason {
   ProcessingError  = 'PROCESSING_ERROR',
   /** Urgent issue detected by slot signals */
   UrgentIssue      = 'URGENT_ISSUE',
+  /** Intent model confidence below autonomous threshold */
+  LowIntentConfidence = 'LOW_INTENT_CONFIDENCE',
+  /** Payment/refund/dispute-style message needing human review */
+  PaymentComplaint = 'PAYMENT_COMPLAINT',
+}
+
+/** Per-chat autonomous pipeline session (see conversation-session-store). */
+export type AutonomousSessionRole = 'guest' | 'staff' | 'unknown';
+
+export enum AutonomousSessionStatus {
+  Active                 = 'active',
+  Collecting             = 'collecting',
+  AwaitingClarification  = 'awaiting_clarification',
+  Escalated              = 'escalated',
+  /** All required info gathered; request has been fulfilled — stop asking. */
+  Completed              = 'completed',
+}
+
+/** One message in the per-session short-term timeline (capped at 10 entries). */
+export interface SessionTimelineEntry {
+  role: 'user' | 'assistant';
+  /** Truncated to 500 chars before storage. */
+  text: string;
+  ts: string; // ISO
+}
+
+export interface AutonomousConversationSession {
+  chat_id: number;
+  /** Channel this session was created on. Needed for outbound routing. */
+  channel?: CommunicationChannel;
+  role: AutonomousSessionRole;
+  intent?: IntentCategory;
+  intent_confidence?: number;
+  status: AutonomousSessionStatus;
+  /** Normalised slots gathered across turns (booking ref, property clue, etc.) */
+  collected_data: Record<string, string | undefined>;
+  updated_at: string;
+  /** Last 10 turns used for context-aware decision and escalation logic. */
+  timeline: SessionTimelineEntry[];
 }
 
 export interface EscalationEvent {
@@ -425,7 +492,7 @@ export interface OperatorHandoffPayload {
 
 // ─── Phase 3: Multi-Channel & Multilingual ────────────────────────────────────
 
-export type CommunicationChannel = 'telegram' | 'email' | 'phone' | 'max';
+export type CommunicationChannel = 'telegram' | 'vk' | 'email' | 'phone' | 'max';
 
 export interface InboundMessageEnvelope {
   channel: CommunicationChannel;
