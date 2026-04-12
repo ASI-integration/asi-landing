@@ -8,6 +8,7 @@ import { HeroSection } from '@/components/HeroSection';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { TgIcon } from '@/components/TgIcon';
+import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 
 const DEMO_LINK = '/connect';
 
@@ -542,48 +543,35 @@ export default function HomeRu() {
       </main>
 
       {/* ── Footer ── */}
-      <footer className="py-8 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            <span className="text-[var(--t-text)] font-bold text-lg">ASI</span>
-            <span className="text-xs text-[var(--t-muted)]">© {new Date().getFullYear()}</span>
-          </div>
-
-          {/* Contacts in footer */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 text-sm">
-            <a
-              href="https://t.me/ASI_core_bot"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Telegram"
-              title="Telegram"
-              className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
-            >
-              <TgIcon className="w-4 h-4" />
-              <span className="sr-only">Telegram</span>
-            </a>
-            <span className="hidden sm:block w-px h-3 bg-[var(--t-border)]" />
-            <a
-              href={`mailto:${productSupportEmail}`}
-              className="text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors"
-            >
-              {productSupportEmail}
-            </a>
-          </div>
-
-          {/* Company/legal info (RU) */}
-          <div className="text-xs text-[var(--t-muted)] text-center sm:text-right leading-relaxed">
-            <div className="text-[var(--t-muted)]">Automation System Integrations</div>
-            <div className="text-[var(--t-muted)]">Реутова Ю.И.</div>
-            <div className="text-[var(--t-muted)]">ИНН: 235307941957</div>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-            <Link href="/privacy" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Конфиденциальность</Link>
-            <Link href="/offer" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Условия</Link>
-            <Link href="/legal" className="text-[var(--t-muted)] hover:text-[var(--t-text)] text-xs">Правовые документы</Link>
+      <footer>
+        <div className="py-6 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
+          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-[var(--t-text)] font-bold text-lg">ASI</span>
+              <span className="text-xs text-[var(--t-muted)]">© {new Date().getFullYear()}</span>
+            </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 text-sm">
+              <a
+                href="https://t.me/ASI_core_bot"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Telegram"
+                title="Telegram"
+                className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
+              >
+                <TgIcon className="w-4 h-4" />
+                <span className="sr-only">Telegram</span>
+              </a>
+              <a
+                href={`mailto:${productSupportEmail}`}
+                className="text-[var(--t-muted)] hover:text-[var(--t-text)] transition-colors break-all"
+              >
+                {productSupportEmail}
+              </a>
+            </div>
           </div>
         </div>
+        <RuComplianceFooter tone="theme" />
       </footer>
 
     </ThemeProvider>

@@ -1,4 +1,6 @@
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
+import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import { RuLegalTrustBlock } from '@/components/ru/RuLegalTrustBlock';
 
 export default function ReportPage() {
   return (
@@ -214,6 +216,14 @@ export default function ReportPage() {
           <p className="mt-4 text-sm text-slate-600">One-time payment. No subscription.</p>
         </div>
       </section>
+
+      <section className="px-4 sm:px-6 py-10 bg-slate-950 border-t border-slate-800/60">
+        <div className="max-w-2xl mx-auto">
+          <RuLegalTrustBlock tone="dark" />
+        </div>
+      </section>
+
+      <RuComplianceFooter tone="dark" />
     </div>
   );
 }
