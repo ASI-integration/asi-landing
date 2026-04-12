@@ -14,7 +14,10 @@ function hostnameFromHeaders(request: NextRequest): string {
 }
 
 export async function POST(request: NextRequest) {
-  if (hostnameFromHeaders(request).endsWith('.ru')) {
+  // HOST_VARIANT=ru is the reliable signal when nginx does not forward Host correctly.
+  const isRu =
+    process.env.HOST_VARIANT === 'ru' || hostnameFromHeaders(request).endsWith('.ru');
+  if (isRu) {
     return Response.json({ error: 'Checkout is not available on this host' }, { status: 403 });
   }
 

@@ -53,7 +53,9 @@ export function middleware(request: NextRequest) {
   const hostname = hostnameFromRequest(request);
   const { pathname, search } = request.nextUrl;
 
-  const isRuDomain = hostname.endsWith('.ru');
+  // HOST_VARIANT=ru can be set in .env.production.live as a reliable fallback
+  // when the upstream proxy does not forward the Host header correctly.
+  const isRuDomain = process.env.HOST_VARIANT === 'ru' || hostname.endsWith('.ru');
   const isComDomain = !isRuDomain; // localhost, .com, vercel previews → EN
 
   const origin = publicOrigin(request);
