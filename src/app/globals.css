@@ -6,6 +6,19 @@
 /* Theme tokens (RU-scoped via [data-theme])                                  */
 /* -------------------------------------------------------------------------- */
 
+/* Fallback when no ThemeProvider (e.g. EN landing FAQ). RU ThemeProvider overrides via [data-theme]. */
+:root {
+  --t-bg: #020617;
+  --t-surface: #0F172A;
+  --t-surface-2: #111827;
+  --t-text: #F8FAFC;
+  --t-text-2: #CBD5E1;
+  --t-muted: #94A3B8;
+  --t-border: #1E293B;
+  --t-accent: #6366F1;
+  --t-accent-hover: #818CF8;
+}
+
 /* Default values live on [data-theme="light"] (first-time visitors). */
 [data-theme="light"] {
   --t-bg: #F8FAFC;
@@ -29,19 +42,6 @@
   --t-border: #1E293B;
   --t-accent: #6366F1;
   --t-accent-hover: #818CF8;
-}
-
-[data-theme="soft-blue"] {
-  /* Make the blue theme immediately distinguishable from light. */
-  --t-bg: #E0F2FE;
-  --t-surface: #F0F9FF;
-  --t-surface-2: #D6ECFF;
-  --t-text: #0F172A;
-  --t-text-2: #1E3A8A;
-  --t-muted: #3B556F;
-  --t-border: #93C5FD;
-  --t-accent: #2563EB;
-  --t-accent-hover: #1D4ED8;
 }
 
 [data-theme] {

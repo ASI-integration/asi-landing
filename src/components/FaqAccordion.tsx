@@ -107,17 +107,17 @@ export function FaqAccordion({ lang = 'en' }: { lang?: 'en' | 'ru' }) {
         return (
           <div
             key={i}
-            className="rounded-xl border border-slate-800/90 bg-slate-900/40 overflow-hidden backdrop-blur-sm"
+            className="rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] overflow-hidden"
           >
             <button
               type="button"
               onClick={() => setOpenIndex(isOpen ? null : i)}
               aria-expanded={isOpen}
-              className="w-full flex items-start justify-between gap-4 px-5 py-4 text-left text-slate-100 hover:bg-slate-800/35 transition-colors duration-200 text-lg"
+              className="w-full flex items-start justify-between gap-4 px-5 py-4 text-left text-[var(--t-text)] hover:bg-[var(--t-surface-2)] transition-colors duration-200 text-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
             >
               <span className="font-medium leading-snug pr-2">{item.q}</span>
               <span
-                className={`mt-0.5 shrink-0 text-slate-500 text-lg leading-none transition-transform duration-300 ease-out ${
+                className={`mt-0.5 shrink-0 text-[var(--t-muted)] text-lg leading-none transition-transform duration-300 ease-out ${
                   isOpen ? 'rotate-45' : ''
                 }`}
                 aria-hidden
@@ -131,7 +131,7 @@ export function FaqAccordion({ lang = 'en' }: { lang?: 'en' | 'ru' }) {
               }`}
             >
               <div className="min-h-0">
-                <p className="px-5 pb-5 pt-1 text-base text-slate-400 leading-relaxed">
+                <p className="px-5 pb-5 pt-1 text-base text-[var(--t-text-2)] leading-relaxed">
                   {item.a}
                 </p>
               </div>

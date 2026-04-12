@@ -26,7 +26,12 @@ export function ThemeProvider({
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(storageKey);
-      if (isThemeId(stored)) setThemeState(stored);
+      if (stored === 'soft-blue') {
+        setThemeState('light');
+        window.localStorage.setItem(storageKey, 'light');
+      } else if (isThemeId(stored)) {
+        setThemeState(stored);
+      }
     } catch {
       // ignore storage errors (private mode / denied)
     }
