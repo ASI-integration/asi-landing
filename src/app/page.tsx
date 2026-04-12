@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { headers } from 'next/headers';
+import type { Metadata } from 'next';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { HeroSection } from '@/components/HeroSection';
 
@@ -8,7 +10,9 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { TgIcon } from '@/components/TgIcon';
-import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
+import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
+import HomeRu from '@/app/ru/page';
 
 /* ─── Platform modules ──────────────────────────────────────────────────────── */
 const MODULES = [
@@ -138,8 +142,36 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
   );
 }
 
+/* ─── Host detection helper ─────────────────────────────────────────────────── */
+async function getIsRuHost(): Promise<boolean> {
+  const h = await headers();
+  const raw = h.get('x-forwarded-host')?.split(',')[0]?.trim() ?? h.get('host') ?? '';
+  return isRuRuntimeHost(hostnameFromHostHeader(raw));
+}
+
+/* ─── Metadata (RU or EN based on host) ─────────────────────────────────────── */
+export async function generateMetadata(): Promise<Metadata> {
+  if (await getIsRuHost()) {
+    return {
+      title: 'ASI — Полная операционная автоматизация',
+      description:
+        'Автоматизация операций для недвижимости и гостеприимства: коммуникации, объявления, цены, брони и исполнение — замена операционного слоя, а не очередной инструмент.',
+      alternates: {
+        canonical: `${RU_PUBLIC_ORIGIN}/`,
+        languages: {
+          'x-default': EN_PUBLIC_ORIGIN,
+          en: EN_PUBLIC_ORIGIN,
+          ru: `${RU_PUBLIC_ORIGIN}/`,
+        },
+      },
+    };
+  }
+  return {};
+}
+
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
-export default function Home() {
+export default async function Home() {
+  if (await getIsRuHost()) return <HomeRu />;
   return (
     <LocationTelemetryProvider>
     <div className="min-h-screen bg-slate-950">

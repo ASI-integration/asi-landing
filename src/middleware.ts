@@ -70,16 +70,8 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // .ru domain — serve RU landing at canonical `/`; legacy `/ru` redirects away.
-  // Rewrite keeps the URL at `/` so the browser never sees a redirect for the root.
-  // Only `/` and `/ru` (exact) are touched here; `/ru/*` sub-pages keep working as-is.
-  if (isRuDomain && pathname === '/') {
-    // Use nextUrl.clone() so the rewrite target stays path-relative — avoids
-    // leaking the internal `localhost:3000` origin when behind an nginx proxy.
-    const dest = request.nextUrl.clone();
-    dest.pathname = '/ru';
-    return NextResponse.rewrite(dest);
-  }
+  // .ru domain — `/` is handled by app/page.tsx reading the Host header directly;
+  // no middleware rewrite needed (avoids localhost:3000 proxy leak behind nginx).
   // Redirect the legacy bare `/ru` to `/` (302 — easy to roll back without CDN cache issues).
   if (isRuDomain && (pathname === '/ru' || pathname === '/ru/')) {
     return NextResponse.redirect(new URL(`/${search}`, origin), { status: 302 });
