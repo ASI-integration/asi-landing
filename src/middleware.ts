@@ -74,7 +74,11 @@ export function middleware(request: NextRequest) {
   // Rewrite keeps the URL at `/` so the browser never sees a redirect for the root.
   // Only `/` and `/ru` (exact) are touched here; `/ru/*` sub-pages keep working as-is.
   if (isRuDomain && pathname === '/') {
-    return NextResponse.rewrite(new URL(`/ru${search}`, request.url));
+    // Use nextUrl.clone() so the rewrite target stays path-relative — avoids
+    // leaking the internal `localhost:3000` origin when behind an nginx proxy.
+    const dest = request.nextUrl.clone();
+    dest.pathname = '/ru';
+    return NextResponse.rewrite(dest);
   }
   // Redirect the legacy bare `/ru` to `/` (302 — easy to roll back without CDN cache issues).
   if (isRuDomain && (pathname === '/ru' || pathname === '/ru/')) {
