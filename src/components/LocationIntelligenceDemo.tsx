@@ -1322,7 +1322,8 @@ function ASIPanel({
           Get detailed revenue model, pricing strategy, and demand analysis for this location.
         </p>
         <button
-          onClick={() => router.push('/report')}
+          onClick={() =>
+            router.push(locale === 'ru' ? '/connect' : '/report')}
           className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
         >
           Start analyzing properties

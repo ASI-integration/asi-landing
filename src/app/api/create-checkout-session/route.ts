@@ -1,4 +1,23 @@
-export async function POST() {
+import type { NextRequest } from 'next/server';
+
+function hostnameFromHeaders(request: NextRequest): string {
+  const raw =
+    request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ??
+    request.headers.get('host') ??
+    '';
+  if (!raw) return '';
+  try {
+    return new URL(`http://${raw}`).hostname;
+  } catch {
+    return raw;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  if (hostnameFromHeaders(request).endsWith('.ru')) {
+    return Response.json({ error: 'Checkout is not available on this host' }, { status: 403 });
+  }
+
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secretKey) {
     return Response.json({ error: 'Stripe is not configured' }, { status: 503 });

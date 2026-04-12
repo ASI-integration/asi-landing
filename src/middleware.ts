@@ -58,6 +58,19 @@ export function middleware(request: NextRequest) {
 
   const origin = publicOrigin(request);
 
+  // RU deployment: Stripe/report flows are not offered — send users elsewhere.
+  if (isRuDomain) {
+    if (
+      pathname === '/report' ||
+      pathname.startsWith('/report/') ||
+      pathname === '/compare' ||
+      pathname.startsWith('/compare/')
+    ) {
+      const dest = new URL('/connect', origin);
+      return NextResponse.redirect(dest, { status: 307 });
+    }
+  }
+
   // .ru domain → keep RU landing at /ru, but don't force-prefix every route.
   // Otherwise routes like /connect and /dashboard would become /ru/connect and 404.
   if (isRuDomain && pathname === '/') {
