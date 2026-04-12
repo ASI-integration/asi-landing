@@ -15,9 +15,16 @@ interface GooglePlaceDetailsResponse {
   status: string;
 }
 
-export async function googleForwardGeocode(address: string, apiKey: string): Promise<GeocodeResult | null> {
+export async function googleForwardGeocode(
+  address: string,
+  apiKey: string,
+  options?: { region?: string },
+): Promise<GeocodeResult | null> {
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.searchParams.set('address', address);
+  if (options?.region) {
+    url.searchParams.set('region', options.region);
+  }
   url.searchParams.set('key', apiKey);
 
   try {

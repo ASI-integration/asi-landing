@@ -1,17 +1,11 @@
 import type { AddressMarket, AddressSuggestionRow } from './types';
 import { googleForwardGeocode, googlePlaceDetailsLatLon } from './geocode-google';
-import { twogisGeocode } from './geocode-2gis';
 import { geocodeWithFallback } from '../providers/geocoding';
 
 function googleKey(): string | null {
   const k =
     (process.env.GOOGLE_MAPS_SERVER_API_KEY ?? '').trim() ||
     (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '').trim();
-  return k || null;
-}
-
-function twogisCatalogKey(): string | null {
-  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
 }
 
@@ -24,7 +18,7 @@ function parseInlineCoords(s: AddressSuggestionRow): { lat: number; lon: number 
 }
 
 /**
- * Resolves a picked suggestion to coordinates using market-primary providers,
+ * Resolves a picked suggestion to coordinates using Google when available,
  * then shared OSM fallbacks via `geocodeWithFallback`.
  */
 export async function resolveAddressSelection(
@@ -39,22 +33,16 @@ export async function resolveAddressSelection(
   const value = suggestion.value.trim();
   if (!value) return null;
 
-  if (market === 'ru') {
-    const tk = twogisCatalogKey();
-    if (tk) {
-      const rText = await twogisGeocode({ apiKey: tk, text: value });
-      if (rText) return { lat: rText.lat, lon: rText.lon, displayName: rText.displayName };
-    }
-  } else {
-    const gk = googleKey();
-    if (gk && suggestion.placeId) {
-      const r = await googlePlaceDetailsLatLon(suggestion.placeId, gk);
-      if (r) return { lat: r.lat, lon: r.lon, displayName: r.displayName };
-    }
-    if (gk) {
-      const g = await googleForwardGeocode(value, gk);
-      if (g) return { lat: g.lat, lon: g.lon, displayName: g.displayName };
-    }
+  const gk = googleKey();
+  const geoOpts = { region: market === 'ru' ? 'ru' as const : undefined };
+
+  if (gk && suggestion.placeId) {
+    const r = await googlePlaceDetailsLatLon(suggestion.placeId, gk);
+    if (r) return { lat: r.lat, lon: r.lon, displayName: r.displayName };
+  }
+  if (gk) {
+    const g = await googleForwardGeocode(value, gk, geoOpts);
+    if (g) return { lat: g.lat, lon: g.lon, displayName: g.displayName };
   }
 
   const { result } = await geocodeWithFallback(value);

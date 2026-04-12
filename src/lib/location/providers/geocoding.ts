@@ -5,7 +5,7 @@
 // The scoring engine never calls geocoding — geocoding is only an entry-point
 // helper when the caller has an address string rather than a coordinate.
 //
-// Locale-primary geocoding is in address-providers (RU: 2GIS Catalog, EN: Google).
+// Locale-primary geocoding is in address-providers (Google for all markets, then OSM fallbacks).
 // This module remains the shared Nominatim → Photon fallback chain.
 
 import type { GeocodingProvider, GeocodeResult } from './types';

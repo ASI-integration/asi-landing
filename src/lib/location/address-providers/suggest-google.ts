@@ -10,10 +10,14 @@ interface GoogleAutocompleteResponse {
 export async function googlePlacesAutocomplete(
   query: string,
   apiKey: string,
+  options?: { language?: string; components?: string },
 ): Promise<AddressSuggestionRow[]> {
   const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
   url.searchParams.set('input', query);
-  url.searchParams.set('language', 'en');
+  url.searchParams.set('language', options?.language ?? 'en');
+  if (options?.components) {
+    url.searchParams.set('components', options.components);
+  }
   url.searchParams.set('key', apiKey);
 
   const res = await fetch(url.toString(), {

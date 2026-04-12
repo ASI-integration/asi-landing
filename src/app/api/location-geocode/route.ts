@@ -6,7 +6,7 @@
  * if the address has already been analysed we return the cached coords
  * without hitting Nominatim.
  *
- * On cache miss: locale-primary geocoder (RU: 2GIS, EN: Google Geocoding), then
+ * On cache miss: Google Geocoding (all locales), then
  * Nominatim → Photon if needed.
  * The result (coords + displayName) is returned to the caller so they can
  * proceed to POST /api/location-demo-analyze with the resolved lat/lon.

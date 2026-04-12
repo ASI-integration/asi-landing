@@ -3,7 +3,6 @@ import type { GeocodeAttemptStatus } from '../providers/geocoding';
 import { geocodeWithFallback } from '../providers/geocoding';
 import type { AddressMarket } from './types';
 import { googleForwardGeocode } from './geocode-google';
-import { twogisGeocode } from './geocode-2gis';
 
 function googleKey(): string | null {
   const k =
@@ -12,13 +11,8 @@ function googleKey(): string | null {
   return k || null;
 }
 
-function twogisCatalogKey(): string | null {
-  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
-  return k || null;
-}
-
 /**
- * Plain-string geocoding for API routes: market-primary vendor, then Nominatim → Photon.
+ * Plain-string geocoding for API routes: Google (all markets), then Nominatim → Photon.
  */
 export async function geocodePlainAddressForMarket(
   market: AddressMarket,
@@ -29,32 +23,19 @@ export async function geocodePlainAddressForMarket(
   attempts: GeocodeAttemptStatus[];
 }> {
   const attempts: GeocodeAttemptStatus[] = [];
+  const gk = googleKey();
 
-  if (market === 'ru') {
-    const tk = twogisCatalogKey();
-    if (tk) {
-      try {
-        const r = await twogisGeocode({ apiKey: tk, text: address });
-        attempts.push({ id: 'twogis_geocode', ok: r != null });
-        if (r) {
-          return { result: r, winner: 'twogis_geocode', attempts };
-        }
-      } catch {
-        attempts.push({ id: 'twogis_geocode', ok: false });
+  if (gk) {
+    try {
+      const r = await googleForwardGeocode(address, gk, {
+        region: market === 'ru' ? 'ru' : undefined,
+      });
+      attempts.push({ id: 'google_geocode', ok: r != null });
+      if (r) {
+        return { result: r, winner: 'google_geocode', attempts };
       }
-    }
-  } else {
-    const gk = googleKey();
-    if (gk) {
-      try {
-        const r = await googleForwardGeocode(address, gk);
-        attempts.push({ id: 'google_geocode', ok: r != null });
-        if (r) {
-          return { result: r, winner: 'google_geocode', attempts };
-        }
-      } catch {
-        attempts.push({ id: 'google_geocode', ok: false });
-      }
+    } catch {
+      attempts.push({ id: 'google_geocode', ok: false });
     }
   }
 

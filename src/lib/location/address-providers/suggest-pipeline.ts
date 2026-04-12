@@ -2,7 +2,6 @@ import type { AddressMarket, SuggestPipelineResult } from './types';
 import { dadataAddressSuggest } from './suggest-dadata';
 import { googlePlacesAutocomplete } from './suggest-google';
 import { photonSuggest } from './suggest-photon';
-import { twogisAddressSuggest } from './suggest-2gis';
 
 function googleMapsKey(): string | null {
   const k =
@@ -14,8 +13,7 @@ function googleMapsKey(): string | null {
 /**
  * Locale-routed suggestion chain. Always returns a terminal status (never hangs).
  *
- * RU: 2GIS Suggest → Photon → DaData (optional key)
- * EN: Google Places Autocomplete → Photon
+ * RU and EN: Google Places Autocomplete (language/bias by market) → Photon → optional DaData (RU only)
  */
 export async function runSuggestPipeline(market: AddressMarket, query: string): Promise<SuggestPipelineResult> {
   const t0 = Date.now();
@@ -24,22 +22,28 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
     return { suggestions: [], status: 'ok', elapsed_ms: Date.now() - t0 };
   }
 
+  const googleLang = market === 'ru' ? 'ru' : 'en';
+  const googleComponents = market === 'ru' ? 'country:ru' : undefined;
+
   try {
+    const gKey = googleMapsKey();
+    if (gKey) {
+      const primary = await googlePlacesAutocomplete(q, gKey, {
+        language: googleLang,
+        components: googleComponents,
+      });
+      if (primary.length > 0) {
+        return { suggestions: primary, status: 'ok', elapsed_ms: Date.now() - t0 };
+      }
+    }
+
+    const photon = await photonSuggest(q, market);
+    if (photon.length > 0) {
+      console.warn(`[address-suggest] market=${market} fallback=photon after_google_empty_or_no_key`);
+      return { suggestions: photon, status: 'ok', elapsed_ms: Date.now() - t0 };
+    }
+
     if (market === 'ru') {
-      const twogisKey = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
-      if (twogisKey) {
-        const primary = await twogisAddressSuggest(q, twogisKey);
-        if (primary.length > 0) {
-          return { suggestions: primary, status: 'ok', elapsed_ms: Date.now() - t0 };
-        }
-      }
-
-      const photon = await photonSuggest(q, 'ru');
-      if (photon.length > 0) {
-        console.warn('[address-suggest] ru fallback=photon after_2gis_empty_or_no_key');
-        return { suggestions: photon, status: 'ok', elapsed_ms: Date.now() - t0 };
-      }
-
       const dadataKey = (process.env.DADATA_API_KEY ?? '').trim();
       if (dadataKey) {
         const dd = await dadataAddressSuggest(q, dadataKey);
@@ -49,30 +53,12 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
         }
         return { suggestions: [], status: 'no_results', elapsed_ms: Date.now() - t0 };
       }
-
-      if (!twogisKey) {
-        console.warn('[address-suggest] ru status=no_key (TWOGIS_CATALOG_API_KEY unset or empty)');
-        return { suggestions: [], status: 'no_key', elapsed_ms: Date.now() - t0 };
-      }
-      return { suggestions: [], status: 'no_results', elapsed_ms: Date.now() - t0 };
-    }
-
-    // EN
-    const gKey = googleMapsKey();
-    if (gKey) {
-      const primary = await googlePlacesAutocomplete(q, gKey);
-      if (primary.length > 0) {
-        return { suggestions: primary, status: 'ok', elapsed_ms: Date.now() - t0 };
-      }
-    }
-
-    const photon = await photonSuggest(q, 'en');
-    if (photon.length > 0) {
-      console.warn('[address-suggest] en fallback=photon after google_empty_or_no_key');
-      return { suggestions: photon, status: 'ok', elapsed_ms: Date.now() - t0 };
     }
 
     if (!gKey) {
+      console.warn(
+        '[address-suggest] status=no_key (GOOGLE_MAPS_SERVER_API_KEY and NEXT_PUBLIC_GOOGLE_MAPS_API_KEY unset or empty)',
+      );
       return { suggestions: [], status: 'no_key', elapsed_ms: Date.now() - t0 };
     }
     return { suggestions: [], status: 'no_results', elapsed_ms: Date.now() - t0 };
