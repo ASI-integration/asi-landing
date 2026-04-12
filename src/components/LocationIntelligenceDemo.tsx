@@ -54,6 +54,7 @@ interface Suggestion {
   lat: string | null;
   lon: string | null;
   placeId?: string;
+  yandexUri?: string;
 }
 
 interface SelectedAddress {
@@ -64,33 +65,51 @@ interface SelectedAddress {
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 
-// ── Address suggestion fetch ───────────────────────────────────────────────────
+// ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
-async function fetchSuggestions(q: string): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
-  return new Promise((resolve) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const google = (window as any).google;
-    if (!google?.maps?.places?.AutocompleteService) {
-      resolve({ suggestions: [], status: 'no_key' });
-      return;
+const SUGGEST_TIMEOUT_MS = 8_000;
+const RESOLVE_TIMEOUT_MS = 12_000;
+
+async function fetchAddressSuggestions(
+  locale: LocDemoLocale,
+  q: string,
+): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SUGGEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(
+      `/api/address-suggest?q=${encodeURIComponent(q)}&locale=${locale}`,
+      { signal: controller.signal, cache: 'no-store' },
+    );
+    const data = (await res.json()) as {
+      suggestions?: Array<{
+        value: string;
+        lat: string | null;
+        lon: string | null;
+        placeId?: string;
+        yandexUri?: string;
+      }>;
+      status?: string;
+    };
+    if (!res.ok) {
+      return { suggestions: [], status: 'error' };
     }
-    const svc = new google.maps.places.AutocompleteService();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc.getPlacePredictions({ input: q }, (predictions: any[] | null, status: string) => {
-      if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) {
-        resolve({ suggestions: [], status: 'no_results' });
-        return;
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const suggestions: Suggestion[] = predictions.map((p: any) => ({
-        value: p.description,
-        lat: null,
-        lon: null,
-        placeId: p.place_id,
-      }));
-      resolve({ suggestions, status: 'ok' });
-    });
-  });
+    const suggestions: Suggestion[] = (data.suggestions ?? []).map(s => ({
+      value: s.value,
+      lat: s.lat,
+      lon: s.lon,
+      placeId: s.placeId,
+      yandexUri: s.yandexUri,
+    }));
+    if (data.status === 'no_key') return { suggestions: [], status: 'no_key' };
+    if (data.status === 'error') return { suggestions: [], status: 'error' };
+    if (suggestions.length === 0) return { suggestions: [], status: 'no_results' };
+    return { suggestions, status: 'ok' };
+  } catch {
+    return { suggestions: [], status: 'error' };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function fetchLocationAnalysis(
@@ -831,11 +850,13 @@ function AddressInput({
   onSelect,
   onClear,
   disabled,
+  locale,
   c,
 }: {
   onSelect: (addr: SelectedAddress) => void;
   onClear: () => void;
   disabled: boolean;
+  locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
 }) {
   const [text, setText] = useState('');
@@ -843,6 +864,8 @@ function AddressInput({
   const [lockedValue, setLockedValue] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [fetching, setFetching] = useState(false);
+  const [resolvingPick, setResolvingPick] = useState(false);
+  const [resolveFailed, setResolveFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>('idle');
@@ -853,16 +876,20 @@ function AddressInput({
     const val = e.target.value;
     setText(val);
     setActiveIdx(-1);
+    setResolveFailed(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (val.trim().length >= 2) {
       setFetching(true);
       debounceRef.current = setTimeout(async () => {
-        const result = await fetchSuggestions(val);
-        setSuggestions(result.suggestions);
-        setSuggestStatus(result.status);
-        setOpen(result.suggestions.length > 0);
-        setFetching(false);
+        try {
+          const result = await fetchAddressSuggestions(locale, val);
+          setSuggestions(result.suggestions);
+          setSuggestStatus(result.status);
+          setOpen(result.suggestions.length > 0);
+        } finally {
+          setFetching(false);
+        }
       }, 280);
     } else {
       setSuggestions([]);
@@ -872,9 +899,8 @@ function AddressInput({
     }
   }
 
-  function pick(s: Suggestion) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const google = (window as any).google;
+  async function pick(s: Suggestion) {
+    if (resolvingPick) return;
 
     const doSelect = (lat: number, lon: number) => {
       setLocked(true);
@@ -883,22 +909,58 @@ function AddressInput({
       setSuggestions([]);
       setOpen(false);
       setSuggestStatus('idle');
+      setResolveFailed(false);
       onSelect({ value: s.value, lat, lon });
     };
 
-    if (s.lat && s.lon) {
-      doSelect(parseFloat(s.lat), parseFloat(s.lon));
-      return;
+    if (
+      s.lat != null &&
+      s.lon != null &&
+      String(s.lat).trim() !== '' &&
+      String(s.lon).trim() !== ''
+    ) {
+      const lat = parseFloat(String(s.lat));
+      const lon = parseFloat(String(s.lon));
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        doSelect(lat, lon);
+        return;
+      }
     }
 
-    if (!s.placeId || !google?.maps?.places?.PlacesService) return;
-    const div = document.createElement('div');
-    const svc = new google.maps.places.PlacesService(div);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    svc.getDetails({ placeId: s.placeId, fields: ['geometry'] }, (place: any, status: string) => {
-      if (status !== google.maps.places.PlacesServiceStatus.OK || !place?.geometry?.location) return;
-      doSelect(place.geometry.location.lat(), place.geometry.location.lng());
-    });
+    setResolvingPick(true);
+    setResolveFailed(false);
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
+      const res = await fetch('/api/address-resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          locale,
+          suggestion: {
+            value: s.value,
+            lat: s.lat,
+            lon: s.lon,
+            placeId: s.placeId,
+            yandexUri: s.yandexUri,
+          },
+        }),
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = (await res.json()) as { lat?: unknown; lon?: unknown };
+        if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+          doSelect(data.lat, data.lon);
+          return;
+        }
+      }
+      setResolveFailed(true);
+    } catch {
+      setResolveFailed(true);
+    } finally {
+      setResolvingPick(false);
+    }
   }
 
   function clear() {
@@ -909,6 +971,7 @@ function AddressInput({
     setOpen(false);
     setActiveIdx(-1);
     setSuggestStatus('idle');
+    setResolveFailed(false);
     onClear();
   }
 
@@ -922,7 +985,7 @@ function AddressInput({
       setActiveIdx(i => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' && activeIdx >= 0) {
       e.preventDefault();
-      pick(suggestions[activeIdx]);
+      void pick(suggestions[activeIdx]);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -955,7 +1018,7 @@ function AddressInput({
           onChange={locked ? () => undefined : handleChange}
           onKeyDown={handleKeyDown}
           placeholder={c.addressPlaceholder}
-          disabled={disabled}
+          disabled={disabled || resolvingPick}
           readOnly={locked}
           autoComplete="off"
           aria-autocomplete="list"
@@ -988,7 +1051,7 @@ function AddressInput({
             </svg>
           </button>
         )}
-        {!locked && fetching && (
+        {!locked && (fetching || resolvingPick) && (
           <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-slate-600 border-t-slate-300 rounded-full animate-spin pointer-events-none" />
         )}
       </div>
@@ -1005,7 +1068,7 @@ function AddressInput({
               role="option"
               aria-selected={activeIdx === i}
               onMouseEnter={() => setActiveIdx(i)}
-              onMouseDown={e => { e.preventDefault(); pick(s); }}
+              onMouseDown={e => { e.preventDefault(); void pick(s); }}
               className={`px-4 py-3 cursor-pointer text-sm leading-snug transition-colors ${
                 activeIdx === i ? 'bg-slate-700/80 text-white' : 'text-slate-300 hover:bg-slate-800/80'
               }`}
@@ -1016,12 +1079,15 @@ function AddressInput({
         </ul>
       )}
 
-      {!locked && !open && !fetching && text.trim().length >= 2 && (
+      {!locked && !open && !fetching && !resolvingPick && text.trim().length >= 2 && (
         suggestStatus === 'no_results' ? (
           <p className="mt-1.5 px-1 text-xs text-slate-500">{c.addrNotFound}</p>
         ) : (suggestStatus === 'no_key' || suggestStatus === 'error') ? (
           <p className="mt-1.5 px-1 text-xs text-slate-500">{c.suggestUnavailable}</p>
         ) : null
+      )}
+      {resolveFailed && !locked && (
+        <p className="mt-1.5 px-1 text-xs text-rose-400/90" role="alert">{c.addrNotFound}</p>
       )}
     </div>
   );
@@ -1728,6 +1794,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                   }}
                   onClear={() => setSelected(null)}
                   disabled={phase === 'loading'}
+                  locale={locale}
                   c={c}
                 />
                 {validationErr && (

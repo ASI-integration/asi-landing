@@ -6,7 +6,8 @@
  * if the address has already been analysed we return the cached coords
  * without hitting Nominatim.
  *
- * On cache miss: Nominatim, then Photon (Komoot) if the first fails or returns empty.
+ * On cache miss: locale-primary geocoder (RU: Yandex, EN: Google Geocoding), then
+ * Nominatim → Photon if needed.
  * The result (coords + displayName) is returned to the caller so they can
  * proceed to POST /api/location-demo-analyze with the resolved lat/lon.
  *
@@ -15,20 +16,29 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
+import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress } from '@/lib/location/cache';
-import { geocodeWithFallback } from '@/lib/location/providers/geocoding';
 
 export const dynamic = 'force-dynamic';
 
+function parseMarket(v: unknown): AddressMarket {
+  return v === 'ru' ? 'ru' : 'en';
+}
+
 export async function POST(req: NextRequest) {
   let rawAddress: string;
+  let market: AddressMarket = 'en';
 
   try {
-    const body = await req.json() as { address?: unknown };
+    const body = await req.json() as { address?: unknown; locale?: unknown };
     if (typeof body.address !== 'string' || !body.address.trim()) {
       return NextResponse.json({ error: 'Укажите адрес' }, { status: 400 });
     }
     rawAddress = body.address.trim();
+    if (body.locale !== undefined) {
+      market = parseMarket(body.locale);
+    }
   } catch {
     return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 });
   }
@@ -45,8 +55,8 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ── Geocode chain (Nominatim → Photon) ─────────────────────────────────────
-  const { result } = await geocodeWithFallback(rawAddress);
+  // ── Geocode chain (market primary → Nominatim → Photon) ────────────────────
+  const { result } = await geocodePlainAddressForMarket(market, rawAddress);
 
   if (!result) {
     return NextResponse.json(
