@@ -79,7 +79,7 @@ export function RuPublicNavHeader({
     <header className={surfaceHeader[surface]}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-5 min-w-0">
-          <Link href="/ru" className={surfaceLogo[surface]}>
+          <Link href="/" className={surfaceLogo[surface]}>
             ASI
           </Link>
           <nav
