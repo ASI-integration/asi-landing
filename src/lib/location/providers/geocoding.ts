@@ -5,10 +5,8 @@
 // The scoring engine never calls geocoding — geocoding is only an entry-point
 // helper when the caller has an address string rather than a coordinate.
 //
-// To swap to Yandex Geocoder or 2GIS:
-//   1. Implement GeocodingProvider with their API
-//   2. Export a new singleton and use it in the API route
-//   3. The map display vendor (Yandex Maps, 2GIS tiles) stays its own concern
+// Locale-primary geocoding is in address-providers (RU: 2GIS Catalog, EN: Google).
+// This module remains the shared Nominatim → Photon fallback chain.
 
 import type { GeocodingProvider, GeocodeResult } from './types';
 

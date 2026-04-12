@@ -11,8 +11,8 @@ export interface AddressSuggestionRow {
   lon: string | null;
   /** Google Places prediction id (EN). */
   placeId?: string;
-  /** Yandex Geosuggest uri → Geocoder (RU). */
-  yandexUri?: string;
+  /** 2GIS catalog item id (RU) — optional hint when resolving without inline coords. */
+  twogisItemId?: string;
 }
 
 export type SuggestPipelineStatus = 'ok' | 'no_results' | 'no_key' | 'error';

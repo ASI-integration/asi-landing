@@ -20,7 +20,7 @@ function parseSuggestion(body: Record<string, unknown>): AddressSuggestionRow | 
     lat: typeof o.lat === 'string' || o.lat === null ? (o.lat as string | null) : null,
     lon: typeof o.lon === 'string' || o.lon === null ? (o.lon as string | null) : null,
     placeId: typeof o.placeId === 'string' ? o.placeId : undefined,
-    yandexUri: typeof o.yandexUri === 'string' ? o.yandexUri : undefined,
+    twogisItemId: typeof o.twogisItemId === 'string' ? o.twogisItemId : undefined,
   };
 }
 

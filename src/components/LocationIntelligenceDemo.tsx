@@ -54,7 +54,7 @@ interface Suggestion {
   lat: string | null;
   lon: string | null;
   placeId?: string;
-  yandexUri?: string;
+  twogisItemId?: string;
 }
 
 interface SelectedAddress {
@@ -87,7 +87,7 @@ async function fetchAddressSuggestions(
         lat: string | null;
         lon: string | null;
         placeId?: string;
-        yandexUri?: string;
+        twogisItemId?: string;
       }>;
       status?: string;
     };
@@ -99,7 +99,7 @@ async function fetchAddressSuggestions(
       lat: s.lat,
       lon: s.lon,
       placeId: s.placeId,
-      yandexUri: s.yandexUri,
+      twogisItemId: s.twogisItemId,
     }));
     if (data.status === 'no_key') return { suggestions: [], status: 'no_key' };
     if (data.status === 'error') return { suggestions: [], status: 'error' };
@@ -943,7 +943,7 @@ function AddressInput({
             lat: s.lat,
             lon: s.lon,
             placeId: s.placeId,
-            yandexUri: s.yandexUri,
+            twogisItemId: s.twogisItemId,
           },
         }),
       });

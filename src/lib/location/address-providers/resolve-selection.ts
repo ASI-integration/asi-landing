@@ -1,6 +1,6 @@
 import type { AddressMarket, AddressSuggestionRow } from './types';
 import { googleForwardGeocode, googlePlaceDetailsLatLon } from './geocode-google';
-import { yandexGeocode } from './geocode-yandex';
+import { twogisGeocode } from './geocode-2gis';
 import { geocodeWithFallback } from '../providers/geocoding';
 
 function googleKey(): string | null {
@@ -10,8 +10,8 @@ function googleKey(): string | null {
   return k || null;
 }
 
-function yandexKey(): string | null {
-  const k = (process.env.YANDEX_MAPS_API_KEY ?? '').trim();
+function twogisCatalogKey(): string | null {
+  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
 }
 
@@ -40,13 +40,9 @@ export async function resolveAddressSelection(
   if (!value) return null;
 
   if (market === 'ru') {
-    const yk = yandexKey();
-    if (yk) {
-      if (suggestion.yandexUri) {
-        const r = await yandexGeocode({ apiKey: yk, uri: suggestion.yandexUri });
-        if (r) return { lat: r.lat, lon: r.lon, displayName: r.displayName };
-      }
-      const rText = await yandexGeocode({ apiKey: yk, text: value });
+    const tk = twogisCatalogKey();
+    if (tk) {
+      const rText = await twogisGeocode({ apiKey: tk, text: value });
       if (rText) return { lat: rText.lat, lon: rText.lon, displayName: rText.displayName };
     }
   } else {

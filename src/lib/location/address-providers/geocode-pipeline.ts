@@ -3,7 +3,7 @@ import type { GeocodeAttemptStatus } from '../providers/geocoding';
 import { geocodeWithFallback } from '../providers/geocoding';
 import type { AddressMarket } from './types';
 import { googleForwardGeocode } from './geocode-google';
-import { yandexGeocode } from './geocode-yandex';
+import { twogisGeocode } from './geocode-2gis';
 
 function googleKey(): string | null {
   const k =
@@ -12,8 +12,8 @@ function googleKey(): string | null {
   return k || null;
 }
 
-function yandexKey(): string | null {
-  const k = (process.env.YANDEX_MAPS_API_KEY ?? '').trim();
+function twogisCatalogKey(): string | null {
+  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
 }
 
@@ -31,16 +31,16 @@ export async function geocodePlainAddressForMarket(
   const attempts: GeocodeAttemptStatus[] = [];
 
   if (market === 'ru') {
-    const yk = yandexKey();
-    if (yk) {
+    const tk = twogisCatalogKey();
+    if (tk) {
       try {
-        const r = await yandexGeocode({ apiKey: yk, text: address });
-        attempts.push({ id: 'yandex', ok: r != null });
+        const r = await twogisGeocode({ apiKey: tk, text: address });
+        attempts.push({ id: 'twogis_geocode', ok: r != null });
         if (r) {
-          return { result: r, winner: 'yandex', attempts };
+          return { result: r, winner: 'twogis_geocode', attempts };
         }
       } catch {
-        attempts.push({ id: 'yandex', ok: false });
+        attempts.push({ id: 'twogis_geocode', ok: false });
       }
     }
   } else {
