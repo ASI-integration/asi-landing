@@ -8,6 +8,7 @@ node_modules
 .env.production.pulled
 .env.production*
 .claude/settings.local.json
+.claude/
 .vexp/
 supabase/.temp/
 *.tsbuildinfo

@@ -21,4 +21,6 @@ export interface SuggestPipelineResult {
   suggestions: AddressSuggestionRow[];
   status: SuggestPipelineStatus;
   elapsed_ms?: number;
+  raw_query?: string;
+  normalized_query?: string;
 }

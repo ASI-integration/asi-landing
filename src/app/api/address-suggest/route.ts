@@ -21,11 +21,13 @@ export async function GET(request: NextRequest) {
   }
 
   const market = parseMarket(request);
-  const { suggestions, status, elapsed_ms } = await runSuggestPipeline(market, q);
+  const { suggestions, status, elapsed_ms, raw_query, normalized_query } = await runSuggestPipeline(market, q);
 
   return NextResponse.json({
     suggestions,
     status,
     elapsed_ms,
+    raw_query,
+    normalized_query,
   });
 }
