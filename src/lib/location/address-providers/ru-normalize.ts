@@ -67,10 +67,10 @@ function extractRuLocalityTokens(normalizedQuery: string): string[] {
   return locality;
 }
 
-export function rerankRuSuggestionsByLocality(
+export function rerankRuSuggestionsByLocality<T extends { value: string }>(
   normalizedQuery: string,
-  suggestions: Array<{ value: string }>,
-): Array<{ value: string }> {
+  suggestions: T[],
+): T[] {
   const localityTokens = extractRuLocalityTokens(normalizedQuery);
   if (localityTokens.length === 0 || suggestions.length < 2) return suggestions;
 
