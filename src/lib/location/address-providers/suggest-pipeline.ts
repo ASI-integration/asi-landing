@@ -24,8 +24,10 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
     return { suggestions: [], status: 'ok', elapsed_ms: Date.now() - t0 };
   }
 
-  const { normalized } = market === 'ru' ? normalizeRuAddressQuery(trimmed) : { normalized: trimmed };
-  const providerQuery = normalized;
+  const { normalized, providerQuery } =
+    market === 'ru'
+      ? normalizeRuAddressQuery(trimmed)
+      : { normalized: trimmed, providerQuery: trimmed };
 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;

@@ -1,6 +1,9 @@
 export interface RuNormalizedQuery {
   raw: string;
   normalized: string;
+  /** Query to send to geocoding providers — locality type prefixes stripped so
+   *  verbose Russian phrases (e.g. "поселок городского типа") don't kill recall. */
+  providerQuery: string;
 }
 
 // Abbreviation expansions are intentionally conservative (token-boundary only).
@@ -16,6 +19,36 @@ const RU_ABBREV_RULES: Array<{ re: RegExp; replace: string }> = [
   // region
   { re: /(^|[\s,.-])обл\.?(?=$|[\s,.-])/giu, replace: '$1область' },
 ];
+
+// Matches a leading settlement-type qualifier in a single address segment.
+// Must be kept in sync with RU_ABBREV_RULES expansions above.
+const LEADING_LOCALITY_TYPE_RE =
+  /^(?:поселок городского типа|посёлок городского типа|поселок|посёлок)\s+/iu;
+
+/**
+ * Build a provider query from a normalized RU address string.
+ *
+ * Strips leading settlement-type qualifiers ("поселок городского типа",
+ * "поселок", "посёлок") before the locality name in the first comma segment so
+ * that geocoders receive a clean name ("Невская Дубровка") rather than the
+ * verbose phrase ("поселок городского типа Невская Дубровка") that returns
+ * zero results from Google / Photon / DaData.
+ *
+ * The full normalized form is kept for locality-token extraction and reranking.
+ */
+export function buildRuProviderQuery(normalized: string): string {
+  const commaIdx = normalized.indexOf(', ');
+  if (commaIdx === -1) {
+    // Locality-only query — strip leading type qualifier entirely.
+    const stripped = normalized.replace(LEADING_LOCALITY_TYPE_RE, '').trim();
+    return stripped || normalized;
+  }
+  // Full address — strip leading type qualifier only from the locality block
+  // (first comma segment); keep the rest (street, house number) intact.
+  const localityBlock = normalized.slice(0, commaIdx).replace(LEADING_LOCALITY_TYPE_RE, '').trim();
+  const rest = normalized.slice(commaIdx); // includes the leading ", "
+  return (localityBlock + rest).trim() || normalized;
+}
 
 export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
   const q0 = raw;
@@ -33,7 +66,7 @@ export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
   q = q.replace(/\s*,\s*/g, ', ');
   q = q.replace(/\s+/g, ' ').trim();
 
-  return { raw: q0, normalized: q };
+  return { raw: q0, normalized: q, providerQuery: buildRuProviderQuery(q) };
 }
 
 function normalizeForMatch(s: string): string {
