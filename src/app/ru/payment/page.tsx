@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
+import { ruCompliance } from '@/config/ruCompliance';
 
 export const metadata: Metadata = {
   title: 'Оплата — ASI',
@@ -23,6 +24,12 @@ export default function RuPaymentPage() {
         При необходимости пользователь может запросить подтверждение оплаты, обратившись по контактам, указанным на
         странице «Контакты».
       </p>
+
+      <section className="space-y-2 pt-2">
+        <h2 className="text-base font-semibold text-[var(--t-text)]">Реквизиты исполнителя</h2>
+        <p>Самозанятый: {ruCompliance.fullName}</p>
+        <p>ИНН: {ruCompliance.inn}</p>
+      </section>
     </RuLegalPageLayout>
   );
 }

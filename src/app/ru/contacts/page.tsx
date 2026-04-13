@@ -45,7 +45,7 @@ export default function RuContactsPage() {
       </ul>
       <p>Реквизиты исполнителя:</p>
       <ul className="list-disc pl-5 space-y-2">
-        <li>ФИО: {ruCompliance.fullName}</li>
+        <li>Самозанятый: {ruCompliance.fullName}</li>
         <li>ИНН: {ruCompliance.inn}</li>
         <li>Адрес для корреспонденции: {ruCompliance.address}</li>
       </ul>

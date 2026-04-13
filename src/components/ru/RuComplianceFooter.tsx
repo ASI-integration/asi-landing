@@ -77,7 +77,7 @@ export function RuComplianceFooter({ tone = 'theme' }: { tone?: Tone }) {
 
         <div className={`pt-4 border-t ${tone === 'light' ? 'border-slate-200' : tone === 'dark' ? 'border-slate-800' : 'border-[var(--t-border)]'}`}>
           <p className={req}>
-            Исполнитель: {ruCompliance.fullName}
+            Самозанятый: {ruCompliance.fullName}
             <br />
             ИНН: {ruCompliance.inn}
           </p>
