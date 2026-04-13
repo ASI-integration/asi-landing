@@ -1,12 +1,9 @@
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
-import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import { HeroSection } from '@/components/HeroSection';
 
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
-import { CommDemo } from '@/components/CommDemo';
-import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
 import { TgIcon } from '@/components/TgIcon';
@@ -173,7 +170,6 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Home() {
   if (await getIsRuHost()) return <HomeRu />;
   return (
-    <LocationTelemetryProvider>
     <div className="min-h-screen bg-slate-950">
 
       {/* ── Header ── */}
@@ -185,9 +181,12 @@ export default async function Home() {
             <Link href="/" className="text-2xl font-bold text-white tracking-tight shrink-0">
               ASI
             </Link>
-            <a href="#platform-modules" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
-              Platform
-            </a>
+            <Link href="/features/location-analysis" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+              Location Analysis
+            </Link>
+            <Link href="/features/communication" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
+              Communication
+            </Link>
             <a href="#faq" className="hidden sm:block text-sm text-slate-400 hover:text-white transition-colors">
               FAQ
             </a>
@@ -262,12 +261,12 @@ export default async function Home() {
               </span>
             </a>
             <a
-              href="#finances"
+              href="#product-modules"
               className="group flex items-center gap-3 px-5 py-4 rounded-xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/40 hover:bg-indigo-950/20 transition-all"
             >
               <span className="text-2xl shrink-0">🔄</span>
               <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors leading-snug">
-                What it handles
+                Product modules
               </span>
             </a>
             <a
@@ -349,13 +348,47 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* ── Location demo ── */}
-        <div id="location-demo">
-          <LocationIntelligenceDemo />
-        </div>
-
-        {/* ── Communication demo ── */}
-        <CommDemo />
+        {/* ── Product modules (teaser) ── */}
+        <section id="product-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-950 border-t border-slate-800/60">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+              Product modules
+            </h2>
+            <p className="text-slate-500 mb-10">
+              Two core capabilities — each with a live interactive demo.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-6">
+              <Link
+                href="/features/location-analysis"
+                className="group p-7 rounded-2xl border border-slate-800 bg-slate-900/60 hover:border-indigo-500/50 hover:bg-indigo-950/20 transition-all"
+              >
+                <div className="text-3xl mb-4">📍</div>
+                <h3 className="font-bold text-white text-lg mb-2">Location Analysis</h3>
+                <p className="text-sm text-slate-400 leading-relaxed mb-5">
+                  Enter any address and get a full demand-landscape analysis — traffic magnets,
+                  competitor density, evergreen demand score.
+                </p>
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-400 group-hover:text-indigo-300 transition-colors">
+                  Open demo →
+                </span>
+              </Link>
+              <Link
+                href="/features/communication"
+                className="group p-7 rounded-2xl border border-slate-800 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-950/20 transition-all"
+              >
+                <div className="text-3xl mb-4">💬</div>
+                <h3 className="font-bold text-white text-lg mb-2">Communication Module</h3>
+                <p className="text-sm text-slate-400 leading-relaxed mb-5">
+                  AI handles all guest messaging end to end — instant replies, in-chat execution,
+                  and automatic escalation only for true edge cases.
+                </p>
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 group-hover:text-sky-300 transition-colors">
+                  Open demo →
+                </span>
+              </Link>
+            </div>
+          </div>
+        </section>
 
         {/* ── What the platform does ── */}
         <section id="finances" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-slate-900/40 border-t border-slate-800/60">
@@ -512,6 +545,5 @@ export default async function Home() {
       </footer>
 
     </div>
-    </LocationTelemetryProvider>
   );
 }
