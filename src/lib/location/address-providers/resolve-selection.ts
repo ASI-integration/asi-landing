@@ -1,11 +1,17 @@
 import type { AddressMarket, AddressSuggestionRow } from './types';
 import { googleForwardGeocode, googlePlaceDetailsLatLon } from './geocode-google';
+import { twogisGeocode } from './geocode-2gis';
 import { geocodeWithFallback } from '../providers/geocoding';
 
 function googleKey(): string | null {
   const k =
     (process.env.GOOGLE_MAPS_SERVER_API_KEY ?? '').trim() ||
     (process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '').trim();
+  return k || null;
+}
+
+function twogisCatalogKey(): string | null {
+  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
 }
 
@@ -43,6 +49,15 @@ export async function resolveAddressSelection(
   if (gk) {
     const g = await googleForwardGeocode(value, gk, geoOpts);
     if (g) return { lat: g.lat, lon: g.lon, displayName: g.displayName };
+  }
+
+  // RU-only vendor fallback: 2GIS geocoder can resolve many RU addresses when Google key is missing/denied.
+  if (market === 'ru') {
+    const dgKey = twogisCatalogKey();
+    if (dgKey) {
+      const dg = await twogisGeocode({ apiKey: dgKey, text: value });
+      if (dg) return { lat: dg.lat, lon: dg.lon, displayName: dg.displayName };
+    }
   }
 
   const { result } = await geocodeWithFallback(value);

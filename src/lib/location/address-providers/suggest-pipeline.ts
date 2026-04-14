@@ -1,6 +1,7 @@
 import type { AddressMarket, SuggestPipelineResult } from './types';
 import { dadataAddressSuggest } from './suggest-dadata';
 import { googlePlacesAutocomplete } from './suggest-google';
+import { twogisAddressSuggest } from './suggest-2gis';
 import { photonSuggest } from './suggest-photon';
 import { normalizeRuAddressQuery, rerankRuSuggestionsByLocality } from './ru-normalize';
 
@@ -11,10 +12,16 @@ function googleMapsKey(): string | null {
   return k || null;
 }
 
+function twogisCatalogKey(): string | null {
+  const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
+  return k || null;
+}
+
 /**
  * Locale-routed suggestion chain. Always returns a terminal status (never hangs).
  *
  * RU and EN: Google Places Autocomplete (language/bias by market) → Photon → optional DaData (RU only)
+ * RU only: optional 2GIS Catalog suggest is tried before Photon if configured.
  */
 export async function runSuggestPipeline(market: AddressMarket, query: string): Promise<SuggestPipelineResult> {
   const t0 = Date.now();
@@ -50,6 +57,24 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
           raw_query: trimmed,
           normalized_query: normalized,
         };
+      }
+    }
+
+    if (market === 'ru') {
+      const dgKey = twogisCatalogKey();
+      if (dgKey) {
+        let dg = await twogisAddressSuggest(providerQuery, dgKey);
+        dg = rerankRuSuggestionsByLocality(normalized, dg);
+        if (dg.length > 0) {
+          console.warn('[address-suggest] ru fallback=2gis_catalog');
+          return {
+            suggestions: dg,
+            status: 'ok',
+            elapsed_ms: Date.now() - t0,
+            raw_query: trimmed,
+            normalized_query: normalized,
+          };
+        }
       }
     }
 
