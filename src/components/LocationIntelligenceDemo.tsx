@@ -16,7 +16,6 @@ import type {
   Band,
   AnalysisMeta,
   DemandType,
-  LocationReportOutput,
 } from '@/lib/location';
 import {
   useLocationTelemetryOptional,
@@ -141,27 +140,6 @@ async function fetchLocationAnalysis(
       cached: false,
     };
     return { analysis, meta };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchLocationReport(args: {
-  address: string;
-  isPaid: boolean;
-  locale: LocDemoLocale;
-  signal?: AbortSignal;
-}): Promise<LocationReportOutput | null> {
-  try {
-    const res = await fetch('/api/location-report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: args.address, is_paid: args.isPaid, locale: args.locale }),
-      signal: args.signal,
-    });
-    if (!res.ok) return null;
-    const data = await res.json() as { report?: LocationReportOutput };
-    return data.report ?? null;
   } catch {
     return null;
   }
@@ -1357,36 +1335,11 @@ function ASIPanel({
     : c.strategyShortTerm;
   const [visible, setVisible] = useState(false);
   const [magnetExpanded, setMagnetExpanded] = useState(false);
-  const [isPaid, setIsPaid] = useState(false);
-  const [report, setReport] = useState<LocationReportOutput | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
     return () => clearTimeout(t);
   }, []);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem('paidUser') === 'true') setIsPaid(true);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    if (!address) return;
-    let cancelled = false;
-    const controller = new AbortController();
-    setReportLoading(true);
-    fetchLocationReport({ address, isPaid, locale, signal: controller.signal }).then((r) => {
-      if (cancelled) return;
-      setReport(r);
-      setReportLoading(false);
-    });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [address, isPaid, locale]);
 
   const hasMagnets = magnets.length > 0;
 
@@ -1418,60 +1371,6 @@ function ASIPanel({
           </p>
         </div>
       </div>
-
-      {/* Paywall trigger: preview vs full report */}
-      {report && report.is_preview && (
-        <div className="px-5 py-4 border-b border-slate-800/40 bg-slate-950/30">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-1">
-                {locale === 'ru' ? 'Предпросмотр отчёта' : 'Report preview'}
-              </p>
-              <p className="text-[14px] text-slate-400 leading-snug">
-                {locale === 'ru'
-                  ? 'Полная версия включает breakdown, все режимы дохода, стратегию и полное объяснение.'
-                  : 'Full report includes breakdown, all income modes, strategy, and full explanation.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                try { localStorage.setItem('paidUser', 'true'); } catch { /* ignore */ }
-                setIsPaid(true);
-              }}
-              className="shrink-0 inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-slate-950 text-sm font-semibold transition-colors"
-            >
-              Get full report
-            </button>
-          </div>
-        </div>
-      )}
-
-      {reportLoading && (
-        <div className="px-5 py-3 border-b border-slate-800/40">
-          <p className="text-[13px] text-slate-600">
-            {locale === 'ru' ? 'Готовим отчёт…' : 'Preparing report…'}
-          </p>
-        </div>
-      )}
-
-      {report && !report.is_preview && (
-        <div className="px-5 py-4 border-b border-slate-800/40">
-          <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">
-            {locale === 'ru' ? 'Полный отчёт разблокирован' : 'Full report unlocked'}
-          </p>
-          <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-            <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">rating</p>
-              <p className="text-[17px] text-slate-300">{report.rating}</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-0.5">strategy</p>
-              <p className="text-[17px] text-slate-300">{report.recommended_strategy}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Why this score? */}
       {(() => {
