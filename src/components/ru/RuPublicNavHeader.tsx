@@ -73,7 +73,8 @@ export function RuPublicNavHeader({
   surface: RuPublicNavSurface;
   density: RuPublicNavDensity;
 }) {
-  const navCls = `text-sm sm:text-[15px] font-medium whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
+  const navCls = `text-[13px] sm:text-sm lg:text-[15px] font-medium whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
+
   const showTheme = surface === 'theme';
 
   return (
@@ -81,8 +82,8 @@ export function RuPublicNavHeader({
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         {/* Top row: contacts + email + Telegram + lang + theme + login */}
         {density === 'landing' ? (
-          <div className="py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+          <div className="py-2 sm:py-2.5 flex items-center justify-between gap-x-4 min-w-0">
+            <div className="flex items-center gap-x-3 min-w-0 overflow-hidden">
               <Link
                 href={ruComplianceRoutes.contacts}
                 className={`text-sm font-medium transition-colors ${surfaceMuted[surface]}`}
@@ -92,14 +93,14 @@ export function RuPublicNavHeader({
               <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
               <a
                 href={`mailto:${productSupportEmail}`}
-                className={`text-sm truncate max-w-[14rem] sm:max-w-[18rem] md:max-w-none transition-colors ${surfaceMuted[surface]}`}
+                className={`hidden lg:block text-sm truncate max-w-[12rem] xl:max-w-[16rem] transition-colors ${surfaceMuted[surface]}`}
                 title={productSupportEmail}
               >
                 {productSupportEmail}
               </a>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 justify-end shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
               <a
                 href="https://t.me/ASI_core_bot"
                 target="_blank"
@@ -144,7 +145,7 @@ export function RuPublicNavHeader({
             ASI
           </Link>
           <nav
-            className="flex items-center gap-x-4 sm:gap-x-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"
+            className="flex items-center gap-x-3 sm:gap-x-3.5 lg:gap-x-4 xl:gap-x-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"
             aria-label="Основная навигация"
           >
             {ruNavMainLinks.map(({ href, label }) => (

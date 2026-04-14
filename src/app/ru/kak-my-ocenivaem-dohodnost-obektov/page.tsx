@@ -243,21 +243,6 @@ export default function KakMyOcenivaemPage() {
           </div>
         </section>
 
-        {/* ── What we don't disclose ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
-              Что мы не раскрываем полностью
-            </h2>
-            <p className="text-[var(--t-text-2)] text-base leading-relaxed">
-              Часть аналитической логики является частью собственной методологии компании —
-              в частности, веса факторов, scoring-модель и правила агрегации сигналов.
-              Это не скрывает результат от вас: отчёт показывает итоговые выводы и ключевые факторы
-              прозрачно. Но внутренняя механика остаётся закрытой.
-            </p>
-          </div>
-        </section>
-
         {/* ── CTA ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-2xl mx-auto text-center">
