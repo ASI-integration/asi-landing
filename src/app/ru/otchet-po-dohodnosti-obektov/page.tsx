@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     'Показываем ожидаемый доход, уровень спроса, конкуренцию и ключевые факторы по конкретному адресу. Для квартир, апартаментов, мини-отелей и апарт-отелей.',
 };
 
-const METHODOLOGY_HREF = '/kak-my-ocenivaem-dohodnost-obektov';
+const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
 const REPORT_CTA_HREF  = 'https://t.me/ASI_core_bot';
 
 /* ─── Report features ─────────────────────────────────────────────────────── */

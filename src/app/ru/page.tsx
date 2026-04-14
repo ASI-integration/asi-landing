@@ -368,7 +368,7 @@ export default function HomeRu() {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3 shrink-0">
                   <Link
-                    href="/otchet-po-dohodnosti-obektov"
+                    href="/ru/otchet-po-dohodnosti-obektov"
                     className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[var(--t-accent)] text-white font-semibold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all text-sm whitespace-nowrap"
                   >
                     Узнать доходность объектов

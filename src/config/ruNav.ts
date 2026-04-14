@@ -6,11 +6,10 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
 export const ruNavMainLinks = [
   { href: '/', label: 'Главная' },
   { href: '/#platform-modules', label: 'Платформа' },
-  { href: '/otchet-po-dohodnosti-obektov', label: 'Доходность объектов' },
+  { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Доходность объектов' },
   { href: '/#faq', label: 'Как это работает' },
   { href: '/#pricing', label: 'Тарифы' },
   { href: '/connect', label: 'Подключение' },
-  { href: ruComplianceRoutes.contacts, label: 'Контакты' },
 ] as const;
 
 /** Extra compliance destinations for the lightweight bottom quick-links strip. */

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     'Методология оценки доходности объектов посуточной аренды: данные, отраслевые метрики и подход к анализу локации, спроса и конкурентной среды.',
 };
 
-const PRODUCT_HREF  = '/otchet-po-dohodnosti-obektov';
+const PRODUCT_HREF  = '/ru/otchet-po-dohodnosti-obektov';
 const REPORT_CTA_HREF = 'https://t.me/ASI_core_bot';
 
 /* ─── Data factors ────────────────────────────────────────────────────────── */
