@@ -145,21 +145,21 @@ async function fetchLocationAnalysis(
   }
 }
 
-function formatUpdatedRelativeRu(iso: string): string {
+function formatUpdatedRelative(iso: string, c: (typeof LOC_COPY)['en']): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '';
   const m = Math.floor((Date.now() - t) / 60000);
-  if (m < 1) return 'Just updated';
-  if (m < 60) return `Updated ${m} min ago`;
+  if (m < 1) return c.analysisFreshness.justUpdated;
+  if (m < 60) return c.analysisFreshness.updatedMinutesAgo(m);
   const h = Math.floor(m / 60);
-  if (h < 48) return `Updated ${h} h ago`;
-  return `Updated ${new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  if (h < 48) return c.analysisFreshness.updatedHoursAgo(h);
+  return c.analysisFreshness.updatedOn(iso);
 }
 
-function formatUpdatedAtReadableRu(iso: string): string {
+function formatUpdatedAtReadable(iso: string, locale: LocDemoLocale): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString('en-GB', {
+  return d.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-GB', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -168,7 +168,16 @@ function formatUpdatedAtReadableRu(iso: string): string {
   });
 }
 
-function demandTypeRu(d: DemandType): string {
+function demandTypeLabel(d: DemandType, locale: LocDemoLocale): string {
+  if (locale === 'ru') {
+    const map: Record<DemandType, string> = {
+      'tourism-led': 'туристический',
+      'business-led': 'деловой',
+      'transport-led': 'транзитный',
+      'mixed': 'смешанный',
+    };
+    return map[d];
+  }
   const map: Record<DemandType, string> = {
     'tourism-led': 'tourism',
     'business-led': 'business',
@@ -178,25 +187,25 @@ function demandTypeRu(d: DemandType): string {
   return map[d];
 }
 
-function sourceDataRu(meta: AnalysisMeta | null): string {
-  if (!meta) return 'local calculation (no server metadata)';
+function sourceDataLabel(meta: AnalysisMeta | null, c: (typeof LOC_COPY)['en']): string {
+  if (!meta) return c === LOC_COPY.ru ? 'локальный расчёт (нет метаданных сервера)' : 'local calculation (no server metadata)';
   const fromCache = meta.cached;
   const refreshing = Boolean(meta.refreshing);
   const isStale = meta.freshness === 'stale';
   if (fromCache) {
-    if (refreshing && isStale) return 'cache / updating';
-    return 'cache';
+    if (refreshing && isStale) return c.analysisFreshness.sourceCacheUpdating;
+    return c.analysisFreshness.sourceCache;
   }
-  return 'fresh data';
+  return c.analysisFreshness.sourceFresh;
 }
 
-function dataFreshnessRu(meta: AnalysisMeta | null): string {
-  if (!meta) return 'Data current';
+function dataFreshnessLabel(meta: AnalysisMeta | null, c: (typeof LOC_COPY)['en']): string {
+  if (!meta) return c.analysisFreshness.dataCurrent;
   const refreshing = Boolean(meta.refreshing);
   const isStale = meta.freshness === 'stale';
-  if (refreshing && isStale) return 'Data updating';
-  if (isStale) return 'Snapshot slightly stale';
-  return 'Data current';
+  if (refreshing && isStale) return c.analysisFreshness.dataUpdating;
+  if (isStale) return c.analysisFreshness.snapshotStale;
+  return c.analysisFreshness.dataCurrent;
 }
 
 function truncateForLog(s: string, max = 52): string {
@@ -210,27 +219,44 @@ function emitAnalysisTelemetry(
   updateSnapshot: (patch: Partial<LocationTelemetrySnapshot>) => void,
   analysis: LocationAnalysis,
   meta: AnalysisMeta | null,
+  locale: LocDemoLocale,
+  c: (typeof LOC_COPY)['en'],
 ) {
-  pushLine({ badge: 'SRC', text: `data source: ${sourceDataRu(meta)}`, kind: 'ok' });
-  pushLine({ badge: 'MAG', text: `magnets found: ${analysis.magnets.length}`, kind: 'info' });
-  pushLine({ badge: 'CMP', text: `competitors found: ${analysis.competitors.length}`, kind: 'info' });
-  pushLine({ badge: 'DM', text: `demand type: ${demandTypeRu(analysis.demandType)}`, kind: 'info' });
+  if (locale === 'ru') {
+    pushLine({ badge: 'SRC', text: `источник данных: ${sourceDataLabel(meta, c)}`, kind: 'ok' });
+    pushLine({ badge: 'MAG', text: `магнитов найдено: ${analysis.magnets.length}`, kind: 'info' });
+    pushLine({ badge: 'CMP', text: `конкурентов найдено: ${analysis.competitors.length}`, kind: 'info' });
+    pushLine({ badge: 'DM', text: `тип спроса: ${demandTypeLabel(analysis.demandType, locale)}`, kind: 'info' });
+  } else {
+    pushLine({ badge: 'SRC', text: `data source: ${sourceDataLabel(meta, c)}`, kind: 'ok' });
+    pushLine({ badge: 'MAG', text: `magnets found: ${analysis.magnets.length}`, kind: 'info' });
+    pushLine({ badge: 'CMP', text: `competitors found: ${analysis.competitors.length}`, kind: 'info' });
+    pushLine({ badge: 'DM', text: `demand type: ${demandTypeLabel(analysis.demandType, locale)}`, kind: 'info' });
+  }
   pushLine({
     badge: 'IDX',
-    text: `location index updated · ${analysis.evergreenIndex}`,
+    text: locale === 'ru'
+      ? `индекс локации обновлён · ${analysis.evergreenIndex}`
+      : `location index updated · ${analysis.evergreenIndex}`,
     kind: 'ok',
   });
-  const fresh = dataFreshnessRu(meta);
-  const freshKind: 'ok' | 'warn' = fresh === 'Data current' ? 'ok' : 'warn';
+  const fresh = dataFreshnessLabel(meta, c);
+  const freshKind: 'ok' | 'warn' = fresh === c.analysisFreshness.dataCurrent ? 'ok' : 'warn';
   pushLine({ badge: '···', text: fresh, kind: freshKind });
   if (meta?.usedFallbackQuery) {
-    pushLine({ badge: '⚠', text: 'some map queries ran in simplified mode', kind: 'warn' });
+    pushLine({
+      badge: '⚠',
+      text: locale === 'ru'
+        ? 'часть запросов к карте выполнена в упрощённом режиме'
+        : `some map queries ran in ${c.analysisFreshness.simplifiedMode}`,
+      kind: 'warn',
+    });
   }
   updateSnapshot({
     evergreenIndex: analysis.evergreenIndex,
     magnetCount: analysis.magnets.length,
     competitorCount: analysis.competitors.length,
-    demandTypeLabel: demandTypeRu(analysis.demandType),
+    demandTypeLabel: demandTypeLabel(analysis.demandType, locale),
     dataStatusLabel: fresh,
   });
 }
@@ -247,7 +273,12 @@ function calculateDemandStability(data: { seasonality?: number; competitors?: nu
   return Math.max(0, Math.min(1, stability));
 }
 
-function getStabilityLabel(stability: number): string {
+function getStabilityLabel(stability: number, locale: LocDemoLocale): string {
+  if (locale === 'ru') {
+    if (stability > 0.7) return 'устойчивый';
+    if (stability > 0.4) return 'средний';
+    return 'нестабильный';
+  }
   if (stability > 0.7) return 'Stable';
   if (stability > 0.4) return 'Moderate';
   return 'Unstable';
@@ -297,18 +328,22 @@ function MarketSnapshotTable({
   demandType,
   competitorCount,
   strategy,
+  locale,
+  c,
 }: {
   evergreenIndex: number;
   demandType: DemandType;
   competitorCount: number;
   strategy: 'mid_term' | 'hybrid' | 'short_term';
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
 }) {
   const inferredSeasonality = inferSeasonalityFactor(demandType);
   const demandStability = calculateDemandStability({
     seasonality: inferredSeasonality,
     competitors: competitorCount,
   });
-  const stabilityLabel = getStabilityLabel(demandStability);
+  const stabilityLabel = getStabilityLabel(demandStability, locale);
 
   const demandLevelMap: Record<DemandType, string> = {
     'tourism-led':   'Tourism',
@@ -335,28 +370,28 @@ function MarketSnapshotTable({
     :                                 'bg-orange-400';
 
   const rows: Array<{ label: string; value: React.ReactNode; tooltip?: string }> = [
-    { label: 'Location Score',    value: `${evergreenIndex} / 100` },
-    { label: 'Demand Level',      value: demandLevelMap[demandType] },
+    { label: c.marketRows.locationScore,    value: `${evergreenIndex} / 100` },
+    { label: c.marketRows.demandLevel,      value: demandLevelMap[demandType] },
     {
-      label: 'Demand Stability',
+      label: c.marketRows.demandStability,
       value: (
         <span className="flex items-center gap-1.5">
           <span className={`w-2 h-2 rounded-full shrink-0 ${stabilityDotColor}`} />
           {stabilityLabel}
         </span>
       ),
-      tooltip: 'How consistent demand is over time, adjusted for seasonality and competition',
+      tooltip: c.marketTooltips.demandStability,
     },
-    { label: 'Competitors (500m)', value: `${competitorCount}` },
-    { label: 'Avg ADR',           value: `$${adr}`,       tooltip: 'Average daily rate based on nearby listings' },
-    { label: 'Est. Occupancy',    value: `${occupancy}%` },
-    { label: 'RevPAR',            value: `$${revpar}`,    tooltip: 'Revenue per available rental night' },
-    { label: 'Strategy',          value: strategyLabelMap[strategy] },
+    { label: c.marketRows.competitors500m, value: `${competitorCount}` },
+    { label: c.marketRows.avgAdr,          value: `$${adr}`,       tooltip: c.marketTooltips.avgAdr },
+    { label: c.marketRows.estOccupancy,    value: `${occupancy}%` },
+    { label: c.marketRows.revpar,          value: `$${revpar}`,    tooltip: c.marketTooltips.revpar },
+    { label: c.marketRows.strategy,        value: strategyLabelMap[strategy] },
   ];
 
   return (
     <div className="px-5 py-5 border-b border-slate-800/40">
-      <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-4">Market Snapshot</p>
+      <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-4">{c.marketSnapshotTitle}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {rows.map((row) => (
           <div key={row.label}>
@@ -372,7 +407,7 @@ function MarketSnapshotTable({
   );
 }
 
-function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
+function AnalysisFreshnessStrip({ meta, locale, c }: { meta: AnalysisMeta; locale: LocDemoLocale; c: (typeof LOC_COPY)['en'] }) {
   const isStale = meta.freshness === 'stale';
   const refreshing = Boolean(meta.refreshing);
   const fromCache = meta.cached;
@@ -380,26 +415,26 @@ function AnalysisFreshnessStrip({ meta }: { meta: AnalysisMeta }) {
   let statusLabel: string;
   let statusClass: string;
   if (refreshing && isStale) {
-    statusLabel = 'Data updating';
+    statusLabel = c.analysisFreshness.dataUpdating;
     statusClass = 'text-amber-400';
   } else if (isStale) {
-    statusLabel = 'Snapshot slightly stale';
+    statusLabel = c.analysisFreshness.snapshotStale;
     statusClass = 'text-slate-400';
   } else {
-    statusLabel = 'Data current';
+    statusLabel = c.analysisFreshness.dataCurrent;
     statusClass = 'text-emerald-400';
   }
 
   const sourceKind = fromCache
-    ? (refreshing && isStale ? 'cache (updating)' : 'cache')
-    : 'fresh data';
-  const baseSource = 'OpenStreetMap';
+    ? (refreshing && isStale ? c.analysisFreshness.sourceCacheUpdating : c.analysisFreshness.sourceCache)
+    : c.analysisFreshness.sourceFresh;
+  const baseSource = c.analysisFreshness.sourceOpenStreetMap;
 
   return (
     <div className="px-5 py-2 border-b border-slate-800/40 bg-slate-950/30 flex flex-wrap items-center gap-x-3 gap-y-0.5">
       <span className={`text-[11px] font-semibold uppercase tracking-[0.15em] ${statusClass}`}>{statusLabel}</span>
-      <span className="text-[11px] text-slate-600">{formatUpdatedRelativeRu(meta.updatedAt)}</span>
-      <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ' · simplified mode' : ''}</span>
+      <span className="text-[11px] text-slate-600">{formatUpdatedRelative(meta.updatedAt, c)}</span>
+      <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ` · ${c.analysisFreshness.simplifiedMode}` : ''}</span>
     </div>
   );
 }
@@ -421,7 +456,7 @@ const DOT_POOL = [
   { top: 80, left: 28 }, { top: 76, left: 52 }, { top: 83, left: 74 }, { top: 78, left: 92 },
 ];
 
-function IdleMapPanel() {
+function IdleMapPanel({ locale, c }: { locale: LocDemoLocale; c: (typeof LOC_COPY)['en'] }) {
   const [activeDots, setActiveDots] = useState<number[]>([]);
 
   useEffect(() => {
@@ -506,8 +541,12 @@ function IdleMapPanel() {
               <path d="M9 1.5C6.1 1.5 3.75 3.85 3.75 6.75c0 4.22 5.25 9.75 5.25 9.75s5.25-5.53 5.25-9.75C14.25 3.85 11.9 1.5 9 1.5zm0 7a2.25 2.25 0 110-4.5 2.25 2.25 0 010 4.5z" fill="rgba(99,102,241,0.45)" />
             </svg>
           </div>
-          <p className="text-base font-medium text-slate-400">Enter your property address</p>
-          <p className="mt-2 text-sm text-slate-600 leading-relaxed">Analysis starts after you select an exact address from the list</p>
+          <p className="text-base font-medium text-slate-400">{c.addressPlaceholder}</p>
+          <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+            {locale === 'ru'
+              ? 'Анализ начнётся после выбора точного адреса из списка'
+              : 'Analysis starts after you select an exact address from the list'}
+          </p>
         </div>
       </div>
     </div>
@@ -1313,7 +1352,7 @@ function ASIPanel({
         transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}
     >
-      {meta ? <AnalysisFreshnessStrip meta={meta} /> : null}
+      {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       {/* Header: index ring + verdict */}
       <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
         <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
@@ -1369,16 +1408,16 @@ function ASIPanel({
 
       {/* Estimated Monthly Income */}
       <div className="px-5 py-6 border-b border-slate-800/40">
-        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">Estimated Monthly Income</p>
+        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">{c.incomeTitle}</p>
         <p className="text-[32px] font-bold text-slate-100 leading-none tracking-tight">
           {strategy === 'mid_term' ? '$1,800 – $3,200'
            : strategy === 'hybrid' ? '$2,500 – $4,500'
            : '$3,500 – $7,000'}
-          <span className="text-[20px] font-semibold text-slate-400"> / mo</span>
+          <span className="text-[20px] font-semibold text-slate-400"> {c.incomeSuffix}</span>
         </p>
-        <p className="text-[13px] text-slate-400 mt-2">Before expenses and management fees</p>
-        <p className="text-[12px] text-slate-500 mt-1">Estimated using market data (Zillow, Airbnb comps, local demand signals)</p>
-        <p className="text-[12px] text-slate-600 mt-0.5">Range varies by occupancy, seasonality, and pricing strategy</p>
+        <p className="text-[13px] text-slate-400 mt-2">{c.incomeDisclaimer1}</p>
+        <p className="text-[12px] text-slate-500 mt-1">{c.incomeDisclaimer2}</p>
+        <p className="text-[12px] text-slate-600 mt-0.5">{c.incomeDisclaimer3}</p>
       </div>
 
       {/* Market Snapshot */}
@@ -1387,22 +1426,24 @@ function ASIPanel({
         demandType={analysis.demandType}
         competitorCount={competitors.length}
         strategy={strategy}
+        locale={locale}
+        c={c}
       />
 
       {/* CTA — lead capture */}
       <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
-        <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">Want a full breakdown?</p>
+        <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
         <p className="text-[14px] text-slate-400 leading-snug mb-4">
-          Get detailed revenue model, pricing strategy, and demand analysis for this location.
+          {c.ctaBlock.body}
         </p>
         <button
           onClick={() =>
             router.push(locale === 'ru' ? '/connect' : '/report')}
           className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
         >
-          Start analyzing properties
+          {c.ctaBlock.button}
         </button>
-        <p className="mt-2 text-[13px] text-slate-500 text-center">First report free</p>
+        <p className="mt-2 text-[13px] text-slate-500 text-center">{c.ctaBlock.note}</p>
       </div>
 
       {/* Analytics: gravity signals + foot traffic — combined compact grid */}
@@ -1529,15 +1570,6 @@ function ASIPanel({
   );
 }
 
-// ── Map button tooltips ───────────────────────────────────────────────────────
-
-const TAG_TOOLTIPS = [
-  'Show exact property location on the map',
-  'View nearby transport options (roads, public transit)',
-  'Show nearby demand generators (restaurants, stores, hotels)',
-  'Open full interactive map in a new tab',
-];
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLocale }) {
@@ -1614,7 +1646,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
         setPhase('result');
         const tel = locTelRef.current;
         if (tel) {
-          emitAnalysisTelemetry(tel.pushLine, tel.updateSnapshot, resolvedAnalysis, resolvedMeta);
+          emitAnalysisTelemetry(tel.pushLine, tel.updateSnapshot, resolvedAnalysis, resolvedMeta, locale, c);
         }
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
       }, Math.max(0, 3000 - elapsed));
@@ -1626,7 +1658,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
       clearTimeout(abortTimeout);
       tickers.forEach(clearTimeout);
     };
-  }, [phase, selected, c.loadingSteps]);
+  }, [phase, selected, locale, c]);
 
   return (
     <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
@@ -1687,13 +1719,27 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                     <button
                       key={i}
                       type="button"
-                      title={TAG_TOOLTIPS[i]}
+                      title={c.tagTooltips[i]}
                       onClick={() => {
                         if (i === 0) {
                           setActiveTag(0);
-                          showMapFeedback('Showing property location...');
+                          showMapFeedback(c.mapFeedback.showingProperty);
                           mapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        } else if (i === 1) {
+                          return;
+                        }
+
+                        // RU: chips are only internal navigation (no external side-effects)
+                        if (locale === 'ru') {
+                          if (i === 1) {
+                            setActiveTag(1);
+                            showMapFeedback(c.mapFeedback.showingNearbyPlaces);
+                            heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                          }
+                          return;
+                        }
+
+                        // EN: keep legacy behavior for 4 chips
+                        if (i === 1) {
                           setActiveTag(1);
                           showMapFeedback('Showing transport routes...');
                           if (selected) {
@@ -1706,7 +1752,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                           setActiveTag(2);
                           showMapFeedback('Showing nearby places...');
                           heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        } else {
+                        } else if (i === 3) {
                           showMapFeedback('Opening full map...');
                           if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
                         }
@@ -1724,12 +1770,24 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                 {selected && (
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                     <a
+                      href={
+                        isIOS()
+                          ? `http://maps.apple.com/?daddr=${encodeURIComponent(selected.value)}&dirflg=r`
+                          : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                    >
+                      {c.routeTransit}
+                    </a>
+                    <a
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.value)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
                     >
-                      Open in Google Maps
+                      {c.openInGoogleMaps}
                     </a>
                     {isIOS() && (
                       <a
@@ -1738,9 +1796,19 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                         rel="noopener noreferrer"
                         className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
                       >
-                        Open in Apple Maps
+                        {c.openInAppleMaps}
                       </a>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        showMapFeedback(c.mapFeedback.openingFullMap);
+                        if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
+                      }}
+                      className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                    >
+                      {c.openMapNewTab}
+                    </button>
                   </div>
                 )}
               </div>
@@ -1836,7 +1904,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                   c={c}
                 />
               ) : (
-                <IdleMapPanel />
+                <IdleMapPanel locale={locale} c={c} />
               )}
             </div>
 

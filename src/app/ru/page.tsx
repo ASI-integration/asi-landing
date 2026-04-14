@@ -208,7 +208,7 @@ export default function HomeRu() {
               {AUTOMATED_ITEMS.map((item) => (
                 <div
                   key={item.title}
-                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all"
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
                 >
                   <h3 className="font-semibold text-[var(--t-text)] text-sm leading-snug">{item.title}</h3>
                   <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
@@ -293,7 +293,7 @@ export default function HomeRu() {
               {CARDS.map((card) => (
                 <div
                   key={card.title}
-                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all"
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
                 >
                   <span className="text-2xl" aria-hidden>{card.icon}</span>
                   <h3 className="mt-3 font-semibold text-[var(--t-text)] text-sm leading-snug">{card.title}</h3>
@@ -321,8 +321,8 @@ export default function HomeRu() {
                     key={mod.id}
                     className={`p-6 rounded-xl border transition-all ${
                       isActive
-                        ? 'border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)]'
-                        : 'border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)]'
+                        ? 'border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)]'
+                        : 'border-[var(--t-border)] bg-[var(--t-surface)]'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3 mb-4">

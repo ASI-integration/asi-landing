@@ -89,6 +89,16 @@ export const LOC_COPY: Record<
     sectionSub2: string;
     envMapTitle: string;
     tags: string[];
+    tagTooltips: string[];
+    mapFeedback: {
+      showingProperty: string;
+      showingNearbyPlaces: string;
+      openingFullMap: string;
+    };
+    openInGoogleMaps: string;
+    openInAppleMaps: string;
+    routeTransit: string;
+    openMapNewTab: string;
     tryAnother: string;
     asiPanelTitle: string;
     addrChosenLog: (s: string) => string;
@@ -99,6 +109,47 @@ export const LOC_COPY: Record<
     strategyMidTerm: string[];
     strategyHybrid: string[];
     strategyShortTerm: string[];
+    marketSnapshotTitle: string;
+    marketRows: {
+      locationScore: string;
+      demandLevel: string;
+      demandStability: string;
+      competitors500m: string;
+      avgAdr: string;
+      estOccupancy: string;
+      revpar: string;
+      strategy: string;
+    };
+    marketTooltips: {
+      demandStability: string;
+      avgAdr: string;
+      revpar: string;
+    };
+    incomeTitle: string;
+    incomeSuffix: string;
+    incomeDisclaimer1: string;
+    incomeDisclaimer2: string;
+    incomeDisclaimer3: string;
+    ctaBlock: {
+      title: string;
+      body: string;
+      button: string;
+      note: string;
+    };
+    analysisFreshness: {
+      justUpdated: string;
+      updatedMinutesAgo: (m: number) => string;
+      updatedHoursAgo: (h: number) => string;
+      updatedOn: (iso: string) => string;
+      dataCurrent: string;
+      dataUpdating: string;
+      snapshotStale: string;
+      simplifiedMode: string;
+      sourceOpenStreetMap: string;
+      sourceCache: string;
+      sourceCacheUpdating: string;
+      sourceFresh: string;
+    };
   }
 > = {
   en: {
@@ -158,6 +209,21 @@ export const LOC_COPY: Record<
       'Surfaces where intent-aligned demand concentrates — inputs listing and pricing can act on.',
     envMapTitle: 'Surroundings map',
     tags: ['Show Property', 'Transport', 'Nearby Places', 'Open Map'],
+    tagTooltips: [
+      'Show exact property location on the map',
+      'View nearby transport options (roads, public transit)',
+      'Show nearby demand generators (restaurants, stores, hotels)',
+      'Open full interactive map in a new tab',
+    ],
+    mapFeedback: {
+      showingProperty: 'Showing property location...',
+      showingNearbyPlaces: 'Showing nearby places...',
+      openingFullMap: 'Opening full map...',
+    },
+    openInGoogleMaps: 'Open in Google Maps',
+    openInAppleMaps: 'Open in Apple Maps',
+    routeTransit: 'Transit directions',
+    openMapNewTab: 'Open full map (new tab)',
     tryAnother: 'Try another address',
     asiPanelTitle: 'ASI · Location analysis',
     addrChosenLog: s => `address selected · ${s}`,
@@ -180,6 +246,47 @@ export const LOC_COPY: Record<
       'Focus on occupancy and pricing optimization',
       'Leverage peak seasons',
     ],
+    marketSnapshotTitle: 'Market Snapshot',
+    marketRows: {
+      locationScore: 'Location Score',
+      demandLevel: 'Demand Level',
+      demandStability: 'Demand Stability',
+      competitors500m: 'Competitors (500m)',
+      avgAdr: 'Avg ADR',
+      estOccupancy: 'Est. Occupancy',
+      revpar: 'RevPAR',
+      strategy: 'Strategy',
+    },
+    marketTooltips: {
+      demandStability: 'How consistent demand is over time, adjusted for seasonality and competition',
+      avgAdr: 'Average daily rate based on nearby listings',
+      revpar: 'Revenue per available rental night',
+    },
+    incomeTitle: 'Estimated Monthly Income',
+    incomeSuffix: '/ mo',
+    incomeDisclaimer1: 'Before expenses and management fees',
+    incomeDisclaimer2: 'Estimated using market data (Zillow, Airbnb comps, local demand signals)',
+    incomeDisclaimer3: 'Range varies by occupancy, seasonality, and pricing strategy',
+    ctaBlock: {
+      title: 'Want a full breakdown?',
+      body: 'Get detailed revenue model, pricing strategy, and demand analysis for this location.',
+      button: 'Start analyzing properties',
+      note: 'First report free',
+    },
+    analysisFreshness: {
+      justUpdated: 'Just updated',
+      updatedMinutesAgo: (m) => `Updated ${m} min ago`,
+      updatedHoursAgo: (h) => `Updated ${h} h ago`,
+      updatedOn: (iso) => `Updated ${new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      dataCurrent: 'Data current',
+      dataUpdating: 'Data updating',
+      snapshotStale: 'Snapshot slightly stale',
+      simplifiedMode: 'simplified mode',
+      sourceOpenStreetMap: 'OpenStreetMap',
+      sourceCache: 'cache',
+      sourceCacheUpdating: 'cache (updating)',
+      sourceFresh: 'fresh data',
+    },
   },
   ru: {
     mapLoadingTitle: 'Анализируем локацию…',
@@ -207,8 +314,8 @@ export const LOC_COPY: Record<
     changeAddressAria: 'Изменить адрес',
     addrNotFound: 'Адрес не найден — попробуйте уточнить запрос',
     suggestUnavailable: 'Подсказки временно недоступны',
-    evergreenLine1: 'Location',
-    evergreenLine2: 'Score',
+    evergreenLine1: 'Индекс',
+    evergreenLine2: 'локации',
     analysisHeader: 'Итог анализа',
     keyZone: 'Ключевая зона',
     topMagnet: 'Главный магнит',
@@ -237,7 +344,20 @@ export const LOC_COPY: Record<
     sectionSub2:
       'Показывает, где сосредоточен целевой спрос — входы для объявлений и ценообразования.',
     envMapTitle: 'Карта окружения',
-    tags: ['Показать объект', 'Транспорт', 'Места рядом', 'Открыть карту'],
+    tags: ['Показать объект', 'Места рядом'],
+    tagTooltips: [
+      'Показать точку объекта на карте',
+      'Показать теплокарту влияния рядом',
+    ],
+    mapFeedback: {
+      showingProperty: 'Показываем объект на карте…',
+      showingNearbyPlaces: 'Показываем теплокарту…',
+      openingFullMap: 'Открываем карту…',
+    },
+    openInGoogleMaps: 'Открыть в Google Maps',
+    openInAppleMaps: 'Открыть в Apple Maps',
+    routeTransit: 'Маршрут (общественный транспорт)',
+    openMapNewTab: 'Открыть карту (в новой вкладке)',
     tryAnother: 'Проверить другой адрес',
     asiPanelTitle: 'ASI · Анализ локации',
     addrChosenLog: s => `адрес выбран · ${s}`,
@@ -260,6 +380,47 @@ export const LOC_COPY: Record<
       'Фокус на загрузке и оптимизации цен',
       'Используйте пиковые сезоны',
     ],
+    marketSnapshotTitle: 'Снимок рынка',
+    marketRows: {
+      locationScore: 'Индекс локации',
+      demandLevel: 'Профиль спроса',
+      demandStability: 'Устойчивость спроса',
+      competitors500m: 'Конкуренты (500 м)',
+      avgAdr: 'Средний ADR',
+      estOccupancy: 'Оценка загрузки',
+      revpar: 'RevPAR',
+      strategy: 'Стратегия',
+    },
+    marketTooltips: {
+      demandStability: 'Насколько спрос стабилен во времени с учётом сезонности и конкуренции',
+      avgAdr: 'Средняя цена ночи по ближайшим размещениям',
+      revpar: 'Доход на доступную ночь аренды',
+    },
+    incomeTitle: 'Оценка дохода в месяц',
+    incomeSuffix: '/ мес',
+    incomeDisclaimer1: 'До расходов и комиссий управления',
+    incomeDisclaimer2: 'Оценка по рыночным данным (аналоги размещений и сигналы спроса)',
+    incomeDisclaimer3: 'Диапазон зависит от загрузки, сезонности и стратегии ценообразования',
+    ctaBlock: {
+      title: 'Хотите подробный расчёт?',
+      body: 'Сделаем модель дохода, стратегию цен и разбор спроса по этой локации.',
+      button: 'Получить разбор',
+      note: 'Первый разбор — бесплатно',
+    },
+    analysisFreshness: {
+      justUpdated: 'только что обновлено',
+      updatedMinutesAgo: (m) => `обновлено ${m} мин назад`,
+      updatedHoursAgo: (h) => `обновлено ${h} ч назад`,
+      updatedOn: (iso) => `обновлено ${new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      dataCurrent: 'данные актуальны',
+      dataUpdating: 'данные обновляются',
+      snapshotStale: 'снимок немного устарел',
+      simplifiedMode: 'упрощённый режим',
+      sourceOpenStreetMap: 'OpenStreetMap',
+      sourceCache: 'кэш',
+      sourceCacheUpdating: 'кэш (обновляется)',
+      sourceFresh: 'свежие данные',
+    },
   },
 };
 
