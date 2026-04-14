@@ -17,51 +17,87 @@ jobs:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
     steps:
-      - name: Preflight connectivity (DNS + TCP)
+      - name: Deploy over SSH (auto-detect port)
         shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-          HOST='${{ secrets.VPS_HOST }}'
-          PORT='${{ secrets.VPS_PORT || 22 }}'
-          echo "Preflight: checking DNS + TCP connectivity to VPS_HOST:${PORT}"
-          getent hosts "$HOST" || true
-          timeout 8 bash -lc "cat < /dev/null > /dev/tcp/${HOST}/${PORT}" && echo "TCP OK" || (echo "TCP FAIL" && exit 1)
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          envs: TWOGIS_CATALOG_API_KEY,GOOGLE_MAPS_SERVER_API_KEY
-          timeout: 120s
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd ~/asi-landing
-            git fetch origin
-            git reset --hard origin/main
-            merge_secret_into_env_file() {
-              key="$1"
-              val="$2"
-              if [ -z "${val:-}" ]; then
-                return 0
-              fi
-              tmp="$(mktemp)"
-              if [ -f .env.production.live ]; then
-                grep -v "^${key}=" .env.production.live >"$tmp" || true
-              else
-                : >"$tmp"
-              fi
-              printf '%s\n' "${key}=${val}" >>"$tmp"
-              mv "$tmp" .env.production.live
-            }
-            merge_secret_into_env_file TWOGIS_CATALOG_API_KEY "${TWOGIS_CATALOG_API_KEY:-}"
-            merge_secret_into_env_file GOOGLE_MAPS_SERVER_API_KEY "${GOOGLE_MAPS_SERVER_API_KEY:-}"
-            cp .env.production.live .env.production.local
-            npm ci
-            npm run build
-            # Main site: this repo only (not automation-core apps/web).
-            pm2 startOrReload ecosystem.config.cjs --only asi-landing
-            pm2 save
-            pm2 status
+
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "Missing one of required secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY"
+            exit 1
+          fi
+
+          echo "Resolving VPS_HOST..."
+          getent hosts "$VPS_HOST" || true
+
+          if [ -n "${VPS_PORT:-}" ]; then
+            CANDIDATE_PORTS=("$VPS_PORT")
+          else
+            CANDIDATE_PORTS=(22 2222 22022 22222)
+          fi
+
+          SELECTED_PORT=""
+          for p in "${CANDIDATE_PORTS[@]}"; do
+            echo "Preflight TCP check: ${VPS_HOST}:${p}"
+            if timeout 6 bash -lc "cat < /dev/null > /dev/tcp/${VPS_HOST}/${p}" 2>/dev/null; then
+              SELECTED_PORT="$p"
+              break
+            fi
+          done
+
+          if [ -z "$SELECTED_PORT" ]; then
+            echo "No reachable SSH port found (tried: ${CANDIDATE_PORTS[*]}). Likely firewall/security-group blocking inbound SSH or VPS is down."
+            exit 1
+          fi
+
+          echo "Selected SSH port: ${SELECTED_PORT}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          SSH_OPTS=(
+            -p "$SELECTED_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
+            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
+              cd ~/asi-landing
+              git fetch origin
+              git reset --hard origin/main
+              merge_secret_into_env_file() {
+                key=\"\$1\"
+                val=\"\$2\"
+                if [ -z \"\${val:-}\" ]; then
+                  return 0
+                fi
+                tmp=\"\$(mktemp)\"
+                if [ -f .env.production.live ]; then
+                  grep -v \"^\${key}=\" .env.production.live >\"\$tmp\" || true
+                else
+                  : >\"\$tmp\"
+                fi
+                printf \"%s\\n\" \"\${key}=\${val}\" >>\"\$tmp\"
+                mv \"\$tmp\" .env.production.live
+              }
+              merge_secret_into_env_file TWOGIS_CATALOG_API_KEY \"\${TWOGIS_CATALOG_API_KEY:-}\"
+              merge_secret_into_env_file GOOGLE_MAPS_SERVER_API_KEY \"\${GOOGLE_MAPS_SERVER_API_KEY:-}\"
+              cp .env.production.live .env.production.local
+              npm ci
+              npm run build
+              pm2 startOrReload ecosystem.config.cjs --only asi-landing
+              pm2 save
+              pm2 status
+              echo \"SERVER_GIT_SHA=\$(git rev-parse HEAD)\"
+            '"
