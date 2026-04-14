@@ -342,7 +342,7 @@ export default async function Home() {
               <li>10 units → no staff needed</li>
               <li>100+ units → centralized AI control</li>
             </ul>
-            <p className="mt-8 text-xs text-slate-600 text-center sm:text-left">
+            <p className="mt-8 text-xs text-slate-400 text-center sm:text-left">
               Used in real estate, hospitality, corporate housing, and distributed operations.
             </p>
           </div>
@@ -354,7 +354,7 @@ export default async function Home() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               Product modules
             </h2>
-            <p className="text-slate-500 mb-10">
+            <p className="text-slate-400 mb-10">
               Two core capabilities — each with a live interactive demo.
             </p>
             <div className="grid sm:grid-cols-2 gap-6">
@@ -396,7 +396,7 @@ export default async function Home() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               What it handles
             </h2>
-            <p className="text-slate-500 mb-10">
+            <p className="text-slate-400 mb-10">
               Everything that used to sit with an ops team — the system runs it automatically.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -420,7 +420,7 @@ export default async function Home() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-2">
               Platform modules
             </h2>
-            <p className="text-slate-500 mb-10">
+            <p className="text-slate-400 mb-10">
               Autonomous systems on one infrastructure — each runs its domain.
             </p>
             <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
@@ -443,7 +443,7 @@ export default async function Home() {
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-xs text-slate-600">
+            <p className="mt-6 text-xs text-slate-400">
               Security Autopilot and Market Automation — in development.
             </p>
           </div>
@@ -455,7 +455,7 @@ export default async function Home() {
             <h2 className="text-3xl sm:text-4xl font-bold text-white text-center tracking-tight">
               How the automation works
             </h2>
-            <p className="mt-3 text-center text-sm text-slate-500 max-w-xl mx-auto">
+            <p className="mt-3 text-center text-sm text-slate-400 max-w-xl mx-auto">
               Direct answers — no marketing, no jargon.
             </p>
             <div className="mt-10">
@@ -491,15 +491,15 @@ export default async function Home() {
                 Book a demo
               </a>
             </div>
-            <p className="mt-4 text-sm text-slate-600">One-time payment · Instant access · No commitment required</p>
+            <p className="mt-4 text-sm text-slate-400">One-time payment · Instant access · No commitment required</p>
 
             {/* Contacts below CTA */}
             <div className="mt-10 pt-8 border-t border-slate-800/60">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 mb-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-5">
                 Or reach out directly
               </p>
               <ContactLinks />
-              <p className="mt-4 text-xs text-slate-600">
+              <p className="mt-4 text-xs text-slate-400">
                 Mon–Fri, 9:00–18:00 UTC+3 · usually faster
               </p>
             </div>
@@ -513,7 +513,7 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
             <span className="text-white font-bold text-lg">ASI</span>
-            <span className="text-xs text-slate-600">© {new Date().getFullYear()}</span>
+            <span className="text-xs text-slate-400">© {new Date().getFullYear()}</span>
           </div>
 
           {/* Contacts in footer */}
@@ -537,9 +537,9 @@ export default async function Home() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
-            <Link href="/privacy" className="text-slate-600 hover:text-slate-400 text-xs">Privacy</Link>
-            <Link href="/offer" className="text-slate-600 hover:text-slate-400 text-xs">Terms</Link>
-            <Link href="/legal" className="text-slate-600 hover:text-slate-400 text-xs">Legal</Link>
+            <Link href="/privacy" className="text-slate-400 hover:text-slate-200 text-xs">Privacy</Link>
+            <Link href="/offer" className="text-slate-400 hover:text-slate-200 text-xs">Terms</Link>
+            <Link href="/legal" className="text-slate-400 hover:text-slate-200 text-xs">Legal</Link>
           </div>
         </div>
       </footer>

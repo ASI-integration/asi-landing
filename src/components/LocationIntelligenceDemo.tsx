@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CATEGORY_COLOR,
@@ -861,6 +861,7 @@ function AddressInput({
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
 }) {
+  const listboxId = useId();
   const [text, setText] = useState('');
   const [locked, setLocked] = useState(false);
   const [lockedValue, setLockedValue] = useState('');
@@ -1023,9 +1024,12 @@ function AddressInput({
           disabled={disabled || resolvingPick}
           readOnly={locked}
           autoComplete="off"
+          role="combobox"
           aria-autocomplete="list"
           aria-expanded={open}
           aria-haspopup="listbox"
+          aria-controls={open ? listboxId : undefined}
+          aria-activedescendant={activeIdx >= 0 ? `${listboxId}-opt-${activeIdx}` : undefined}
           className={`w-full py-4 rounded-xl bg-slate-800/80 border text-base focus:outline-none focus:ring-2 transition-all disabled:opacity-50 ${
             locked
               ? 'border-emerald-700/60 focus:ring-emerald-500/20 pl-10 pr-12 text-emerald-300 cursor-default'
@@ -1061,6 +1065,7 @@ function AddressInput({
       {open && suggestions.length > 0 && !locked && (
         <ul
           role="listbox"
+          id={listboxId}
           className="absolute z-50 w-full mt-1 rounded-xl border border-slate-700 bg-slate-900/95 backdrop-blur shadow-2xl overflow-y-auto"
           style={{ maxHeight: 260 }}
         >
@@ -1068,6 +1073,7 @@ function AddressInput({
             <li
               key={i}
               role="option"
+              id={`${listboxId}-opt-${i}`}
               aria-selected={activeIdx === i}
               onMouseEnter={() => setActiveIdx(i)}
               onMouseDown={e => { e.preventDefault(); void pick(s); }}
@@ -1813,7 +1819,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                 </button>
               </form>
               {phase === 'idle' && (
-                <p className="mt-5 text-xs text-slate-600">
+                <p className="mt-5 text-xs text-slate-400">
                   {c.osmNote}
                 </p>
               )}

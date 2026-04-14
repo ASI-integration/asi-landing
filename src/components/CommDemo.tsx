@@ -161,7 +161,7 @@ export function CommDemo() {
                     }`}
                   >
                     {msg.text}
-                    <p className={`text-[10px] mt-1 ${msg.role === 'guest' ? 'text-indigo-300/60' : 'text-slate-600'}`}>
+                    <p className={`text-[10px] mt-1 ${msg.role === 'guest' ? 'text-indigo-300/60' : 'text-slate-400'}`}>
                       {now()}
                     </p>
                   </div>
@@ -211,7 +211,9 @@ export function CommDemo() {
                   type="submit"
                   disabled={!input.trim() || phase === 'processing'}
                   className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+                  aria-label="Send message"
                 >
+                  <span className="sr-only">Send message</span>
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                   </svg>
@@ -223,10 +225,10 @@ export function CommDemo() {
           {/* Right: internal processing */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 flex flex-col gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 mb-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-1">
                 {t('commDemo.insideTitle')}
               </p>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-400">
                 {t('commDemo.insideSubtitle')}
               </p>
             </div>
@@ -240,7 +242,7 @@ export function CommDemo() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                     </svg>
                   </div>
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-400">
                     {t('commDemo.emptyStateLine1')}
                     <br />
                     {t('commDemo.emptyStateLine2')}
@@ -316,7 +318,7 @@ export function CommDemo() {
 
             {/* Bottom note */}
             {phase === 'done' && (
-              <p className="text-xs text-slate-600 text-center border-t border-slate-800/60 pt-3">
+              <p className="text-xs text-slate-400 text-center border-t border-slate-800/60 pt-3">
                 {escalated
                   ? t('commDemo.doneNoteEscalated')
                   : t('commDemo.doneNoteAuto')}
