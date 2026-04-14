@@ -349,6 +349,36 @@ export default function HomeRu() {
           </div>
         </section>
 
+        {/* ── Доходность объектов ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-6 p-6 sm:p-8">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)] mb-2">
+                    Аналитика
+                  </p>
+                  <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] leading-snug">
+                    Сколько могут приносить ваши объекты
+                  </h2>
+                  <p className="mt-2 text-sm text-[var(--t-text-2)] leading-relaxed">
+                    Отчёт по доходности: ожидаемый доход, спрос, конкуренция и ключевые факторы
+                    по конкретному адресу — для квартир, апартаментов и мини-отелей.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+                  <Link
+                    href="/otchet-po-dohodnosti-obektov"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[var(--t-accent)] text-white font-semibold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all text-sm whitespace-nowrap"
+                  >
+                    Узнать доходность объектов
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ── Тарифы ── */}
         <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
