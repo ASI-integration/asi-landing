@@ -5,15 +5,16 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
 import { ruNavMainLinks } from '@/config/ruNav';
+import { ruComplianceRoutes } from '@/config/ruCompliance';
 
 export type RuPublicNavSurface = 'theme' | 'light' | 'dark';
 export type RuPublicNavDensity = 'legal' | 'landing';
 
 const surfaceHeader: Record<RuPublicNavSurface, string> = {
   theme:
-    'sticky top-0 z-50 bg-[color-mix(in_srgb,var(--t-bg)_92%,transparent)] backdrop-blur-md border-b border-[var(--t-border)]',
-  light: 'sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200',
-  dark: 'sticky top-0 z-50 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/60',
+    'sticky top-0 z-50 bg-[color-mix(in_srgb,var(--t-bg)_96%,transparent)] backdrop-blur-sm border-b border-[var(--t-border)]',
+  light: 'sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-200',
+  dark: 'sticky top-0 z-50 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800/60',
 };
 
 const surfaceLogo: Record<RuPublicNavSurface, string> = {
@@ -72,39 +73,33 @@ export function RuPublicNavHeader({
   surface: RuPublicNavSurface;
   density: RuPublicNavDensity;
 }) {
-  const navCls = `text-xs sm:text-sm whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
+  const navCls = `text-sm sm:text-[15px] font-medium whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
   const showTheme = surface === 'theme';
 
   return (
     <header className={surfaceHeader[surface]}>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-3.5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-5 min-w-0">
-          <Link href="/" className={surfaceLogo[surface]}>
-            ASI
-          </Link>
-          <nav
-            className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1.5 sm:gap-x-4 overflow-x-auto sm:overflow-visible pb-0.5 sm:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            aria-label="Основная навигация"
-          >
-            {ruNavMainLinks.map(({ href, label }) => (
-              <Link key={href} href={href} className={navCls}>
-                {label}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        {/* Top row: contacts + email + Telegram + lang + theme + login */}
+        {density === 'landing' ? (
+          <div className="py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+              <Link
+                href={ruComplianceRoutes.contacts}
+                className={`text-sm font-medium transition-colors ${surfaceMuted[surface]}`}
+              >
+                Контакты
               </Link>
-            ))}
-          </nav>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end shrink-0">
-          {density === 'landing' ? (
-            <>
+              <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
               <a
                 href={`mailto:${productSupportEmail}`}
-                className={`hidden sm:block text-sm truncate max-w-[11rem] md:max-w-none transition-colors ${surfaceMuted[surface]}`}
+                className={`text-sm truncate max-w-[14rem] sm:max-w-[18rem] md:max-w-none transition-colors ${surfaceMuted[surface]}`}
                 title={productSupportEmail}
               >
                 {productSupportEmail}
               </a>
-              <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 justify-end shrink-0">
               <a
                 href="https://t.me/ASI_core_bot"
                 target="_blank"
@@ -120,19 +115,44 @@ export function RuPublicNavHeader({
                 <a href="https://asi-global.com" className="px-2 py-1 rounded transition-colors">
                   EN
                 </a>
-                <span className={surface === 'dark' ? 'text-slate-600' : surface === 'light' ? 'text-slate-300' : 'text-[var(--t-border)]'}>
+                <span
+                  className={
+                    surface === 'dark'
+                      ? 'text-slate-600'
+                      : surface === 'light'
+                        ? 'text-slate-300'
+                        : 'text-[var(--t-border)]'
+                  }
+                >
                   |
                 </span>
                 <span className={surfaceLangActive[surface]}>RU</span>
               </div>
-            </>
-          ) : null}
-          {showTheme ? <ThemeSwitcher /> : null}
-          {density === 'landing' ? (
-            <Link href="/login" className={surfaceLogin[surface]}>
-              Войти
-            </Link>
-          ) : null}
+              {showTheme ? <ThemeSwitcher /> : null}
+              <Link href="/login" className={surfaceLogin[surface]}>
+                Войти
+              </Link>
+            </div>
+          </div>
+        ) : null}
+
+        <div className={`h-px ${surfaceDivider[surface]} opacity-60`} />
+
+        {/* Bottom row: logo + main nav */}
+        <div className="py-3 sm:py-3.5 flex items-center gap-4">
+          <Link href="/" className={surfaceLogo[surface]}>
+            ASI
+          </Link>
+          <nav
+            className="flex items-center gap-x-4 sm:gap-x-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"
+            aria-label="Основная навигация"
+          >
+            {ruNavMainLinks.map(({ href, label }) => (
+              <Link key={href} href={href} className={navCls}>
+                {label}
+              </Link>
+            ))}
+          </nav>
         </div>
       </div>
     </header>
