@@ -9,7 +9,15 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:smoke": "playwright test tests/smoke.spec.ts --project=desktop",
+    "test:smoke:ui": "playwright test tests/smoke.spec.ts --project=desktop --ui",
+    "test:smoke:headed": "playwright test tests/smoke.spec.ts --project=desktop --headed",
+    "test:responsive": "playwright test tests/responsive.spec.ts",
+    "test:a11y": "playwright test tests/a11y.spec.ts --project=desktop",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report",
+    "lighthouse": "node scripts/lighthouse.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
@@ -24,6 +32,8 @@
     "stripe": "^20.4.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
+    "@playwright/test": "^1.59.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.7",
     "@types/react": "^18.3.12",
@@ -32,8 +42,10 @@
     "@typescript-eslint/parser": "^8.58.1",
     "@vitest/coverage-v8": "^4.1.0",
     "autoprefixer": "^10.4.20",
+    "chrome-launcher": "^1.2.1",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.18",
+    "lighthouse": "^13.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

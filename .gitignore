@@ -16,6 +16,12 @@ test_out*.txt
 var_*.txt
 vercel_*.txt
 test_webhook.ps1
+# Playwright / Lighthouse test artifacts
+test-results/
+playwright-report/
+lighthouse-reports/
+.lighthouse-tmp/
+
 # Dev/debug artifacts
 cookies_ru*.txt
 err.txt
