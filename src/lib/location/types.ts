@@ -203,6 +203,13 @@ export interface LocationScoreOutput {
     mid_term: number;
     hybrid: number;
   };
+  /** Raw inputs behind the income estimate — exposed for UI explainability only */
+  income_model: {
+    /** Base ADR in RUB before strategy multiplier, rounded to nearest 100 */
+    base_adr_rub: number;
+    /** Base occupancy 0–100 before strategy multiplier */
+    base_occupancy_pct: number;
+  };
   top_positive_factors: string[];
   top_negative_factors: string[];
   recommended_strategy: RecommendedStrategy;

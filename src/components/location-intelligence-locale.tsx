@@ -134,6 +134,7 @@ export const LOC_COPY: Record<
     incomeDisclaimer1: string;
     incomeDisclaimer2: string;
     incomeDisclaimer3: string;
+    incomeStrategyLabel: (strategy: 'short_term' | 'hybrid' | 'mid_term') => string;
     ctaBlock: {
       title: string;
       body: string;
@@ -271,6 +272,10 @@ export const LOC_COPY: Record<
     incomeDisclaimer1: 'Before expenses and management fees',
     incomeDisclaimer2: 'Estimated using market data (Zillow, Airbnb comps, local demand signals)',
     incomeDisclaimer3: 'Range varies by occupancy, seasonality, and pricing strategy',
+    incomeStrategyLabel: (s) =>
+      s === 'short_term' ? 'short-term rental model'
+      : s === 'hybrid'   ? 'hybrid (short + mid-term) model'
+      :                    'mid-term rental model',
     ctaBlock: {
       title: 'Want a full breakdown?',
       body: 'Get detailed revenue model, pricing strategy, and demand analysis for this location.',
@@ -405,6 +410,10 @@ export const LOC_COPY: Record<
     incomeDisclaimer1: 'До расходов и комиссий управления',
     incomeDisclaimer2: 'Оценка по рыночным данным (аналоги STR-объектов в России, сигналы спроса)',
     incomeDisclaimer3: 'Диапазон зависит от загрузки, сезонности и стратегии ценообразования',
+    incomeStrategyLabel: (s) =>
+      s === 'short_term' ? 'посуточная аренда'
+      : s === 'hybrid'   ? 'гибридная модель (посуточная + среднесрочная)'
+      :                    'среднесрочная аренда',
     ctaBlock: {
       title: 'Хотите подробный расчёт?',
       body: 'Сделаем модель дохода, стратегию цен и разбор спроса по этой локации.',

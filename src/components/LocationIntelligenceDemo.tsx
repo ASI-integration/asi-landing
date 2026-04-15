@@ -364,6 +364,14 @@ function MarketSnapshotTable({
     :                           Math.round(45 + evergreenIndex * 0.3);
   const occupancy = Math.round(50 + (evergreenIndex / 100) * 35);
   const revpar = Math.round(adr * occupancy / 100);
+  const isRu = locale === 'ru';
+  const adrRub = Math.round(
+    strategy === 'short_term' ? (2500 + evergreenIndex * 22)
+    : strategy === 'hybrid'   ? (2000 + evergreenIndex * 18)
+    :                           (1600 + evergreenIndex * 13),
+  );
+  const revparRub = Math.round(adrRub * occupancy / 100);
+  const fmtRub = (n: number) => `${(Math.round(n / 500) * 500).toLocaleString('ru-RU')} ₽`;
 
   const stabilityDotColor =
     stabilityLabel === 'Stable'   ? 'bg-emerald-400'
@@ -384,9 +392,9 @@ function MarketSnapshotTable({
       tooltip: c.marketTooltips.demandStability,
     },
     { label: c.marketRows.competitors500m, value: `${competitorCount}` },
-    { label: c.marketRows.avgAdr,          value: `$${adr}`,       tooltip: c.marketTooltips.avgAdr },
+    { label: c.marketRows.avgAdr,          value: isRu ? fmtRub(adrRub) : `$${adr}`,       tooltip: c.marketTooltips.avgAdr },
     { label: c.marketRows.estOccupancy,    value: `${occupancy}%` },
-    { label: c.marketRows.revpar,          value: `$${revpar}`,    tooltip: c.marketTooltips.revpar },
+    { label: c.marketRows.revpar,          value: isRu ? fmtRub(revparRub) : `$${revpar}`, tooltip: c.marketTooltips.revpar },
     { label: c.marketRows.strategy,        value: strategyLabelMap[strategy] },
   ];
 
@@ -1294,6 +1302,140 @@ function generateScoreFactors(analysis: LocationAnalysis, locale: LocDemoLocale)
   return factors.slice(0, 5);
 }
 
+// ── Competitor Breakdown Block ────────────────────────────────────────────────
+
+function CompetitorBreakdownBlock({
+  analysis,
+  locale,
+}: {
+  analysis: LocationAnalysis;
+  locale: LocDemoLocale;
+}) {
+  const { competitors, gravityExplanation, locationScore } = analysis;
+  const isRu = locale === 'ru';
+
+  if (competitors.length === 0) return null;
+
+  const top = [...competitors].sort((a, b) => a.distance - b.distance).slice(0, 5);
+  const level = gravityExplanation.competitorPressureLevel;
+  const supplyScore = locationScore?.breakdown.supply_score;
+
+  function inferType(name: string): string {
+    const n = name.toLowerCase();
+    if (/хостел|hostel/.test(n)) return isRu ? 'хостел' : 'hostel';
+    if (/апарт|apart/.test(n)) return isRu ? 'апартаменты' : 'apartments';
+    if (/гостин|hotel|отель/.test(n)) return isRu ? 'гостиница' : 'hotel';
+    if (/inn|инн|мини/.test(n)) return isRu ? 'мини-отель' : 'mini-hotel';
+    return isRu ? 'посуточная аренда' : 'short-term rental';
+  }
+
+  function fmtDist(m: number): string {
+    return m < 1000
+      ? `${Math.round(m / 10) * 10} ${isRu ? 'м' : 'm'}`
+      : `${(m / 1000).toFixed(1)} ${isRu ? 'км' : 'km'}`;
+  }
+
+  const levelColor =
+    level === 'high'   ? 'text-rose-400'
+    : level === 'medium' ? 'text-amber-400'
+    : 'text-emerald-400';
+
+  const levelLabel = isRu
+    ? (level === 'high' ? 'Высокая конкуренция' : level === 'medium' ? 'Умеренная конкуренция' : 'Низкая конкуренция')
+    : (level === 'high' ? 'High competition'    : level === 'medium' ? 'Moderate competition'  : 'Low competition');
+
+  // Summary lines: what drives this level and what it means
+  const summaryLines: string[] = [];
+  if (isRu) {
+    if (level === 'high') {
+      summaryLines.push(`${competitors.length} конкурентов в зоне — давление на ставку и загрузку.`);
+      summaryLines.push(
+        supplyScore !== undefined && supplyScore < 45
+          ? 'Свободной ниши нет — критичны упаковка и дифференциация.'
+          : 'Нужна чёткая позиция: рейтинг, описание, цена.',
+      );
+    } else if (level === 'medium') {
+      summaryLines.push(`${competitors.length} конкурентов в зоне — ниша частично открыта.`);
+      summaryLines.push('При качественной упаковке можно занять устойчивую позицию.');
+    } else {
+      const cnt = competitors.length;
+      summaryLines.push(
+        `${cnt} конкурент${cnt === 1 ? '' : cnt <= 4 ? 'а' : 'ов'} в зоне — рынок слабо насыщен.`,
+      );
+      summaryLines.push('Ниша свободна: проще войти и удерживать ставку.');
+    }
+  } else {
+    if (level === 'high') {
+      summaryLines.push(`${competitors.length} competitors nearby — pressure on rates and occupancy.`);
+      summaryLines.push('Strong positioning and reviews are critical to hold rates.');
+    } else if (level === 'medium') {
+      summaryLines.push(`${competitors.length} competitors nearby — partial market gap available.`);
+      summaryLines.push('Quality listings can establish a stable position.');
+    } else {
+      summaryLines.push(`${competitors.length} competitor${competitors.length === 1 ? '' : 's'} nearby — low market saturation.`);
+      summaryLines.push('Market gap available — easier to enter and hold rates.');
+    }
+  }
+
+  // Verdict linkage note
+  const verdictNote: string | null =
+    level === 'high'
+      ? (isRu
+          ? (supplyScore !== undefined && supplyScore < 45
+              ? 'Конкуренция ограничивает доходный потенциал объекта.'
+              : 'Конкуренты снижают прогнозируемую загрузку.')
+          : 'Competition limits income potential.')
+      : level === 'low'
+        ? (isRu ? 'Конкурентная среда поддерживает доходный потенциал.' : 'Low competition supports income potential.')
+        : null;
+
+  return (
+    <div className="px-5 py-4 border-b border-slate-800/40">
+      <div className="flex items-baseline justify-between mb-3">
+        <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em]">
+          {isRu ? 'Конкурентная среда' : 'Competitive landscape'}
+        </p>
+        <span className={`text-[13px] font-medium ${levelColor}`}>{levelLabel}</span>
+      </div>
+
+      {/* Summary */}
+      <div className="mb-3 space-y-0.5">
+        {summaryLines.map((line, i) => (
+          <p key={i} className="text-[13px] text-slate-400 leading-snug">{line}</p>
+        ))}
+      </div>
+
+      {/* Competitor list */}
+      <div className="space-y-2">
+        {top.map((comp, i) => (
+          <div key={i} className="flex items-center justify-between text-[13px]">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                comp.distance < 300 ? 'bg-rose-400'
+                : comp.distance < 600 ? 'bg-amber-400/80'
+                : 'bg-slate-600'
+              }`} />
+              <span className="text-slate-300 truncate">{comp.name || (isRu ? `Объект #${i + 1}` : `Unit #${i + 1}`)}</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-slate-500 shrink-0">{inferType(comp.name)}</span>
+            </div>
+            <span className="text-slate-500 shrink-0 ml-2 tabular-nums">{fmtDist(comp.distance)}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Verdict linkage */}
+      {verdictNote && (
+        <p className={`mt-3 pt-2 border-t border-slate-800/30 text-[13px] leading-snug ${
+          level === 'high' ? 'text-amber-400/80' : 'text-emerald-400/80'
+        }`}>
+          {level === 'high' ? '↓ ' : '↑ '}{verdictNote}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
 function ASIPanel({
@@ -1347,10 +1489,22 @@ function ASIPanel({
   const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
   const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
-  const incomeRange =
-    strategy === 'mid_term' ? '$1 800 – $3 200'
+  const incomeRange = locale === 'ru'
+    ? (() => {
+        const income = analysis.locationScore?.estimated_monthly_income;
+        if (income) {
+          const val = income[strategy as keyof typeof income];
+          const lo = Math.round(val * 0.85 / 5000) * 5000;
+          const hi = Math.round(val * 1.15 / 5000) * 5000;
+          return `${lo.toLocaleString('ru-RU')} – ${hi.toLocaleString('ru-RU')} ₽`;
+        }
+        return strategy === 'mid_term' ? '80 000 – 130 000 ₽'
+          : strategy === 'hybrid'     ? '120 000 – 200 000 ₽'
+          :                             '160 000 – 300 000 ₽';
+      })()
+    : strategy === 'mid_term' ? '$1 800 – $3 200'
     : strategy === 'hybrid'   ? '$2 500 – $4 500'
-    : '$3 500 – $7 000';
+    :                           '$3 500 – $7 000';
 
   function openStandaloneFullReportRu() {
     (async () => {
@@ -1390,14 +1544,14 @@ function ASIPanel({
       <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">
 
         {/* Col 1 — Score ring */}
-        <div className="flex flex-col items-center justify-center gap-1 p-4
+        <div className="flex flex-col items-center justify-center gap-1 p-5
                         border-r border-b md:border-b-0 border-slate-800/40">
-          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em]">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">
             {c.analysisHeader}
           </p>
           <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
           <p
-            className="text-[11px] text-slate-600 leading-tight text-center truncate w-full px-1"
+            className="text-[12px] text-slate-600 leading-tight text-center truncate w-full px-1"
             title={address}
           >
             {address}
@@ -1405,19 +1559,19 @@ function ASIPanel({
         </div>
 
         {/* Col 2 — Audience */}
-        <div className="flex flex-col justify-center gap-0.5 p-4
+        <div className="flex flex-col justify-center gap-0.5 p-5
                         border-b md:border-b-0 md:border-r border-slate-800/40">
-          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
             {locale === 'ru' ? 'Аудитория' : 'Audience'}
           </p>
-          <p className={`text-[22px] font-bold leading-tight ${band.textColor}`}>
+          <p className={`text-[26px] font-bold leading-tight ${band.textColor}`}>
             {locale === 'ru' ? audienceLabelRu : audienceLabelEn}
           </p>
           {demandFlowLabel && (
-            <p className="text-[13px] text-slate-300 mt-0.5">{demandFlowLabel}</p>
+            <p className="text-[14px] text-slate-300 mt-0.5">{demandFlowLabel}</p>
           )}
           {audienceSharePct !== undefined && (
-            <p className="text-[12px] text-slate-500 mt-1">
+            <p className="text-[13px] text-slate-500 mt-1">
               {audienceSharePct}%&nbsp;
               {locale === 'ru' ? 'дел. спрос' : 'business signal'}
             </p>
@@ -1425,28 +1579,34 @@ function ASIPanel({
         </div>
 
         {/* Col 3 — Income estimate */}
-        <div className="flex flex-col justify-center gap-0.5 p-4
+        <div className="flex flex-col justify-center gap-0.5 p-5
                         border-r border-slate-800/40">
-          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
             {c.incomeTitle}
           </p>
-          <p className="text-[20px] font-bold text-slate-100 leading-tight">
+          <p className="text-[22px] font-bold text-slate-100 leading-tight">
             {incomeRange}
           </p>
-          <p className="text-[12px] text-slate-500 mt-0.5">{c.incomeSuffix}</p>
-          <p className="text-[11px] text-slate-600 mt-1 leading-snug">{c.incomeDisclaimer1}</p>
+          <p className="text-[13px] text-slate-500 mt-0.5">{c.incomeSuffix}</p>
+          <p className="text-[12px] text-slate-600 mt-1 leading-snug">{c.incomeDisclaimer1}</p>
+          <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{c.incomeStrategyLabel(strategy)}</p>
         </div>
 
         {/* Col 4 — Verdict + conclusion (spans full width on mobile) */}
-        <div className="col-span-2 md:col-span-1 flex flex-col justify-center gap-1 p-4">
-          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+        <div className="col-span-2 md:col-span-1 flex flex-col justify-center gap-1 p-5">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
             {locale === 'ru' ? 'Итог' : 'Summary'}
           </p>
-          <p className={`text-[20px] font-bold leading-tight ${band.textColor}`}>
+          <p className={`text-[24px] font-bold leading-tight ${band.textColor}`}>
             {band.label}
           </p>
+          {analysis.audienceAnalysis?.demandFlowLabel && (
+            <p className="text-[13px] text-slate-400 mt-0.5 leading-snug">
+              {analysis.audienceAnalysis.demandFlowLabel}
+            </p>
+          )}
           {conclusion && (
-            <p className="text-[13px] text-slate-400 leading-snug mt-1 line-clamp-4">
+            <p className="text-[14px] text-slate-400 leading-snug mt-1">
               {conclusion}
             </p>
           )}
@@ -1473,26 +1633,218 @@ function ASIPanel({
         </div>
       ) : null}
 
-      {/* Why this score? */}
+      {/* Why this score? — uses locationScore factors when available, falls back to generic */}
       {(() => {
-        const factors = generateScoreFactors(analysis, locale);
-        if (factors.length === 0) return null;
+        const ls = analysis.locationScore;
+        const posFactors = ls?.top_positive_factors ?? [];
+        const negFactors = ls?.top_negative_factors ?? [];
+        const hasDetailed = posFactors.length > 0 || negFactors.length > 0;
+        const genericFactors = hasDetailed ? [] : generateScoreFactors(analysis, locale);
+
+        if (!hasDetailed && genericFactors.length === 0) return null;
+
         return (
           <div className="px-5 py-4 border-b border-slate-800/40">
-            <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
               {locale === 'ru' ? 'Почему такой балл?' : 'Why this score?'}
             </p>
-            <ul className="space-y-1.5">
-              {factors.map((factor, i) => (
-                <li key={i} className="flex items-start gap-2 text-[15px] text-slate-400 leading-snug">
-                  <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
-                  {factor}
-                </li>
-              ))}
-            </ul>
+            {hasDetailed ? (
+              <div className="space-y-1.5">
+                {posFactors.map((factor, i) => (
+                  <div key={`pos-${i}`} className="flex items-start gap-2 text-[15px] text-slate-300 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    {factor}
+                  </div>
+                ))}
+                {negFactors.map((factor, i) => (
+                  <div key={`neg-${i}`} className="flex items-start gap-2 text-[15px] text-slate-400 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500/70" />
+                    {factor}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="space-y-1.5">
+                {genericFactors.map((factor, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[15px] text-slate-400 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                    {factor}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         );
       })()}
+
+      {/* Audience reasoning — why this audience was determined */}
+      {(() => {
+        const aa = analysis.audienceAnalysis;
+        if (!aa) return null;
+        const topMagnets = aa.primaryMagnets.slice(0, 3);
+        if (topMagnets.length === 0 && !aa.primaryDriverLabel) return null;
+
+        const fmtD = (m: number) =>
+          locale === 'ru'
+            ? (m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1)} км`)
+            : (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+
+        return (
+          <div className="px-5 py-4 border-b border-slate-800/40">
+            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+              {locale === 'ru' ? 'Почему такая аудитория?' : 'Why this audience?'}
+            </p>
+            {aa.primaryDriverLabel && (
+              <p className="text-[14px] text-slate-300 leading-snug mb-3">{aa.primaryDriverLabel}</p>
+            )}
+            {topMagnets.length > 0 && (
+              <div className="space-y-2 mb-2">
+                {topMagnets.map((pm, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className={`mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full ${pm.type === 'business' ? 'bg-blue-400' : 'bg-amber-400'}`} />
+                    <p className="text-[14px] text-slate-400 leading-snug">
+                      <span className="text-slate-200">{pm.name}</span>
+                      {' · '}{fmtD(pm.distance)}
+                      {' · '}
+                      <span className="text-slate-500">
+                        {pm.type === 'business'
+                          ? (locale === 'ru' ? 'деловой магнит' : 'business magnet')
+                          : (locale === 'ru' ? 'туристический магнит' : 'tourist magnet')}
+                      </span>
+                      {pm.subType ? ` · ${pm.subType}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {aa.audienceSharePct >= 50 && aa.primaryAudience === 'BUSINESS' && (
+              <p className="text-[13px] text-slate-500">
+                {locale === 'ru'
+                  ? `${aa.audienceSharePct}% взвешенного спроса — деловой сегмент${aa.businessClusterDetected ? ' · кластер ≥2 деловых объектов в 1 км' : ''}`
+                  : `${aa.audienceSharePct}% weighted demand — business segment${aa.businessClusterDetected ? ' · cluster ≥2 business within 1 km' : ''}`}
+              </p>
+            )}
+            {aa.fallbackMode && (
+              <p className="text-[13px] text-amber-500/80 mt-1">
+                {locale === 'ru'
+                  ? 'Деловых магнитов не обнаружено — анализ по туристической аудитории'
+                  : 'No business magnets found — tourist audience fallback'}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Score breakdown — what drives the index */}
+      {analysis.locationScore && (() => {
+        const ls = analysis.locationScore;
+        const bd = ls.breakdown;
+
+        const components: Array<{
+          labelRu: string; labelEn: string;
+          score: number; weight: number;
+        }> = [
+          { labelRu: 'Соответствие аудитории', labelEn: 'Audience fit',   score: bd.audience_fit_score,  weight: 40 },
+          { labelRu: 'Спрос в зоне',           labelEn: 'Demand',         score: bd.demand_score,        weight: 25 },
+          { labelRu: 'Свободная ниша',          labelEn: 'Market gap',     score: bd.supply_score,        weight: 20 },
+          { labelRu: 'Доступность',             labelEn: 'Accessibility',  score: bd.accessibility_score, weight: 15 },
+        ];
+
+        const supporting: Array<{ labelRu: string; labelEn: string; score: number }> = [
+          { labelRu: 'Магниты спроса',        labelEn: 'Demand magnets',    score: bd.magnet_score },
+          { labelRu: 'Устойчивость потока',   labelEn: 'Demand stability',  score: bd.seasonality_score },
+        ];
+
+        const barColor = (s: number) =>
+          s >= 70 ? 'bg-emerald-500'
+          : s >= 45 ? 'bg-amber-400'
+          : 'bg-rose-500/70';
+
+        const strongComps = components
+          .filter(c => c.score >= 70)
+          .map(c => (locale === 'ru' ? c.labelRu : c.labelEn));
+        const weakComps = components
+          .filter(c => c.score < 45)
+          .map(c => (locale === 'ru' ? c.labelRu : c.labelEn));
+
+        return (
+          <div className="px-5 py-5 border-b border-slate-800/40">
+            <div className="flex items-baseline justify-between mb-4">
+              <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em]">
+                {locale === 'ru' ? 'Состав индекса' : 'Score breakdown'}
+              </p>
+              <span className="text-[13px] text-slate-500">
+                {locale === 'ru' ? 'Индекс ' : 'Score '}<span className="font-semibold text-slate-300">{ls.location_score}</span>/100
+              </span>
+            </div>
+
+            {/* Weighted components */}
+            <div className="space-y-3">
+              {components.map((comp) => (
+                <div key={comp.labelRu}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[13px] text-slate-400">
+                      {locale === 'ru' ? comp.labelRu : comp.labelEn}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-slate-600">{comp.weight}%</span>
+                      <span className={`text-[13px] font-medium tabular-nums ${
+                        comp.score >= 70 ? 'text-emerald-400'
+                        : comp.score >= 45 ? 'text-amber-400'
+                        : 'text-rose-400'
+                      }`}>{comp.score}</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${barColor(comp.score)}`}
+                      style={{ width: `${comp.score}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Supporting signals (no weight) */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 pt-3 border-t border-slate-800/30">
+              {supporting.map((s) => (
+                <div key={s.labelRu}>
+                  <p className="text-[11px] text-slate-600 mb-0.5">{locale === 'ru' ? s.labelRu : s.labelEn}</p>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${barColor(s.score)}`} style={{ width: `${s.score}%` }} />
+                    </div>
+                    <span className="text-[11px] text-slate-500 tabular-nums">{s.score}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Verdict linkage */}
+            {(strongComps.length > 0 || weakComps.length > 0) && (
+              <div className="mt-3 pt-3 border-t border-slate-800/40 space-y-1">
+                {strongComps.length > 0 && (
+                  <p className="text-[13px] text-slate-400 leading-snug">
+                    <span className="text-emerald-400">↑ </span>
+                    {locale === 'ru' ? 'Поддерживает: ' : 'Supporting: '}
+                    <span className="text-slate-300">{strongComps.join(', ')}</span>
+                  </p>
+                )}
+                {weakComps.length > 0 && (
+                  <p className="text-[13px] text-slate-400 leading-snug">
+                    <span className="text-amber-400">↓ </span>
+                    {locale === 'ru' ? 'Ограничивает: ' : 'Limiting: '}
+                    <span className="text-slate-300">{weakComps.join(', ')}</span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Competitor breakdown — what drives competition score */}
+      <CompetitorBreakdownBlock analysis={analysis} locale={locale} />
 
       {/* Recommended Strategy */}
       <div className="px-5 py-5 border-b border-slate-800/40">
@@ -1507,11 +1859,129 @@ function ASIPanel({
         </ul>
       </div>
 
-      {/* Income disclaimer detail — compact, below the KPI row */}
-      <div className="px-5 py-3 border-b border-slate-800/30">
-        <p className="text-[11px] text-slate-600">{c.incomeDisclaimer2}</p>
-        <p className="text-[11px] text-slate-700 mt-0.5">{c.incomeDisclaimer3}</p>
-      </div>
+      {/* Income formula — ADR × occupancy × 30 days */}
+      {analysis.locationScore?.income_model && (() => {
+        const { base_adr_rub, base_occupancy_pct } = analysis.locationScore!.income_model;
+        const stratMul = {
+          short_term: { adr: 1.12, occ: 0.93 },
+          hybrid:     { adr: 1.00, occ: 1.00 },
+          mid_term:   { adr: 0.88, occ: 1.06 },
+        }[strategy];
+        const adjAdr = Math.round(base_adr_rub * stratMul.adr / 100) * 100;
+        const adjOcc = Math.min(90, Math.max(20, Math.round(base_occupancy_pct * stratMul.occ)));
+        const formulaResult = Math.round(adjAdr * (adjOcc / 100) * 30 / 1000) * 1000;
+
+        const stratLabel = locale === 'ru'
+          ? (strategy === 'short_term' ? 'посуточная аренда' : strategy === 'hybrid' ? 'гибридная модель' : 'среднесрочная аренда')
+          : (strategy === 'short_term' ? 'short-term' : strategy === 'hybrid' ? 'hybrid model' : 'mid-term');
+
+        return (
+          <div className="px-5 py-4 border-b border-slate-800/30">
+            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+              {locale === 'ru' ? 'Как посчитан доход' : 'How income is estimated'}
+            </p>
+            {/* Formula row */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 text-[14px]">
+              <span className="text-slate-200 font-medium">{adjAdr.toLocaleString('ru-RU')} ₽</span>
+              <span className="text-slate-600">ставка/ночь</span>
+              <span className="text-slate-700">×</span>
+              <span className="text-slate-200 font-medium">{adjOcc}%</span>
+              <span className="text-slate-600">загрузка</span>
+              <span className="text-slate-700">×</span>
+              <span className="text-slate-200 font-medium">30</span>
+              <span className="text-slate-600">дней</span>
+              <span className="text-slate-700">=</span>
+              <span className="text-slate-100 font-semibold">≈ {formulaResult.toLocaleString('ru-RU')} ₽</span>
+            </div>
+
+            {/* Income scenarios — cautious / base / upside */}
+            {(() => {
+              const isRu = locale === 'ru';
+              const level = analysis.gravityExplanation.competitorPressureLevel;
+              // Cautious: -12% ADR, -15 pp occupancy (higher competition, weaker demand)
+              const cautAdr = Math.round(adjAdr * 0.88 / 100) * 100;
+              const cautOcc = Math.max(20, adjOcc - 15);
+              const cautious = Math.round(cautAdr * (cautOcc / 100) * 30 / 1000) * 1000;
+              // Strong: +12% ADR, +10 pp occupancy (high rating, peak demand)
+              const strongAdr = Math.round(adjAdr * 1.12 / 100) * 100;
+              const strongOcc = Math.min(90, adjOcc + 10);
+              const strong = Math.round(strongAdr * (strongOcc / 100) * 30 / 1000) * 1000;
+
+              const competitionNote = isRu
+                ? (level === 'high' ? 'давление конкурентов' : level === 'medium' ? 'умеренная конкуренция' : 'свободная ниша')
+                : (level === 'high' ? 'high competition' : level === 'medium' ? 'moderate competition' : 'open niche');
+
+              const scenarios: Array<{ labelRu: string; labelEn: string; value: number; reasonRu: string; reasonEn: string; dim: boolean }> = [
+                {
+                  labelRu: 'Осторожный',
+                  labelEn: 'Conservative',
+                  value: cautious,
+                  reasonRu: `слабая загрузка · ${competitionNote}`,
+                  reasonEn: `lower occupancy · ${competitionNote}`,
+                  dim: true,
+                },
+                {
+                  labelRu: 'Базовый',
+                  labelEn: 'Base',
+                  value: formulaResult,
+                  reasonRu: 'расчётная модель',
+                  reasonEn: 'model estimate',
+                  dim: false,
+                },
+                {
+                  labelRu: 'Сильный',
+                  labelEn: 'Upside',
+                  value: strong,
+                  reasonRu: 'высокий рейтинг · пиковый спрос',
+                  reasonEn: 'high ratings · peak demand',
+                  dim: false,
+                },
+              ];
+
+              return (
+                <div className="mt-3 pt-3 border-t border-slate-800/30">
+                  <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-2">
+                    {isRu ? 'Сценарии' : 'Scenarios'}
+                  </p>
+                  <div className="space-y-1.5">
+                    {scenarios.map((s) => {
+                      const isBase = s.labelRu === 'Базовый';
+                      return (
+                        <div key={s.labelRu} className="flex items-baseline justify-between gap-3">
+                          <div className="flex items-baseline gap-1.5 min-w-0">
+                            <span className={`text-[13px] shrink-0 ${isBase ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
+                              {isRu ? s.labelRu : s.labelEn}
+                            </span>
+                            <span className="text-[11px] text-slate-700 truncate">
+                              {isRu ? s.reasonRu : s.reasonEn}
+                            </span>
+                          </div>
+                          <span className={`text-[13px] tabular-nums shrink-0 ${
+                            isBase ? 'text-slate-100 font-semibold'
+                            : s.dim ? 'text-slate-500'
+                            : 'text-emerald-400'
+                          }`}>
+                            {s.value.toLocaleString('ru-RU')} ₽
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-0.5 mt-3">
+              <p className="text-[12px] text-slate-600">
+                {locale === 'ru' ? `Модель: ${stratLabel}` : `Model: ${stratLabel}`}
+              </p>
+              <p className="text-[12px] text-slate-600">{c.incomeDisclaimer1}</p>
+              <p className="text-[12px] text-slate-700">{c.incomeDisclaimer2}</p>
+              <p className="text-[12px] text-slate-700">{c.incomeDisclaimer3}</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Market Snapshot */}
       <MarketSnapshotTable
@@ -1599,19 +2069,39 @@ function ASIPanel({
           ? allFiltered
           : allFiltered.slice(0, MAGNET_DEFAULT_LIMIT);
         const hiddenCount = allFiltered.length - MAGNET_DEFAULT_LIMIT;
+
+        const fmtDist = (m: number) =>
+          locale === 'ru'
+            ? (m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1)} км`)
+            : formatDist(m);
+
+        const strengthLabel = (sc: string) => {
+          if (locale === 'ru') {
+            return sc === 'strong' ? 'первичный' : sc === 'medium' ? 'вторичный' : 'слабый';
+          }
+          return sc === 'strong' ? 'primary' : sc === 'medium' ? 'secondary' : 'weak';
+        };
+        const strengthColor = (sc: string) =>
+          sc === 'strong' ? 'text-indigo-400' : sc === 'medium' ? 'text-slate-400' : 'text-slate-600';
+
         return (
           <div className="px-5 pt-4 pb-3">
-            <div className="flex items-baseline justify-between mb-3">
-              <p className="text-[18px] font-semibold text-slate-600 uppercase tracking-[0.18em]">
+            <div className="flex items-baseline justify-between mb-1">
+              <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-[0.18em]">
                 {c.magnetsAround}
               </p>
-              <span className="text-[16px] text-slate-700">{c.significantCount(allFiltered.length)}</span>
+              <span className="text-[13px] text-slate-600">{c.significantCount(allFiltered.length)}</span>
             </div>
+            <p className="text-[12px] text-slate-700 mb-3">
+              {locale === 'ru'
+                ? 'первичный = сильный магнит спроса · вторичный = поддерживающий'
+                : 'primary = strong demand magnet · secondary = supporting'}
+            </p>
             <div className="space-y-0">
               {shown.map((m, i) => (
                 <div
                   key={i}
-                  className="flex items-start gap-3 py-2 border-b border-slate-800/30 last:border-0"
+                  className="flex items-start gap-3 py-2.5 border-b border-slate-800/30 last:border-0"
                 >
                   <span
                     className="mt-0.5 shrink-0 w-6 h-6 flex items-center justify-center rounded text-[14px] font-bold bg-slate-800/60"
@@ -1620,21 +2110,21 @@ function ASIPanel({
                     {m.icon}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[19px] text-slate-300 leading-snug truncate">{m.name}</p>
-                    <p className="text-[15px] text-slate-600 mt-0.5">
+                    <p className="text-[18px] text-slate-200 leading-snug truncate">{m.name}</p>
+                    <p className="text-[14px] text-slate-500 mt-0.5">
+                      {magnetCategoryLabel(m.categoryId, locale)}
                       {(() => {
                         const why = magnetWhy(m.categoryId, locale);
-                        return (
-                          <>
-                            {magnetCategoryLabel(m.categoryId, locale)}
-                            {why ? ` · ${why}` : ''}
-                          </>
-                        );
+                        return why ? ` · ${why}` : '';
                       })()}
                     </p>
+                    <p className={`text-[12px] mt-0.5 ${strengthColor(m.strengthClass)}`}>
+                      {strengthLabel(m.strengthClass)}
+                      {m.scopeLevel !== 'local' ? ` · ${m.scopeLevel}` : ''}
+                    </p>
                   </div>
-                  <span className="text-[17px] text-slate-500 shrink-0 tabular-nums mt-0.5">
-                    {formatDist(m.distance)}
+                  <span className="text-[16px] text-slate-500 shrink-0 tabular-nums mt-0.5">
+                    {fmtDist(m.distance)}
                   </span>
                 </div>
               ))}

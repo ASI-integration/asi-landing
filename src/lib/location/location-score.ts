@@ -152,6 +152,10 @@ export function buildLocationScoreOutput(input: {
     demandScore: demand_score,
     supplyScore: supply_score,
   });
+  const income_model = {
+    base_adr_rub: Math.round(computeADR(basePrice, location_score) / 100) * 100,
+    base_occupancy_pct: Math.round(computeOccupancy01(demand_score, supply_score) * 100),
+  };
 
   // ── Factor candidates ────────────────────────────────────────────────────────
 
@@ -315,6 +319,7 @@ export function buildLocationScoreOutput(input: {
     rating,
     breakdown,
     estimated_monthly_income,
+    income_model,
     ...splitFactors(factors),
     recommended_strategy,
   };
