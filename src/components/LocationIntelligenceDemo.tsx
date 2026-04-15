@@ -1530,6 +1530,7 @@ function ASIPanel({
   }
 
   return (
+    <>
     <div
       className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
       style={{
@@ -1550,12 +1551,6 @@ function ASIPanel({
             {c.analysisHeader}
           </p>
           <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
-          <p
-            className="text-[12px] text-slate-600 leading-tight text-center truncate w-full px-1"
-            title={address}
-          >
-            {address}
-          </p>
         </div>
 
         {/* Col 2 — Audience */}
@@ -1567,15 +1562,6 @@ function ASIPanel({
           <p className={`text-[26px] font-bold leading-tight ${band.textColor}`}>
             {locale === 'ru' ? audienceLabelRu : audienceLabelEn}
           </p>
-          {demandFlowLabel && (
-            <p className="text-[14px] text-slate-300 mt-0.5">{demandFlowLabel}</p>
-          )}
-          {audienceSharePct !== undefined && (
-            <p className="text-[13px] text-slate-500 mt-1">
-              {audienceSharePct}%&nbsp;
-              {locale === 'ru' ? 'дел. спрос' : 'business signal'}
-            </p>
-          )}
         </div>
 
         {/* Col 3 — Income estimate */}
@@ -1588,8 +1574,6 @@ function ASIPanel({
             {incomeRange}
           </p>
           <p className="text-[13px] text-slate-500 mt-0.5">{c.incomeSuffix}</p>
-          <p className="text-[12px] text-slate-600 mt-1 leading-snug">{c.incomeDisclaimer1}</p>
-          <p className="text-[11px] text-slate-700 mt-0.5 leading-snug">{c.incomeStrategyLabel(strategy)}</p>
         </div>
 
         {/* Col 4 — Verdict + conclusion (spans full width on mobile) */}
@@ -1600,26 +1584,13 @@ function ASIPanel({
           <p className={`text-[24px] font-bold leading-tight ${band.textColor}`}>
             {band.label}
           </p>
-          {analysis.audienceAnalysis?.demandFlowLabel && (
-            <p className="text-[13px] text-slate-400 mt-0.5 leading-snug">
-              {analysis.audienceAnalysis.demandFlowLabel}
-            </p>
-          )}
-          {conclusion && (
-            <p className="text-[14px] text-slate-400 leading-snug mt-1">
-              {conclusion}
-            </p>
-          )}
         </div>
 
       </div>
 
       {/* Full standalone report permalink (RU-first) */}
       {locale === 'ru' ? (
-        <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-950/20">
-          <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-2">
-            Полный отчёт
-          </p>
+        <div className="px-5 py-5">
           <button
             type="button"
             onClick={openStandaloneFullReportRu}
@@ -1627,11 +1598,18 @@ function ASIPanel({
           >
             Открыть полный отчёт
           </button>
-          <p className="mt-2 text-[12px] text-slate-600 leading-snug">
-            Откроется постоянная ссылка, которую можно сохранить и отправить.
-          </p>
         </div>
       ) : null}
+    </div>
+
+    {/* ── Detail sections — below summary panel ── */}
+    <div
+      className="mt-4 rounded-2xl border border-slate-800/40 overflow-hidden"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.5s ease 0.15s',
+      }}
+    >
 
       {/* Why this score? — uses locationScore factors when available, falls back to generic */}
       {(() => {
@@ -2150,6 +2128,7 @@ function ASIPanel({
       })()}
 
     </div>
+    </>
   );
 }
 
