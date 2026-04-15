@@ -1324,9 +1324,10 @@ function ASIPanel({
           magnetCountByCategory,
           gravityExplanation,
           'ru',
+          analysis.audienceAnalysis,
         )
       : analysis.conclusion;
-  const band = getBand(evergreenIndex);
+  const band = getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
   const strategy =
     evergreenIndex <= 6 ? 'mid_term' : evergreenIndex <= 7.5 ? 'hybrid' : 'short_term';
   const strategyPoints =
@@ -1342,6 +1343,13 @@ function ASIPanel({
   }, []);
 
   const hasMagnets = magnets.length > 0;
+  const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
+  const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
+  const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
+  const incomeRange =
+    strategy === 'mid_term' ? '$1 800 – $3 200'
+    : strategy === 'hybrid'   ? '$2 500 – $4 500'
+    : '$3 500 – $7 000';
 
   return (
     <div
@@ -1353,23 +1361,73 @@ function ASIPanel({
       }}
     >
       {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
-      {/* Header: index ring + verdict */}
-      <div className="p-5 flex items-center gap-4 border-b border-slate-800/60">
-        <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
-        <div className="min-w-0">
-          <p className="text-[18px] font-semibold text-slate-500 uppercase tracking-[0.2em] mb-1">{c.analysisHeader}</p>
-          <p className={`text-4xl font-bold leading-tight ${band.textColor}`}>{band.label}</p>
-          {conclusion ? (
-            <p className="mt-2 text-[22px] text-slate-400 leading-snug">{conclusion}</p>
-          ) : null}
+
+      {/* ── KPI summary row — horizontal on desktop, 2-col grid on mobile ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">
+
+        {/* Col 1 — Score ring */}
+        <div className="flex flex-col items-center justify-center gap-1 p-4
+                        border-r border-b md:border-b-0 border-slate-800/40">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em]">
+            {c.analysisHeader}
+          </p>
+          <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
           <p
-            className="mt-2 text-[18px] text-slate-600 leading-snug"
-            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+            className="text-[11px] text-slate-600 leading-tight text-center truncate w-full px-1"
             title={address}
           >
             {address}
           </p>
         </div>
+
+        {/* Col 2 — Audience */}
+        <div className="flex flex-col justify-center gap-0.5 p-4
+                        border-b md:border-b-0 md:border-r border-slate-800/40">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+            {locale === 'ru' ? 'Аудитория' : 'Audience'}
+          </p>
+          <p className={`text-[22px] font-bold leading-tight ${band.textColor}`}>
+            {locale === 'ru' ? audienceLabelRu : audienceLabelEn}
+          </p>
+          {demandFlowLabel && (
+            <p className="text-[13px] text-slate-300 mt-0.5">{demandFlowLabel}</p>
+          )}
+          {audienceSharePct !== undefined && (
+            <p className="text-[12px] text-slate-500 mt-1">
+              {audienceSharePct}%&nbsp;
+              {locale === 'ru' ? 'дел. спрос' : 'business signal'}
+            </p>
+          )}
+        </div>
+
+        {/* Col 3 — Income estimate */}
+        <div className="flex flex-col justify-center gap-0.5 p-4
+                        border-r border-slate-800/40">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+            {c.incomeTitle}
+          </p>
+          <p className="text-[20px] font-bold text-slate-100 leading-tight">
+            {incomeRange}
+          </p>
+          <p className="text-[12px] text-slate-500 mt-0.5">{c.incomeSuffix}</p>
+          <p className="text-[11px] text-slate-600 mt-1 leading-snug">{c.incomeDisclaimer1}</p>
+        </div>
+
+        {/* Col 4 — Verdict + conclusion (spans full width on mobile) */}
+        <div className="col-span-2 md:col-span-1 flex flex-col justify-center gap-1 p-4">
+          <p className="text-[10px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
+            {locale === 'ru' ? 'Итог' : 'Summary'}
+          </p>
+          <p className={`text-[20px] font-bold leading-tight ${band.textColor}`}>
+            {band.label}
+          </p>
+          {conclusion && (
+            <p className="text-[13px] text-slate-400 leading-snug mt-1 line-clamp-4">
+              {conclusion}
+            </p>
+          )}
+        </div>
+
       </div>
 
       {/* Why this score? */}
@@ -1406,18 +1464,10 @@ function ASIPanel({
         </ul>
       </div>
 
-      {/* Estimated Monthly Income */}
-      <div className="px-5 py-6 border-b border-slate-800/40">
-        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">{c.incomeTitle}</p>
-        <p className="text-[32px] font-bold text-slate-100 leading-none tracking-tight">
-          {strategy === 'mid_term' ? '$1,800 – $3,200'
-           : strategy === 'hybrid' ? '$2,500 – $4,500'
-           : '$3,500 – $7,000'}
-          <span className="text-[20px] font-semibold text-slate-400"> {c.incomeSuffix}</span>
-        </p>
-        <p className="text-[13px] text-slate-400 mt-2">{c.incomeDisclaimer1}</p>
-        <p className="text-[12px] text-slate-500 mt-1">{c.incomeDisclaimer2}</p>
-        <p className="text-[12px] text-slate-600 mt-0.5">{c.incomeDisclaimer3}</p>
+      {/* Income disclaimer detail — compact, below the KPI row */}
+      <div className="px-5 py-3 border-b border-slate-800/30">
+        <p className="text-[11px] text-slate-600">{c.incomeDisclaimer2}</p>
+        <p className="text-[11px] text-slate-700 mt-0.5">{c.incomeDisclaimer3}</p>
       </div>
 
       {/* Market Snapshot */}

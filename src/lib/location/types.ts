@@ -48,6 +48,11 @@ export interface MagnetItem {
   scopeLevel: ScopeLevel;
   strengthClass: StrengthClass;
   attractionScore: number; // ASI computed gravity score
+  /**
+   * Sub-type for business magnets: 'factory' | 'industrial' | 'office' | 'commercial' | 'bank'.
+   * Undefined for non-business categories.
+   */
+  subType?: string;
 }
 
 /** A nearby short-term rental competitor detected in OSM */
@@ -62,6 +67,62 @@ export interface CompetitorItem {
 export interface AccessibilityStopItem {
   name: string;
   distance: number;
+}
+
+// ── Target audience layer ─────────────────────────────────────────────────────
+
+/** Primary guest audience driving the location's rental demand */
+export type TargetAudience = 'BUSINESS' | 'TOURIST' | 'FAMILY';
+
+/** Dominant character of the location based on surrounding magnet mix */
+export type LocationType = 'URBAN_BUSINESS' | 'TOURIST_CLUSTER' | 'MIXED';
+
+/** A nearby magnet classified as business- or tourist-oriented */
+export interface PrimaryMagnet {
+  type: 'business' | 'tourist';
+  name: string;
+  categoryId: string;
+  /** Mirrors MagnetItem.subType — 'factory' | 'industrial' | 'office' | 'commercial' | 'bank' */
+  subType?: string;
+  weight: number;
+  distance: number;
+  /** Pre-computed relevance: exponential-decay score × sub-type weight */
+  relevanceScore: number;
+}
+
+/** Audience fit analysis attached to every LocationAnalysis */
+export interface AudienceAnalysis {
+  primaryAudience: TargetAudience;
+  locationType: LocationType;
+  /** 0–100: how well the location serves its primary audience */
+  audienceFitScore: number;
+  primaryMagnets: PrimaryMagnet[];
+  /** true when TOURIST mode was activated automatically due to missing business magnets */
+  fallbackMode: boolean;
+  /**
+   * Share of business demand in the overall audience signal (0–100).
+   * E.g. 72 means 72 % of distance-weighted magnet pull comes from business objects.
+   */
+  audienceSharePct: number;
+  /** true when ≥ 2 business magnets are detected within 1 km (cluster effect) */
+  businessClusterDetected: boolean;
+  /**
+   * Russian-language primary driver label shown in the UI.
+   * E.g. "Основной драйвер: деловой поток — Полиграфмаш (300 м, завод)"
+   */
+  primaryDriverLabel: string;
+  /**
+   * true when mode was hard-locked by the 65 % share threshold,
+   * rather than falling back to the default BUSINESS→TOURIST chain.
+   */
+  lockedMode: boolean;
+  /**
+   * Demand-flow consistency label (Russian).
+   * "устойчивый поток" — strong, close, clustered business magnets.
+   * "поток ограничен" — otherwise.
+   * "туристический поток" — when primaryAudience is TOURIST.
+   */
+  demandFlowLabel: string;
 }
 
 // ── ASI interpretation layer ──────────────────────────────────────────────────
@@ -118,6 +179,35 @@ export type ScoreBand = 'strong' | 'medium' | 'weak' | 'none';
 /** Demand-type classification: which category of visitor/tenant driver dominates */
 export type DemandType = 'tourism-led' | 'business-led' | 'transport-led' | 'mixed';
 
+// ── Explainable location score (v1) ────────────────────────────────────────────
+
+export type LocationScoreRating = 'exceptional' | 'strong' | 'viable' | 'weak' | 'risky';
+export type RecommendedStrategy = 'short_term' | 'hybrid' | 'mid_term';
+
+export interface LocationScoreBreakdown {
+  demand_score: number;        // 0–100
+  supply_score: number;        // 0–100
+  magnet_score: number;        // 0–100
+  seasonality_score: number;   // 0–100
+  audience_fit_score: number;  // 0–100 NEW: audience-specific proximity fit
+  accessibility_score: number; // 0–100 NEW: metro + transit access
+}
+
+export interface LocationScoreOutput {
+  /** 0–100 overall location score */
+  location_score: number;
+  rating: LocationScoreRating;
+  breakdown: LocationScoreBreakdown;
+  estimated_monthly_income: {
+    short_term: number;
+    mid_term: number;
+    hybrid: number;
+  };
+  top_positive_factors: string[];
+  top_negative_factors: string[];
+  recommended_strategy: RecommendedStrategy;
+}
+
 export interface Band {
   label: string;
   scoreBand: ScoreBand;
@@ -153,6 +243,8 @@ export interface LocationAnalysis {
   // Score
   evergreenIndex: number;
   scoreBand: ScoreBand;
+  /** Explainable composite score (0–100), stable output contract for production-shaping */
+  locationScore?: LocationScoreOutput;
 
   // Detected objects (real-world data)
   magnets: MagnetItem[];
@@ -171,6 +263,9 @@ export interface LocationAnalysis {
 
   /** Foot-traffic layer — confirms strong locations together with magnets. */
   footTraffic: FootTrafficSummary;
+
+  /** Audience fit layer — classifies location by primary audience type */
+  audienceAnalysis: AudienceAnalysis;
 
   // Computed visualization data
   heatmapPoints: HeatmapPoint[];

@@ -13,7 +13,7 @@ export const MAGNET_CATEGORIES: MagnetCategory[] = [
   { id: 'entertainment',    label: 'Entertainment',                 labelRu: 'Развлечения',                   icon: '▶',  weight: 5,  permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
   { id: 'shopping_major',   label: 'Malls & major retail',          labelRu: 'ТЦ и крупная розница',          icon: '⊞',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
   { id: 'shopping_local',   label: 'Supermarkets',                  labelRu: 'Супермаркеты',                 icon: '+',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
-  { id: 'business',         label: 'Offices & business',            labelRu: 'Офисы и бизнес',               icon: 'Б',  weight: 2.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'weak' },
+  { id: 'business',         label: 'Offices, factories & business',  labelRu: 'Офисы, заводы и бизнес',       icon: 'Б',  weight: 5.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
   { id: 'food',             label: 'Cafés & restaurants',         labelRu: 'Кафе и рестораны',             icon: '◈',  weight: 1,  permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
 ];
 
@@ -27,7 +27,7 @@ export const CATEGORY_RADIUS: Record<string, number> = {
   entertainment:     800,
   shopping_major:    900,
   shopping_local:    450,
-  business:          550,
+  business:          1200,
   food:              450,
   /** Fetch-only: bus / tram stop nodes (scored only via accessibility bonus) */
   accessibility_stop: 550,
@@ -43,7 +43,7 @@ export const CATEGORY_MAX_SHOW: Record<string, number> = {
   entertainment:     3,
   shopping_major:    3,
   shopping_local:    3,
-  business:          3,
+  business:          5,
   food:              4,
 };
 

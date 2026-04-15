@@ -14,10 +14,23 @@ export type {
   ScoreBand,
   Band,
   LocationAnalysis,
+  LocationScoreOutput,
   AnalysisFreshness,
   AnalysisMeta,
   AccessibilityStopItem,
+  // Audience layer
+  TargetAudience,
+  LocationType,
+  PrimaryMagnet,
+  AudienceAnalysis,
 } from './types';
+
+export type {
+  LocationReportOutput,
+  LocationReportPreview,
+  LocationReportFull,
+  LockedField,
+} from './location-report-paywall';
 
 export {
   MAGNET_CATEGORIES,
@@ -51,6 +64,15 @@ export {
   buildAnalysis,
 } from './gravity-scoring';
 
+export { buildLocationScoreOutput } from './location-score';
+
+export {
+  detectLocationType,
+  classifyPrimaryMagnets,
+  calculateAudienceFitScore,
+  buildAudienceAnalysis,
+} from './audience-scoring';
+
 export { getBand, bandFromScoreBand, generateConclusion } from './explanation';
 
 export { computeHeatmap, projectToSVG } from './heatmap';
@@ -68,3 +90,9 @@ export type {
   CompetitorMarketData,
   CompetitorFetchOptions,
 } from './competitors';
+
+export {
+  wrapLocationReport,
+  toLocationReportPreview,
+  toLocationReportFull,
+} from './location-report-paywall';

@@ -1,10 +1,24 @@
-import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand } from './types';
+import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand, AudienceAnalysis, TargetAudience } from './types';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
-export function getBand(idx: number): Band {
+/**
+ * Map evergreenIndex to a Band descriptor.
+ *
+ * When `audience` is supplied the strong-tier label is rendered in Russian,
+ * naming the dominant audience type:
+ *   BUSINESS → "Сильная деловая локация"
+ *   TOURIST  → "Сильная туристическая локация"
+ * Omit `audience` to get the neutral English label.
+ */
+export function getBand(idx: number, audience?: TargetAudience): Band {
+  const strongLabel =
+    audience === 'BUSINESS' ? 'Сильная деловая локация'
+    : audience === 'TOURIST' ? 'Сильная туристическая локация'
+    : 'Strong location';
+
   if (idx >= 70) return {
-    label: 'Strong location',
+    label: strongLabel,
     scoreBand: 'strong',
     textColor: 'text-emerald-400',
     stroke: '#34d399',
@@ -51,6 +65,12 @@ export function bandFromScoreBand(scoreBand: ScoreBand): Band {
   return map[scoreBand];
 }
 
+// ── Distance formatting ───────────────────────────────────────────────────────
+
+function fmRu(m: number): string {
+  return m < 1000 ? `${Math.round(m / 10) * 10}м` : `${(m / 1000).toFixed(1)}км`;
+}
+
 // ── Conclusion generator ──────────────────────────────────────────────────────
 
 export function generateConclusion(
@@ -60,6 +80,7 @@ export function generateConclusion(
   countByCategory: Record<string, number>,
   gravity: GravityExplanation,
   locale: 'en' | 'ru' = 'en',
+  audienceAnalysis?: AudienceAnalysis,
 ): string {
   if (magnets.length === 0) return '';
 
@@ -78,22 +99,30 @@ export function generateConclusion(
       : gravity.competitorPressureLevel === 'medium'
         ? ' Конкуренция умеренная.'
         : '';
+
+    // Audience-specific driver line
+    const audienceDriver = buildAudienceDriverRu(audienceAnalysis, hasMetro, hasAttractions, hasBusiness);
+
     if (idx >= 70) {
-      const driver = hasMetro
-        ? 'Метро рядом — устойчивый поток гостей.'
-        : hasAttractions
-          ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
-          : 'Насыщенное окружение создаёт постоянный трафик.';
-      return `Сильная локация для посуточной аренды. ${driver}${splitNote}${compNote}`;
+      const strongLabel =
+        audienceAnalysis?.primaryAudience === 'BUSINESS' ? 'Сильная деловая локация'
+        : audienceAnalysis?.primaryAudience === 'TOURIST' ? 'Сильная туристическая локация'
+        : 'Сильная локация для посуточной аренды';
+      return `${strongLabel}. ${audienceDriver}${splitNote}${compNote}`;
     }
     if (idx >= 45) {
       const note = !hasMetro && !hasBusiness
         ? 'Транспортная доступность — ключевой фактор усиления.'
-        : 'Окружение поддерживает умеренный спрос.';
+        : audienceDriver;
       return `Рабочая локация. ${note}${splitNote}${compNote} Результат во многом определяется упаковкой и каналами продаж.`;
     }
-    return `Магниты вокруг ограничены.${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
+    const weakNote = audienceAnalysis?.fallbackMode
+      ? 'Деловых магнитов нет — ориентация на туристический сегмент.'
+      : audienceDriver || 'Магниты вокруг ограничены.';
+    return `${weakNote}${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
   }
+
+  // ── English ──────────────────────────────────────────────────────────────────
 
   const splitNote = gravity.demandDistribution === 'split'
     ? ' Demand is spread across several attraction zones.'
@@ -124,4 +153,60 @@ export function generateConclusion(
   }
 
   return `Nearby demand magnets are limited.${splitNote} Focus on niche positioning and channel mix.`;
+}
+
+// ── Russian audience driver builder ──────────────────────────────────────────
+
+function buildAudienceDriverRu(
+  audienceAnalysis: AudienceAnalysis | undefined,
+  hasMetro: boolean,
+  hasAttractions: boolean,
+  hasBusiness: boolean,
+): string {
+  if (!audienceAnalysis) {
+    // Fallback when audienceAnalysis is not available
+    return hasMetro
+      ? 'Метро рядом — устойчивый поток гостей.'
+      : hasAttractions
+        ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
+        : 'Насыщенное окружение создаёт постоянный трафик.';
+  }
+
+  const { primaryAudience, primaryMagnets, fallbackMode, demandFlowLabel } = audienceAnalysis;
+
+  // ── BUSINESS dominant ──────────────────────────────────────────────────────
+  if (primaryAudience === 'BUSINESS') {
+    const topBusiness = primaryMagnets.find(m => m.type === 'business');
+
+    if (topBusiness && topBusiness.distance <= 500) {
+      return `Рядом ${topBusiness.name} (${fmRu(topBusiness.distance)}) — ${demandFlowLabel}.`;
+    }
+    if (topBusiness) {
+      return `Деловой поток: ${topBusiness.name} (${fmRu(topBusiness.distance)}) — ${demandFlowLabel}.`;
+    }
+    if (hasBusiness) {
+      return `Деловое окружение — ${demandFlowLabel}.`;
+    }
+    return hasMetro
+      ? `Метро рядом — деловые гости, ${demandFlowLabel}.`
+      : `Деловая аудитория — ${demandFlowLabel}.`;
+  }
+
+  // ── TOURIST dominant ───────────────────────────────────────────────────────
+  const topTourist = primaryMagnets.find(m => m.type === 'tourist');
+
+  if (fallbackMode) {
+    if (topTourist) {
+      return `Деловых магнитов нет — туристический поток: рядом ${topTourist.name} (${fmRu(topTourist.distance)}).`;
+    }
+    return 'Деловых магнитов нет — акцент на туристический и транзитный поток.';
+  }
+
+  if (topTourist) {
+    return `Близость к ${topTourist.name} (${fmRu(topTourist.distance)}) обеспечивает туристический спрос.`;
+  }
+
+  return hasMetro
+    ? 'Метро рядом — устойчивый поток гостей.'
+    : 'Насыщенное окружение создаёт постоянный трафик.';
 }

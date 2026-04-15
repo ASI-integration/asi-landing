@@ -25,6 +25,8 @@ import { classifyElement } from './overpass';
 import { computeHeatmap } from './heatmap';
 import { generateConclusion } from './explanation';
 import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatmapFactors } from './foot-traffic';
+import { buildLocationScoreOutput } from './location-score';
+import { buildAudienceAnalysis } from './audience-scoring';
 
 // ── Distance helpers ──────────────────────────────────────────────────────────
 
@@ -159,7 +161,7 @@ export function calcEvergreenIndex(
   if (magnets.length === 0) {
     const competitorPressureValue = calcCompetitorPressure(competitors);
     const rawScore = -competitorPressureValue + accessibilityBonus;
-    const index = Math.max(5, Math.min(96, Math.round(rawScore)));
+    const index = Math.max(5, Math.min(100, Math.round(rawScore)));
     return {
       index,
       competitorPressureValue,
@@ -201,7 +203,8 @@ export function calcEvergreenIndex(
   );
 
   const rawScore = rawBaseScore + boostRaw;
-  const index = Math.max(5, Math.min(96, Math.round(rawScore)));
+  // Cap at 100 — the previous 96 ceiling collapsed all strong locations to the same score.
+  const index = Math.max(5, Math.min(100, Math.round(rawScore)));
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
   const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
@@ -282,6 +285,7 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
       categoryLabel: cat.label,
       icon: cat.icon,
       name: classified.name,
+      subType: classified.subType,
       lat: elLat,
       lon: elLon,
       distance: dist,
@@ -339,15 +343,32 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
   const strongestMagnets = sorted.slice(0, 3);
   const clusterZones = detectClusterZones(magnets);
 
+  const audienceAnalysis = buildAudienceAnalysis(magnets);
+
   const conclusion = generateConclusion(
-    evergreenIndex, magnets, competitors, magnetCountByCategory, gravityExplanation,
+    evergreenIndex, magnets, competitors, magnetCountByCategory, gravityExplanation, 'en', audienceAnalysis,
   );
 
   const heatmapPoints = computeHeatmap(magnets, competitors, heatmapFactors);
 
+  const hasMetro = (magnetCountByCategory.metro ?? 0) > 0;
+  const attractionCount = magnetCountByCategory.attraction ?? 0;
+  const locationScore = buildLocationScoreOutput({
+    evergreenIndex,
+    gravityExplanation,
+    competitorPressure: competitorPressureValue,
+    magnetCount: magnets.length,
+    hasMetro,
+    attractionCount,
+    footTraffic,
+    audienceAnalysis,
+    accessibilityStopCount: accessibilityDeduped.length,
+  });
+
   return {
     evergreenIndex,
     scoreBand,
+    locationScore,
     magnets,
     magnetCountByCategory,
     accessibilityStops: accessibilityDeduped.slice(0, 12),
@@ -359,6 +380,7 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     splitDemand: gravityExplanation.demandDistribution === 'split',
     competitorPressure: competitorPressureValue,
     footTraffic,
+    audienceAnalysis,
     heatmapPoints,
     conclusion,
   };

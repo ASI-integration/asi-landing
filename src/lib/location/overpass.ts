@@ -64,9 +64,14 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"shop"="mall"',             radius: CATEGORY_RADIUS.shopping_major, includeInStrict: true },
     { filter: '"shop"="department_store"', radius: CATEGORY_RADIUS.shopping_major, includeInStrict: true },
 
-    // ── Medium: Business (offices — district-level) ──────────────────────────
-    { filter: '"office"',           radius: CATEGORY_RADIUS.business, includeInStrict: true },
-    { filter: '"amenity"="bank"',   radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    // ── Medium: Business (offices, factories, industrial zones) ─────────────
+    { filter: '"office"',                  radius: CATEGORY_RADIUS.business, includeInStrict: true  },
+    { filter: '"amenity"="bank"',          radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    // Industrial: factories, works, business parks — key business travel magnets
+    { filter: '"landuse"="industrial"',    radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    { filter: '"man_made"="works"',        radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    { filter: '"building"="industrial"',   radius: CATEGORY_RADIUS.business, includeInStrict: false },
+    { filter: '"landuse"="commercial"',    radius: CATEGORY_RADIUS.business, includeInStrict: false },
 
     // ── Accessibility only: local stops / platforms (weak bonus, not demand magnets)
     { filter: '"highway"="bus_stop"',               radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true },
@@ -236,8 +241,8 @@ export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchRe
   return { elements: merged, hadProviderFailure };
 }
 
-/** Map a raw OSM element to a category id + display name, or null if unrecognised */
-export function classifyElement(el: OSMElement): { categoryId: string; name: string } | null {
+/** Map a raw OSM element to a category id + display name (+ optional subType), or null if unrecognised */
+export function classifyElement(el: OSMElement): { categoryId: string; name: string; subType?: string } | null {
   const t = el.tags ?? {};
 
   // ── Strong magnets ──────────────────────────────────────────────────────────
@@ -275,9 +280,25 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.shop === 'mall' || t.shop === 'department_store')
     return { categoryId: 'shopping_major', name: t.name || 'ТЦ' };
 
-  // Offices and banks — district/medium level (not strong demand generators)
-  if (t.office || t.amenity === 'bank')
-    return { categoryId: 'business', name: t.name || 'Офис' };
+  // Industrial: factories, works — primary business travel magnets (highest sub-type weight)
+  if (t.man_made === 'works')
+    return { categoryId: 'business', name: t.name || 'Завод', subType: 'factory' };
+  if (t.landuse === 'industrial')
+    return { categoryId: 'business', name: t.name || 'Промзона', subType: 'industrial' };
+  if (t.building === 'industrial')
+    return { categoryId: 'business', name: t.name || 'Производство', subType: 'factory' };
+
+  // Commercial zones — moderate business signal
+  if (t.landuse === 'commercial')
+    return { categoryId: 'business', name: t.name || 'Коммерческая зона', subType: 'commercial' };
+
+  // Banks — weak standalone signal (noise filter in audience scoring)
+  if (t.amenity === 'bank')
+    return { categoryId: 'business', name: t.name || 'Банк', subType: 'bank' };
+
+  // Offices — standard business signal
+  if (t.office)
+    return { categoryId: 'business', name: t.name || 'Офис', subType: 'office' };
 
   // ── Accessibility: stop positions only (not scored as attraction magnets) ───
   if (t.highway === 'bus_stop' || t.public_transport === 'stop_position' || t.public_transport === 'platform' || t.railway === 'tram_stop')
