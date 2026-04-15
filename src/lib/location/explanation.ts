@@ -13,7 +13,7 @@ import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand, A
  */
 export function getBand(idx: number, audience?: TargetAudience): Band {
   const strongLabel =
-    audience === 'BUSINESS' ? 'Сильная деловая локация'
+    audience === 'BUSINESS' ? 'Сильная локация для командированных'
     : audience === 'TOURIST' ? 'Сильная туристическая локация'
     : 'Strong location';
 
@@ -27,7 +27,7 @@ export function getBand(idx: number, audience?: TargetAudience): Band {
     bar: 'bg-emerald-500',
   };
   if (idx >= 45) return {
-    label: 'Solid location',
+    label: audience ? 'Хорошая локация' : 'Solid location',
     scoreBand: 'medium',
     textColor: 'text-amber-400',
     stroke: '#fbbf24',
@@ -36,7 +36,7 @@ export function getBand(idx: number, audience?: TargetAudience): Band {
     bar: 'bg-amber-500',
   };
   if (idx > 0) return {
-    label: 'Needs optimization',
+    label: audience ? 'Слабая локация' : 'Needs optimization',
     scoreBand: 'weak',
     textColor: 'text-yellow-400',
     stroke: '#facc15',
@@ -45,7 +45,7 @@ export function getBand(idx: number, audience?: TargetAudience): Band {
     bar: 'bg-yellow-500',
   };
   return {
-    label: 'No data',
+    label: audience ? 'Нет данных' : 'No data',
     scoreBand: 'none',
     textColor: 'text-slate-400',
     stroke: '#475569',
@@ -71,6 +71,25 @@ function fmRu(m: number): string {
   return m < 1000 ? `${Math.round(m / 10) * 10}м` : `${(m / 1000).toFixed(1)}км`;
 }
 
+// ── Accessibility verdicts (strict thresholds) ────────────────────────────────
+
+type AccessVerdict = 'пешая доступность' | 'умеренная доступность' | 'не пешая доступность';
+
+export function accessVerdictRu(distanceMeters: number): AccessVerdict {
+  if (distanceMeters <= 800) return 'пешая доступность';
+  if (distanceMeters <= 1500) return 'умеренная доступность';
+  return 'не пешая доступность';
+}
+
+function nearestDistance(magnets: MagnetItem[], categoryId: string): number | null {
+  let best = Infinity;
+  for (const m of magnets) {
+    if (m.categoryId !== categoryId) continue;
+    if (Number.isFinite(m.distance) && m.distance < best) best = m.distance;
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
 // ── Conclusion generator ──────────────────────────────────────────────────────
 
 export function generateConclusion(
@@ -84,6 +103,7 @@ export function generateConclusion(
 ): string {
   if (magnets.length === 0) return '';
 
+  const nearestMetroM = nearestDistance(magnets, 'metro');
   const hasMetro       = (countByCategory.metro ?? 0) > 0;
   const hasAttractions = (countByCategory.attraction ?? 0) > 0;
   const hasBusiness    = (countByCategory.business ?? 0) > 0;
@@ -101,24 +121,32 @@ export function generateConclusion(
         : '';
 
     // Audience-specific driver line
-    const audienceDriver = buildAudienceDriverRu(audienceAnalysis, hasMetro, hasAttractions, hasBusiness);
+    const audienceDriver = buildAudienceDriverRu(audienceAnalysis, nearestMetroM, hasAttractions, hasBusiness);
 
     if (idx >= 70) {
       const strongLabel =
-        audienceAnalysis?.primaryAudience === 'BUSINESS' ? 'Сильная деловая локация'
+        audienceAnalysis?.primaryAudience === 'BUSINESS' ? 'Сильная локация для командированных'
         : audienceAnalysis?.primaryAudience === 'TOURIST' ? 'Сильная туристическая локация'
         : 'Сильная локация для посуточной аренды';
-      return `${strongLabel}. ${audienceDriver}${splitNote}${compNote}`;
+      const b2bNote =
+        audienceAnalysis?.primaryAudience === 'BUSINESS'
+          ? ' Подходит для делового потока и командированных.'
+          : '';
+      return `${strongLabel}.${b2bNote} ${audienceDriver}${splitNote}${compNote}`.trim();
     }
     if (idx >= 45) {
-      const note = !hasMetro && !hasBusiness
-        ? 'Транспортная доступность — ключевой фактор усиления.'
-        : audienceDriver;
+      const note = audienceAnalysis?.primaryAudience === 'BUSINESS'
+        ? 'Подходит для делового потока и командированных.'
+        : !hasMetro && !hasBusiness
+          ? 'Транспортная доступность — ключевой фактор усиления.'
+          : audienceDriver;
       return `Рабочая локация. ${note}${splitNote}${compNote} Результат во многом определяется упаковкой и каналами продаж.`;
     }
     const weakNote = audienceAnalysis?.fallbackMode
       ? 'Деловых магнитов нет — ориентация на туристический сегмент.'
-      : audienceDriver || 'Магниты вокруг ограничены.';
+      : audienceAnalysis?.primaryAudience === 'BUSINESS'
+        ? 'Деловые магниты есть, но далеко — поток командированных будет слабым.'
+        : audienceDriver || 'Магниты вокруг ограничены.';
     return `${weakNote}${splitNote} Рекомендуется точечное позиционирование и проработка каналов продаж.`;
   }
 
@@ -159,17 +187,21 @@ export function generateConclusion(
 
 function buildAudienceDriverRu(
   audienceAnalysis: AudienceAnalysis | undefined,
-  hasMetro: boolean,
+  nearestMetroM: number | null,
   hasAttractions: boolean,
   hasBusiness: boolean,
 ): string {
   if (!audienceAnalysis) {
     // Fallback when audienceAnalysis is not available
-    return hasMetro
-      ? 'Метро рядом — устойчивый поток гостей.'
-      : hasAttractions
-        ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
-        : 'Насыщенное окружение создаёт постоянный трафик.';
+    if (nearestMetroM != null) {
+      const acc = accessVerdictRu(nearestMetroM);
+      if (acc === 'пешая доступность') return 'Метро в пешей доступности — это усиливает спрос без зависимости от такси.';
+      if (acc === 'умеренная доступность') return 'Метро на умеренном удалении — гости чаще используют транспорт/такси.';
+      return `Метро далеко (${fmRu(nearestMetroM)}) — пешая доступность отсутствует.`;
+    }
+    return hasAttractions
+      ? 'Близость к достопримечательностям обеспечивает стабильный спрос.'
+      : 'Насыщенное окружение создаёт постоянный трафик.';
   }
 
   const { primaryAudience, primaryMagnets, fallbackMode, demandFlowLabel } = audienceAnalysis;
@@ -187,9 +219,12 @@ function buildAudienceDriverRu(
     if (hasBusiness) {
       return `Деловое окружение — ${demandFlowLabel}.`;
     }
-    return hasMetro
-      ? `Метро рядом — деловые гости, ${demandFlowLabel}.`
-      : `Деловая аудитория — ${demandFlowLabel}.`;
+    if (nearestMetroM != null) {
+      const acc = accessVerdictRu(nearestMetroM);
+      const base = `Метро: ${fmRu(nearestMetroM)} — ${acc}.`;
+      return `${base} Деловая аудитория — ${demandFlowLabel}.`;
+    }
+    return `Деловая аудитория — ${demandFlowLabel}.`;
   }
 
   // ── TOURIST dominant ───────────────────────────────────────────────────────
@@ -206,7 +241,11 @@ function buildAudienceDriverRu(
     return `Близость к ${topTourist.name} (${fmRu(topTourist.distance)}) обеспечивает туристический спрос.`;
   }
 
-  return hasMetro
-    ? 'Метро рядом — устойчивый поток гостей.'
-    : 'Насыщенное окружение создаёт постоянный трафик.';
+  if (nearestMetroM != null) {
+    const acc = accessVerdictRu(nearestMetroM);
+    if (acc === 'пешая доступность') return 'Метро в пешей доступности — это усиливает спрос.';
+    if (acc === 'умеренная доступность') return 'Метро на умеренном удалении — часть гостей будет добираться на транспорте.';
+    return `Метро далеко (${fmRu(nearestMetroM)}) — пешая доступность отсутствует.`;
+  }
+  return 'Насыщенное окружение создаёт постоянный трафик.';
 }

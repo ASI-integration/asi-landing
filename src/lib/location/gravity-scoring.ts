@@ -128,6 +128,127 @@ function calcAccessibilityBonus(stopCount: number): number {
   );
 }
 
+// ── Demand type inference + "main magnets" selection ──────────────────────────
+
+function sumAttractionByCategory(magnets: MagnetItem[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const m of magnets) {
+    out[m.categoryId] = (out[m.categoryId] ?? 0) + (Number.isFinite(m.attractionScore) ? m.attractionScore : 0);
+  }
+  return out;
+}
+
+function inferDemandType(magnets: MagnetItem[]): GravityExplanation['demandType'] {
+  if (magnets.length === 0) return 'mixed';
+  const byCat = sumAttractionByCategory(magnets);
+  const total = Object.values(byCat).reduce((s, v) => s + v, 0);
+  if (total <= 0) return 'mixed';
+
+  const transport =
+    (byCat.metro ?? 0) +
+    (byCat.railway_station ?? 0);
+  const business = (byCat.business ?? 0);
+  const tourism =
+    (byCat.attraction ?? 0) +
+    (byCat.entertainment ?? 0) +
+    (byCat.shopping_major ?? 0);
+
+  const shares = {
+    transport: transport / total,
+    business: business / total,
+    tourism: tourism / total,
+  };
+
+  // "Led" requires a clear dominant share; otherwise classify as mixed.
+  // Thresholds tuned to avoid over-triggering transport-led on one small station.
+  if (shares.transport >= 0.45 && shares.transport >= shares.business + 0.10 && shares.transport >= shares.tourism + 0.10) return 'transport-led';
+  if (shares.business >= 0.48 && shares.business >= shares.transport + 0.08 && shares.business >= shares.tourism + 0.08) return 'business-led';
+  if (shares.tourism >= 0.48 && shares.tourism >= shares.transport + 0.08 && shares.tourism >= shares.business + 0.08) return 'tourism-led';
+  return 'mixed';
+}
+
+function bestByCategory(magnets: MagnetItem[], categoryId: string): MagnetItem | null {
+  let best: MagnetItem | null = null;
+  for (const m of magnets) {
+    if (m.categoryId !== categoryId) continue;
+    if (!best || m.attractionScore > best.attractionScore) best = m;
+  }
+  return best;
+}
+
+function isMetroRelevant(metro: MagnetItem | null): boolean {
+  if (!metro) return false;
+  // Metro is only "main block" eligible when it's realistically usable without a car.
+  return metro.distance <= 1500;
+}
+
+/**
+ * Pick 1–3 "main magnets" with guaranteed category coverage:
+ * - transport hub (railway_station) when present and especially for transport-led
+ * - business magnet
+ * - metro (only when relevant/usable)
+ *
+ * Then fill remaining slots by attractionScore, preferring category diversity.
+ */
+function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['demandType']): MagnetItem[] {
+  if (magnets.length === 0) return [];
+
+  const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
+  const rail = bestByCategory(magnets, 'railway_station');
+  const metroBest = bestByCategory(magnets, 'metro');
+  const business = bestByCategory(magnets, 'business');
+
+  const picked: MagnetItem[] = [];
+  const seen = new Set<string>();
+  const add = (m: MagnetItem | null) => {
+    if (!m) return;
+    const key = `${m.categoryId}:${m.name}:${Math.round(m.distance)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    picked.push(m);
+  };
+
+  // 1) Scenario-driven first slot
+  if (demandType === 'transport-led') {
+    add(rail ?? (isMetroRelevant(metroBest) ? metroBest : null));
+  }
+
+  // 2) Strategic category coverage
+  add(business);
+  if (isMetroRelevant(metroBest)) add(metroBest);
+  add(rail);
+
+  // Trim to 3 with diversity-first ordering.
+  const uniq = picked.filter((m, idx, arr) => idx === arr.findIndex(o => o.categoryId === m.categoryId || `${o.categoryId}:${o.name}` === `${m.categoryId}:${m.name}`));
+  const out: MagnetItem[] = [];
+  const usedCats = new Set<string>();
+  for (const m of uniq) {
+    if (out.length >= 3) break;
+    if (!usedCats.has(m.categoryId) || out.length === 0) {
+      out.push(m);
+      usedCats.add(m.categoryId);
+    }
+  }
+
+  // Fill remaining with best scores, but avoid ending up with 3 same-category items
+  for (const m of sorted) {
+    if (out.length >= 3) break;
+    if (out.some(x => x.categoryId === m.categoryId && x.name === m.name)) continue;
+    const wouldBeAllBusiness = out.length === 2 && out.every(x => x.categoryId === 'business') && m.categoryId === 'business';
+    if (wouldBeAllBusiness) {
+      // Try to find any non-business alternative; if none, accept business.
+      const alt = sorted.find(x => x.categoryId !== 'business' && !out.some(o => o.categoryId === x.categoryId && o.name === x.name));
+      if (alt) {
+        out.push(alt);
+        continue;
+      }
+    }
+    out.push(m);
+  }
+
+  return out.slice(0, 3);
+}
+
 // ── Composite evergreen index ─────────────────────────────────────────────────
 
 export function calcEvergreenIndex(
@@ -211,6 +332,7 @@ export function calcEvergreenIndex(
   const strongestZoneLabel = sorted[0]?.categoryLabel ?? '';
   const competitorPressureLevel: GravityExplanation['competitorPressureLevel'] =
     competitorPressureValue < 6 ? 'low' : competitorPressureValue < 14 ? 'medium' : 'high';
+  const demandType = inferDemandType(magnets);
 
   return {
     index,
@@ -222,7 +344,7 @@ export function calcEvergreenIndex(
       strongestZoneLabel,
       competitorPressureLevel,
       demandDistribution,
-      demandType: 'mixed',
+      demandType,
       clusterDetected,
       clusterSize,
       scoreBreakdown: {
@@ -340,7 +462,7 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     evergreenIndex >= 70 ? 'strong' : evergreenIndex >= 45 ? 'medium' : evergreenIndex > 0 ? 'weak' : 'none';
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
-  const strongestMagnets = sorted.slice(0, 3);
+  const strongestMagnets = pickMainMagnets(magnets, gravityExplanation.demandType);
   const clusterZones = detectClusterZones(magnets);
 
   const audienceAnalysis = buildAudienceAnalysis(magnets);
@@ -351,7 +473,9 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
 
   const heatmapPoints = computeHeatmap(magnets, competitors, heatmapFactors);
 
-  const hasMetro = (magnetCountByCategory.metro ?? 0) > 0;
+  // Avoid false "metro nearby": count metro as accessible only when usable without a car.
+  // This flag feeds scoring/accessibility copy, so it must be strict.
+  const hasMetro = magnets.some(m => m.categoryId === 'metro' && m.distance <= 1500);
   const attractionCount = magnetCountByCategory.attraction ?? 0;
   const locationScore = buildLocationScoreOutput({
     evergreenIndex,

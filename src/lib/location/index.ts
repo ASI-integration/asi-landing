@@ -32,6 +32,8 @@ export type {
   LockedField,
 } from './location-report-paywall';
 
+export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
+
 export {
   MAGNET_CATEGORIES,
   CATEGORY_RADIUS,
@@ -73,7 +75,7 @@ export {
   buildAudienceAnalysis,
 } from './audience-scoring';
 
-export { getBand, bandFromScoreBand, generateConclusion } from './explanation';
+export { getBand, bandFromScoreBand, generateConclusion, accessVerdictRu } from './explanation';
 
 export { computeHeatmap, projectToSVG } from './heatmap';
 export type { ProjectedPoint } from './heatmap';
@@ -96,3 +98,5 @@ export {
   toLocationReportPreview,
   toLocationReportFull,
 } from './location-report-paywall';
+
+export { buildLocationStandaloneReport } from './standalone-report';

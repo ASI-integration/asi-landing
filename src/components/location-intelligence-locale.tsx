@@ -39,8 +39,12 @@ export function competitorLabel(level: GravityExplanation['competitorPressureLev
 
 export function magnetCategoryLabel(categoryId: string, locale: LocDemoLocale): string {
   const cat = MAGNET_CATEGORIES.find(c => c.id === categoryId);
-  if (!cat) return categoryId;
-  return locale === 'ru' ? cat.labelRu : cat.label;
+  if (!cat) {
+    // Never leak technical category ids into UI.
+    return locale === 'ru' ? 'Точка спроса' : 'Demand driver';
+  }
+  const label = locale === 'ru' ? cat.labelRu : cat.label;
+  return label?.trim() ? label : (locale === 'ru' ? 'Точка спроса' : 'Demand driver');
 }
 
 export const LOC_COPY: Record<
@@ -367,18 +371,18 @@ export const LOC_COPY: Record<
     strategyTitle: 'Рекомендуемая стратегия',
     strategyMidTerm: [
       'Лучше всего: среднесрочная аренда (1–3 месяца)',
-      'Целевая аудитория: командировочные, переезды, временное проживание',
-      'Стабилизируйте доход вместо погони за посуточным спросом',
+      'Целевая аудитория: командированные, переезды, временное проживание',
+      'Контракты с корпоративными клиентами — ключ к стабильной загрузке',
     ],
     strategyHybrid: [
-      'Комбинируйте краткосрочную и среднесрочную аренду',
-      'Корректируйте цены по сезону',
-      'Давайте скидки при длительном проживании',
+      'Комбинируйте посуточную и среднесрочную аренду',
+      'В будни — деловые гости, в выходные — досуговый сегмент',
+      'Скидки при длительном проживании для корпоративных бронирований',
     ],
     strategyShortTerm: [
-      'Хорошие условия для посуточной аренды',
-      'Фокус на загрузке и оптимизации цен',
-      'Используйте пиковые сезоны',
+      'Сильная локация для делового потока и командированных',
+      'Основной спрос формируется за счёт деловых магнитов',
+      'Фокус на корпоративных каналах, загрузке и динамическом ценообразовании',
     ],
     marketSnapshotTitle: 'Снимок рынка',
     marketRows: {
@@ -399,7 +403,7 @@ export const LOC_COPY: Record<
     incomeTitle: 'Оценка дохода в месяц',
     incomeSuffix: '/ мес',
     incomeDisclaimer1: 'До расходов и комиссий управления',
-    incomeDisclaimer2: 'Оценка по рыночным данным (аналоги размещений и сигналы спроса)',
+    incomeDisclaimer2: 'Оценка по рыночным данным (аналоги STR-объектов в России, сигналы спроса)',
     incomeDisclaimer3: 'Диапазон зависит от загрузки, сезонности и стратегии ценообразования',
     ctaBlock: {
       title: 'Хотите подробный расчёт?',
@@ -438,15 +442,15 @@ const MAGNET_WHY_EN: Record<string, string> = {
 };
 
 const MAGNET_WHY_RU: Record<string, string> = {
-  metro:           'региональный поток',
-  railway_station: 'транспортный узел',
+  metro:           'командированные / деловой поток',
+  railway_station: 'транспортный узел — деловой трафик',
   attraction:      'туристический спрос',
-  university:      'образовательный поток',
+  university:      'образовательный / деловой поток',
   education_local: 'локальный спрос',
   entertainment:   'досуговый трафик',
   shopping_major:  'торговый поток',
   shopping_local:  'жилая активность',
-  business:        'деловой трафик',
+  business:        'командированные / деловой поток',
   food:            'локальная активность',
 };
 

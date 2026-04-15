@@ -251,21 +251,21 @@ export function buildLocationScoreOutput(input: {
 
   // ── Demand / magnets ────────────────────────────────────────────────────────
   if (demand_score >= 70) {
-    factors.push({ text: 'Strong overall demand signals in the area.', kind: 'positive', weight: demand_score });
+    factors.push({ text: 'Сильные сигналы спроса в зоне.', kind: 'positive', weight: demand_score });
   } else if (demand_score <= 45) {
-    factors.push({ text: 'Demand signals limited — positioning and distribution channels will matter more.', kind: 'negative', weight: 100 - demand_score });
+    factors.push({ text: 'Сигналы спроса ограничены — сильнее влияет упаковка и каналы продаж.', kind: 'negative', weight: 100 - demand_score });
   }
 
   // ── Transit — explain value to business travelers, not just "nearby" ────────
   if (input.hasMetro) {
     factors.push({
-      text: 'Metro within walking distance — business guests arrive without needing a car or taxi.',
+      text: 'Metro доступно без автомобиля — гостям проще добираться без такси.',
       kind: 'positive',
       weight: 72,
     });
   } else {
     factors.push({
-      text: 'No metro nearby — guests need a car or taxi; factor this into pricing and listing copy.',
+      text: 'Метро рядом нет — гостям чаще нужно такси/авто; учитывайте это в цене и описании.',
       kind: 'negative',
       weight: 45,
     });
@@ -274,16 +274,16 @@ export function buildLocationScoreOutput(input: {
   // ── Tourist attractions (suppressed when BUSINESS is locked at ≥65 %) ───────
   if (primaryAudience !== 'BUSINESS' || audienceSharePct < 65) {
     if (input.attractionCount >= 2) {
-      factors.push({ text: 'Multiple attractions nearby generate leisure and weekend demand.', kind: 'positive', weight: 62 + input.attractionCount * 2 });
+      factors.push({ text: 'Несколько достопримечательностей рядом поддерживают досуговый и выходной спрос.', kind: 'positive', weight: 62 + input.attractionCount * 2 });
     } else if (input.attractionCount === 0) {
-      factors.push({ text: 'No tourist attractions nearby — leisure traveler appeal is limited.', kind: 'negative', weight: 55 });
+      factors.push({ text: 'Достопримечательностей рядом нет — досуговый спрос ограничен.', kind: 'negative', weight: 55 });
     }
   }
 
   // ── Demand cluster ──────────────────────────────────────────────────────────
   if (input.gravityExplanation.clusterDetected) {
     factors.push({
-      text: 'Destination magnet cluster detected — concentrated demand zone boosts stable occupancy.',
+      text: 'Рядом кластер сильных магнитов — концентрированная зона спроса повышает стабильную загрузку.',
       kind: 'positive',
       weight: 65 + Math.min(20, input.gravityExplanation.clusterSize * 3),
     });
@@ -291,23 +291,23 @@ export function buildLocationScoreOutput(input: {
 
   // ── Magnet density ──────────────────────────────────────────────────────────
   if (input.magnetCount <= 2) {
-    factors.push({ text: 'Low magnet density — few demand drivers around the property.', kind: 'negative', weight: 65 });
+    factors.push({ text: 'Мало магнитов спроса рядом — драйверов вокруг объекта недостаточно.', kind: 'negative', weight: 65 });
   } else if (input.magnetCount >= 7) {
-    factors.push({ text: 'Dense mix of demand drivers nearby supports consistent year-round occupancy.', kind: 'positive', weight: 55 + input.magnetCount });
+    factors.push({ text: 'Насыщенное окружение поддерживает загрузку в течение года.', kind: 'positive', weight: 55 + input.magnetCount });
   }
 
   // ── Supply / competition ────────────────────────────────────────────────────
   if (supply_score >= 70) {
-    factors.push({ text: 'Lower competitive pressure — differentiated positioning is achievable.', kind: 'positive', weight: supply_score });
+    factors.push({ text: 'Конкурентное давление ниже среднего — проще занять нишу и удерживать цену.', kind: 'positive', weight: supply_score });
   } else if (supply_score <= 45) {
-    factors.push({ text: 'High competitive pressure — packaging, price, and reviews are critical differentiators.', kind: 'negative', weight: 100 - supply_score });
+    factors.push({ text: 'Высокая конкуренция — критичны упаковка, цена и качество отзывов.', kind: 'negative', weight: 100 - supply_score });
   }
 
   // ── Seasonality proxy ───────────────────────────────────────────────────────
   if (seasonality_score >= 65) {
-    factors.push({ text: 'Demand stability strong — low seasonality risk for this location type.', kind: 'positive', weight: seasonality_score });
+    factors.push({ text: 'Спрос устойчивый — ниже риск сезонных провалов.', kind: 'positive', weight: seasonality_score });
   } else if (seasonality_score <= 40) {
-    factors.push({ text: 'Expect stronger seasonality swings — revenue management strategy required.', kind: 'negative', weight: 100 - seasonality_score });
+    factors.push({ text: 'Вероятны сезонные качели — нужна стратегия управления доходом.', kind: 'negative', weight: 100 - seasonality_score });
   }
 
   return {

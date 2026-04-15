@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   CATEGORY_COLOR,
   buildAnalysis,
+  buildLocationStandaloneReport,
   getBand,
   formatDist,
   projectToSVG,
@@ -1351,6 +1352,29 @@ function ASIPanel({
     : strategy === 'hybrid'   ? '$2 500 – $4 500'
     : '$3 500 – $7 000';
 
+  function openStandaloneFullReportRu() {
+    (async () => {
+      const standalone = buildLocationStandaloneReport({
+        address,
+        analysis,
+        verdict: conclusion || 'Итог: данных недостаточно для уверенного вывода.',
+      });
+
+      try {
+        const res = await fetch('/api/location-standalone-report', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ locale: 'ru', report: standalone }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
+        router.push(`/ru/location-report/${json.reportId}`);
+      } catch {
+        router.push('/ru/location-report');
+      }
+    })();
+  }
+
   return (
     <div
       className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
@@ -1429,6 +1453,25 @@ function ASIPanel({
         </div>
 
       </div>
+
+      {/* Full standalone report permalink (RU-first) */}
+      {locale === 'ru' ? (
+        <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-950/20">
+          <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-2">
+            Полный отчёт
+          </p>
+          <button
+            type="button"
+            onClick={openStandaloneFullReportRu}
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
+          >
+            Открыть полный отчёт
+          </button>
+          <p className="mt-2 text-[12px] text-slate-600 leading-snug">
+            Откроется постоянная ссылка, которую можно сохранить и отправить.
+          </p>
+        </div>
+      ) : null}
 
       {/* Why this score? */}
       {(() => {
