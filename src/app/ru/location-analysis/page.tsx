@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 export default function RuLocationAnalysisPage() {
   return (
-    <ThemeProvider defaultTheme="dark" className="min-h-screen bg-slate-950 text-white">
+    <ThemeProvider defaultTheme="midnight" className="min-h-screen bg-slate-950 text-white">
       <LocationTelemetryProvider>
 
         <RuPublicNavHeader surface="dark" density="landing" />
