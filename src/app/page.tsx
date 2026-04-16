@@ -133,7 +133,7 @@ export default async function Home() {
         {/* ── Hero ── */}
         <HeroSection content={{
           aboutLabel: 'About',
-          aboutHeadline: 'AI Operational System for Short-Term Rentals',
+          aboutHeadline: 'AI system that runs short-term rentals for you',
           aboutBody: 'ASI is not a dashboard or tool you manage. It replaces your ops team — handling guests, bookings, pricing, and property access automatically, around the clock.',
           aboutPoints: [
             'Not a dashboard',
