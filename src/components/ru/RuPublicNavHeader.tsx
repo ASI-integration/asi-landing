@@ -113,7 +113,7 @@ export function RuPublicNavHeader({
                 <span className="sr-only">Telegram</span>
               </a>
               <div className={`flex items-center gap-1 text-sm ${surfaceMuted[surface]}`}>
-                <a href="https://asi-global.com" className="px-2 py-1 rounded transition-colors">
+                <a href="/" className="px-2 py-1 rounded transition-colors">
                   EN
                 </a>
                 <span

@@ -50,7 +50,7 @@ export function Header() {
               </Link>
               <span className="text-slate-300">|</span>
               <a
-                href={`${RU_PUBLIC_ORIGIN}/`}
+                href={`${RU_PUBLIC_ORIGIN}/ru`}
                 className={`px-2 py-1 rounded transition-colors ${onRu ? 'font-semibold text-slate-900 bg-slate-100' : 'hover:text-slate-900'}`}
               >
                 RU
@@ -122,7 +122,7 @@ export function Header() {
           <a href="#faq" className="block text-slate-600 hover:text-slate-900" onClick={() => setOpen(false)}>{t('nav.faq')}</a>
           <div className="flex gap-2">
             <Link href="/" onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${!onRu ? 'font-semibold bg-slate-100' : ''}`}>EN</Link>
-            <a href={`${RU_PUBLIC_ORIGIN}/`} onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</a>
+            <a href={`${RU_PUBLIC_ORIGIN}/ru`} onClick={() => setOpen(false)} className={`px-2 py-1 text-sm rounded ${onRu ? 'font-semibold bg-slate-100' : ''}`}>RU</a>
           </div>
           <a
             href={`mailto:${productSupportEmail}`}

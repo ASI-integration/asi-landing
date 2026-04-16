@@ -71,6 +71,30 @@ export default function HomeRu() {
           ctaExternal: false,
         }} telegramVariant="icon" />
 
+        {/* ── Bridge: почему локация важна ── */}
+        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-4">
+              Доходность — это не только ремонт
+            </h2>
+            <p className="text-[var(--t-text-2)] text-base leading-relaxed mb-7">
+              Один объект работает хорошо, другой — почти не загружается. Часто дело не в качестве: локация определяет, кто вообще ищет аренду в этом районе, насколько высока конкуренция и какую цену готов платить реальный гость. Без этого понимания легко ошибиться с позиционированием и ценой — ещё до запуска.
+            </p>
+            <ul className="space-y-2">
+              {[
+                'Кому реально подходит объект — и кто будет его снимать',
+                'Какой спрос держится в районе — не по ощущениям, а по данным',
+                'Какую доходность можно ожидать до старта',
+              ].map((point) => (
+                <li key={point} className="flex items-start gap-3 text-sm text-[var(--t-text-2)]">
+                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-[color:var(--t-accent)] shrink-0" />
+                  {point}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
         {/* ── 3 продуктовых модуля ── */}
         <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
@@ -90,7 +114,7 @@ export default function HomeRu() {
                   Введите адрес — получите анализ спроса, конкуренции, магнитов трафика и ожидаемого дохода ₽/мес.
                 </p>
                 <Link
-                  href="/ru/otchet-po-dohodnosti-obektov"
+                  href="/ru/location-analysis"
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-[color:var(--t-accent)] hover:opacity-80 transition-opacity"
                 >
                   Получить отчёт →
