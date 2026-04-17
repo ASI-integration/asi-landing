@@ -277,13 +277,13 @@ export default function HomeRu() {
               Покажем, как ASI будет вести ваши объекты
             </h2>
             <p className="mt-4 text-[var(--t-text-2)] text-lg">
-              Система принимает входящие, отвечает гостям и ведёт операционные сценарии автоматически. Человек подключается только как fallback в исключительных случаях. На разборе покажем это на ваших объектах.
+              Система принимает входящие, отвечает гостям и ведёт операционные сценарии автоматически. Человек подключается только в исключительных случаях. На разборе покажем это на ваших объектах.
             </p>
             <Link
               href="/connect"
               className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-lg"
             >
-              Записаться на демо
+              Запросить разбор объектов
             </Link>
             <p className="mt-4 text-sm text-[var(--t-muted)]">Без обязательств. Прямые ответы.</p>
 
