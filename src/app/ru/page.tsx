@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
-import { FaqAccordion } from '@/components/FaqAccordion';
 import { HeroSection } from '@/components/HeroSection';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { TgIcon } from '@/components/TgIcon';
@@ -567,44 +566,71 @@ export default function HomeRu() {
         {/* ── FAQ ── */}
         <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] text-center tracking-tight">
-              Как работает автоматизация
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Вопросы
             </h2>
-            <p className="mt-3 text-center text-sm text-[var(--t-muted)] max-w-xl mx-auto">
-              Прямые ответы — без маркетинга, без жаргона.
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Коротко отвечаем на главные вопросы о том, что уже доступно и как это работает.
             </p>
-            <div className="mt-10">
-              <FaqAccordion lang="ru" />
+            <div className="flex flex-col divide-y divide-[var(--t-border)]">
+              {[
+                {
+                  q: 'Что уже доступно прямо сейчас?',
+                  a: 'Сейчас доступны два ключевых направления: коммуникационный модуль и модуль оценки локации. Их уже можно использовать как основу для автоматизации входящих обращений и предварительной оценки потенциала объекта.',
+                },
+                {
+                  q: 'Как работает коммуникационный модуль?',
+                  a: 'Система принимает входящие обращения, помогает вести коммуникацию с гостями и снижает ручную нагрузку на операционный контур. Это особенно полезно там, где важно быстро отвечать и не терять обращения.',
+                },
+                {
+                  q: 'Что показывает модуль оценки локации?',
+                  a: 'Модуль помогает оценить спрос, окружение, магниты трафика, конкуренцию и потенциальную доходность объекта до запуска или при пересмотре стратегии.',
+                },
+                {
+                  q: 'Кому это уже подходит?',
+                  a: 'Система подходит собственникам, операторам небольших портфелей и управляющим компаниям, которым нужен более собранный и автоматизированный операционный контур.',
+                },
+                {
+                  q: 'Нужен ли большой штат для работы с ASI?',
+                  a: 'Нет. Логика продукта как раз в том, чтобы уменьшать ручную нагрузку и убирать лишнюю операционную координацию там, где это возможно.',
+                },
+                {
+                  q: 'Как происходит подключение?',
+                  a: 'Сначала мы смотрим на ваши объекты, текущие процессы и задачи. После этого предлагаем формат подключения и показываем, как система может использоваться именно в вашем случае.',
+                },
+              ].map(({ q, a }) => (
+                <details key={q} className="group py-5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                  <summary className="flex items-start justify-between gap-4 text-[var(--t-text)] font-semibold text-sm sm:text-base leading-snug select-none">
+                    <span>{q}</span>
+                    <span className="mt-0.5 shrink-0 text-[var(--t-muted)] transition-transform duration-200 group-open:rotate-45" aria-hidden>+</span>
+                  </summary>
+                  <p className="mt-3 text-sm text-[var(--t-text-2)] leading-relaxed">
+                    {a}
+                  </p>
+                </details>
+              ))}
             </div>
           </div>
         </section>
 
-        {/* ── CTA + contacts ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
+        {/* ── Final CTA ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-surface-2)]">
           <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)]">
-              Посмотрите на реальном примере
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
+              Готовы посмотреть, как это работает на ваших объектах?
             </h2>
-            <p className="mt-4 text-[var(--t-text-2)] text-lg">
-              Прогоним продукт на реальном сценарии — увидите исполнение, а не слайды. Подтверждение — в течение одного рабочего дня.
+            <p className="mt-4 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
+              Оставьте заявку, и мы покажем, как ASI можно использовать для ваших объектов, сценариев и текущих операционных задач.
             </p>
             <Link
               href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-10 py-5 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-lg"
+              className="mt-8 inline-flex items-center justify-center px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-md hover:scale-[1.02] text-base"
             >
-              Записаться на демо
+              Запросить разбор объектов
             </Link>
-            <p className="mt-4 text-sm text-[var(--t-muted)]">Без обязательств. Прямые ответы.</p>
-
-            <div className="mt-10 pt-8 border-t border-[var(--t-border)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)] mb-5">
-                Или напишите напрямую
-              </p>
-              <ContactLinks />
-              <p className="mt-4 text-xs text-[var(--t-muted)]">
-                Пн–Пт, 9:00–18:00 МСК · обычно быстрее
-              </p>
-            </div>
+            <p className="mt-3 text-sm text-[var(--t-muted)]">
+              Без лишних презентаций. Смотрим на ваши реальные задачи.
+            </p>
           </div>
         </section>
 
