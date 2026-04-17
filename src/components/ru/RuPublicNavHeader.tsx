@@ -112,23 +112,7 @@ export function RuPublicNavHeader({
                 <TgIcon className="w-4 h-4 shrink-0" />
                 <span className="sr-only">Telegram</span>
               </a>
-              <div className={`flex items-center gap-1 text-sm ${surfaceMuted[surface]}`}>
-                <a href="/" className="px-2 py-1 rounded transition-colors">
-                  EN
-                </a>
-                <span
-                  className={
-                    surface === 'dark'
-                      ? 'text-slate-600'
-                      : surface === 'light'
-                        ? 'text-slate-300'
-                        : 'text-[var(--t-border)]'
-                  }
-                >
-                  |
-                </span>
-                <span className={surfaceLangActive[surface]}>RU</span>
-              </div>
+              <span className={surfaceLangActive[surface]}>RU</span>
               {showTheme ? <ThemeSwitcher /> : null}
               <Link href="/login" className={surfaceLogin[surface]}>
                 Войти
@@ -141,7 +125,7 @@ export function RuPublicNavHeader({
 
         {/* Bottom row: logo + main nav */}
         <div className="py-3 sm:py-3.5 flex items-center gap-4">
-          <Link href="/" className={surfaceLogo[surface]}>
+          <Link href="/ru" className={surfaceLogo[surface]}>
             ASI
           </Link>
           <nav

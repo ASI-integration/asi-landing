@@ -193,7 +193,7 @@ export default function HomeRu() {
                   Принимает входящие обращения, ведёт переписку с гостями, автоматизирует ответы и снижает нагрузку на операционный контур.
                 </p>
                 <Link
-                  href="/features/communication"
+                  href={DEMO_LINK}
                   className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
                 >
                   Посмотреть модуль →
