@@ -25,6 +25,7 @@ export default function OnboardingPageContent() {
   const [googleOAuthConfigured, setGoogleOAuthConfigured] = useState<boolean>(false);
   /** Server hint: ready | missing_client_id | missing_client_secret — for UI/debug only. */
   const [googleOAuthEnv, setGoogleOAuthEnv] = useState<string>('');
+  const [googleOAuthMode, setGoogleOAuthMode] = useState<'redirect' | 'gis' | 'disabled'>('disabled');
   const [googleConfigLoading, setGoogleConfigLoading] = useState<boolean>(true);
   // Kept only for GIS fallback/debug; not used for enablement.
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
@@ -62,14 +63,19 @@ export default function OnboardingPageContent() {
           googleClientId?: string;
           googleOAuthConfigured?: boolean;
           googleOAuthEnv?: string;
+          googleOAuthMode?: 'redirect' | 'gis' | 'disabled';
         };
         const clientId = (data.googleClientId || '').trim();
         const configured = Boolean(data.googleOAuthConfigured);
         const envHint = typeof data.googleOAuthEnv === 'string' ? data.googleOAuthEnv : '';
+        const mode = data.googleOAuthMode === 'redirect' || data.googleOAuthMode === 'gis' || data.googleOAuthMode === 'disabled'
+          ? data.googleOAuthMode
+          : (configured ? 'redirect' : 'disabled');
         if (!cancelled && isMountedRef.current) {
           setGoogleClientId(clientId);
           setGoogleOAuthConfigured(configured);
           setGoogleOAuthEnv(envHint);
+          setGoogleOAuthMode(mode);
         }
         if (debugGoogle) {
           // eslint-disable-next-line no-console
@@ -78,6 +84,7 @@ export default function OnboardingPageContent() {
             clientIdPresent: Boolean(clientId),
             oauthConfigured: configured,
             googleOAuthEnv: envHint || undefined,
+            mode,
           });
         }
       } catch (e) {
@@ -89,6 +96,7 @@ export default function OnboardingPageContent() {
           setGoogleClientId('');
           setGoogleOAuthConfigured(false);
           setGoogleOAuthEnv('');
+          setGoogleOAuthMode('disabled');
         }
       } finally {
         // Always clear the loading flag once the request settles.
@@ -205,9 +213,8 @@ export default function OnboardingPageContent() {
         return;
       }
 
-      // Production-robust flow: full-page redirect OAuth (no popup / no lost user gesture).
-      // We keep the GIS flow as a fallback only when redirect env isn't configured.
-      {
+      // Mode 1: redirect OAuth (requires server-side client secret).
+      if (googleOAuthMode === 'redirect') {
         const debug = debugGoogle ? '1' : '0';
         const url = `/api/auth/google/start?plan=${encodeURIComponent(String(selectedPlanValue))}&debug=${debug}`;
         setGoogleStatus('Открываем Google…');
@@ -215,6 +222,7 @@ export default function OnboardingPageContent() {
         return;
       }
 
+      // Mode 2: GIS id_token (no server secret required). Requires client id.
       // If config wasn't available at click time, re-fetch once (protects against earlier transient failures).
       if (!googleClientId && !publicConfigFetchAttemptedRef.current) {
         publicConfigFetchAttemptedRef.current = true;
@@ -429,8 +437,12 @@ export default function OnboardingPageContent() {
                 {googleConfigLoading
                   ? 'Проверяем доступность Google…'
                   : googleReady
-                    ? 'Google OAuth: доступен'
-                    : 'Google OAuth: недоступен — выберите другой способ'}
+                    ? (googleOAuthMode === 'redirect'
+                        ? 'Google: доступен'
+                        : googleOAuthMode === 'gis'
+                          ? 'Google: доступен (упрощённый режим)'
+                          : 'Google: недоступен')
+                    : 'Google: недоступен — выберите другой способ'}
               </p>
 
               {googleConfigLoading ? (
@@ -453,7 +465,7 @@ export default function OnboardingPageContent() {
               ) : (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm text-slate-600">
-                    Вход через Google сейчас выключен на сервере. Вы всё равно можете начать тест: напишите нам или зарегистрируйтесь по email справа.
+                    Вход через Google сейчас недоступен. Вы всё равно можете начать тест: зарегистрируйтесь по email или напишите нам.
                   </p>
                   <a
                     href="https://t.me/ASI_core_bot"
@@ -469,6 +481,12 @@ export default function OnboardingPageContent() {
                   >
                     Запросить доступ по email
                   </a>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-slate-700">Другие способы</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Яндекс ID и VK ID пока не включены для входа. Можно использовать email или Telegram.
+                    </p>
+                  </div>
                   <div className="pt-1 text-center">
                     <a
                       href="/ru/contacts"

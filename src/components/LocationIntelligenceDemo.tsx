@@ -1471,8 +1471,10 @@ function ASIPanel({
         )
       : analysis.conclusion;
   const band = getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
-  const strategy =
-    evergreenIndex <= 6 ? 'mid_term' : evergreenIndex <= 7.5 ? 'hybrid' : 'short_term';
+  // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
+  const strategy: 'mid_term' | 'hybrid' | 'short_term' =
+    analysis.locationScore?.recommended_strategy ??
+    (evergreenIndex >= 70 ? 'short_term' : evergreenIndex >= 45 ? 'hybrid' : 'mid_term');
   const strategyPoints =
     strategy === 'mid_term' ? c.strategyMidTerm
     : strategy === 'hybrid' ? c.strategyHybrid
@@ -1489,22 +1491,30 @@ function ASIPanel({
   const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
   const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
-  const incomeRange = locale === 'ru'
-    ? (() => {
-        const income = analysis.locationScore?.estimated_monthly_income;
-        if (income) {
-          const val = income[strategy as keyof typeof income];
-          const lo = Math.round(val * 0.85 / 5000) * 5000;
-          const hi = Math.round(val * 1.15 / 5000) * 5000;
-          return `${lo.toLocaleString('ru-RU')} – ${hi.toLocaleString('ru-RU')} ₽`;
-        }
-        return strategy === 'mid_term' ? '80 000 – 130 000 ₽'
-          : strategy === 'hybrid'     ? '120 000 – 200 000 ₽'
-          :                             '160 000 – 300 000 ₽';
-      })()
-    : strategy === 'mid_term' ? '$1 800 – $3 200'
-    : strategy === 'hybrid'   ? '$2 500 – $4 500'
-    :                           '$3 500 – $7 000';
+  const incomeRange = (() => {
+    const income = analysis.locationScore?.estimated_monthly_income;
+    if (income) {
+      const val = income[strategy];
+      if (locale === 'ru') {
+        const lo = Math.round(val * 0.85 / 5000) * 5000;
+        const hi = Math.round(val * 1.15 / 5000) * 5000;
+        return `${lo.toLocaleString('ru-RU')} – ${hi.toLocaleString('ru-RU')} ₽`;
+      }
+      // Convert RUB to approximate USD (×0.011) for EN locale display
+      const loUsd = Math.round(val * 0.85 * 0.011 / 100) * 100;
+      const hiUsd = Math.round(val * 1.15 * 0.011 / 100) * 100;
+      return `$${loUsd.toLocaleString()} – $${hiUsd.toLocaleString()}`;
+    }
+    // Fallback when locationScore is unavailable
+    if (locale === 'ru') {
+      return strategy === 'mid_term' ? '80 000 – 130 000 ₽'
+        : strategy === 'hybrid'     ? '120 000 – 200 000 ₽'
+        :                             '160 000 – 300 000 ₽';
+    }
+    return strategy === 'mid_term' ? '$900 – $1 500'
+      : strategy === 'hybrid'      ? '$1 300 – $2 200'
+      :                              '$1 800 – $3 300';
+  })();
 
   function openStandaloneFullReportRu() {
     (async () => {

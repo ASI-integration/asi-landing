@@ -52,6 +52,27 @@ export async function POST(req: NextRequest) {
         fetchAndCache(lat, lon);
       }
 
+      const ca = cached.entry.analysis;
+      console.info(
+        `[location-demo-analyze] result ` +
+        `lat=${lat} lon=${lon} ` +
+        `elements=${cached.entry.elementsCount} ` +
+        `magnets=${ca.magnets.length} ` +
+        `competitors=${ca.competitors.length} ` +
+        `evergreenIndex=${ca.evergreenIndex} ` +
+        `scoreBand=${ca.scoreBand} ` +
+        `locationScore=${ca.locationScore?.location_score ?? 'n/a'} ` +
+        `recommendedStrategy=${ca.locationScore?.recommended_strategy ?? 'n/a'} ` +
+        `demandType=${ca.demandType} ` +
+        `audience=${ca.audienceAnalysis?.primaryAudience ?? 'n/a'} ` +
+        `audienceFallback=${ca.audienceAnalysis?.fallbackMode ?? false} ` +
+        `audienceFit=${ca.audienceAnalysis?.audienceFitScore ?? 'n/a'} ` +
+        `clusterDetected=${ca.gravityExplanation.clusterDetected} ` +
+        `competitorPressure=${ca.gravityExplanation.competitorPressureLevel} ` +
+        `usedFallbackQuery=${!!meta.usedFallbackQuery} ` +
+        `cached=true freshness=${cached.freshness}`,
+      );
+
       return NextResponse.json({
         analysis: cached.entry.analysis,
         elementsCount: cached.entry.elementsCount,
@@ -81,6 +102,27 @@ export async function POST(req: NextRequest) {
       cached: false,
       ...(usedFallbackQuery ? { usedFallbackQuery: true } : {}),
     };
+
+    // ── Structured diagnostics — always logged; helps detect silent regressions ──
+    console.info(
+      `[location-demo-analyze] result ` +
+      `lat=${lat} lon=${lon} ` +
+      `elements=${elements.length} ` +
+      `magnets=${analysis.magnets.length} ` +
+      `competitors=${analysis.competitors.length} ` +
+      `evergreenIndex=${analysis.evergreenIndex} ` +
+      `scoreBand=${analysis.scoreBand} ` +
+      `locationScore=${analysis.locationScore?.location_score ?? 'n/a'} ` +
+      `recommendedStrategy=${analysis.locationScore?.recommended_strategy ?? 'n/a'} ` +
+      `demandType=${analysis.demandType} ` +
+      `audience=${analysis.audienceAnalysis?.primaryAudience ?? 'n/a'} ` +
+      `audienceFallback=${analysis.audienceAnalysis?.fallbackMode ?? false} ` +
+      `audienceFit=${analysis.audienceAnalysis?.audienceFitScore ?? 'n/a'} ` +
+      `clusterDetected=${analysis.gravityExplanation.clusterDetected} ` +
+      `competitorPressure=${analysis.gravityExplanation.competitorPressureLevel} ` +
+      `usedFallbackQuery=${!!usedFallbackQuery} ` +
+      `cached=false`,
+    );
 
     return NextResponse.json({
       analysis,
