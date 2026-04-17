@@ -1594,7 +1594,7 @@ function ASIPanel({
           <button
             type="button"
             onClick={openStandaloneFullReportRu}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
             Открыть полный отчёт
           </button>
@@ -1980,7 +1980,7 @@ function ASIPanel({
         <button
           onClick={() =>
             router.push(locale === 'ru' ? '/connect' : '/report')}
-          className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer"
+          className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.99]"
         >
           {c.ctaBlock.button}
         </button>
@@ -2110,7 +2110,7 @@ function ASIPanel({
             {!magnetExpanded && hiddenCount > 0 && (
               <button
                 onClick={() => setMagnetExpanded(true)}
-                className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
+                className="mt-3 inline-flex items-center gap-2 text-[16px] text-slate-400 hover:text-slate-200 transition-colors underline underline-offset-4 decoration-slate-700 hover:decoration-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded"
               >
                 {c.showMoreMagnets(hiddenCount)}
               </button>
@@ -2118,7 +2118,7 @@ function ASIPanel({
             {magnetExpanded && allFiltered.length > MAGNET_DEFAULT_LIMIT && (
               <button
                 onClick={() => setMagnetExpanded(false)}
-                className="mt-3 text-[16px] text-slate-600 hover:text-slate-400 transition-colors"
+                className="mt-3 inline-flex items-center gap-2 text-[16px] text-slate-400 hover:text-slate-200 transition-colors underline underline-offset-4 decoration-slate-700 hover:decoration-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded"
               >
                 {c.collapse}
               </button>
@@ -2325,10 +2325,10 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                           if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
                         }
                       }}
-                      className={`text-[17px] px-2 py-0.5 rounded-full border transition-all cursor-pointer hover:brightness-125 ${
+                      className={`text-[17px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
                         activeTag === i
                           ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700/60'
-                          : 'bg-slate-800/80 text-slate-500 border-slate-800 hover:text-slate-300 hover:border-slate-600'
+                          : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200 hover:border-slate-700'
                       }`}
                     >
                       {tag}
@@ -2449,7 +2449,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                 <button
                   type="submit"
                   disabled={phase === 'loading'}
-                  className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99]"
+                  className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                 >
                   {phase === 'loading' ? c.loadingSteps[step] : c.submitIdle}
                 </button>

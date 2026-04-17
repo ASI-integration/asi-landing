@@ -469,12 +469,14 @@ export default function OnboardingPageContent() {
                   >
                     Запросить доступ по email
                   </a>
-                  <a
-                    href="/ru/contacts"
-                    className="flex w-full items-center justify-center px-5 py-3 rounded-xl border border-slate-200 text-slate-800 font-medium hover:bg-slate-50"
-                  >
-                    Страница контактов
-                  </a>
+                  <div className="pt-1 text-center">
+                    <a
+                      href="/ru/contacts"
+                      className="text-sm text-slate-600 underline underline-offset-2 hover:text-slate-900 transition-colors"
+                    >
+                      Страница контактов
+                    </a>
+                  </div>
                   <a href="#connect-email" className="block text-center text-sm text-slate-600 underline hover:text-slate-900">
                     Или продолжить с паролем →
                   </a>
@@ -496,11 +498,13 @@ export default function OnboardingPageContent() {
             <div id="connect-email" className="bg-white rounded-2xl border border-slate-200 p-5 scroll-mt-8">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-slate-900">Email</p>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200">
                   <button
                     type="button"
-                    className={`text-xs px-3 py-1.5 rounded-lg border ${
-                      mode === 'signup' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+                      mode === 'signup'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-transparent text-slate-700 border-transparent hover:bg-white hover:border-slate-200'
                     }`}
                     onClick={() => setMode('signup')}
                     disabled={loading}
@@ -509,8 +513,10 @@ export default function OnboardingPageContent() {
                   </button>
                   <button
                     type="button"
-                    className={`text-xs px-3 py-1.5 rounded-lg border ${
-                      mode === 'login' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+                      mode === 'login'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-transparent text-slate-700 border-transparent hover:bg-white hover:border-slate-200'
                     }`}
                     onClick={() => setMode('login')}
                     disabled={loading}

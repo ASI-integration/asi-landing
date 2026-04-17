@@ -179,7 +179,11 @@ export default function HomeRu() {
             <div className="grid sm:grid-cols-2 gap-5">
 
               {/* Card 1 — Коммуникационный модуль */}
-              <div className="flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
+              <Link
+                href="/connect"
+                aria-label="Открыть подключение: коммуникационный модуль"
+                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+              >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
                     Коммуникационный модуль
@@ -191,16 +195,17 @@ export default function HomeRu() {
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
                   Принимает входящие обращения 24/7, ведёт переписку с гостями и снижает ручную нагрузку на операционный контур. Пропущенных тредов нет.
                 </p>
-                <Link
-                  href="/connect"
-                  className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
-                >
+                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
-                </Link>
-              </div>
+                </span>
+              </Link>
 
               {/* Card 2 — Модуль оценки локации */}
-              <div className="flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
+              <Link
+                href="/ru/location-analysis"
+                aria-label="Открыть анализ локации"
+                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+              >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
                     Модуль оценки локации
@@ -212,13 +217,10 @@ export default function HomeRu() {
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
                   Показывает спрос в зоне, магниты трафика, конкурентную плотность и расчётный потенциал доходности. Полезно до запуска и при пересмотре позиционирования.
                 </p>
-                <Link
-                  href="/ru/location-analysis"
-                  className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
-                >
+                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Открыть анализ локации →
-                </Link>
-              </div>
+                </span>
+              </Link>
 
             </div>
           </div>
@@ -514,7 +516,9 @@ export default function HomeRu() {
                 <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
                   Подходит для собственников, которые хотят автоматизировать входящие обращения, коммуникацию с гостями и базовые операционные сценарии без найма дополнительного персонала.
                 </p>
-                <div className="mt-6" aria-hidden />
+                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
+                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
+                </div>
               </Link>
 
               {/* Operator */}
@@ -535,7 +539,9 @@ export default function HomeRu() {
                 <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
                   Для операторов, которым нужен единый контур работы с несколькими объектами: коммуникация, обращения, задачи, доступы и видимость по доходности.
                 </p>
-                <div className="mt-6" aria-hidden />
+                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
+                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
+                </div>
               </Link>
 
               {/* Management company */}
@@ -556,7 +562,9 @@ export default function HomeRu() {
                 <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
                   Для портфелей с большим числом объектов, кастомной логикой процессов и отдельными требованиями к внедрению и поддержке.
                 </p>
-                <div className="mt-6" aria-hidden />
+                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
+                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
+                </div>
               </Link>
 
             </div>
@@ -599,12 +607,12 @@ export default function HomeRu() {
                   a: 'Оставьте заявку через форму. Мы смотрим на ваши объекты и текущие задачи, после чего предлагаем конкретный формат работы.',
                 },
               ].map(({ q, a }) => (
-                <details key={q} className="group py-5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-                  <summary className="flex items-start justify-between gap-4 text-[var(--t-text)] font-semibold text-sm sm:text-base leading-snug select-none">
+                <details key={q} className="group py-3 list-none [&::-webkit-details-marker]:hidden">
+                  <summary className="flex items-start justify-between gap-4 rounded-xl px-3 py-2 text-[var(--t-text)] font-semibold text-sm sm:text-base leading-snug select-none cursor-pointer hover:bg-[var(--t-surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]">
                     <span>{q}</span>
-                    <span className="mt-0.5 shrink-0 text-[var(--t-muted)] transition-transform duration-200 group-open:rotate-45" aria-hidden>+</span>
+                    <span className="mt-0.5 shrink-0 text-[var(--t-muted)] transition-transform duration-200 group-open:rotate-45 group-hover:text-[var(--t-text)]" aria-hidden>+</span>
                   </summary>
-                  <p className="mt-3 text-sm text-[var(--t-text-2)] leading-relaxed">
+                  <p className="mt-3 px-3 pb-3 text-sm text-[var(--t-text-2)] leading-relaxed">
                     {a}
                   </p>
                 </details>
