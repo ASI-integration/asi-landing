@@ -492,85 +492,71 @@ export default function HomeRu() {
             <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
               Тарифы
             </h2>
-            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-2">
-              Фиксированная стоимость. Без расширения штата.
-            </p>
-            <p className="text-[var(--t-muted)] text-sm mb-10">
-              Коммуникация с гостями, платежи, бронирования и контроль задач — без найма. Цена за 1 объект в месяц.
+            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-10">
+              Выберите формат подключения под ваш масштаб и задачи.
             </p>
             <div className="grid sm:grid-cols-3 gap-6">
 
-              {/* Small */}
+              {/* Owner */}
               <Link
                 href="/connect?plan=small"
                 className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Базовый"
+                aria-label="Выбрать тариф Для собственника"
               >
                 <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-700 text-xs font-medium rounded-full border border-emerald-500/20">
-                  🟢 Базовый
+                  1–3 объекта
                 </span>
                 <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
                   12 900 ₽ / объект / месяц
                 </p>
-                <p className="mt-1 text-sm text-[var(--t-muted)]">
-                  1–3 объекта
+                <p className="mt-1 text-sm text-[var(--t-muted)] font-medium">
+                  Для собственника
                 </p>
-                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
-                  <li>Базовая автоматизация коммуникации</li>
-                  <li>Обработка типовых запросов гостей</li>
-                  <li>Единый канал взаимодействия</li>
-                  <li>Подходит для небольшого числа объектов</li>
-                </ul>
+                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
+                  Подходит для собственников, которые хотят автоматизировать входящие обращения, коммуникацию с гостями и базовые операционные сценарии без найма дополнительного персонала.
+                </p>
                 <div className="mt-6" aria-hidden />
               </Link>
 
-              {/* Growth */}
+              {/* Operator */}
               <Link
                 href="/connect?plan=growth"
                 className="p-6 rounded-xl border border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Масштабирование"
+                aria-label="Выбрать тариф Для оператора"
               >
                 <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
-                  🟡 Масштабирование
+                  До 15 объектов
                 </span>
                 <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
                   8 900 ₽ / объект / месяц
                 </p>
-                <p className="mt-1 text-sm text-[var(--t-text-2)]">
-                  4–10 объектов
+                <p className="mt-1 text-sm text-[var(--t-text-2)] font-medium">
+                  Для оператора
                 </p>
-                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
-                  <li>Включает возможности базового тарифа</li>
-                  <li>Для растущего портфеля объектов</li>
-                  <li>Масштабирование коммуникации и бронирований</li>
-                  <li>Больше сценариев автоматизации</li>
-                  <li>Подходит для активных операторов</li>
-                </ul>
+                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
+                  Для операторов, которым нужен единый контур работы с несколькими объектами: коммуникация, обращения, задачи, доступы и видимость по доходности.
+                </p>
                 <div className="mt-6" aria-hidden />
               </Link>
 
-              {/* Enterprise */}
+              {/* Management company */}
               <Link
                 href="/connect?plan=enterprise"
                 className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Крупный портфель"
+                aria-label="Выбрать тариф Для управляющей компании"
               >
                 <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
-                  🔵 Крупный портфель
+                  Индивидуально
                 </span>
                 <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
-                  6 900 ₽ / объект / месяц
+                  По запросу
                 </p>
-                <p className="mt-1 text-sm text-[var(--t-muted)]">
-                  от 20 объектов
+                <p className="mt-1 text-sm text-[var(--t-muted)] font-medium">
+                  Для управляющей компании
                 </p>
-                <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
-                  <li>Включает возможности тарифа для масштабирования</li>
-                  <li>Для крупных портфелей объектов</li>
-                  <li>Централизованное управление коммуникацией и бронированиями</li>
-                  <li>Масштабирование операционного контура</li>
-                  <li>Подходит для операторов и управляющих компаний</li>
-                </ul>
+                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
+                  Для портфелей с большим числом объектов, кастомной логикой процессов и отдельными требованиями к внедрению и поддержке.
+                </p>
                 <div className="mt-6" aria-hidden />
               </Link>
 
