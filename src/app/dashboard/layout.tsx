@@ -9,7 +9,10 @@ import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
 
 const navItems = [
   { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard/data-source', key: 'dataSource' },
   { href: '/dashboard/properties', key: 'properties' },
+  { href: '/dashboard/communication', key: 'communication' },
+  { href: '/dashboard/bookings', key: 'bookings' },
   { href: '/dashboard/automations', key: 'automations' },
   { href: '/dashboard/settings', key: 'settings' },
 ] as const;
@@ -43,10 +46,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                 key={key}
                 href={href}
                 onClick={onClose}
-                className={`block px-4 py-2.5 text-sm font-medium rounded-md transition-colors ${
+                className={`block px-4 py-3 text-base font-medium rounded-md transition-colors ${
                   isActive
                     ? 'bg-slate-800 text-white'
-                    : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 }`}
               >
                 {t(`dashboard.sidebar.${key}`)}

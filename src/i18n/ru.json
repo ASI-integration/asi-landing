@@ -579,13 +579,19 @@
   "dashboard": {
     "sidebar": {
       "overview": "Обзор",
+      "dataSource": "Источник данных",
       "properties": "Объекты",
+      "communication": "Коммуникация",
+      "bookings": "Бронирования",
       "automations": "Автоматизация",
       "settings": "Настройки"
     },
     "propertiesSubtitle": "Управление объектами",
     "automationsSubtitle": "Настройка автоматизаций",
     "settingsSubtitle": "Аккаунт и настройки",
+    "dataSourceSubtitle": "Подключение источника данных",
+    "communicationSubtitle": "Коммуникация с гостями",
+    "bookingsSubtitle": "Бронирования и размещение",
     "header": {
       "userEmail": "user@example.com",
       "userMenu": "Меню пользователя",
