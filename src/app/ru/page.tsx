@@ -380,30 +380,40 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Под любой масштаб ── */}
-        <section id="scale" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Под любой масштаб
+        {/* ── Растёт вместе с вами ── */}
+        <section id="scale" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Растёт вместе с вами
             </h2>
-            <p className="text-[var(--t-muted)] text-lg mb-8">
-              Система растёт вместе с портфелем — без найма и без смены инструментов.
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Один объект или сотня. ASI справляется с разным масштабом без перестройки процессов.
             </p>
-            <div className="grid sm:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-3 gap-5">
               {[
-                { scale: '1 объект',      note: 'Полная автоматизация с первого дня' },
-                { scale: '10 объектов',   note: 'Работает без операционного персонала' },
-                { scale: '100+ объектов', note: 'Централизованное управление через ИИ' },
-              ].map(({ scale, note }) => (
-                <div key={scale} className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]">
-                  <p className="text-[var(--t-text)] font-semibold text-base">{scale}</p>
-                  <p className="mt-1 text-sm text-[var(--t-muted)] leading-relaxed">{note}</p>
+                {
+                  label: '1 объект',
+                  title: 'Для собственника одной квартиры',
+                  body: 'Автоматизирует обработку обращений, коммуникацию, платежи и базовые операционные сценарии без найма дополнительного персонала.',
+                },
+                {
+                  label: '10 объектов',
+                  title: 'Для оператора портфеля',
+                  body: 'Даёт единый контур управления по нескольким объектам: входящие обращения, задачи, доступы, коммуникация и видимость по доходности.',
+                },
+                {
+                  label: '100+ объектов',
+                  title: 'Для управляющей компании',
+                  body: 'Масштабирует операционный контур без ручной координации между командами и разрозненными инструментами.',
+                },
+              ].map(({ label, title, body }) => (
+                <div key={label} className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                  <span className="text-xs font-bold uppercase tracking-widest text-[var(--t-muted)] mb-3">{label}</span>
+                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">{title}</h3>
+                  <p className="text-sm text-[var(--t-text-2)] leading-relaxed">{body}</p>
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-xs text-[var(--t-muted)]">
-              Используется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
-            </p>
           </div>
         </section>
 
