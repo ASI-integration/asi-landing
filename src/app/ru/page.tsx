@@ -133,7 +133,7 @@ export default function HomeRu() {
                     href="/connect"
                     className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 hover:text-sky-300 transition-colors"
                   >
-                    Посмотреть демо →
+                    Записаться на демо →
                   </Link>
                   <Link
                     href="/features/communication"
@@ -193,7 +193,7 @@ export default function HomeRu() {
                   1–3 объекта
                 </p>
                 <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
-                  <li>Базовая автоматизация коммуникации</li>
+                  <li>Базовая автоматизация ��оммуникации</li>
                   <li>Обработка типовых запросов гостей</li>
                   <li>Единый канал взаимодействия</li>
                   <li>Подходит для небольшого числа объектов</li>
@@ -293,7 +293,7 @@ export default function HomeRu() {
               </p>
               <ContactLinks />
               <p className="mt-4 text-xs text-[var(--t-muted)]">
-                Пн–Пт, 9:00–18:00 МСК · обычно быстрее
+                Система работает 24/7. Поддержка по новым подключениям: Пн–Пт, 9:00–18:00 МСК — обычно быстрее.
               </p>
             </div>
           </div>
