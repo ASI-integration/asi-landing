@@ -10,6 +10,103 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
 const DEMO_LINK = '/connect';
 
+/* ─── Platform modules ──────────────────────────────────────────────────────── */
+const MODULES = [
+  {
+    id: 'real-estate',
+    name: 'Автопилот для недвижимости',
+    status: 'ACTIVE' as const,
+    desc: 'Ведёт коммуникации с гостями, операции, платежи и контроль от начала до конца.',
+  },
+  {
+    id: 'security',
+    name: 'Автопилот безопасности',
+    status: 'COMING SOON' as const,
+    desc: 'Мониторит события, исполняет правила доступа и автоматически реагирует на инциденты.',
+  },
+  {
+    id: 'market',
+    name: 'Автоматизация рынка',
+    status: 'COMING SOON' as const,
+    desc: 'Ведёт клиентские потоки, транзакции и операционные процессы без отдельного операционного стола.',
+  },
+];
+
+/* ─── Что автоматизируется ───────────────────────────────────────────────────── */
+const AUTOMATED_ITEMS = [
+  {
+    title: 'Коммуникация с гостями',
+    desc: 'ИИ отвечает мгновенно, 24/7 — заменяет стойку и мониторинг почты.',
+  },
+  {
+    title: 'Управление объявлениями',
+    desc: 'Создание, обновления и синхронизация по каналам — заменяет администратора листингов.',
+  },
+  {
+    title: 'Ценообразование',
+    desc: 'Автоматически подстраивается под сигналы спроса — заменяет ручной тарифный стол.',
+  },
+  {
+    title: 'Обработка бронирований',
+    desc: 'Подтверждения и календарь исполняются автоматически — заменяет координатора броней.',
+  },
+  {
+    title: 'Отзывы',
+    desc: 'Запросы и ответы по политике — заменяет ручную работу с репутацией.',
+  },
+  {
+    title: 'Инциденты и вопросы',
+    desc: 'ИИ доводит большинство кейсов до решения — заменяет первую линию поддержки.',
+  },
+  {
+    title: 'Синхронизация каналов',
+    desc: 'Работает с площадками; заменяет менеджеров каналов и табличный операционный контур.',
+  },
+  {
+    title: 'Финансовый учёт',
+    desc: 'Доход, показатели и прогнозы собираются автоматически — заменяет операционную отчётность.',
+  },
+];
+
+/* ─── Cards ─────────────────────────────────────────────────────────────────── */
+const CARDS = [
+  {
+    icon: '📥',
+    title: 'Коммуникация с гостями',
+    desc: 'Ведёт входящие обращения гостей круглосуточно — без задержек и пропущенных тредов.',
+  },
+  {
+    icon: '📋',
+    title: 'Сбор данных и приём заявок',
+    desc: 'Исполняет квалификацию и сбор данных целиком — заменяет сотрудника на приёме.',
+  },
+  {
+    icon: '🔄',
+    title: 'Рабочие процессы и расписание',
+    desc: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает автоматически.',
+  },
+  {
+    icon: '💳',
+    title: 'Платежи и монетизация',
+    desc: 'Доплаты, поздний выезд, дополнительные услуги — счёт в чате, оплата в один клик.',
+  },
+  {
+    icon: '📊',
+    title: 'Динамическое ценообразование',
+    desc: 'Тарифы двигаются со спросом, конкурентами и загрузкой — без ревеню-менеджера в контуре.',
+  },
+  {
+    icon: '🔔',
+    title: 'Редкий вызов оператора',
+    desc: 'Истинные исключения уходят человеку с полным контекстом. Всё остальное исполняется автоматически.',
+  },
+  {
+    icon: '🔒',
+    title: 'Безопасность и контроль доступа',
+    desc: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматические сценарии реагирования.',
+  },
+];
+
 /* ─── Contacts ──────────────────────────────────────────────────────────────── */
 function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) {
   const cls = orientation === 'row'
@@ -71,94 +168,148 @@ export default function HomeRu() {
           ctaExternal: false,
         }} telegramVariant="icon" />
 
-        {/* ── Bridge: почему локация важна ── */}
-        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-4">
-              Доходность — это не только ремонт
+        {/* ── Что реально автоматизируется ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
+              Что реально автоматизируется
             </h2>
-            <p className="text-[var(--t-text-2)] text-base leading-relaxed mb-7">
-              Один объект работает хорошо, другой — почти не загружается. Часто дело не в качестве: локация определяет, кто вообще ищет аренду в этом районе, насколько высока конкуренция и какую цену готов платить реальный гость. Без этого понимания легко ошибиться с позиционированием и ценой — ещё до запуска.
+            <p className="text-[var(--t-muted)] text-lg mb-10">
+              Не инструменты. Не дашборды. Операции.
             </p>
-            <ul className="space-y-2">
-              {[
-                'Кому реально подходит объект — и кто будет его снимать',
-                'Какой спрос держится в районе — не по ощущениям, а по данным',
-                'Какую доходность можно ожидать до старта',
-              ].map((point) => (
-                <li key={point} className="flex items-start gap-3 text-sm text-[var(--t-text-2)]">
-                  <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-[color:var(--t-accent)] shrink-0" />
-                  {point}
-                </li>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {AUTOMATED_ITEMS.map((item) => (
+                <div
+                  key={item.title}
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
+                >
+                  <h3 className="font-semibold text-[var(--t-text)] text-sm leading-snug">{item.title}</h3>
+                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
+                </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Не очередной инструмент ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-8">
+              Не очередной инструмент
+            </h2>
+            <ul className="space-y-3 text-[var(--t-text-2)] text-base leading-relaxed">
+              <li>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
+                Менеджеры каналов → всё равно нужен ручной контроль
+              </li>
+              <li>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
+                CRM → всё равно нужны операторы
+              </li>
+              <li>
+                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
+                Точечные продукты «автоматизации» → частичное покрытие
+              </li>
+              <li className="pt-2 text-[var(--t-text)] font-medium">
+                <span className="text-emerald-500/90" aria-hidden>✅ </span>
+                ASI → заменяет операционный слой целиком
+              </li>
             </ul>
           </div>
         </section>
 
-        {/* ── 3 продуктовых модуля ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Три направления
+        {/* ── Под любой масштаб ── */}
+        <section id="scale" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
+              Под любой масштаб
             </h2>
-            <p className="text-[var(--t-muted)] mb-10">
-              Каждое направление закрывает отдельный контур и работает как часть единой системы.
+            <p className="text-[var(--t-muted)] text-lg mb-8">
+              Система растёт вместе с портфелем — без найма и без смены инструментов.
             </p>
-            <div className="grid sm:grid-cols-3 gap-6">
-
-              {/* Module 1 — Location */}
-              <div className="flex flex-col p-7 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:border-[color:var(--t-accent)]/60 hover:bg-[color-mix(in_srgb,var(--t-accent)_5%,var(--t-surface))] transition-all">
-                <div className="text-3xl mb-4">📍</div>
-                <h3 className="font-bold text-[var(--t-text)] text-lg mb-2">Оценка доходности</h3>
-                <p className="text-sm text-[var(--t-muted)] leading-relaxed mb-6 flex-1">
-                  Введите адрес — получите анализ спроса, конкуренции, магнитов трафика и ожидаемого дохода ₽/мес.
-                </p>
-                <Link
-                  href="/ru/location-analysis"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-[color:var(--t-accent)] hover:opacity-80 transition-opacity"
-                >
-                  Получить отчёт →
-                </Link>
-              </div>
-
-              {/* Module 2 — Communication */}
-              <div className="flex flex-col p-7 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:border-sky-500/40 hover:bg-sky-950/10 transition-all">
-                <div className="text-3xl mb-4">💬</div>
-                <h3 className="font-bold text-[var(--t-text)] text-lg mb-2">Автоматизация общения</h3>
-                <p className="text-sm text-[var(--t-muted)] leading-relaxed mb-6 flex-1">
-                  ИИ ведёт переписку с гостями 24/7: мгновенные ответы, исполнение в чате, эскалация только в исключительных случаях.
-                </p>
-                <div className="flex flex-col gap-2">
-                  <Link
-                    href="/connect"
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 hover:text-sky-300 transition-colors"
-                  >
-                    Посмотреть демо →
-                  </Link>
-                  <Link
-                    href="/features/communication"
-                    className="text-xs text-[var(--t-muted)] hover:text-[var(--t-text-2)] transition-colors"
-                  >
-                    Как это работает
-                  </Link>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {[
+                { scale: '1 объект',      note: 'Полная автоматизация с первого дня' },
+                { scale: '10 объектов',   note: 'Работает без операционного персонала' },
+                { scale: '100+ объектов', note: 'Централизованное управление через ИИ' },
+              ].map(({ scale, note }) => (
+                <div key={scale} className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                  <p className="text-[var(--t-text)] font-semibold text-base">{scale}</p>
+                  <p className="mt-1 text-sm text-[var(--t-muted)] leading-relaxed">{note}</p>
                 </div>
-              </div>
+              ))}
+            </div>
+            <p className="mt-6 text-xs text-[var(--t-muted)]">
+              Используется в недвижимости, гостиничном бизнесе, корпоративном жилье и распределённых операциях.
+            </p>
+          </div>
+        </section>
 
-              {/* Module 3 — Full Platform */}
-              <div className="flex flex-col p-7 rounded-2xl border border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,transparent)] transition-all">
-                <div className="text-3xl mb-4">🔄</div>
-                <h3 className="font-bold text-[var(--t-text)] text-lg mb-2">Полная платформа</h3>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed mb-6 flex-1">
-                  Операционный автопилот: коммуникации, бронирования, платежи и задачи — без персонала и ручного контроля.
-                </p>
-                <a
-                  href="#pricing"
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--t-text)] hover:opacity-80 transition-opacity"
+        {/* ── Слой исполнения ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
+              Слой исполнения
+            </h2>
+            <p className="text-[var(--t-muted)] text-lg mb-10">
+              Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
+            </p>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {CARDS.map((card) => (
+                <div
+                  key={card.title}
+                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
                 >
-                  Тарифы и подключение ↓
-                </a>
-              </div>
+                  <span className="text-2xl" aria-hidden>{card.icon}</span>
+                  <h3 className="mt-3 font-semibold text-[var(--t-text)] text-sm leading-snug">{card.title}</h3>
+                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{card.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
+        {/* ── Модули платформы ── */}
+        <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
+              Модули платформы
+            </h2>
+            <p className="text-[var(--t-muted)] text-lg mb-10">
+              Автономные системы на одной инфраструктуре — каждая ведёт свой домен.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {MODULES.map((mod) => {
+                const isActive = mod.status === 'ACTIVE';
+                return (
+                  <div
+                    key={mod.id}
+                    className={`p-6 rounded-xl border transition-all ${
+                      isActive
+                        ? 'border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)]'
+                        : 'border-[var(--t-border)] bg-[var(--t-surface)]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <h3 className={`font-semibold text-sm leading-snug ${isActive ? 'text-[var(--t-text)]' : 'text-[var(--t-text-2)]'}`}>
+                        {mod.name}
+                      </h3>
+                      <span
+                        className={`shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                          isActive
+                            ? 'bg-[color-mix(in_srgb,var(--t-accent)_18%,transparent)] text-[var(--t-text)] border border-[color:var(--t-accent)]'
+                            : 'bg-[var(--t-surface-2)] text-[var(--t-muted)] border border-[var(--t-border)]'
+                        }`}
+                      >
+                        {isActive ? 'АКТИВНО' : 'СКОРО'}
+                      </span>
+                    </div>
+                    <p className={`text-sm leading-relaxed ${isActive ? 'text-[var(--t-text-2)]' : 'text-[var(--t-muted)]'}`}>
+                      {mod.desc}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
