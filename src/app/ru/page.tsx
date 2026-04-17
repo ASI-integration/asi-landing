@@ -161,7 +161,7 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: <>Ваш бизнес <span className="text-[var(--t-text-2)]">работает сам.</span></>,
+          offerHeadline: <>Ваш арендный бизнес.<br /><span className="text-[var(--t-text-2)]">На автопилоте.</span></>,
           offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
           ctaLabel: 'Записаться на демо',
           ctaHref: DEMO_LINK,

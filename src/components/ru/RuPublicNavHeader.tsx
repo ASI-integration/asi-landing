@@ -112,7 +112,6 @@ export function RuPublicNavHeader({
                 <TgIcon className="w-4 h-4 shrink-0" />
                 <span className="sr-only">Telegram</span>
               </a>
-              <span className={surfaceLangActive[surface]}>RU</span>
               {showTheme ? <ThemeSwitcher /> : null}
               <Link href="/login" className={surfaceLogin[surface]}>
                 Войти
