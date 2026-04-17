@@ -64,7 +64,7 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: <>Ваш бизнес <span className="text-[var(--t-text-2)]">работает сам.</span></>,
+          offerHeadline: <>Ваш арендный бизнес.<br /><span className="text-[var(--t-text-2)]">На полном автопилоте.</span></>,
           offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
           ctaLabel: 'Записаться на демо',
           ctaHref: DEMO_LINK,
@@ -244,7 +244,7 @@ export default function HomeRu() {
                 <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
                   <li>Включает возможности тарифа для масштабирования</li>
                   <li>Для крупных портфелей объектов</li>
-                  <li>Централизованное управление коммуникацией и бронированиями</li>
+                  <li>Централизованное управление коммуникацией и брониро��аниями</li>
                   <li>Масштабирование операционного контура</li>
                   <li>Подходит для операторов и управляющих компаний</li>
                 </ul>
