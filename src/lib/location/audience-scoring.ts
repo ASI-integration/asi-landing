@@ -87,14 +87,25 @@ function distRu(meters: number): string {
 
 // ── Category classification ───────────────────────────────────────────────────
 
-/** Category IDs that generate business (corporate / commanded traveler) demand */
-const BUSINESS_CATEGORY_IDS: ReadonlySet<string> = new Set(['business']);
+/**
+ * Category IDs that generate business (corporate / commanded traveler) demand.
+ * hospital and convention contribute strongly to business-type visitor flows.
+ */
+const BUSINESS_CATEGORY_IDS: ReadonlySet<string> = new Set([
+  'business',
+  'hospital',    // medical staff, corporate health travel, visiting colleagues
+  'convention',  // conference attendees, corporate events
+]);
 
-/** Category IDs that generate tourist demand */
+/**
+ * Category IDs that generate tourist demand.
+ * stadium contributes partial tourist demand (events, sports tourism).
+ */
 const TOURIST_CATEGORY_IDS: ReadonlySet<string> = new Set([
   'attraction',
   'entertainment',
   'shopping_major',
+  'stadium',
 ]);
 
 // ── Primary magnets classifier ────────────────────────────────────────────────
@@ -242,14 +253,18 @@ function buildPrimaryDriverLabel(
   businessClusterDetected: boolean,
 ): string {
   if (primaryAudience === 'BUSINESS') {
-    const top = primaryMagnets.find(m => m.type === 'business');
+    const top =
+      primaryMagnets.find(m => m.type === 'business' && m.categoryId === 'hospital')
+      ?? primaryMagnets.find(m => m.type === 'business');
     if (!top) {
       return `Основной поток: BUSINESS (${audienceSharePct}%) — деловые объекты не обнаружены`;
     }
     const cluster = businessClusterDetected ? ' · кластер деловых объектов' : '';
+    const role =
+      top.categoryId === 'hospital' ? 'медцентр / больница' : subtypeLabel(top.subType);
     return (
       `Основной драйвер: деловой поток — ${top.name} ` +
-      `(${distRu(top.distance)}, ${subtypeLabel(top.subType)})` +
+      `(${distRu(top.distance)}, ${role})` +
       cluster
     );
   }

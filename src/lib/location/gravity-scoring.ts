@@ -144,14 +144,24 @@ function inferDemandType(magnets: MagnetItem[]): GravityExplanation['demandType'
   const total = Object.values(byCat).reduce((s, v) => s + v, 0);
   if (total <= 0) return 'mixed';
 
+  // Strong airport pull only — micro-heliports / distant GA strips should not flip the whole zone.
+  const ap = byCat.airport ?? 0;
+  if (ap > 0 && (ap / total >= 0.11 || ap >= 9)) return 'transport-led';
+
   const transport =
     (byCat.metro ?? 0) +
     (byCat.railway_station ?? 0);
-  const business = (byCat.business ?? 0);
+  // Hospital, convention, major_hotel contribute to business demand
+  const business =
+    (byCat.business ?? 0) +
+    (byCat.hospital ?? 0) * 0.6 +
+    (byCat.convention ?? 0) * 0.8 +
+    (byCat.major_hotel ?? 0) * 0.4;
   const tourism =
     (byCat.attraction ?? 0) +
     (byCat.entertainment ?? 0) +
-    (byCat.shopping_major ?? 0);
+    (byCat.shopping_major ?? 0) +
+    (byCat.stadium ?? 0) * 0.5;
 
   const shares = {
     transport: transport / total,
@@ -159,8 +169,6 @@ function inferDemandType(magnets: MagnetItem[]): GravityExplanation['demandType'
     tourism: tourism / total,
   };
 
-  // "Led" requires a clear dominant share; otherwise classify as mixed.
-  // Thresholds tuned to avoid over-triggering transport-led on one small station.
   if (shares.transport >= 0.45 && shares.transport >= shares.business + 0.10 && shares.transport >= shares.tourism + 0.10) return 'transport-led';
   if (shares.business >= 0.48 && shares.business >= shares.transport + 0.08 && shares.business >= shares.tourism + 0.08) return 'business-led';
   if (shares.tourism >= 0.48 && shares.tourism >= shares.transport + 0.08 && shares.tourism >= shares.business + 0.08) return 'tourism-led';
@@ -183,20 +191,35 @@ function isMetroRelevant(metro: MagnetItem | null): boolean {
 }
 
 /**
- * Pick 1–3 "main magnets" with guaranteed category coverage:
- * - transport hub (railway_station) when present and especially for transport-led
- * - business magnet
- * - metro (only when relevant/usable)
+ * Pick 1–3 "main magnets" with guaranteed coverage of the most impactful categories.
+ *
+ * Priority order for first slots:
+ *   airport (very strong) > metro (transport-led) > hospital > major_hotel >
+ *   railway_station > business > attraction > convention > university
  *
  * Then fill remaining slots by attractionScore, preferring category diversity.
+ *
+ * Airports: only “material” hubs (see isMaterialAirportMagnet) may occupy the first slot.
  */
+function isMaterialAirportMagnet(m: MagnetItem | null): boolean {
+  if (!m || m.categoryId !== 'airport') return false;
+  if (m.attractionScore >= 3.8) return true;
+  return m.distance <= 2200 && m.attractionScore >= 2;
+}
+
 function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['demandType']): MagnetItem[] {
   if (magnets.length === 0) return [];
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
-  const rail = bestByCategory(magnets, 'railway_station');
-  const metroBest = bestByCategory(magnets, 'metro');
-  const business = bestByCategory(magnets, 'business');
+
+  const airportRaw   = bestByCategory(magnets, 'airport');
+  const airport      = isMaterialAirportMagnet(airportRaw) ? airportRaw : null;
+  const metroBest    = bestByCategory(magnets, 'metro');
+  const hospital     = bestByCategory(magnets, 'hospital');
+  const majorHotel   = bestByCategory(magnets, 'major_hotel');
+  const rail         = bestByCategory(magnets, 'railway_station');
+  const business     = bestByCategory(magnets, 'business');
+  const convention   = bestByCategory(magnets, 'convention');
 
   const picked: MagnetItem[] = [];
   const seen = new Set<string>();
@@ -209,17 +232,24 @@ function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['
   };
 
   // 1) Scenario-driven first slot
-  if (demandType === 'transport-led') {
+  if (airport) {
+    add(airport);
+  } else if (demandType === 'transport-led') {
     add(rail ?? (isMetroRelevant(metroBest) ? metroBest : null));
   }
 
-  // 2) Strategic category coverage
+  // 2) Strategic category coverage (order: high-value anchors first)
+  add(hospital);
+  add(majorHotel);
   add(business);
   if (isMetroRelevant(metroBest)) add(metroBest);
   add(rail);
+  add(convention);
 
   // Trim to 3 with diversity-first ordering.
-  const uniq = picked.filter((m, idx, arr) => idx === arr.findIndex(o => o.categoryId === m.categoryId || `${o.categoryId}:${o.name}` === `${m.categoryId}:${m.name}`));
+  const uniq = picked.filter((m, idx, arr) => idx === arr.findIndex(
+    o => o.categoryId === m.categoryId || `${o.categoryId}:${o.name}` === `${m.categoryId}:${m.name}`,
+  ));
   const out: MagnetItem[] = [];
   const usedCats = new Set<string>();
   for (const m of uniq) {
@@ -230,18 +260,14 @@ function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['
     }
   }
 
-  // Fill remaining with best scores, but avoid ending up with 3 same-category items
+  // Fill remaining with best scores, but avoid same-category dominance
   for (const m of sorted) {
     if (out.length >= 3) break;
     if (out.some(x => x.categoryId === m.categoryId && x.name === m.name)) continue;
     const wouldBeAllBusiness = out.length === 2 && out.every(x => x.categoryId === 'business') && m.categoryId === 'business';
     if (wouldBeAllBusiness) {
-      // Try to find any non-business alternative; if none, accept business.
       const alt = sorted.find(x => x.categoryId !== 'business' && !out.some(o => o.categoryId === x.categoryId && o.name === x.name));
-      if (alt) {
-        out.push(alt);
-        continue;
-      }
+      if (alt) { out.push(alt); continue; }
     }
     out.push(m);
   }
@@ -398,6 +424,14 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
       continue;
     }
 
+    // Major hotels are BOTH a quality-proxy magnet AND count as competitor supply.
+    // This ensures the hotel's presence lifts the location score while also
+    // contributing to the competitor pressure calculation.
+    if (classified.categoryId === 'major_hotel') {
+      competitors.push({ name: classified.name, lat: elLat, lon: elLon, distance: dist });
+      // Falls through to magnet processing below.
+    }
+
     const cat = MAGNET_CATEGORIES.find(c => c.id === classified.categoryId);
     if (!cat) continue;
 
@@ -488,6 +522,47 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     audienceAnalysis,
     accessibilityStopCount: accessibilityDeduped.length,
   });
+
+  // ── Debug diagnostics (gated by env flag) ──────────────────────────────────
+  if (process.env.LOCATION_DEBUG === '1') {
+    const majorHotelFound = magnets.filter(m => m.categoryId === 'major_hotel');
+    const debugInfo = {
+      evergreenIndex,
+      scoreBand,
+      magnetsByCategory: Object.fromEntries(
+        MAGNET_CATEGORIES.map(c => [
+          c.id,
+          {
+            count: magnetCountByCategory[c.id] ?? 0,
+            baseWeight: c.weight,
+            top: (magnets
+              .filter(m => m.categoryId === c.id)
+              .sort((a, b) => b.attractionScore - a.attractionScore)
+              .slice(0, 2)
+              .map(m => ({
+                name: m.name,
+                distM: Math.round(m.distance),
+                attractionScore: +m.attractionScore.toFixed(2),
+              }))),
+          },
+        ]),
+      ),
+      hotelProxyActive: majorHotelFound.length > 0,
+      hotelProxyItems: majorHotelFound.map(m => ({ name: m.name, distM: Math.round(m.distance), score: +m.attractionScore.toFixed(2) })),
+      competitorCount: competitors.length,
+      scoreBreakdown: gravityExplanation.scoreBreakdown,
+      topContributors: [...magnets]
+        .sort((a, b) => b.attractionScore - a.attractionScore)
+        .slice(0, 5)
+        .map(m => ({ name: m.name, cat: m.categoryId, distM: Math.round(m.distance), score: +m.attractionScore.toFixed(2), strength: m.strengthClass })),
+      weakCategoriesFiltered: ['food', 'shopping_local', 'education_local'].map(id => ({
+        id,
+        rawCount: magnetCountByCategory[id] ?? 0,
+        inScoring: magnets.filter(m => m.categoryId === id).length,
+      })),
+    };
+    console.info('[location-debug]', JSON.stringify(debugInfo, null, 2));
+  }
 
   return {
     evergreenIndex,
