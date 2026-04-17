@@ -276,17 +276,46 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Что реально автоматизируется ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+        {/* ── Что автоматизируется в ASI ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Что реально автоматизируется
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Что автоматизируется в ASI
             </h2>
-            <p className="text-[var(--t-muted)] text-lg mb-10">
-              Не инструменты. Не дашборды. Операции.
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Конкретные операционные функции — не обещания. Система исполняет их без участия команды.
             </p>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {AUTOMATED_ITEMS.map((item) => (
+              {[
+                {
+                  title: 'Входящие обращения',
+                  desc: 'Принимает запросы гостей круглосуточно, без пропущенных тредов и задержек.',
+                },
+                {
+                  title: 'Переписка с гостями',
+                  desc: 'ИИ ведёт диалог, отвечает на типовые и нетиповые вопросы, собирает данные.',
+                },
+                {
+                  title: 'Бронирования',
+                  desc: 'Подтверждения, изменения и отмены обрабатываются автоматически по триггеру.',
+                },
+                {
+                  title: 'Платежи',
+                  desc: 'Доплаты, ранний заезд, поздний выезд — счёт в чате, оплата в один клик.',
+                },
+                {
+                  title: 'Доступы и check-in',
+                  desc: 'Коды доступа генерируются и отправляются автоматически по триггеру бронирования.',
+                },
+                {
+                  title: 'Задачи и инциденты',
+                  desc: 'Уборка, ремонт, исключения — система создаёт задачи, назначает и контролирует исполнение.',
+                },
+                {
+                  title: 'Аналитика спроса и доходности',
+                  desc: 'Данные по загрузке, конкурентам и потенциалу объекта собираются без участия оператора.',
+                },
+              ].map((item) => (
                 <div
                   key={item.title}
                   className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
@@ -299,30 +328,55 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Не очередной инструмент ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-3xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-8">
-              Не очередной инструмент
+        {/* ── Не CRM, не channel manager, не PMS ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Не CRM, не channel manager, не PMS
             </h2>
-            <ul className="space-y-3 text-[var(--t-text-2)] text-base leading-relaxed">
-              <li>
-                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
-                Менеджеры каналов → всё равно нужен ручной контроль
-              </li>
-              <li>
-                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
-                CRM → всё равно нужны операторы
-              </li>
-              <li>
-                <span className="text-[var(--t-muted)]" aria-hidden>❌ </span>
-                Точечные продукты «автоматизации» → частичное покрытие
-              </li>
-              <li className="pt-2 text-[var(--t-text)] font-medium">
-                <span className="text-emerald-500/90" aria-hidden>✅ </span>
-                ASI → заменяет операционный слой целиком
-              </li>
-            </ul>
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Все эти инструменты требуют операторов, которые их используют. ASI — это слой исполнения: система сама ведёт операции от начала до конца.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-4 mb-8">
+              {[
+                {
+                  label: 'CRM',
+                  gap: 'Фиксирует данные. Требует оператора, который с ними работает.',
+                },
+                {
+                  label: 'Channel manager',
+                  gap: 'Синхронизирует площадки. Не ведёт коммуникацию и не принимает решений.',
+                },
+                {
+                  label: 'PMS',
+                  gap: 'Управляет объектами. Не обрабатывает гостей и не закрывает инциденты.',
+                },
+                {
+                  label: 'Точечная автоматизация',
+                  gap: 'Закрывает одну функцию. Остальные всё равно требуют ручного труда.',
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex gap-4 p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
+                >
+                  <span className="mt-0.5 shrink-0 text-[var(--t-muted)]" aria-hidden>✗</span>
+                  <div>
+                    <p className="font-semibold text-[var(--t-text)] text-sm">{item.label}</p>
+                    <p className="mt-1 text-sm text-[var(--t-muted)] leading-relaxed">{item.gap}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-4 p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
+              <span className="mt-0.5 shrink-0 text-emerald-500" aria-hidden>✓</span>
+              <div>
+                <p className="font-bold text-[var(--t-text)] text-base">ASI — операционный слой</p>
+                <p className="mt-1 text-sm text-[var(--t-text-2)] leading-relaxed">
+                  Заменяет операционный контур целиком: принимает обращения, ведёт гостей, исполняет задачи, контролирует платежи и доступы — без команды операторов в цепочке.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
