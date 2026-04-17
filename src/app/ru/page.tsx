@@ -168,6 +168,63 @@ export default function HomeRu() {
           ctaExternal: false,
         }} telegramVariant="icon" />
 
+        {/* ── Два рабочих модуля ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t-2 border-[color:var(--t-accent)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Два рабочих модуля уже доступны
+            </h2>
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Уже сейчас ASI помогает привлекать гостей, обрабатывать входящие и оценивать потенциал объекта по локации, спросу и доходности.
+            </p>
+            <div className="grid sm:grid-cols-2 gap-5">
+
+              {/* Card 1 — Коммуникационный модуль */}
+              <div className="flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                    Коммуникационный модуль
+                  </h3>
+                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                    Доступно
+                  </span>
+                </div>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Принимает входящие обращения, ведёт переписку с гостями, автоматизирует ответы и снижает нагрузку на операционный контур.
+                </p>
+                <Link
+                  href="/features/communication"
+                  className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
+                >
+                  Посмотреть модуль →
+                </Link>
+              </div>
+
+              {/* Card 2 — Модуль оценки локации */}
+              <div className="flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                    Модуль оценки локации
+                  </h3>
+                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                    Доступно
+                  </span>
+                </div>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Оценивает спрос, окружение, магниты трафика, конкуренцию и потенциальную доходность объекта до запуска.
+                </p>
+                <Link
+                  href="/ru/location-analysis"
+                  className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
+                >
+                  Открыть анализ локации →
+                </Link>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
         {/* ── Что реально автоматизируется ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
