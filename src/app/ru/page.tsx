@@ -161,9 +161,9 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: <>Ваш арендный бизнес.<br /><span className="text-[var(--t-text-2)]">На автопилоте.</span></>,
-          offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
-          ctaLabel: 'Записаться на демо',
+          offerHeadline: 'Автопилот для вашего арендного бизнеса',
+          offerSub: 'ASI автоматизирует операционный контур: от входящих обращений и коммуникации с гостями до аналитики спроса и доходности. Два рабочих модуля доступны уже сейчас.',
+          ctaLabel: 'Запросить разбор объектов',
           ctaHref: DEMO_LINK,
           ctaExternal: false,
         }} telegramVariant="icon" />
@@ -175,7 +175,7 @@ export default function HomeRu() {
               Два рабочих модуля уже доступны
             </h2>
             <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              Уже сейчас ASI помогает привлекать гостей, обрабатывать входящие и оценивать потенциал объекта по локации, спросу и доходности.
+              Уже сейчас ASI помогает обрабатывать входящие обращения, вести коммуникацию с гостями и оценивать потенциал объекта по локации, спросу и доходности.
             </p>
             <div className="grid sm:grid-cols-2 gap-5">
 
@@ -193,10 +193,10 @@ export default function HomeRu() {
                   Принимает входящие обращения, ведёт переписку с гостями, автоматизирует ответы и снижает нагрузку на операционный контур.
                 </p>
                 <Link
-                  href={DEMO_LINK}
+                  href="/connect"
                   className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm hover:bg-[color:var(--t-accent-hover)] transition-all"
                 >
-                  Посмотреть модуль →
+                  Запросить подключение →
                 </Link>
               </div>
 
@@ -219,6 +219,57 @@ export default function HomeRu() {
                 >
                   Открыть анализ локации →
                 </Link>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        {/* ── Почему ASI уже сейчас ── */}
+        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Почему ASI уже сейчас
+            </h2>
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Два модуля уже работают в боевом режиме. Мы показываем не обещания, а реальные сценарии использования.
+            </p>
+            <div className="grid sm:grid-cols-3 gap-5">
+
+              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
+                  Сценарий 1
+                </span>
+                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
+                  Входящее обращение вечером
+                </h3>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
+                  Гость пишет вечером. Система принимает обращение, отвечает без задержки, собирает нужные данные и переводит сценарий дальше по цепочке.
+                </p>
+              </div>
+
+              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
+                  Сценарий 2
+                </span>
+                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
+                  Объект недозагружен
+                </h3>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
+                  Система показывает слабые точки по локации, спросу и окружению, чтобы можно было скорректировать стратегию до потери доходности.
+                </p>
+              </div>
+
+              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
+                  Сценарий 3
+                </span>
+                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
+                  Оператор работает с портфелем
+                </h3>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
+                  Один интерфейс вместо ручной координации между сообщениями, задачами, доступами и аналитикой по объектам.
+                </p>
               </div>
 
             </div>
