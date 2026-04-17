@@ -3,7 +3,6 @@
 import { useTranslation } from '@/i18n/useTranslation';
 import { productSupportEmail } from '@/config/contact';
 import { useSession } from '@/contexts/SessionContext';
-import { useEffect, useMemo, useState } from 'react';
 
 function formatDateRu(iso: string | null) {
   if (!iso) return '—';
@@ -19,54 +18,25 @@ function planLabel(plan: string | null | undefined) {
   return '—';
 }
 
+function subscriptionStatusLabel(status: string | null | undefined) {
+  if (status === 'trialing') return 'Пробный период';
+  if (status === 'active') return 'Активна';
+  if (status === 'inactive' || status === 'canceled' || status === 'cancelled') return 'Неактивна';
+  if (status) return status;
+  return '—';
+}
+
+const pmsItems = [
+  { name: 'Bnovo', status: 'soon' as const },
+  { name: 'TravelLine', status: 'soon' as const },
+  { name: 'RealtyCalendar', status: 'soon' as const },
+  { name: 'Другая система', status: 'request' as const },
+] as const;
+
 export default function DashboardPage() {
   const { t } = useTranslation();
   const { session } = useSession();
   const account = session?.account ?? null;
-  const [vkStatus, setVkStatus] = useState<'not_connected' | 'pending' | 'connected' | 'error'>('not_connected');
-  const [vkErrorHint, setVkErrorHint] = useState<string | null>(null);
-
-  const vkBadge = useMemo(() => {
-    if (vkStatus === 'connected') return { label: 'Подключено', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-    if (vkStatus === 'pending') return { label: 'Ожидает подтверждения', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
-    if (vkStatus === 'error') return { label: 'Ошибка', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-    return { label: 'Не подключено', cls: 'bg-slate-50 text-slate-700 border-slate-200' };
-  }, [vkStatus]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const res = await fetch('/api/channels', { method: 'GET' });
-        if (!res.ok) return;
-        const data = await res.json();
-        const channels = Array.isArray(data?.channels) ? data.channels : [];
-        const vk = channels.find((c: any) => c?.type === 'vk') ?? null;
-        if (!vk) {
-          if (!cancelled) {
-            setVkStatus('not_connected');
-            setVkErrorHint(null);
-          }
-          return;
-        }
-        const status = String(vk.status || '').toLowerCase();
-        const mapped =
-          status === 'connected' ? 'connected' :
-          status === 'pending' ? 'pending' :
-          status === 'error' ? 'error' :
-          'not_connected';
-        if (!cancelled) {
-          setVkStatus(mapped);
-          const lastErr = vk?.settings_json?.last_error;
-          setVkErrorHint(typeof lastErr === 'string' && lastErr.trim() ? lastErr : null);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
 
   return (
     <div className="space-y-6">
@@ -98,95 +68,63 @@ export default function DashboardPage() {
             до {formatDateRu(account?.trial_ends_at ?? null)}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Статус: {account?.subscription_status ?? '—'}
+            Статус: {subscriptionStatusLabel(account?.subscription_status)}
           </p>
         </div>
       </div>
 
+      {/* PMS / Channel Manager connection */}
       <div className="bg-white rounded-lg shadow-sm p-6">
         <h2 className="text-lg font-semibold text-slate-900">
-          Подключить каналы
+          Подключить PMS / Channel Manager
         </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Минимальный старт: подключите 1 канал — Telegram, Email или VK.
+        <p className="mt-1 text-sm text-slate-600 max-w-2xl">
+          Подключите систему, через которую вы уже управляете бронированиями, доступностью и тарифами. ASI будет использовать её как основной источник данных.
         </p>
 
-        <div className="mt-5 grid sm:grid-cols-3 gap-4">
-          <a
-            href="https://t.me/ASI_core_bot"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group rounded-xl border border-slate-200 p-4 hover:border-slate-400 hover:bg-slate-50 transition-all"
-          >
-            <p className="text-sm font-semibold text-slate-900">Telegram</p>
-            <p className="mt-1 text-xs text-slate-600">Открыть бота и начать подключение.</p>
-            <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">t.me/ASI_core_bot</p>
-          </a>
-          <a
-            href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Подключение Email канала')}`}
-            className="group rounded-xl border border-slate-200 p-4 hover:border-slate-400 hover:bg-slate-50 transition-all"
-          >
-            <p className="text-sm font-semibold text-slate-900">Email</p>
-            <p className="mt-1 text-xs text-slate-600">Запросить подключение Email‑канала.</p>
-            <p className="mt-3 text-xs text-slate-500 group-hover:text-slate-700">{productSupportEmail}</p>
-          </a>
-          <div className="rounded-xl border border-slate-200 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">VK</p>
-                <p className="mt-1 text-xs text-slate-600">
-                  Подключите VK через OAuth (v1).
-                </p>
+        <div className="mt-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {pmsItems.map((item) => (
+            item.status === 'request' ? (
+              <a
+                key={item.name}
+                href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Запрос на подключение PMS / Channel Manager')}`}
+                className="group rounded-xl border border-slate-200 p-4 hover:border-slate-300 hover:bg-slate-50 transition-all"
+              >
+                <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                <span className="mt-2 inline-block text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  По запросу
+                </span>
+                <p className="mt-2 text-xs text-slate-500 group-hover:text-slate-700">Напишите нам</p>
+              </a>
+            ) : (
+              <div
+                key={item.name}
+                className="rounded-xl border border-slate-100 p-4 bg-slate-50 cursor-default"
+              >
+                <p className="text-sm font-semibold text-slate-500">{item.name}</p>
+                <span className="mt-2 inline-block text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                  Скоро
+                </span>
               </div>
-              <span className={`text-[11px] px-2 py-1 rounded-full border ${vkBadge.cls}`}>
-                {vkBadge.label}
-              </span>
-            </div>
-
-            {vkStatus === 'error' && vkErrorHint ? (
-              <p className="mt-2 text-xs text-rose-700">
-                {vkErrorHint}
-              </p>
-            ) : null}
-
-            <div className="mt-3 flex items-center gap-2">
-              <a
-                href="/api/connect/vk/start"
-                className="inline-flex items-center justify-center rounded-lg bg-slate-900 text-white text-xs px-3 py-2 hover:bg-slate-800 transition-colors"
-              >
-                {vkStatus === 'connected' ? 'Переподключить' : 'Подключить VK'}
-              </a>
-              <a
-                href="https://vk.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-slate-600 hover:text-slate-900"
-              >
-                Открыть VK
-              </a>
-            </div>
-          </div>
+            )
+          ))}
         </div>
+
+        <p className="mt-4 text-xs text-slate-500">
+          После подключения система сможет подтянуть объекты и данные бронирований автоматически.
+        </p>
       </div>
 
+      {/* Activity placeholder */}
       <div className="bg-white rounded-lg shadow-sm p-6">
         <h2 className="text-lg font-semibold text-slate-900">
           {t('dashboard.overview.activityTitle')}
         </h2>
-        <ul className="mt-4 space-y-3">
-          <li className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
-            <span className="w-2 h-2 rounded-full bg-slate-400" />
-            <span className="text-slate-700">{t('dashboard.overview.activity1')}</span>
-          </li>
-          <li className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
-            <span className="w-2 h-2 rounded-full bg-slate-400" />
-            <span className="text-slate-700">{t('dashboard.overview.activity2')}</span>
-          </li>
-          <li className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
-            <span className="w-2 h-2 rounded-full bg-slate-400" />
-            <span className="text-slate-700">{t('dashboard.overview.activity3')}</span>
-          </li>
-        </ul>
+        <div className="mt-4 py-8 text-center">
+          <p className="text-sm text-slate-400">
+            Активность появится здесь после подключения PMS или Channel Manager.
+          </p>
+        </div>
       </div>
     </div>
   );

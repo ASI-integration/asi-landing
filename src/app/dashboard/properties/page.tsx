@@ -15,8 +15,13 @@ export default function PropertiesPage() {
           {t('dashboard.propertiesSubtitle')}
         </p>
       </header>
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <p className="text-slate-500">No properties yet.</p>
+      <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+        <p className="text-slate-500 text-sm">
+          Объекты появятся здесь после подключения PMS или Channel Manager.
+        </p>
+        <p className="mt-2 text-xs text-slate-400">
+          Вернитесь на главную страницу дашборда, чтобы запросить подключение.
+        </p>
       </div>
     </div>
   );

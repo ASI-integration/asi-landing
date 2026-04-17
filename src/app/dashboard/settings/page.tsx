@@ -15,8 +15,13 @@ export default function SettingsPage() {
           {t('dashboard.settingsSubtitle')}
         </p>
       </header>
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <p className="text-slate-500">Settings coming soon.</p>
+      <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+        <p className="text-slate-500 text-sm">
+          Настройки аккаунта скоро будут доступны.
+        </p>
+        <p className="mt-2 text-xs text-slate-400">
+          Этот раздел находится в разработке.
+        </p>
       </div>
     </div>
   );
