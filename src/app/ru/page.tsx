@@ -66,7 +66,7 @@ export default function HomeRu() {
           loginHref: '/login',
           offerHeadline: <>Ваш арендный бизнес.<br /><span className="text-[var(--t-accent)]">На полном автопилоте.</span></>,
           offerSub: <>Пассивный доход от вашей недвижимости<br className="hidden sm:block" /> без операционки и найма персонала</>,
-          ctaLabel: 'Записаться на демо-звонок',
+          ctaLabel: 'Запросить разбор ваших объектов',
           ctaHref: DEMO_LINK,
           ctaExternal: false,
         }} telegramVariant="icon" />
@@ -82,7 +82,7 @@ export default function HomeRu() {
             </p>
             <ul className="space-y-2">
               {[
-                'Кому реально подходит объект — и кто будет его снимать',
+                'Кому реально подходит объект — и кто будет его снимат��',
                 'Какой спрос держится в районе — не по ощущениям, а по данным',
                 'Какую доходность можно ожидать до старта',
               ].map((point) => (
@@ -133,7 +133,7 @@ export default function HomeRu() {
                     href="/connect"
                     className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-400 hover:text-sky-300 transition-colors"
                   >
-                    Записаться на демо →
+                    Посмотреть сценарий работы →
                   </Link>
                   <Link
                     href="/features/communication"
@@ -244,7 +244,7 @@ export default function HomeRu() {
                 <ul className="mt-4 space-y-2 text-[var(--t-text-2)] text-sm flex-1">
                   <li>Включает возможности тарифа для масштабирования</li>
                   <li>Для крупных портфелей объектов</li>
-                  <li>Централизованное управление ком��уникацией и брониро��аниями</li>
+                  <li>Цен��рализованное управление ком��уникацией и брониро��аниями</li>
                   <li>Масштабирование операционного контура</li>
                   <li>Подходит для операторов и управляющих компаний</li>
                 </ul>
@@ -274,10 +274,10 @@ export default function HomeRu() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-bg)]">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)]">
-              Прогоним ASI на ваших объектах
+              Покажем, как ASI будет вести ваши объекты
             </h2>
             <p className="mt-4 text-[var(--t-text-2)] text-lg">
-              Вы присылаете 1–2 объекта — показываем, как система ведёт их от заявки до заезда. Без слайдов. Ответ в течение одного рабочего дня.
+              Система принимает входящие, отвечает гостям и ведёт операционные сценарии автоматически. Человек подключается только как fallback в исключительных случаях. На разборе покажем это на ваших объектах.
             </p>
             <Link
               href="/connect"
