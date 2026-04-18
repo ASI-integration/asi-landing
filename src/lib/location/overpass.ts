@@ -366,8 +366,10 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
     return { categoryId: 'business', name: t.name || 'Коммерческая зона', subType: 'commercial' };
   if (t.amenity === 'bank')
     return { categoryId: 'business', name: t.name || 'Банк', subType: 'bank' };
-  if (t.office)
-    return { categoryId: 'business', name: t.name || 'Офис', subType: 'office' };
+  if (t.office) {
+    const hasName = Boolean(t.name && t.name.trim());
+    return { categoryId: 'business', name: t.name || 'Офис', subType: hasName ? 'office' : 'office_anon' };
+  }
 
   // ── Tier 3: Local / accessibility-only ──────────────────────────────────────
 

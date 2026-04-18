@@ -102,7 +102,7 @@ const MAGNET_REASON_EN: Record<string, string> = {
   attraction:     'tourist anchor — consistent leisure demand',
   convention:     'conference hub — strong corporate demand spikes',
   university:     'education cluster — recurring semester demand',
-  business:       'office/industrial zone — corporate travel flow',
+  business:       'office district — corporate and workforce demand',
   stadium:        'event venue — periodic occupancy spikes',
   entertainment:  'entertainment anchor — leisure footfall driver',
   shopping_major: 'retail anchor — sustained visitor traffic',
@@ -118,7 +118,7 @@ const MAGNET_REASON_RU: Record<string, string> = {
   attraction:     'туристический якорь — постоянный досуговый спрос',
   convention:     'конгресс-центр — корпоративный спрос, деловые мероприятия',
   university:     'университет — сезонный и долгосрочный образовательный спрос',
-  business:       'деловая зона — корпоративный поток, командированные',
+  business:       'деловой кластер — корпоративный спрос, командированные',
   stadium:        'стадион / арена — периодические пики спроса в дни матчей',
   entertainment:  'развлекательный якорь — досуговый трафик',
   shopping_major: 'торговый центр — высокий поток посетителей',
@@ -169,14 +169,37 @@ function fmDist(m: number, locale: 'en' | 'ru'): string {
   return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
+/** Resolve a per-magnet reason line, with subType overrides for business magnets */
+function getMagnetReason(m: MagnetItem, locale: 'en' | 'ru'): string | undefined {
+  if (m.categoryId === 'business' && m.subType) {
+    if (m.subType === 'industrial' || m.subType === 'factory') {
+      return locale === 'ru'
+        ? 'промзона — ограниченный спрос на STR'
+        : 'industrial zone — limited STR demand';
+    }
+    if (m.subType === 'commercial') {
+      return locale === 'ru'
+        ? 'коммерческая зона — смешанный деловой профиль'
+        : 'commercial zone — mixed demand profile';
+    }
+    // office_anon: honest about low signal quality
+    if (m.subType === 'office_anon') {
+      return locale === 'ru'
+        ? 'офисная активность (слабый сигнал)'
+        : 'office activity — weak signal';
+    }
+  }
+  const REASONS = locale === 'ru' ? MAGNET_REASON_RU : MAGNET_REASON_EN;
+  return REASONS[m.categoryId];
+}
+
 /** Build a concise "key drivers" sentence from the top magnets */
 function buildDriversLine(magnets: MagnetItem[], locale: 'en' | 'ru'): string {
   const top = pickTopDrivers(magnets);
   if (top.length === 0) return '';
-  const REASONS = locale === 'ru' ? MAGNET_REASON_RU : MAGNET_REASON_EN;
   const parts = top.map(m => {
     const dist = fmDist(m.distance, locale);
-    const reason = REASONS[m.categoryId];
+    const reason = getMagnetReason(m, locale);
     return reason
       ? `${m.name} (${dist}) — ${reason}`
       : `${m.name} (${dist})`;
@@ -201,7 +224,6 @@ export function generateConclusion(
   const hasMetro       = (countByCategory.metro ?? 0) > 0;
   const hasAttractions = (countByCategory.attraction ?? 0) > 0;
   const hasBusiness    = (countByCategory.business ?? 0) > 0;
-  const hasMajorHotel  = (countByCategory.major_hotel ?? 0) > 0;
 
   const driversLine = buildDriversLine(magnets, locale);
 
@@ -217,7 +239,15 @@ export function generateConclusion(
       ? (locale === 'ru' ? ' Конкуренция умеренная.' : ' Competition is moderate.')
       : '';
 
-  const hotelNote = hasMajorHotel
+  // Hotel note: only fire when the hotel is genuinely close OR a strong contributor.
+  // A distant or borderline-chain match should not produce "commercially validated" copy.
+  const bestHotel = magnets
+    .filter(m => m.categoryId === 'major_hotel')
+    .sort((a, b) => b.attractionScore - a.attractionScore)[0];
+  const hotelIsSignificant = bestHotel != null && (
+    bestHotel.distance <= 550 || bestHotel.attractionScore >= 3.0
+  );
+  const hotelNote = hotelIsSignificant
     ? (locale === 'ru'
       ? ' Наличие крупного отеля рядом — подтверждение коммерческой состоятельности зоны.'
       : ' A major hotel nearby confirms this as a commercially viable area.')

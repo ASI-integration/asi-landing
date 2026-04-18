@@ -28,6 +28,21 @@ import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatm
 import { buildLocationScoreOutput } from './location-score';
 import { buildAudienceAnalysis } from './audience-scoring';
 
+// ── Business subType weight adjustments ──────────────────────────────────────
+// Generic/unnamed offices, industrial landuse, and commercial zones score
+// significantly lower than named office buildings as STR demand drivers.
+
+function effectiveBusinessWeight(baseWeight: number, subType: string | undefined): number {
+  switch (subType) {
+    case 'office_anon': return baseWeight * 0.45; // unnamed office node — minimal signal
+    case 'industrial':  return baseWeight * 0.55; // landuse=industrial — limited STR demand
+    case 'factory':     return baseWeight * 0.55; // man_made=works / building=industrial
+    case 'commercial':  return baseWeight * 0.65; // landuse=commercial — retail strip noise
+    case 'bank':        return baseWeight * 0.55; // single bank branch — not a demand cluster
+    default:            return baseWeight;         // named office: full weight
+  }
+}
+
 // ── Distance helpers ──────────────────────────────────────────────────────────
 
 export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -436,6 +451,10 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     if (!cat) continue;
 
     if (!byCategory[classified.categoryId]) byCategory[classified.categoryId] = [];
+    const effectiveWeight =
+      classified.categoryId === 'business'
+        ? effectiveBusinessWeight(cat.weight, classified.subType)
+        : cat.weight;
     byCategory[classified.categoryId].push({
       categoryId: cat.id,
       categoryLabel: cat.label,
@@ -445,11 +464,11 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
       lat: elLat,
       lon: elLon,
       distance: dist,
-      weight: cat.weight,
+      weight: effectiveWeight,
       permanenceType: cat.permanenceType,
       scopeLevel: cat.scopeLevel,
       strengthClass: cat.strengthClass,
-      attractionScore: calcMagnetAttraction(cat.weight, cat.permanenceType, dist),
+      attractionScore: calcMagnetAttraction(effectiveWeight, cat.permanenceType, dist),
     });
   }
 
