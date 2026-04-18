@@ -141,6 +141,17 @@ const CONCLUSION_PRIORITY = [
 function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
   const out: MagnetItem[] = [];
   const usedCats = new Set<string>();
+
+  // Pre-compute best attraction score so we can deprioritise hospital
+  // when tourist anchors clearly dominate (e.g. Kremlin museums vs distant
+  // military-medical office).
+  const bestAttractionScore = Math.max(
+    0,
+    ...magnets
+      .filter(m => m.categoryId === 'attraction' && m.strengthClass !== 'weak')
+      .map(m => m.attractionScore),
+  );
+
   for (const cat of CONCLUSION_PRIORITY) {
     if (out.length >= 2) break;
     const best = magnets
@@ -151,6 +162,11 @@ function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
           if (m.attractionScore >= 3.8) return true;
           return m.distance <= 2200 && m.attractionScore >= 2;
         }
+        // Skip hospital when a significantly stronger tourist anchor exists.
+        // Prevents "medical cluster 960m away" from overshadowing museums at 12m.
+        if (cat === 'hospital' && bestAttractionScore > 0 && m.attractionScore < bestAttractionScore * 0.65) return false;
+        // Same threshold as hotelNote: marginal hotels don't belong in the drivers sentence.
+        if (cat === 'major_hotel' && m.attractionScore < 3.0 && m.distance > 550) return false;
         return true;
       })
       .sort((a, b) => b.attractionScore - a.attractionScore)[0];
