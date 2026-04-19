@@ -2,7 +2,8 @@
 
 **Version:** baseline-v4-pass4-edge-hardening (2026-04-19)  
 **Applies to:** `buildResidentialAnalysis` in `src/lib/location/residential-analysis.ts`  
-**Runner:** `npx tsx scripts/residential-validation-runner.ts`
+**Runner:** `npx tsx scripts/residential-validation-runner.ts`  
+**Onboarding / handoff:** [`docs/residential-handoff.md`](./residential-handoff.md)
 
 ---
 

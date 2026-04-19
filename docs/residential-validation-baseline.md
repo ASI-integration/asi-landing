@@ -3,7 +3,8 @@
 **Version:** baseline-v4-pass4-edge-hardening (2026-04-19)  
 **Control set:** 30 cases (`docs/residential-control-set-definition.md`)  
 **Gate results:** 30/30 pass · 0 known gaps  
-**Runner output:** `scripts/residential-control-set-results.json`
+**Runner output:** `scripts/residential-control-set-results.json`  
+**Engineering handoff:** [`docs/residential-handoff.md`](./residential-handoff.md)
 
 **Pass-2 change:** `short_term` no longer uses a blanket `!isElevatedOrHigh` veto. Elevated urban cores can qualify via a guarded composite (demand + centrality + seasonality + audience fit, with industrial/nightlife/road/stack gates). Resort-like cases use a narrow low-friction seasonality lift when demand sits just under the normal STR floor.
 
