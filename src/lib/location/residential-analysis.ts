@@ -1,12 +1,12 @@
 /**
- * Residential analysis layer — pass 1 + pass-2 strategy refinement (elevated-zone STR nuance).
+ * Residential analysis layer — pass 1–3 (strategy + confidence/rationale discipline).
  *
  * Builds on top of LocationAnalysis (commercial engine output) to produce a
  * residential-specific interpretation covering four concerns:
  *   1. Strategy modes  (Block 1)
  *   2. Audience type   (Block 2) — including premium_comfort
  *   3. Operational suitability (Block 3)
- *   4. Confidence      (Block 4)
+ *   4. Confidence      (Block 4) — pass-3: clarity, burden stack, cross-score consistency, ambiguity
  *
  * Does NOT modify commercial scoring; purely additive.
  */
@@ -246,12 +246,52 @@ function computeResidentialStrategy(args: {
   return finish('mid_term');
 }
 
-// ── BLOCK 4: Confidence ───────────────────────────────────────────────────────
+// ── BLOCK 4: Confidence (pass-3 semantic model) ───────────────────────────────
 
 /**
- * Honest confidence based on signal strength and data quality.
- * Not a marketing rating — degrades with fallback mode, sparse data,
- * conflicting signals, and high-friction + weak-demand combos.
+ * Elevated urban core with clean burden profile: hybrid here is a deliberate
+ * trade-off (center gravity vs env), not an ambiguous suburb — allows `high`
+ * confidence despite hybrid + elevated.
+ */
+function hybridElevatedPrimeCoreException(args: {
+  level: ReturnType<typeof frictionLevel>;
+  locationScore: number;
+  demandScore: number;
+  magnetCount: number;
+  bd: NeighborhoodEnvironmentLayer['breakdown'];
+}): boolean {
+  const { level, locationScore, demandScore, magnetCount, bd } = args;
+  if (level !== 'elevated') return false;
+  if (locationScore < 78 || demandScore < 80 || magnetCount < 10) return false;
+  if (bd.industrial01 >= 0.2) return false;
+  if (bd.nightlife01 > 0.48) return false;
+  if (bd.harshUrbanStack01 > 0.52) return false;
+  if (bd.majorRoads01 > 0.68) return false;
+  return true;
+}
+
+/** Count strong environment burdens (partial overlap with strategy guards). */
+function countResidentialBurdenAxes(bd: NeighborhoodEnvironmentLayer['breakdown']): number {
+  let n = 0;
+  if (bd.industrial01 >= 0.45) n += 1;
+  if (bd.nightlife01 >= 0.52) n += 1;
+  if (bd.majorRoads01 >= 0.6) n += 1;
+  if (bd.aviation01 >= 0.65) n += 1;
+  if (bd.harshUrbanStack01 >= 0.55) n += 1;
+  return n;
+}
+
+/**
+ * Confidence reflects (not marketing):
+ * - clarity of demand / audience signal (magnets, fit, evergreen, stability)
+ * - operating-condition stability (foot-traffic stability, friction level)
+ * - burden stacking and contradiction between scores and environment
+ * - cross-consistency of location vs demand vs seasonality
+ * - map / env data quality
+ *
+ * `high` = aligned signals and stable operating read; `low` = sparse, fallback,
+ * or unreliable stack; `medium` = usable but should be validated — including
+ * many hybrid+elevated cases where STR is not the headline win.
  */
 function computeResidentialConfidence(args: {
   magnetCount: number;
@@ -260,67 +300,130 @@ function computeResidentialConfidence(args: {
   isFallbackMode: boolean;
   env: NeighborhoodEnvironmentLayer;
   demandScore: number;
+  seasonalityScore: number;
+  locationScore: number;
   stability01: number;
   strategy: ResidentialStrategy;
 }): { confidence: ResidentialAnalysisConfidence; reasons: string[] } {
-  const { magnetCount, audienceFitScore, evergreenIndex, isFallbackMode, env, demandScore, stability01, strategy } = args;
+  const {
+    magnetCount,
+    audienceFitScore,
+    evergreenIndex,
+    isFallbackMode,
+    env,
+    demandScore,
+    seasonalityScore,
+    locationScore,
+    stability01,
+    strategy,
+  } = args;
   const level = frictionLevel(env);
+  const bd = env.breakdown;
   const reasons: string[] = [];
 
-  let score = 2; // start at medium baseline
+  let score = 2;
 
-  // Signal strength
+  // ── Signal clarity (demand + audience alignment) ────────────────────────────
   if (magnetCount >= 7) score += 2;
   else if (magnetCount >= 4) score += 1;
   else if (magnetCount <= 2) {
     score -= 1;
-    reasons.push('Мало магнитов спроса — оценка ориентировочная');
+    reasons.push('Мало магнитов спроса — ядро вывода ориентировочное');
+  }
+
+  if (magnetCount <= 1 && !isFallbackMode) {
+    score -= 1;
+    reasons.push('Почти одиночный магнит — слабая опора для аудиторного профиля');
   }
 
   if (audienceFitScore >= 55) score += 2;
   else if (audienceFitScore >= 32) score += 1;
 
   if (evergreenIndex >= 65) score += 1;
-  if (stability01 >= 0.65) score += 1;
 
-  // Fallback mode: no viable primary magnets detected
-  if (isFallbackMode) {
-    score -= 2;
-    reasons.push('Аудиторный режим: резерв — целевых магнитов не найдено');
+  if (stability01 >= 0.65) {
+    score += 1;
+  } else if (stability01 < 0.38 && (strategy === 'short_term' || strategy === 'selective_premium_short_term')) {
+    score -= 1;
+    reasons.push('Нестабильный пешеходный профиль — краткосрочный сценарий менее предсказуем');
   }
 
-  // Conflicting signals: strong gravity but high friction
+  if (isFallbackMode) {
+    score -= 2;
+    reasons.push('Режим резерва аудитории — целевые магниты не выделены, вывод хрупкий');
+  }
+
+  // ── Cross-consistency (location / demand / seasonality) ───────────────────
+  const locDem = Math.abs(locationScore - demandScore);
+  const locSea = Math.abs(locationScore - seasonalityScore);
+  const demSea = Math.abs(demandScore - seasonalityScore);
+  const spreadMax = Math.max(locDem, locSea, demSea);
+  if (spreadMax >= 28 && Math.min(locationScore, demandScore, seasonalityScore) < 52) {
+    score -= 1;
+    reasons.push('Сильный разброс локация/спрос/сезонность при средних значениях — сигнал неоднороден');
+  }
+
+  // ── Conflicting signals: gravity vs livability load ─────────────────────────
   const conflictingSignals = evergreenIndex >= 62 && isElevatedOrHigh(level) && demandScore < 62;
   if (conflictingSignals) {
     score -= 1;
-    reasons.push('Конфликт сигналов: сильная гравитация, но высокая нагрузка среды');
+    reasons.push('Конфликт: сильная гравитация при умеренном спросе на фоне тяжёлой среды');
   }
 
-  // High friction + weak demand — unreliable residential picture
+  const burdenAxes = countResidentialBurdenAxes(bd);
+  if (burdenAxes >= 3) {
+    score -= 2;
+    reasons.push('Несколько сильных осей нагрузки среды одновременно — риск стекается');
+  } else if (burdenAxes === 2) {
+    score -= 1;
+    reasons.push('Двойная нагрузка среды (дорога/ночная жизнь/промка и т.п.) — осторожнее в выводах');
+  }
+
+  // Friction level vs demand
   if (isElevatedOrHigh(level) && demandScore < 50) {
     score -= 2;
-    reasons.push('Высокая нагрузка среды при слабом спросе — прогноз ненадёжен');
+    reasons.push('Тяжёлая среда при слабом спросе — жилой прогноз ненадёжен');
   } else if (isElevatedOrHigh(level)) {
     score -= 1;
-    reasons.push('Повышенная нагрузка среды снижает уверенность');
+    reasons.push('Повышенная или высокая нагрузка среды снижает уверенность в комфорт-сценарии');
   }
 
-  // Sparse neighborhood data
   if (env.confidence === 'low') {
     score -= 1;
-    reasons.push('Разреженные данные карты для среды — вывод ориентировочный');
-  } else if (env.confidence === 'medium' && score > 3) {
-    score -= 0; // no extra penalty at medium
+    reasons.push('Низкая достоверность слоя среды по карте — модель среды может недоучитывать факторы');
   }
 
-  // Strategy itself reflects risk
   if (strategy === 'cautious_manual_only') {
-    if (score > 2) score = 2; // cap at medium when strategy is cautious
-    reasons.push('Стратегия cautious_manual_only ограничивает уверенность');
+    if (score > 2) score = 2;
+    reasons.push('Стратегия cautious_manual_only: уверенность в авто-режиме низкая по определению');
   }
 
-  const confidence: ResidentialAnalysisConfidence =
-    score >= 5 ? 'high' : score >= 3 ? 'medium' : 'low';
+  let confidence: ResidentialAnalysisConfidence = score >= 5 ? 'high' : score >= 3 ? 'medium' : 'low';
+
+  // Hybrid in elevated/high friction without prime-core exception: medium at most
+  // (avoids «фальшивая уверенность» там, где STR не выиграл, а среда спорная).
+  if (
+    strategy === 'hybrid' &&
+    isElevatedOrHigh(level) &&
+    !hybridElevatedPrimeCoreException({ level, locationScore, demandScore, magnetCount, bd })
+  ) {
+    if (confidence === 'high') {
+      confidence = 'medium';
+      reasons.push('Гибрид на фоне elevated/high: сильный спрос не отменяет спорную среду — без максимальной уверенности');
+    }
+  }
+
+  // Industrial / harsh stack in non-cautious strategies: never `high` without prime exception path above
+  if (
+    strategy !== 'cautious_manual_only' &&
+    (bd.industrial01 >= 0.52 || (bd.harshUrbanStack01 >= 0.62 && bd.industrial01 >= 0.35)) &&
+    !hybridElevatedPrimeCoreException({ level, locationScore, demandScore, magnetCount, bd })
+  ) {
+    if (confidence === 'high') {
+      confidence = 'medium';
+      reasons.push('Промышленный или жёсткий городской стек ограничивает верхнюю уверенность');
+    }
+  }
 
   return { confidence, reasons };
 }
@@ -384,33 +487,163 @@ function buildOperationalNoteRu(
   return 'Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем.';
 }
 
-function buildStrategyRationaleRu(
-  strategy: ResidentialStrategy,
-  audienceType: ResidentialAudienceType,
-  env: NeighborhoodEnvironmentLayer,
-  locationScore: number,
-  shortTermRationaleKind: ResidentialShortTermRationaleKind,
-): string {
+function describeAggressiveBlockerRu(args: {
+  strategy: ResidentialStrategy;
+  env: NeighborhoodEnvironmentLayer;
+  locationScore: number;
+  demandScore: number;
+  seasonalityScore: number;
+  audienceType: ResidentialAudienceType;
+  isFallbackMode: boolean;
+  magnetCount: number;
+}): string | null {
+  const { strategy, env, locationScore, demandScore, seasonalityScore, audienceType, isFallbackMode, magnetCount } = args;
+  const level = frictionLevel(env);
+  const bd = env.breakdown;
+
+  if (strategy === 'cautious_manual_only') {
+    if (isElevatedOrHigh(level) && locationScore < 68) {
+      return `Более агрессивные режимы отсечены: при ${env.concernLevel} среде итоговый score локации ${locationScore} ниже порога устойчивого STR.`;
+    }
+    if (bd.nightlife01 > 0.5 && bd.industrial01 > 0.5) {
+      return `Посуточка и гибрид отсекаются: одновременно сильные ночная и промышленная нагрузка — жилой комфорт и соседи в приоритете.`;
+    }
+    if (bd.nightlife01 > 0.5 && bd.majorRoads01 > 0.6) {
+      return `STR и гибрид с высокой интенсивностью отсекаются: ночная активность + магистральная нагрузка дают типичный «осторожный» профиль.`;
+    }
+    return `Более агрессивные стратегии отсекаются правилами риска среды и спроса для этой точки.`;
+  }
+
+  if (strategy === 'selective_premium_short_term') {
+    if (demandScore > 72 && seasonalityScore > 60 && level !== 'high') {
+      const aud =
+        audienceType === 'premium_comfort'
+          ? 'тихий premium'
+          : audienceType === 'mixed_use_adjacent'
+            ? 'смешанная жилая среда'
+            : 'стандартный жилой контур';
+      return `Классическая посуточка не выбрана: при профиле «${aud}» и не максимальной нагрузке среды выгоднее избирательный STR, чем массовый поток.`;
+    }
+    return null;
+  }
+
+  if (strategy === 'hybrid' || strategy === 'mid_term') {
+    if (demandScore > 72 && seasonalityScore > 60 && (isElevatedOrHigh(level) || env.environmentalFrictionScore >= 38)) {
+      return `Чистая посуточка не прошла: сочетание нагрузки среды (${env.concernLevel}, индекс ${env.environmentalFrictionScore}/100) и порогов спроса/сезонности оставляет гибрид или средний срок как более устойчивый режим.`;
+    }
+  }
+
+  if (strategy === 'mid_term') {
+    if (demandScore <= 52 || isFallbackMode || magnetCount <= 2) {
+      return `STR и гибрид не выиграли: спрос ${demandScore}${isFallbackMode ? ', режим резерва аудитории' : ''}${magnetCount <= 2 ? ', мало магнитов' : ''} — краткосрочный сценарий слабый.`;
+    }
+  }
+
+  if (strategy === 'hybrid' && audienceType === 'premium_comfort' && locationScore < 56) {
+    return `Selective premium не включён: при тихом профиле score локации ${locationScore} не дотягивает до порога избирательной посуточки — остаётся гибрид.`;
+  }
+
+  return null;
+}
+
+function buildStrategyRationaleRu(args: {
+  strategy: ResidentialStrategy;
+  audienceType: ResidentialAudienceType;
+  env: NeighborhoodEnvironmentLayer;
+  locationScore: number;
+  demandScore: number;
+  seasonalityScore: number;
+  audienceFitScore: number;
+  magnetCount: number;
+  isFallbackMode: boolean;
+  competitorPressureLevel: 'low' | 'medium' | 'high';
+  shortTermRationaleKind: ResidentialShortTermRationaleKind;
+  confidence: ResidentialAnalysisConfidence;
+  stability01: number;
+}): string {
+  const {
+    strategy,
+    audienceType,
+    env,
+    locationScore,
+    demandScore,
+    seasonalityScore,
+    audienceFitScore,
+    magnetCount,
+    isFallbackMode,
+    competitorPressureLevel,
+    shortTermRationaleKind,
+    confidence,
+    stability01,
+  } = args;
+  const bd = env.breakdown;
+  const audLabel =
+    audienceType === 'premium_comfort'
+      ? 'тихий premium-комфорт'
+      : audienceType === 'mixed_use_adjacent'
+        ? 'смешанная среда у коммерции'
+        : 'типичный жилой контур';
+
+  const strengthBits: string[] = [];
+  if (demandScore >= 75) strengthBits.push(`спрос ${demandScore}`);
+  if (seasonalityScore >= 78) strengthBits.push(`сезонность ${seasonalityScore}`);
+  if (locationScore >= 72) strengthBits.push(`локация ${locationScore}`);
+  if (magnetCount >= 8) strengthBits.push(`${magnetCount} магнитов`);
+  if (audienceFitScore >= 60) strengthBits.push(`аудиторное попадание ${audienceFitScore}`);
+  const strength = strengthBits.length > 0 ? strengthBits.slice(0, 3).join(', ') : `базовые score (локация ${locationScore}, спрос ${demandScore})`;
+
+  const confPhrase =
+    confidence === 'high'
+      ? 'Уверенность высокая: сигналы согласованы.'
+      : confidence === 'medium'
+        ? 'Уверенность средняя: вывод рабочий, но есть зоны неопределённости.'
+        : 'Уверенность низкая: опирайтесь на ручную проверку и локальные факты.';
+
+  const blocker = describeAggressiveBlockerRu({
+    strategy,
+    env,
+    locationScore,
+    demandScore,
+    seasonalityScore,
+    audienceType,
+    isFallbackMode,
+    magnetCount,
+  });
+
   switch (strategy) {
-    case 'selective_premium_short_term':
-      return `Тихая среда (нагрузка ${env.environmentalFrictionScore}/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.`;
-    case 'short_term':
+    case 'selective_premium_short_term': {
+      const core = `Выбран избирательный STR: ${audLabel}, нагрузка среды ${env.environmentalFrictionScore}/100 (${env.concernLevel}), стабильность потока ${(stability01 * 100).toFixed(0)}%. Опора на силу: ${strength}.`;
+      const tail = blocker ? ` ${blocker}` : '';
+      return `${core}${tail} ${confPhrase}`;
+    }
+    case 'short_term': {
+      let core: string;
       if (shortTermRationaleKind === 'elevated_core_override') {
-        return (
-          `Посуточная модель: сильный спрос и сезонность перевешивают повышенную нагрузку среды (${env.concernLevel}) ` +
-          `при сильном транспортном каркасе и без промышленного / «ночного» доминирования — STR уместен с дисциплиной заселений и уважением к соседям.`
-        );
+        core = `Посуточка в зоне ${env.concernLevel}: спрос ${demandScore} и сезонность ${seasonalityScore} перевешивают нагрузку при сильном транспорте (коридор ${(bd.transitCorridor01 * 100).toFixed(0)}%) и без доминирования промки/ночной полосы.`;
+      } else if (shortTermRationaleKind === 'seasonal_demand_lift') {
+        core = `Посуточка через сезонный лифт: сезонность ${seasonalityScore} очень высокая при спокойной среде и спросе ${demandScore} около STR-порога — курортно-пиковый сценарий.`;
+      } else {
+        core = `Посуточка: спрос ${demandScore} и сезонность ${seasonalityScore} на фоне умеренной среды (${env.concernLevel}, ${env.environmentalFrictionScore}/100).`;
       }
-      if (shortTermRationaleKind === 'seasonal_demand_lift') {
-        return `Посуточка опирается на очень высокую сезонность при спокойной среде и спросе чуть ниже обычного STR-порога — типичный курортный / пиковый профиль.`;
-      }
-      return `Высокий стабильный спрос вытягивает посуточку: риски среды умеренные, нагрузка приемлема для STR.`;
-    case 'cautious_manual_only':
-      return `Нагрузка среды (${env.concernLevel}) + ограниченный потенциал (score ${locationScore}) — авто-прайсинг ненадёжен, нужен ручной мониторинг.`;
-    case 'hybrid':
-      return `Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.`;
-    case 'mid_term':
-      return `Слабые сигналы краткосрочного спроса: среднесрочная аренда снижает операционные риски.`;
+      const comp =
+        competitorPressureLevel === 'high'
+          ? ` Конкуренция высокая (${competitorPressureLevel}) — держите дисциплину цены и заселений.`
+          : '';
+      return `${core} Ключевая опора: ${strength}.${comp}${blocker ? ` ${blocker}` : ''} ${confPhrase}`;
+    }
+    case 'cautious_manual_only': {
+      const core = `Ручной осторожный режим: среда ${env.concernLevel}, трение ${env.environmentalFrictionScore}/100; локация ${locationScore}, спрос ${demandScore}.`;
+      const mid = blocker ? ` ${blocker}` : '';
+      return `${core}${mid} ${confPhrase}`;
+    }
+    case 'hybrid': {
+      const core = `Гибрид посуточно/средний срок: ${audLabel}; спрос ${demandScore} без устойчивого «чистого» STR-окна при текущих порогах среды (${env.concernLevel}).`;
+      return `${core} Опора: ${strength}.${blocker ? ` ${blocker}` : ''} ${confPhrase}`;
+    }
+    case 'mid_term': {
+      const core = `Среднесрок: ${audLabel}${isFallbackMode ? ', аудитория в резерве' : ''}; краткосрочный спрос недостаточен (спрос ${demandScore}).`;
+      return `${core} ${blocker ? `${blocker} ` : ''}${confPhrase}`;
+    }
   }
 }
 
@@ -461,6 +694,8 @@ export function buildResidentialAnalysis(analysis: LocationAnalysis): Residentia
     isFallbackMode,
     env,
     demandScore,
+    seasonalityScore,
+    locationScore,
     stability01,
     strategy: residentialStrategy,
   });
@@ -476,13 +711,21 @@ export function buildResidentialAnalysis(analysis: LocationAnalysis): Residentia
   });
 
   const operationalNoteRu = buildOperationalNoteRu(operationalSuitability, residentialStrategy);
-  const strategyRationaleRu = buildStrategyRationaleRu(
-    residentialStrategy,
+  const strategyRationaleRu = buildStrategyRationaleRu({
+    strategy: residentialStrategy,
     audienceType,
     env,
     locationScore,
+    demandScore,
+    seasonalityScore,
+    audienceFitScore,
+    magnetCount,
+    isFallbackMode,
+    competitorPressureLevel,
     shortTermRationaleKind,
-  );
+    confidence,
+    stability01,
+  });
 
   return {
     residentialAudienceType: audienceType,

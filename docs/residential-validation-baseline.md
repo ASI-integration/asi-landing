@@ -1,11 +1,13 @@
 # Residential Validation — Baseline Pass
 
-**Version:** baseline-v2-pass2-strategy (2026-04-19)  
+**Version:** baseline-v3-pass3-confidence-rationale (2026-04-19)  
 **Control set:** 28 cases (`docs/residential-control-set-definition.md`)  
 **Gate results:** 28/28 pass · 0 known gaps  
 **Runner output:** `scripts/residential-control-set-results.json`
 
 **Pass-2 change:** `short_term` no longer uses a blanket `!isElevatedOrHigh` veto. Elevated urban cores can qualify via a guarded composite (demand + centrality + seasonality + audience fit, with industrial/nightlife/road/stack gates). Resort-like cases use a narrow low-friction seasonality lift when demand sits just under the normal STR floor.
+
+**Pass-3 change:** Residential `confidence` uses explicit signal-clarity, burden-stacking, cross-score consistency, and post-calibration caps (`hybrid` + elevated without prime-core exception → at most `medium`; industrial / harsh-stack ceiling). `strategyRationaleRu` is archetype- and strategy-aware and ties to blockers, strengths, and confidence tier.
 
 This document records the state of the residential model as a fixed starting point. Future passes compare against this baseline.
 
@@ -43,6 +45,14 @@ When locationScore < 48 or stability < 0.48, premium_comfort does not fire — e
 | R27 under-classification | `lowFrictionSeasonalShortTermEligible`: seasonality ≥ 90, demand in **[68, 72)**, friction < 32, non-elevated |
 | Resort ops over-automation risk | `computeOperationalSuitability`: `short_term` + **stability01 < 0.42** → **semi_auto** |
 
+## 2b. Closed in baseline-v3 (pass-3 confidence + rationale)
+
+| Former issue | Resolution in code |
+|--------------|-------------------|
+| R17 overconfident `high` on industrial conversion hybrid | Burden-axis stacking, industrial / harsh-stack ceiling, and hybrid+elevated cap (unless `hybridElevatedPrimeCoreException`) |
+| R10 / R15 «фальшивый high» на elevated hybrid | Same hybrid+elevated cap; prime-core exception preserves R01 |
+| Generic one-line strategy rationale | `buildStrategyRationaleRu`: audience + scores + optional aggressive-blocker sentence + confidence phrase |
+
 ---
 
 ## 3. Remaining follow-ups (unchanged from v1 notes)
@@ -54,10 +64,6 @@ All five cautious cases (R03, R06, R12, R23, R28) produce confidence=low by desi
 ### Gap B: premium_comfort + non-selective strategy (R05, R21)
 
 Comfort-first audience label with hybrid/mid_term strategy — copy layer should explain the tension.
-
-### Gap C: High confidence on industrial conversion contested zone (R17)
-
-Industrial burden severity is not heavily penalized in the confidence score.
 
 ---
 
@@ -103,16 +109,7 @@ Consider a separate confidence path for cautious locations:
 ```
 This is a design change that requires discussion. For now, document the semantic mismatch and add copy clarification.
 
-**Target 4: Penalize industrial burden in confidence (R17)**
-
-Add industrial-specific deductions:
-```typescript
-if (env.breakdown.industrial01 > 0.65 && isElevatedOrHigh(level)) {
-  score -= 1;
-  reasons.push('Высокая промышленная нагрузка — оценка требует проверки');
-}
-```
-Verify: R17 drops from high to medium. R03, R28 already on cautious path — no change.
+**Target 4: Penalize industrial burden in confidence (R17)** — implemented in pass-3 (industrial ceiling + burden axes + hybrid/elevated cap).
 
 ---
 

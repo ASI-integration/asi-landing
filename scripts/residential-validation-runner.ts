@@ -309,8 +309,8 @@ const CASES: CaseFixture[] = [
     competitorPressureLevel: 'high',
     environmentalFrictionScore: 48, concernLevel: 'elevated', envConfidence: 'high',
     breakdown: { majorRoads01: 0.35, industrial01: 0.12, aviation01: 0.06, nightlife01: 0.68, transitCorridor01: 0.40, harshUrbanStack01: 0.45 },
-    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'high' },
-    notes: 'nightlife=0.68 один (без industrial) не должен давать cautious; elevated env → hybrid',
+    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'medium' },
+    notes: 'Pass-3: elevated+hybrid без «чистого» ядра → medium confidence; nightlife=0.68 не даёт cautious',
   },
   {
     id: 'R11',
@@ -369,8 +369,8 @@ const CASES: CaseFixture[] = [
     competitorPressureLevel: 'high',
     environmentalFrictionScore: 45, concernLevel: 'elevated', envConfidence: 'high',
     breakdown: { majorRoads01: 0.38, industrial01: 0.10, aviation01: 0.05, nightlife01: 0.72, transitCorridor01: 0.35, harshUrbanStack01: 0.48 },
-    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'high' },
-    notes: 'nightlife=0.72 + elevated → hybrid (не short_term). nightlife+road<0.60 → не cautious',
+    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'medium' },
+    notes: 'Pass-3: elevated+hybrid, сильная ночная нагрузка → medium confidence; hybrid (не short_term)',
   },
   {
     id: 'R16',
@@ -393,8 +393,8 @@ const CASES: CaseFixture[] = [
     competitorPressureLevel: 'medium',
     environmentalFrictionScore: 58, concernLevel: 'elevated', envConfidence: 'high',
     breakdown: { majorRoads01: 0.62, industrial01: 0.72, aviation01: 0.08, nightlife01: 0.22, transitCorridor01: 0.42, harshUrbanStack01: 0.68 },
-    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'high' },
-    notes: 'industrial=0.72 один (без nightlife) не даёт cautious; elevated → hybrid; strong signals → high confidence',
+    expected: { audienceTypeTendency: 'mixed', strategyTendency: 'hybrid', operationalSuitability: 'semi_auto', confidenceTendency: 'medium' },
+    notes: 'Pass-3: промка + elevated + hybrid → medium confidence (потолок); industrial=0.72 не даёт cautious',
   },
   {
     id: 'R18',
@@ -604,7 +604,7 @@ function main() {
 
   const output = {
     runAt: new Date().toISOString(),
-    runnerVersion: 'baseline-v2-pass2-strategy',
+    runnerVersion: 'baseline-v3-pass3-confidence-rationale',
     totalCases: results.length,
     passCount,
     failCount,

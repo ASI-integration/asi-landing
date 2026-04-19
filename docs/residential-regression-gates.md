@@ -1,6 +1,6 @@
 # Residential Regression Gates
 
-**Version:** baseline-v2-pass2-strategy (2026-04-19)  
+**Version:** baseline-v3-pass3-confidence-rationale (2026-04-19)  
 **Applies to:** `buildResidentialAnalysis` in `src/lib/location/residential-analysis.ts`  
 **Runner:** `npx tsx scripts/residential-validation-runner.ts`
 
@@ -40,6 +40,7 @@ An improvement is one that:
 3. **Reduces cliff severity at stability thresholds** without breaking R02, R07, R13, R18, R26
 4. **Addresses premium_comfort + non-selective mismatch** (R05, R21) without regressing R11 or R07
 5. **Maintains or improves pass count** from the current baseline of **28/28**
+6. **Pass-3 confidence discipline:** R10, R15, R17 intentionally expect `medium` (not `high`) for elevated `hybrid` without prime-core exception or with industrial / harsh-stack ceiling — changing them back to `high` is a regression unless rationale is updated in the same PR
 
 ---
 

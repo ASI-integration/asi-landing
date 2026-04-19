@@ -184,6 +184,62 @@ export type DemandType = 'tourism-led' | 'business-led' | 'transport-led' | 'mix
 export type LocationScoreRating = 'exceptional' | 'strong' | 'viable' | 'weak' | 'risky';
 export type RecommendedStrategy = 'short_term' | 'hybrid' | 'mid_term';
 
+// ── Residential analysis layer ────────────────────────────────────────────────
+
+/**
+ * Residential audience classification — livability-first, not demand-first.
+ * premium_comfort: quiet, low-friction, comfort-sensitive guests.
+ * mixed_use_adjacent: near commercial activity, moderate friction acceptable.
+ * standard_residential: typical urban STR profile.
+ */
+export type ResidentialAudienceType =
+  | 'premium_comfort'
+  | 'mixed_use_adjacent'
+  | 'standard_residential';
+
+/**
+ * Residential-specific strategy — finer than the commercial RecommendedStrategy.
+ * selective_premium_short_term: premium/quiet STR targeting.
+ * cautious_manual_only: noisy/risky location, manual pricing only.
+ */
+export type ResidentialStrategy =
+  | 'short_term'
+  | 'selective_premium_short_term'
+  | 'hybrid'
+  | 'mid_term'
+  | 'cautious_manual_only';
+
+/** How much operator automation is safe for this location. */
+export type OperationalSuitability = 'full_auto' | 'semi_auto' | 'manual';
+
+/** Honest signal-quality confidence for the residential interpretation layer. */
+export type ResidentialAnalysisConfidence = 'high' | 'medium' | 'low';
+
+export interface ResidentialAnalysisOutput {
+  /** Residential audience classification (not a commercial demand type). */
+  residentialAudienceType: ResidentialAudienceType;
+  /** Residential-aware strategy recommendation. */
+  residentialStrategy: ResidentialStrategy;
+  /** How safely this location can be operated in automated mode. */
+  operationalSuitability: OperationalSuitability;
+  /** Honest confidence in the above outputs given available signal strength. */
+  confidence: ResidentialAnalysisConfidence;
+  /**
+   * Short reasons behind the confidence rating — surfaces weak signals,
+   * fallback mode, data sparsity, or conflicting indicators.
+   */
+  confidenceReasons: string[];
+  /**
+   * Non-empty only when residentialAudienceType === 'premium_comfort'.
+   * Lists concrete livability-positive signals detected.
+   */
+  premiumComfortSignals: string[];
+  /** One-line RU operational guidance for this location. */
+  operationalNoteRu: string;
+  /** RU rationale for the strategy (2–4 short sentences: strengths, blockers, confidence). */
+  strategyRationaleRu: string;
+}
+
 export interface LocationScoreBreakdown {
   demand_score: number;        // 0–100
   supply_score: number;        // 0–100
@@ -245,6 +301,105 @@ export interface AnalysisMeta {
   usedFallbackQuery?: boolean;
 }
 
+/** Concern tier for the neighborhood environment / livability-friction layer (not commercial strength). */
+export type NeighborhoodEnvironmentConcernLevel = 'low' | 'moderate' | 'elevated' | 'high';
+
+/**
+ * MVP environmental friction layer — neutral infrastructure proxies only.
+ * Not merged into commercial scoring; safe to use later as an optional modifier.
+ */
+export interface NeighborhoodEnvironmentLayer {
+  /** 0–100 — higher = more environmental friction / livability stress. */
+  environmentalFrictionScore: number;
+  concernLevel: NeighborhoodEnvironmentConcernLevel;
+  /** Human-readable tier label (EN). */
+  concernLabelEn: string;
+  /** Human-readable tier label (RU). */
+  concernLabelRu: string;
+  /** Short explainability bullets (EN). */
+  reasonsEn: string[];
+  /** Short explainability bullets (RU). */
+  reasonsRu: string[];
+  /**
+   * One neutral synthesis line for UI — not merged into commercial scoring;
+   * distinguishes strong-but-busy vs calmer vs patchy micro-location signals.
+   */
+  environmentNarrativeEn: string;
+  environmentNarrativeRu: string;
+  /** Map/OSM coverage confidence for this sub-model. */
+  confidence: 'high' | 'medium' | 'low';
+  /** Normalised 0–1 sub-components for debugging / future UI. */
+  breakdown: {
+    majorRoads01: number;
+    industrial01: number;
+    aviation01: number;
+    nightlife01: number;
+    transitCorridor01: number;
+    harshUrbanStack01: number;
+  };
+}
+
+/** Soft post-layer on headline `location_score` only; `evergreenIndex` unchanged. */
+export interface NeighborhoodEnvironmentCommercialModifierSnapshot {
+  /** False when master switch off (`ASI_NEIGHBORHOOD_ENV_SCORE_MODIFIER=0`). */
+  layerEnabled: boolean;
+  /** True when the headline score was reduced. */
+  applied: boolean;
+  baseLocationScore: number;
+  adjustedLocationScore: number;
+  pointsRemoved: number;
+  /** Intended nominal reduction before point cap (e.g. 0.045 ≈ 4.5%). */
+  nominalReductionFraction: number;
+  concernLevel: NeighborhoodEnvironmentConcernLevel;
+  neighborhoodConfidence: NeighborhoodEnvironmentLayer['confidence'];
+  osmElementCount: number;
+  /** Sparse fetch — numeric modifier skipped. */
+  osmCoverageOkForPenalty: boolean;
+  skipReason:
+    | null
+    | 'layer_disabled'
+    | 'concern_below_elevated'
+    | 'neighborhood_confidence_low'
+    | 'osm_too_sparse'
+    | 'no_numeric_change';
+  /** High environment concern but neighborhood sub-model confidence is low — no penalty. */
+  warningOnlyHighConcernLowConfidence: boolean;
+  /**
+   * True when base headline was ≥70 and reduction was capped so the adjusted score
+   * does not drop below 70 in a single pass (preserves the "strong" rating band).
+   */
+  strongBandFloorApplied: boolean;
+  explainEn: string;
+  explainRu: string;
+}
+
+/** Spatial engine tier — v1 ships `stub` only; `graph` / `provider` reserved for Phase 2. */
+export type SpatialTier = 'stub' | 'graph' | 'provider';
+
+export type BarrierKind = 'water' | 'rail' | 'major_road';
+
+/**
+ * Commercial spatial foundation snapshot (stub geometry).
+ * Attached to every `LocationAnalysis`; scoring uses it only when `enabled` is true.
+ */
+export interface SpatialFoundationSnapshot {
+  spatialTier: SpatialTier;
+  /** True when barrier/corridor heuristics were applied to magnet attraction scores. */
+  enabled: boolean;
+  /** Any magnet received a barrier multiplier below 1. */
+  barrierPenaltyApplied: boolean;
+  /** Magnets that received a barrier dampening (count, not deduped by object). */
+  penalizedMagnetCount: number;
+  /** Shortest distance from subject to a walkable-corridor OSM sample (m), if any. */
+  corridorSnapM: number | null;
+  /** Barrier classes detected in the fetch window (for UI / explainability). */
+  barrierKindsDetected: BarrierKind[];
+  /** Extra meters blended into decay distance before barrier multiplier (corridor offset). */
+  distanceInflationM: number;
+  /** RU copy for UI / report — clarifies stub vs future graph confidence. */
+  geometricConfidenceNoteRu: string;
+}
+
 /** Full structured output of the gravity engine */
 export interface LocationAnalysis {
   // Score
@@ -273,6 +428,30 @@ export interface LocationAnalysis {
 
   /** Audience fit layer — classifies location by primary audience type */
   audienceAnalysis: AudienceAnalysis;
+
+  /**
+   * Livability / environmental friction — OSM-only, independent of commercial `evergreenIndex`.
+   * Higher `environmentalFrictionScore` = more physical-environment stress (noise, traffic, industry, aviation).
+   */
+  neighborhoodEnvironment: NeighborhoodEnvironmentLayer;
+
+  /**
+   * Soft livability-friction adjustment applied after base `buildLocationScoreOutput`.
+   * Present on fresh analyses; legacy cached payloads may omit it.
+   */
+  commercialNeighborhoodModifier?: NeighborhoodEnvironmentCommercialModifierSnapshot;
+
+  /**
+   * Spatial foundation v1 — barrier-aware magnet scoring + corridor inflation when enabled.
+   * Legacy cache rows may omit this; clients should treat as disabled stub via patch helper.
+   */
+  spatialFoundation?: SpatialFoundationSnapshot;
+
+  /**
+   * Residential analysis layer — strategy, audience type, operational suitability,
+   * and confidence for short-term rental use cases. Always present on fresh analyses.
+   */
+  residentialAnalysis?: ResidentialAnalysisOutput;
 
   // Computed visualization data
   heatmapPoints: HeatmapPoint[];

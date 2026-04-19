@@ -1,6 +1,6 @@
 # Residential Control Set — Snapshot Report
 
-**Version:** baseline-v2-pass2-strategy (2026-04-19)  
+**Version:** baseline-v3-pass3-confidence-rationale (2026-04-19)  
 **Runner:** `scripts/residential-validation-runner.ts`  
 **Source:** `scripts/residential-control-set-results.json`  
 **Cases:** 28 | **Pass:** 28 | **Fail:** 0
@@ -16,7 +16,7 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 | audienceType | premium_comfort: 8 · mixed_use_adjacent: 11 · standard_residential: 9 |
 | strategy | hybrid: 10 · selective_premium: 6 · cautious: 5 · short_term: 4 · mid_term: 3 |
 | opSuit | semi_auto: 17 · manual: 7 · full_auto: 4 |
-| confidence | medium: 10 · high: 11 · low: 7 |
+| confidence | medium: 13 · high: 8 · low: 7 |
 
 ---
 
@@ -161,14 +161,14 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 ---
 
 ### R10 — Китай-город (nightlife urban contested)
-**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=high
+**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=medium
 
 | What the model produced | Assessment |
 |------------------------|------------|
 | mixed_use_adjacent | ✓ Correct |
 | hybrid | ✓ Correct: elevated env blocks short_term |
 | semi_auto | ✓ Correct |
-| confidence=high | ✓ Correct: strong signals (8 magnets, audienceFit=55≥55, evergreenIndex=70≥65) |
+| confidence=medium | ✓ Pass-3: elevated + hybrid без «чистого ядра» — без верхней уверенности, хотя сигналы спроса сильные |
 
 **Positive test: nightlife=0.68 alone does NOT trigger cautious (requires double-burden). Validated.**
 
@@ -239,13 +239,13 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 ---
 
 ### R15 — СПб, Думская (tourist harsh, nightlife-heavy)
-**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=high
+**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=medium
 
 | What the model produced | Assessment |
 |------------------------|------------|
 | mixed_use_adjacent | ✓ Correct |
 | hybrid | ✓ Correct: elevated blocks short_term |
-| semi_auto + high | ✓ Correct |
+| semi_auto + medium | ✓ Pass-3: сильная ночная нагрузка + elevated + hybrid → уверенность без «фальшивого high» |
 
 **Positive test: nightlife=0.72 + industrial=0.10 → NOT cautious (industrial below 0.50 threshold). Also nightlife=0.72 + majorRoad=0.38 → NOT cautious (road below 0.60 threshold). Validated.**
 
@@ -269,18 +269,18 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 ---
 
 ### R17 — Преображенская (industrial conversion, high gravity)
-**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=high
+**Model output:** audienceType=mixed_use_adjacent · strategy=hybrid · opSuit=semi_auto · confidence=medium
 
 | What the model produced | Assessment |
 |------------------------|------------|
 | mixed_use_adjacent | ✓ Correct |
 | hybrid | ✓ Correct: elevated env + industrial=0.72 alone doesn't trigger cautious |
 | semi_auto | ✓ Correct |
-| confidence=high | ⚠ Suspicious: industrial=0.72 + elevated env + harshUrbanStack=0.68, yet confidence=high. Strong signal volume (9 magnets, evergreenIndex=70) overwhelms the environmental concerns in the confidence formula. |
+| confidence=medium | ✓ Pass-3: промышленный профиль и жёсткий стек ограничивают верх уверенности при сохранении гибридной стратегии |
 
-**The confidence score doesn't factor in the industrial burden severity directly — it only counts magnets, audienceFit, evergreen, stability, env confidence level, and demand. A location can have very harsh industrial burden but still get high confidence if the demand signals are strong. This is a valid design tension.**
+**Industrial gravity remains readable in strategy; confidence now matches operator risk on contested conversion zones.**
 
-**Severity:** medium (confidence=high on an industrial-conversion contested zone may mislead operators)
+**Severity:** pass
 
 ---
 
@@ -458,9 +458,9 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 4. **Strong business cluster (R22):** short_term + full_auto + high confidence. The best-case STR path is functional.
 
 ### Archetypes with recurring issues
-1. **Elevated env + high demand:** Blanket short_term block for all elevated locations (R01, R10, R15, R25). Moscow center (R25) is the most egregious — score=88 gets hybrid.
+1. **Elevated env + high demand:** Pass-2 closed the R25 short_term gap; R01 stays hybrid with **high** confidence only under the prime-core exception (сильное ядро + чистый профиль бремени).
 2. **premium_comfort + non-selective strategy:** R05 (premium + hybrid), R21 (premium + mid_term) create audience-strategy mismatch in copy.
-3. **Resort / seasonal profile:** R27 shows the model doesn't handle high-seasonality low-stability locations correctly.
+3. **Resort / seasonal profile:** R27 is on short_term with semi_auto (pass-2); volatility remains visible in ops, not strategy.
 4. **Cautious confidence semantics:** All cautious cases (R03, R06, R12, R23, R28) get confidence=low, which conflates "model certainty about risk" with "data sufficiency".
 
 ### Threshold sensitivity (cliff effects)
@@ -475,9 +475,9 @@ Severity key: **[CRITICAL]** wrong on obvious case • **[MEDIUM]** plausible bu
 
 | Rank | Issue | Affected Cases | Severity |
 |------|-------|---------------|----------|
-| 1 | Elevated env blanket blocks short_term | R01, R10, R15, R25 | Critical (R25) |
-| 2 | Seasonal override missing for resort zones | R27 | Medium |
-| 3 | confidence=high on R17 (industrial conversion) | R17 | Medium |
+| 1 | Elevated env vs short_term (non-prime cores) | R01, R10, R15 | By design (R25 exempt via pass-2) |
+| 2 | ~~Seasonal override missing for resort zones~~ | ~~R27~~ | Closed pass-2 |
+| 3 | ~~confidence=high on R17 (industrial conversion)~~ | ~~R17~~ | Closed pass-3 |
 | 4 | premium_comfort + non-selective strategy mismatch in copy | R05, R21 | Minor |
 | 5 | cautious_manual_only → confidence=low semantic ambiguity | R03, R06, R12, R23, R28 | Minor |
 | 6 | Stability cliff (0.47 vs 0.48) | R20, R26 | Minor (by design) |
