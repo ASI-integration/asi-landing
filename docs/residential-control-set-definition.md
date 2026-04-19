@@ -1,7 +1,7 @@
 # Residential Control Set — Definition
 
-**Version:** baseline-v1 (2026-04-19)  
-**Cases:** 28  
+**Version:** baseline-v4-pass4-edge-hardening (2026-04-19)  
+**Cases:** 30  
 **Purpose:** Fixed reference set for repeatable residential validation. Never changed retroactively — add new cases in a new version file.
 
 ---
@@ -21,7 +21,7 @@
 | Mixed-use contested | R10, R16 |
 | Premium but low-demand | R11, R21 |
 | High-demand but harsh environment | R03, R17, R23, R25 |
-| Edge / conflicting signals | R20, R26, R27, R28 |
+| Edge / conflicting signals | R20, R26, R27, R28, R29, R30 |
 | Industrial conversion | R28 |
 | Resort / seasonal | R27 |
 | Airport zone | R12 |
@@ -727,7 +727,7 @@
 | expected strategy | short_term |
 | expected opSuit | semi_auto |
 | expected confidence | high |
-| notes | KNOWN GAP: текущая модель выдаёт hybrid (elevated env блокирует short_term). Идеальный ответ — short_term: score=88, demand=90, season=82 не должны превращаться в hybrid из-за городской среды. Это самый важный regression risk: правило elevated→no short_term слишком широкое. |
+| notes | Pass-2/4: elevated urban-core override при сильном центре/спросе/сезонности и жёстких гвардах среды — short_term сохраняется. |
 
 ---
 
@@ -783,7 +783,7 @@
 | expected strategy | short_term |
 | expected opSuit | semi_auto |
 | expected confidence | high |
-| notes | KNOWN GAP: текущая модель выдаёт hybrid (demand=70 < 72 порог short_term). Но seasonality=92 однозначно говорит о курортной STR локации. Модель игнорирует seasonality при низком stability. Это design gap для следующего pass. |
+| notes | Pass-2/4: узкий seasonal lift при demand 68–71 и очень высокой сезонности; semi_auto из-за низкой stability. |
 
 ---
 
@@ -815,10 +815,48 @@
 
 ---
 
+### R29 — Нижний Новгород (условный центр), classic STR при demand=72
+
+| Field | Value |
+|-------|-------|
+| id | R29 |
+| archetype | edge — inclusive classic STR demand floor |
+| locationScore | 68 |
+| demandScore | 72 |
+| seasonalityScore | 75 |
+| audienceFitScore | 55 |
+| evergreenIndex | 65 |
+| stability01 | 0.55 |
+| magnetCount | 7 |
+| friction | 28 — moderate |
+| expected strategy | short_term |
+| expected opSuit | full_auto |
+| expected confidence | high |
+| notes | Pass-4: classic STR включает ровно 72 (нет разрыва с seasonal 68–71). Регрессия — hybrid на этом профиле. |
+
+---
+
+### R30 — «Слабый курорт» без структурной опоры
+
+| Field | Value |
+|-------|-------|
+| id | R30 |
+| archetype | edge — seasonal lift blocked |
+| locationScore | 42 |
+| demandScore | 69 |
+| seasonalityScore | 94 |
+| evergreenIndex | 40 |
+| friction | 18 — low |
+| expected strategy | hybrid |
+| expected confidence | medium |
+| notes | Pass-4: высокая сезонность не поднимает STR без location≥58 и evergreen≥55. Регрессия — short_term. |
+
+---
+
 ## Summary Statistics
 
-- **Total cases:** 28  
+- **Total cases:** 30  
 - **Must-pass cases (zero ambiguity):** R02, R08, R13, R18, R22, R23  
-- **Known gap cases (expected ≠ current model):** R25, R27  
+- **Pass-4 boundary locks:** R29, R30  
 - **Edge / threshold cases:** R05, R20, R21, R26  
 - **Ambiguity-allowed cases (multiple valid answers):** R04 (semi_auto vs full_auto borderline), R07 (medium vs high confidence borderline)

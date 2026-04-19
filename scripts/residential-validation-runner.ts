@@ -1,7 +1,7 @@
 /**
  * Residential validation runner — control set baseline
  *
- * Runs buildResidentialAnalysis against 28 synthetic fixtures covering
+ * Runs buildResidentialAnalysis against 30 synthetic fixtures covering
  * all defined residential archetypes. Pure-function runner — no I/O, no
  * live API calls. Fixtures encode the exact parameter space that determines
  * model output.
@@ -528,6 +528,70 @@ const CASES: CaseFixture[] = [
     expected: { audienceTypeTendency: 'mixed', strategyTendency: 'cautious', operationalSuitability: 'manual', confidenceTendency: 'low' },
     notes: 'score=62 < 68 при elevated → cautious; cautious cap → low confidence',
   },
+  {
+    id: 'R29',
+    label: 'Нижний Новгород, центр — classic STR ровно при demand=72',
+    archetype: 'edge — inclusive classic STR demand floor',
+    locationScore: 68,
+    demandScore: 72,
+    seasonalityScore: 75,
+    audienceFitScore: 55,
+    evergreenIndex: 65,
+    stability01: 0.55,
+    magnetCount: 7,
+    isFallbackMode: false,
+    competitorPressureLevel: 'medium',
+    environmentalFrictionScore: 28,
+    concernLevel: 'moderate',
+    envConfidence: 'high',
+    breakdown: {
+      majorRoads01: 0.48,
+      industrial01: 0.15,
+      aviation01: 0.06,
+      nightlife01: 0.26,
+      transitCorridor01: 0.32,
+      harshUrbanStack01: 0.36,
+    },
+    expected: {
+      audienceTypeTendency: 'mixed',
+      strategyTendency: 'short_term',
+      operationalSuitability: 'full_auto',
+      confidenceTendency: 'high',
+    },
+    notes: 'Pass-4: нет «дыры» 71/72/73 — classic STR включает 72; mixed_use + умеренная среда; full_auto при friction<38',
+  },
+  {
+    id: 'R30',
+    label: 'Условный «слабый курорт» — сезонность без структурной опоры',
+    archetype: 'edge — seasonal lift guard (weak location + evergreen)',
+    locationScore: 42,
+    demandScore: 69,
+    seasonalityScore: 94,
+    audienceFitScore: 35,
+    evergreenIndex: 40,
+    stability01: 0.36,
+    magnetCount: 4,
+    isFallbackMode: false,
+    competitorPressureLevel: 'low',
+    environmentalFrictionScore: 18,
+    concernLevel: 'low',
+    envConfidence: 'high',
+    breakdown: {
+      majorRoads01: 0.22,
+      industrial01: 0.06,
+      aviation01: 0.04,
+      nightlife01: 0.12,
+      transitCorridor01: 0.12,
+      harshUrbanStack01: 0.14,
+    },
+    expected: {
+      audienceTypeTendency: 'standard',
+      strategyTendency: 'hybrid',
+      operationalSuitability: 'semi_auto',
+      confidenceTendency: 'medium',
+    },
+    notes: 'Pass-4: узкий seasonal-lift не срабатывает при location<58 или evergreen<55 — остаётся hybrid',
+  },
 ];
 
 // ── Main runner ───────────────────────────────────────────────────────────────
@@ -604,7 +668,7 @@ function main() {
 
   const output = {
     runAt: new Date().toISOString(),
-    runnerVersion: 'baseline-v3-pass3-confidence-rationale',
+    runnerVersion: 'baseline-v4-pass4-edge-hardening',
     totalCases: results.length,
     passCount,
     failCount,

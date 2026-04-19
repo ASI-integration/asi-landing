@@ -1,13 +1,15 @@
 # Residential Validation — Baseline Pass
 
-**Version:** baseline-v3-pass3-confidence-rationale (2026-04-19)  
-**Control set:** 28 cases (`docs/residential-control-set-definition.md`)  
-**Gate results:** 28/28 pass · 0 known gaps  
+**Version:** baseline-v4-pass4-edge-hardening (2026-04-19)  
+**Control set:** 30 cases (`docs/residential-control-set-definition.md`)  
+**Gate results:** 30/30 pass · 0 known gaps  
 **Runner output:** `scripts/residential-control-set-results.json`
 
 **Pass-2 change:** `short_term` no longer uses a blanket `!isElevatedOrHigh` veto. Elevated urban cores can qualify via a guarded composite (demand + centrality + seasonality + audience fit, with industrial/nightlife/road/stack gates). Resort-like cases use a narrow low-friction seasonality lift when demand sits just under the normal STR floor.
 
 **Pass-3 change:** Residential `confidence` uses explicit signal-clarity, burden-stacking, cross-score consistency, and post-calibration caps (`hybrid` + elevated without prime-core exception → at most `medium`; industrial / harsh-stack ceiling). `strategyRationaleRu` is archetype- and strategy-aware and ties to blockers, strengths, and confidence tier.
+
+**Pass-4 change:** Thresholds live in `RESIDENTIAL_THRESHOLDS` (single source). Classic STR uses an **inclusive** demand floor at 72 (aligned with seasonal lift 68–71 so there is no dead zone). Seasonal lift adds **structural floors** on `locationScore` and `evergreenIndex` so peak seasonality cannot paper over a dead address. Control cases **R29** and **R30** lock those boundaries; see `docs/residential-regression-gates.md` §0 and §10.
 
 This document records the state of the residential model as a fixed starting point. Future passes compare against this baseline.
 
@@ -117,7 +119,7 @@ This is a design change that requires discussion. For now, document the semantic
 
 **Is this framework usable as a baseline for next passes?** Yes.
 
-- The control set is fixed and representative (28 cases, 12 archetypes)
+- The control set is fixed and representative (30 cases, 12+ archetypes)
 - The runner is fully repeatable and produces deterministic output (pure function, no live API calls)
 - The JSON output is structured for before/after comparison
 - The regression gates define clear pass/fail criteria

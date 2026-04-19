@@ -1,8 +1,26 @@
 # Residential Regression Gates
 
-**Version:** baseline-v3-pass3-confidence-rationale (2026-04-19)  
+**Version:** baseline-v4-pass4-edge-hardening (2026-04-19)  
 **Applies to:** `buildResidentialAnalysis` in `src/lib/location/residential-analysis.ts`  
 **Runner:** `npx tsx scripts/residential-validation-runner.ts`
+
+---
+
+## 0. Decision families (maintenance map)
+
+| Family | Meaning | Dominates when |
+|--------|---------|----------------|
+| **cautious_manual_only** | Auto pricing / ops unsafe | Elevated/high + weak location score, double environment burdens, airport-like stacks, or high competition + very weak demand on non-quiet friction |
+| **selective_premium_short_term** | Quiet comfort-first STR | `premium_comfort` + friction/env gates + stability floor; wins over mass STR when audience is premium |
+| **short_term** | Mass STR | Classic demand+seasonality floor, **or** narrow elevated urban-core override, **or** low-friction seasonal lift band |
+| **hybrid** | STR not cleanly justified | Mid demand, elevated friction without override, or blocked seasonal/structural guards |
+| **mid_term** | Weak short demand | Demand at/below hybrid floor, fallback, or sparse magnets |
+
+**Overrides (allowed, heavily guarded):** elevated-only urban-core STR (`elevatedUrbanCoreAllowsShortTerm`); low-friction seasonal lift for demand 68–71 with very high seasonality **and** structural floors on location + evergreen.
+
+**Caution must dominate:** any double burden (nightlife+industrial, nightlife+major road), elevated + location ≤67, harsh industrial stacks aligned with control cases R03/R06/R12/R23/R28.
+
+**Must never regress:** the six must-pass rows in §5, plus pass-4 boundary cases R29 (inclusive STR floor) and R30 (seasonal lift structural guard).
 
 ---
 
@@ -39,7 +57,7 @@ An improvement is one that:
 2. **Keeps R27 (resort seasonal) on short_term** via controlled seasonality lift (resolved pass-2)
 3. **Reduces cliff severity at stability thresholds** without breaking R02, R07, R13, R18, R26
 4. **Addresses premium_comfort + non-selective mismatch** (R05, R21) without regressing R11 or R07
-5. **Maintains or improves pass count** from the current baseline of **28/28**
+5. **Maintains or improves pass count** from the current baseline of **30/30**
 6. **Pass-3 confidence discipline:** R10, R15, R17 intentionally expect `medium` (not `high`) for elevated `hybrid` without prime-core exception or with industrial / harsh-stack ceiling — changing them back to `high` is a regression unless rationale is updated in the same PR
 
 ---
@@ -147,7 +165,7 @@ npx tsx scripts/residential-validation-runner.ts
 ```
 
 **Pass criteria:**
-- `passCount === 28` (full control set)
+- `passCount === 30` (full control set)
 - `unexpectedFailIds` is empty (no intentional failing cases)
 - All 6 must-pass cases show `allPass: true` in JSON output
 - No critical errors from Section 4
@@ -199,3 +217,14 @@ node -e "
 | Change friction threshold for full_auto (< 38 → < N) | R04, R13, R22 opSuit may change | BLOCKER if R02/R13/R18 lose full_auto |
 | Add seasonality override for short_term | R27 may gain short_term | IMPROVEMENT target |
 | Change confidence score formula | Multiple cases affected | Run full gate suite |
+| Change classic STR demand floor (inclusive 72) or seasonal structural mins | R29 / R30 / R27 | Run full gate suite; R29/R30 are pass-4 boundary locks |
+| Widen seasonal lift without structural floors | R30 may become STR | BLOCKER unless intentional |
+
+---
+
+## 10. Pass-4 edge locks (2026-04-19)
+
+| Case | Locks |
+|------|--------|
+| **R29** | Classic `short_term` includes **demand = 72** (no gap between seasonal band 68–71 and classic floor). |
+| **R30** | Seasonal lift does **not** fire when `locationScore` or `evergreenIndex` sit below pass-4 structural floors (`RESIDENTIAL_THRESHOLDS.seasonalLiftLocationMin` / `seasonalLiftEvergreenMin`). |

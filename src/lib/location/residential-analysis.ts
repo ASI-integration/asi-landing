@@ -1,5 +1,5 @@
 /**
- * Residential analysis layer — pass 1–3 (strategy + confidence/rationale discipline).
+ * Residential analysis layer — pass 1–4 (strategy + confidence/rationale + edge hardening).
  *
  * Builds on top of LocationAnalysis (commercial engine output) to produce a
  * residential-specific interpretation covering four concerns:
@@ -21,6 +21,32 @@ import type {
   NeighborhoodEnvironmentLayer,
   NeighborhoodEnvironmentConcernLevel,
 } from './types';
+
+/**
+ * Decision boundaries (pass-4): one place to read thresholds for maintenance.
+ * Classic STR floor is inclusive at 72 so there is no dead zone between 71 (seasonal lift) and 73.
+ */
+const RESIDENTIAL_THRESHOLDS = {
+  strDemandMin: 72,
+  strSeasonalityMin: 60,
+  /** Seasonal lift band sits strictly below classic STR demand floor. */
+  seasonalLiftDemandMin: 68,
+  seasonalLiftDemandMax: 71,
+  seasonalLiftSeasonalityMin: 90,
+  /** Block “seasonality-only” STR when the address is structurally weak on both axes. */
+  seasonalLiftLocationMin: 58,
+  seasonalLiftEvergreenMin: 55,
+  hybridDemandMin: 52,
+  selectiveLocationMin: 56,
+  premiumComfortStabilityMin: 0.48,
+  elevatedCautiousLocationMax: 67,
+  /** Urban-core elevated STR composite (see elevatedUrbanCoreAllowsShortTerm). */
+  elevatedCoreLocDemandSumMin: 170,
+  elevatedCoreDemandMin: 87,
+  elevatedCoreSeasonalityMin: 76,
+  elevatedCoreLocationMin: 84,
+  elevatedCoreAudienceFitMin: 70,
+} as const;
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -54,10 +80,16 @@ function elevatedUrbanCoreAllowsShortTerm(args: {
   if (!isElevatedOnly(level)) return false;
 
   const sumLocDemand = locationScore + demandScore;
+  const t = RESIDENTIAL_THRESHOLDS;
   // Strong urban / center crossover: both score and demand must clear a high bar together.
-  if (sumLocDemand < 170) return false;
-  if (demandScore < 87 || seasonalityScore < 76 || locationScore < 84) return false;
-  if (audienceFitScore < 70) return false;
+  if (sumLocDemand < t.elevatedCoreLocDemandSumMin) return false;
+  if (
+    demandScore < t.elevatedCoreDemandMin ||
+    seasonalityScore < t.elevatedCoreSeasonalityMin ||
+    locationScore < t.elevatedCoreLocationMin
+  )
+    return false;
+  if (audienceFitScore < t.elevatedCoreAudienceFitMin) return false;
 
   // Burden stacking — keep STR off when industrial or "party strip" living load dominates.
   if (bd.industrial01 >= 0.52) return false;
@@ -81,13 +113,25 @@ function lowFrictionSeasonalShortTermEligible(args: {
   demandScore: number;
   seasonalityScore: number;
   environmentalFrictionScore: number;
+  locationScore: number;
+  evergreenIndex: number;
 }): boolean {
-  const { level, demandScore, seasonalityScore, environmentalFrictionScore } = args;
+  const {
+    level,
+    demandScore,
+    seasonalityScore,
+    environmentalFrictionScore,
+    locationScore,
+    evergreenIndex,
+  } = args;
+  const t = RESIDENTIAL_THRESHOLDS;
   if (isElevatedOrHigh(level)) return false;
   if (environmentalFrictionScore >= 32) return false;
-  if (seasonalityScore < 90) return false;
-  // Narrow band: lifts only "almost there" demand, not weak suburbs.
-  if (demandScore < 68 || demandScore >= 72) return false;
+  if (seasonalityScore < t.seasonalLiftSeasonalityMin) return false;
+  // Narrow band: lifts only "almost there" demand, not weak suburbs; never collides with classic floor.
+  if (demandScore < t.seasonalLiftDemandMin || demandScore > t.seasonalLiftDemandMax) return false;
+  // Peak seasonality must not mask a structurally dead location (pass-4 stability).
+  if (locationScore < t.seasonalLiftLocationMin || evergreenIndex < t.seasonalLiftEvergreenMin) return false;
   return true;
 }
 
@@ -135,7 +179,7 @@ function computeResidentialAudienceType(
     aviationLow &&
     stackLow &&
     locationScore >= 48 &&
-    stability01 >= 0.48
+    stability01 >= RESIDENTIAL_THRESHOLDS.premiumComfortStabilityMin
   ) {
     const signals: string[] = [];
     if (env.environmentalFrictionScore < 15) signals.push('Минимальная общая нагрузка среды');
@@ -177,13 +221,25 @@ function computeResidentialStrategy(args: {
   demandScore: number;
   seasonalityScore: number;
   audienceFitScore: number;
+  evergreenIndex: number;
   env: NeighborhoodEnvironmentLayer;
   competitorPressureLevel: 'low' | 'medium' | 'high';
   stability01: number;
   isFallbackMode: boolean;
   audienceType: ResidentialAudienceType;
 }): ResidentialStrategyRun {
-  const { locationScore, demandScore, seasonalityScore, audienceFitScore, env, competitorPressureLevel, stability01, isFallbackMode, audienceType } = args;
+  const {
+    locationScore,
+    demandScore,
+    seasonalityScore,
+    audienceFitScore,
+    evergreenIndex,
+    env,
+    competitorPressureLevel,
+    stability01,
+    isFallbackMode,
+    audienceType,
+  } = args;
   const level = frictionLevel(env);
   const bd = env.breakdown;
 
@@ -197,7 +253,8 @@ function computeResidentialStrategy(args: {
   });
 
   // cautious_manual_only: location is too risky / noisy for auto-operation
-  if (isElevatedOrHigh(level) && locationScore < 68) return finish('cautious_manual_only');
+  const t = RESIDENTIAL_THRESHOLDS;
+  if (isElevatedOrHigh(level) && locationScore <= t.elevatedCautiousLocationMax) return finish('cautious_manual_only');
   if (nightlifeBurden && industrialBurden) return finish('cautious_manual_only');
   if (nightlifeBurden && majorRoadBurden) return finish('cautious_manual_only');
   if (competitorPressureLevel === 'high' && demandScore < 45 && level !== 'low') return finish('cautious_manual_only');
@@ -206,7 +263,7 @@ function computeResidentialStrategy(args: {
   if (
     audienceType === 'premium_comfort' &&
     env.environmentalFrictionScore < 28 &&
-    locationScore >= 56 &&
+    locationScore >= t.selectiveLocationMin &&
     audienceFitScore >= 36 &&
     stability01 >= 0.50 &&
     !isFallbackMode
@@ -216,10 +273,12 @@ function computeResidentialStrategy(args: {
 
   // short_term: strong demand + seasonality; elevated zones use selective eligibility, not a blanket veto
   const classicShortTerm =
-    demandScore > 72 && seasonalityScore > 60 && !isElevatedOrHigh(level);
+    demandScore >= t.strDemandMin &&
+    seasonalityScore > t.strSeasonalityMin &&
+    !isElevatedOrHigh(level);
   const elevatedCoreShortTerm =
-    demandScore > 72 &&
-    seasonalityScore > 60 &&
+    demandScore >= t.strDemandMin &&
+    seasonalityScore > t.strSeasonalityMin &&
     elevatedUrbanCoreAllowsShortTerm({
       level,
       locationScore,
@@ -234,14 +293,16 @@ function computeResidentialStrategy(args: {
       demandScore,
       seasonalityScore,
       environmentalFrictionScore: env.environmentalFrictionScore,
-    }) && seasonalityScore > 60;
+      locationScore,
+      evergreenIndex,
+    }) && seasonalityScore > t.strSeasonalityMin;
 
   if (classicShortTerm) return finish('short_term', 'default');
   if (elevatedCoreShortTerm) return finish('short_term', 'elevated_core_override');
   if (seasonalLiftShortTerm) return finish('short_term', 'seasonal_demand_lift');
 
   // hybrid: decent demand
-  if (demandScore > 52) return finish('hybrid');
+  if (demandScore > t.hybridDemandMin) return finish('hybrid');
 
   return finish('mid_term');
 }
@@ -501,9 +562,10 @@ function describeAggressiveBlockerRu(args: {
   const level = frictionLevel(env);
   const bd = env.breakdown;
 
+  const thr = RESIDENTIAL_THRESHOLDS;
   if (strategy === 'cautious_manual_only') {
-    if (isElevatedOrHigh(level) && locationScore < 68) {
-      return `Более агрессивные режимы отсечены: при ${env.concernLevel} среде итоговый score локации ${locationScore} ниже порога устойчивого STR.`;
+    if (isElevatedOrHigh(level) && locationScore <= thr.elevatedCautiousLocationMax) {
+      return `Более агрессивные режимы отсечены: при ${env.concernLevel} среде итоговый score локации ${locationScore} ниже порога устойчивого STR (${thr.elevatedCautiousLocationMax + 1}+).`;
     }
     if (bd.nightlife01 > 0.5 && bd.industrial01 > 0.5) {
       return `Посуточка и гибрид отсекаются: одновременно сильные ночная и промышленная нагрузка — жилой комфорт и соседи в приоритете.`;
@@ -515,7 +577,7 @@ function describeAggressiveBlockerRu(args: {
   }
 
   if (strategy === 'selective_premium_short_term') {
-    if (demandScore > 72 && seasonalityScore > 60 && level !== 'high') {
+    if (demandScore >= thr.strDemandMin && seasonalityScore > thr.strSeasonalityMin && level !== 'high') {
       const aud =
         audienceType === 'premium_comfort'
           ? 'тихий premium'
@@ -528,18 +590,22 @@ function describeAggressiveBlockerRu(args: {
   }
 
   if (strategy === 'hybrid' || strategy === 'mid_term') {
-    if (demandScore > 72 && seasonalityScore > 60 && (isElevatedOrHigh(level) || env.environmentalFrictionScore >= 38)) {
+    if (
+      demandScore >= thr.strDemandMin &&
+      seasonalityScore > thr.strSeasonalityMin &&
+      (isElevatedOrHigh(level) || env.environmentalFrictionScore >= 38)
+    ) {
       return `Чистая посуточка не прошла: сочетание нагрузки среды (${env.concernLevel}, индекс ${env.environmentalFrictionScore}/100) и порогов спроса/сезонности оставляет гибрид или средний срок как более устойчивый режим.`;
     }
   }
 
   if (strategy === 'mid_term') {
-    if (demandScore <= 52 || isFallbackMode || magnetCount <= 2) {
+    if (demandScore <= thr.hybridDemandMin || isFallbackMode || magnetCount <= 2) {
       return `STR и гибрид не выиграли: спрос ${demandScore}${isFallbackMode ? ', режим резерва аудитории' : ''}${magnetCount <= 2 ? ', мало магнитов' : ''} — краткосрочный сценарий слабый.`;
     }
   }
 
-  if (strategy === 'hybrid' && audienceType === 'premium_comfort' && locationScore < 56) {
+  if (strategy === 'hybrid' && audienceType === 'premium_comfort' && locationScore < thr.selectiveLocationMin) {
     return `Selective premium не включён: при тихом профиле score локации ${locationScore} не дотягивает до порога избирательной посуточки — остаётся гибрид.`;
   }
 
@@ -679,6 +745,7 @@ export function buildResidentialAnalysis(analysis: LocationAnalysis): Residentia
     demandScore,
     seasonalityScore,
     audienceFitScore,
+    evergreenIndex: analysis.evergreenIndex,
     env,
     competitorPressureLevel,
     stability01,

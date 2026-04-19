@@ -1,8 +1,8 @@
 {
-  "runAt": "2026-04-19T20:28:50.692Z",
-  "runnerVersion": "baseline-v3-pass3-confidence-rationale",
-  "totalCases": 28,
-  "passCount": 28,
+  "runAt": "2026-04-19T20:36:30.356Z",
+  "runnerVersion": "baseline-v4-pass4-edge-hardening",
+  "totalCases": 30,
+  "passCount": 30,
   "failCount": 0,
   "knownGapIds": [],
   "unexpectedFailIds": [],
@@ -128,7 +128,7 @@
           "Стратегия cautious_manual_only: уверенность в авто-режиме низкая по определению"
         ],
         "premiumComfortSignals": [],
-        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 68/100; локация 58, спрос 75. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 58 ниже порога устойчивого STR. Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
+        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 68/100; локация 58, спрос 75. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 58 ниже порога устойчивого STR (68+). Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
         "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
       },
       "expected": {
@@ -263,7 +263,7 @@
           "Стратегия cautious_manual_only: уверенность в авто-режиме низкая по определению"
         ],
         "premiumComfortSignals": [],
-        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 52/100; локация 64, спрос 68. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 64 ниже порога устойчивого STR. Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
+        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 52/100; локация 64, спрос 68. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 64 ниже порога устойчивого STR (68+). Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
         "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
       },
       "expected": {
@@ -535,7 +535,7 @@
           "Стратегия cautious_manual_only: уверенность в авто-режиме низкая по определению"
         ],
         "premiumComfortSignals": [],
-        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 62/100; локация 48, спрос 50. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 48 ниже порога устойчивого STR. Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
+        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 62/100; локация 48, спрос 50. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 48 ниже порога устойчивого STR (68+). Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
         "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
       },
       "expected": {
@@ -1237,7 +1237,7 @@
           "Стратегия cautious_manual_only: уверенность в авто-режиме низкая по определению"
         ],
         "premiumComfortSignals": [],
-        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 44/100; локация 62, спрос 64. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 62 ниже порога устойчивого STR. Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
+        "strategyRationaleRu": "Ручной осторожный режим: среда elevated, трение 44/100; локация 62, спрос 64. Более агрессивные режимы отсечены: при elevated среде итоговый score локации 62 ниже порога устойчивого STR (68+). Уверенность низкая: опирайтесь на ручную проверку и локальные факты.",
         "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
       },
       "expected": {
@@ -1254,6 +1254,92 @@
         "allPass": true
       },
       "notes": "score=62 < 68 при elevated → cautious; cautious cap → low confidence"
+    },
+    {
+      "id": "R29",
+      "label": "Нижний Новгород, центр — classic STR ровно при demand=72",
+      "archetype": "edge — inclusive classic STR demand floor",
+      "inputs": {
+        "locationScore": 68,
+        "demandScore": 72,
+        "seasonalityScore": 75,
+        "audienceFitScore": 55,
+        "evergreenIndex": 65,
+        "stability01": 0.55,
+        "magnetCount": 7,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 28,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "short_term",
+        "operationalSuitability": "full_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Посуточка: спрос 72 и сезонность 75 на фоне умеренной среды (moderate, 28/100). Ключевая опора: базовые score (локация 68, спрос 72). Уверенность высокая: сигналы согласованы.",
+        "operationalNoteRu": "Сигналы чистые и стабильные — локация подходит для полного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "short_term",
+        "operationalSuitability": "full_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Pass-4: нет «дыры» 71/72/73 — classic STR включает 72; mixed_use + умеренная среда; full_auto при friction<38"
+    },
+    {
+      "id": "R30",
+      "label": "Условный «слабый курорт» — сезонность без структурной опоры",
+      "archetype": "edge — seasonal lift guard (weak location + evergreen)",
+      "inputs": {
+        "locationScore": 42,
+        "demandScore": 69,
+        "seasonalityScore": 94,
+        "audienceFitScore": 35,
+        "evergreenIndex": 40,
+        "stability01": 0.36,
+        "magnetCount": 4,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 18,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [
+          "Сильный разброс локация/спрос/сезонность при средних значениях — сигнал неоднороден"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Гибрид посуточно/средний срок: типичный жилой контур; спрос 69 без устойчивого «чистого» STR-окна при текущих порогах среды (low). Опора: сезонность 94. Уверенность средняя: вывод рабочий, но есть зоны неопределённости.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Pass-4: узкий seasonal-lift не срабатывает при location<58 или evergreen<55 — остаётся hybrid"
     }
   ]
 }
