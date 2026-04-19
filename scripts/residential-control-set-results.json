@@ -1,0 +1,1252 @@
+{
+  "runAt": "2026-04-19T20:14:17.015Z",
+  "runnerVersion": "baseline-v2-pass2-strategy",
+  "totalCases": 28,
+  "passCount": 28,
+  "failCount": 0,
+  "knownGapIds": [],
+  "unexpectedFailIds": [],
+  "results": [
+    {
+      "id": "R01",
+      "label": "Москва-Сити (Пресненская наб.) — strong urban core, business-led",
+      "archetype": "strong urban core — business",
+      "inputs": {
+        "locationScore": 82,
+        "demandScore": 85,
+        "seasonalityScore": 68,
+        "audienceFitScore": 72,
+        "evergreenIndex": 78,
+        "stability01": 0.62,
+        "magnetCount": 12,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 42,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Деловой центр elevated; short_term только при «ядре» (сумма score+спрос и пороги) — здесь hybrid корректно"
+    },
+    {
+      "id": "R02",
+      "label": "Остоженка / Золотая миля — quiet premium",
+      "archetype": "quiet premium",
+      "inputs": {
+        "locationScore": 74,
+        "demandScore": 69,
+        "seasonalityScore": 62,
+        "audienceFitScore": 58,
+        "evergreenIndex": 70,
+        "stability01": 0.68,
+        "magnetCount": 8,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 14,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "full_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Минимальная общая нагрузка среды",
+          "Тихий ночной профиль",
+          "Нет промышленных зон поблизости",
+          "Спокойная транспортная среда",
+          "Высокая стабильность потока",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 14/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Сигналы чистые и стабильные — локация подходит для полного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "full_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Эталон quiet premium. Любое отклонение от expected — критическая ошибка"
+    },
+    {
+      "id": "R03",
+      "label": "Люблино, промышленная зона — industrial harsh + strong demand",
+      "archetype": "high-demand but harsh environment",
+      "inputs": {
+        "locationScore": 58,
+        "demandScore": 75,
+        "seasonalityScore": 55,
+        "audienceFitScore": 45,
+        "evergreenIndex": 61,
+        "stability01": 0.52,
+        "magnetCount": 6,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 68,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "cautious_manual_only",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность",
+          "Стратегия cautious_manual_only ограничивает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Нагрузка среды (elevated) + ограниченный потенциал (score 58) — авто-прайсинг ненадёжен, нужен ручной мониторинг.",
+        "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "cautious",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Высокий спрос + тяжёлая среда; cautious единственно правильная стратегия; cautious cap → score=2 → low"
+    },
+    {
+      "id": "R04",
+      "label": "СПб, Невский пр-т — tourist historic, active STR",
+      "archetype": "tourist-heavy — active STR market",
+      "inputs": {
+        "locationScore": 72,
+        "demandScore": 78,
+        "seasonalityScore": 85,
+        "audienceFitScore": 62,
+        "evergreenIndex": 72,
+        "stability01": 0.44,
+        "magnetCount": 9,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 38,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Высокий стабильный спрос вытягивает посуточку: риски среды умеренные, нагрузка приемлема для STR.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Туристический центр; short_term правильно; friction=38 точно на пороге full_auto"
+    },
+    {
+      "id": "R05",
+      "label": "Митино, жилой массив — family-friendly district",
+      "archetype": "family-friendly district",
+      "inputs": {
+        "locationScore": 55,
+        "demandScore": 58,
+        "seasonalityScore": 48,
+        "audienceFitScore": 42,
+        "evergreenIndex": 58,
+        "stability01": 0.55,
+        "magnetCount": 5,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 16,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Тихий ночной профиль",
+          "Нет промышленных зон поблизости",
+          "Спокойная транспортная среда",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "premium_comfort + hybrid: design tension допустима при locationScore=55 (ниже порога selective=56)"
+    },
+    {
+      "id": "R06",
+      "label": "Шоссе Энтузиастов — transport-heavy, noisy",
+      "archetype": "transport-heavy but noisy",
+      "inputs": {
+        "locationScore": 64,
+        "demandScore": 68,
+        "seasonalityScore": 52,
+        "audienceFitScore": 40,
+        "evergreenIndex": 63,
+        "stability01": 0.6,
+        "magnetCount": 7,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 52,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "cautious_manual_only",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность",
+          "Стратегия cautious_manual_only ограничивает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Нагрузка среды (elevated) + ограниченный потенциал (score 64) — авто-прайсинг ненадёжен, нужен ручной мониторинг.",
+        "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "cautious",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "elevated + score=64 < 68 → cautious; cautious cap → score=2 → low confidence"
+    },
+    {
+      "id": "R07",
+      "label": "Щепкина ул., медицинская зона — hospital adjacent",
+      "archetype": "medical-adjacent — moderate demand",
+      "inputs": {
+        "locationScore": 60,
+        "demandScore": 62,
+        "seasonalityScore": 44,
+        "audienceFitScore": 38,
+        "evergreenIndex": 58,
+        "stability01": 0.5,
+        "magnetCount": 4,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 22,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Тихий ночной профиль",
+          "Нет промышленных зон поблизости",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 22/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Граничные значения selective: magnetCount=4, audienceFit=38; medium confidence ожидается"
+    },
+    {
+      "id": "R08",
+      "label": "Люберцы, спальный район — weak distant suburb",
+      "archetype": "weak suburb",
+      "inputs": {
+        "locationScore": 28,
+        "demandScore": 32,
+        "seasonalityScore": 35,
+        "audienceFitScore": 22,
+        "evergreenIndex": 28,
+        "stability01": 0.32,
+        "magnetCount": 2,
+        "isFallbackMode": true,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 12,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "mid_term",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Мало магнитов спроса — оценка ориентировочная",
+          "Аудиторный режим: резерв — целевых магнитов не найдено"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Слабые сигналы краткосрочного спроса: среднесрочная аренда снижает операционные риски.",
+        "operationalNoteRu": "Требует ручной проверки перед настройкой автоматики — данных недостаточно для надёжного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "mid_term",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: fallback + слабые магниты → low confidence → manual обязательно"
+    },
+    {
+      "id": "R09",
+      "label": "Коптево — medium residential urban",
+      "archetype": "medium residential urban",
+      "inputs": {
+        "locationScore": 52,
+        "demandScore": 54,
+        "seasonalityScore": 50,
+        "audienceFitScore": 35,
+        "evergreenIndex": 50,
+        "stability01": 0.45,
+        "magnetCount": 5,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 30,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Стандартный средний городской профиль — тест стабильности модели"
+    },
+    {
+      "id": "R10",
+      "label": "Китай-город / Маросейка — nightlife urban contested",
+      "archetype": "mixed-use contested — nightlife heavy",
+      "inputs": {
+        "locationScore": 70,
+        "demandScore": 74,
+        "seasonalityScore": 65,
+        "audienceFitScore": 55,
+        "evergreenIndex": 70,
+        "stability01": 0.56,
+        "magnetCount": 8,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 48,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "nightlife=0.68 один (без industrial) не должен давать cautious; elevated env → hybrid"
+    },
+    {
+      "id": "R11",
+      "label": "Раменки — premium low-demand",
+      "archetype": "premium but low-demand",
+      "inputs": {
+        "locationScore": 65,
+        "demandScore": 42,
+        "seasonalityScore": 38,
+        "audienceFitScore": 48,
+        "evergreenIndex": 60,
+        "stability01": 0.62,
+        "magnetCount": 4,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 10,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Минимальная общая нагрузка среды",
+          "Тихий ночной профиль",
+          "Нет промышленных зон поблизости",
+          "Спокойная транспортная среда",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 10/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Тихий premium, слабый спрос → selective правильно; medium confidence из-за малых магнитов"
+    },
+    {
+      "id": "R12",
+      "label": "Внуково — airport zone, aviation-heavy",
+      "archetype": "airport zone",
+      "inputs": {
+        "locationScore": 48,
+        "demandScore": 50,
+        "seasonalityScore": 55,
+        "audienceFitScore": 35,
+        "evergreenIndex": 48,
+        "stability01": 0.42,
+        "magnetCount": 3,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 62,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "cautious_manual_only",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность",
+          "Стратегия cautious_manual_only ограничивает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Нагрузка среды (elevated) + ограниченный потенциал (score 48) — авто-прайсинг ненадёжен, нужен ручной мониторинг.",
+        "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "cautious",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Авиационная нагрузка + elevated + score=48 → cautious; cautious cap → low confidence"
+    },
+    {
+      "id": "R13",
+      "label": "2-й Боткинский пр. — medical cluster, quiet",
+      "archetype": "medical-adjacent — strong cluster, quiet",
+      "inputs": {
+        "locationScore": 68,
+        "demandScore": 65,
+        "seasonalityScore": 42,
+        "audienceFitScore": 52,
+        "evergreenIndex": 65,
+        "stability01": 0.58,
+        "magnetCount": 7,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 18,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "full_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Тихий ночной профиль",
+          "Нет промышленных зон поблизости",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 18/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Сигналы чистые и стабильные — локация подходит для полного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "full_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: сильный медицинский кластер + тихая среда = selective + full_auto + high"
+    },
+    {
+      "id": "R14",
+      "label": "Тушино / Сходненская — Soviet block, transit ok",
+      "archetype": "Soviet-era block — transit ok",
+      "inputs": {
+        "locationScore": 48,
+        "demandScore": 56,
+        "seasonalityScore": 48,
+        "audienceFitScore": 32,
+        "evergreenIndex": 48,
+        "stability01": 0.5,
+        "magnetCount": 4,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 36,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Советский панельный + транзит: moderate env не должен давать cautious"
+    },
+    {
+      "id": "R15",
+      "label": "СПб, Думская — tourist harsh, nightlife-heavy",
+      "archetype": "tourist-heavy but harsh for living",
+      "inputs": {
+        "locationScore": 75,
+        "demandScore": 80,
+        "seasonalityScore": 88,
+        "audienceFitScore": 65,
+        "evergreenIndex": 75,
+        "stability01": 0.45,
+        "magnetCount": 10,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 45,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "nightlife=0.72 + elevated → hybrid (не short_term). nightlife+road<0.60 → не cautious"
+    },
+    {
+      "id": "R16",
+      "label": "Арбат, коммерческая граница — mixed-use contested",
+      "archetype": "mixed-use contested — commercial edge",
+      "inputs": {
+        "locationScore": 62,
+        "demandScore": 65,
+        "seasonalityScore": 55,
+        "audienceFitScore": 48,
+        "evergreenIndex": 60,
+        "stability01": 0.52,
+        "magnetCount": 6,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 28,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Граница жилого и коммерческого; mixed_use_adjacent (score=62, friction=28); hybrid"
+    },
+    {
+      "id": "R17",
+      "label": "Преображенская пл. — industrial conversion, high gravity",
+      "archetype": "industrial conversion — conflicting signals",
+      "inputs": {
+        "locationScore": 70,
+        "demandScore": 73,
+        "seasonalityScore": 62,
+        "audienceFitScore": 52,
+        "evergreenIndex": 70,
+        "stability01": 0.58,
+        "magnetCount": 9,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 58,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "industrial=0.72 один (без nightlife) не даёт cautious; elevated → hybrid; strong signals → high confidence"
+    },
+    {
+      "id": "R18",
+      "label": "Хамовники / Зубовский бул. — quiet premium, strong demand",
+      "archetype": "quiet premium — strong demand",
+      "inputs": {
+        "locationScore": 78,
+        "demandScore": 80,
+        "seasonalityScore": 72,
+        "audienceFitScore": 68,
+        "evergreenIndex": 78,
+        "stability01": 0.72,
+        "magnetCount": 11,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 20,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "full_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Нет промышленных зон поблизости",
+          "Высокая стабильность потока",
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 20/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Сигналы чистые и стабильные — локация подходит для полного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "full_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: strongest quiet premium. full_auto + high. selective берёт приоритет над short_term"
+    },
+    {
+      "id": "R19",
+      "label": "Краснодар, удалённый район — distant suburb, fallback",
+      "archetype": "distant suburb — fallback mode",
+      "inputs": {
+        "locationScore": 35,
+        "demandScore": 38,
+        "seasonalityScore": 60,
+        "audienceFitScore": 28,
+        "evergreenIndex": 35,
+        "stability01": 0.3,
+        "magnetCount": 1,
+        "isFallbackMode": true,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 10,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "mid_term",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Мало магнитов спроса — оценка ориентировочная",
+          "Аудиторный режим: резерв — целевых магнитов не найдено"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Слабые сигналы краткосрочного спроса: среднесрочная аренда снижает операционные риски.",
+        "operationalNoteRu": "Требует ручной проверки перед настройкой автоматики — данных недостаточно для надёжного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "mid_term",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: 1 магнит + fallback → low confidence → manual обязательно"
+    },
+    {
+      "id": "R20",
+      "label": "Бирюлёво (stability=0.47) — borderline cliff case",
+      "archetype": "edge case — stability just below premium_comfort threshold",
+      "inputs": {
+        "locationScore": 58,
+        "demandScore": 60,
+        "seasonalityScore": 52,
+        "audienceFitScore": 42,
+        "evergreenIndex": 58,
+        "stability01": 0.47,
+        "magnetCount": 5,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 16,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "stability=0.47 < 0.48 порога → standard (не premium). Cliff-effect кейс для мониторинга"
+    },
+    {
+      "id": "R21",
+      "label": "Покровка — premium area, high-comp, weak demand",
+      "archetype": "premium area — high competition, weak demand",
+      "inputs": {
+        "locationScore": 55,
+        "demandScore": 42,
+        "seasonalityScore": 45,
+        "audienceFitScore": 35,
+        "evergreenIndex": 55,
+        "stability01": 0.52,
+        "magnetCount": 3,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 24,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "mid_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Слабые сигналы краткосрочного спроса: среднесрочная аренда снижает операционные риски.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "mid_term",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "premium_comfort + mid_term: design tension допустима при demand=42 < 52"
+    },
+    {
+      "id": "R22",
+      "label": "Тверская — dense business cluster",
+      "archetype": "strong urban core — dense business cluster",
+      "inputs": {
+        "locationScore": 85,
+        "demandScore": 88,
+        "seasonalityScore": 75,
+        "audienceFitScore": 78,
+        "evergreenIndex": 85,
+        "stability01": 0.68,
+        "magnetCount": 15,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 35,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "short_term",
+        "operationalSuitability": "full_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Высокий стабильный спрос вытягивает посуточку: риски среды умеренные, нагрузка приемлема для STR.",
+        "operationalNoteRu": "Сигналы чистые и стабильные — локация подходит для полного авто-режима."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "short_term",
+        "operationalSuitability": "full_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: сильный деловой кластер → short_term + full_auto + high; moderate env не блокирует"
+    },
+    {
+      "id": "R23",
+      "label": "Таганская — nightlife + major road stack",
+      "archetype": "harsh urban — nightlife + road double burden",
+      "inputs": {
+        "locationScore": 72,
+        "demandScore": 76,
+        "seasonalityScore": 68,
+        "audienceFitScore": 60,
+        "evergreenIndex": 72,
+        "stability01": 0.6,
+        "magnetCount": 10,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 62,
+        "concernLevel": "high"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "cautious_manual_only",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность",
+          "Стратегия cautious_manual_only ограничивает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Нагрузка среды (high) + ограниченный потенциал (score 72) — авто-прайсинг ненадёжен, нужен ручной мониторинг.",
+        "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "cautious",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "MUST-PASS: nightlife=0.55 + majorRoad=0.72 → cautious; cautious cap → low confidence"
+    },
+    {
+      "id": "R24",
+      "label": "Щёлковское ш. — good transit, average residential",
+      "archetype": "good transit — average residential",
+      "inputs": {
+        "locationScore": 58,
+        "demandScore": 58,
+        "seasonalityScore": 52,
+        "audienceFitScore": 40,
+        "evergreenIndex": 58,
+        "stability01": 0.5,
+        "magnetCount": 5,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 28,
+        "concernLevel": "moderate"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Умеренный спрос без явного premium-профиля: гибрид посуточно / среднесрок даёт лучший баланс.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "hybrid",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Стандартный транзитный профиль — тест стабильности baseline"
+    },
+    {
+      "id": "R25",
+      "label": "Охотный ряд — center crossover (KNOWN GAP)",
+      "archetype": "high-demand harsh env — best score, elevated friction",
+      "inputs": {
+        "locationScore": 88,
+        "demandScore": 90,
+        "seasonalityScore": 82,
+        "audienceFitScore": 82,
+        "evergreenIndex": 88,
+        "stability01": 0.7,
+        "magnetCount": 18,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "high",
+        "environmentalFrictionScore": 40,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Посуточная модель: сильный спрос и сезонность перевешивают повышенную нагрузку среды (elevated) при сильном транспортном каркасе и без промышленного / «ночного» доминирования — STR уместен с дисциплиной заселений и уважением к соседям.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Pass-2: elevated + сильный центр/спрос/сезонность → short_term при контроле nightlife/industrial/дорог"
+    },
+    {
+      "id": "R26",
+      "label": "Кунцево (stability=0.50) — selective boundary",
+      "archetype": "edge case — selective_premium at exact stability threshold",
+      "inputs": {
+        "locationScore": 58,
+        "demandScore": 58,
+        "seasonalityScore": 52,
+        "audienceFitScore": 38,
+        "evergreenIndex": 58,
+        "stability01": 0.5,
+        "magnetCount": 5,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "low",
+        "environmentalFrictionScore": 25,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "premium_comfort",
+        "residentialStrategy": "selective_premium_short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "medium",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [
+          "Нет авиационной нагрузки"
+        ],
+        "strategyRationaleRu": "Тихая среда (нагрузка 25/100) + достаточный спрос: ставка на quality-first гостей, избирательная посуточная аренда.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "premium",
+        "strategyTendency": "selective_premium",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "medium"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "stability=0.50 ровно на пороге ≥0.50 selective; inclusive inequality тест"
+    },
+    {
+      "id": "R27",
+      "label": "Адлер / Сочи — resort seasonal (KNOWN GAP)",
+      "archetype": "resort / seasonal — high seasonality, low stability",
+      "inputs": {
+        "locationScore": 65,
+        "demandScore": 70,
+        "seasonalityScore": 92,
+        "audienceFitScore": 65,
+        "evergreenIndex": 65,
+        "stability01": 0.38,
+        "magnetCount": 6,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 18,
+        "concernLevel": "low"
+      },
+      "output": {
+        "residentialAudienceType": "standard_residential",
+        "residentialStrategy": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidence": "high",
+        "confidenceReasons": [],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Посуточка опирается на очень высокую сезонность при спокойной среде и спросе чуть ниже обычного STR-порога — типичный курортный / пиковый профиль.",
+        "operationalNoteRu": "Рекомендуется полуавтоматический режим: автоматика с регулярным ручным контролем."
+      },
+      "expected": {
+        "audienceTypeTendency": "standard",
+        "strategyTendency": "short_term",
+        "operationalSuitability": "semi_auto",
+        "confidenceTendency": "high"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "Pass-2: очень высокая сезонность + тихая среда поднимает short_term при demand 68–71; ops остаётся semi_auto из-за низкой stability"
+    },
+    {
+      "id": "R28",
+      "label": "Лефортово — industrial conversion, mixed contested",
+      "archetype": "industrial conversion — elevated, mixed-use",
+      "inputs": {
+        "locationScore": 62,
+        "demandScore": 64,
+        "seasonalityScore": 58,
+        "audienceFitScore": 45,
+        "evergreenIndex": 62,
+        "stability01": 0.55,
+        "magnetCount": 6,
+        "isFallbackMode": false,
+        "competitorPressureLevel": "medium",
+        "environmentalFrictionScore": 44,
+        "concernLevel": "elevated"
+      },
+      "output": {
+        "residentialAudienceType": "mixed_use_adjacent",
+        "residentialStrategy": "cautious_manual_only",
+        "operationalSuitability": "manual",
+        "confidence": "low",
+        "confidenceReasons": [
+          "Повышенная нагрузка среды снижает уверенность",
+          "Стратегия cautious_manual_only ограничивает уверенность"
+        ],
+        "premiumComfortSignals": [],
+        "strategyRationaleRu": "Нагрузка среды (elevated) + ограниченный потенциал (score 62) — авто-прайсинг ненадёжен, нужен ручной мониторинг.",
+        "operationalNoteRu": "Ручное управление ценообразованием и заселениями — авто-режим не рекомендуется."
+      },
+      "expected": {
+        "audienceTypeTendency": "mixed",
+        "strategyTendency": "cautious",
+        "operationalSuitability": "manual",
+        "confidenceTendency": "low"
+      },
+      "gateResults": {
+        "audienceMatch": true,
+        "strategyMatch": true,
+        "opSuitMatch": true,
+        "confidenceMatch": true,
+        "allPass": true
+      },
+      "notes": "score=62 < 68 при elevated → cautious; cautious cap → low confidence"
+    }
+  ]
+}
