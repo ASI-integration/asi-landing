@@ -171,7 +171,7 @@ npx tsx scripts/residential-validation-runner.ts
 - No critical errors from Section 4
 
 **Improvement criteria (for a successful tuning pass):**
-- `passCount` remains 28 and must-pass cases still pass
+- `passCount` remains 30 and must-pass cases still pass
 - `unexpectedFailIds` is empty
 
 **Compare two passes:**
