@@ -180,7 +180,7 @@ export function LocationStandaloneFullReport({
                 Отчёт по потенциалу локации
               </h1>
               <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
-                Документ для решения "стоит ли заходить в объект" и какой моделью дохода идти: посуточно, среднесрок или гибрид.
+                Документ, чтобы решить, стоит ли заходить в объект и какой моделью дохода идти: посуточно, среднесрок или гибрид.
               </p>
             </div>
 
@@ -495,7 +495,7 @@ export function LocationStandaloneFullReport({
                     <ul className="mt-3 space-y-2 text-sm text-slate-200">
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Какая стратегия подходит именно под этот объект — и где она "ломается" без доработок
+                        Какая стратегия подходит именно под этот объект — и где она «ломается» без доработок
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
@@ -503,7 +503,7 @@ export function LocationStandaloneFullReport({
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Как снизить ошибки перед запуском: упаковка, прайс, операционные "узкие места"
+                        Как снизить ошибки перед запуском: упаковка, прайс, операционные «узкие места»
                       </li>
                     </ul>
                   </div>
