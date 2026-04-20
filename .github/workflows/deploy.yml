@@ -186,8 +186,17 @@ jobs:
             -o ConnectTimeout=20
           )
 
+          SCP_OPTS=(
+            -P "$SELECTED_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
           echo "Copying artifact to VPS..."
-          scp "${SSH_OPTS[@]}" "$ARTIFACT_FILE" "${VPS_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
+          scp "${SCP_OPTS[@]}" "$ARTIFACT_FILE" "${VPS_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
 
           ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
             "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
