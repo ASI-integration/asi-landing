@@ -33,7 +33,9 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
 
     // Metro: only genuine subway/underground systems.
     { filter: '"railway"="subway_entrance"', radius: CATEGORY_RADIUS.metro,    includeInStrict: true  },
-    { filter: '"station"="subway"',          radius: CATEGORY_RADIUS.metro,    includeInStrict: true  },
+    // Many OSM metro stations are mapped as ways/relations (e.g. stop_area / station relations).
+    // Query all geometries in strict mode to avoid silent under-detection.
+    { filter: '"station"="subway"',          radius: CATEGORY_RADIUS.metro,    includeInStrict: true, allGeometries: true  },
 
     // Airport: major air traffic hubs — very strong demand generator
     { filter: '"aeroway"="aerodrome"',       radius: CATEGORY_RADIUS.airport,  includeInStrict: true  },
@@ -73,10 +75,11 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"landuse"="commercial"',    radius: CATEGORY_RADIUS.business, includeInStrict: false },
 
     // Railway stations (commuter / intercity)
-    { filter: '"railway"="station"',       radius: CATEGORY_RADIUS.railway_station, includeInStrict: true  },
-    { filter: '"railway"="halt"',          radius: CATEGORY_RADIUS.railway_station, includeInStrict: false },
+    // Major stations are frequently mapped as ways/relations; strict mode must include them.
+    { filter: '"railway"="station"',       radius: CATEGORY_RADIUS.railway_station, includeInStrict: true,  allGeometries: true  },
+    { filter: '"railway"="halt"',          radius: CATEGORY_RADIUS.railway_station, includeInStrict: false, allGeometries: true },
     // Major surface transit hubs
-    { filter: '"amenity"="bus_station"',   radius: CATEGORY_RADIUS.railway_station, includeInStrict: true  },
+    { filter: '"amenity"="bus_station"',   radius: CATEGORY_RADIUS.railway_station, includeInStrict: true,  allGeometries: true  },
 
     // Entertainment (city-scale venues)
     { filter: '"amenity"="cinema"',     radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
@@ -111,10 +114,10 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
 
     // ── Competitors (non-hotel STR supply) ───────────────────────────────────
     // Note: tourism=hotel is handled by major_hotel selector above + classifyElement split.
-    { filter: '"tourism"="apartment"',   radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="guest_house"', radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="hostel"',      radius: COMPETITOR_RADIUS, includeInStrict: true },
-    { filter: '"tourism"="motel"',       radius: COMPETITOR_RADIUS, includeInStrict: false },
+    { filter: '"tourism"="apartment"',   radius: COMPETITOR_RADIUS, includeInStrict: true,  allGeometries: true },
+    { filter: '"tourism"="guest_house"', radius: COMPETITOR_RADIUS, includeInStrict: true,  allGeometries: true },
+    { filter: '"tourism"="hostel"',      radius: COMPETITOR_RADIUS, includeInStrict: true,  allGeometries: true },
+    { filter: '"tourism"="motel"',       radius: COMPETITOR_RADIUS, includeInStrict: false, allGeometries: true },
 
     // ── Neighborhood environment (strict + full geometry — independent of commercial score) ──
     { filter: '"highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link)$"', radius: 520, includeInStrict: true, allGeometries: true },
@@ -153,6 +156,30 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
 
 function buildQuery(clauses: string[]): string {
   return `[out:json][timeout:18];(${clauses.join('')});out center;`;
+}
+
+/**
+ * Backfill clauses — small, high-signal selectors that are frequently represented as ways/relations
+ * and are critical for demand type (transport-led) and competitor pressure.
+ *
+ * Used when Overpass returns partial results (provider failures) to avoid returning a silently
+ * incomplete element set without paying the cost of the full broad pass.
+ */
+function buildBackfillClauses(lat: number, lon: number): string[] {
+  const r = (meters: number, filter: string) => makeAround(filter, meters, lat, lon, true);
+  return [
+    // Rail / bus hubs
+    ...r(CATEGORY_RADIUS.railway_station, '"railway"="station"'),
+    ...r(CATEGORY_RADIUS.railway_station, '"amenity"="bus_station"'),
+    // Metro stations + entrances
+    ...r(CATEGORY_RADIUS.metro, '"station"="subway"'),
+    ...r(CATEGORY_RADIUS.metro, '"railway"="subway_entrance"'),
+    // STR supply competitors
+    ...r(COMPETITOR_RADIUS, '"tourism"="apartment"'),
+    ...r(COMPETITOR_RADIUS, '"tourism"="guest_house"'),
+    ...r(COMPETITOR_RADIUS, '"tourism"="hostel"'),
+    ...r(COMPETITOR_RADIUS, '"tourism"="motel"'),
+  ];
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -257,8 +284,23 @@ export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchRe
   const strictElements = dedupeElements(strictResult.elements);
 
   // If strict filters return enough data, skip the broader fallback.
-  if (strictElements.length >= 12) {
+  // Exception: if Overpass had partial failures, strict results can be silently incomplete
+  // (missing entire selector batches). In that case, always run the broad pass to backfill.
+  if (strictElements.length >= 12 && !strictResult.hadProviderFailure) {
     return { elements: strictElements, hadProviderFailure: strictResult.hadProviderFailure };
+  }
+
+  // Partial-failure recovery: run a small transport/competitor backfill query first.
+  // This addresses the most damaging regressions (missing stations, metro, competitors)
+  // without paying the cost of the full broad pass.
+  if (strictElements.length > 0 && strictResult.hadProviderFailure) {
+    const backfillResult = await fetchOsmByBatches(buildBackfillClauses(lat, lon));
+    const merged = dedupeElements([...strictElements, ...backfillResult.elements]);
+    const hadProviderFailure = strictResult.hadProviderFailure || backfillResult.hadProviderFailure;
+    if (merged.length >= 12) {
+      return { elements: merged, hadProviderFailure, usedFallbackQuery: true };
+    }
+    // fall through to broad pass (still too sparse)
   }
 
   const fallbackClauses = buildClauses(lat, lon, 1.4, true);
