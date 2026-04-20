@@ -13,7 +13,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      # Injected into the remote SSH session via `envs` below; merged into `.env.production.live` before build.
+      # Injected into the remote SSH session; deploy script merges into shared env.
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
     steps:
@@ -73,31 +73,18 @@ jobs:
 
           ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
             "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
+              echo \"Deploying SHA: ${GITHUB_SHA:-unknown}\"
+
+              # This repo is the deploy controller (not the live app directory).
               cd ~/asi-landing
               git fetch origin
               git reset --hard origin/main
-              merge_secret_into_env_file() {
-                key=\"\$1\"
-                val=\"\$2\"
-                if [ -z \"\${val:-}\" ]; then
-                  return 0
-                fi
-                tmp=\"\$(mktemp)\"
-                if [ -f .env.production.live ]; then
-                  grep -v \"^\${key}=\" .env.production.live >\"\$tmp\" || true
-                else
-                  : >\"\$tmp\"
-                fi
-                printf \"%s\\n\" \"\${key}=\${val}\" >>\"\$tmp\"
-                mv \"\$tmp\" .env.production.live
-              }
-              merge_secret_into_env_file TWOGIS_CATALOG_API_KEY \"\${TWOGIS_CATALOG_API_KEY:-}\"
-              merge_secret_into_env_file GOOGLE_MAPS_SERVER_API_KEY \"\${GOOGLE_MAPS_SERVER_API_KEY:-}\"
-              cp .env.production.live .env.production.local
-              npm ci
-              npm run build
-              pm2 startOrReload ecosystem.config.cjs --only asi-landing
-              pm2 save
+
+              # Canonical atomic deploy (releases/<sha> + current symlink + gated switch)
+              chmod +x scripts/deploy-release.sh || true
+              ASI_BASE_DIR=\"/var/www/asi\" scripts/deploy-release.sh \"${GITHUB_SHA}\"
+
+              echo \"LIVE_SHA_EXPECTED=${GITHUB_SHA}\"
+              curl -fsS http://127.0.0.1:3000/api/version || true
               pm2 status
-              echo \"SERVER_GIT_SHA=\$(git rev-parse HEAD)\"
             '"

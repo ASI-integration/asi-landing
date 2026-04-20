@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "typecheck": "tsc --noEmit",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "test:location-golden": "vitest run src/lib/location/__tests__",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:smoke": "playwright test tests/smoke.spec.ts --project=desktop",
