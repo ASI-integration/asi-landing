@@ -15,12 +15,22 @@ function fmtMeters(m: number): string {
   return `${(m / 1000).toFixed(1)} км`;
 }
 
-function magnetCategoryRu(categoryId: string): string {
-  if (categoryId === 'metro') return 'Метро';
-  if (categoryId === 'railway_station') return 'Ж/д станция / транспортный узел';
-  if (categoryId === 'business') return 'Деловой магнит';
-  if (categoryId === 'shopping_major') return 'Крупный ТЦ';
-  return categoryId;
+type AnchorType = 'POSITIVE_DEMAND_ANCHOR' | 'MIXED_CONTEXT_ANCHOR' | 'RESTRICTIVE_OR_FRICTION_ANCHOR';
+
+function AnchorTypeBadge({ anchorType }: { anchorType: AnchorType | undefined }) {
+  if (!anchorType || anchorType === 'POSITIVE_DEMAND_ANCHOR') return null;
+  if (anchorType === 'MIXED_CONTEXT_ANCHOR') {
+    return (
+      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-900/40 text-amber-300 border border-amber-700/40">
+        Смешанный контекст
+      </span>
+    );
+  }
+  return (
+    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-900/40 text-rose-300 border border-rose-700/40">
+      Фрикционный объект
+    </span>
+  );
 }
 
 function strategyTitleRu(s: NonNullable<LocationStandaloneReport['sections'][number] & { id: 'summary' }>['recommended_strategy']): string {
@@ -170,7 +180,7 @@ export function LocationStandaloneFullReport({
                 Отчёт по потенциалу локации
               </h1>
               <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
-                Документ для решения “стоит ли заходить в объект” и какой моделью дохода идти: посуточно, среднесрок или гибрид.
+                Документ для решения "стоит ли заходить в объект" и какой моделью дохода идти: посуточно, среднесрок или гибрид.
               </p>
             </div>
 
@@ -282,7 +292,10 @@ export function LocationStandaloneFullReport({
                     <div className="mt-4 grid sm:grid-cols-2 gap-3">
                       {businessFit.primary_magnets.map((m, i) => (
                         <div key={i} className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
-                          <p className="text-sm font-semibold text-white leading-snug">{m.title}</p>
+                          <div className="flex items-start gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-white leading-snug flex-1">{m.title}</p>
+                            {m.anchor_type && <AnchorTypeBadge anchorType={m.anchor_type as AnchorType} />}
+                          </div>
                           <p className="mt-1 text-xs text-slate-500">Дистанция: {fmtMeters(m.distance_m)}</p>
                         </div>
                       ))}
@@ -301,48 +314,64 @@ export function LocationStandaloneFullReport({
           <SectionShell
             id="magnets"
             title="Главные магниты"
-            lead="Ключевые точки притяжения вокруг объекта. Это то, что формирует “зачем сюда едут” — и какую аудиторию проще всего собрать."
+            lead="Устойчивые точки притяжения вокруг объекта — то, что формирует реальный спрос на проживание рядом. Только крупные городские и региональные якоря."
           >
             {magnets ? (
-              <div className="grid lg:grid-cols-2 gap-5">
-                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Primary</p>
-                  {magnets.primary.length ? (
-                    <div className="mt-4 space-y-2">
-                      {magnets.primary.map((m, i) => (
-                        <div key={i} className="flex items-start justify-between gap-3 py-2 border-b border-slate-800/60 last:border-0">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-white truncate">{m.name}</p>
-                            <p className="text-xs text-slate-500">Категория: {magnetCategoryRu(m.category_id)}</p>
-                          </div>
-                          <span className="text-sm text-slate-300 tabular-nums shrink-0">{fmtMeters(m.distance_m)}</span>
+              <>
+                {magnets.no_magnets_note ? (
+                  <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                    <p className="text-slate-400 leading-relaxed">{magnets.no_magnets_note}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {magnets.primary.length > 0 && (
+                      <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Основные магниты</p>
+                        <div className="mt-4 space-y-3">
+                          {magnets.primary.map((m, i) => (
+                            <div key={i} className="flex items-start justify-between gap-3 py-2 border-b border-slate-800/60 last:border-0">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-semibold text-white">{m.name}</p>
+                                  <AnchorTypeBadge anchorType={m.anchor_type as AnchorType} />
+                                </div>
+                                <p className="mt-0.5 text-xs text-slate-500">{m.category_label_ru ?? m.category_id}</p>
+                              </div>
+                              <span className="text-sm text-slate-300 tabular-nums shrink-0">{fmtMeters(m.distance_m)}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-slate-400">Primary-магниты не найдены.</p>
-                  )}
-                </div>
+                      </div>
+                    )}
 
-                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Secondary</p>
-                  {magnets.secondary.length ? (
-                    <div className="mt-4 space-y-2">
-                      {magnets.secondary.map((m, i) => (
-                        <div key={i} className="flex items-start justify-between gap-3 py-2 border-b border-slate-800/60 last:border-0">
-                          <div className="min-w-0">
-                            <p className="text-sm text-slate-200 truncate">{m.name}</p>
-                            <p className="text-xs text-slate-500">Категория: {magnetCategoryRu(m.category_id)}</p>
-                          </div>
-                          <span className="text-sm text-slate-400 tabular-nums shrink-0">{fmtMeters(m.distance_m)}</span>
+                    {magnets.secondary.length > 0 && (
+                      <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Дополнительные магниты</p>
+                        <div className="mt-4 space-y-3">
+                          {magnets.secondary.map((m, i) => (
+                            <div key={i} className="flex items-start justify-between gap-3 py-2 border-b border-slate-800/60 last:border-0">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm text-slate-200">{m.name}</p>
+                                  <AnchorTypeBadge anchorType={m.anchor_type as AnchorType} />
+                                </div>
+                                <p className="mt-0.5 text-xs text-slate-500">{m.category_label_ru ?? m.category_id}</p>
+                              </div>
+                              <span className="text-sm text-slate-400 tabular-nums shrink-0">{fmtMeters(m.distance_m)}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-slate-400">Secondary-магниты не найдены.</p>
-                  )}
-                </div>
-              </div>
+                      </div>
+                    )}
+
+                    {magnets.primary.length === 0 && magnets.secondary.length === 0 && (
+                      <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                        <p className="text-slate-400">Prime-магниты в зоне 1 км не обнаружены.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
               <p className="text-slate-400">Секция магнитов отсутствует в данных отчёта.</p>
             )}
@@ -466,7 +495,7 @@ export function LocationStandaloneFullReport({
                     <ul className="mt-3 space-y-2 text-sm text-slate-200">
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Какая стратегия подходит именно под этот объект — и где она “ломается” без доработок
+                        Какая стратегия подходит именно под этот объект — и где она "ломается" без доработок
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
@@ -474,7 +503,7 @@ export function LocationStandaloneFullReport({
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Как снизить ошибки перед запуском: упаковка, прайс, операционные “узкие места”
+                        Как снизить ошибки перед запуском: упаковка, прайс, операционные "узкие места"
                       </li>
                     </ul>
                   </div>

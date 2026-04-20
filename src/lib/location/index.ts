@@ -23,6 +23,18 @@ export type {
   LocationType,
   PrimaryMagnet,
   AudienceAnalysis,
+  NeighborhoodEnvironmentLayer,
+  NeighborhoodEnvironmentConcernLevel,
+  NeighborhoodEnvironmentCommercialModifierSnapshot,
+  SpatialTier,
+  BarrierKind,
+  SpatialFoundationSnapshot,
+  // Residential analysis layer
+  ResidentialAudienceType,
+  ResidentialStrategy,
+  OperationalSuitability,
+  ResidentialAnalysisConfidence,
+  ResidentialAnalysisOutput,
 } from './types';
 
 export type {
@@ -33,6 +45,17 @@ export type {
 } from './location-report-paywall';
 
 export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
+export type { LocationCommercialReport } from './standalone-report';
+export { isLocationCommercialReport, buildCommercialReport } from './standalone-report';
+
+export type {
+  CommercialFormatType,
+  CommercialFormatFitLevel,
+  CommercialFormatFitEntry,
+  CommercialFormatFit,
+  CommercialOverallVerdict,
+} from './commercial-format-fit';
+export { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from './commercial-format-fit';
 
 export {
   MAGNET_CATEGORIES,
@@ -42,6 +65,7 @@ export {
   PERMANENCE_MULTIPLIER,
   GRAVITY_CONFIG,
   CATEGORY_COLOR,
+  NEIGHBORHOOD_ENV_SCORE_MODIFIER,
 } from './config';
 
 export { fetchOsmData, classifyElement } from './overpass';
@@ -65,8 +89,11 @@ export {
   calcEvergreenIndex,
   buildAnalysis,
 } from './gravity-scoring';
+export type { BuildAnalysisOptions } from './gravity-scoring';
 
-export { buildLocationScoreOutput } from './location-score';
+export { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
+
+export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 
 export {
   detectLocationType,
@@ -84,6 +111,13 @@ export {
   patchLegacyLocationAnalysis,
   emptyFootTrafficSummary,
 } from './foot-traffic';
+
+export {
+  buildNeighborhoodEnvironmentLayer,
+  emptyNeighborhoodEnvironmentLayer,
+  mergeNeighborhoodEnvironmentLayer,
+} from './neighborhood-environment';
+export type { NeighborhoodEnvironmentContext } from './neighborhood-environment';
 export type { FootTrafficHeatmapFactors } from './foot-traffic';
 
 export { fetchCompetitorData } from './competitors';
@@ -99,4 +133,7 @@ export {
   toLocationReportFull,
 } from './location-report-paywall';
 
-export { buildLocationStandaloneReport } from './standalone-report';
+export { buildLocationStandaloneReport, isLocationStandaloneReportV1 } from './standalone-report';
+export type { PrimeMagnetAnchorType } from './residential-prime-magnets';
+
+export { buildResidentialAnalysis } from './residential-analysis';

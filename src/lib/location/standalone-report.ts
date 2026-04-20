@@ -1,4 +1,12 @@
-import type { LocationAnalysis, MagnetItem, RecommendedStrategy } from './types';
+import type { LocationAnalysis, RecommendedStrategy, SpatialTier } from './types';
+import type { CommercialFormatFitEntry, CommercialOverallVerdict } from './commercial-format-fit';
+import { buildCommercialFormatFit } from './commercial-format-fit';
+import { createDisabledSpatialFoundation } from './spatial-foundation';
+import {
+  filterResidentialPrimeMagnets,
+  type PrimeMagnetAnchorType,
+  type ResidentialMarketMode,
+} from './residential-prime-magnets';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -23,13 +31,29 @@ export type LocationStandaloneReport = {
     | {
         id: 'business_fit';
         business_fit_verdict: 'fit' | 'not_fit' | 'unknown';
-        primary_magnets: Array<{ title: string; distance_m: number }>;
+        primary_magnets: Array<{ title: string; distance_m: number; anchor_type?: PrimeMagnetAnchorType }>;
         note: string | null;
       }
     | {
         id: 'magnets';
-        primary: Array<{ category_id: string; name: string; distance_m: number }>;
-        secondary: Array<{ category_id: string; name: string; distance_m: number }>;
+        primary: Array<{
+          category_id: string;
+          name: string;
+          distance_m: number;
+          anchor_type: PrimeMagnetAnchorType;
+          anchor_label_ru: string;
+          category_label_ru: string;
+        }>;
+        secondary: Array<{
+          category_id: string;
+          name: string;
+          distance_m: number;
+          anchor_type: PrimeMagnetAnchorType;
+          anchor_label_ru: string;
+          category_label_ru: string;
+        }>;
+        /** Present when no prime magnets passed the residential filter. */
+        no_magnets_note?: string;
       }
     | {
         id: 'competition';
@@ -53,6 +77,169 @@ export type LocationStandaloneReport = {
   >;
 };
 
+// ── Commercial standalone report ─────────────────────────────────────────────
+
+export type LocationCommercialReport = {
+  version: 'v2-commercial';
+  address: string;
+  generated_at_iso: string;
+  flow: {
+    transitShare: number;
+    localActiveShare: number;
+    destinationShare: number;
+    flowCharacter: string;
+    modifierTier: string;
+    flowConclusion: string;
+  };
+  formatFit: {
+    overallVerdict: CommercialOverallVerdict;
+    overallVerdictLabelRu: string;
+    entries: Array<{
+      format: string;
+      formatLabelRu: string;
+      fitLevel: 'high' | 'medium' | 'low' | 'poor';
+      explanationRu: string;
+      supportingFactorsRu: string[];
+      limitingFactorsRu: string[];
+    }>;
+  };
+  /** Spatial foundation v1 — explainability + UI tier (new reports always include this). */
+  spatial?: {
+    spatial_tier: SpatialTier;
+    enabled: boolean;
+    barrier_penalty_applied: boolean;
+    corridor_snap_m: number | null;
+    distance_inflation_m: number;
+    barrier_kinds: string[];
+    geometric_confidence_note_ru: string;
+  };
+  anchors: Array<{ categoryId: string; name: string; distance_m: number; icon: string }>;
+  barriers: string[];
+  competition: {
+    competitor_count: number;
+    pressure_level: 'low' | 'medium' | 'high';
+  };
+  recommendation: string;
+};
+
+export function isLocationCommercialReport(x: any): x is LocationCommercialReport {
+  return Boolean(
+    x &&
+    x.version === 'v2-commercial' &&
+    typeof x.address === 'string' &&
+    typeof x.generated_at_iso === 'string' &&
+    x.flow &&
+    x.formatFit,
+  );
+}
+
+function buildFlowConclusion(args: {
+  transitShare: number;
+  localActiveShare: number;
+  destinationShare: number;
+}): string {
+  const { transitShare, localActiveShare, destinationShare } = args;
+  if (destinationShare >= 0.45)
+    return 'У точки есть сильный целевой поток — люди приходят сюда намеренно.';
+  if (transitShare >= 0.50)
+    return 'В локации преобладает транзитный поток — высокая проходимость, но низкая задерживаемость.';
+  if (localActiveShare >= 0.40)
+    return 'Активная локальная аудитория — жители и работающие рядом.';
+  return 'Поток смешанный: часть людей проходит транзитом, часть приходит целенаправленно.';
+}
+
+function buildBarriersRu(analysis: LocationAnalysis): string[] {
+  const barriers: string[] = [];
+  const env = analysis.neighborhoodEnvironment;
+  if ((env.breakdown.industrial01 ?? 0) > 0.4)
+    barriers.push('Промышленная инфраструктура снижает потребительский контекст');
+  if ((env.breakdown.majorRoads01 ?? 0) > 0.55)
+    barriers.push('Перегруженные магистрали затрудняют пешеходный подход');
+  if ((env.breakdown.nightlife01 ?? 0) > 0.45)
+    barriers.push('Ночная активность — возможные конфликты формата');
+  if ((env.breakdown.aviation01 ?? 0) > 0.4)
+    barriers.push('Близость авиационных объектов (шум)');
+  if (analysis.gravityExplanation.competitorPressureLevel === 'high')
+    barriers.push('Высокая конкурентная плотность');
+  return barriers;
+}
+
+function buildCommercialRecommendation(
+  verdict: CommercialOverallVerdict,
+  entries: CommercialFormatFitEntry[],
+): string {
+  const highFormats = entries.filter(e => e.fitLevel === 'high').map(e => e.formatLabelRu);
+  const mediumFormats = entries.filter(e => e.fitLevel === 'medium').map(e => e.formatLabelRu);
+
+  if (verdict === 'strong') {
+    return `Сильная коммерческая точка. Форматы с высоким потенциалом: ${highFormats.join(', ')}. Подходит для запуска при правильном позиционировании.`;
+  }
+  if (verdict === 'selective') {
+    const best = [...highFormats, ...mediumFormats].slice(0, 2);
+    return `Точечный потенциал: выбор формата критичен. Приоритет: ${best.join(', ')}. Остальные форматы несут повышенный риск.`;
+  }
+  if (verdict === 'weak') {
+    return 'Слабая коммерческая локация. Требует глубокого анализа концепции и целевой аудитории перед запуском.';
+  }
+  return 'Локация не рекомендуется для коммерческого использования без существенного обоснования.';
+}
+
+export function buildCommercialReport(args: {
+  address: string;
+  analysis: LocationAnalysis;
+}): LocationCommercialReport {
+  const { analysis } = args;
+  const ft = analysis.footTraffic;
+  const { transitShare, localActiveShare, destinationShare } = ft.transitVsTarget;
+  const formatFit = buildCommercialFormatFit(analysis);
+
+  const anchors = (analysis.strongestMagnets ?? []).slice(0, 5).map(m => ({
+    categoryId: m.categoryId,
+    name: m.name,
+    distance_m: Math.round(m.distance),
+    icon: m.icon,
+  }));
+
+  const sf = args.analysis.spatialFoundation ?? createDisabledSpatialFoundation();
+
+  return {
+    version: 'v2-commercial',
+    address: args.address,
+    generated_at_iso: new Date().toISOString(),
+    spatial: {
+      spatial_tier: sf.spatialTier,
+      enabled: sf.enabled,
+      barrier_penalty_applied: sf.barrierPenaltyApplied,
+      corridor_snap_m: sf.corridorSnapM,
+      distance_inflation_m: sf.distanceInflationM,
+      barrier_kinds: sf.barrierKindsDetected,
+      geometric_confidence_note_ru: sf.geometricConfidenceNoteRu,
+    },
+    flow: {
+      transitShare: Math.round(transitShare * 100) / 100,
+      localActiveShare: Math.round(localActiveShare * 100) / 100,
+      destinationShare: Math.round(destinationShare * 100) / 100,
+      flowCharacter: ft.flowCharacter,
+      modifierTier: ft.modifierTier,
+      flowConclusion: buildFlowConclusion({ transitShare, localActiveShare, destinationShare }),
+    },
+    formatFit: {
+      overallVerdict: formatFit.overallVerdict,
+      overallVerdictLabelRu: formatFit.overallVerdictLabelRu,
+      entries: formatFit.entries,
+    },
+    anchors,
+    barriers: buildBarriersRu(analysis),
+    competition: {
+      competitor_count: analysis.competitors.length,
+      pressure_level: analysis.gravityExplanation.competitorPressureLevel,
+    },
+    recommendation: buildCommercialRecommendation(formatFit.overallVerdict, formatFit.entries),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function isLocationStandaloneReportV1(x: any): x is LocationStandaloneReport {
   return Boolean(
     x &&
@@ -69,15 +256,18 @@ function strategyTitleRu(s: RecommendedStrategy): string {
   return 'Среднесрочная аренда';
 }
 
-function pickBusinessFitVerdict(analysis: LocationAnalysis): {
+function pickBusinessFitVerdict(
+  analysis: LocationAnalysis,
+  primeMagnets: ReturnType<typeof filterResidentialPrimeMagnets>,
+): {
   business_fit_verdict: 'fit' | 'not_fit' | 'unknown';
   note: string | null;
 } {
   const aa = analysis.audienceAnalysis;
   if (!aa) return { business_fit_verdict: 'unknown', note: null };
 
-  const primary = analysis.strongestMagnets ?? [];
-  const hasPrimaryAccess = primary.some(m => m.distance <= 1500);
+  // Use policy-filtered prime magnets (within 1.5 km) for business-fit determination
+  const hasPrimaryAccess = primeMagnets.some(m => m.distance <= 1500);
 
   if (aa.primaryAudience === 'BUSINESS' && hasPrimaryAccess) {
     return { business_fit_verdict: 'fit', note: 'Подходит для делового потока и командированных.' };
@@ -93,19 +283,16 @@ function pickBusinessFitVerdict(analysis: LocationAnalysis): {
   return { business_fit_verdict: 'not_fit', note: 'По сигналам окружения деловой сценарий не доминирует.' };
 }
 
-function asPrimaryMagnetTitleRu(m: MagnetItem): string {
-  if (m.categoryId === 'metro') return `Метро: ${m.name}`;
-  if (m.categoryId === 'railway_station') return `Транспортный узел: ${m.name}`;
-  if (m.categoryId === 'business') return `Деловой магнит: ${m.name}`;
-  return `${m.categoryLabel}: ${m.name}`;
-}
 
 export function buildLocationStandaloneReport(args: {
   address: string;
   analysis: LocationAnalysis;
   verdict: string;
+  /** Market mode for prime magnet selection. Defaults to 'RU'. */
+  market?: ResidentialMarketMode;
 }): LocationStandaloneReport {
   const { analysis } = args;
+  const market = args.market ?? 'RU';
   const score = analysis.locationScore;
   const drivers = (score?.top_positive_factors ?? []).slice(0, 3);
 
@@ -119,14 +306,33 @@ export function buildLocationStandaloneReport(args: {
             : score.estimated_monthly_income.hybrid)
       : null;
 
-  const businessFit = pickBusinessFitVerdict(analysis);
-  const primaryMagnets = (analysis.strongestMagnets ?? []).slice(0, 3);
-  const primaryMagnetRows = primaryMagnets.map(m => ({ title: asPrimaryMagnetTitleRu(m), distance_m: m.distance }));
+  // ── Residential prime magnets (policy-filtered) ───────────────────────────
+  // Apply the closed allowlist + distance + persistence + market rules.
+  // Primary: top 3 by default; secondary: items 4–5 (hard max 5 total).
+  const primeMagnets = filterResidentialPrimeMagnets(analysis.magnets, {
+    market,
+    defaultTop: 3,
+    hardMax: 5,
+  });
+  const primaryPrime = primeMagnets.slice(0, 3);
+  const secondaryPrime = primeMagnets.slice(3, 5);
 
-  const secondary = analysis.magnets
-    .filter(m => !primaryMagnets.some(p => p.categoryId === m.categoryId && p.name === m.name))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, 8);
+  // Business-fit section: use prime-filtered magnets within 1.5 km
+  const businessFit = pickBusinessFitVerdict(analysis, primeMagnets);
+  const primaryMagnetRows = primaryPrime.map(m => ({
+    title: `${m.categoryLabelRu}: ${m.name}`,
+    distance_m: Math.round(m.distance),
+    anchor_type: m.anchorType,
+  }));
+
+  const toMagnetRow = (m: (typeof primeMagnets)[number]) => ({
+    category_id: m.categoryId,
+    name: m.name,
+    distance_m: Math.round(m.distance),
+    anchor_type: m.anchorType,
+    anchor_label_ru: m.anchorLabelRu,
+    category_label_ru: m.categoryLabelRu,
+  });
 
   return {
     version: 'v1',
@@ -148,8 +354,12 @@ export function buildLocationStandaloneReport(args: {
       },
       {
         id: 'magnets',
-        primary: primaryMagnets.map(m => ({ category_id: m.categoryId, name: m.name, distance_m: m.distance })),
-        secondary: secondary.map(m => ({ category_id: m.categoryId, name: m.name, distance_m: m.distance })),
+        primary: primaryPrime.map(toMagnetRow),
+        secondary: secondaryPrime.map(toMagnetRow),
+        no_magnets_note:
+          primeMagnets.length === 0
+            ? 'В радиусе 1 км не обнаружено prime-магнитов, отвечающих требованиям устойчивого спроса.'
+            : undefined,
       },
       {
         id: 'competition',
