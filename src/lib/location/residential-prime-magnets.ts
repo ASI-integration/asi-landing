@@ -270,15 +270,34 @@ export function filterResidentialPrimeMagnets(
 
   const deduped = [...seen.values()];
 
-  // Step 4: Sort — POSITIVE first, MIXED second, RESTRICTIVE last; distance within each type
+  // Step 4: Sort — POSITIVE first, MIXED second, RESTRICTIVE last;
+  // then category priority (city-forming anchors first); then distance.
+  //
+  // Rationale: The policy is about surfacing true demand anchors (transport, city-forming hubs)
+  // rather than whichever eligible POI happens to be closest (e.g. a single office branch).
   const typeOrder: Record<PrimeMagnetAnchorType, number> = {
     POSITIVE_DEMAND_ANCHOR: 0,
     MIXED_CONTEXT_ANCHOR: 1,
     RESTRICTIVE_OR_FRICTION_ANCHOR: 2,
   };
+  const categoryPriority: Record<string, number> = {
+    railway_station: 0,
+    metro: 1,
+    airport: 2,
+    attraction: 3,
+    university: 4,
+    hospital: 5,
+    shopping_major: 6,
+    business: 7,
+    stadium: 8,
+    convention: 9,
+  };
   deduped.sort((a, b) => {
     const tDiff = typeOrder[a.anchorType] - typeOrder[b.anchorType];
     if (tDiff !== 0) return tDiff;
+    const pA = categoryPriority[a.categoryId] ?? 50;
+    const pB = categoryPriority[b.categoryId] ?? 50;
+    if (pA !== pB) return pA - pB;
     return a.distance - b.distance;
   });
 
@@ -295,6 +314,94 @@ export function filterResidentialPrimeMagnets(
     }
   }
   // Fill remaining slots from deduplicated list without repeating exact items
+  for (const m of deduped) {
+    if (result.length >= hardMax) break;
+    if (!result.includes(m)) result.push(m);
+  }
+
+  return result.slice(0, hardMax);
+}
+
+// ── UI helper: keep full MagnetItem for rendering ──────────────────────────────
+
+export interface SelectResidentialPrimeMagnetItemsOptions {
+  market?: ResidentialMarketMode;
+  defaultTop?: number;
+  hardMax?: number;
+}
+
+/**
+ * Same canonical prime-magnets policy as `filterResidentialPrimeMagnets`,
+ * but returns the original `MagnetItem`s (for UI rendering: icon/color/strength).
+ */
+export function selectResidentialPrimeMagnetItems(
+  magnets: MagnetItem[],
+  options: SelectResidentialPrimeMagnetItemsOptions = {},
+): MagnetItem[] {
+  const { market = 'RU', defaultTop = 3, hardMax = 5 } = options;
+
+  // Step 1: Allowlist + distance + persistence
+  const eligible = magnets.filter(m => {
+    if (!isAllowlistedForResidential(m.categoryId, m.subType)) return false;
+    if (!passesResidentialDistanceRule(m.distance, m.categoryId, m.subType)) return false;
+    if (!passesResidentialPersistenceRule(m.permanenceType)) return false;
+    return true;
+  });
+
+  // Step 2: Market-specific suppression for INTERNATIONAL mode
+  const marketFiltered =
+    market === 'INTERNATIONAL'
+      ? eligible.filter(m => !CONDITIONAL_PERSISTENCE_CATEGORIES.has(m.categoryId))
+      : eligible;
+
+  // Step 3: Deduplicate by categoryId + normalised name (keep closest instance)
+  const byKey = new Map<string, MagnetItem>();
+  for (const m of [...marketFiltered].sort((a, b) => a.distance - b.distance)) {
+    const key = `${m.categoryId}:${m.name.toLowerCase().trim()}`;
+    if (!byKey.has(key)) byKey.set(key, m);
+  }
+
+  const deduped = [...byKey.values()];
+
+  // Step 4: Sort with the same category priority as the canonical output
+  const typeOrder: Record<PrimeMagnetAnchorType, number> = {
+    POSITIVE_DEMAND_ANCHOR: 0,
+    MIXED_CONTEXT_ANCHOR: 1,
+    RESTRICTIVE_OR_FRICTION_ANCHOR: 2,
+  };
+  const categoryPriority: Record<string, number> = {
+    railway_station: 0,
+    metro: 1,
+    airport: 2,
+    attraction: 3,
+    university: 4,
+    hospital: 5,
+    shopping_major: 6,
+    business: 7,
+    stadium: 8,
+    convention: 9,
+  };
+  deduped.sort((a, b) => {
+    const tA = classifyPrimeMagnetAnchorType(a.categoryId, a.subType);
+    const tB = classifyPrimeMagnetAnchorType(b.categoryId, b.subType);
+    const tDiff = typeOrder[tA] - typeOrder[tB];
+    if (tDiff !== 0) return tDiff;
+    const pA = categoryPriority[a.categoryId] ?? 50;
+    const pB = categoryPriority[b.categoryId] ?? 50;
+    if (pA !== pB) return pA - pB;
+    return a.distance - b.distance;
+  });
+
+  // Step 5: Category-diverse selection up to defaultTop, then fill to hardMax
+  const result: MagnetItem[] = [];
+  const usedCategories = new Set<string>();
+  for (const m of deduped) {
+    if (result.length >= defaultTop) break;
+    if (!usedCategories.has(m.categoryId)) {
+      result.push(m);
+      usedCategories.add(m.categoryId);
+    }
+  }
   for (const m of deduped) {
     if (result.length >= hardMax) break;
     if (!result.includes(m)) result.push(m);

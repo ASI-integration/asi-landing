@@ -36,6 +36,7 @@ import {
   type LocDemoLocale,
 } from '@/components/location-intelligence-locale';
 import { generateConclusion } from '@/lib/location';
+import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -1634,6 +1635,7 @@ function ASIPanel({
   meta,
   locale,
   c,
+  mode,
 }: {
   analysis: LocationAnalysis;
   address: string;
@@ -1641,6 +1643,7 @@ function ASIPanel({
   meta: AnalysisMeta | null;
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
+  mode: LocationAnalysisMode;
 }) {
   const router = useRouter();
   const {
@@ -2242,11 +2245,14 @@ function ASIPanel({
 
       {/* Magnets */}
       {hasMagnets && (() => {
-        const MAGNET_DEFAULT_LIMIT = 6;
-        const allFiltered = getFilteredMagnets(magnets, magnets.length);
-        const shown = magnetExpanded
+        const isResidentialPrime = mode === 'residential';
+        const MAGNET_DEFAULT_LIMIT = isResidentialPrime ? 5 : 6;
+        const allFiltered = isResidentialPrime
+          ? selectResidentialPrimeMagnetItems(magnets, { market: 'RU', defaultTop: 3, hardMax: 5 })
+          : getFilteredMagnets(magnets, magnets.length);
+        const shown = isResidentialPrime
           ? allFiltered
-          : allFiltered.slice(0, MAGNET_DEFAULT_LIMIT);
+          : (magnetExpanded ? allFiltered : allFiltered.slice(0, MAGNET_DEFAULT_LIMIT));
         const hiddenCount = allFiltered.length - MAGNET_DEFAULT_LIMIT;
 
         const fmtDist = (m: number) =>
@@ -2271,11 +2277,13 @@ function ASIPanel({
               </p>
               <span className="text-[13px] text-slate-600">{c.significantCount(allFiltered.length)}</span>
             </div>
-            <p className="text-[12px] text-slate-700 mb-3">
-              {locale === 'ru'
-                ? 'первичный = сильный магнит спроса · вторичный = поддерживающий'
-                : 'primary = strong demand magnet · secondary = supporting'}
-            </p>
+            {!isResidentialPrime && (
+              <p className="text-[12px] text-slate-700 mb-3">
+                {locale === 'ru'
+                  ? 'первичный = сильный магнит спроса · вторичный = поддерживающий'
+                  : 'primary = strong demand magnet · secondary = supporting'}
+              </p>
+            )}
             <div className="space-y-0">
               {shown.map((m, i) => (
                 <div
@@ -2308,7 +2316,7 @@ function ASIPanel({
                 </div>
               ))}
             </div>
-            {!magnetExpanded && hiddenCount > 0 && (
+            {!isResidentialPrime && !magnetExpanded && hiddenCount > 0 && (
               <button
                 onClick={() => setMagnetExpanded(true)}
                 className="mt-3 inline-flex items-center gap-2 text-[16px] text-slate-400 hover:text-slate-200 transition-colors underline underline-offset-4 decoration-slate-700 hover:decoration-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded"
@@ -2316,7 +2324,7 @@ function ASIPanel({
                 {c.showMoreMagnets(hiddenCount)}
               </button>
             )}
-            {magnetExpanded && allFiltered.length > MAGNET_DEFAULT_LIMIT && (
+            {!isResidentialPrime && magnetExpanded && allFiltered.length > MAGNET_DEFAULT_LIMIT && (
               <button
                 onClick={() => setMagnetExpanded(false)}
                 className="mt-3 inline-flex items-center gap-2 text-[16px] text-slate-400 hover:text-slate-200 transition-colors underline underline-offset-4 decoration-slate-700 hover:decoration-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded"
@@ -2943,6 +2951,7 @@ export function LocationIntelligenceDemo({
                   meta={analysisMeta}
                   locale={locale}
                   c={c}
+                  mode={mode}
                 />
               )}
             </div>
