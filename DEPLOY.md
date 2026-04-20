@@ -21,14 +21,13 @@ git push origin main
 
 ```bash
 ssh root@<server>
-cd /root/asi-landing
-# (legacy) bash deploy.sh              # builds on VPS (not recommended)
+# Canonical production deploy: push to `main` → GitHub Actions builds the artifact and runs
+# `scripts/deploy-artifact.sh` on the VPS. Do not run `deploy.sh` (retired).
 #
-# Canonical production deploy uses GitHub Actions to build an artifact and the VPS only unpacks it.
 # See: `.github/workflows/deploy.yml` + `scripts/deploy-artifact.sh`
 ```
 
-Legacy `deploy.sh` does: `git pull` → `npm install` → `npm run build` → `pm2 reload` → healthcheck → `nginx reload`.
+`deploy.sh` is **retired** (it exits with an error if invoked).
 
 **Current discipline (prod)**:
 
@@ -37,21 +36,21 @@ Legacy `deploy.sh` does: `git pull` → `npm install` → `npm run build` → `p
 - VPS runs `scripts/deploy-artifact.sh <sha> /tmp/asi-release-<sha>.tgz`
 - no `next build` on the VPS in the normal production flow
 
-**Успех** — последняя строка `[deploy] success`.
+**Успех** — в логе GitHub Actions job `deploy` зелёный; на сервере `pm2 status` и `curl http://127.0.0.1:3000/api/version`.
 
 ---
 
 ## 3. ROLLBACK
 
 ```bash
-# откат на предыдущий коммит
-bash rollback.sh
+# symlink rollback to an existing unpacked release (no rebuild)
+ASI_BASE_DIR=/var/www/asi bash scripts/rollback-artifact.sh <full-sha>
 
-# откат на конкретный SHA
-bash rollback.sh <sha>
+# list available release dirs
+ls /var/www/asi/releases
 ```
 
-Перед откатом: `git log --oneline -6` чтобы выбрать нужный SHA.
+`rollback.sh` is **retired** (it exits with an error if invoked).
 
 ---
 
@@ -69,18 +68,18 @@ pm2 logs asi-landing --lines 20        # нет FATAL/unhandled
 
 ## ЗАПРЕЩЕНО
 
-- **Не делать `pm2 restart`** вручную — только через `deploy.sh` или `rollback.sh`
+- **Не делать `pm2 restart`** вручную — только через GitHub Actions deploy или `scripts/rollback-artifact.sh`
 - **Не запускать `pm2 delete` / `pm2 kill`** в продакшне без rollback-плана
 - **Не деплоить при failed build** — если build упал, чинить локально и пушить снова
 - **Не запускать два деплоя параллельно** — один агент/сессия за раз
-- **Не редактировать файлы напрямую на сервере** — только через git push + deploy.sh
-- **Не делать `git reset --hard` на сервере** вручную — использовать rollback.sh
+- **Не редактировать файлы напрямую на сервере** — только через git push + CI deploy
+- **Не делать `git reset --hard` на сервере** вручную — использовать `scripts/rollback-artifact.sh`
 
 ---
 
 ## ЕСЛИ ДЕПЛОЙ ЗАВИС / УПАЛ
 
 1. Проверить: `pm2 status` — процесс живой?
-2. Если build упал → `rollback.sh` → починить локально → push → deploy снова
-3. Если healthcheck не прошёл → `rollback.sh` немедленно
+2. Если build упал → починить локально → push → deploy снова
+3. Если healthcheck не прошёл → `scripts/rollback-artifact.sh` немедленно
 4. Если nginx не стартует → `nginx -t` → смотреть конфиг ошибку

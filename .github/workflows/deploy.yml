@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: Commit SHA to build+deploy (defaults to the triggering SHA)
+        description: Commit SHA or ref to build+deploy (defaults to the triggering SHA)
         required: false
         type: string
 
@@ -18,30 +18,37 @@ jobs:
   build_release:
     runs-on: ubuntu-latest
     outputs:
-      sha: ${{ steps.meta.outputs.sha }}
-      artifact_name: ${{ steps.meta.outputs.artifact_name }}
-      artifact_file: ${{ steps.meta.outputs.artifact_file }}
+      sha: ${{ steps.build_meta.outputs.sha }}
+      artifact_name: ${{ steps.build_meta.outputs.artifact_name }}
+      artifact_file: ${{ steps.build_meta.outputs.artifact_file }}
     steps:
-      - name: Resolve SHA + artifact names
-        id: meta
+      - name: Resolve checkout ref
+        id: checkout_ref
         shell: bash
         run: |
           set -euo pipefail
-          SHA_INPUT="${{ inputs.sha }}"
-          if [ -n "${SHA_INPUT:-}" ]; then
-            SHA="$SHA_INPUT"
+          REF_INPUT="${{ inputs.sha }}"
+          if [ -n "${REF_INPUT:-}" ]; then
+            echo "ref=${REF_INPUT}" >> "$GITHUB_OUTPUT"
           else
-            SHA="${GITHUB_SHA}"
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=asi-release-${SHA}" >> "$GITHUB_OUTPUT"
-          echo "artifact_file=asi-release-${SHA}.tgz" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout exact SHA
+      - name: Checkout exact ref
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: ${{ steps.meta.outputs.sha }}
+          ref: ${{ steps.checkout_ref.outputs.ref }}
+
+      - name: Resolve canonical SHA + artifact names
+        id: build_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          FULL="$(git rev-parse HEAD)"
+          echo "sha=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=asi-release-${FULL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_file=asi-release-${FULL}.tgz" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -68,8 +75,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SHA="${{ steps.meta.outputs.sha }}"
-          OUT="${{ steps.meta.outputs.artifact_file }}"
+          SHA="${{ steps.build_meta.outputs.sha }}"
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
 
           rm -rf release
           mkdir -p release
@@ -95,34 +102,39 @@ jobs:
           fs.writeFileSync('release/.release.build.json', JSON.stringify(meta, null, 2) + '\n');
           NODE
         env:
-          GITHUB_SHA_EXACT: ${{ steps.meta.outputs.sha }}
+          GITHUB_SHA_EXACT: ${{ steps.build_meta.outputs.sha }}
 
       - name: Tar release
         shell: bash
         run: |
           set -euo pipefail
-          OUT="${{ steps.meta.outputs.artifact_file }}"
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
           tar -czf "$OUT" -C release .
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.artifact_name }}
-          path: ${{ steps.meta.outputs.artifact_file }}
+          name: ${{ steps.build_meta.outputs.artifact_name }}
+          path: ${{ steps.build_meta.outputs.artifact_file }}
           if-no-files-found: error
 
   deploy:
     runs-on: ubuntu-latest
     needs: [build_release]
     env:
-      # Injected into the remote SSH session; deploy script merges into shared env.
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
     steps:
+      - name: Checkout (deploy script for SCP)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Download release artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build_release.outputs.artifact_name }}
+          path: release-artifact
 
       - name: Deploy over SSH (auto-detect port)
         shell: bash
@@ -135,10 +147,14 @@ jobs:
           set -euo pipefail
           SHA="${{ needs.build_release.outputs.sha }}"
           ARTIFACT_FILE="${{ needs.build_release.outputs.artifact_file }}"
-
-          if [ ! -f "$ARTIFACT_FILE" ]; then
-            echo "Missing artifact file in workspace: $ARTIFACT_FILE"
-            ls -la
+          RELEASE_DIR="release-artifact"
+          ARTIFACT_PATH="${RELEASE_DIR}/${ARTIFACT_FILE}"
+          if [ ! -f "$ARTIFACT_PATH" ]; then
+            ARTIFACT_PATH="$(find "$RELEASE_DIR" -type f -name "$ARTIFACT_FILE" | head -n1 || true)"
+          fi
+          if [ -z "${ARTIFACT_PATH:-}" ] || [ ! -f "$ARTIFACT_PATH" ]; then
+            echo "Artifact tarball not found (expected ${RELEASE_DIR}/${ARTIFACT_FILE})"
+            find "$RELEASE_DIR" -type f 2>/dev/null || ls -la
             exit 1
           fi
 
@@ -195,23 +211,20 @@ jobs:
             -o ConnectTimeout=20
           )
 
-          echo "Copying artifact to VPS..."
-          scp "${SCP_OPTS[@]}" "$ARTIFACT_FILE" "${VPS_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
+          echo "Copying deploy script + artifact to VPS..."
+          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${VPS_USER}@${VPS_HOST}:/tmp/asi-deploy-artifact.sh"
+          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${VPS_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
 
           ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
             "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
               echo \"Deploying SHA: ${SHA}\"
 
-              # This repo is the deploy controller (not the live app directory).
-              cd ~/asi-landing
-              git fetch origin
-              git reset --hard origin/main
+              chmod +x /tmp/asi-deploy-artifact.sh || true
+              ASI_BASE_DIR=\"/var/www/asi\" bash /tmp/asi-deploy-artifact.sh \"${SHA}\" \"/tmp/${ARTIFACT_FILE}\"
 
-              # Artifact-based atomic deploy (no build on the VPS)
-              chmod +x scripts/deploy-artifact.sh || true
-              ASI_BASE_DIR=\"/var/www/asi\" scripts/deploy-artifact.sh \"${SHA}\" \"/tmp/${ARTIFACT_FILE}\"
+              rm -f /tmp/asi-deploy-artifact.sh \"/tmp/${ARTIFACT_FILE}\"
 
               echo \"LIVE_SHA_EXPECTED=${SHA}\"
-              curl -fsS http://127.0.0.1:3000/api/version || true
+              curl -fsS http://127.0.0.1:3000/api/version
               pm2 status
             '"

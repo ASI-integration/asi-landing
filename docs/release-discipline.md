@@ -12,8 +12,8 @@
 
 ## Rules
 
-- **Deploy only by exact commit SHA**.
-- **Deploy only SHAs reachable from `origin/main`**.
+- **Deploy only by exact commit SHA** (canonical full SHA from `git rev-parse HEAD` in CI).
+- **Deploy only SHAs reachable from `origin/main`** (VPS git-worktree path retired; discipline remains via branch protection + CI on `main`).
 - **Never build in `/var/www/asi/current`**.
 - **Releases are immutable folders** under `/var/www/asi/releases/<sha>`.
 - **Switch is atomic**: only the `current` symlink changes.
@@ -22,12 +22,17 @@
 
 ## Release gates (must pass before switch)
 
-The deploy script enforces these gates inside the fresh release folder:
+**GitHub Actions** runs before packaging:
 
-- `npm ci` (clean install in release dir)
+- `npm ci`
+- `npm run lint`
 - `npm run typecheck`
 - `npm run test:location-golden`
 - `npm run build`
+
+**`scripts/deploy-artifact.sh`** runs on the VPS before switching `current`:
+
+- `npm ci --omit=dev` in the fresh release folder
 - **Local smoke start + fetch**:
   - start `next start` on a local port
   - fetch `/api/health`, `/`, `/ru`, `/api/version`
@@ -43,8 +48,7 @@ After switching `current` and reloading PM2, the deploy script checks:
 
 If healthcheck fails, deploy **auto-rolls back** to the previous `current` target and reloads PM2.
 
-## Unified deploy path (GitHub + manual)
+## Unified deploy path (GitHub Actions only)
 
-- GitHub Actions calls `scripts/deploy-release.sh <sha>` on the VPS.
-- Manual deploy uses the same script, same gates, same switch, same rollback behavior.
-
+- GitHub Actions builds the artifact and runs `scripts/deploy-artifact.sh <full-sha> /tmp/asi-release-<full-sha>.tgz` on the VPS (script is copied via SCP; no dependency on a git-updated clone for the deploy entrypoint).
+- Legacy VPS-build scripts (`deploy.sh`, `scripts/deploy-release.sh`, root `rollback.sh`) are **retired** and exit with an error if invoked.
