@@ -108,7 +108,11 @@ SMOKE_PORT="${SMOKE_PORT:-3107}"
 SMOKE_BASE="http://127.0.0.1:${SMOKE_PORT}"
 
 start_server() {
-  PORT="$SMOKE_PORT" NODE_ENV=production nohup npm run start -- -H 127.0.0.1 -p "$SMOKE_PORT" >/tmp/asi-smoke-${SHA}.log 2>&1 &
+  # Pass release env explicitly: smoke uses plain `npm run start` (not PM2), so it does not get
+  # ecosystem.config.cjs merged env. ASI_* must match the deploy SHA for pre-switch checks.
+  PORT="$SMOKE_PORT" NODE_ENV=production ASI_RELEASE_SHA="$SHA" \
+    ASI_RELEASE_DEPLOYED_AT_ISO="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" ASI_RELEASE_PATH="$RELEASE_DIR" \
+    nohup npm run start -- -H 127.0.0.1 -p "$SMOKE_PORT" >/tmp/asi-smoke-${SHA}.log 2>&1 &
   echo $! > /tmp/asi-smoke-${SHA}.pid
 }
 stop_server() {

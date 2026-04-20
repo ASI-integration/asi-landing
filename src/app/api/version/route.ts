@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
+import { getServerReleaseSha } from '@/lib/serverReleaseSha';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const sha =
-    (process.env.ASI_RELEASE_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '').trim() ||
-    null;
+  const sha = getServerReleaseSha();
 
   const res = NextResponse.json({
     sha,

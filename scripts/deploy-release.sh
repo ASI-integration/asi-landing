@@ -104,7 +104,9 @@ SMOKE_PORT="${SMOKE_PORT:-3107}"
 SMOKE_BASE="http://127.0.0.1:${SMOKE_PORT}"
 
 start_server() {
-  PORT="$SMOKE_PORT" NODE_ENV=production nohup npm run start -- -H 127.0.0.1 -p "$SMOKE_PORT" >/tmp/asi-smoke-${SHA}.log 2>&1 &
+  PORT="$SMOKE_PORT" NODE_ENV=production ASI_RELEASE_SHA="$SHA" \
+    ASI_RELEASE_DEPLOYED_AT_ISO="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" ASI_RELEASE_PATH="$RELEASE_DIR" \
+    nohup npm run start -- -H 127.0.0.1 -p "$SMOKE_PORT" >/tmp/asi-smoke-${SHA}.log 2>&1 &
   echo $! > /tmp/asi-smoke-${SHA}.pid
 }
 stop_server() {
