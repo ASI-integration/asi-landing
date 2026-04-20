@@ -1,0 +1,722 @@
+[
+  {
+    "id": 20,
+    "expect": "drop",
+    "type": "weak_suburb",
+    "name": "Ozone Park",
+    "lat": 40.6786,
+    "lon": -73.8464,
+    "note": "airport/metro noise",
+    "elements": 52,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 116.6,
+      "rawCapped": 116.6,
+      "breakdown": {
+        "attraction": 105,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 8,
+      "magnetCountByCategory": {
+        "metro": 24,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 8,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    },
+    "new": {
+      "idx": 93,
+      "band": "strong",
+      "rawScore": 101.2,
+      "rawCapped": 92.7,
+      "breakdown": {
+        "attraction": 90,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 8,
+      "magnetCountByCategory": {
+        "metro": 24,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 8,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    }
+  },
+  {
+    "id": 47,
+    "expect": "drop",
+    "type": "remote",
+    "name": "Tromsø city center",
+    "lat": 69.6492,
+    "lon": 18.9553,
+    "note": "airport noise",
+    "elements": 69,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 126.2,
+      "rawCapped": 126.2,
+      "breakdown": {
+        "attraction": 115,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 12,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 21,
+        "railway_station": 1,
+        "entertainment": 3,
+        "shopping_major": 3,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    },
+    "new": {
+      "idx": 99,
+      "band": "strong",
+      "rawScore": 112.2,
+      "rawCapped": 99.3,
+      "breakdown": {
+        "attraction": 101,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 12,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 21,
+        "railway_station": 1,
+        "entertainment": 3,
+        "shopping_major": 3,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    }
+  },
+  {
+    "id": 12,
+    "expect": "drop",
+    "type": "medium_urban",
+    "name": "Prenzlauer Berg",
+    "lat": 52.538,
+    "lon": 13.4194,
+    "note": "office noise",
+    "elements": 362,
+    "old": {
+      "idx": 50,
+      "band": "medium",
+      "rawScore": 50.4,
+      "rawCapped": 50.4,
+      "breakdown": {
+        "attraction": 61,
+        "competitorPressure": 20,
+        "clusterBonus": 8,
+        "trafficBoost": 2
+      },
+      "competitorCount": 14,
+      "totalMagnets": 7,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 43,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 10,
+        "food": 295
+      }
+    },
+    "new": {
+      "idx": 55,
+      "band": "medium",
+      "rawScore": 55.4,
+      "rawCapped": 55.4,
+      "breakdown": {
+        "attraction": 61,
+        "competitorPressure": 15,
+        "clusterBonus": 8,
+        "trafficBoost": 2
+      },
+      "competitorCount": 14,
+      "totalMagnets": 7,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 43,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 10,
+        "food": 295
+      }
+    }
+  },
+  {
+    "id": 45,
+    "expect": "drop",
+    "type": "rural",
+    "name": "Переславль центр",
+    "lat": 56.7387,
+    "lon": 38.8552,
+    "note": "office noise",
+    "elements": 80,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 162.1,
+      "rawCapped": 162.1,
+      "breakdown": {
+        "attraction": 156,
+        "competitorPressure": 3,
+        "clusterBonus": 8,
+        "trafficBoost": 1
+      },
+      "competitorCount": 2,
+      "totalMagnets": 18,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 16,
+        "hospital": 1,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 30,
+        "railway_station": 0,
+        "entertainment": 2,
+        "shopping_major": 5,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 6,
+        "food": 18
+      }
+    },
+    "new": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 162.1,
+      "rawCapped": 129.3,
+      "breakdown": {
+        "attraction": 156,
+        "competitorPressure": 3,
+        "clusterBonus": 8,
+        "trafficBoost": 1
+      },
+      "competitorCount": 2,
+      "totalMagnets": 18,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 16,
+        "hospital": 1,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 30,
+        "railway_station": 0,
+        "entertainment": 2,
+        "shopping_major": 5,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 6,
+        "food": 18
+      }
+    }
+  },
+  {
+    "id": 54,
+    "expect": "drop",
+    "type": "weak_urban",
+    "name": "Wedding Berlin",
+    "lat": 52.5427,
+    "lon": 13.3649,
+    "note": "metro+office noise",
+    "elements": 115,
+    "old": {
+      "idx": 91,
+      "band": "strong",
+      "rawScore": 91.2,
+      "rawCapped": 91.2,
+      "breakdown": {
+        "attraction": 100,
+        "competitorPressure": 20,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 7,
+      "totalMagnets": 10,
+      "magnetCountByCategory": {
+        "metro": 31,
+        "airport": 0,
+        "attraction": 1,
+        "hospital": 1,
+        "major_hotel": 0,
+        "convention": 1,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 4,
+        "food": 44
+      }
+    },
+    "new": {
+      "idx": 90,
+      "band": "strong",
+      "rawScore": 96.2,
+      "rawCapped": 89.7,
+      "breakdown": {
+        "attraction": 100,
+        "competitorPressure": 15,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 7,
+      "totalMagnets": 10,
+      "magnetCountByCategory": {
+        "metro": 31,
+        "airport": 0,
+        "attraction": 1,
+        "hospital": 1,
+        "major_hotel": 0,
+        "convention": 1,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 4,
+        "food": 44
+      }
+    }
+  },
+  {
+    "id": 44,
+    "expect": "rise",
+    "type": "rural",
+    "name": "Siena old town",
+    "lat": 43.3188,
+    "lon": 11.3308,
+    "note": "competitor pressure crushed",
+    "elements": 300,
+    "old": {
+      "idx": 5,
+      "band": "weak",
+      "rawScore": 4.4,
+      "rawCapped": 4.4,
+      "breakdown": {
+        "attraction": 21,
+        "competitorPressure": 20,
+        "clusterBonus": 2,
+        "trafficBoost": 0
+      },
+      "competitorCount": 100,
+      "totalMagnets": 4,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 7,
+        "food": 191
+      }
+    },
+    "new": {
+      "idx": 9,
+      "band": "weak",
+      "rawScore": 9.4,
+      "rawCapped": 9.4,
+      "breakdown": {
+        "attraction": 21,
+        "competitorPressure": 15,
+        "clusterBonus": 2,
+        "trafficBoost": 0
+      },
+      "competitorCount": 100,
+      "totalMagnets": 4,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 7,
+        "food": 191
+      }
+    }
+  },
+  {
+    "id": 91,
+    "expect": "rise",
+    "type": "medium_urban",
+    "name": "El Poblado",
+    "lat": 6.2089,
+    "lon": -75.569,
+    "note": "competitor pressure crushed",
+    "elements": 311,
+    "old": {
+      "idx": 16,
+      "band": "weak",
+      "rawScore": 15.9,
+      "rawCapped": 15.9,
+      "breakdown": {
+        "attraction": 31,
+        "competitorPressure": 20,
+        "clusterBonus": 2,
+        "trafficBoost": 0
+      },
+      "competitorCount": 102,
+      "totalMagnets": 6,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 1,
+        "major_hotel": 1,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 5,
+        "food": 183
+      }
+    },
+    "new": {
+      "idx": 21,
+      "band": "weak",
+      "rawScore": 20.9,
+      "rawCapped": 20.9,
+      "breakdown": {
+        "attraction": 31,
+        "competitorPressure": 15,
+        "clusterBonus": 2,
+        "trafficBoost": 0
+      },
+      "competitorCount": 102,
+      "totalMagnets": 6,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 1,
+        "major_hotel": 1,
+        "convention": 0,
+        "university": 0,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 5,
+        "food": 183
+      }
+    }
+  },
+  {
+    "id": 1,
+    "expect": "stable",
+    "type": "strong_urban",
+    "name": "Times Square",
+    "lat": 40.758,
+    "lon": -73.9855,
+    "note": "anchor — must stay 100",
+    "elements": 533,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 163,
+      "rawCapped": 163,
+      "breakdown": {
+        "attraction": 172,
+        "competitorPressure": 20,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 34,
+      "totalMagnets": 17,
+      "magnetCountByCategory": {
+        "metro": 224,
+        "airport": 1,
+        "attraction": 7,
+        "hospital": 1,
+        "major_hotel": 5,
+        "convention": 1,
+        "university": 2,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 3,
+        "food": 215
+      }
+    },
+    "new": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 166.7,
+      "rawCapped": 132,
+      "breakdown": {
+        "attraction": 170,
+        "competitorPressure": 15,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 34,
+      "totalMagnets": 16,
+      "magnetCountByCategory": {
+        "metro": 224,
+        "airport": 0,
+        "attraction": 7,
+        "hospital": 1,
+        "major_hotel": 5,
+        "convention": 1,
+        "university": 2,
+        "business": 0,
+        "railway_station": 0,
+        "entertainment": 0,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 3,
+        "food": 215
+      }
+    }
+  },
+  {
+    "id": 37,
+    "expect": "stable",
+    "type": "beach_resort",
+    "name": "Cannes Croisette",
+    "lat": 43.5505,
+    "lon": 7.0178,
+    "note": "strong — must stay ≥70",
+    "elements": 274,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 137.9,
+      "rawCapped": 137.9,
+      "breakdown": {
+        "attraction": 129,
+        "competitorPressure": 2,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 1,
+      "totalMagnets": 16,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 73,
+        "railway_station": 2,
+        "entertainment": 4,
+        "shopping_major": 2,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 2,
+        "food": 118
+      }
+    },
+    "new": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 122.4,
+      "rawCapped": 105.4,
+      "breakdown": {
+        "attraction": 113,
+        "competitorPressure": 2,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 1,
+      "totalMagnets": 16,
+      "magnetCountByCategory": {
+        "metro": 0,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 73,
+        "railway_station": 2,
+        "entertainment": 4,
+        "shopping_major": 2,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 2,
+        "food": 118
+      }
+    }
+  },
+  {
+    "id": 17,
+    "expect": "stable",
+    "type": "medium_urban",
+    "name": "Clapham Common",
+    "lat": 51.4614,
+    "lon": -0.14,
+    "note": "medium — must not regress",
+    "elements": 64,
+    "old": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 131.6,
+      "rawCapped": 131.6,
+      "breakdown": {
+        "attraction": 120,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 13,
+      "magnetCountByCategory": {
+        "metro": 3,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 34,
+        "railway_station": 2,
+        "entertainment": 3,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    },
+    "new": {
+      "idx": 100,
+      "band": "strong",
+      "rawScore": 114,
+      "rawCapped": 100.4,
+      "breakdown": {
+        "attraction": 103,
+        "competitorPressure": 0,
+        "clusterBonus": 8,
+        "trafficBoost": 0
+      },
+      "competitorCount": 0,
+      "totalMagnets": 13,
+      "magnetCountByCategory": {
+        "metro": 3,
+        "airport": 0,
+        "attraction": 0,
+        "hospital": 0,
+        "major_hotel": 0,
+        "convention": 0,
+        "university": 0,
+        "business": 34,
+        "railway_station": 2,
+        "entertainment": 3,
+        "shopping_major": 0,
+        "stadium": 0,
+        "education_local": 0,
+        "shopping_local": 0,
+        "food": 0
+      }
+    }
+  }
+]

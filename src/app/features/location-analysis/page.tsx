@@ -13,7 +13,11 @@ export const metadata: Metadata = {
     'AI-powered location analysis for short-term rental properties. Understand demand patterns, competition density, and foot traffic to maximise occupancy.',
 };
 
-export default function LocationAnalysisPage() {
+export default async function LocationAnalysisPage(
+  props: { searchParams: Promise<{ mode?: string }> },
+) {
+  const searchParams = await props.searchParams;
+  const mode = searchParams.mode === 'commercial' ? 'commercial' as const : 'residential' as const;
   return (
     <LocationTelemetryProvider>
       <div className="min-h-screen bg-slate-950">
@@ -91,7 +95,7 @@ export default function LocationAnalysisPage() {
           </section>
 
           {/* ── Demo ── */}
-          <LocationIntelligenceDemo />
+          <LocationIntelligenceDemo initialMode={mode} />
 
           {/* ── CTA ── */}
           <section className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-800/60">

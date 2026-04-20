@@ -21,7 +21,18 @@ export async function GET(request: NextRequest) {
   }
 
   const market = parseMarket(request);
+  const qPreview = q.length > 100 ? `${q.slice(0, 100)}…` : q;
+  console.info('[address-suggest] request_start', { market, qLen: q.length, q: qPreview });
+
   const { suggestions, status, elapsed_ms, raw_query, normalized_query } = await runSuggestPipeline(market, q);
+
+  console.info('[address-suggest] request_done', {
+    market,
+    status,
+    suggestionCount: suggestions.length,
+    elapsed_ms,
+    normalized_query: normalized_query ? (normalized_query.length > 80 ? `${normalized_query.slice(0, 80)}…` : normalized_query) : undefined,
+  });
 
   return NextResponse.json({
     suggestions,

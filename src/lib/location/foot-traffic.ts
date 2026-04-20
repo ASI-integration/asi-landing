@@ -4,6 +4,8 @@
  */
 
 import type { MagnetItem, GravityExplanation, FootTrafficSummary, LocationAnalysis } from './types';
+import { createDisabledSpatialFoundation } from './spatial-foundation';
+import { mergeNeighborhoodEnvironmentLayer } from './neighborhood-environment';
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -93,6 +95,8 @@ export function patchLegacyLocationAnalysis(a: LocationAnalysis): LocationAnalys
   const sb = ge?.scoreBreakdown ?? { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 };
   return {
     ...a,
+    spatialFoundation: a.spatialFoundation ?? createDisabledSpatialFoundation(),
+    neighborhoodEnvironment: mergeNeighborhoodEnvironmentLayer(a.neighborhoodEnvironment),
     footTraffic: normalizeFootTrafficFields(a.footTraffic),
     gravityExplanation: {
       dominantMagnets: ge?.dominantMagnets ?? [],
@@ -125,23 +129,38 @@ export const FOOT_TRAFFIC_CONFIG = {
 function magnetFlowWeights(m: MagnetItem): { transit: number; local: number; destination: number } {
   switch (m.categoryId) {
     case 'metro':
-      return { transit: 0.45, local: 0.1, destination: 0.45 };
+      return { transit: 0.45, local: 0.1,  destination: 0.45 };
+    case 'airport':
+      // Airports are almost entirely transit-flow and destination arrivals
+      return { transit: 0.65, local: 0.05, destination: 0.30 };
     case 'railway_station':
-      return { transit: 0.4, local: 0.05, destination: 0.55 };
+      return { transit: 0.4,  local: 0.05, destination: 0.55 };
+    case 'hospital':
+      // Stable destination flow: staff, patients, visitors — minimal transit share
+      return { transit: 0.08, local: 0.22, destination: 0.70 };
+    case 'major_hotel':
+      // Hotel guests arrive for purpose; some local leisure/dining spill
+      return { transit: 0.10, local: 0.25, destination: 0.65 };
+    case 'convention':
+      // Corporate events: nearly all destination-led flow
+      return { transit: 0.10, local: 0.10, destination: 0.80 };
     case 'attraction':
     case 'university':
     case 'shopping_major':
-      return { transit: 0.05, local: 0.1, destination: 0.85 };
+      return { transit: 0.05, local: 0.10, destination: 0.85 };
+    case 'stadium':
+      // Event-driven: mostly destination; transit on event days
+      return { transit: 0.20, local: 0.15, destination: 0.65 };
     case 'entertainment':
-      return { transit: 0.08, local: 0.22, destination: 0.7 };
+      return { transit: 0.08, local: 0.22, destination: 0.70 };
     case 'food':
     case 'shopping_local':
     case 'education_local':
-      return { transit: 0.12, local: 0.68, destination: 0.2 };
+      return { transit: 0.12, local: 0.68, destination: 0.20 };
     case 'business':
-      return { transit: 0.18, local: 0.52, destination: 0.3 };
+      return { transit: 0.18, local: 0.52, destination: 0.30 };
     default:
-      return { transit: 0.2, local: 0.5, destination: 0.3 };
+      return { transit: 0.20, local: 0.50, destination: 0.30 };
   }
 }
 
@@ -248,13 +267,27 @@ export function computeFootTrafficLayer(
     destination += w.destination * n;
   }
 
-  transit = clamp01(transit);
-  local = clamp01(local * 0.95);
-  destination = clamp01(destination);
-  const sum = transit + local + destination + 1e-4;
-  const transitShare = transit / sum;
-  const localActiveShare = local / sum;
-  const destinationShare = destination / sum;
+  // ── Flow-share computation (unclamped sums) ──────────────────────────────────
+  // Do NOT clamp each component to [0,1] before normalising.
+  // When 15+ magnets of mixed types are present every component accumulates
+  // well above 1.0, clamp01 flattens all three to exactly 1.0, and after
+  // normalisation every location shows 0.33 / 0.33 / 0.33 — destroying the
+  // signal that distinguishes a transit hub from a tourist destination.
+  // Using raw (floor-at-0) sums and a single normalisation preserves the
+  // relative weight of dominant magnet types.
+  const transitRaw  = Math.max(0, transit);
+  const localRaw    = Math.max(0, local * 0.95);
+  const destRaw     = Math.max(0, destination);
+  const sumRaw      = transitRaw + localRaw + destRaw + 1e-4;
+  const transitShare     = transitRaw / sumRaw;
+  const localActiveShare = localRaw   / sumRaw;
+  const destinationShare = destRaw    / sumRaw;
+
+  // Clamped variants — used only for density/activity labels and boostRaw
+  // to maintain backwards-compatible behaviour for the heatmap and score pipeline.
+  const transitC = clamp01(transit);
+  const localC   = clamp01(local * 0.95);
+  const destC    = clamp01(destination);
 
   let stability01 =
     (gravity.clusterDetected ? 0.38 : 0.12) +
@@ -267,8 +300,8 @@ export function computeFootTrafficLayer(
   const median = distances[Math.floor(distances.length / 2)] ?? 500;
   const concentration01 = clamp01(1 - median / 900);
 
-  const flowVolume01 = clamp01((transit + local + destination) / 2.2);
-  const localPulse01 = clamp01(local + Math.min(destination, local) * 0.5);
+  const flowVolume01 = clamp01((transitC + localC + destC) / 2.2);
+  const localPulse01 = clamp01(localC + Math.min(destC, localC) * 0.5);
 
   const labels = triadLabels(flowVolume01, localPulse01, stability01, destinationShare);
 

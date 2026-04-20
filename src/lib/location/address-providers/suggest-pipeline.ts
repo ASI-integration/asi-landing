@@ -4,6 +4,7 @@ import { googlePlacesAutocomplete } from './suggest-google';
 import { twogisAddressSuggest } from './suggest-2gis';
 import { photonSuggest } from './suggest-photon';
 import { normalizeRuAddressQuery, rerankRuSuggestionsByLocality } from './ru-normalize';
+import { geocodePlainAddressForMarket } from './geocode-pipeline';
 
 function googleMapsKey(): string | null {
   const k =
@@ -108,14 +109,36 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
             normalized_query: normalized,
           };
         }
+      }
+    }
+
+    // Last resort: forward-geocode the normalized query so autocomplete outages
+    // (Photon down, Places empty, etc.) do not hard-block the UI.
+    try {
+      const geo = await geocodePlainAddressForMarket(market, normalized);
+      if (geo.result) {
+        const r = geo.result;
+        const label = (r.displayName ?? trimmed).trim() || trimmed;
+        console.warn(
+          `[address-suggest] fallback=plain_geocode winner=${geo.winner ?? 'none'} market=${market} q=${JSON.stringify(trimmed.slice(0, 80))}`,
+        );
         return {
-          suggestions: [],
-          status: 'no_results',
+          suggestions: [
+            {
+              value: label,
+              lat: String(r.lat),
+              lon: String(r.lon),
+            },
+          ],
+          status: 'ok',
           elapsed_ms: Date.now() - t0,
           raw_query: trimmed,
           normalized_query: normalized,
         };
       }
+    } catch (geoErr) {
+      const m = geoErr instanceof Error ? geoErr.message : String(geoErr);
+      console.warn(`[address-suggest] plain_geocode_last_resort_failed market=${market} ${m}`);
     }
 
     if (!gKey) {

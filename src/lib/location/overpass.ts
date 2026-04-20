@@ -14,6 +14,8 @@ interface QuerySelector {
   filter: string;
   radius: number;
   includeInStrict: boolean;
+  /** When set, query node+way+relation even in strict mode (needed for highways, landuse, runways). */
+  allGeometries?: boolean;
 }
 
 function makeAround(filter: string, radius: number, lat: number, lon: number, allGeometryTypes: boolean): string[] {
@@ -113,13 +115,37 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"tourism"="guest_house"', radius: COMPETITOR_RADIUS, includeInStrict: true },
     { filter: '"tourism"="hostel"',      radius: COMPETITOR_RADIUS, includeInStrict: true },
     { filter: '"tourism"="motel"',       radius: COMPETITOR_RADIUS, includeInStrict: false },
+
+    // ── Neighborhood environment (strict + full geometry — independent of commercial score) ──
+    { filter: '"highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link)$"', radius: 520, includeInStrict: true, allGeometries: true },
+    { filter: '"aeroway"="runway"',       radius: 2600, includeInStrict: true, allGeometries: true },
+    { filter: '"aeroway"="taxiway"',      radius: 900,  includeInStrict: true, allGeometries: true },
+    { filter: '"landuse"="industrial"',  radius: 1100, includeInStrict: true, allGeometries: true },
+    { filter: '"industrial"="warehouse"', radius: 950, includeInStrict: true, allGeometries: true },
+    { filter: '"man_made"="works"',       radius: 1000, includeInStrict: true, allGeometries: true },
+    { filter: '"building"="industrial"', radius: 800,  includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="nightclub"',    radius: 360,  includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="bar"',          radius: 300,  includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="pub"',          radius: 280,  includeInStrict: true, allGeometries: true },
+    { filter: '"railway"="rail"',         radius: 520,  includeInStrict: true, allGeometries: true },
+    // Spatial foundation v1 — barrier + walkable-corridor proxies (strict; light batch)
+    { filter: '"natural"="water"',        radius: 620,  includeInStrict: true, allGeometries: true },
+    { filter: '"waterway"="riverbank"',   radius: 620,  includeInStrict: true, allGeometries: true },
+    { filter: '"landuse"="reservoir"',    radius: 620,  includeInStrict: true, allGeometries: true },
+    {
+      filter: '"highway"~"^(residential|secondary|tertiary|living_street|pedestrian|unclassified|service)$"',
+      radius: 420,
+      includeInStrict: true,
+      allGeometries: true,
+    },
   ];
 
   const parts: string[] = [];
   for (const s of selectors) {
     if (!broad && !s.includeInStrict) continue;
     const radius = Math.max(150, Math.round(s.radius * radiusScale));
-    parts.push(...makeAround(s.filter, radius, lat, lon, broad));
+    const useAllGeom = s.allGeometries ?? broad;
+    parts.push(...makeAround(s.filter, radius, lat, lon, useAllGeom));
   }
 
   return parts;

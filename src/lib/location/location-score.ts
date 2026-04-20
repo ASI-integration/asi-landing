@@ -324,3 +324,38 @@ export function buildLocationScoreOutput(input: {
     recommended_strategy,
   };
 }
+
+/**
+ * Recomputes headline `location_score`, `rating`, income fields, and strategy from a new score.
+ * Breakdown and factor lists stay unchanged (they describe the base commercial model).
+ */
+export function withAdjustedLocationScoreHeadline(
+  output: LocationScoreOutput,
+  newLocationScore: number,
+): LocationScoreOutput {
+  const location_score = clamp(Math.round(newLocationScore), 0, 100);
+  const rating = ratingFromLocationScore(location_score);
+  const recommended_strategy = recommendStrategy({
+    demand_score: output.breakdown.demand_score,
+    seasonality_score: output.breakdown.seasonality_score,
+  });
+  const basePrice = basePriceProxyRUB(location_score);
+  const estimated_monthly_income = incomeByStrategyRUB({
+    basePrice,
+    locationScore: location_score,
+    demandScore: output.breakdown.demand_score,
+    supplyScore: output.breakdown.supply_score,
+  });
+  const income_model = {
+    base_adr_rub: Math.round(computeADR(basePrice, location_score) / 100) * 100,
+    base_occupancy_pct: Math.round(computeOccupancy01(output.breakdown.demand_score, output.breakdown.supply_score) * 100),
+  };
+  return {
+    ...output,
+    location_score,
+    rating,
+    recommended_strategy,
+    estimated_monthly_income,
+    income_model,
+  };
+}

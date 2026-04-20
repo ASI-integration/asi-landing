@@ -1,0 +1,318 @@
+[
+  {
+    "id": "times_square",
+    "label": "Times Square",
+    "lat": 40.758,
+    "lon": -73.9855,
+    "bucket": "strong",
+    "elementCount": 452,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 74,
+      "locationScoreBase": 74,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "commercialNeighborhoodModifier": {
+      "layerEnabled": true,
+      "applied": false,
+      "baseLocationScore": 74,
+      "adjustedLocationScore": 74,
+      "pointsRemoved": 0,
+      "nominalReductionFraction": 0,
+      "concernLevel": "moderate",
+      "neighborhoodConfidence": "high",
+      "osmElementCount": 452,
+      "osmCoverageOkForPenalty": true,
+      "skipReason": "concern_below_elevated",
+      "warningOnlyHighConcernLowConfidence": false,
+      "strongBandFloorApplied": false,
+      "explainEn": "Environment concern is moderate — narrative only; headline commercial score unchanged.",
+      "explainRu": "Нагрузка среды умеренная — только текстовый слой; итоговый коммерческий балл не меняется."
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 32,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "concernLabelRu": "Умеренная нагрузка среды",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.36666666666666664,
+        "aviation01": 0,
+        "nightlife01": 0.875,
+        "transitCorridor01": 0,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Industrial or logistics-related mapped land use nearby.",
+        "Dense late-night venue footprint (nightlife intensity proxy)."
+      ],
+      "reasonsRu": [
+        "Рядом отмечены промышленные или логистические зоны по данным карты.",
+        "Плотная сеть ночных заведений по карте (прокси ночной нагрузки)."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average.",
+      "environmentNarrativeRu": "Коммерческий профиль сильный, среда при этом более напряжённая — полезна проверка шума и транспорта на месте; важен точечный отбор объекта."
+    },
+    "commercialNarrativeEn": "Strong short-term rental location. Supported by Метро (150 m) — metro access — reliable year-round guest flow; Tempo by Hilton New York Times Square (140 m) — quality signal — commercially validated location. A major hotel nearby confirms this as a commercially viable area. Demand is spread across several attraction zones. Competition is high — positioning and differentiation matter.",
+    "error": null,
+    "_mergedAt": "2026-04-18T18:09:00.044Z"
+  },
+  {
+    "id": "kazan_center",
+    "label": "Kazan center (Baumana)",
+    "lat": 55.7963,
+    "lon": 49.1088,
+    "bucket": "strong",
+    "elementCount": 264,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 80,
+      "locationScoreBase": 80,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "commercialNeighborhoodModifier": {
+      "layerEnabled": true,
+      "applied": false,
+      "baseLocationScore": 80,
+      "adjustedLocationScore": 80,
+      "pointsRemoved": 0,
+      "nominalReductionFraction": 0,
+      "concernLevel": "moderate",
+      "neighborhoodConfidence": "high",
+      "osmElementCount": 264,
+      "osmCoverageOkForPenalty": true,
+      "skipReason": "concern_below_elevated",
+      "warningOnlyHighConcernLowConfidence": false,
+      "strongBandFloorApplied": false,
+      "explainEn": "Environment concern is moderate — narrative only; headline commercial score unchanged.",
+      "explainRu": "Нагрузка среды умеренная — только текстовый слой; итоговый коммерческий балл не меняется."
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 30,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "concernLabelRu": "Умеренная нагрузка среды",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.16666666666666666,
+        "aviation01": 0,
+        "nightlife01": 0.4791666666666667,
+        "transitCorridor01": 0.7222222222222222,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Dense late-night venue footprint (nightlife intensity proxy).",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "reasonsRu": [
+        "Плотная сеть ночных заведений по карте (прокси ночной нагрузки).",
+        "Очень плотная сеть остановок — признак оживлённого транзитного коридора."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average.",
+      "environmentNarrativeRu": "Коммерческий профиль сильный, среда при этом более напряжённая — полезна проверка шума и транспорта на месте; важен точечный отбор объекта."
+    },
+    "commercialNarrativeEn": "Strong short-term rental location. Supported by Метро (160 m) — metro access — reliable year-round guest flow; Джузеппе (430 m) — quality signal — commercially validated location. A major hotel nearby confirms this as a commercially viable area. Demand is spread across several attraction zones. Competition is high — positioning and differentiation matter.",
+    "error": null,
+    "_mergedAt": "2026-04-18T18:10:39.929Z"
+  },
+  {
+    "id": "sochi_center",
+    "label": "Sochi city center",
+    "lat": 43.5855,
+    "lon": 39.7231,
+    "bucket": "strong",
+    "elementCount": 129,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 63,
+      "scoreBand": "medium",
+      "locationScore": 62,
+      "locationScoreBase": 65,
+      "locationRating": "viable",
+      "demandType": "mixed"
+    },
+    "commercialNeighborhoodModifier": {
+      "layerEnabled": true,
+      "applied": true,
+      "baseLocationScore": 65,
+      "adjustedLocationScore": 62,
+      "pointsRemoved": 3,
+      "nominalReductionFraction": 0.045,
+      "concernLevel": "elevated",
+      "neighborhoodConfidence": "high",
+      "osmElementCount": 129,
+      "osmCoverageOkForPenalty": true,
+      "skipReason": null,
+      "warningOnlyHighConcernLowConfidence": false,
+      "strongBandFloorApplied": false,
+      "explainEn": "Soft environment-friction adjustment: −3 pts on the headline score (~4.5% nominal, capped) while demand signals stay unchanged.",
+      "explainRu": "Мягкая корректировка по нагрузке среды: −3 к итоговому баллу (ориентир ~4.5%, с ограничением), сигналы спроса не менялись."
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 61,
+      "concernLevel": "elevated",
+      "concernLabelEn": "Elevated concern",
+      "concernLabelRu": "Повышенная нагрузка среды",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0.38315789473684214,
+        "industrial01": 0.9333333333333333,
+        "aviation01": 0,
+        "nightlife01": 0,
+        "transitCorridor01": 0.4444444444444444,
+        "harshUrbanStack01": 0.8333333333333334
+      },
+      "reasonsEn": [
+        "High traffic load near the property (major roads / corridor proxy).",
+        "Industrial or logistics-related mapped land use nearby.",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy.",
+        "Several strong environment stressors stack in the same radius."
+      ],
+      "reasonsRu": [
+        "Высокая транспортная нагрузка рядом с объектом (магистрали и коридоры).",
+        "Рядом отмечены промышленные или логистические зоны по данным карты.",
+        "Очень плотная сеть остановок — признак оживлённого транзитного коридора.",
+        "Несколько сильных факторов нагрузки среды совпадают в одном радиусе."
+      ],
+      "environmentNarrativeEn": "Signals are uneven — environmental quality can change within a few blocks; targeted property selection and a short field check pay off.",
+      "environmentNarrativeRu": "Сигналы неоднородны: возможна неравномерность качества среды внутри района — имеет смысл точечный отбор объекта и короткая полевая проверка."
+    },
+    "commercialNarrativeEn": "Workable location. The surroundings support moderate demand. Key nearby drivers: Автовокзал (870 m) — rail hub — stable transit and business demand; Типография Дория (130 m) — industrial zone — limited STR demand. Demand is spread across several attraction zones. Competition is high — positioning and differentiation matter. Results still depend heavily on positioning and distribution channels.",
+    "error": null,
+    "_mergedAt": "2026-04-18T18:13:06.793Z"
+  },
+  {
+    "id": "lyubertsy",
+    "label": "Lyubertsy (Moscow Oblast — weak suburb)",
+    "lat": 55.6769,
+    "lon": 37.8942,
+    "bucket": "weak",
+    "elementCount": 142,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 96,
+      "scoreBand": "strong",
+      "locationScore": 84,
+      "locationScoreBase": 88,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "commercialNeighborhoodModifier": {
+      "layerEnabled": true,
+      "applied": true,
+      "baseLocationScore": 88,
+      "adjustedLocationScore": 84,
+      "pointsRemoved": 4,
+      "nominalReductionFraction": 0.045,
+      "concernLevel": "elevated",
+      "neighborhoodConfidence": "high",
+      "osmElementCount": 142,
+      "osmCoverageOkForPenalty": true,
+      "skipReason": null,
+      "warningOnlyHighConcernLowConfidence": false,
+      "strongBandFloorApplied": false,
+      "explainEn": "Soft environment-friction adjustment: −4 pts on the headline score (~4.5% nominal, capped) while demand signals stay unchanged.",
+      "explainRu": "Мягкая корректировка по нагрузке среды: −4 к итоговому баллу (ориентир ~4.5%, с ограничением), сигналы спроса не менялись."
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 54,
+      "concernLevel": "elevated",
+      "concernLabelEn": "Elevated concern",
+      "concernLabelRu": "Повышенная нагрузка среды",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0.38315789473684214,
+        "industrial01": 0.5666666666666667,
+        "aviation01": 0.25,
+        "nightlife01": 0,
+        "transitCorridor01": 0.2222222222222222,
+        "harshUrbanStack01": 0.8333333333333334
+      },
+      "reasonsEn": [
+        "High traffic load near the property (major roads / corridor proxy).",
+        "Industrial or logistics-related mapped land use nearby.",
+        "Several strong environment stressors stack in the same radius."
+      ],
+      "reasonsRu": [
+        "Высокая транспортная нагрузка рядом с объектом (магистрали и коридоры).",
+        "Рядом отмечены промышленные или логистические зоны по данным карты.",
+        "Несколько сильных факторов нагрузки среды совпадают в одном радиусе."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average.",
+      "environmentNarrativeRu": "Коммерческий профиль сильный, среда при этом более напряжённая — полезна проверка шума и транспорта на месте; важен точечный отбор объекта."
+    },
+    "commercialNarrativeEn": "Strong short-term rental location. Supported by Мальчики (640 m) — rail hub — stable transit and business demand; Краеведческий музей (40 m) — tourist anchor — consistent leisure demand. Demand is spread across several attraction zones.",
+    "error": null,
+    "_mergedAt": "2026-04-18T18:14:30.354Z"
+  },
+  {
+    "id": "pechatniki",
+    "label": "Pechatniki industrial / logistics (Moscow)",
+    "lat": 55.6882,
+    "lon": 37.6984,
+    "bucket": "contested",
+    "elementCount": 47,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 56,
+      "scoreBand": "medium",
+      "locationScore": 89,
+      "locationScoreBase": 89,
+      "locationRating": "exceptional",
+      "demandType": "business-led"
+    },
+    "commercialNeighborhoodModifier": {
+      "layerEnabled": true,
+      "applied": false,
+      "baseLocationScore": 89,
+      "adjustedLocationScore": 89,
+      "pointsRemoved": 0,
+      "nominalReductionFraction": 0,
+      "concernLevel": "moderate",
+      "neighborhoodConfidence": "high",
+      "osmElementCount": 47,
+      "osmCoverageOkForPenalty": true,
+      "skipReason": "concern_below_elevated",
+      "warningOnlyHighConcernLowConfidence": false,
+      "strongBandFloorApplied": false,
+      "explainEn": "Environment concern is moderate — narrative only; headline commercial score unchanged.",
+      "explainRu": "Нагрузка среды умеренная — только текстовый слой; итоговый коммерческий балл не меняется."
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 37,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "concernLabelRu": "Умеренная нагрузка среды",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.8,
+        "aviation01": 0,
+        "nightlife01": 0,
+        "transitCorridor01": 0.7222222222222222,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Industrial or logistics-related mapped land use nearby.",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "reasonsRu": [
+        "Рядом отмечены промышленные или логистические зоны по данным карты.",
+        "Очень плотная сеть остановок — признак оживлённого транзитного коридора."
+      ],
+      "environmentNarrativeEn": "Several infrastructure cues suggest a busier envelope; comfort often depends on façade line, floor, and glazing rather than the postcode alone.",
+      "environmentNarrativeRu": "Есть несколько признаков более оживлённого контура; комфорт чаще зависит от линии дома, этажа и остекления, а не только от адреса."
+    },
+    "commercialNarrativeEn": "Workable location. The surroundings support moderate demand. Key nearby drivers: Нагатинский Затон (570 m) — metro access — reliable year-round guest flow; Производство (210 m) — industrial zone — limited STR demand. Demand is spread across several attraction zones. Results still depend heavily on positioning and distribution channels.",
+    "error": null,
+    "_mergedAt": "2026-04-18T18:16:00.155Z"
+  }
+]

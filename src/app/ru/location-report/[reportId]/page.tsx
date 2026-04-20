@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
+import { CommercialReportView } from '@/components/location/CommercialReportView';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
-import { isLocationStandaloneReportV1 } from '@/lib/location/standalone-report';
+import { isLocationStandaloneReportV1, isLocationCommercialReport } from '@/lib/location/standalone-report';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,10 @@ export default async function RuLocationReportByIdPage(props: { params: Promise<
   if (entity.locale !== 'ru') {
     // RU-first route: if we ever persist EN here, treat as not found for now.
     return <MissingReport />;
+  }
+
+  if (isLocationCommercialReport(entity.report)) {
+    return <CommercialReportView report={entity.report} />;
   }
 
   if (!isLocationStandaloneReportV1(entity.report)) return <MissingReport />;

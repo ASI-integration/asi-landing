@@ -1,0 +1,254 @@
+[
+  {
+    "id": "lic_queens",
+    "elementCount": 269,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 97,
+      "locationRating": "exceptional",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 21,
+      "concernLevel": "low",
+      "concernLabelEn": "Low concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0,
+        "aviation01": 0,
+        "nightlife01": 0.10416666666666667,
+        "transitCorridor01": 1,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Mapped stressors look moderate overall — environmental load is closer to a typical urban baseline than to a clearly overloaded corridor."
+    },
+    "error": null
+  },
+  {
+    "id": "causeway_bay",
+    "elementCount": 367,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 74,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 25,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0.46315789473684216,
+        "industrial01": 0,
+        "aviation01": 0,
+        "nightlife01": 0.3125,
+        "transitCorridor01": 0,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "High traffic load near the property (major roads / corridor proxy)."
+      ],
+      "environmentNarrativeEn": "Mapped stressors look moderate overall — environmental load is closer to a typical urban baseline than to a clearly overloaded corridor."
+    },
+    "error": null
+  },
+  {
+    "id": "kazan_center",
+    "elementCount": 264,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 80,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 30,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.16666666666666666,
+        "aviation01": 0,
+        "nightlife01": 0.4791666666666667,
+        "transitCorridor01": 0.7222222222222222,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Dense late-night venue footprint (nightlife intensity proxy).",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average."
+    },
+    "error": null
+  },
+  {
+    "id": "el_poblado",
+    "elementCount": 278,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 89,
+      "scoreBand": "strong",
+      "locationScore": 69,
+      "locationRating": "viable",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 47,
+      "concernLevel": "elevated",
+      "concernLabelEn": "Elevated concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.16666666666666666,
+        "aviation01": 0,
+        "nightlife01": 1,
+        "transitCorridor01": 1,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Dense late-night venue footprint (nightlife intensity proxy).",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average."
+    },
+    "error": null
+  },
+  {
+    "id": "miami_brickell",
+    "elementCount": 131,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 92,
+      "locationRating": "exceptional",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 23,
+      "concernLevel": "low",
+      "concernLabelEn": "Low concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.16666666666666666,
+        "aviation01": 0,
+        "nightlife01": 0,
+        "transitCorridor01": 1,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Mapped stressors look moderate overall — environmental load is closer to a typical urban baseline than to a clearly overloaded corridor."
+    },
+    "error": null
+  },
+  {
+    "id": "cannes",
+    "elementCount": 296,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 71,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 29,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.36666666666666664,
+        "aviation01": 0,
+        "nightlife01": 0,
+        "transitCorridor01": 1,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Industrial or logistics-related mapped land use nearby.",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average."
+    },
+    "error": null
+  },
+  {
+    "id": "copacabana",
+    "elementCount": 143,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "locationScore": 79,
+      "locationRating": "strong",
+      "demandType": "mixed"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 23,
+      "concernLevel": "low",
+      "concernLabelEn": "Low concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0.46315789473684216,
+        "industrial01": 0,
+        "aviation01": 0,
+        "nightlife01": 0.20833333333333334,
+        "transitCorridor01": 0,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "High traffic load near the property (major roads / corridor proxy)."
+      ],
+      "environmentNarrativeEn": "Mapped stressors look moderate overall — environmental load is closer to a typical urban baseline than to a clearly overloaded corridor."
+    },
+    "error": null
+  },
+  {
+    "id": "pechatniki",
+    "elementCount": 47,
+    "hadProviderFailure": true,
+    "commercial": {
+      "evergreenIndex": 56,
+      "scoreBand": "medium",
+      "locationScore": 89,
+      "locationRating": "exceptional",
+      "demandType": "business-led"
+    },
+    "neighborhood": {
+      "environmentalFrictionScore": 37,
+      "concernLevel": "moderate",
+      "concernLabelEn": "Moderate concern",
+      "confidence": "high",
+      "breakdown": {
+        "majorRoads01": 0,
+        "industrial01": 0.8,
+        "aviation01": 0,
+        "nightlife01": 0,
+        "transitCorridor01": 0.7222222222222222,
+        "harshUrbanStack01": 0
+      },
+      "reasonsEn": [
+        "Industrial or logistics-related mapped land use nearby.",
+        "Very high transit stop density — busy pedestrian–bus corridor proxy."
+      ],
+      "environmentNarrativeEn": "Several infrastructure cues suggest a busier envelope; comfort often depends on façade line, floor, and glazing rather than the postcode alone."
+    },
+    "error": null
+  }
+]

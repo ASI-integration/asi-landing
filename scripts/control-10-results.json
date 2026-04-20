@@ -1,0 +1,682 @@
+[
+  {
+    "id": 20,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "USA",
+    "city": "Queens NY",
+    "name": "Ozone Park",
+    "lat": 40.6786,
+    "lon": -73.8464,
+    "elementsCount": 52,
+    "evergreenIndex": 93,
+    "scoreBand": "strong",
+    "demandType": "transport-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 20,
+    "rawScoreDebug": 101.2,
+    "rawCappedDebug": 92.7,
+    "scoreBreakdown": {
+      "attraction": 90,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 204,
+        "score": 9.11
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 218,
+        "score": 8.93
+      },
+      {
+        "name": "Rockaway Boulevard",
+        "cat": "metro",
+        "dist": 301,
+        "score": 7.87
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 24,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 8,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 47,
+    "block": "stress",
+    "type": "remote",
+    "country": "Norway",
+    "city": "Tromsø",
+    "name": "Tromsø city center",
+    "lat": 69.6492,
+    "lon": 18.9553,
+    "elementsCount": 172,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 16,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 15,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 60,
+    "rawScoreDebug": 130.7,
+    "rawCappedDebug": 110.4,
+    "scoreBreakdown": {
+      "attraction": 122,
+      "competitorPressure": 3,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Tromsø Gift & Souvenir Shop",
+        "cat": "shopping_major",
+        "dist": 122,
+        "score": 5.65
+      },
+      {
+        "name": "Torgcenteret",
+        "cat": "shopping_major",
+        "dist": 202,
+        "score": 5.08
+      },
+      {
+        "name": "Chasing Lights",
+        "cat": "business",
+        "dist": 4,
+        "score": 4.95
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 21,
+      "railway_station": 1,
+      "entertainment": 3,
+      "shopping_major": 3,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 5,
+      "food": 78
+    }
+  },
+  {
+    "id": 12,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Germany",
+    "city": "Berlin",
+    "name": "Prenzlauer Berg",
+    "lat": 52.538,
+    "lon": 13.4194,
+    "elementsCount": 468,
+    "evergreenIndex": 98,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 18,
+    "competitorCount": 10,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 11,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 11,
+    "rawScoreDebug": 110.8,
+    "rawCappedDebug": 98.5,
+    "scoreBreakdown": {
+      "attraction": 115,
+      "competitorPressure": 15,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Hagen Reischel",
+        "cat": "business",
+        "dist": 17,
+        "score": 4.92
+      },
+      {
+        "name": "Eberswalder Straße",
+        "cat": "metro",
+        "dist": 626,
+        "score": 4.82
+      },
+      {
+        "name": "Camper & Friends",
+        "cat": "business",
+        "dist": 64,
+        "score": 4.77
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 4,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 278,
+      "railway_station": 2,
+      "entertainment": 11,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 4,
+      "food": 147
+    }
+  },
+  {
+    "id": 45,
+    "block": "stress",
+    "type": "rural",
+    "country": "Russia",
+    "city": "Pereslavl-Zalessky",
+    "name": "Переславль-Залесский центр",
+    "lat": 56.7387,
+    "lon": 38.8552,
+    "elementsCount": 55,
+    "evergreenIndex": 85,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 9,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 9,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 6,
+    "rawScoreDebug": 88.3,
+    "rawCappedDebug": 85,
+    "scoreBreakdown": {
+      "attraction": 78,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Mall",
+        "cat": "shopping_major",
+        "dist": 162,
+        "score": 5.37
+      },
+      {
+        "name": "Ваша газета",
+        "cat": "business",
+        "dist": 43,
+        "score": 4.85
+      },
+      {
+        "name": "Ингосстрах-М",
+        "cat": "business",
+        "dist": 57,
+        "score": 4.79
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 45,
+      "railway_station": 0,
+      "entertainment": 2,
+      "shopping_major": 2,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 54,
+    "block": "market",
+    "type": "weak_urban",
+    "country": "Germany",
+    "city": "Berlin",
+    "name": "Wedding district",
+    "lat": 52.5427,
+    "lon": 13.3649,
+    "elementsCount": 115,
+    "evergreenIndex": 90,
+    "scoreBand": "strong",
+    "demandType": "transport-led",
+    "totalMagnets": 10,
+    "competitorCount": 7,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 26,
+    "rawScoreDebug": 96.2,
+    "rawCappedDebug": 89.7,
+    "scoreBreakdown": {
+      "attraction": 100,
+      "competitorPressure": 15,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 41,
+        "score": 11.03
+      },
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 62,
+        "score": 10.85
+      },
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 100,
+        "score": 10.43
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 31,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 1,
+      "major_hotel": 0,
+      "convention": 1,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 4,
+      "food": 44
+    }
+  },
+  {
+    "id": 44,
+    "block": "stress",
+    "type": "rural",
+    "country": "Italy",
+    "city": "Siena",
+    "name": "Siena old town / Tuscany",
+    "lat": 43.3188,
+    "lon": 11.3308,
+    "elementsCount": 86,
+    "evergreenIndex": 96,
+    "scoreBand": "strong",
+    "demandType": "tourism-led",
+    "totalMagnets": 8,
+    "competitorCount": 27,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "rawScoreDebug": 107.3,
+    "rawCappedDebug": 96.4,
+    "scoreBreakdown": {
+      "attraction": 110,
+      "competitorPressure": 15,
+      "clusterBonus": 8,
+      "trafficBoost": 4
+    },
+    "footTrafficTier": "strong",
+    "topMagnets": [
+      {
+        "name": "Triomphe de la Mort XV",
+        "cat": "attraction",
+        "dist": 52,
+        "score": 9.72
+      },
+      {
+        "name": "Croce del Travaglio",
+        "cat": "attraction",
+        "dist": 57,
+        "score": 9.69
+      },
+      {
+        "name": "Museo della Tortura di Siena",
+        "cat": "attraction",
+        "dist": 106,
+        "score": 9.22
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 52,
+      "hospital": 1,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 6,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 91,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Colombia",
+    "city": "Medellín",
+    "name": "El Poblado",
+    "lat": 6.2089,
+    "lon": -75.569,
+    "elementsCount": 172,
+    "evergreenIndex": 83,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 19,
+    "competitorCount": 15,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 3,
+    "rawScoreDebug": 85.2,
+    "rawCappedDebug": 83.1,
+    "scoreBreakdown": {
+      "attraction": 91,
+      "competitorPressure": 15,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Marquetería",
+        "cat": "attraction",
+        "dist": 665,
+        "score": 4.06
+      },
+      {
+        "name": "Tropical Cocktails",
+        "cat": "food",
+        "dist": 40,
+        "score": 3.14
+      },
+      {
+        "name": "Santa Ana Hospital Infantil",
+        "cat": "hospital",
+        "dist": 756,
+        "score": 3.14
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 1,
+      "airport": 5,
+      "attraction": 2,
+      "hospital": 4,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 52,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 6,
+      "stadium": 1,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 81
+    }
+  },
+  {
+    "id": 1,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "USA",
+    "city": "New York",
+    "name": "Times Square",
+    "lat": 40.758,
+    "lon": -73.9855,
+    "elementsCount": 532,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 16,
+    "competitorCount": 34,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 13,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 45,
+    "rawScoreDebug": 166.7,
+    "rawCappedDebug": 132,
+    "scoreBreakdown": {
+      "attraction": 170,
+      "competitorPressure": 15,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 146,
+        "score": 9.87
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 172,
+        "score": 9.53
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 173,
+        "score": 9.53
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 224,
+      "airport": 0,
+      "attraction": 7,
+      "hospital": 1,
+      "major_hotel": 5,
+      "convention": 1,
+      "university": 2,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 215
+    }
+  },
+  {
+    "id": 37,
+    "block": "stress",
+    "type": "beach_resort",
+    "country": "France",
+    "city": "Cannes",
+    "name": "Promenade de la Croisette",
+    "lat": 43.5505,
+    "lon": 7.0178,
+    "elementsCount": 128,
+    "evergreenIndex": 95,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 12,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 12,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 47,
+    "rawScoreDebug": 105.7,
+    "rawCappedDebug": 95.4,
+    "scoreBreakdown": {
+      "attraction": 95,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Théâtre Claude Debussy",
+        "cat": "entertainment",
+        "dist": 46,
+        "score": 4.88
+      },
+      {
+        "name": "Europa",
+        "cat": "business",
+        "dist": 103,
+        "score": 4.58
+      },
+      {
+        "name": "Gray d'Albion",
+        "cat": "shopping_major",
+        "dist": 272,
+        "score": 4.57
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 73,
+      "railway_station": 2,
+      "entertainment": 4,
+      "shopping_major": 2,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 17,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "UK",
+    "city": "London",
+    "name": "Clapham Common",
+    "lat": 51.4614,
+    "lon": -0.14,
+    "elementsCount": 235,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 22,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 14,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 36,
+    "rawScoreDebug": 165,
+    "rawCappedDebug": 131,
+    "scoreBreakdown": {
+      "attraction": 155,
+      "competitorPressure": 1,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Clapham Common",
+        "cat": "metro",
+        "dist": 125,
+        "score": 10.14
+      },
+      {
+        "name": "Clapham Common",
+        "cat": "metro",
+        "dist": 127,
+        "score": 10.12
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 138,
+        "score": 9.97
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 12,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 1,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 83,
+      "railway_station": 5,
+      "entertainment": 4,
+      "shopping_major": 0,
+      "stadium": 19,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 68
+    }
+  }
+]

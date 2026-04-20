@@ -15,7 +15,7 @@ function sourceLabel(usedFallback: boolean | undefined): string {
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
     const { elements, usedFallbackQuery } = await fetchOsmData(lat, lon);
-    const analysis = buildAnalysis(elements, lat, lon);
+    const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: false });
     await cacheSet(lat, lon, analysis, sourceLabel(usedFallbackQuery), elements.length);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -25,16 +25,18 @@ async function fetchAndCache(lat: number, lon: number): Promise<void> {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { lat?: unknown; lon?: unknown };
+    const body = await req.json() as { lat?: unknown; lon?: unknown; spatialFoundation?: unknown };
     const lat = typeof body.lat === 'number' ? body.lat : null;
     const lon = typeof body.lon === 'number' ? body.lon : null;
+    const wantSpatial = body.spatialFoundation === true;
 
     if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       return NextResponse.json({ error: 'lat/lon required' }, { status: 400 });
     }
 
-    // ── Cache check ────────────────────────────────────────────────────────────
-    const cached = await cacheGet(lat, lon);
+    // ── Cache check (residential / default pipeline only) ─────────────────────
+    // Commercial spatial variant mutates magnet scores — never read/write the shared coord cache row.
+    const cached = wantSpatial ? null : await cacheGet(lat, lon);
 
     if (cached) {
       const meta: AnalysisMeta = {
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
         `clusterDetected=${ca.gravityExplanation.clusterDetected} ` +
         `competitorPressure=${ca.gravityExplanation.competitorPressureLevel} ` +
         `usedFallbackQuery=${!!meta.usedFallbackQuery} ` +
+        `spatialFoundation=false ` +
         `cached=true freshness=${cached.freshness}`,
       );
 
@@ -82,9 +85,11 @@ export async function POST(req: NextRequest) {
 
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
     const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
-    const analysis = buildAnalysis(elements, lat, lon);
+    const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: wantSpatial });
     const src = sourceLabel(usedFallbackQuery);
-    await cacheSet(lat, lon, analysis, src, elements.length);
+    if (!wantSpatial) {
+      await cacheSet(lat, lon, analysis, src, elements.length);
+    }
 
     if (usedFallbackQuery) {
       console.warn(`[location-demo-analyze] magnet_provider used_fallback_query count=${elements.length}`);
@@ -120,8 +125,9 @@ export async function POST(req: NextRequest) {
       `audienceFit=${analysis.audienceAnalysis?.audienceFitScore ?? 'n/a'} ` +
       `clusterDetected=${analysis.gravityExplanation.clusterDetected} ` +
       `competitorPressure=${analysis.gravityExplanation.competitorPressureLevel} ` +
-      `usedFallbackQuery=${!!usedFallbackQuery} ` +
-      `cached=false`,
+        `usedFallbackQuery=${!!usedFallbackQuery} ` +
+        `spatialFoundation=${wantSpatial} ` +
+        `cached=false`,
     );
 
     return NextResponse.json({

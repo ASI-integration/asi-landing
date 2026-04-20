@@ -1,0 +1,6696 @@
+[
+  {
+    "id": 1,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "USA",
+    "city": "New York",
+    "name": "Times Square",
+    "lat": 40.758,
+    "lon": -73.9855,
+    "elementsCount": 1011,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 30,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 19,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 75,
+    "scoreBreakdown": {
+      "attraction": 263,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 146,
+        "score": 9.87
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 172,
+        "score": 9.53
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 173,
+        "score": 9.53
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 299,
+      "airport": 2,
+      "attraction": 60,
+      "hospital": 4,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 10,
+      "business": 433,
+      "railway_station": 3,
+      "entertainment": 87,
+      "shopping_major": 14,
+      "stadium": 19,
+      "education_local": 3,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 2,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "Japan",
+    "city": "Tokyo",
+    "name": "Shinjuku Station area",
+    "lat": 35.6896,
+    "lon": 139.6994,
+    "elementsCount": 241,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 22,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 21,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 82,
+    "scoreBreakdown": {
+      "attraction": 237,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "新線新宿",
+        "cat": "metro",
+        "dist": 113,
+        "score": 10.29
+      },
+      {
+        "name": "新宿",
+        "cat": "metro",
+        "dist": 141,
+        "score": 9.94
+      },
+      {
+        "name": "Attraction",
+        "cat": "attraction",
+        "dist": 167,
+        "score": 8.53
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 19,
+      "airport": 0,
+      "attraction": 32,
+      "hospital": 13,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 42,
+      "railway_station": 11,
+      "entertainment": 1,
+      "shopping_major": 26,
+      "stadium": 14,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 3,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "UK",
+    "city": "London",
+    "name": "Covent Garden",
+    "lat": 51.5118,
+    "lon": -0.124,
+    "elementsCount": 1305,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 18,
+    "competitorCount": 106,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 15,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 228,
+    "scoreBreakdown": {
+      "attraction": 193,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Covent Garden",
+        "cat": "metro",
+        "dist": 132,
+        "score": 10.04
+      },
+      {
+        "name": "Covent Garden",
+        "cat": "metro",
+        "dist": 134,
+        "score": 10.02
+      },
+      {
+        "name": "Covent Garden",
+        "cat": "metro",
+        "dist": 143,
+        "score": 9.9
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 112,
+      "airport": 0,
+      "attraction": 116,
+      "hospital": 0,
+      "major_hotel": 25,
+      "convention": 2,
+      "university": 0,
+      "business": 0,
+      "railway_station": 1,
+      "entertainment": 77,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 7,
+      "food": 656
+    }
+  },
+  {
+    "id": 4,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "France",
+    "city": "Paris",
+    "name": "Opéra / Grands Boulevards",
+    "lat": 48.8716,
+    "lon": 2.3297,
+    "elementsCount": 637,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 16,
+    "competitorCount": 245,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 12,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 193,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Rue Scribe",
+        "cat": "metro",
+        "dist": 73,
+        "score": 10.74
+      },
+      {
+        "name": "Rue Auber (Opéra Garnier)",
+        "cat": "metro",
+        "dist": 90,
+        "score": 10.56
+      },
+      {
+        "name": "Rue des Mathurins",
+        "cat": "metro",
+        "dist": 143,
+        "score": 9.91
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 245,
+      "airport": 0,
+      "attraction": 127,
+      "hospital": 0,
+      "major_hotel": 74,
+      "convention": 4,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 8,
+      "shopping_major": 8,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 5,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Старый Арбат",
+    "lat": 55.7485,
+    "lon": 37.5952,
+    "elementsCount": 681,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 24,
+    "competitorCount": 40,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 17,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 21,
+    "scoreBreakdown": {
+      "attraction": 183,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "МОЭК",
+        "cat": "business",
+        "dist": 120,
+        "score": 6.23
+      },
+      {
+        "name": "Rhyme",
+        "cat": "business",
+        "dist": 124,
+        "score": 6.2
+      },
+      {
+        "name": "Многофункциональный центр предоставления государственных и муниципальных услуг района Арбат",
+        "cat": "business",
+        "dist": 146,
+        "score": 6.03
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 20,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 13,
+      "business": 502,
+      "railway_station": 0,
+      "entertainment": 7,
+      "shopping_major": 4,
+      "stadium": 30,
+      "education_local": 2,
+      "shopping_local": 0,
+      "food": 41
+    }
+  },
+  {
+    "id": 6,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "Brazil",
+    "city": "São Paulo",
+    "name": "Praça da Sé",
+    "lat": -23.5505,
+    "lon": -46.6333,
+    "elementsCount": 137,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 15,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 10,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 45,
+    "scoreBreakdown": {
+      "attraction": 145,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Sé",
+        "cat": "metro",
+        "dist": 16,
+        "score": 11.2
+      },
+      {
+        "name": "Centro Cultural Banco do Brasil São Paulo",
+        "cat": "attraction",
+        "dist": 357,
+        "score": 6.42
+      },
+      {
+        "name": "OAB Centro",
+        "cat": "business",
+        "dist": 139,
+        "score": 6.09
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 7,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 72,
+      "railway_station": 2,
+      "entertainment": 1,
+      "shopping_major": 9,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 7,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "Turkey",
+    "city": "Istanbul",
+    "name": "Taksim Meydanı",
+    "lat": 41.0369,
+    "lon": 28.985,
+    "elementsCount": 93,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 15,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 11,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 20,
+    "scoreBreakdown": {
+      "attraction": 130,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Taksim",
+        "cat": "metro",
+        "dist": 136,
+        "score": 10
+      },
+      {
+        "name": "Fransız Konsolosluğu",
+        "cat": "business",
+        "dist": 127,
+        "score": 6.18
+      },
+      {
+        "name": "Turkish Airlines (reseller)",
+        "cat": "business",
+        "dist": 161,
+        "score": 5.92
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 1,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 57,
+      "railway_station": 3,
+      "entertainment": 5,
+      "shopping_major": 7,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 8,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "HongKong",
+    "city": "Hong Kong",
+    "name": "Causeway Bay",
+    "lat": 22.28,
+    "lon": 114.1838,
+    "elementsCount": 320,
+    "fetchError": null,
+    "evergreenIndex": 6,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 8,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 56,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "何洪記粥麵專家",
+        "cat": "food",
+        "dist": 31,
+        "score": 3.16
+      },
+      {
+        "name": "Ming Bistro",
+        "cat": "food",
+        "dist": 31,
+        "score": 3.16
+      },
+      {
+        "name": "Flipper’s",
+        "cat": "food",
+        "dist": 40,
+        "score": 3.14
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 9,
+      "food": 247
+    }
+  },
+  {
+    "id": 9,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "UK",
+    "city": "London",
+    "name": "Canary Wharf financial district",
+    "lat": 51.5054,
+    "lon": -0.0235,
+    "elementsCount": 23,
+    "fetchError": null,
+    "evergreenIndex": 55,
+    "scoreBand": "medium",
+    "demandType": "transport-led",
+    "totalMagnets": 5,
+    "competitorCount": 3,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 57,
+      "competitorPressure": 5,
+      "clusterBonus": 2,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 267,
+        "score": 8.3
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 317,
+        "score": 7.68
+      },
+      {
+        "name": "West Entrance",
+        "cat": "metro",
+        "dist": 331,
+        "score": 7.52
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 18,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 1,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 10,
+    "block": "stress",
+    "type": "strong_urban",
+    "country": "UAE",
+    "city": "Dubai",
+    "name": "Dubai Marina",
+    "lat": 25.0819,
+    "lon": 55.1407,
+    "elementsCount": 12,
+    "fetchError": null,
+    "evergreenIndex": 31,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 5,
+    "competitorCount": 9,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 46,
+      "competitorPressure": 20,
+      "clusterBonus": 4,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Hotel Le Royal Méridien Beach Resort & Spa",
+        "cat": "major_hotel",
+        "dist": 267,
+        "score": 5.53
+      },
+      {
+        "name": "مستشفى الإمارات",
+        "cat": "hospital",
+        "dist": 398,
+        "score": 5.27
+      },
+      {
+        "name": "Five Luxe",
+        "cat": "major_hotel",
+        "dist": 411,
+        "score": 4.43
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 1,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 2,
+      "major_hotel": 6,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 11,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Хамовники",
+    "lat": 55.7299,
+    "lon": 37.5757,
+    "elementsCount": 53,
+    "fetchError": null,
+    "evergreenIndex": 11,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 13,
+    "scoreBreakdown": {
+      "attraction": 8,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Перекресток",
+        "cat": "shopping_local",
+        "dist": 182,
+        "score": 1.25
+      },
+      {
+        "name": "Surf Coffee",
+        "cat": "food",
+        "dist": 19,
+        "score": 0.99
+      },
+      {
+        "name": "Milk&Beans",
+        "cat": "food",
+        "dist": 114,
+        "score": 0.91
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 38
+    }
+  },
+  {
+    "id": 12,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Germany",
+    "city": "Berlin",
+    "name": "Prenzlauer Berg",
+    "lat": 52.538,
+    "lon": 13.4194,
+    "elementsCount": 298,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 14,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 2,
+    "scoreBreakdown": {
+      "attraction": 112,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Hagen Reischel",
+        "cat": "business",
+        "dist": 17,
+        "score": 6.84
+      },
+      {
+        "name": "Camper & Friends",
+        "cat": "business",
+        "dist": 64,
+        "score": 6.62
+      },
+      {
+        "name": "Chrono24",
+        "cat": "business",
+        "dist": 80,
+        "score": 6.52
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 4,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 278,
+      "railway_station": 2,
+      "entertainment": 11,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 13,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "USA",
+    "city": "Brooklyn NY",
+    "name": "Williamsburg",
+    "lat": 40.7128,
+    "lon": -73.9638,
+    "elementsCount": 104,
+    "fetchError": null,
+    "evergreenIndex": 25,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 18,
+    "scoreBreakdown": {
+      "attraction": 20,
+      "competitorPressure": 0,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "South Port",
+        "cat": "food",
+        "dist": 53,
+        "score": 3.11
+      },
+      {
+        "name": "La Superior",
+        "cat": "food",
+        "dist": 85,
+        "score": 3.02
+      },
+      {
+        "name": "Cariño",
+        "cat": "food",
+        "dist": 89,
+        "score": 3
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 84
+    }
+  },
+  {
+    "id": 14,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Turkey",
+    "city": "Istanbul",
+    "name": "Kadıköy",
+    "lat": 40.9905,
+    "lon": 29.0237,
+    "elementsCount": 288,
+    "fetchError": null,
+    "evergreenIndex": 16,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 5,
+    "competitorCount": 9,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 16,
+    "scoreBreakdown": {
+      "attraction": 29,
+      "competitorPressure": 20,
+      "clusterBonus": 4,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Mekan İyi Fikir",
+        "cat": "business",
+        "dist": 429,
+        "score": 3.95
+      },
+      {
+        "name": "Baylan Pastanesi",
+        "cat": "food",
+        "dist": 16,
+        "score": 3.19
+      },
+      {
+        "name": "Viyana Kahvesi",
+        "cat": "food",
+        "dist": 19,
+        "score": 3.18
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 1,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 11,
+      "food": 251
+    }
+  },
+  {
+    "id": 15,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "China",
+    "city": "Beijing",
+    "name": "Chaoyang Park area",
+    "lat": 39.9332,
+    "lon": 116.4669,
+    "elementsCount": 26,
+    "fetchError": null,
+    "evergreenIndex": 25,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 3,
+    "competitorCount": 8,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 39,
+      "competitorPressure": 17,
+      "clusterBonus": 2,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "D2 出口",
+        "cat": "metro",
+        "dist": 358,
+        "score": 7.2
+      },
+      {
+        "name": "A 出口",
+        "cat": "metro",
+        "dist": 380,
+        "score": 6.96
+      },
+      {
+        "name": "D1 出口",
+        "cat": "metro",
+        "dist": 483,
+        "score": 5.94
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 18,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 16,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Argentina",
+    "city": "Buenos Aires",
+    "name": "Palermo",
+    "lat": -34.5763,
+    "lon": -58.4244,
+    "elementsCount": 95,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 14,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 47,
+    "scoreBreakdown": {
+      "attraction": 108,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Palermo",
+        "cat": "metro",
+        "dist": 268,
+        "score": 8.29
+      },
+      {
+        "name": "Médicos Sin Fronteras",
+        "cat": "business",
+        "dist": 258,
+        "score": 5.14
+      },
+      {
+        "name": "CAS - Centro de Atención al Solicitante - Visa USA",
+        "cat": "business",
+        "dist": 265,
+        "score": 5.08
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 4,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 38,
+      "railway_station": 3,
+      "entertainment": 3,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 17,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "UK",
+    "city": "London",
+    "name": "Clapham Common",
+    "lat": 51.4614,
+    "lon": -0.14,
+    "elementsCount": 13,
+    "fetchError": null,
+    "evergreenIndex": 64,
+    "scoreBand": "medium",
+    "demandType": "transport-led",
+    "totalMagnets": 4,
+    "competitorCount": 2,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 64,
+      "competitorPressure": 3,
+      "clusterBonus": 2,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Clapham Common",
+        "cat": "metro",
+        "dist": 125,
+        "score": 10.14
+      },
+      {
+        "name": "Clapham Common",
+        "cat": "metro",
+        "dist": 127,
+        "score": 10.12
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 138,
+        "score": 9.97
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 10,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 18,
+    "block": "stress",
+    "type": "medium_urban",
+    "country": "Spain",
+    "city": "Barcelona",
+    "name": "Eixample",
+    "lat": 41.3951,
+    "lon": 2.1589,
+    "elementsCount": 1492,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 20,
+    "competitorCount": 50,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 16,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 29,
+    "scoreBreakdown": {
+      "attraction": 230,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Rambla Catalunya",
+        "cat": "metro",
+        "dist": 50,
+        "score": 10.96
+      },
+      {
+        "name": "Diagonal",
+        "cat": "metro",
+        "dist": 70,
+        "score": 10.77
+      },
+      {
+        "name": "Rambla Catalunya",
+        "cat": "metro",
+        "dist": 75,
+        "score": 10.72
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 76,
+      "airport": 0,
+      "attraction": 13,
+      "hospital": 1,
+      "major_hotel": 17,
+      "convention": 0,
+      "university": 0,
+      "business": 1312,
+      "railway_station": 2,
+      "entertainment": 8,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 19,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "Russia",
+    "city": "Moscow Oblast",
+    "name": "Люберцы",
+    "lat": 55.6769,
+    "lon": 37.8942,
+    "elementsCount": 18,
+    "fetchError": null,
+    "evergreenIndex": 43,
+    "scoreBand": "weak",
+    "demandType": "tourism-led",
+    "totalMagnets": 7,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 42,
+      "competitorPressure": 2,
+      "clusterBonus": 0,
+      "trafficBoost": 3
+    },
+    "footTrafficTier": "strong",
+    "topMagnets": [
+      {
+        "name": "Краеведческий музей",
+        "cat": "attraction",
+        "dist": 44,
+        "score": 9.79
+      },
+      {
+        "name": "Музей люберецкого техникума",
+        "cat": "attraction",
+        "dist": 675,
+        "score": 4
+      },
+      {
+        "name": "По ленинским местам",
+        "cat": "attraction",
+        "dist": 774,
+        "score": 3.51
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 3,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 4,
+      "food": 10
+    }
+  },
+  {
+    "id": 20,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "USA",
+    "city": "Queens NY",
+    "name": "Ozone Park",
+    "lat": 40.6786,
+    "lon": -73.8464,
+    "elementsCount": 34,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 20,
+    "scoreBreakdown": {
+      "attraction": 90,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Rockaway Boulevard",
+        "cat": "metro",
+        "dist": 301,
+        "score": 7.87
+      },
+      {
+        "name": "88th Street",
+        "cat": "metro",
+        "dist": 452,
+        "score": 6.23
+      },
+      {
+        "name": "Richard H. Lovell, P.C.",
+        "cat": "business",
+        "dist": 169,
+        "score": 5.85
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 6,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 8,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 21,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "France",
+    "city": "Paris suburb",
+    "name": "Évry-Courcouronnes",
+    "lat": 48.6273,
+    "lon": 2.4355,
+    "elementsCount": 22,
+    "fetchError": null,
+    "evergreenIndex": 8,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 16,
+    "scoreBreakdown": {
+      "attraction": 5,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "G20",
+        "cat": "shopping_local",
+        "dist": 414,
+        "score": 0.88
+      },
+      {
+        "name": "O' Ptit Parisien",
+        "cat": "food",
+        "dist": 348,
+        "score": 0.65
+      },
+      {
+        "name": "Restaurant bodrum",
+        "cat": "food",
+        "dist": 359,
+        "score": 0.64
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 5
+    }
+  },
+  {
+    "id": 22,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "India",
+    "city": "Mumbai suburb",
+    "name": "Mira Road",
+    "lat": 19.2855,
+    "lon": 72.8622,
+    "elementsCount": 63,
+    "fetchError": null,
+    "evergreenIndex": 39,
+    "scoreBand": "weak",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 37,
+      "competitorPressure": 1,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "LAQSHYA Institute of Skills Training",
+        "cat": "business",
+        "dist": 504,
+        "score": 3.52
+      },
+      {
+        "name": "Shriram Finance",
+        "cat": "business",
+        "dist": 523,
+        "score": 3.42
+      },
+      {
+        "name": "Navkar",
+        "cat": "business",
+        "dist": 535,
+        "score": 3.36
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 48,
+      "railway_station": 1,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 2
+    }
+  },
+  {
+    "id": 23,
+    "block": "stress",
+    "type": "weak_suburb",
+    "country": "Turkey",
+    "city": "Yalova",
+    "name": "Yalova city center",
+    "lat": 40.6515,
+    "lon": 29.2742,
+    "elementsCount": 79,
+    "fetchError": null,
+    "evergreenIndex": 52,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 47,
+    "scoreBreakdown": {
+      "attraction": 50,
+      "competitorPressure": 1,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "MacroTurk",
+        "cat": "business",
+        "dist": 446,
+        "score": 3.84
+      },
+      {
+        "name": "6. Noter",
+        "cat": "business",
+        "dist": 450,
+        "score": 3.82
+      },
+      {
+        "name": "Yalova 5. Noterliği",
+        "cat": "business",
+        "dist": 545,
+        "score": 3.31
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 1,
+      "business": 25,
+      "railway_station": 3,
+      "entertainment": 1,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 24,
+    "block": "stress",
+    "type": "transport",
+    "country": "Germany",
+    "city": "Frankfurt",
+    "name": "Frankfurt Airport vicinity",
+    "lat": 50.0333,
+    "lon": 8.5706,
+    "elementsCount": 13,
+    "fetchError": null,
+    "evergreenIndex": 20,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 7,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 20,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Zollamt - Abfertigungsstelle CargoCity Süd",
+        "cat": "business",
+        "dist": 862,
+        "score": 2.16
+      },
+      {
+        "name": "QARAT",
+        "cat": "business",
+        "dist": 916,
+        "score": 2.02
+      },
+      {
+        "name": "AF Logistik",
+        "cat": "business",
+        "dist": 959,
+        "score": 1.92
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 3,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 10,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 25,
+    "block": "stress",
+    "type": "transport",
+    "country": "UK",
+    "city": "London",
+    "name": "King's Cross St Pancras",
+    "lat": 51.5308,
+    "lon": -0.1238,
+    "elementsCount": 126,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 15,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 12,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 28,
+    "scoreBreakdown": {
+      "attraction": 139,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "King's Cross St Pancras",
+        "cat": "metro",
+        "dist": 24,
+        "score": 11.16
+      },
+      {
+        "name": "Left Luggage",
+        "cat": "business",
+        "dist": 172,
+        "score": 5.83
+      },
+      {
+        "name": "The Alan Turing Institute",
+        "cat": "business",
+        "dist": 231,
+        "score": 5.36
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 8,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 81,
+      "railway_station": 4,
+      "entertainment": 4,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 26,
+    "block": "stress",
+    "type": "transport",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Внуково (зона аэропорта)",
+    "lat": 55.5985,
+    "lon": 37.2627,
+    "elementsCount": 8,
+    "fetchError": null,
+    "evergreenIndex": 9,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 3,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 9,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "«Внуково-3» VIP терминал",
+        "cat": "airport",
+        "dist": 1383,
+        "score": 1.8
+      },
+      {
+        "name": "«Внуково-1» Международный терминал А",
+        "cat": "airport",
+        "dist": 1523,
+        "score": 1.59
+      },
+      {
+        "name": "Аэропорт",
+        "cat": "railway_station",
+        "dist": 1292,
+        "score": 1.23
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 7,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 1,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 27,
+    "block": "stress",
+    "type": "transport",
+    "country": "UAE",
+    "city": "Dubai",
+    "name": "Dubai Airport vicinity",
+    "lat": 25.2532,
+    "lon": 55.3657,
+    "elementsCount": 15,
+    "fetchError": null,
+    "evergreenIndex": 16,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 2,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 4,
+    "scoreBreakdown": {
+      "attraction": 15,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Concourse B",
+        "cat": "airport",
+        "dist": 668,
+        "score": 4.04
+      },
+      {
+        "name": "Airport",
+        "cat": "airport",
+        "dist": 768,
+        "score": 3.53
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 11,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 28,
+    "block": "stress",
+    "type": "medical",
+    "country": "UK",
+    "city": "London",
+    "name": "Royal London Hospital area",
+    "lat": 51.5194,
+    "lon": -0.0604,
+    "elementsCount": 109,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "transport-led",
+    "totalMagnets": 13,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 19,
+    "scoreBreakdown": {
+      "attraction": 91,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Whitechapel",
+        "cat": "metro",
+        "dist": 46,
+        "score": 11
+      },
+      {
+        "name": "Taj",
+        "cat": "business",
+        "dist": 360,
+        "score": 4.39
+      },
+      {
+        "name": "Kuddus Solicitors",
+        "cat": "business",
+        "dist": 397,
+        "score": 4.14
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 5,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 78,
+      "railway_station": 5,
+      "entertainment": 2,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 29,
+    "block": "stress",
+    "type": "medical",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Сеченовский медицинский кластер",
+    "lat": 55.7356,
+    "lon": 37.5654,
+    "elementsCount": 88,
+    "fetchError": null,
+    "evergreenIndex": 89,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 16,
+    "scoreBreakdown": {
+      "attraction": 78,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "МСМ-групп",
+        "cat": "business",
+        "dist": 87,
+        "score": 6.47
+      },
+      {
+        "name": "Vikilini",
+        "cat": "business",
+        "dist": 315,
+        "score": 4.71
+      },
+      {
+        "name": "Главное Управление ПФР России 10",
+        "cat": "business",
+        "dist": 355,
+        "score": 4.42
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 6,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 63,
+      "railway_station": 1,
+      "entertainment": 2,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 30,
+    "block": "stress",
+    "type": "medical",
+    "country": "USA",
+    "city": "Baltimore",
+    "name": "Johns Hopkins Medical Campus",
+    "lat": 39.2965,
+    "lon": -76.5927,
+    "elementsCount": 165,
+    "fetchError": null,
+    "evergreenIndex": 82,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 13,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 71,
+    "scoreBreakdown": {
+      "attraction": 71,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Johns Hopkins University - East Baltimore Campus",
+        "cat": "university",
+        "dist": 50,
+        "score": 7.3
+      },
+      {
+        "name": "Johns Hopkins University School Of Medicine",
+        "cat": "university",
+        "dist": 451,
+        "score": 4.16
+      },
+      {
+        "name": "​​​Office of Laboratory Support Services",
+        "cat": "business",
+        "dist": 485,
+        "score": 3.62
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 4,
+      "business": 73,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 5,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 12
+    }
+  },
+  {
+    "id": 31,
+    "block": "stress",
+    "type": "convention",
+    "country": "UK",
+    "city": "London",
+    "name": "ExCeL London",
+    "lat": 51.5074,
+    "lon": 0.0328,
+    "elementsCount": 128,
+    "fetchError": null,
+    "evergreenIndex": 53,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 45,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Prince Regent Bus Station",
+        "cat": "railway_station",
+        "dist": 279,
+        "score": 4.52
+      },
+      {
+        "name": "KDD Construction Ltd",
+        "cat": "business",
+        "dist": 467,
+        "score": 3.73
+      },
+      {
+        "name": "Blinky Property Solutions",
+        "cat": "business",
+        "dist": 475,
+        "score": 3.68
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 110,
+      "railway_station": 3,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 15
+    }
+  },
+  {
+    "id": 32,
+    "block": "stress",
+    "type": "convention",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Экспоцентр",
+    "lat": 55.7488,
+    "lon": 37.5341,
+    "elementsCount": 132,
+    "fetchError": null,
+    "evergreenIndex": 18,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 3,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 18,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 8,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Ruski",
+        "cat": "food",
+        "dist": 50,
+        "score": 3.12
+      },
+      {
+        "name": "На свежем воздухе",
+        "cat": "food",
+        "dist": 50,
+        "score": 3.12
+      },
+      {
+        "name": "Правда кофе",
+        "cat": "food",
+        "dist": 65,
+        "score": 3.08
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 4,
+      "food": 107
+    }
+  },
+  {
+    "id": 33,
+    "block": "stress",
+    "type": "convention",
+    "country": "USA",
+    "city": "Las Vegas",
+    "name": "Las Vegas Convention Center",
+    "lat": 36.1293,
+    "lon": -115.1523,
+    "elementsCount": 39,
+    "fetchError": null,
+    "evergreenIndex": 29,
+    "scoreBand": "weak",
+    "demandType": "tourism-led",
+    "totalMagnets": 10,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 26,
+      "competitorPressure": 1,
+      "clusterBonus": 0,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Elvis Presley Museum",
+        "cat": "attraction",
+        "dist": 840,
+        "score": 3.22
+      },
+      {
+        "name": "Vegas Indoor Skydiving",
+        "cat": "attraction",
+        "dist": 920,
+        "score": 2.92
+      },
+      {
+        "name": "XS Nightclub",
+        "cat": "attraction",
+        "dist": 1112,
+        "score": 2.35
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 5,
+      "attraction": 6,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 1,
+      "stadium": 6,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 2
+    }
+  },
+  {
+    "id": 34,
+    "block": "stress",
+    "type": "industrial",
+    "country": "Germany",
+    "city": "Stuttgart",
+    "name": "Stuttgart industrial zone (Bad Cannstatt)",
+    "lat": 48.8073,
+    "lon": 9.2269,
+    "elementsCount": 37,
+    "fetchError": null,
+    "evergreenIndex": 57,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 6,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 3,
+    "scoreBreakdown": {
+      "attraction": 50,
+      "competitorPressure": 0,
+      "clusterBonus": 6,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Höfliger Immobilien",
+        "cat": "business",
+        "dist": 109,
+        "score": 6.31
+      },
+      {
+        "name": "Kraft Reisebüro",
+        "cat": "business",
+        "dist": 225,
+        "score": 5.4
+      },
+      {
+        "name": "Anna Haag Mobil",
+        "cat": "business",
+        "dist": 338,
+        "score": 4.54
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 33,
+      "railway_station": 1,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 35,
+    "block": "stress",
+    "type": "industrial",
+    "country": "Russia",
+    "city": "Moscow",
+    "name": "Печатники (промзона)",
+    "lat": 55.6882,
+    "lon": 37.6984,
+    "elementsCount": 14,
+    "fetchError": null,
+    "evergreenIndex": 7,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 3,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 10,
+    "scoreBreakdown": {
+      "attraction": 4,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Pizzamento",
+        "cat": "food",
+        "dist": 218,
+        "score": 0.79
+      },
+      {
+        "name": "Surf Coffee",
+        "cat": "food",
+        "dist": 252,
+        "score": 0.75
+      },
+      {
+        "name": "Моряк и маяк",
+        "cat": "food",
+        "dist": 258,
+        "score": 0.75
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 4
+    }
+  },
+  {
+    "id": 36,
+    "block": "stress",
+    "type": "industrial",
+    "country": "China",
+    "city": "Zhengzhou",
+    "name": "Zhengzhou Logistics Hub",
+    "lat": 34.7472,
+    "lon": 113.6249,
+    "elementsCount": 19,
+    "fetchError": null,
+    "evergreenIndex": 61,
+    "scoreBand": "medium",
+    "demandType": "transport-led",
+    "totalMagnets": 4,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 3,
+    "scoreBreakdown": {
+      "attraction": 58,
+      "competitorPressure": 1,
+      "clusterBonus": 2,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 142,
+        "score": 9.92
+      },
+      {
+        "name": "绿城广场",
+        "cat": "metro",
+        "dist": 159,
+        "score": 9.7
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 190,
+        "score": 9.3
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 14,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 1
+    }
+  },
+  {
+    "id": 37,
+    "block": "stress",
+    "type": "beach_resort",
+    "country": "France",
+    "city": "Cannes",
+    "name": "Promenade de la Croisette",
+    "lat": 43.5505,
+    "lon": 7.0178,
+    "elementsCount": 42,
+    "fetchError": null,
+    "evergreenIndex": 73,
+    "scoreBand": "strong",
+    "demandType": "tourism-led",
+    "totalMagnets": 6,
+    "competitorCount": 37,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 83,
+      "competitorPressure": 20,
+      "clusterBonus": 6,
+      "trafficBoost": 4
+    },
+    "footTrafficTier": "strong",
+    "topMagnets": [
+      {
+        "name": "Tapis rouge - Red carpet",
+        "cat": "attraction",
+        "dist": 54,
+        "score": 9.71
+      },
+      {
+        "name": "Walk of Fame",
+        "cat": "attraction",
+        "dist": 86,
+        "score": 9.42
+      },
+      {
+        "name": "Grand Auditorium Louis Lumière",
+        "cat": "convention",
+        "dist": 29,
+        "score": 7.42
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 4,
+      "hospital": 0,
+      "major_hotel": 7,
+      "convention": 1,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 38,
+    "block": "stress",
+    "type": "beach_resort",
+    "country": "Thailand",
+    "city": "Pattaya",
+    "name": "Pattaya Beach",
+    "lat": 12.9435,
+    "lon": 100.8825,
+    "elementsCount": 39,
+    "fetchError": null,
+    "evergreenIndex": 31,
+    "scoreBand": "weak",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 16,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 49,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "One Stop Visa & Driving License",
+        "cat": "business",
+        "dist": 291,
+        "score": 4.89
+      },
+      {
+        "name": "Kendo Travel",
+        "cat": "business",
+        "dist": 302,
+        "score": 4.81
+      },
+      {
+        "name": "Tamar Center",
+        "cat": "business",
+        "dist": 476,
+        "score": 3.67
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 7,
+      "railway_station": 4,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 12
+    }
+  },
+  {
+    "id": 39,
+    "block": "stress",
+    "type": "beach_resort",
+    "country": "Brazil",
+    "city": "Rio de Janeiro",
+    "name": "Copacabana beach",
+    "lat": -22.9715,
+    "lon": -43.1822,
+    "elementsCount": 86,
+    "fetchError": null,
+    "evergreenIndex": 36,
+    "scoreBand": "weak",
+    "demandType": "business-led",
+    "totalMagnets": 7,
+    "competitorCount": 74,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 51,
+      "competitorPressure": 20,
+      "clusterBonus": 4,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Oceano Copacabana",
+        "cat": "major_hotel",
+        "dist": 219,
+        "score": 5.95
+      },
+      {
+        "name": "Mercure Rio Boutique Copacabana",
+        "cat": "major_hotel",
+        "dist": 337,
+        "score": 4.96
+      },
+      {
+        "name": "Consulado-Geral do Panamá",
+        "cat": "business",
+        "dist": 357,
+        "score": 4.41
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 9,
+      "convention": 0,
+      "university": 0,
+      "business": 12,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 40,
+    "block": "stress",
+    "type": "beach_resort",
+    "country": "Greece",
+    "city": "Mykonos",
+    "name": "Mykonos Town",
+    "lat": 37.4452,
+    "lon": 25.3281,
+    "elementsCount": 226,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "tourism-led",
+    "totalMagnets": 18,
+    "competitorCount": 69,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 10,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 142,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Attraction",
+        "cat": "attraction",
+        "dist": 79,
+        "score": 9.49
+      },
+      {
+        "name": "Rarity Gallery",
+        "cat": "attraction",
+        "dist": 98,
+        "score": 9.3
+      },
+      {
+        "name": "Rarity Gallery",
+        "cat": "attraction",
+        "dist": 99,
+        "score": 9.29
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 1,
+      "attraction": 7,
+      "hospital": 2,
+      "major_hotel": 3,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 3,
+      "entertainment": 3,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 140
+    }
+  },
+  {
+    "id": 41,
+    "block": "stress",
+    "type": "ski_mountain",
+    "country": "France",
+    "city": "Courchevel",
+    "name": "Courchevel 1850",
+    "lat": 45.4155,
+    "lon": 6.6343,
+    "elementsCount": 17,
+    "fetchError": null,
+    "evergreenIndex": 24,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 3,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 0,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "The Burger Factory",
+        "cat": "food",
+        "dist": 53,
+        "score": 3.11
+      },
+      {
+        "name": "Seasons Courchevel",
+        "cat": "food",
+        "dist": 54,
+        "score": 3.11
+      },
+      {
+        "name": "Le Tremplin",
+        "cat": "food",
+        "dist": 64,
+        "score": 3.08
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 13
+    }
+  },
+  {
+    "id": 42,
+    "block": "stress",
+    "type": "ski_mountain",
+    "country": "Switzerland",
+    "city": "Davos",
+    "name": "Davos Platz",
+    "lat": 46.8026,
+    "lon": 9.8354,
+    "elementsCount": 65,
+    "fetchError": null,
+    "evergreenIndex": 58,
+    "scoreBand": "medium",
+    "demandType": "mixed",
+    "totalMagnets": 15,
+    "competitorCount": 29,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 22,
+    "scoreBreakdown": {
+      "attraction": 69,
+      "competitorPressure": 20,
+      "clusterBonus": 6,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Hilton Garden Inn Davos",
+        "cat": "major_hotel",
+        "dist": 289,
+        "score": 5.35
+      },
+      {
+        "name": "Kongress Hotel",
+        "cat": "major_hotel",
+        "dist": 306,
+        "score": 5.21
+      },
+      {
+        "name": "Kongresszentrum",
+        "cat": "convention",
+        "dist": 376,
+        "score": 4.67
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 2,
+      "hospital": 0,
+      "major_hotel": 7,
+      "convention": 2,
+      "university": 0,
+      "business": 4,
+      "railway_station": 1,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 3,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 2
+    }
+  },
+  {
+    "id": 43,
+    "block": "stress",
+    "type": "ski_mountain",
+    "country": "Russia",
+    "city": "Sochi / Krasnaya Polyana",
+    "name": "Красная Поляна",
+    "lat": 43.6855,
+    "lon": 40.2477,
+    "elementsCount": 17,
+    "fetchError": null,
+    "evergreenIndex": 5,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 10,
+    "competitorPressureLevel": "high",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 6,
+      "competitorPressure": 18,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Магнит",
+        "cat": "shopping_local",
+        "dist": 427,
+        "score": 0.86
+      },
+      {
+        "name": "Джорджио Сулугуни",
+        "cat": "food",
+        "dist": 256,
+        "score": 0.75
+      },
+      {
+        "name": "Патиссон",
+        "cat": "food",
+        "dist": 277,
+        "score": 0.73
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 6
+    }
+  },
+  {
+    "id": 44,
+    "block": "stress",
+    "type": "rural",
+    "country": "Italy",
+    "city": "Siena",
+    "name": "Siena old town / Tuscany",
+    "lat": 43.3188,
+    "lon": 11.3308,
+    "elementsCount": 300,
+    "fetchError": null,
+    "evergreenIndex": 5,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 100,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 2,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Caffetteria Torrefazione Fiorella",
+        "cat": "food",
+        "dist": 6,
+        "score": 3.2
+      },
+      {
+        "name": "Caffè Fiorella",
+        "cat": "food",
+        "dist": 7,
+        "score": 3.2
+      },
+      {
+        "name": "Nuovo Caffè Greco",
+        "cat": "food",
+        "dist": 16,
+        "score": 3.19
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 7,
+      "food": 191
+    }
+  },
+  {
+    "id": 45,
+    "block": "stress",
+    "type": "rural",
+    "country": "Russia",
+    "city": "Pereslavl-Zalessky",
+    "name": "Переславль-Залесский центр",
+    "lat": 56.7387,
+    "lon": 38.8552,
+    "elementsCount": 55,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 9,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 9,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 6,
+    "scoreBreakdown": {
+      "attraction": 96,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Ваша газета",
+        "cat": "business",
+        "dist": 43,
+        "score": 6.73
+      },
+      {
+        "name": "Ингосстрах-М",
+        "cat": "business",
+        "dist": 57,
+        "score": 6.66
+      },
+      {
+        "name": "Нотариус",
+        "cat": "business",
+        "dist": 95,
+        "score": 6.41
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 45,
+      "railway_station": 0,
+      "entertainment": 2,
+      "shopping_major": 2,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 46,
+    "block": "stress",
+    "type": "rural",
+    "country": "France",
+    "city": "Beaune",
+    "name": "Beaune / Burgundy wine region",
+    "lat": 47.026,
+    "lon": 4.8397,
+    "elementsCount": 97,
+    "fetchError": null,
+    "evergreenIndex": 52,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 25,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 42,
+    "scoreBreakdown": {
+      "attraction": 61,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Hostellerie Le Cèdre",
+        "cat": "major_hotel",
+        "dist": 328,
+        "score": 5.03
+      },
+      {
+        "name": "L'Hôtel de Beaune",
+        "cat": "major_hotel",
+        "dist": 343,
+        "score": 4.92
+      },
+      {
+        "name": "Piscine Municipale",
+        "cat": "stadium",
+        "dist": 288,
+        "score": 3.57
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 2,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 4,
+      "convention": 0,
+      "university": 0,
+      "business": 20,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 7,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 47,
+    "block": "stress",
+    "type": "remote",
+    "country": "Norway",
+    "city": "Tromsø",
+    "name": "Tromsø city center",
+    "lat": 69.6492,
+    "lon": 18.9553,
+    "elementsCount": 204,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "tourism-led",
+    "totalMagnets": 23,
+    "competitorCount": 22,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 19,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 52,
+    "scoreBreakdown": {
+      "attraction": 182,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Tromsø domkirke",
+        "cat": "attraction",
+        "dist": 76,
+        "score": 9.52
+      },
+      {
+        "name": "Richard With",
+        "cat": "attraction",
+        "dist": 121,
+        "score": 9.05
+      },
+      {
+        "name": "Enter Adventures",
+        "cat": "attraction",
+        "dist": 153,
+        "score": 8.69
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 3,
+      "attraction": 14,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 0,
+      "business": 11,
+      "railway_station": 0,
+      "entertainment": 5,
+      "shopping_major": 6,
+      "stadium": 4,
+      "education_local": 0,
+      "shopping_local": 6,
+      "food": 81
+    }
+  },
+  {
+    "id": 48,
+    "block": "stress",
+    "type": "remote",
+    "country": "Mongolia",
+    "city": "Ulaanbaatar",
+    "name": "Ulaanbaatar outskirts (ger district)",
+    "lat": 47.8864,
+    "lon": 106.9057,
+    "elementsCount": 78,
+    "fetchError": null,
+    "evergreenIndex": 69,
+    "scoreBand": "medium",
+    "demandType": "mixed",
+    "totalMagnets": 17,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 7,
+    "scoreBreakdown": {
+      "attraction": 67,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Tsagaandarium",
+        "cat": "attraction",
+        "dist": 415,
+        "score": 5.86
+      },
+      {
+        "name": "Golden LUXOR Beauty Clinic",
+        "cat": "hospital",
+        "dist": 512,
+        "score": 4.43
+      },
+      {
+        "name": "\"WHC\" Women's health center",
+        "cat": "hospital",
+        "dist": 628,
+        "score": 3.74
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 9,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 16,
+      "railway_station": 2,
+      "entertainment": 0,
+      "shopping_major": 1,
+      "stadium": 7,
+      "education_local": 0,
+      "shopping_local": 23,
+      "food": 7
+    }
+  },
+  {
+    "id": 49,
+    "block": "stress",
+    "type": "remote",
+    "country": "Australia",
+    "city": "Alice Springs",
+    "name": "Alice Springs center",
+    "lat": -23.7,
+    "lon": 133.8816,
+    "elementsCount": 22,
+    "fetchError": null,
+    "evergreenIndex": 69,
+    "scoreBand": "medium",
+    "demandType": "tourism-led",
+    "totalMagnets": 7,
+    "competitorCount": 2,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 65,
+      "competitorPressure": 6,
+      "clusterBonus": 8,
+      "trafficBoost": 2
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "The Residency",
+        "cat": "attraction",
+        "dist": 151,
+        "score": 8.72
+      },
+      {
+        "name": "The Old Courthouse",
+        "cat": "attraction",
+        "dist": 202,
+        "score": 8.13
+      },
+      {
+        "name": "Stay at Alice Springs",
+        "cat": "major_hotel",
+        "dist": 221,
+        "score": 5.93
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 2,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 16
+    }
+  },
+  {
+    "id": 50,
+    "block": "stress",
+    "type": "small_weak_city",
+    "country": "Russia",
+    "city": "Kostroma",
+    "name": "Кострома центр",
+    "lat": 57.7679,
+    "lon": 40.9272,
+    "elementsCount": 54,
+    "fetchError": null,
+    "evergreenIndex": 77,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 69,
+      "competitorPressure": 0,
+      "clusterBonus": 6,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Глава города Костромы",
+        "cat": "business",
+        "dist": 99,
+        "score": 6.39
+      },
+      {
+        "name": "Дума города Костромы",
+        "cat": "business",
+        "dist": 100,
+        "score": 6.38
+      },
+      {
+        "name": "Глава администрации города Костромы",
+        "cat": "business",
+        "dist": 109,
+        "score": 6.31
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 40,
+      "railway_station": 0,
+      "entertainment": 3,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 51,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Sweden",
+    "city": "Stockholm",
+    "name": "Södermalm",
+    "lat": 59.3162,
+    "lon": 18.071,
+    "elementsCount": 124,
+    "fetchError": null,
+    "evergreenIndex": 40,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 5,
+    "competitorCount": 3,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 4,
+    "scoreBreakdown": {
+      "attraction": 39,
+      "competitorPressure": 6,
+      "clusterBonus": 4,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Crumheaven",
+        "cat": "attraction",
+        "dist": 55,
+        "score": 9.7
+      },
+      {
+        "name": "Il Tempo",
+        "cat": "food",
+        "dist": 33,
+        "score": 3.16
+      },
+      {
+        "name": "Ylias Bistro",
+        "cat": "food",
+        "dist": 69,
+        "score": 3.07
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 7,
+      "food": 109
+    }
+  },
+  {
+    "id": 52,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "France",
+    "city": "Paris",
+    "name": "20ème arrondissement (Père Lachaise)",
+    "lat": 48.8652,
+    "lon": 2.4014,
+    "elementsCount": 39,
+    "fetchError": null,
+    "evergreenIndex": 61,
+    "scoreBand": "medium",
+    "demandType": "transport-led",
+    "totalMagnets": 4,
+    "competitorCount": 3,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 64,
+      "competitorPressure": 7,
+      "clusterBonus": 4,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Mairie du 20e (Hôpital)",
+        "cat": "metro",
+        "dist": 181,
+        "score": 9.42
+      },
+      {
+        "name": "Place Gambetta",
+        "cat": "metro",
+        "dist": 210,
+        "score": 9.04
+      },
+      {
+        "name": "Père Lachaise",
+        "cat": "metro",
+        "dist": 225,
+        "score": 8.84
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 35,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 53,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Poland",
+    "city": "Łódź",
+    "name": "Łódź city center (Piotrkowska St)",
+    "lat": 51.7592,
+    "lon": 19.4553,
+    "elementsCount": 126,
+    "fetchError": null,
+    "evergreenIndex": 82,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 10,
+    "scoreBreakdown": {
+      "attraction": 72,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "The Leader Ship",
+        "cat": "business",
+        "dist": 77,
+        "score": 6.54
+      },
+      {
+        "name": "Kancelaria Adwokacka Chróścielewska & Chróścielewski",
+        "cat": "business",
+        "dist": 94,
+        "score": 6.42
+      },
+      {
+        "name": "iTechArt",
+        "cat": "business",
+        "dist": 105,
+        "score": 6.34
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 111,
+      "railway_station": 0,
+      "entertainment": 5,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 54,
+    "block": "market",
+    "type": "weak_urban",
+    "country": "Germany",
+    "city": "Berlin",
+    "name": "Wedding district",
+    "lat": 52.5427,
+    "lon": 13.3649,
+    "elementsCount": 244,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "transport-led",
+    "totalMagnets": 14,
+    "competitorCount": 8,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 102,
+    "scoreBreakdown": {
+      "attraction": 109,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 41,
+        "score": 11.03
+      },
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 62,
+        "score": 10.85
+      },
+      {
+        "name": "Wedding",
+        "cat": "metro",
+        "dist": 100,
+        "score": 10.43
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 41,
+      "airport": 0,
+      "attraction": 7,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 30,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 56
+    }
+  },
+  {
+    "id": 55,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Italy",
+    "city": "Naples",
+    "name": "Quartieri Spagnoli",
+    "lat": 40.8518,
+    "lon": 14.2463,
+    "elementsCount": 107,
+    "fetchError": null,
+    "evergreenIndex": 5,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 52,
+    "competitorPressureLevel": "high",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 15,
+    "scoreBreakdown": {
+      "attraction": 7,
+      "competitorPressure": 20,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Enne",
+        "cat": "shopping_local",
+        "dist": 344,
+        "score": 0.98
+      },
+      {
+        "name": "Don Vincenzo",
+        "cat": "food",
+        "dist": 122,
+        "score": 0.9
+      },
+      {
+        "name": "Caffè Cantone",
+        "cat": "food",
+        "dist": 133,
+        "score": 0.89
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 38
+    }
+  },
+  {
+    "id": 56,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Slovakia",
+    "city": "Bratislava",
+    "name": "Staré Mesto",
+    "lat": 48.1486,
+    "lon": 17.1077,
+    "elementsCount": 235,
+    "fetchError": null,
+    "evergreenIndex": 80,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 11,
+    "competitorCount": 39,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 26,
+    "scoreBreakdown": {
+      "attraction": 89,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Múzeum polície Slovenskej republiky",
+        "cat": "attraction",
+        "dist": 186,
+        "score": 8.31
+      },
+      {
+        "name": "Múzeum 17. Novembra 1989",
+        "cat": "attraction",
+        "dist": 307,
+        "score": 6.94
+      },
+      {
+        "name": "Múzeum farmácie - lekáreň U červeného raka",
+        "cat": "attraction",
+        "dist": 366,
+        "score": 6.32
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 24,
+      "hospital": 0,
+      "major_hotel": 2,
+      "convention": 0,
+      "university": 2,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 6,
+      "food": 138
+    }
+  },
+  {
+    "id": 57,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "Lithuania",
+    "city": "Vilnius",
+    "name": "Vilnius Old Town",
+    "lat": 54.6872,
+    "lon": 25.2797,
+    "elementsCount": 130,
+    "fetchError": null,
+    "evergreenIndex": 97,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 13,
+    "scoreBreakdown": {
+      "attraction": 86,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "EIGE",
+        "cat": "business",
+        "dist": 55,
+        "score": 6.67
+      },
+      {
+        "name": "Europos informacijos centras",
+        "cat": "business",
+        "dist": 60,
+        "score": 6.64
+      },
+      {
+        "name": "Vengrijos respublikos ambasada",
+        "cat": "business",
+        "dist": 82,
+        "score": 6.5
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 111,
+      "railway_station": 0,
+      "entertainment": 6,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 58,
+    "block": "market",
+    "type": "weak_urban",
+    "country": "Montenegro",
+    "city": "Podgorica",
+    "name": "Podgorica city center",
+    "lat": 42.4414,
+    "lon": 19.2629,
+    "elementsCount": 149,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 20,
+    "competitorCount": 19,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 15,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 15,
+    "scoreBreakdown": {
+      "attraction": 169,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Feniks Medika",
+        "cat": "hospital",
+        "dist": 296,
+        "score": 6.17
+      },
+      {
+        "name": "Hotel Alexandar LUX",
+        "cat": "major_hotel",
+        "dist": 203,
+        "score": 6.08
+      },
+      {
+        "name": "historische Bogenbrücke",
+        "cat": "attraction",
+        "dist": 399,
+        "score": 6.01
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 5,
+      "hospital": 2,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 1,
+      "business": 25,
+      "railway_station": 1,
+      "entertainment": 2,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 8,
+      "food": 70
+    }
+  },
+  {
+    "id": 59,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Romania",
+    "city": "Bucharest",
+    "name": "Floreasca",
+    "lat": 44.4662,
+    "lon": 26.0988,
+    "elementsCount": 13,
+    "fetchError": null,
+    "evergreenIndex": 63,
+    "scoreBand": "medium",
+    "demandType": "tourism-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 62,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Monumentul Eroilor Piloți de Vânătoare",
+        "cat": "attraction",
+        "dist": 451,
+        "score": 5.55
+      },
+      {
+        "name": "Muzeul Memorial \"George Călinescu\"",
+        "cat": "attraction",
+        "dist": 453,
+        "score": 5.53
+      },
+      {
+        "name": "Muzeul Parfumurilor",
+        "cat": "attraction",
+        "dist": 617,
+        "score": 4.34
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 5,
+      "airport": 0,
+      "attraction": 6,
+      "hospital": 1,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 1,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 60,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Malta",
+    "city": "Valletta",
+    "name": "Valletta (Triq ir-Repubblika)",
+    "lat": 35.8989,
+    "lon": 14.5145,
+    "elementsCount": 260,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 11,
+    "competitorCount": 42,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 111,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 2
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Grand Master's Palace",
+        "cat": "attraction",
+        "dist": 48,
+        "score": 9.76
+      },
+      {
+        "name": "Attraction",
+        "cat": "attraction",
+        "dist": 131,
+        "score": 8.95
+      },
+      {
+        "name": "Malta Society of Arts",
+        "cat": "attraction",
+        "dist": 167,
+        "score": 8.53
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 8,
+      "hospital": 2,
+      "major_hotel": 15,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 205
+    }
+  },
+  {
+    "id": 61,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Belarus",
+    "city": "Minsk",
+    "name": "Prospekt Nezavisimosti center",
+    "lat": 53.9006,
+    "lon": 27.559,
+    "elementsCount": 607,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 21,
+    "competitorCount": 6,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 14,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 24,
+    "scoreBreakdown": {
+      "attraction": 186,
+      "competitorPressure": 4,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Нацыянальны акадэмічны тэатр імя Янкі Купалы",
+        "cat": "attraction",
+        "dist": 248,
+        "score": 7.59
+      },
+      {
+        "name": "Філалагічны і эканамічны факультэты БДУ",
+        "cat": "university",
+        "dist": 163,
+        "score": 6.43
+      },
+      {
+        "name": "Галоўнае консульскае ўпраўленне",
+        "cat": "business",
+        "dist": 140,
+        "score": 6.08
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 3,
+      "hospital": 5,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 37,
+      "business": 479,
+      "railway_station": 1,
+      "entertainment": 18,
+      "shopping_major": 1,
+      "stadium": 26,
+      "education_local": 2,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 62,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Croatia",
+    "city": "Zagreb",
+    "name": "Zagreb city center",
+    "lat": 45.815,
+    "lon": 15.9819,
+    "elementsCount": 302,
+    "fetchError": null,
+    "evergreenIndex": 94,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 14,
+    "competitorCount": 33,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 11,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 21,
+    "scoreBreakdown": {
+      "attraction": 103,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Zagrebačka nadbiskupija",
+        "cat": "business",
+        "dist": 121,
+        "score": 6.23
+      },
+      {
+        "name": "Limina",
+        "cat": "business",
+        "dist": 130,
+        "score": 6.16
+      },
+      {
+        "name": "Nadbiskupski pastoralni institut",
+        "cat": "business",
+        "dist": 187,
+        "score": 5.71
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 151,
+      "railway_station": 1,
+      "entertainment": 7,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 87
+    }
+  },
+  {
+    "id": 63,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "Russia",
+    "city": "Kazan",
+    "name": "Казань центр (Баумана)",
+    "lat": 55.7963,
+    "lon": 49.1088,
+    "elementsCount": 91,
+    "fetchError": null,
+    "evergreenIndex": 5,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 20,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 13,
+    "scoreBreakdown": {
+      "attraction": 19,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "fast_food",
+        "cat": "food",
+        "dist": 77,
+        "score": 3.04
+      },
+      {
+        "name": "Кафе от Бахетле",
+        "cat": "food",
+        "dist": 138,
+        "score": 2.84
+      },
+      {
+        "name": "cafe",
+        "cat": "food",
+        "dist": 168,
+        "score": 2.73
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 57
+    }
+  },
+  {
+    "id": 64,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Russia",
+    "city": "Novosibirsk",
+    "name": "Новосибирск центр (Красный проспект)",
+    "lat": 54.989,
+    "lon": 82.904,
+    "elementsCount": 76,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 10,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 102,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Студенческая",
+        "cat": "metro",
+        "dist": 172,
+        "score": 9.54
+      },
+      {
+        "name": "Жилфонд",
+        "cat": "business",
+        "dist": 22,
+        "score": 6.82
+      },
+      {
+        "name": "Tele2",
+        "cat": "business",
+        "dist": 79,
+        "score": 6.52
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 3,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 60,
+      "railway_station": 0,
+      "entertainment": 2,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 65,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Russia",
+    "city": "Yekaterinburg",
+    "name": "Екатеринбург центр (Ленина)",
+    "lat": 56.8389,
+    "lon": 60.6057,
+    "elementsCount": 190,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 14,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 10,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 112,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Площадь 1905 года",
+        "cat": "metro",
+        "dist": 457,
+        "score": 6.18
+      },
+      {
+        "name": "Министерство финансов Свердловской области",
+        "cat": "business",
+        "dist": 165,
+        "score": 5.88
+      },
+      {
+        "name": "БКС Мир инвестиций",
+        "cat": "business",
+        "dist": 255,
+        "score": 5.16
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 3,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 157,
+      "railway_station": 0,
+      "entertainment": 13,
+      "shopping_major": 6,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 66,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Kazakhstan",
+    "city": "Almaty",
+    "name": "Алматы центр (Арбат / Панфилова)",
+    "lat": 43.2551,
+    "lon": 76.9126,
+    "elementsCount": 39,
+    "fetchError": null,
+    "evergreenIndex": 16,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 6,
+    "competitorCount": 6,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 6,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 7,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Здоровье",
+        "cat": "hospital",
+        "dist": 508,
+        "score": 4.45
+      },
+      {
+        "name": "Hospital",
+        "cat": "hospital",
+        "dist": 843,
+        "score": 2.81
+      },
+      {
+        "name": "Алем",
+        "cat": "shopping_local",
+        "dist": 166,
+        "score": 1.28
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 6,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 6,
+      "food": 15
+    }
+  },
+  {
+    "id": 67,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Uzbekistan",
+    "city": "Tashkent",
+    "name": "Ташкент центр (Бродвей)",
+    "lat": 41.2995,
+    "lon": 69.2401,
+    "elementsCount": 62,
+    "fetchError": null,
+    "evergreenIndex": 46,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 13,
+    "competitorCount": 4,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 13,
+    "scoreBreakdown": {
+      "attraction": 45,
+      "competitorPressure": 3,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Oʻzbekiston yozuvchilar uyushmasi",
+        "cat": "business",
+        "dist": 338,
+        "score": 4.54
+      },
+      {
+        "name": "theatre",
+        "cat": "entertainment",
+        "dist": 482,
+        "score": 2.65
+      },
+      {
+        "name": "Industrial Zone",
+        "cat": "business",
+        "dist": 439,
+        "score": 2.14
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 4,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 27,
+      "railway_station": 0,
+      "entertainment": 4,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 10
+    }
+  },
+  {
+    "id": 68,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Azerbaijan",
+    "city": "Baku",
+    "name": "Baku Icherisheher",
+    "lat": 40.4093,
+    "lon": 49.8671,
+    "elementsCount": 31,
+    "fetchError": null,
+    "evergreenIndex": 15,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 3,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 19,
+      "competitorPressure": 5,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "cafe",
+        "cat": "food",
+        "dist": 107,
+        "score": 2.95
+      },
+      {
+        "name": "cafe",
+        "cat": "food",
+        "dist": 176,
+        "score": 2.7
+      },
+      {
+        "name": "Tendir Restoran",
+        "cat": "food",
+        "dist": 195,
+        "score": 2.63
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 9,
+      "food": 19
+    }
+  },
+  {
+    "id": 69,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Georgia",
+    "city": "Tbilisi",
+    "name": "Тбилиси Старый Город",
+    "lat": 41.6941,
+    "lon": 44.8,
+    "elementsCount": 735,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 18,
+    "competitorCount": 245,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 14,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 40,
+    "scoreBreakdown": {
+      "attraction": 163,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "თავისუფლების მონუმენტი",
+        "cat": "attraction",
+        "dist": 147,
+        "score": 8.76
+      },
+      {
+        "name": "საბჭოთა ოკუპაციის მუზეუმი",
+        "cat": "attraction",
+        "dist": 193,
+        "score": 8.23
+      },
+      {
+        "name": "შალვა ამირანაშვილის სახელობის საქართველოს ხელოვნების სახელმწიფო მუზეუმი",
+        "cat": "attraction",
+        "dist": 212,
+        "score": 8
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 109,
+      "hospital": 0,
+      "major_hotel": 11,
+      "convention": 0,
+      "university": 6,
+      "business": 201,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 4,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 130
+    }
+  },
+  {
+    "id": 70,
+    "block": "market",
+    "type": "beach_resort",
+    "country": "Russia",
+    "city": "Sochi",
+    "name": "Сочи центр (Морвокзал)",
+    "lat": 43.5992,
+    "lon": 39.7257,
+    "elementsCount": 40,
+    "fetchError": null,
+    "evergreenIndex": 22,
+    "scoreBand": "weak",
+    "demandType": "tourism-led",
+    "totalMagnets": 7,
+    "competitorCount": 8,
+    "competitorPressureLevel": "high",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 3,
+    "scoreBreakdown": {
+      "attraction": 34,
+      "competitorPressure": 15,
+      "clusterBonus": 0,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Граффити Сочи 2014",
+        "cat": "attraction",
+        "dist": 422,
+        "score": 5.8
+      },
+      {
+        "name": "Слоник",
+        "cat": "attraction",
+        "dist": 619,
+        "score": 4.33
+      },
+      {
+        "name": "Музей боевой славы",
+        "cat": "attraction",
+        "dist": 635,
+        "score": 4.23
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 5,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 21
+    }
+  },
+  {
+    "id": 71,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "India",
+    "city": "Delhi",
+    "name": "Paharganj (Old Delhi tourist)",
+    "lat": 28.645,
+    "lon": 77.209,
+    "elementsCount": 106,
+    "fetchError": null,
+    "evergreenIndex": 85,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 10,
+    "competitorCount": 83,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 6,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 97,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Albero nel muro",
+        "cat": "attraction",
+        "dist": 269,
+        "score": 7.35
+      },
+      {
+        "name": "Snooker tashi",
+        "cat": "attraction",
+        "dist": 401,
+        "score": 6
+      },
+      {
+        "name": "Ramakrishna Ashram Marg Metro Station Gate Number 2",
+        "cat": "metro",
+        "dist": 576,
+        "score": 5.18
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 13,
+      "airport": 0,
+      "attraction": 5,
+      "hospital": 5,
+      "major_hotel": 5,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 72,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "Vietnam",
+    "city": "Hanoi",
+    "name": "Hanoi Old Quarter",
+    "lat": 21.0285,
+    "lon": 105.8542,
+    "elementsCount": 105,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 14,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 11,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 17,
+    "scoreBreakdown": {
+      "attraction": 112,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Hội đồng nhân dân Thành phố Hà Nội",
+        "cat": "business",
+        "dist": 16,
+        "score": 6.84
+      },
+      {
+        "name": "Đại sứ quán Ireland",
+        "cat": "business",
+        "dist": 164,
+        "score": 5.89
+      },
+      {
+        "name": "Đại sứ quán Argentina",
+        "cat": "business",
+        "dist": 169,
+        "score": 5.85
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 61,
+      "railway_station": 3,
+      "entertainment": 3,
+      "shopping_major": 21,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 73,
+    "block": "market",
+    "type": "beach_resort",
+    "country": "S.Korea",
+    "city": "Busan",
+    "name": "Haeundae Beach area",
+    "lat": 35.1587,
+    "lon": 129.16,
+    "elementsCount": 227,
+    "fetchError": null,
+    "evergreenIndex": 80,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 17,
+    "competitorCount": 124,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 8,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 92,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "해운대",
+        "cat": "metro",
+        "dist": 573,
+        "score": 5.2
+      },
+      {
+        "name": "Fairfield by Marriott",
+        "cat": "major_hotel",
+        "dist": 543,
+        "score": 3.63
+      },
+      {
+        "name": "우1동 행정복지센터",
+        "cat": "business",
+        "dist": 494,
+        "score": 3.57
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 4,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 0,
+      "business": 10,
+      "railway_station": 0,
+      "entertainment": 4,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 81
+    }
+  },
+  {
+    "id": 74,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "Malaysia",
+    "city": "Kuala Lumpur",
+    "name": "KLCC / Bukit Bintang",
+    "lat": 3.1578,
+    "lon": 101.7116,
+    "elementsCount": 41,
+    "fetchError": null,
+    "evergreenIndex": 75,
+    "scoreBand": "strong",
+    "demandType": "transport-led",
+    "totalMagnets": 6,
+    "competitorCount": 16,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 89,
+      "competitorPressure": 20,
+      "clusterBonus": 6,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 151,
+        "score": 9.81
+      },
+      {
+        "name": "Petrosains",
+        "cat": "attraction",
+        "dist": 43,
+        "score": 9.8
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 164,
+        "score": 9.64
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 24,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 11,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 75,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Sri Lanka",
+    "city": "Colombo",
+    "name": "Colombo Fort",
+    "lat": 6.9349,
+    "lon": 79.8428,
+    "elementsCount": 47,
+    "fetchError": null,
+    "evergreenIndex": 34,
+    "scoreBand": "weak",
+    "demandType": "tourism-led",
+    "totalMagnets": 7,
+    "competitorCount": 10,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 4,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 2,
+    "scoreBreakdown": {
+      "attraction": 48,
+      "competitorPressure": 20,
+      "clusterBonus": 4,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Old General Post Office Fort",
+        "cat": "attraction",
+        "dist": 143,
+        "score": 8.81
+      },
+      {
+        "name": "Attraction",
+        "cat": "attraction",
+        "dist": 805,
+        "score": 3.37
+      },
+      {
+        "name": "Black Pepper",
+        "cat": "food",
+        "dist": 102,
+        "score": 2.96
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 3,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 29
+    }
+  },
+  {
+    "id": 76,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Nepal",
+    "city": "Kathmandu",
+    "name": "Thamel tourist district",
+    "lat": 27.7156,
+    "lon": 85.3103,
+    "elementsCount": 422,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 22,
+    "competitorCount": 275,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 18,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 7,
+    "scoreBreakdown": {
+      "attraction": 229,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Sagarmatha Bazaar",
+        "cat": "attraction",
+        "dist": 80,
+        "score": 9.48
+      },
+      {
+        "name": "KGH Dream Garden",
+        "cat": "attraction",
+        "dist": 107,
+        "score": 9.2
+      },
+      {
+        "name": "Thamel Chowk",
+        "cat": "attraction",
+        "dist": 176,
+        "score": 8.43
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 16,
+      "hospital": 7,
+      "major_hotel": 8,
+      "convention": 0,
+      "university": 1,
+      "business": 96,
+      "railway_station": 8,
+      "entertainment": 5,
+      "shopping_major": 7,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 77,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Thailand",
+    "city": "Chiang Mai",
+    "name": "Chiang Mai Old City",
+    "lat": 18.788,
+    "lon": 98.986,
+    "elementsCount": 425,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 23,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 9,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 5,
+    "scoreBreakdown": {
+      "attraction": 108,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "เมืองปัญญา",
+        "cat": "business",
+        "dist": 188,
+        "score": 5.7
+      },
+      {
+        "name": "Chiang Mai Thailand Tour Center",
+        "cat": "business",
+        "dist": 234,
+        "score": 5.33
+      },
+      {
+        "name": "Main wall",
+        "cat": "stadium",
+        "dist": 308,
+        "score": 3.46
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 1,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 4,
+      "business": 121,
+      "railway_station": 1,
+      "entertainment": 10,
+      "shopping_major": 3,
+      "stadium": 13,
+      "education_local": 6,
+      "shopping_local": 4,
+      "food": 255
+    }
+  },
+  {
+    "id": 78,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Georgia",
+    "city": "Tbilisi",
+    "name": "Tbilisi Vake district",
+    "lat": 41.7045,
+    "lon": 44.7741,
+    "elementsCount": 117,
+    "fetchError": null,
+    "evergreenIndex": 70,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 10,
+    "competitorCount": 8,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 38,
+    "scoreBreakdown": {
+      "attraction": 81,
+      "competitorPressure": 20,
+      "clusterBonus": 6,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "საქართველოს ეკონომიკა",
+        "cat": "business",
+        "dist": 111,
+        "score": 6.3
+      },
+      {
+        "name": "TMGROUP",
+        "cat": "business",
+        "dist": 130,
+        "score": 6.15
+      },
+      {
+        "name": "საქართველოს ენისა და მეტყველების თერაპევტთა ასოციაცია",
+        "cat": "business",
+        "dist": 220,
+        "score": 5.44
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 1,
+      "airport": 0,
+      "attraction": 3,
+      "hospital": 1,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 66,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 79,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Jordan",
+    "city": "Amman",
+    "name": "Abdoun (West Amman)",
+    "lat": 31.9539,
+    "lon": 35.9106,
+    "elementsCount": 37,
+    "fetchError": null,
+    "evergreenIndex": 66,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 7,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 4,
+    "scoreBreakdown": {
+      "attraction": 56,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "بلدية زهران",
+        "cat": "business",
+        "dist": 61,
+        "score": 6.63
+      },
+      {
+        "name": "Abbassi Law Office",
+        "cat": "business",
+        "dist": 226,
+        "score": 5.4
+      },
+      {
+        "name": "JETT Bus Office",
+        "cat": "business",
+        "dist": 307,
+        "score": 4.77
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 31,
+      "railway_station": 1,
+      "entertainment": 1,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 80,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Lebanon",
+    "city": "Beirut",
+    "name": "Hamra Street",
+    "lat": 33.8937,
+    "lon": 35.4837,
+    "elementsCount": 48,
+    "fetchError": null,
+    "evergreenIndex": 38,
+    "scoreBand": "weak",
+    "demandType": "tourism-led",
+    "totalMagnets": 6,
+    "competitorCount": 35,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 53,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 3
+    },
+    "footTrafficTier": "strong",
+    "topMagnets": [
+      {
+        "name": "Rass Beirut Pharmacy",
+        "cat": "hospital",
+        "dist": 361,
+        "score": 5.58
+      },
+      {
+        "name": "مسجد جميل",
+        "cat": "attraction",
+        "dist": 510,
+        "score": 5.07
+      },
+      {
+        "name": "بناية ناصيف جراحة تجميل الدكتور عماد شحاتة",
+        "cat": "hospital",
+        "dist": 430,
+        "score": 5.02
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 4,
+      "hospital": 8,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 1,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 81,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Oman",
+    "city": "Muscat",
+    "name": "Muscat city center (Ruwi)",
+    "lat": 23.588,
+    "lon": 58.3829,
+    "elementsCount": 16,
+    "fetchError": null,
+    "evergreenIndex": 47,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 8,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 3,
+    "scoreBreakdown": {
+      "attraction": 43,
+      "competitorPressure": 0,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Public Authority for Electricity and Water",
+        "cat": "business",
+        "dist": 224,
+        "score": 5.41
+      },
+      {
+        "name": "الهيئة العامة للكهرباء والمياه",
+        "cat": "business",
+        "dist": 247,
+        "score": 5.22
+      },
+      {
+        "name": "Jal Technology",
+        "cat": "business",
+        "dist": 314,
+        "score": 4.71
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 9,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 2
+    }
+  },
+  {
+    "id": 82,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "Saudi Arabia",
+    "city": "Riyadh",
+    "name": "Olaya business district",
+    "lat": 24.6877,
+    "lon": 46.6855,
+    "elementsCount": 20,
+    "fetchError": null,
+    "evergreenIndex": 56,
+    "scoreBand": "medium",
+    "demandType": "business-led",
+    "totalMagnets": 9,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 1,
+    "scoreBreakdown": {
+      "attraction": 55,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "مكتبة الملك فهد",
+        "cat": "metro",
+        "dist": 315,
+        "score": 7.71
+      },
+      {
+        "name": "شركة المياه الوطنية",
+        "cat": "business",
+        "dist": 181,
+        "score": 5.75
+      },
+      {
+        "name": "بنك البلاد",
+        "cat": "metro",
+        "dist": 996,
+        "score": 3.01
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 2,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 15,
+      "railway_station": 1,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 1,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 83,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "USA",
+    "city": "Chicago",
+    "name": "River North",
+    "lat": 41.8919,
+    "lon": -87.6342,
+    "elementsCount": 262,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 21,
+    "competitorCount": 12,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 12,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 51,
+    "scoreBreakdown": {
+      "attraction": 179,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 274,
+        "score": 8.2
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 275,
+        "score": 8.19
+      },
+      {
+        "name": "Merchandise Mart",
+        "cat": "metro",
+        "dist": 340,
+        "score": 7.41
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 72,
+      "airport": 0,
+      "attraction": 9,
+      "hospital": 0,
+      "major_hotel": 2,
+      "convention": 0,
+      "university": 1,
+      "business": 110,
+      "railway_station": 2,
+      "entertainment": 2,
+      "shopping_major": 3,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 84,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "USA",
+    "city": "Miami",
+    "name": "Brickell",
+    "lat": 25.7551,
+    "lon": -80.1934,
+    "elementsCount": 16,
+    "fetchError": null,
+    "evergreenIndex": 32,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 7,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 9,
+    "scoreBreakdown": {
+      "attraction": 30,
+      "competitorPressure": 1,
+      "clusterBonus": 0,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 910,
+        "score": 3.33
+      },
+      {
+        "name": "Brickell",
+        "cat": "metro",
+        "dist": 988,
+        "score": 3.04
+      },
+      {
+        "name": "Hyatt Centric Brickell Miami",
+        "cat": "major_hotel",
+        "dist": 714,
+        "score": 2.85
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 3,
+      "airport": 1,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 1,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 1
+    }
+  },
+  {
+    "id": 85,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "USA",
+    "city": "Austin TX",
+    "name": "Downtown Austin",
+    "lat": 30.2672,
+    "lon": -97.7431,
+    "elementsCount": 106,
+    "fetchError": null,
+    "evergreenIndex": 23,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 3,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 30,
+    "scoreBreakdown": {
+      "attraction": 18,
+      "competitorPressure": 0,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "My Name Is Joe Coffee",
+        "cat": "food",
+        "dist": 48,
+        "score": 3.12
+      },
+      {
+        "name": "CAVA",
+        "cat": "food",
+        "dist": 84,
+        "score": 3.02
+      },
+      {
+        "name": "Velvet Taco",
+        "cat": "food",
+        "dist": 89,
+        "score": 3.01
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 76
+    }
+  },
+  {
+    "id": 86,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Canada",
+    "city": "Montreal",
+    "name": "Plateau-Mont-Royal",
+    "lat": 45.5249,
+    "lon": -73.5781,
+    "elementsCount": 114,
+    "fetchError": null,
+    "evergreenIndex": 95,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 20,
+    "competitorCount": 7,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 106,
+      "competitorPressure": 12,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Mont-Royal",
+        "cat": "metro",
+        "dist": 278,
+        "score": 8.15
+      },
+      {
+        "name": "L'Original",
+        "cat": "attraction",
+        "dist": 339,
+        "score": 6.6
+      },
+      {
+        "name": "Le Livart",
+        "cat": "attraction",
+        "dist": 562,
+        "score": 4.7
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 7,
+      "airport": 0,
+      "attraction": 6,
+      "hospital": 4,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 45,
+      "railway_station": 1,
+      "entertainment": 9,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 35
+    }
+  },
+  {
+    "id": 87,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "USA",
+    "city": "Las Vegas",
+    "name": "Las Vegas Strip (main)",
+    "lat": 36.1185,
+    "lon": -115.1729,
+    "elementsCount": 28,
+    "fetchError": null,
+    "evergreenIndex": 95,
+    "scoreBand": "strong",
+    "demandType": "tourism-led",
+    "totalMagnets": 11,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 7,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 12,
+    "scoreBreakdown": {
+      "attraction": 83,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Flamingos",
+        "cat": "attraction",
+        "dist": 246,
+        "score": 7.61
+      },
+      {
+        "name": "Madame Tussauds Las Vegas",
+        "cat": "attraction",
+        "dist": 346,
+        "score": 6.53
+      },
+      {
+        "name": "Fall of Atlantis Show",
+        "cat": "attraction",
+        "dist": 491,
+        "score": 5.22
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 6,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 1,
+      "university": 0,
+      "business": 0,
+      "railway_station": 4,
+      "entertainment": 4,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 88,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "USA",
+    "city": "Denver CO",
+    "name": "Cherry Creek",
+    "lat": 39.7175,
+    "lon": -104.952,
+    "elementsCount": 76,
+    "fetchError": null,
+    "evergreenIndex": 96,
+    "scoreBand": "strong",
+    "demandType": "business-led",
+    "totalMagnets": 11,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": true,
+    "clusterSize": 10,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 22,
+    "scoreBreakdown": {
+      "attraction": 85,
+      "competitorPressure": 0,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "The SEO Expert",
+        "cat": "business",
+        "dist": 143,
+        "score": 6.05
+      },
+      {
+        "name": "Nuclear Networking",
+        "cat": "business",
+        "dist": 148,
+        "score": 6.01
+      },
+      {
+        "name": "Action Air Duct",
+        "cat": "business",
+        "dist": 162,
+        "score": 5.91
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 26,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 2,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 1,
+      "food": 25
+    }
+  },
+  {
+    "id": 89,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Peru",
+    "city": "Lima",
+    "name": "Miraflores",
+    "lat": -12.121,
+    "lon": -77.028,
+    "elementsCount": 630,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 22,
+    "competitorCount": 185,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 18,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 21,
+    "scoreBreakdown": {
+      "attraction": 167,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Pasaporte al arte",
+        "cat": "attraction",
+        "dist": 96,
+        "score": 9.32
+      },
+      {
+        "name": "Four Points by Sheraton",
+        "cat": "major_hotel",
+        "dist": 126,
+        "score": 6.75
+      },
+      {
+        "name": "Centro Cultural CCORI WASI",
+        "cat": "attraction",
+        "dist": 419,
+        "score": 5.83
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 5,
+      "hospital": 3,
+      "major_hotel": 16,
+      "convention": 1,
+      "university": 0,
+      "business": 65,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 4,
+      "stadium": 10,
+      "education_local": 0,
+      "shopping_local": 9,
+      "food": 324
+    }
+  },
+  {
+    "id": 90,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Mexico",
+    "city": "Mexico City",
+    "name": "Zona Rosa / Cuauhtémoc",
+    "lat": 19.4284,
+    "lon": -99.1676,
+    "elementsCount": 260,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 26,
+    "competitorCount": 61,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 20,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 11,
+    "scoreBreakdown": {
+      "attraction": 201,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Monumento a la Independencia",
+        "cat": "attraction",
+        "dist": 156,
+        "score": 8.67
+      },
+      {
+        "name": "Casa de Moneda",
+        "cat": "attraction",
+        "dist": 211,
+        "score": 8.02
+      },
+      {
+        "name": "Sheraton María Isabel",
+        "cat": "major_hotel",
+        "dist": 52,
+        "score": 7.29
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 29,
+      "hospital": 8,
+      "major_hotel": 13,
+      "convention": 0,
+      "university": 0,
+      "business": 68,
+      "railway_station": 8,
+      "entertainment": 18,
+      "shopping_major": 8,
+      "stadium": 6,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 42
+    }
+  },
+  {
+    "id": 91,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Colombia",
+    "city": "Medellín",
+    "name": "El Poblado",
+    "lat": 6.2089,
+    "lon": -75.569,
+    "elementsCount": 282,
+    "fetchError": null,
+    "evergreenIndex": 5,
+    "scoreBand": "weak",
+    "demandType": "mixed",
+    "totalMagnets": 4,
+    "competitorCount": 74,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 3,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 20,
+    "scoreBreakdown": {
+      "attraction": 20,
+      "competitorPressure": 20,
+      "clusterBonus": 2,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Osaka",
+        "cat": "food",
+        "dist": 40,
+        "score": 3.14
+      },
+      {
+        "name": "Munchies",
+        "cat": "food",
+        "dist": 94,
+        "score": 2.99
+      },
+      {
+        "name": "Le Bon",
+        "cat": "food",
+        "dist": 104,
+        "score": 2.95
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 5,
+      "food": 183
+    }
+  },
+  {
+    "id": 92,
+    "block": "market",
+    "type": "weak_urban",
+    "country": "Uruguay",
+    "city": "Montevideo",
+    "name": "Ciudad Vieja",
+    "lat": -34.9033,
+    "lon": -56.1882,
+    "elementsCount": 545,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 21,
+    "competitorCount": 12,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": true,
+    "clusterSize": 16,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 126,
+    "scoreBreakdown": {
+      "attraction": 187,
+      "competitorPressure": 12,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Museo del Azulejo",
+        "cat": "attraction",
+        "dist": 123,
+        "score": 9.03
+      },
+      {
+        "name": "Museo del Automóvil Club del Uruguay",
+        "cat": "attraction",
+        "dist": 164,
+        "score": 8.57
+      },
+      {
+        "name": "Fuente de los Candados",
+        "cat": "attraction",
+        "dist": 278,
+        "score": 7.26
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 27,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 12,
+      "business": 264,
+      "railway_station": 2,
+      "entertainment": 21,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 2,
+      "shopping_local": 12,
+      "food": 67
+    }
+  },
+  {
+    "id": 93,
+    "block": "market",
+    "type": "strong_urban",
+    "country": "South Africa",
+    "city": "Johannesburg",
+    "name": "Sandton CBD",
+    "lat": -26.1076,
+    "lon": 28.0567,
+    "elementsCount": 134,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 21,
+    "competitorCount": 21,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 16,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 15,
+    "scoreBreakdown": {
+      "attraction": 175,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Radisson Blu Gautrain",
+        "cat": "major_hotel",
+        "dist": 188,
+        "score": 6.22
+      },
+      {
+        "name": "Sandton Station",
+        "cat": "railway_station",
+        "dist": 52,
+        "score": 6.08
+      },
+      {
+        "name": "Old Mutual Offices",
+        "cat": "business",
+        "dist": 147,
+        "score": 6.03
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 2,
+      "hospital": 1,
+      "major_hotel": 4,
+      "convention": 1,
+      "university": 1,
+      "business": 40,
+      "railway_station": 2,
+      "entertainment": 0,
+      "shopping_major": 1,
+      "stadium": 2,
+      "education_local": 0,
+      "shopping_local": 3,
+      "food": 44
+    }
+  },
+  {
+    "id": 94,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Kenya",
+    "city": "Nairobi",
+    "name": "Westlands",
+    "lat": -1.267,
+    "lon": 36.8085,
+    "elementsCount": 25,
+    "fetchError": null,
+    "evergreenIndex": 12,
+    "scoreBand": "weak",
+    "demandType": "business-led",
+    "totalMagnets": 4,
+    "competitorCount": 1,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 14,
+      "competitorPressure": 2,
+      "clusterBonus": 0,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Bombay Indian Resturant & Night Club;GOAJO KENYA OFFICE",
+        "cat": "business",
+        "dist": 324,
+        "score": 4.64
+      },
+      {
+        "name": "Osteria Westlands",
+        "cat": "food",
+        "dist": 82,
+        "score": 0.95
+      },
+      {
+        "name": "Namaste India Restaurant",
+        "cat": "food",
+        "dist": 170,
+        "score": 0.85
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 1,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 23
+    }
+  },
+  {
+    "id": 95,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Egypt",
+    "city": "Cairo",
+    "name": "Zamalek",
+    "lat": 30.0612,
+    "lon": 31.2195,
+    "elementsCount": 87,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 22,
+    "competitorCount": 13,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 10,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 2,
+    "scoreBreakdown": {
+      "attraction": 123,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "صفاء حجازي",
+        "cat": "metro",
+        "dist": 320,
+        "score": 7.65
+      },
+      {
+        "name": "Attraction",
+        "cat": "attraction",
+        "dist": 442,
+        "score": 5.62
+      },
+      {
+        "name": "Al Masar Art Gallery",
+        "cat": "attraction",
+        "dist": 493,
+        "score": 5.21
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 6,
+      "airport": 0,
+      "attraction": 2,
+      "hospital": 1,
+      "major_hotel": 2,
+      "convention": 0,
+      "university": 0,
+      "business": 40,
+      "railway_station": 2,
+      "entertainment": 4,
+      "shopping_major": 2,
+      "stadium": 13,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 96,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Nigeria",
+    "city": "Lagos",
+    "name": "Victoria Island",
+    "lat": 6.43,
+    "lon": 3.4229,
+    "elementsCount": 183,
+    "fetchError": null,
+    "evergreenIndex": 73,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 16,
+    "competitorCount": 13,
+    "competitorPressureLevel": "medium",
+    "clusterDetected": true,
+    "clusterSize": 9,
+    "demandDistribution": "split",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 76,
+      "competitorPressure": 10,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "The Sphere",
+        "cat": "business",
+        "dist": 193,
+        "score": 3.68
+      },
+      {
+        "name": "UBA",
+        "cat": "business",
+        "dist": 71,
+        "score": 3.62
+      },
+      {
+        "name": "Unity",
+        "cat": "business",
+        "dist": 86,
+        "score": 3.56
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 1,
+      "business": 142,
+      "railway_station": 0,
+      "entertainment": 3,
+      "shopping_major": 1,
+      "stadium": 0,
+      "education_local": 1,
+      "shopping_local": 4,
+      "food": 18
+    }
+  },
+  {
+    "id": 97,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Australia",
+    "city": "Sydney",
+    "name": "Surry Hills",
+    "lat": -33.8862,
+    "lon": 151.2099,
+    "elementsCount": 299,
+    "fetchError": null,
+    "evergreenIndex": 100,
+    "scoreBand": "strong",
+    "demandType": "mixed",
+    "totalMagnets": 23,
+    "competitorCount": 18,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 15,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 63,
+    "scoreBreakdown": {
+      "attraction": 184,
+      "competitorPressure": 20,
+      "clusterBonus": 8,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Exit 5: Chalmers Street",
+        "cat": "metro",
+        "dist": 274,
+        "score": 8.21
+      },
+      {
+        "name": "Exit 5: Chalmers Street",
+        "cat": "metro",
+        "dist": 274,
+        "score": 8.2
+      },
+      {
+        "name": "Exit 5: Chalmers Street",
+        "cat": "metro",
+        "dist": 276,
+        "score": 8.19
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 19,
+      "airport": 0,
+      "attraction": 1,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 1,
+      "business": 103,
+      "railway_station": 4,
+      "entertainment": 3,
+      "shopping_major": 3,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 2,
+      "food": 82
+    }
+  },
+  {
+    "id": 98,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "Australia",
+    "city": "Melbourne",
+    "name": "Fitzroy",
+    "lat": -37.7978,
+    "lon": 144.9793,
+    "elementsCount": 188,
+    "fetchError": null,
+    "evergreenIndex": 59,
+    "scoreBand": "medium",
+    "demandType": "mixed",
+    "totalMagnets": 16,
+    "competitorCount": 13,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "split",
+    "hasMetro": true,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 72,
+      "competitorPressure": 19,
+      "clusterBonus": 6,
+      "trafficBoost": 0
+    },
+    "footTrafficTier": "weak",
+    "topMagnets": [
+      {
+        "name": "Fitzroy",
+        "cat": "metro",
+        "dist": 504,
+        "score": 5.76
+      },
+      {
+        "name": "Bank Australia",
+        "cat": "business",
+        "dist": 138,
+        "score": 3.35
+      },
+      {
+        "name": "Hecho en Mexico",
+        "cat": "food",
+        "dist": 53,
+        "score": 3.11
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 5,
+      "airport": 0,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 1,
+      "convention": 0,
+      "university": 0,
+      "business": 27,
+      "railway_station": 0,
+      "entertainment": 8,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 12,
+      "food": 123
+    }
+  },
+  {
+    "id": 99,
+    "block": "market",
+    "type": "medium_urban",
+    "country": "New Zealand",
+    "city": "Wellington",
+    "name": "Wellington CBD",
+    "lat": -41.2865,
+    "lon": 174.7762,
+    "elementsCount": 58,
+    "fetchError": null,
+    "evergreenIndex": 25,
+    "scoreBand": "weak",
+    "demandType": "transport-led",
+    "totalMagnets": 4,
+    "competitorCount": 0,
+    "competitorPressureLevel": "low",
+    "clusterDetected": false,
+    "clusterSize": 0,
+    "demandDistribution": "concentrated",
+    "hasMetro": true,
+    "stopCount": 47,
+    "scoreBreakdown": {
+      "attraction": 21,
+      "competitorPressure": 0,
+      "clusterBonus": 0,
+      "trafficBoost": 1
+    },
+    "footTrafficTier": "moderate",
+    "topMagnets": [
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 836,
+        "score": 3.65
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 854,
+        "score": 3.56
+      },
+      {
+        "name": "Metro",
+        "cat": "metro",
+        "dist": 899,
+        "score": 3.37
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 10,
+      "airport": 1,
+      "attraction": 0,
+      "hospital": 0,
+      "major_hotel": 0,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  },
+  {
+    "id": 100,
+    "block": "market",
+    "type": "ski_mountain",
+    "country": "New Zealand",
+    "city": "Queenstown",
+    "name": "Queenstown center",
+    "lat": -45.0312,
+    "lon": 168.6626,
+    "elementsCount": 34,
+    "fetchError": null,
+    "evergreenIndex": 50,
+    "scoreBand": "medium",
+    "demandType": "tourism-led",
+    "totalMagnets": 5,
+    "competitorCount": 26,
+    "competitorPressureLevel": "high",
+    "clusterDetected": true,
+    "clusterSize": 5,
+    "demandDistribution": "concentrated",
+    "hasMetro": false,
+    "stopCount": 0,
+    "scoreBreakdown": {
+      "attraction": 60,
+      "competitorPressure": 20,
+      "clusterBonus": 6,
+      "trafficBoost": 4
+    },
+    "footTrafficTier": "strong",
+    "topMagnets": [
+      {
+        "name": "Escape Quest Queenstown",
+        "cat": "attraction",
+        "dist": 281,
+        "score": 7.22
+      },
+      {
+        "name": "Fear Factory",
+        "cat": "attraction",
+        "dist": 335,
+        "score": 6.64
+      },
+      {
+        "name": "IFly Indoor Skydiving",
+        "cat": "attraction",
+        "dist": 407,
+        "score": 5.93
+      }
+    ],
+    "magnetCountByCategory": {
+      "metro": 0,
+      "airport": 0,
+      "attraction": 8,
+      "hospital": 0,
+      "major_hotel": 4,
+      "convention": 0,
+      "university": 0,
+      "business": 0,
+      "railway_station": 0,
+      "entertainment": 0,
+      "shopping_major": 0,
+      "stadium": 0,
+      "education_local": 0,
+      "shopping_local": 0,
+      "food": 0
+    }
+  }
+]

@@ -6,10 +6,14 @@ import {
   CATEGORY_COLOR,
   buildAnalysis,
   buildLocationStandaloneReport,
+  buildCommercialReport,
   getBand,
   formatDist,
   projectToSVG,
   patchLegacyLocationAnalysis,
+  buildCommercialFormatFit,
+  FIT_LEVEL_LABEL_RU,
+  FIT_LEVEL_COLOR,
 } from '@/lib/location';
 import type {
   LocationAnalysis,
@@ -17,6 +21,7 @@ import type {
   Band,
   AnalysisMeta,
   DemandType,
+  NeighborhoodEnvironmentConcernLevel,
 } from '@/lib/location';
 import {
   useLocationTelemetryOptional,
@@ -73,16 +78,34 @@ const RESOLVE_TIMEOUT_MS = 12_000;
 /** Must allow Overpass + server cache work; short timeouts yield `buildAnalysis([])` fallback. */
 const LOCATION_ANALYSIS_FETCH_MS = 55_000;
 
+function truncateForLog(s: string, max = 52): string {
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
 async function fetchAddressSuggestions(
   locale: LocDemoLocale,
   q: string,
+  externalSignal?: AbortSignal,
 ): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), SUGGEST_TIMEOUT_MS);
+  const merged = new AbortController();
+  const extHandler = () => merged.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      const stale = new Error('Stale suggest request');
+      stale.name = 'AbortError';
+      throw stale;
+    }
+    externalSignal.addEventListener('abort', extHandler, { once: true });
+  }
+  const timeoutId = setTimeout(() => merged.abort(), SUGGEST_TIMEOUT_MS);
+  const qLog = truncateForLog(q, 48);
+  console.info('[location-demo] addressSuggest request_start', { locale, qLen: q.length, q: qLog });
   try {
     const res = await fetch(
       `/api/address-suggest?q=${encodeURIComponent(q)}&locale=${locale}`,
-      { signal: controller.signal, cache: 'no-store' },
+      { signal: merged.signal, cache: 'no-store' },
     );
     const data = (await res.json()) as {
       suggestions?: Array<{
@@ -94,9 +117,7 @@ async function fetchAddressSuggestions(
       }>;
       status?: string;
     };
-    if (!res.ok) {
-      return { suggestions: [], status: 'error' };
-    }
+    const pipelineStatus = typeof data.status === 'string' ? data.status : undefined;
     const suggestions: Suggestion[] = (data.suggestions ?? []).map(s => ({
       value: s.value,
       lat: s.lat,
@@ -104,14 +125,28 @@ async function fetchAddressSuggestions(
       placeId: s.placeId,
       twogisItemId: s.twogisItemId,
     }));
-    if (data.status === 'no_key') return { suggestions: [], status: 'no_key' };
-    if (data.status === 'error') return { suggestions: [], status: 'error' };
-    if (suggestions.length === 0) return { suggestions: [], status: 'no_results' };
+    if (!res.ok) {
+      console.warn('[location-demo] addressSuggest http_error', { httpStatus: res.status, pipelineStatus });
+      return { suggestions: [], status: 'error' };
+    }
+    console.info('[location-demo] addressSuggest response', {
+      pipelineStatus,
+      suggestionCount: suggestions.length,
+    });
+    if (pipelineStatus === 'no_key') return { suggestions: [], status: 'no_key' };
+    if (pipelineStatus === 'error') return { suggestions: [], status: 'error' };
+    if (suggestions.length === 0) {
+      return { suggestions: [], status: 'no_results' };
+    }
     return { suggestions, status: 'ok' };
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[location-demo] addressSuggest client_error', { msg, q: qLog });
     return { suggestions: [], status: 'error' };
   } finally {
     clearTimeout(timeoutId);
+    if (externalSignal) externalSignal.removeEventListener('abort', extHandler);
   }
 }
 
@@ -119,12 +154,17 @@ async function fetchLocationAnalysis(
   lat: number,
   lon: number,
   signal?: AbortSignal,
+  opts?: { spatialFoundation?: boolean },
 ): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
   try {
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lon }),
+      body: JSON.stringify({
+        lat,
+        lon,
+        ...(opts?.spatialFoundation ? { spatialFoundation: true } : {}),
+      }),
       signal,
     });
     if (!res.ok) return null;
@@ -207,12 +247,6 @@ function dataFreshnessLabel(meta: AnalysisMeta | null, c: (typeof LOC_COPY)['en'
   if (refreshing && isStale) return c.analysisFreshness.dataUpdating;
   if (isStale) return c.analysisFreshness.snapshotStale;
   return c.analysisFreshness.dataCurrent;
-}
-
-function truncateForLog(s: string, max = 52): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1)}…`;
 }
 
 function emitAnalysisTelemetry(
@@ -552,9 +586,7 @@ function IdleMapPanel({ locale, c }: { locale: LocDemoLocale; c: (typeof LOC_COP
           </div>
           <p className="text-base font-medium text-slate-400">{c.addressPlaceholder}</p>
           <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-            {locale === 'ru'
-              ? 'Анализ начнётся после выбора точного адреса из списка'
-              : 'Analysis starts after you select an exact address from the list'}
+            {c.idleMapAnalysisLead}
           </p>
         </div>
       </div>
@@ -899,12 +931,14 @@ function InfluenceHeatmapPanel({
 function AddressInput({
   onSelect,
   onClear,
+  onDraftChange,
   disabled,
   locale,
   c,
 }: {
   onSelect: (addr: SelectedAddress) => void;
   onClear: () => void;
+  onDraftChange?: (draft: string) => void;
   disabled: boolean;
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
@@ -921,28 +955,49 @@ function AddressInput({
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>('idle');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestAbortRef = useRef<AbortController | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => () => {
+    suggestAbortRef.current?.abort();
+  }, []);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setText(val);
+    onDraftChange?.(val);
     setActiveIdx(-1);
     setResolveFailed(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (val.trim().length >= 2) {
       setFetching(true);
+      suggestAbortRef.current?.abort();
+      const ac = new AbortController();
+      suggestAbortRef.current = ac;
       debounceRef.current = setTimeout(async () => {
         try {
-          const result = await fetchAddressSuggestions(locale, val);
+          const result = await fetchAddressSuggestions(locale, val, ac.signal);
+          if (suggestAbortRef.current !== ac) return;
           setSuggestions(result.suggestions);
           setSuggestStatus(result.status);
           setOpen(result.suggestions.length > 0);
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return;
+          console.warn('[location-demo] addressSuggest unexpected_error', {
+            message: err instanceof Error ? err.message : String(err),
+          });
+          if (suggestAbortRef.current !== ac) return;
+          setSuggestions([]);
+          setSuggestStatus('error');
+          setOpen(false);
         } finally {
-          setFetching(false);
+          if (suggestAbortRef.current === ac) setFetching(false);
         }
       }, 280);
     } else {
+      suggestAbortRef.current?.abort();
+      suggestAbortRef.current = null;
       setSuggestions([]);
       setOpen(false);
       setSuggestStatus('idle');
@@ -957,10 +1012,15 @@ function AddressInput({
       setLocked(true);
       setLockedValue(s.value);
       setText('');
+      onDraftChange?.('');
       setSuggestions([]);
       setOpen(false);
       setSuggestStatus('idle');
       setResolveFailed(false);
+      console.info('[location-demo] addressPick', {
+        value: truncateForLog(s.value, 64),
+        source: s.lat != null && s.lon != null ? 'inline_coords' : 'resolved',
+      });
       onSelect({ value: s.value, lat, lon });
     };
 
@@ -980,6 +1040,11 @@ function AddressInput({
 
     setResolvingPick(true);
     setResolveFailed(false);
+    console.info('[location-demo] addressResolve request_start', {
+      value: truncateForLog(s.value, 64),
+      hasPlaceId: Boolean(s.placeId),
+      hasTwogisId: Boolean(s.twogisItemId),
+    });
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
@@ -1002,12 +1067,15 @@ function AddressInput({
       if (res.ok) {
         const data = (await res.json()) as { lat?: unknown; lon?: unknown };
         if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+          console.info('[location-demo] addressResolve ok', { lat: data.lat, lon: data.lon });
           doSelect(data.lat, data.lon);
           return;
         }
       }
+      console.warn('[location-demo] addressResolve failed', { httpStatus: res.status });
       setResolveFailed(true);
     } catch {
+      console.warn('[location-demo] addressResolve network_error');
       setResolveFailed(true);
     } finally {
       setResolvingPick(false);
@@ -1018,6 +1086,7 @@ function AddressInput({
     setLocked(false);
     setLockedValue('');
     setText('');
+    onDraftChange?.('');
     setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);
@@ -1226,6 +1295,17 @@ function normalizeMetroName(name: string): string {
     .trim();
 }
 
+/**
+ * Categories that are weak lifestyle signals — should not dominate the visible list.
+ * These are capped so strong/medium evergreen magnets stay in front.
+ * Note: food items upgraded to 'medium' by the cluster bonus are not capped.
+ */
+const WEAK_CATEGORY_DISPLAY_CAP: Readonly<Record<string, number>> = {
+  food:            2,
+  shopping_local:  1,
+  education_local: 1,
+};
+
 function getFilteredMagnets(magnets: MagnetItem[], limit: number): MagnetItem[] {
   const filtered = magnets.filter(m => !isStreetNoise(m.name));
 
@@ -1246,7 +1326,22 @@ function getFilteredMagnets(magnets: MagnetItem[], limit: number): MagnetItem[] 
 
   const all = [...metroByStation.values(), ...nonMetro];
   all.sort((a, b) => b.attractionScore - a.attractionScore);
-  return all.slice(0, limit);
+
+  // Apply weak-category display cap: food/local/schools should not crowd out
+  // strong evergreen magnets. Items that were upgraded to 'medium' (e.g. food
+  // cluster bonus) are exempt — they earned their slot through scoring.
+  const weakCounts: Record<string, number> = {};
+  const capped = all.filter(m => {
+    const cap = WEAK_CATEGORY_DISPLAY_CAP[m.categoryId];
+    if (cap === undefined) return true;              // not a capped category
+    if (m.strengthClass !== 'weak') return true;     // cluster-upgraded — keep it
+    const seen = weakCounts[m.categoryId] ?? 0;
+    if (seen >= cap) return false;
+    weakCounts[m.categoryId] = seen + 1;
+    return true;
+  });
+
+  return capped.slice(0, limit);
 }
 
 // ── Score factor generator ────────────────────────────────────────────────────
@@ -1432,6 +1527,100 @@ function CompetitorBreakdownBlock({
           {level === 'high' ? '↓ ' : '↑ '}{verdictNote}
         </p>
       )}
+    </div>
+  );
+}
+
+function isEnvironmentMapCoverageFootnote(line: string): boolean {
+  const l = line.toLowerCase();
+  return (
+    l.includes('coverage confidence') ||
+    l.includes('map coverage') ||
+    (l.includes('confidence') && (l.includes('indicative') || l.includes('edge cases'))) ||
+    l.includes('уверенност') ||
+    l.includes('полнота карты') ||
+    l.includes('ориентировочн')
+  );
+}
+
+function envConcernStyles(level: NeighborhoodEnvironmentConcernLevel): { bar: string; badge: string } {
+  switch (level) {
+    case 'low':
+      return { bar: 'bg-emerald-500/80', badge: 'text-emerald-400/90 border-emerald-500/35' };
+    case 'moderate':
+      return { bar: 'bg-amber-500/85', badge: 'text-amber-300/95 border-amber-500/35' };
+    case 'elevated':
+      return { bar: 'bg-orange-500/85', badge: 'text-orange-300/95 border-orange-500/35' };
+    case 'high':
+      return { bar: 'bg-rose-500/85', badge: 'text-rose-300/95 border-rose-500/35' };
+    default:
+      return { bar: 'bg-slate-500', badge: 'text-slate-400 border-slate-600/40' };
+  }
+}
+
+function NeighborhoodEnvironmentPanel({
+  analysis,
+  locale,
+  c,
+}: {
+  analysis: LocationAnalysis;
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
+}) {
+  const ne = analysis.neighborhoodEnvironment;
+  if (!ne) return null;
+  const reasons = locale === 'ru' ? ne.reasonsRu : ne.reasonsEn;
+  const label = locale === 'ru' ? ne.concernLabelRu : ne.concernLabelEn;
+  const narrative = locale === 'ru' ? ne.environmentNarrativeRu : ne.environmentNarrativeEn;
+  const styles = envConcernStyles(ne.concernLevel);
+  const score = ne.environmentalFrictionScore;
+
+  const coverageNotes = reasons.filter(isEnvironmentMapCoverageFootnote);
+  const substantiveReasons = reasons.filter(line => !isEnvironmentMapCoverageFootnote(line));
+  const keyReasons = substantiveReasons.slice(0, 4);
+  const coverageLine = coverageNotes.join(' ');
+
+  return (
+    <div className="px-5 py-4 border-b border-slate-800/40 bg-slate-950/40">
+      <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-1">
+        {c.envBlockTitle}
+      </p>
+      <p className="text-[13px] text-slate-600 leading-snug mb-3">{c.envLayerLead}</p>
+      <div className="flex flex-wrap items-end gap-3 mb-2">
+        <div>
+          <p className="text-[11px] text-slate-500 uppercase tracking-[0.14em] mb-0.5">{c.envLayerScoreLabel}</p>
+          <p className="text-[24px] font-bold tabular-nums text-slate-100 leading-none">{score}</p>
+        </div>
+        <span
+          className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-[13px] font-semibold ${styles.badge}`}
+        >
+          {label}
+        </span>
+        <span className="text-[12px] text-slate-600 ml-auto max-w-[min(100%,220px)] text-right leading-snug">
+          {c.envConfidence(ne.confidence)}
+        </span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-slate-800/80 overflow-hidden mb-3">
+        <div className={`h-full rounded-full transition-all ${styles.bar}`} style={{ width: `${score}%` }} />
+      </div>
+      {keyReasons.length > 0 ? (
+        <ul className="space-y-1.5 mb-3">
+          {keyReasons.map((line, i) => (
+            <li key={i} className="flex items-start gap-2 text-[14px] text-slate-400 leading-snug">
+              <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/70" />
+              {line}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {coverageLine ? (
+        <p className="text-[12px] text-slate-600 leading-snug mb-3">{coverageLine}</p>
+      ) : null}
+      {narrative ? (
+        <p className="text-[13px] text-slate-500 leading-snug border-t border-slate-800/35 pt-3">
+          {narrative}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1664,6 +1853,8 @@ function ASIPanel({
           </div>
         );
       })()}
+
+      <NeighborhoodEnvironmentPanel analysis={analysis} locale={locale} c={c} />
 
       {/* Audience reasoning — why this audience was determined */}
       {(() => {
@@ -2142,13 +2333,197 @@ function ASIPanel({
   );
 }
 
+// ── Commercial mode components ─────────────────────────────────────────────────
+
+function CommercialFlowBlock({ analysis, locale }: { analysis: LocationAnalysis; locale: LocDemoLocale }) {
+  const ft = analysis.footTraffic;
+  const { transitShare, localActiveShare, destinationShare } = ft.transitVsTarget;
+
+  let conclusion: string;
+  if (destinationShare >= 0.45)
+    conclusion = 'У точки есть сильный целевой поток — люди приходят сюда намеренно.';
+  else if (transitShare >= 0.50)
+    conclusion = 'В локации преобладает транзитный поток — высокая проходимость, но низкая задерживаемость.';
+  else if (localActiveShare >= 0.40)
+    conclusion = 'Активная локальная аудитория — жители и работающие рядом составляют основу потока.';
+  else
+    conclusion = 'Поток смешанный: часть людей проходит транзитом, часть приходит целенаправленно.';
+
+  const bars: Array<{ label: string; share: number; color: string; desc: string }> = [
+    { label: 'Транзитный', share: transitShare, color: 'bg-indigo-400', desc: 'Проходящие мимо без намерения остановиться' },
+    { label: 'Локальный', share: localActiveShare, color: 'bg-amber-400', desc: 'Жители и работающие рядом' },
+    { label: 'Целевой', share: destinationShare, color: 'bg-emerald-400', desc: 'Приходящие в эту зону с целью' },
+  ];
+
+  return (
+    <div className="px-5 py-5 border-b border-slate-800/40">
+      <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-4">Структура потока</p>
+      <div className="space-y-4">
+        {bars.map(b => (
+          <div key={b.label} className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] text-slate-400">{b.label}</span>
+              <span className="text-[13px] font-semibold text-slate-200">{Math.round(b.share * 100)}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${b.color}`}
+                style={{ width: `${Math.round(b.share * 100)}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-slate-600">{b.desc}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 p-3 rounded-xl bg-slate-800/30 border border-slate-700/30">
+        <p className="text-[13px] text-slate-300">{conclusion}</p>
+      </div>
+    </div>
+  );
+}
+
+function CommercialFormatFitBlock({ analysis }: { analysis: LocationAnalysis }) {
+  const fit = buildCommercialFormatFit(analysis);
+  const topEntries = fit.entries.filter(e => e.fitLevel === 'high' || e.fitLevel === 'medium').slice(0, 3);
+  const allEntries = fit.entries;
+
+  return (
+    <div className="px-5 py-5 border-b border-slate-800/40">
+      <div className="flex items-baseline justify-between mb-4">
+        <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em]">Форматный потенциал</p>
+        <span className="text-[12px] text-slate-500">{fit.overallVerdictLabelRu}</span>
+      </div>
+      <div className="space-y-3">
+        {allEntries.map(entry => (
+          <div key={entry.format} className="flex items-start justify-between gap-3">
+            <span className="text-[13px] text-slate-300 leading-snug">{entry.formatLabelRu}</span>
+            <span className={`text-[12px] font-semibold shrink-0 ${FIT_LEVEL_COLOR[entry.fitLevel]}`}>
+              {FIT_LEVEL_LABEL_RU[entry.fitLevel]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CommercialASIPanel({
+  analysis,
+  address,
+  animated,
+  meta,
+  locale,
+  c,
+}: {
+  analysis: LocationAnalysis;
+  address: string;
+  animated: boolean;
+  meta: AnalysisMeta | null;
+  locale: LocDemoLocale;
+  c: (typeof LOC_COPY)['en'];
+}) {
+  const router = useRouter();
+  const band = getBand(analysis.evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 30);
+    return () => clearTimeout(t);
+  }, []);
+
+  const fit = buildCommercialFormatFit(analysis);
+  const verdictColorClass =
+    fit.overallVerdict === 'strong' ? 'text-emerald-400' :
+    fit.overallVerdict === 'selective' ? 'text-amber-400' :
+    fit.overallVerdict === 'weak' ? 'text-orange-400' :
+    'text-slate-500';
+
+  function openCommercialReport() {
+    (async () => {
+      const report = buildCommercialReport({ address, analysis });
+      try {
+        const res = await fetch('/api/location-standalone-report', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ locale: 'ru', report }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
+        router.push(`/ru/location-report/${json.reportId}`);
+      } catch {
+        router.push('/ru/location-report');
+      }
+    })();
+  }
+
+  return (
+    <div
+      className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(10px)',
+        transition: 'opacity 0.4s ease, transform 0.4s ease',
+      }}
+    >
+      {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
+
+      {/* Header KPIs */}
+      <div className="grid grid-cols-2 border-b border-slate-800/60">
+        <div className="flex flex-col items-center justify-center gap-1 p-5 border-r border-slate-800/40">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">Индекс</p>
+          <EvergreenRing index={analysis.evergreenIndex} band={band} animated={animated} copy={c} />
+        </div>
+        <div className="flex flex-col justify-center gap-0.5 p-5">
+          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">Потенциал</p>
+          <p className={`text-[20px] font-bold leading-tight ${verdictColorClass}`}>
+            {fit.overallVerdictLabelRu}
+          </p>
+          <p className="text-[12px] text-slate-500 mt-0.5">
+            {analysis.magnets.length} объектов · {analysis.demandType === 'business-led' ? 'деловой' : analysis.demandType === 'tourism-led' ? 'туристический' : analysis.demandType === 'transport-led' ? 'транзитный' : 'смешанный'} спрос
+          </p>
+        </div>
+      </div>
+
+      {/* Flow block */}
+      <CommercialFlowBlock analysis={analysis} locale={locale} />
+
+      {/* Format fit matrix */}
+      <CommercialFormatFitBlock analysis={analysis} />
+
+      {/* CTA */}
+      <div className="px-5 py-5">
+        <button
+          type="button"
+          onClick={openCommercialReport}
+          className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        >
+          Открыть пространственный отчёт
+        </button>
+        <p className="mt-2 text-[11px] text-slate-600 text-center">
+          Детальный анализ · структура потока · форматная матрица · барьеры
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLocale }) {
+export type LocationAnalysisMode = 'residential' | 'commercial';
+
+export function LocationIntelligenceDemo({
+  locale = 'en',
+  initialMode = 'residential',
+}: {
+  locale?: LocDemoLocale;
+  initialMode?: LocationAnalysisMode;
+}) {
   const c = LOC_COPY[locale];
+  const router = useRouter();
   const locTel = useLocationTelemetryOptional();
   const locTelRef = useRef(locTel);
   locTelRef.current = locTel;
+  const [mode, setMode] = useState<LocationAnalysisMode>(initialMode);
   const [selected, setSelected] = useState<SelectedAddress | null>(null);
   const [phase, setPhase] = useState<'idle' | 'loading' | 'result'>('idle');
   const [step, setStep] = useState(0);
@@ -2156,6 +2531,9 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
   const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
   const [animated, setAnimated] = useState(false);
   const [validationErr, setValidationErr] = useState(false);
+  const [addressDraft, setAddressDraft] = useState('');
+  const [geocodeFallbackBusy, setGeocodeFallbackBusy] = useState(false);
+  const [fallbackGeocodeErr, setFallbackGeocodeErr] = useState<string | null>(null);
   const [inputKey, setInputKey] = useState(0);
   const [activeTag, setActiveTag] = useState<number | null>(null);
   const [mapFeedback, setMapFeedback] = useState<string | null>(null);
@@ -2169,16 +2547,89 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
     mapFeedbackTimerRef.current = setTimeout(() => setMapFeedback(null), 2000);
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selected) { setValidationErr(true); return; }
+  const GEOCODE_FALLBACK_MS = 18_000;
+
+  function startAnalysisRun() {
     setValidationErr(false);
+    setFallbackGeocodeErr(null);
     locTel?.pushLine({ badge: 'RUN', text: c.runStarted, kind: 'info' });
     setPhase('loading');
     setStep(0);
     setAnalysis(null);
     setAnalysisMeta(null);
     setAnimated(false);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (phase === 'loading' || geocodeFallbackBusy) return;
+
+    if (selected) {
+      startAnalysisRun();
+      return;
+    }
+
+    const q = addressDraft.trim();
+    if (q.length < 2) {
+      setValidationErr(true);
+      setFallbackGeocodeErr(null);
+      console.warn('[location-demo] submit blocked', { reason: 'empty_or_short_draft', qLen: q.length });
+      return;
+    }
+
+    setValidationErr(false);
+    setFallbackGeocodeErr(null);
+    console.info('[location-demo] submit fallback_geocode_start', { locale, qLen: q.length, q: truncateForLog(q, 64) });
+    setGeocodeFallbackBusy(true);
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GEOCODE_FALLBACK_MS);
+      const res = await fetch('/api/location-geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: q, locale }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      clearTimeout(timer);
+      const raw = (await res.json().catch(() => ({}))) as { error?: unknown; address?: unknown; lat?: unknown; lon?: unknown };
+      if (!res.ok) {
+        const serverMsg = typeof raw.error === 'string' ? raw.error : '';
+        console.warn('[location-demo] fallback_geocode http_error', {
+          httpStatus: res.status,
+          serverMsg: truncateForLog(serverMsg, 120),
+        });
+        setFallbackGeocodeErr(c.fallbackGeocodeFailed);
+        return;
+      }
+      if (typeof raw.lat !== 'number' || typeof raw.lon !== 'number') {
+        console.warn('[location-demo] fallback_geocode invalid_body');
+        setFallbackGeocodeErr(c.fallbackGeocodeFailed);
+        return;
+      }
+      const label = typeof raw.address === 'string' && raw.address.trim() ? raw.address.trim() : q;
+      console.info('[location-demo] fallback_geocode ok', {
+        address: truncateForLog(label, 64),
+        lat: raw.lat,
+        lon: raw.lon,
+      });
+      setSelected({ value: label, lat: raw.lat, lon: raw.lon });
+      locTel?.pushLine({
+        badge: 'ADR',
+        text: c.addrChosenLog(truncateForLog(label)),
+        kind: 'info',
+      });
+      startAnalysisRun();
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === 'AbortError';
+      console.warn('[location-demo] fallback_geocode client_error', {
+        aborted,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      setFallbackGeocodeErr(c.fallbackGeocodeFailed);
+    } finally {
+      setGeocodeFallbackBusy(false);
+    }
   }
 
   function reset() {
@@ -2188,6 +2639,9 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
     setAnalysisMeta(null);
     setAnimated(false);
     setValidationErr(false);
+    setAddressDraft('');
+    setFallbackGeocodeErr(null);
+    setGeocodeFallbackBusy(false);
     setInputKey(k => k + 1);
     setActiveTag(null);
     locTel?.resetTelemetry();
@@ -2205,10 +2659,14 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
-    fetchLocationAnalysis(selected.lat, selected.lon, controller.signal).then(result => {
+    fetchLocationAnalysis(selected.lat, selected.lon, controller.signal, {
+      spatialFoundation: mode === 'commercial',
+    }).then(result => {
       clearTimeout(abortTimeout);
       if (cancelled) return;
-      const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon);
+      const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon, {
+        spatialFoundation: mode === 'commercial',
+      });
       const resolvedMeta = result?.meta ?? null;
       const elapsed = Date.now() - fetchStart;
       setTimeout(() => {
@@ -2230,38 +2688,89 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
       clearTimeout(abortTimeout);
       tickers.forEach(clearTimeout);
     };
-  }, [phase, selected, locale, c]);
+  }, [phase, selected, locale, c, mode]);
 
   return (
     <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
       <div className="max-w-5xl mx-auto text-left">
 
-        {/* Section header + marketing — left-aligned, clear hierarchy */}
-        <div className="mb-12 max-w-2xl space-y-6">
-          <div className="space-y-4">
-            <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight whitespace-pre-line">
-              {c.sectionTitle}
-            </h2>
-            <p className="text-lg sm:text-xl text-slate-400 leading-relaxed whitespace-pre-line">
-              {c.sectionLead}
-            </p>
-          </div>
-
-          {(c.sectionSub1 || c.sectionSub2) && (
-            <div className="space-y-3 pt-2 border-t border-slate-800/80">
-              {c.sectionSub1 && (
-                <p className="text-xl sm:text-2xl font-semibold text-slate-100 leading-snug whitespace-pre-line">
-                  {c.sectionSub1}
-                </p>
-              )}
-              {c.sectionSub2 && (
-                <p className="text-base sm:text-lg text-slate-400 leading-relaxed whitespace-pre-line">
-                  {c.sectionSub2}
-                </p>
-              )}
+        {/* Section header — mode-aware */}
+        <div className="mb-10 max-w-2xl space-y-5">
+          {/* Mode toggle — RU locale only (commercial mode is RU-first) */}
+          {locale === 'ru' && (
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-slate-800 w-fit">
+              {(['residential', 'commercial'] as LocationAnalysisMode[]).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setMode(m);
+                    setPhase('idle');
+                    setAnalysis(null);
+                    setAnalysisMeta(null);
+                    setAnimated(false);
+                    setValidationErr(false);
+                    setInputKey(k => k + 1);
+                    router.replace(
+                      m === 'commercial' ? '?mode=commercial' : '?',
+                      { scroll: false },
+                    );
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    mode === m
+                      ? 'bg-white text-slate-900 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {m === 'residential' ? 'Жилая' : 'Коммерческая'}
+                </button>
+              ))}
             </div>
           )}
 
+          <div className="space-y-4">
+            {locale === 'ru' && mode === 'commercial' ? (
+              <>
+                <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight">
+                  Детальная пространственная карта локации
+                </h2>
+                <p className="text-lg sm:text-xl text-slate-400 leading-relaxed">
+                  Не просто «хорошее место» или «плохое» — а какой тип потока здесь преобладает и какому формату это подходит.
+                </p>
+                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                  <p className="text-xl sm:text-2xl font-semibold text-slate-100 leading-snug">
+                    Пространственный анализ для бизнеса
+                  </p>
+                  <p className="text-base text-slate-400 leading-relaxed">
+                    Введите адрес точки — получите структуру потока, форматную матрицу и барьеры до того, как вы вложили деньги или время.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-4xl sm:text-5xl font-bold text-white leading-[1.1] tracking-tight whitespace-pre-line">
+                  {c.sectionTitle}
+                </h2>
+                <p className="text-lg sm:text-xl text-slate-400 leading-relaxed whitespace-pre-line">
+                  {c.sectionLead}
+                </p>
+                {(c.sectionSub1 || c.sectionSub2) && (
+                  <div className="space-y-3 pt-2 border-t border-slate-800/80">
+                    {c.sectionSub1 && (
+                      <p className="text-xl sm:text-2xl font-semibold text-slate-100 leading-snug whitespace-pre-line">
+                        {c.sectionSub1}
+                      </p>
+                    )}
+                    {c.sectionSub2 && (
+                      <p className="text-base sm:text-lg text-slate-400 leading-relaxed whitespace-pre-line">
+                        {c.sectionSub2}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* ── RESULT PHASE ── */}
@@ -2410,21 +2919,32 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
               </button>
             </div>
 
-            {/* Right: ASI analysis */}
+            {/* Right: ASI analysis — mode-aware */}
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
-                  {c.asiPanelTitle}
+                  {mode === 'commercial' && locale === 'ru' ? 'ASI · Коммерческий анализ' : c.asiPanelTitle}
                 </span>
               </div>
-              <ASIPanel
-                analysis={analysis}
-                address={selected?.value ?? ''}
-                animated={animated}
-                meta={analysisMeta}
-                locale={locale}
-                c={c}
-              />
+              {mode === 'commercial' && locale === 'ru' ? (
+                <CommercialASIPanel
+                  analysis={analysis}
+                  address={selected?.value ?? ''}
+                  animated={animated}
+                  meta={analysisMeta}
+                  locale={locale}
+                  c={c}
+                />
+              ) : (
+                <ASIPanel
+                  analysis={analysis}
+                  address={selected?.value ?? ''}
+                  animated={animated}
+                  meta={analysisMeta}
+                  locale={locale}
+                  c={c}
+                />
+              )}
             </div>
 
           </div>
@@ -2440,6 +2960,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                   onSelect={addr => {
                     setSelected(addr);
                     setValidationErr(false);
+                    setFallbackGeocodeErr(null);
                     locTel?.pushLine({
                       badge: 'ADR',
                       text: c.addrChosenLog(truncateForLog(addr.value)),
@@ -2447,6 +2968,7 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                     });
                   }}
                   onClear={() => setSelected(null)}
+                  onDraftChange={setAddressDraft}
                   disabled={phase === 'loading'}
                   locale={locale}
                   c={c}
@@ -2456,12 +2978,23 @@ export function LocationIntelligenceDemo({ locale = 'en' }: { locale?: LocDemoLo
                     {c.pickAddressErr}
                   </p>
                 )}
+                {fallbackGeocodeErr && (
+                  <p className="text-sm text-rose-400 px-1" role="alert">
+                    {fallbackGeocodeErr}
+                  </p>
+                )}
                 <button
                   type="submit"
-                  disabled={phase === 'loading'}
+                  disabled={phase === 'loading' || geocodeFallbackBusy}
                   className="w-full py-4 px-8 bg-white text-slate-900 font-bold text-base rounded-xl hover:bg-slate-100 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-white/5 hover:shadow-white/10 hover:scale-[1.01] active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                 >
-                  {phase === 'loading' ? c.loadingSteps[step] : c.submitIdle}
+                  {geocodeFallbackBusy
+                    ? c.submitGeocodingAddress
+                    : phase === 'loading'
+                      ? c.loadingSteps[step]
+                      : mode === 'commercial' && locale === 'ru'
+                        ? 'Пространственный анализ точки'
+                        : c.submitIdle}
                 </button>
               </form>
               {phase === 'idle' && (

@@ -5,46 +5,64 @@ import type { MagnetCategory, PermanenceType } from './types';
 // not listed here — they go to accessibilityStops + a tiny capped bonus only.
 
 export const MAGNET_CATEGORIES: MagnetCategory[] = [
-  { id: 'metro',            label: 'Metro',                         labelRu: 'Метро',                         icon: 'М',  weight: 9,  permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
-  { id: 'railway_station',  label: 'Rail & major transit hubs',     labelRu: 'Ж/д и крупные транспортные узлы', icon: 'Ж',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
-  { id: 'attraction',       label: 'Attractions',                   labelRu: 'Достопримечательности',         icon: '★',  weight: 8,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
-  { id: 'university',       label: 'Universities',                  labelRu: 'Университеты',                icon: 'У',  weight: 6,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'education_local',  label: 'Local schools',                 labelRu: 'Локальные учебные заведения',   icon: 'у',  weight: 1.5, permanenceType: 'permanent', scopeLevel: 'local', strengthClass: 'weak' },
-  { id: 'entertainment',    label: 'Entertainment',                 labelRu: 'Развлечения',                   icon: '▶',  weight: 5,  permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'shopping_major',   label: 'Malls & major retail',          labelRu: 'ТЦ и крупная розница',          icon: '⊞',  weight: 5,  permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
-  { id: 'shopping_local',   label: 'Supermarkets',                  labelRu: 'Супермаркеты',                 icon: '+',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
-  { id: 'business',         label: 'Offices, factories & business',  labelRu: 'Офисы, заводы и бизнес',       icon: 'Б',  weight: 5.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
-  { id: 'food',             label: 'Cafés & restaurants',         labelRu: 'Кафе и рестораны',             icon: '◈',  weight: 1,  permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
+  // ── Tier 1: Regional / city-scale anchors (weight 7–9) ───────────────────────
+  { id: 'metro',            label: 'Metro',                            labelRu: 'Метро',                              icon: 'М',  weight: 9,   permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
+  { id: 'airport',          label: 'Airports',                         labelRu: 'Аэропорты',                          icon: '✈',  weight: 8,   permanenceType: 'permanent', scopeLevel: 'regional', strengthClass: 'strong' },
+  { id: 'attraction',       label: 'Attractions',                      labelRu: 'Достопримечательности',              icon: '★',  weight: 8,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
+  { id: 'hospital',         label: 'Hospitals & medical clusters',     labelRu: 'Больницы и медкластеры',             icon: '+',  weight: 7,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
+  // ── Tier 2: District anchors (weight 5–6) ─────────────────────────────────────
+  { id: 'major_hotel',      label: 'Major 4–5★ hotels',               labelRu: 'Крупные отели 4–5★',                 icon: '⛟',  weight: 6,   permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'strong' },
+  { id: 'convention',       label: 'Convention & expo centers',        labelRu: 'Конгресс- и выставочные центры',     icon: '⊟',  weight: 6,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'strong' },
+  { id: 'university',       label: 'Universities',                     labelRu: 'Университеты',                       icon: 'У',  weight: 6,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'business',         label: 'Offices, factories & business',   labelRu: 'Офисы, заводы и бизнес',             icon: 'Б',  weight: 5.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
+  { id: 'railway_station',  label: 'Rail & major transit hubs',       labelRu: 'Ж/д и крупные транспортные узлы',    icon: 'Ж',  weight: 5,   permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
+  { id: 'entertainment',    label: 'Entertainment',                    labelRu: 'Развлечения',                        icon: '▶',  weight: 5,   permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'shopping_major',   label: 'Malls & major retail',            labelRu: 'ТЦ и крупная розница',               icon: '⊞',  weight: 5,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
+  { id: 'stadium',          label: 'Stadiums & arenas',               labelRu: 'Стадионы и арены',                   icon: '⬡',  weight: 5,   permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
+  // ── Tier 3: Local / weak signals (weight 1–1.5) ───────────────────────────────
+  { id: 'education_local',  label: 'Local schools',                   labelRu: 'Локальные учебные заведения',        icon: 'у',  weight: 1.5, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
+  { id: 'shopping_local',   label: 'Supermarkets',                    labelRu: 'Супермаркеты',                       icon: '⊕',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
+  { id: 'food',             label: 'Cafés & restaurants',             labelRu: 'Кафе и рестораны',                   icon: '◈',  weight: 1,   permanenceType: 'semi',      scopeLevel: 'local',    strengthClass: 'weak' },
 ];
 
 // OSM search radius per category (meters)
 export const CATEGORY_RADIUS: Record<string, number> = {
   metro:             1200,
-  railway_station:   1400,
+  airport:           2000,
   attraction:        1000,
+  hospital:          1000,
+  major_hotel:        800,
+  convention:        1000,
   university:        1000,
-  education_local:   650,
-  entertainment:     800,
-  shopping_major:    900,
-  shopping_local:    450,
   business:          1200,
-  food:              450,
+  railway_station:   1400,
+  entertainment:      800,
+  shopping_major:     900,
+  stadium:           1500,
+  education_local:    650,
+  shopping_local:     450,
+  food:               450,
   /** Fetch-only: bus / tram stop nodes (scored only via accessibility bonus) */
   accessibility_stop: 550,
 };
 
-// Max items displayed in UI per category
+// Max items included in scoring per category (caps both scoring and display pool)
 export const CATEGORY_MAX_SHOW: Record<string, number> = {
   metro:             3,
-  railway_station:   3,
+  airport:           2,
   attraction:        3,
+  hospital:          2,
+  major_hotel:       2,
+  convention:        2,
   university:        3,
-  education_local:   3,
+  business:          5,
+  railway_station:   3,
   entertainment:     3,
   shopping_major:    3,
-  shopping_local:    3,
-  business:          5,
-  food:              4,
+  stadium:           2,
+  education_local:   1,
+  shopping_local:    1,
+  food:              3,
 };
 
 export const COMPETITOR_RADIUS = 800;
@@ -69,7 +87,7 @@ export const GRAVITY_CONFIG = {
   competitorDensityGain: 0.14,
   competitorDensityMax:  0.85,
   competitorCloseRadius: 500,
-  competitorPressureMax: 20,
+  competitorPressureMax: 15,
 
   /** Stops / platforms add at most this many raw index points (not scaled like attraction) */
   accessibilityBonusMax:   3.2,
@@ -82,17 +100,34 @@ export const GRAVITY_CONFIG = {
   scoreScale: 1.94,
 } as const;
 
+/**
+ * Optional soft headline adjustment for the explainable composite `location_score`
+ * when neighborhood-environment concern is elevated/high with sufficient OSM confidence.
+ * Does not change `evergreenIndex` or score breakdown inputs.
+ * Disable at runtime with `ASI_NEIGHBORHOOD_ENV_SCORE_MODIFIER=0`.
+ */
+export const NEIGHBORHOOD_ENV_SCORE_MODIFIER = {
+  minOsmElementsForPenalty: 10,
+  /** Hard cap on how many index points may be shaved off the headline score */
+  maxPointReduction: 9,
+} as const;
+
 // ── Heatmap display colors per category ──────────────────────────────────────
 
 export const CATEGORY_COLOR: Record<string, string> = {
   metro:             '#818cf8',
-  railway_station:   '#38bdf8',
+  airport:           '#67e8f9',
   attraction:        '#fbbf24',
+  hospital:          '#f43f5e',
+  major_hotel:       '#fde68a',
+  convention:        '#e879f9',
   university:        '#c084fc',
-  education_local:   '#94a3b8',
   business:          '#a78bfa',
+  railway_station:   '#38bdf8',
   entertainment:     '#f472b6',
   shopping_major:    '#2dd4bf',
+  stadium:           '#a3e635',
+  education_local:   '#94a3b8',
   shopping_local:    '#4ade80',
   food:              '#fb923c',
   accessibility_stop:'#64748b',

@@ -25,8 +25,20 @@ import { classifyElement } from './overpass';
 import { computeHeatmap } from './heatmap';
 import { generateConclusion } from './explanation';
 import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatmapFactors } from './foot-traffic';
-import { buildLocationScoreOutput } from './location-score';
+import { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
+import { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 import { buildAudienceAnalysis } from './audience-scoring';
+import { buildNeighborhoodEnvironmentLayer } from './neighborhood-environment';
+import { applySpatialFoundationLayer } from './spatial-foundation';
+import { buildResidentialAnalysis } from './residential-analysis';
+
+export type BuildAnalysisOptions = {
+  /**
+   * When true, applies barrier + corridor stub heuristics to magnet attraction before scoring.
+   * Default false — keeps legacy residential / paywalled report behaviour unless explicitly enabled.
+   */
+  spatialFoundation?: boolean;
+};
 
 // ── Business subType weight adjustments ──────────────────────────────────────
 // Generic/unnamed offices, industrial landuse, and commercial zones score
@@ -39,7 +51,7 @@ function effectiveBusinessWeight(baseWeight: number, subType: string | undefined
     case 'factory':     return baseWeight * 0.55; // man_made=works / building=industrial
     case 'commercial':  return baseWeight * 0.65; // landuse=commercial — retail strip noise
     case 'bank':        return baseWeight * 0.55; // single bank branch — not a demand cluster
-    default:            return baseWeight;         // named office: full weight
+    default:            return baseWeight * 0.72;   // named office: ~4.0 (was 5.5) — curbs suburban/rural inflation
   }
 }
 
@@ -365,8 +377,9 @@ export function calcEvergreenIndex(
   );
 
   const rawScore = rawBaseScore + boostRaw;
-  // Cap at 100 — the previous 96 ceiling collapsed all strong locations to the same score.
-  const index = Math.max(5, Math.min(100, Math.round(rawScore)));
+  // Soft cap above 80: compresses without flattening mid-range. Times Square (rawScore ~270) → still 100.
+  const rawCapped = rawScore <= 80 ? rawScore : 80 + (rawScore - 80) * 0.60;
+  const index = Math.max(5, Math.min(100, Math.round(rawCapped)));
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
   const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
@@ -414,7 +427,12 @@ function dedupeAccessibilityStops(stops: AccessibilityStopItem[]): Accessibility
 }
 
 /** Build the full LocationAnalysis from raw OSM elements + subject coordinates */
-export function buildAnalysis(elements: OSMElement[], lat: number, lon: number): LocationAnalysis {
+export function buildAnalysis(
+  elements: OSMElement[],
+  lat: number,
+  lon: number,
+  options?: BuildAnalysisOptions,
+): LocationAnalysis {
   const byCategory: Record<string, MagnetItem[]> = {};
   const competitors: CompetitorItem[] = [];
   const accessibilityStops: AccessibilityStopItem[] = [];
@@ -502,6 +520,15 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
   competitors.sort((a, b) => a.distance - b.distance);
 
   const accessibilityDeduped = dedupeAccessibilityStops(accessibilityStops);
+
+  const spatialFoundation = applySpatialFoundationLayer({
+    magnets,
+    elements,
+    subjectLat: lat,
+    subjectLon: lon,
+    enabled: options?.spatialFoundation === true,
+  });
+
   const {
     index: evergreenIndex,
     gravityExplanation,
@@ -541,6 +568,20 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     audienceAnalysis,
     accessibilityStopCount: accessibilityDeduped.length,
   });
+
+  const neighborhoodEnvironment = buildNeighborhoodEnvironmentLayer(elements, lat, lon, {
+    evergreenIndex,
+  });
+
+  const commercialNeighborhoodModifier = computeNeighborhoodEnvironmentCommercialModifier({
+    baseLocationScore: locationScore.location_score,
+    neighborhoodEnvironment,
+    osmElementCount: elements.length,
+  });
+  const locationScoreAdjusted =
+    commercialNeighborhoodModifier.applied
+      ? withAdjustedLocationScoreHeadline(locationScore, commercialNeighborhoodModifier.adjustedLocationScore)
+      : locationScore;
 
   // ── Debug diagnostics (gated by env flag) ──────────────────────────────────
   if (process.env.LOCATION_DEBUG === '1') {
@@ -583,10 +624,10 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     console.info('[location-debug]', JSON.stringify(debugInfo, null, 2));
   }
 
-  return {
+  const baseAnalysis = {
     evergreenIndex,
     scoreBand,
-    locationScore,
+    locationScore: locationScoreAdjusted,
     magnets,
     magnetCountByCategory,
     accessibilityStops: accessibilityDeduped.slice(0, 12),
@@ -599,7 +640,15 @@ export function buildAnalysis(elements: OSMElement[], lat: number, lon: number):
     competitorPressure: competitorPressureValue,
     footTraffic,
     audienceAnalysis,
+    neighborhoodEnvironment,
+    commercialNeighborhoodModifier,
+    spatialFoundation,
     heatmapPoints,
     conclusion,
+  };
+
+  return {
+    ...baseAnalysis,
+    residentialAnalysis: buildResidentialAnalysis(baseAnalysis),
   };
 }

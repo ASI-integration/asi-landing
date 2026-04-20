@@ -108,6 +108,12 @@ export const LOC_COPY: Record<
     addrChosenLog: (s: string) => string;
     pickAddressErr: string;
     submitIdle: string;
+    /** Shown on the idle map when no coordinates are pinned yet */
+    idleMapAnalysisLead: string;
+    /** After failed POST /api/location-geocode from the main CTA */
+    fallbackGeocodeFailed: string;
+    /** Main CTA label while plain geocoding runs (no list selection yet) */
+    submitGeocodingAddress: string;
     osmNote: string;
     strategyTitle: string;
     strategyMidTerm: string[];
@@ -155,6 +161,10 @@ export const LOC_COPY: Record<
       sourceCacheUpdating: string;
       sourceFresh: string;
     };
+    envBlockTitle: string;
+    envLayerLead: string;
+    envLayerScoreLabel: string;
+    envConfidence: (c: 'high' | 'medium' | 'low') => string;
   }
 > = {
   en: {
@@ -232,8 +242,14 @@ export const LOC_COPY: Record<
     tryAnother: 'Try another address',
     asiPanelTitle: 'ASI · Location analysis',
     addrChosenLog: s => `address selected · ${s}`,
-    pickAddressErr: 'Pick an exact address from the list',
+    pickAddressErr:
+      'Enter at least 2 characters. Pick a suggestion, or tap Analyze to resolve what you typed.',
     submitIdle: 'Analyze location',
+    idleMapAnalysisLead:
+      'Pick a suggestion from the list, or tap Analyze — we will try to geocode the address you typed.',
+    fallbackGeocodeFailed:
+      'Could not resolve that address. Add a city or pick a suggestion when available.',
+    submitGeocodingAddress: 'Resolving address…',
     osmNote: 'Uses live OpenStreetMap data',
     strategyTitle: 'Recommended Strategy',
     strategyMidTerm: [
@@ -296,6 +312,14 @@ export const LOC_COPY: Record<
       sourceCacheUpdating: 'cache (updating)',
       sourceFresh: 'fresh data',
     },
+    envBlockTitle: 'Comfort & surroundings',
+    envLayerLead:
+      'Neutral OSM infrastructure cues only — not the commercial location score (roads, industry, aviation, transit density, nightlife).',
+    envLayerScoreLabel: 'Environmental load',
+    envConfidence: (c) =>
+      c === 'high' ? 'High map coverage confidence'
+      : c === 'medium' ? 'Medium map coverage confidence'
+      : 'Low map coverage confidence',
   },
   ru: {
     mapLoadingTitle: 'Анализируем локацию…',
@@ -370,8 +394,14 @@ export const LOC_COPY: Record<
     tryAnother: 'Проверить другой адрес',
     asiPanelTitle: 'ASI · Анализ локации',
     addrChosenLog: s => `адрес выбран · ${s}`,
-    pickAddressErr: 'Выберите точный адрес из списка',
+    pickAddressErr:
+      'Введите не короче 2 символов: выберите подсказку или нажмите «Рассчитать локацию», чтобы искать по тексту.',
     submitIdle: 'Рассчитать локацию',
+    idleMapAnalysisLead:
+      'Выберите подсказку из списка или нажмите «Рассчитать локацию» — мы попробуем найти координаты по введённому адресу.',
+    fallbackGeocodeFailed:
+      'Не удалось найти координаты. Уточните адрес (добавьте город) или выберите подсказку, если она появится.',
+    submitGeocodingAddress: 'Ищем координаты…',
     osmNote: 'Используются реальные данные OpenStreetMap',
     strategyTitle: 'Рекомендуемая стратегия',
     strategyMidTerm: [
@@ -434,33 +464,51 @@ export const LOC_COPY: Record<
       sourceCacheUpdating: 'кэш (обновляется)',
       sourceFresh: 'свежие данные',
     },
+    envBlockTitle: 'Комфорт и среда',
+    envLayerLead:
+      'Нейтральные признаки по OpenStreetMap, отдельно от коммерческого индекса: магистрали, промзона и логистика, авиация, транзит, ночные заведения.',
+    envLayerScoreLabel: 'Нагрузка среды',
+    envConfidence: (c) =>
+      c === 'high' ? 'Высокая уверенность по данным карты'
+      : c === 'medium' ? 'Средняя уверенность по данным карты'
+      : 'Низкая уверенность по данным карты',
   },
 };
 
 const MAGNET_WHY_EN: Record<string, string> = {
-  metro:           'regional flow',
-  railway_station: 'transit hub pull',
-  attraction:      'tourism demand',
-  university:      'education traffic',
+  metro:           'regional flow — reliable year-round demand',
+  airport:         'air hub — strong traveler and business flow',
+  attraction:      'tourist anchor — consistent leisure demand',
+  hospital:        'medical cluster — steady staff & visitor demand',
+  major_hotel:     'quality signal — commercially validated area',
+  convention:      'conference hub — corporate demand spikes',
+  university:      'education cluster — recurring semester demand',
+  business:        'office / industrial zone — corporate travel flow',
+  railway_station: 'transit hub — stable transport and business demand',
+  entertainment:   'leisure venue — footfall driver',
+  shopping_major:  'retail anchor — sustained visitor traffic',
+  stadium:         'event venue — periodic occupancy spikes',
   education_local: 'local schooling demand',
-  entertainment:   'leisure footfall',
-  shopping_major:  'retail traffic',
   shopping_local:  'neighborhood activity',
-  business:        'business traffic',
-  food:            'local dining activity',
+  food:            'local dining cluster',
 };
 
 const MAGNET_WHY_RU: Record<string, string> = {
-  metro:           'командированные / деловой поток',
+  metro:           'стабильный деловой и транзитный поток',
+  airport:         'аэропорт — деловые и туристические гости',
+  attraction:      'туристический якорь — постоянный спрос',
+  hospital:        'медкластер — персонал и посетители',
+  major_hotel:     'индикатор качества — подтверждённая ниша',
+  convention:      'конгресс-центр — корпоративный поток',
+  university:      'университет — образовательный спрос',
+  business:        'деловая зона — командированные',
   railway_station: 'транспортный узел — деловой трафик',
-  attraction:      'туристический спрос',
-  university:      'образовательный / деловой поток',
-  education_local: 'локальный спрос',
   entertainment:   'досуговый трафик',
   shopping_major:  'торговый поток',
+  stadium:         'стадион — периодические пики спроса',
+  education_local: 'локальный спрос',
   shopping_local:  'жилая активность',
-  business:        'командированные / деловой поток',
-  food:            'локальная активность',
+  food:            'кластер кафе / ресторанов',
 };
 
 export function magnetWhy(categoryId: string, locale: LocDemoLocale): string | undefined {

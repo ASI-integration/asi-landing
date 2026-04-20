@@ -1,0 +1,2358 @@
+[
+  {
+    "id": "red_square_moscow",
+    "label": "Красная площадь, Москва",
+    "error": "red_square_moscow: timed out after 120000ms"
+  },
+  {
+    "id": "arbat_moscow",
+    "label": "Арбат, Москва",
+    "error": "arbat_moscow: timed out after 120000ms"
+  },
+  {
+    "id": "tverskaya_moscow",
+    "label": "Тверская улица, Москва",
+    "error": "tverskaya_moscow: timed out after 120000ms"
+  },
+  {
+    "id": "nevsky_spb",
+    "label": "Невский проспект, Санкт-Петербург",
+    "error": "nevsky_spb: timed out after 120000ms"
+  },
+  {
+    "id": "kursky_station_moscow",
+    "label": "Курский вокзал, Москва",
+    "error": "kursky_station_moscow: timed out after 120000ms"
+  },
+  {
+    "id": "gare_du_nord_paris",
+    "label": "Gare du Nord, Париж",
+    "error": "gare_du_nord_paris: timed out after 120000ms"
+  },
+  {
+    "id": "moscow_city",
+    "label": "Москва-Сити",
+    "error": "moscow_city: timed out after 120000ms"
+  },
+  {
+    "id": "canary_wharf_london",
+    "label": "Canary Wharf, Лондон",
+    "error": "canary_wharf_london: timed out after 120000ms"
+  },
+  {
+    "id": "covent_garden_london",
+    "label": "Covent Garden, Лондон",
+    "city": "Лондон, Великобритания",
+    "lat": 51.5121,
+    "lon": -0.123,
+    "bucket": "destination",
+    "primaryType": "destination_venue",
+    "humanRationale": "Один из самых посещаемых туристических рынков Лондона. Destination HIGH очевидно. Retail HIGH — boutique, сувениры, уличная торговля. Food HIGH — рестораны, кафе обслуживают толпы. Service LOW — туристы не ищут сервисные услуги здесь. Convenience LOW — не ежедневный трафик жителей.",
+    "humanExpected": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "low",
+      "convenience": "low",
+      "showroom": "low",
+      "destination_venue": "high"
+    },
+    "elementCount": 1263,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 12,
+      "barrierKindsDetected": [
+        "major_road",
+        "rail",
+        "water"
+      ],
+      "corridorSnapM": 22.224534129043747,
+      "distanceInflationM": 7
+    },
+    "analysis": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.25,
+      "localActiveShare": 0.22,
+      "destinationShare": 0.53,
+      "movementDensity": "high",
+      "modifierTier": "strong",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "high",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "Covent Garden",
+          "distance": 125
+        },
+        {
+          "category": "metro",
+          "name": "Covent Garden",
+          "distance": 128
+        },
+        {
+          "category": "metro",
+          "name": "Covent Garden",
+          "distance": 136
+        },
+        {
+          "category": "attraction",
+          "name": "Bow Street Police Museum",
+          "distance": 178
+        },
+        {
+          "category": "attraction",
+          "name": "Guinness Open Gate Brewery London",
+          "distance": 219
+        },
+        {
+          "category": "attraction",
+          "name": "Goodwin's Court",
+          "distance": 260
+        },
+        {
+          "category": "hospital",
+          "name": "Until SOHO",
+          "distance": 554
+        },
+        {
+          "category": "hospital",
+          "name": "Tunica Diagnostics",
+          "distance": 556
+        },
+        {
+          "category": "major_hotel",
+          "name": "Thistle Holborn, The Kingsley",
+          "distance": 636
+        },
+        {
+          "category": "convention",
+          "name": "The Form Rooms",
+          "distance": 358
+        },
+        {
+          "category": "university",
+          "name": "The Courtauld Institute of Art",
+          "distance": 387
+        },
+        {
+          "category": "university",
+          "name": "University of Notre Dame",
+          "distance": 668
+        },
+        {
+          "category": "business",
+          "name": "NASUWT",
+          "distance": 81
+        },
+        {
+          "category": "business",
+          "name": "Seth Lovis & Co Solicitors",
+          "distance": 96
+        },
+        {
+          "category": "business",
+          "name": "Офис",
+          "distance": 112
+        },
+        {
+          "category": "business",
+          "name": "Morpheus Executive Recruitment",
+          "distance": 122
+        },
+        {
+          "category": "business",
+          "name": "CG Restaurants",
+          "distance": 137
+        },
+        {
+          "category": "railway_station",
+          "name": "Charing Cross",
+          "distance": 514
+        },
+        {
+          "category": "railway_station",
+          "name": "Tottenham Court Road",
+          "distance": 751
+        },
+        {
+          "category": "railway_station",
+          "name": "London Waterloo",
+          "distance": 1249
+        },
+        {
+          "category": "entertainment",
+          "name": "Linbury Theatre",
+          "distance": 107
+        },
+        {
+          "category": "entertainment",
+          "name": "Donmar Warehouse",
+          "distance": 281
+        },
+        {
+          "category": "entertainment",
+          "name": "Tristan Bates Theatre",
+          "distance": 387
+        },
+        {
+          "category": "shopping_major",
+          "name": "Bush House Arcade",
+          "distance": 414
+        },
+        {
+          "category": "shopping_major",
+          "name": "The Arches Shopping",
+          "distance": 483
+        },
+        {
+          "category": "shopping_major",
+          "name": "TK Maxx",
+          "distance": 555
+        },
+        {
+          "category": "food",
+          "name": "Buns & Buns",
+          "distance": 13
+        },
+        {
+          "category": "food",
+          "name": "Cache Cache",
+          "distance": 19
+        },
+        {
+          "category": "food",
+          "name": "Punch & Judy",
+          "distance": 31
+        }
+      ],
+      "industrial01": 0.36666666666666664,
+      "majorRoads01": 0.2736842105263158
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Торговый якорь в зоне",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость"
+          ],
+          "limitingFactors": [
+            "Высокая конкурентная плотность",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток",
+            "Смешанная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "medium",
+          "explanationRu": "Высокий поток в точке, но аудитория преимущественно туристическая — не формирует стабильный повседневный спрос для convenience.",
+          "supportingFactors": [
+            "Высокий поток в точке"
+          ],
+          "limitingFactors": [
+            "Туристическая аудитория не формирует стабильный повседневный спрос",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "low",
+          "explanationRu": "Высокий поток в точке — туристический. Посетители достопримечательностей не являются целевой аудиторией шоурума.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Туристический поток не конвертируется в аудиторию шоурума",
+            "Перегруженные дороги рядом затрудняют парковку и доступ",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "high",
+          "explanationRu": "Якорные объекты и сильный целевой поток формируют хорошую базу для destination-venue.",
+          "supportingFactors": [
+            "Сильный целевой поток от якорных объектов",
+            "Крупный якорь формирует catchment-зону",
+            "Кластер притяжения — устойчивый спрос",
+            "Транспортная доступность для широкой аудитории"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "low",
+      "destination_venue": "high"
+    },
+    "discrepancies": [
+      {
+        "format": "service",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "convenience",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 2,
+    "criticalCount": 0,
+    "error": null
+  },
+  {
+    "id": "shoreditch_london",
+    "label": "Shoreditch High Street, Лондон",
+    "error": "shoreditch_london: timed out after 120000ms"
+  },
+  {
+    "id": "times_square_nyc",
+    "label": "Times Square, Нью-Йорк",
+    "error": "times_square_nyc: timed out after 120000ms"
+  },
+  {
+    "id": "vdnkh_moscow",
+    "label": "ВДНХ, Москва",
+    "city": "Москва, Россия",
+    "lat": 55.8278,
+    "lon": 37.6316,
+    "bucket": "destination",
+    "primaryType": "destination_venue",
+    "humanRationale": "ВДНХ — крупный рекреационный destination. Destination HIGH — выставки, парк, музеи. Food MEDIUM — есть кафе, но туристическое. Retail LOW — сувенирный, не retail-сегмент. Showroom MEDIUM — на ВДНХ традиционно размещают экспозиции, техника, авто. Convenience MEDIUM — есть метро рядом, местный трафик.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "medium",
+      "service": "low",
+      "convenience": "medium",
+      "showroom": "medium",
+      "destination_venue": "high"
+    },
+    "elementCount": 224,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 6,
+      "barrierKindsDetected": [
+        "water"
+      ],
+      "corridorSnapM": 17.948346587653823,
+      "distanceInflationM": 6
+    },
+    "analysis": {
+      "evergreenIndex": 94,
+      "scoreBand": "strong",
+      "demandType": "tourism-led",
+      "transitShare": 0.27,
+      "localActiveShare": 0.24,
+      "destinationShare": 0.49,
+      "movementDensity": "high",
+      "modifierTier": "moderate",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 859
+        },
+        {
+          "category": "metro",
+          "name": "ВДНХ",
+          "distance": 969
+        },
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 985
+        },
+        {
+          "category": "attraction",
+          "name": "Музей городского хозяйства Москвы",
+          "distance": 162
+        },
+        {
+          "category": "attraction",
+          "name": "Музей Рерихов",
+          "distance": 413
+        },
+        {
+          "category": "attraction",
+          "name": "Музей истории ВДНХ",
+          "distance": 424
+        },
+        {
+          "category": "business",
+          "name": "Многофункциональный центр предоставления государственных и муниципальных услуг",
+          "distance": 291
+        },
+        {
+          "category": "business",
+          "name": "Дом полимеров",
+          "distance": 349
+        },
+        {
+          "category": "business",
+          "name": "Строительная Страховая Группа",
+          "distance": 375
+        },
+        {
+          "category": "business",
+          "name": "Настенька",
+          "distance": 386
+        },
+        {
+          "category": "business",
+          "name": "Vysotsky",
+          "distance": 412
+        },
+        {
+          "category": "entertainment",
+          "name": "Театр сказок",
+          "distance": 252
+        },
+        {
+          "category": "entertainment",
+          "name": "VR кинотеатр",
+          "distance": 326
+        },
+        {
+          "category": "food",
+          "name": "Назад в будущее",
+          "distance": 87
+        },
+        {
+          "category": "food",
+          "name": "Гюльчатай",
+          "distance": 127
+        },
+        {
+          "category": "food",
+          "name": "fast_food",
+          "distance": 209
+        }
+      ],
+      "industrial01": 0.36666666666666664,
+      "majorRoads01": 0
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "high",
+          "explanationRu": "Транзитная и локальная аудитория создают импульсный спрос — хорошая точка для магазина у дома или мини-маркета.",
+          "supportingFactors": [
+            "Транзитный узел рядом — стабильный импульсный спрос",
+            "Высокая плотность движения"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "high",
+          "explanationRu": "Целевой поток, деловой контекст и доступность создают правильную базу для шоурума или appointment-based формата.",
+          "supportingFactors": [
+            "Высокий целевой поток — клиенты приходят с намерением",
+            "Транспортная доступность",
+            "Деловой кластер в зоне"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "medium",
+          "explanationRu": "Потенциал есть при сильной концепции, но локация сама по себе не тянет destination-поток.",
+          "supportingFactors": [
+            "Умеренный целевой поток",
+            "Туристический спрос"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "high",
+      "showroom": "high",
+      "destination_venue": "medium"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "food_beverage",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "service",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "convenience",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "showroom",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "destination_venue",
+        "expected": "high",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 6,
+    "criticalCount": 1,
+    "error": null
+  },
+  {
+    "id": "el_poblado_medellin",
+    "label": "El Poblado, Медельин",
+    "city": "Медельин, Колумбия",
+    "lat": 6.2089,
+    "lon": -75.569,
+    "bucket": "destination",
+    "primaryType": "food_beverage",
+    "humanRationale": "Туристический / expat районOn с концентрацией баров, ресторанов. Food HIGH — это суть El Poblado. Destination MEDIUM — туристический, но скорее neighbourhood, чем single landmark. Retail MEDIUM — бутики, ремёсла. Convenience LOW — жизнеобеспечение туристов, но не ежедневное хозяйство местных.",
+    "humanExpected": {
+      "retail": "medium",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "low",
+      "showroom": "low",
+      "destination_venue": "medium"
+    },
+    "elementCount": 418,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 6,
+      "barrierKindsDetected": [
+        "major_road"
+      ],
+      "corridorSnapM": null,
+      "distanceInflationM": 0
+    },
+    "analysis": {
+      "evergreenIndex": 84,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.19,
+      "localActiveShare": 0.36,
+      "destinationShare": 0.45,
+      "movementDensity": "high",
+      "modifierTier": "moderate",
+      "flowCharacter": "mixed destination and transit",
+      "clusterDetected": true,
+      "competitorPressure": "high",
+      "magnets": [
+        {
+          "category": "hospital",
+          "name": "Centro de Fracturas Cefra S.a.",
+          "distance": 822
+        },
+        {
+          "category": "major_hotel",
+          "name": "Marriott",
+          "distance": 785
+        },
+        {
+          "category": "business",
+          "name": "Notaría 12",
+          "distance": 213
+        },
+        {
+          "category": "business",
+          "name": "Atom House Coworking",
+          "distance": 296
+        },
+        {
+          "category": "business",
+          "name": "IC Asesorías y Proyectos S.A.S. E.S.P.",
+          "distance": 384
+        },
+        {
+          "category": "business",
+          "name": "ACNUR",
+          "distance": 391
+        },
+        {
+          "category": "business",
+          "name": "Consulado italiano",
+          "distance": 442
+        },
+        {
+          "category": "entertainment",
+          "name": "nightclub",
+          "distance": 82
+        },
+        {
+          "category": "entertainment",
+          "name": "Donde Chepe",
+          "distance": 120
+        },
+        {
+          "category": "entertainment",
+          "name": "Blue Bar",
+          "distance": 139
+        },
+        {
+          "category": "shopping_major",
+          "name": "Vizcaya Business Center",
+          "distance": 640
+        },
+        {
+          "category": "shopping_major",
+          "name": "D1",
+          "distance": 825
+        },
+        {
+          "category": "shopping_local",
+          "name": "Магазин",
+          "distance": 157
+        },
+        {
+          "category": "food",
+          "name": "Tropical Cocktails",
+          "distance": 40
+        },
+        {
+          "category": "food",
+          "name": "Osaka",
+          "distance": 40
+        },
+        {
+          "category": "food",
+          "name": "Cafe Bar 1977",
+          "distance": 42
+        }
+      ],
+      "industrial01": 0.16666666666666666,
+      "majorRoads01": 0.2736842105263158
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Торговый якорь в зоне",
+            "Деловой кластер рядом",
+            "Активный локальный поток"
+          ],
+          "limitingFactors": [
+            "Высокая конкурентная плотность",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Деловой / образовательный якорь рядом",
+            "Активная локальная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "high",
+          "explanationRu": "Локальный поток или деловая аудитория создают устойчивый спрос на сервис (барбершоп, химчистка, ремонт).",
+          "supportingFactors": [
+            "Высокий локальный поток — постоянная аудитория",
+            "Деловые объекты рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "high",
+          "explanationRu": "Транзитная и локальная аудитория создают импульсный спрос — хорошая точка для магазина у дома или мини-маркета.",
+          "supportingFactors": [
+            "Активная локальная аудитория",
+            "Высокая плотность движения"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "medium",
+          "explanationRu": "Умеренный потенциал — шоурум возможен, особенно при известности бренда или B2B-ориентации.",
+          "supportingFactors": [
+            "Умеренный целевой поток",
+            "Деловой кластер рядом"
+          ],
+          "limitingFactors": [
+            "Ограниченная транспортная доступность",
+            "Перегруженные дороги рядом затрудняют парковку и доступ",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "medium",
+          "explanationRu": "Потенциал есть при сильной концепции, но локация сама по себе не тянет destination-поток.",
+          "supportingFactors": [
+            "Умеренный целевой поток"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "high",
+      "convenience": "high",
+      "showroom": "medium",
+      "destination_venue": "medium"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "service",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "convenience",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "showroom",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 4,
+    "criticalCount": 1,
+    "error": null
+  },
+  {
+    "id": "leningradsky_showroom_moscow",
+    "label": "Ленинградский пр-т (авто-шоурумы), Москва",
+    "city": "Москва, Россия",
+    "lat": 55.7855,
+    "lon": 37.5245,
+    "bucket": "showroom",
+    "primaryType": "showroom",
+    "humanRationale": "Исторически сложившийся кластер автодилеров и шоурумов на Ленинградке. Showroom HIGH — целевая аудитория приезжает намеренно, хорошая доступность. Retail LOW — не shopping area. Food LOW — нет сформированного пешеходного потока. Service MEDIUM — автосервисы, смежные услуги.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "low",
+      "service": "medium",
+      "convenience": "low",
+      "showroom": "high",
+      "destination_venue": "low"
+    },
+    "elementCount": 144,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 6,
+      "barrierKindsDetected": [
+        "water"
+      ],
+      "corridorSnapM": 67.29274458831846,
+      "distanceInflationM": 22
+    },
+    "analysis": {
+      "evergreenIndex": 72,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.19,
+      "localActiveShare": 0.28,
+      "destinationShare": 0.54,
+      "movementDensity": "high",
+      "modifierTier": "strong",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 467
+        },
+        {
+          "category": "metro",
+          "name": "ЦСКА",
+          "distance": 557
+        },
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 653
+        },
+        {
+          "category": "attraction",
+          "name": "М. В. Водопьянов",
+          "distance": 390
+        },
+        {
+          "category": "attraction",
+          "name": "Достопримечательность",
+          "distance": 657
+        },
+        {
+          "category": "attraction",
+          "name": "Центральный музей им. Б.В.Зимина Всероссийского общества слепых",
+          "distance": 881
+        },
+        {
+          "category": "business",
+          "name": "Администрация муниципального округа Хорошевский",
+          "distance": 124
+        },
+        {
+          "category": "business",
+          "name": "Клинский институт охраны и условий труда",
+          "distance": 298
+        },
+        {
+          "category": "business",
+          "name": "Дирекция парка",
+          "distance": 408
+        },
+        {
+          "category": "business",
+          "name": "Вентиляционный киоск метро",
+          "distance": 574
+        },
+        {
+          "category": "business",
+          "name": "Мосинжпроект",
+          "distance": 610
+        },
+        {
+          "category": "food",
+          "name": "Victoria & Albert Pub",
+          "distance": 168
+        },
+        {
+          "category": "food",
+          "name": "Vabene",
+          "distance": 188
+        },
+        {
+          "category": "food",
+          "name": "Ромарио",
+          "distance": 382
+        }
+      ],
+      "industrial01": 0.36666666666666664,
+      "majorRoads01": 0
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток",
+            "Смешанная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "medium",
+          "explanationRu": "Высокий поток в точке, но аудитория преимущественно туристическая — не формирует стабильный повседневный спрос для convenience.",
+          "supportingFactors": [
+            "Высокий поток в точке"
+          ],
+          "limitingFactors": [
+            "Туристическая аудитория не формирует стабильный повседневный спрос",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "high",
+          "explanationRu": "Целевой поток, деловой контекст и доступность создают правильную базу для шоурума или appointment-based формата.",
+          "supportingFactors": [
+            "Высокий целевой поток — клиенты приходят с намерением",
+            "Транспортная доступность",
+            "Деловой кластер в зоне"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "high",
+          "explanationRu": "Якорные объекты и сильный целевой поток формируют хорошую базу для destination-venue.",
+          "supportingFactors": [
+            "Сильный целевой поток от якорных объектов",
+            "Крупный якорь формирует catchment-зону",
+            "Кластер притяжения — устойчивый спрос",
+            "Транспортная доступность для широкой аудитории"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "high",
+      "destination_venue": "high"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "food_beverage",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "convenience",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "destination_venue",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      }
+    ],
+    "discrepancyCount": 4,
+    "criticalCount": 3,
+    "error": null
+  },
+  {
+    "id": "dubai_marina",
+    "label": "Dubai Marina, Дубай",
+    "city": "Дубай, ОАЭ",
+    "lat": 25.0819,
+    "lon": 55.1407,
+    "bucket": "destination",
+    "primaryType": "destination_venue",
+    "humanRationale": "Премиальный жилой / туристический кластер с набережной. Destination HIGH — Marina Walk, яхты, прогулки. Food HIGH — рестораны с видом на марину. Showroom HIGH — luxury brands, интерьер, авто в соседних кварталах. Retail MEDIUM — торговые центры рядом. Convenience MEDIUM — живут здесь экспаты.",
+    "humanExpected": {
+      "retail": "medium",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "high",
+      "destination_venue": "high"
+    },
+    "elementCount": 294,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 10,
+      "barrierKindsDetected": [
+        "major_road",
+        "water"
+      ],
+      "corridorSnapM": 36.18715751311622,
+      "distanceInflationM": 12
+    },
+    "analysis": {
+      "evergreenIndex": 81,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.2,
+      "localActiveShare": 0.38,
+      "destinationShare": 0.42,
+      "movementDensity": "high",
+      "modifierTier": "moderate",
+      "flowCharacter": "mixed destination and transit",
+      "clusterDetected": true,
+      "competitorPressure": "high",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "شوبا العقارية",
+          "distance": 727
+        },
+        {
+          "category": "metro",
+          "name": "مركز دبي للسلع المتعددة",
+          "distance": 1242
+        },
+        {
+          "category": "hospital",
+          "name": "مستشفى الإمارات",
+          "distance": 398
+        },
+        {
+          "category": "hospital",
+          "name": "Health Avenue Polyclinics",
+          "distance": 514
+        },
+        {
+          "category": "major_hotel",
+          "name": "Hotel Le Royal Méridien Beach Resort & Spa",
+          "distance": 267
+        },
+        {
+          "category": "major_hotel",
+          "name": "Five Luxe",
+          "distance": 411
+        },
+        {
+          "category": "business",
+          "name": "Empower AC Branch",
+          "distance": 127
+        },
+        {
+          "category": "business",
+          "name": "Stones International Real Estate Brokers",
+          "distance": 273
+        },
+        {
+          "category": "business",
+          "name": "York Estates",
+          "distance": 386
+        },
+        {
+          "category": "business",
+          "name": "القنصلية العامة لبيرو",
+          "distance": 394
+        },
+        {
+          "category": "business",
+          "name": "CLS Global",
+          "distance": 419
+        },
+        {
+          "category": "entertainment",
+          "name": "Reel Cinemas",
+          "distance": 591
+        },
+        {
+          "category": "shopping_local",
+          "name": "Wmart",
+          "distance": 144
+        },
+        {
+          "category": "food",
+          "name": "Noodle Room",
+          "distance": 45
+        },
+        {
+          "category": "food",
+          "name": "Gallus",
+          "distance": 46
+        },
+        {
+          "category": "food",
+          "name": "@Falafel",
+          "distance": 63
+        }
+      ],
+      "industrial01": 0,
+      "majorRoads01": 0.4652631578947368
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Торговый якорь в зоне",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость",
+            "Активный локальный поток"
+          ],
+          "limitingFactors": [
+            "Высокая конкурентная плотность",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом",
+            "Активная локальная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "high",
+          "explanationRu": "Локальный поток или деловая аудитория создают устойчивый спрос на сервис (барбершоп, химчистка, ремонт).",
+          "supportingFactors": [
+            "Высокий локальный поток — постоянная аудитория",
+            "Деловые объекты рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "high",
+          "explanationRu": "Транзитная и локальная аудитория создают импульсный спрос — хорошая точка для магазина у дома или мини-маркета.",
+          "supportingFactors": [
+            "Транзитный узел рядом — стабильный импульсный спрос",
+            "Активная локальная аудитория",
+            "Высокая плотность движения"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "medium",
+          "explanationRu": "Умеренный потенциал — шоурум возможен, особенно при известности бренда или B2B-ориентации.",
+          "supportingFactors": [
+            "Умеренный целевой поток",
+            "Деловой кластер рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "medium",
+          "explanationRu": "Потенциал есть при сильной концепции, но локация сама по себе не тянет destination-поток.",
+          "supportingFactors": [
+            "Умеренный целевой поток"
+          ],
+          "limitingFactors": [
+            "Нет мощного якоря — catchment-зона ограничена",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "high",
+      "convenience": "high",
+      "showroom": "medium",
+      "destination_venue": "medium"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "service",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "convenience",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "showroom",
+        "expected": "high",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "destination_venue",
+        "expected": "high",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 5,
+    "criticalCount": 0,
+    "error": null
+  },
+  {
+    "id": "lyubertsy_center",
+    "label": "Центр Люберец, Подмосковье",
+    "city": "Люберцы, Московская область",
+    "lat": 55.6769,
+    "lon": 37.8942,
+    "bucket": "weak",
+    "primaryType": "convenience",
+    "humanRationale": "Слабый подмосковный центр. Convenience MEDIUM — есть местный жилой поток. Service MEDIUM — для местных жителей. Retail LOW — нет достаточного целевого потока. Showroom POOR — нет аудитории. Destination POOR — никто не едет в Люберцы целенаправленно.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "low",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "poor",
+      "destination_venue": "poor"
+    },
+    "elementCount": 240,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 7,
+      "barrierKindsDetected": [
+        "major_road",
+        "water"
+      ],
+      "corridorSnapM": 28.3212610187838,
+      "distanceInflationM": 9
+    },
+    "analysis": {
+      "evergreenIndex": 83,
+      "scoreBand": "strong",
+      "demandType": "tourism-led",
+      "transitShare": 0.3,
+      "localActiveShare": 0.24,
+      "destinationShare": 0.47,
+      "movementDensity": "high",
+      "modifierTier": "moderate",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "attraction",
+          "name": "Краеведческий музей",
+          "distance": 44
+        },
+        {
+          "category": "attraction",
+          "name": "Музей люберецкого техникума",
+          "distance": 675
+        },
+        {
+          "category": "attraction",
+          "name": "По ленинским местам",
+          "distance": 774
+        },
+        {
+          "category": "business",
+          "name": "Многофункциональный центр предоставления государственных и муниципальных услуг",
+          "distance": 22
+        },
+        {
+          "category": "business",
+          "name": "Билайн",
+          "distance": 262
+        },
+        {
+          "category": "business",
+          "name": "Люберецкое местное отделение Всероссийской политической партии «Единая Россия»",
+          "distance": 289
+        },
+        {
+          "category": "business",
+          "name": "МегаФон",
+          "distance": 309
+        },
+        {
+          "category": "business",
+          "name": "МТС",
+          "distance": 402
+        },
+        {
+          "category": "railway_station",
+          "name": "Мальчики",
+          "distance": 641
+        },
+        {
+          "category": "railway_station",
+          "name": "Люберцы I",
+          "distance": 641
+        },
+        {
+          "category": "entertainment",
+          "name": "Киномакс Октябрь",
+          "distance": 77
+        },
+        {
+          "category": "shopping_local",
+          "name": "Пятёрочка",
+          "distance": 92
+        },
+        {
+          "category": "food",
+          "name": "Центральный",
+          "distance": 77
+        },
+        {
+          "category": "food",
+          "name": "cafe",
+          "distance": 89
+        },
+        {
+          "category": "food",
+          "name": "Eazzy Pizza & Gelato",
+          "distance": 89
+        }
+      ],
+      "industrial01": 0.5666666666666667,
+      "majorRoads01": 0.38315789473684214
+    },
+    "formatFit": {
+      "overallVerdict": "weak",
+      "overallVerdictLabelRu": "Слабый потенциал — высокий риск",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "poor",
+          "explanationRu": "Локация слишком слабая для розничного формата без серьёзного обоснования.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Слишком слабый спрос или промышленные барьеры",
+            "Промышленное окружение — сдерживает потребительский поток",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "poor",
+          "explanationRu": "Слабая точка для F&B без выраженного трафика.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Недостаточно проходимости для F&B без особой концепции",
+            "Промышленное окружение не формирует аудиторию F&B",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "low",
+          "explanationRu": "Поток слабый или нелокальный. Сервис потребует активного привлечения клиентов.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Промышленное окружение снижает сервисный спрос",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "low",
+          "explanationRu": "Поток слабый. Формат возможен только при концентрированной жилой застройке рядом.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Слабая транзитная или локальная база",
+            "Промышленное окружение — мало жилой / рабочей аудитории рядом",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "low",
+          "explanationRu": "Шоурум возможен, но потребует значительных усилий по привлечению — локация не работает «на себя».",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Промышленное окружение создаёт барьер восприятия бренда",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "low",
+          "explanationRu": "Destination-формат возможен при уникальной концепции, но трафик придётся строить с нуля.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Destination-формат требует мощных якорей или исключительной концепции",
+            "Промышленное окружение несовместимо с destination-концепцией",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "poor",
+      "food_beverage": "poor",
+      "service": "low",
+      "convenience": "low",
+      "showroom": "low",
+      "destination_venue": "low"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "low",
+        "actual": "poor",
+        "severity": "medium"
+      },
+      {
+        "format": "food_beverage",
+        "expected": "low",
+        "actual": "poor",
+        "severity": "medium"
+      },
+      {
+        "format": "service",
+        "expected": "medium",
+        "actual": "low",
+        "severity": "medium"
+      },
+      {
+        "format": "convenience",
+        "expected": "medium",
+        "actual": "low",
+        "severity": "medium"
+      },
+      {
+        "format": "showroom",
+        "expected": "poor",
+        "actual": "low",
+        "severity": "medium"
+      },
+      {
+        "format": "destination_venue",
+        "expected": "poor",
+        "actual": "low",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 6,
+    "criticalCount": 0,
+    "error": null
+  },
+  {
+    "id": "elektrozavodskaya_moscow",
+    "label": "Электрозаводская, Москва (промзона)",
+    "error": "elektrozavodskaya_moscow: timed out after 120000ms"
+  },
+  {
+    "id": "pokrovskoye_streshnevo",
+    "label": "Покровское-Стрешнево, Москва",
+    "city": "Москва, Россия",
+    "lat": 55.8178,
+    "lon": 37.4253,
+    "bucket": "residential",
+    "primaryType": "service",
+    "humanRationale": "Тихий жилой район с парком. Convenience HIGH — местные жители + есть метро. Service MEDIUM — neighbourhood services (парикмахер, аптека). Retail LOW — нет торгового потока. Food LOW — максимум местная кофейня. Destination LOW — парк Стрешнево, но небольшой. Showroom POOR.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "low",
+      "service": "medium",
+      "convenience": "high",
+      "showroom": "poor",
+      "destination_venue": "low"
+    },
+    "elementCount": 133,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": false,
+      "penalizedMagnetCount": 0,
+      "barrierKindsDetected": [
+        "water"
+      ],
+      "corridorSnapM": 35.74963456849015,
+      "distanceInflationM": 11
+    },
+    "analysis": {
+      "evergreenIndex": 36,
+      "scoreBand": "weak",
+      "demandType": "mixed",
+      "transitShare": 0.25,
+      "localActiveShare": 0.53,
+      "destinationShare": 0.22,
+      "movementDensity": "high",
+      "modifierTier": "weak",
+      "flowCharacter": "transit-heavy footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "business",
+          "name": "Производство",
+          "distance": 529
+        },
+        {
+          "category": "business",
+          "name": "Стройинжбетон",
+          "distance": 777
+        },
+        {
+          "category": "business",
+          "name": "Промзона",
+          "distance": 800
+        },
+        {
+          "category": "business",
+          "name": "Производство",
+          "distance": 819
+        },
+        {
+          "category": "business",
+          "name": "Промзона",
+          "distance": 1021
+        },
+        {
+          "category": "shopping_local",
+          "name": "Пятёрочка",
+          "distance": 193
+        },
+        {
+          "category": "food",
+          "name": "Портофино",
+          "distance": 20
+        },
+        {
+          "category": "food",
+          "name": "Деликатеска",
+          "distance": 145
+        },
+        {
+          "category": "food",
+          "name": "Кофелина",
+          "distance": 175
+        }
+      ],
+      "industrial01": 0.36666666666666664,
+      "majorRoads01": 0
+    },
+    "formatFit": {
+      "overallVerdict": "weak",
+      "overallVerdictLabelRu": "Слабый потенциал — высокий риск",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "low",
+          "explanationRu": "Поток в основном транзитный или индекс невысокий. Розница возможна, но с ограниченным охватом.",
+          "supportingFactors": [
+            "Активный локальный поток"
+          ],
+          "limitingFactors": [
+            "Слабый индекс локации",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "low",
+          "explanationRu": "Проходимость ограничена. F&B возможен как destination с чёткой концепцией.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Слабый общий индекс локации",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток",
+            "Смешанная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "medium",
+          "explanationRu": "Умеренный поток позволяет рассмотреть convenience при достаточном жилом контексте.",
+          "supportingFactors": [
+            "Умеренная плотность движения",
+            "Есть локальная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "low",
+          "explanationRu": "Шоурум возможен, но потребует значительных усилий по привлечению — локация не работает «на себя».",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Нет метро / ж/д рядом — сложнее добраться",
+            "Слабый индекс — низкий целенаправленный трафик",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "low",
+          "explanationRu": "Destination-формат возможен при уникальной концепции, но трафик придётся строить с нуля.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Слабый индекс — нет достаточного внешнего спроса",
+            "Ограниченная транспортная доступность",
+            "Destination-формат требует мощных якорей или исключительной концепции",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "low",
+      "food_beverage": "low",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "low",
+      "destination_venue": "low"
+    },
+    "discrepancies": [
+      {
+        "format": "convenience",
+        "expected": "high",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "showroom",
+        "expected": "poor",
+        "actual": "low",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 2,
+    "criticalCount": 0,
+    "error": null
+  },
+  {
+    "id": "khamovniki_moscow",
+    "label": "Хамовники (жилой), Москва",
+    "city": "Москва, Россия",
+    "lat": 55.7309,
+    "lon": 37.5783,
+    "bucket": "residential",
+    "primaryType": "service",
+    "humanRationale": "Центральный жилой район с хорошим локальным потоком. Service HIGH — высокая плотность проживания, доходная аудитория. Convenience HIGH — метро рядом, жители. Food MEDIUM — neighbourhood cafes, не destination. Retail LOW — не торговая улица. Showroom LOW — residential area.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "medium",
+      "service": "high",
+      "convenience": "high",
+      "showroom": "low",
+      "destination_venue": "low"
+    },
+    "elementCount": 352,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 3,
+      "barrierKindsDetected": [
+        "major_road",
+        "water"
+      ],
+      "corridorSnapM": 46.98116051513098,
+      "distanceInflationM": 15
+    },
+    "analysis": {
+      "evergreenIndex": 100,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.23,
+      "localActiveShare": 0.29,
+      "destinationShare": 0.48,
+      "movementDensity": "high",
+      "modifierTier": "moderate",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 412
+        },
+        {
+          "category": "metro",
+          "name": "Фрунзенская",
+          "distance": 447
+        },
+        {
+          "category": "metro",
+          "name": "Парк Культуры",
+          "distance": 980
+        },
+        {
+          "category": "attraction",
+          "name": "Яндекс",
+          "distance": 762
+        },
+        {
+          "category": "attraction",
+          "name": "Достопримечательность",
+          "distance": 792
+        },
+        {
+          "category": "attraction",
+          "name": "Музей-квартира священника Павла Флоренского",
+          "distance": 922
+        },
+        {
+          "category": "hospital",
+          "name": "Российский научный центр хирургии им. академика Б. В. Петровского",
+          "distance": 901
+        },
+        {
+          "category": "major_hotel",
+          "name": "Графский",
+          "distance": 620
+        },
+        {
+          "category": "university",
+          "name": "Российская академия образования",
+          "distance": 610
+        },
+        {
+          "category": "university",
+          "name": "МПГУ Физический Факультет Лабораторный корпус",
+          "distance": 678
+        },
+        {
+          "category": "university",
+          "name": "Институт клинической морфологии и цифровой патологии",
+          "distance": 937
+        },
+        {
+          "category": "business",
+          "name": "Avon",
+          "distance": 124
+        },
+        {
+          "category": "business",
+          "name": "Производство",
+          "distance": 220
+        },
+        {
+          "category": "business",
+          "name": "Cordiant",
+          "distance": 234
+        },
+        {
+          "category": "business",
+          "name": "Бюро Экос",
+          "distance": 248
+        },
+        {
+          "category": "business",
+          "name": "Вычислительный центр Министерства обороны России",
+          "distance": 262
+        },
+        {
+          "category": "entertainment",
+          "name": "Театр На Пироговке",
+          "distance": 579
+        },
+        {
+          "category": "entertainment",
+          "name": "Театр Будущего Лилии Тим",
+          "distance": 590
+        },
+        {
+          "category": "entertainment",
+          "name": "Blar",
+          "distance": 666
+        },
+        {
+          "category": "shopping_local",
+          "name": "Перекресток",
+          "distance": 49
+        },
+        {
+          "category": "food",
+          "name": "Брусника",
+          "distance": 38
+        },
+        {
+          "category": "food",
+          "name": "Ароматный кофе",
+          "distance": 57
+        },
+        {
+          "category": "food",
+          "name": "Рибамбель",
+          "distance": 72
+        }
+      ],
+      "industrial01": 0.8,
+      "majorRoads01": 0.16421052631578947
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Торговый якорь в зоне",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток",
+            "Смешанная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "high",
+          "explanationRu": "Транзитная и локальная аудитория создают импульсный спрос — хорошая точка для магазина у дома или мини-маркета.",
+          "supportingFactors": [
+            "Транзитный узел рядом — стабильный импульсный спрос",
+            "Высокая плотность движения"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "high",
+          "explanationRu": "Целевой поток, деловой контекст и доступность создают правильную базу для шоурума или appointment-based формата.",
+          "supportingFactors": [
+            "Высокий целевой поток — клиенты приходят с намерением",
+            "Транспортная доступность",
+            "Деловой кластер в зоне"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "medium",
+          "explanationRu": "Потенциал есть при сильной концепции, но локация сама по себе не тянет destination-поток.",
+          "supportingFactors": [
+            "Умеренный целевой поток"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "high",
+      "showroom": "high",
+      "destination_venue": "medium"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "food_beverage",
+        "expected": "medium",
+        "actual": "high",
+        "severity": "medium"
+      },
+      {
+        "format": "service",
+        "expected": "high",
+        "actual": "medium",
+        "severity": "medium"
+      },
+      {
+        "format": "showroom",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "destination_venue",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 5,
+    "criticalCount": 2,
+    "error": null
+  },
+  {
+    "id": "gorky_park_moscow",
+    "label": "Парк Горького, Москва",
+    "city": "Москва, Россия",
+    "lat": 55.729,
+    "lon": 37.6015,
+    "bucket": "destination",
+    "primaryType": "food_beverage",
+    "humanRationale": "Крупный рекреационный destination. Food HIGH — парк Горького знаменит кафе, уличной едой, ресторанами. Destination HIGH — специально едут, место для отдыха. Retail LOW — в парке нет торговли. Service LOW — парковый контекст. Convenience MEDIUM — есть поток людей с мелкими покупками.",
+    "humanExpected": {
+      "retail": "low",
+      "food_beverage": "high",
+      "service": "low",
+      "convenience": "medium",
+      "showroom": "low",
+      "destination_venue": "high"
+    },
+    "elementCount": 275,
+    "spatialFoundation": {
+      "enabled": true,
+      "spatialTier": "stub",
+      "barrierPenaltyApplied": true,
+      "penalizedMagnetCount": 10,
+      "barrierKindsDetected": [
+        "major_road",
+        "rail",
+        "water"
+      ],
+      "corridorSnapM": 83.59503578832035,
+      "distanceInflationM": 27
+    },
+    "analysis": {
+      "evergreenIndex": 81,
+      "scoreBand": "strong",
+      "demandType": "mixed",
+      "transitShare": 0.23,
+      "localActiveShare": 0.26,
+      "destinationShare": 0.51,
+      "movementDensity": "high",
+      "modifierTier": "strong",
+      "flowCharacter": "destination-led footfall",
+      "clusterDetected": true,
+      "competitorPressure": "low",
+      "magnets": [
+        {
+          "category": "metro",
+          "name": "Октябрьская",
+          "distance": 502
+        },
+        {
+          "category": "metro",
+          "name": "Метро",
+          "distance": 590
+        },
+        {
+          "category": "metro",
+          "name": "Октябрьская",
+          "distance": 612
+        },
+        {
+          "category": "attraction",
+          "name": "Музей Парка Горького",
+          "distance": 296
+        },
+        {
+          "category": "attraction",
+          "name": "Презервация Тишины",
+          "distance": 587
+        },
+        {
+          "category": "attraction",
+          "name": "Музей предпринимателей, меценатов и благотворителей",
+          "distance": 666
+        },
+        {
+          "category": "university",
+          "name": "Университет мировых цивилизаций им. В.В. Жириновского",
+          "distance": 566
+        },
+        {
+          "category": "business",
+          "name": "Производство",
+          "distance": 213
+        },
+        {
+          "category": "business",
+          "name": "Жилищник района Якиманка",
+          "distance": 371
+        },
+        {
+          "category": "business",
+          "name": "Мосмонтаж",
+          "distance": 376
+        },
+        {
+          "category": "business",
+          "name": "ФГБУ \"Главэкспертцентр\"",
+          "distance": 448
+        },
+        {
+          "category": "business",
+          "name": "Ренессанс страхование",
+          "distance": 482
+        },
+        {
+          "category": "entertainment",
+          "name": "Киноклуб «Фитиль»",
+          "distance": 564
+        },
+        {
+          "category": "food",
+          "name": "Cafe Garage",
+          "distance": 121
+        },
+        {
+          "category": "food",
+          "name": "fast_food",
+          "distance": 162
+        },
+        {
+          "category": "food",
+          "name": "Wursthaus",
+          "distance": 166
+        }
+      ],
+      "industrial01": 0.7,
+      "majorRoads01": 0.16421052631578947
+    },
+    "formatFit": {
+      "overallVerdict": "strong",
+      "overallVerdictLabelRu": "Сильная коммерческая точка",
+      "entries": [
+        {
+          "format": "retail",
+          "fitLevel": "high",
+          "explanationRu": "Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.",
+          "supportingFactors": [
+            "Сильный целевой поток",
+            "Деловой кластер рядом",
+            "Транзитный узел усиливает проходимость"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "food_beverage",
+          "fitLevel": "high",
+          "explanationRu": "Хорошая проходимость и якоря создают устойчивый спрос на кафе, кофейни, ресторан.",
+          "supportingFactors": [
+            "Высокая плотность движения",
+            "Транзитный узел — стабильный поток",
+            "Деловой / образовательный якорь рядом"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "service",
+          "fitLevel": "medium",
+          "explanationRu": "Аудитория есть, но поток умеренный. Сервисный формат возможен при хорошем позиционировании.",
+          "supportingFactors": [
+            "Умеренный локальный поток",
+            "Смешанная аудитория"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "convenience",
+          "fitLevel": "medium",
+          "explanationRu": "Высокий поток в точке, но аудитория преимущественно туристическая — не формирует стабильный повседневный спрос для convenience.",
+          "supportingFactors": [
+            "Высокий поток в точке"
+          ],
+          "limitingFactors": [
+            "Туристическая аудитория не формирует стабильный повседневный спрос",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "showroom",
+          "fitLevel": "low",
+          "explanationRu": "Высокий поток в точке — туристический. Посетители достопримечательностей не являются целевой аудиторией шоурума.",
+          "supportingFactors": [],
+          "limitingFactors": [
+            "Туристический поток не конвертируется в аудиторию шоурума",
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        },
+        {
+          "format": "destination_venue",
+          "fitLevel": "high",
+          "explanationRu": "Якорные объекты и сильный целевой поток формируют хорошую базу для destination-venue.",
+          "supportingFactors": [
+            "Сильный целевой поток от якорных объектов",
+            "Крупный якорь формирует catchment-зону",
+            "Кластер притяжения — устойчивый спрос",
+            "Транспортная доступность для широкой аудитории"
+          ],
+          "limitingFactors": [
+            "Черновая геометрия (stub): пешеходный доступ не по графу улиц — подтвердите на месте.",
+            "Дальние якоря частично ослаблены из‑за барьеров между точкой и объектом (barrier_penalty_applied)."
+          ]
+        }
+      ]
+    },
+    "fitMap": {
+      "retail": "high",
+      "food_beverage": "high",
+      "service": "medium",
+      "convenience": "medium",
+      "showroom": "low",
+      "destination_venue": "high"
+    },
+    "discrepancies": [
+      {
+        "format": "retail",
+        "expected": "low",
+        "actual": "high",
+        "severity": "critical"
+      },
+      {
+        "format": "service",
+        "expected": "low",
+        "actual": "medium",
+        "severity": "medium"
+      }
+    ],
+    "discrepancyCount": 2,
+    "criticalCount": 1,
+    "error": null
+  }
+]
