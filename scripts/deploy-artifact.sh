@@ -82,6 +82,7 @@ tar -xzf "$ARTIFACT_PATH" -C "$RELEASE_DIR.tmp"
 [[ -f "$RELEASE_DIR.tmp/package-lock.json" ]] || die "artifact missing package-lock.json"
 [[ -d "$RELEASE_DIR.tmp/.next" ]] || die "artifact missing .next/"
 [[ -f "$RELEASE_DIR.tmp/ecosystem.config.cjs" ]] || die "artifact missing ecosystem.config.cjs"
+[[ -f "$RELEASE_DIR.tmp/.release.build.json" ]] || die "artifact missing .release.build.json"
 
 log "Publishing release dir atomically"
 rm -rf "$RELEASE_DIR"
@@ -107,6 +108,14 @@ log "Pre-switch smoke check (start Next using prebuilt .next)"
 SMOKE_PORT="${SMOKE_PORT:-3107}"
 SMOKE_BASE="http://127.0.0.1:${SMOKE_PORT}"
 
+# A fixed smoke port can keep answering from an orphaned `next` child if a prior deploy only killed `npm`.
+prep_smoke_port() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${SMOKE_PORT}/tcp" 2>/dev/null || true
+    sleep 0.25
+  fi
+}
+
 start_server() {
   # Pass release env explicitly: smoke uses plain `npm run start` (not PM2), so it does not get
   # ecosystem.config.cjs merged env. ASI_* must match the deploy SHA for pre-switch checks.
@@ -117,11 +126,26 @@ start_server() {
 }
 stop_server() {
   if [[ -f /tmp/asi-smoke-${SHA}.pid ]]; then
-    kill "$(cat /tmp/asi-smoke-${SHA}.pid)" 2>/dev/null || true
+    local npid
+    npid="$(cat /tmp/asi-smoke-${SHA}.pid 2>/dev/null || true)"
+    if [[ -n "${npid:-}" ]] && kill -0 "$npid" 2>/dev/null; then
+      if command -v pkill >/dev/null 2>&1; then
+        pkill -TERM -P "$npid" 2>/dev/null || true
+        sleep 0.45
+        pkill -KILL -P "$npid" 2>/dev/null || true
+      fi
+      kill -TERM "$npid" 2>/dev/null || true
+      sleep 0.2
+      kill -KILL "$npid" 2>/dev/null || true
+    fi
     rm -f /tmp/asi-smoke-${SHA}.pid || true
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${SMOKE_PORT}/tcp" 2>/dev/null || true
   fi
 }
 
+prep_smoke_port
 start_server
 trap 'stop_server' EXIT
 
