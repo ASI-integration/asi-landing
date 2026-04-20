@@ -118,9 +118,48 @@ jobs:
           path: ${{ steps.build_meta.outputs.artifact_file }}
           if-no-files-found: error
 
-  deploy:
+  artifact_smoke:
     runs-on: ubuntu-latest
     needs: [build_release]
+    steps:
+      - name: Checkout (smoke script)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build_release.outputs.artifact_name }}
+          path: release-artifact
+
+      - name: Pre-deploy artifact smoke (/api/health, /api/version, SHA)
+        shell: bash
+        env:
+          EXPECT_SHA: ${{ needs.build_release.outputs.sha }}
+          ARTIFACT_FILE: ${{ needs.build_release.outputs.artifact_file }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_PATH="release-artifact/${ARTIFACT_FILE}"
+          if [[ ! -f "$ARTIFACT_PATH" ]]; then
+            ARTIFACT_PATH="$(find release-artifact -type f -name "${ARTIFACT_FILE}" | head -n1 || true)"
+          fi
+          if [[ -z "${ARTIFACT_PATH:-}" ]] || [[ ! -f "$ARTIFACT_PATH" ]]; then
+            echo "Artifact tarball not found (expected release-artifact/${ARTIFACT_FILE})"
+            find release-artifact -type f 2>/dev/null || ls -la release-artifact || true
+            exit 1
+          fi
+          chmod +x scripts/ci-artifact-smoke.sh
+          bash scripts/ci-artifact-smoke.sh "$ARTIFACT_PATH" 13077
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build_release, artifact_smoke]
     env:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}

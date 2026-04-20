@@ -39,6 +39,8 @@ const root = __dirname;
 const fromLive = parseEnvFile(path.join(root, '.env.production.live'));
 const fromLocal = parseEnvFile(path.join(root, '.env.production.local'));
 const fileEnv = { ...fromLocal, ...fromLive };
+// Never inject legacy release SHA from env files; /api/version reads `.release.build.json` only for artifacts.
+delete fileEnv.ASI_RELEASE_SHA;
 
 module.exports = {
   apps: [

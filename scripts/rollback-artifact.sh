@@ -48,8 +48,18 @@ merge_env_kv() {
   mv "$tmp" "$LIVE_ENV_FILE"
 }
 
+remove_env_key() {
+  local key="$1"
+  local tmp
+  tmp="$(mktemp)"
+  if [[ -f "$LIVE_ENV_FILE" ]]; then
+    grep -v "^${key}=" "$LIVE_ENV_FILE" >"$tmp" || true
+    mv "$tmp" "$LIVE_ENV_FILE"
+  fi
+}
+
 log "Updating shared env metadata to match rollback target"
-merge_env_kv ASI_RELEASE_SHA "$SHA"
+remove_env_key ASI_RELEASE_SHA
 merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 merge_env_kv ASI_RELEASE_PATH "$RELEASE_DIR"
 

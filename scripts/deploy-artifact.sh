@@ -63,6 +63,16 @@ merge_env_kv() {
   mv "$tmp" "$LIVE_ENV_FILE"
 }
 
+remove_env_key() {
+  local key="$1"
+  local tmp
+  tmp="$(mktemp)"
+  if [[ -f "$LIVE_ENV_FILE" ]]; then
+    grep -v "^${key}=" "$LIVE_ENV_FILE" >"$tmp" || true
+    mv "$tmp" "$LIVE_ENV_FILE"
+  fi
+}
+
 rollback_to() {
   local prev="$1"
   log "ROLLBACK: switching current -> $prev"
@@ -89,7 +99,7 @@ rm -rf "$RELEASE_DIR"
 mv "$RELEASE_DIR.tmp" "$RELEASE_DIR"
 
 log "Updating shared env metadata + injected secrets (if present)"
-merge_env_kv ASI_RELEASE_SHA "$SHA"
+remove_env_key ASI_RELEASE_SHA
 merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 merge_env_kv ASI_RELEASE_PATH "$RELEASE_DIR"
 merge_env_kv TWOGIS_CATALOG_API_KEY "${TWOGIS_CATALOG_API_KEY:-}"
@@ -119,7 +129,7 @@ prep_smoke_port() {
 start_server() {
   # Pass release env explicitly: smoke uses plain `npm run start` (not PM2), so it does not get
   # ecosystem.config.cjs merged env. ASI_* must match the deploy SHA for pre-switch checks.
-  PORT="$SMOKE_PORT" NODE_ENV=production ASI_RELEASE_SHA="$SHA" \
+  PORT="$SMOKE_PORT" NODE_ENV=production \
     ASI_RELEASE_DEPLOYED_AT_ISO="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" ASI_RELEASE_PATH="$RELEASE_DIR" \
     nohup npm run start -- -H 127.0.0.1 -p "$SMOKE_PORT" >/tmp/asi-smoke-${SHA}.log 2>&1 &
   echo $! > /tmp/asi-smoke-${SHA}.pid
