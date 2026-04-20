@@ -22,11 +22,20 @@ git push origin main
 ```bash
 ssh root@<server>
 cd /root/asi-landing
-bash deploy.sh
+# (legacy) bash deploy.sh              # builds on VPS (not recommended)
+#
+# Canonical production deploy uses GitHub Actions to build an artifact and the VPS only unpacks it.
+# See: `.github/workflows/deploy.yml` + `scripts/deploy-artifact.sh`
 ```
 
-Скрипт делает: `git pull` → `npm install` → `npm run build` →
-`pm2 reload` → healthcheck → `nginx reload`.
+Legacy `deploy.sh` does: `git pull` → `npm install` → `npm run build` → `pm2 reload` → healthcheck → `nginx reload`.
+
+**Current discipline (prod)**:
+
+- build happens in GitHub Actions (lint + typecheck + tests + `next build`)
+- VPS receives `/tmp/asi-release-<sha>.tgz`
+- VPS runs `scripts/deploy-artifact.sh <sha> /tmp/asi-release-<sha>.tgz`
+- no `next build` on the VPS in the normal production flow
 
 **Успех** — последняя строка `[deploy] success`.
 
