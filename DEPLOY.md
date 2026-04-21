@@ -66,6 +66,24 @@ pm2 logs asi-landing --lines 20        # нет FATAL/unhandled
 
 ---
 
+## Working PM2 baseline
+
+- **Deploy uses clean PM2 start (not reload)**: stop → kill port → delete → `pm2 start`
+- **App start method**: direct `node` → `next` binary (not `npm run start`)
+- **PM2 facts (known-good)**:
+  - `pm_exec_path`: `/var/www/asi/current/node_modules/next/dist/bin/next`
+  - `pm_cwd`: `/var/www/asi/current`
+  - `exec_interpreter`: `node`
+  - `restart_time`: `0` right after successful start
+- **Version integrity**: `/api/version` SHA must match `release-meta.json` SHA
+
+**Do not change casually**:
+- do not switch back to `pm2 startOrReload` for this app
+- do not switch back to `npm run start` without explicit reason
+- if startup method changes again, treat it as a migration and use a fresh PM2 restart
+
+---
+
 ## ЗАПРЕЩЕНО
 
 - **Не делать `pm2 restart`** вручную — только через GitHub Actions deploy или `scripts/rollback-artifact.sh`
