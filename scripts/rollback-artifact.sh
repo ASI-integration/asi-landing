@@ -57,6 +57,62 @@ fi
 mkdir -p "$SHARED_DIR"
 touch "$LIVE_ENV_FILE"
 
+pm2_clean_start() {
+  local app_name="$1"
+  local config="$2"
+  local port="${3:-3000}"
+
+  log "pm2_clean_start: stop→kill-port→delete→start→save (app=$app_name port=$port)"
+  pm2 stop "$app_name" 2>/dev/null || true
+
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${port}/tcp" 2>/dev/null || true
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  elif command -v ss >/dev/null 2>&1; then
+    local pids=""
+    pids="$(ss -ltnp 2>/dev/null | grep -E ":${port}\\b" | sed -n 's/.*pid=\\([0-9]\\+\\).*/\\1/p' | sort -u | tr '\n' ' ' || true)"
+    for pid in $pids; do
+      kill -9 "$pid" 2>/dev/null || true
+    done
+  fi
+
+  sleep 0.5
+  pm2 delete "$app_name" 2>/dev/null || true
+  sleep 0.3
+
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltnp 2>/dev/null | grep -qE ":${port}\\b"; then
+      log "ERROR: port $port still appears to be in use; refusing to start PM2"
+      ss -ltnp 2>/dev/null | grep -E ":${port}\\b" || true
+      return 1
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+      log "ERROR: port $port still appears to be in use; refusing to start PM2"
+      lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+      return 1
+    fi
+  fi
+
+  pm2 start "$config" --only "$app_name"
+  pm2 save || true
+}
+
+print_failure_diagnostics() {
+  log "Failure diagnostics"
+  log "  PM2 status:"
+  pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
+  log "  PM2 describe ($PM2_ONLY):"
+  pm2 describe "$PM2_ONLY" 2>/dev/null || true
+  log "  PM2 logs ($PM2_ONLY) last 120 lines:"
+  pm2 logs "$PM2_ONLY" --lines 120 --nostream 2>/dev/null || true
+  log "  ss -ltnp | grep :3000:"
+  ss -ltnp 2>/dev/null | grep ":3000" || true
+  log "  ps -ef | grep -E 'next|node|npm' | grep -v grep:"
+  ps -ef 2>/dev/null | grep -E 'next|node|npm' | grep -v grep || true
+}
+
 merge_env_kv() {
   local key="$1"
   local val="$2"
@@ -100,18 +156,8 @@ mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 log "PM2 status (before reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
-log "Starting PM2 (clean: stop→kill-port→delete→start)"
-pm2 stop "$PM2_ONLY" 2>/dev/null || true
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k 3000/tcp 2>/dev/null || true
-elif command -v lsof >/dev/null 2>&1; then
-  lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true
-fi
-sleep 0.5
-pm2 delete "$PM2_ONLY" 2>/dev/null || true
-sleep 0.3
-pm2 start "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
-pm2 save || true
+log "Starting PM2 (clean: stop→kill-port→delete→start→save)"
+pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
 
 log "PM2 status (after reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
@@ -173,6 +219,7 @@ let lastBody = '';
 });
 NODE
 then
+  print_failure_diagnostics
   die "Rollback healthcheck failed"
 fi
 

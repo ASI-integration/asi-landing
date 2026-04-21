@@ -85,19 +85,46 @@ try {
 }
 
 pm2_clean_start() {
-  local config="$1"
-  local app_name="$2"
-  log "pm2_clean_start: stop→kill-port→delete→start ($app_name)"
+  local app_name="$1"
+  local config="$2"
+  local port="${3:-3000}"
+
+  log "pm2_clean_start: stop→kill-port→delete→start→save (app=$app_name port=$port)"
   pm2 stop "$app_name" 2>/dev/null || true
+
+  # Ensure port is free before starting PM2.
   if command -v fuser >/dev/null 2>&1; then
-    fuser -k 3000/tcp 2>/dev/null || true
+    fuser -k "${port}/tcp" 2>/dev/null || true
   elif command -v lsof >/dev/null 2>&1; then
-    lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true
+    lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
+  elif command -v ss >/dev/null 2>&1; then
+    local pids=""
+    pids="$(ss -ltnp 2>/dev/null | grep -E ":${port}\\b" | sed -n 's/.*pid=\\([0-9]\\+\\).*/\\1/p' | sort -u | tr '\n' ' ' || true)"
+    for pid in $pids; do
+      kill -9 "$pid" 2>/dev/null || true
+    done
   fi
+
   sleep 0.5
   pm2 delete "$app_name" 2>/dev/null || true
   sleep 0.3
+
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltnp 2>/dev/null | grep -qE ":${port}\\b"; then
+      log "ERROR: port $port still appears to be in use; refusing to start PM2"
+      ss -ltnp 2>/dev/null | grep -E ":${port}\\b" || true
+      return 1
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+      log "ERROR: port $port still appears to be in use; refusing to start PM2"
+      lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+      return 1
+    fi
+  fi
+
   pm2 start "$config" --only "$app_name"
+  pm2 save || true
 }
 
 rollback_to() {
@@ -109,8 +136,7 @@ rollback_to() {
   mv -Tf "$tmp_link" "$CURRENT_LINK"
   log "PM2 status (before reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
-  pm2_clean_start "/var/www/asi/current/ecosystem.config.cjs" "$PM2_ONLY"
-  pm2 save || true
+  pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
   log "PM2 status (after reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   if [[ -n "${expect_sha:-}" ]]; then
@@ -246,8 +272,7 @@ mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 unset SWAP_LINK
 
 log "Starting PM2 (clean: stop→kill-port→delete→start) (single app: $PM2_ONLY)"
-pm2_clean_start "/var/www/asi/current/ecosystem.config.cjs" "$PM2_ONLY"
-pm2 save || true
+pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
 
 log "PM2 status (after reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
@@ -414,8 +439,12 @@ try {
   console.log('pm2-jlist: failed:', String(e));
 }
 NODE
-  log "  PM2 logs ($PM2_ONLY) last 100 lines:"
-  pm2 logs "$PM2_ONLY" --lines 100 --nostream 2>/dev/null || true
+  log "  PM2 logs ($PM2_ONLY) last 120 lines:"
+  pm2 logs "$PM2_ONLY" --lines 120 --nostream 2>/dev/null || true
+  log "  ss -ltnp | grep :3000:"
+  ss -ltnp 2>/dev/null | grep ":3000" || true
+  log "  ps -ef | grep -E 'next|node|npm' | grep -v grep:"
+  ps -ef 2>/dev/null | grep -E 'next|node|npm' | grep -v grep || true
   log "  Restart loop check (pm2 jlist):"
   PM2_ONLY="$PM2_ONLY" node - <<'NODE' || true
 const { execSync } = require('child_process');
