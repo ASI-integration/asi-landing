@@ -5,7 +5,6 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
  *  in-site links use `/` (not `/ru`) as the home anchor. */
 export const ruNavMainLinks = [
   { href: '/', label: 'Главная' },
-  { href: '/#platform-modules', label: 'Платформа' },
   { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Доходность объектов' },
   { href: '/#faq', label: 'Как это работает' },
   { href: '/#pricing', label: 'Тарифы' },

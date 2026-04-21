@@ -9,28 +9,6 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
 const DEMO_LINK = '/connect';
 
-/* ─── Platform modules ──────────────────────────────────────────────────────── */
-const MODULES = [
-  {
-    id: 'real-estate',
-    name: 'Автопилот для недвижимости',
-    status: 'ACTIVE' as const,
-    desc: 'Ведёт коммуникации с гостями, операции, платежи и контроль от начала до конца.',
-  },
-  {
-    id: 'security',
-    name: 'Автопилот безопасности',
-    status: 'COMING SOON' as const,
-    desc: 'Мониторит события, исполняет правила доступа и автоматически реагирует на инциденты.',
-  },
-  {
-    id: 'market',
-    name: 'Автоматизация рынка',
-    status: 'COMING SOON' as const,
-    desc: 'Ведёт клиентские потоки, транзакции и операционные процессы без отдельного операционного стола.',
-  },
-];
-
 /* ─── Что автоматизируется ───────────────────────────────────────────────────── */
 const AUTOMATED_ITEMS = [
   {
@@ -419,51 +397,6 @@ export default function HomeRu() {
                   <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{card.desc}</p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Модули платформы ── */}
-        <section id="platform-modules" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Модули платформы
-            </h2>
-            <p className="text-[var(--t-muted)] text-lg mb-10">
-              Автономные системы на одной инфраструктуре — каждая ведёт свой домен.
-            </p>
-            <div className="grid sm:grid-cols-3 gap-4">
-              {MODULES.map((mod) => {
-                const isActive = mod.status === 'ACTIVE';
-                return (
-                  <div
-                    key={mod.id}
-                    className={`p-6 rounded-xl border transition-all ${
-                      isActive
-                        ? 'border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)]'
-                        : 'border-[var(--t-border)] bg-[var(--t-surface)]'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <h3 className={`font-semibold text-sm leading-snug ${isActive ? 'text-[var(--t-text)]' : 'text-[var(--t-text-2)]'}`}>
-                        {mod.name}
-                      </h3>
-                      <span
-                        className={`shrink-0 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                          isActive
-                            ? 'bg-[color-mix(in_srgb,var(--t-accent)_18%,transparent)] text-[var(--t-text)] border border-[color:var(--t-accent)]'
-                            : 'bg-[var(--t-surface-2)] text-[var(--t-muted)] border border-[var(--t-border)]'
-                        }`}
-                      >
-                        {isActive ? 'АКТИВНО' : 'СКОРО'}
-                      </span>
-                    </div>
-                    <p className={`text-sm leading-relaxed ${isActive ? 'text-[var(--t-text-2)]' : 'text-[var(--t-muted)]'}`}>
-                      {mod.desc}
-                    </p>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </section>
