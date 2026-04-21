@@ -107,7 +107,15 @@ const CARDS = [
 ];
 
 /* ─── Contacts ──────────────────────────────────────────────────────────────── */
-function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) {
+function ContactLinks({
+  orientation = 'row',
+  showLogin = true,
+  telegramIconClassName = 'w-8 h-8',
+}: {
+  orientation?: 'row' | 'col';
+  showLogin?: boolean;
+  telegramIconClassName?: string;
+}) {
   const cls = orientation === 'row'
     ? 'flex flex-col sm:flex-row justify-center gap-4'
     : 'flex flex-col gap-3';
@@ -120,9 +128,9 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
         rel="noopener noreferrer"
         aria-label="Telegram"
         title="Telegram"
-        className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
+        className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
       >
-        <TgIcon />
+        <TgIcon className={telegramIconClassName} />
         <span className="sr-only">Telegram</span>
       </a>
       <a
@@ -134,6 +142,14 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
         </svg>
         {productSupportEmail}
       </a>
+      {showLogin ? (
+        <Link
+          href="/login"
+          className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text)] font-semibold text-sm hover:bg-[var(--t-surface-2)] transition-all"
+        >
+          Войти
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -166,69 +182,6 @@ export default function HomeRu() {
           ctaHref: DEMO_LINK,
           ctaExternal: false,
         }} telegramVariant="icon" showTopRow={false} />
-
-        {/* ── О системе (сразу под героем) ── */}
-        <section className="py-14 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-10 sm:gap-16">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)] mb-4">
-                О системе
-              </p>
-              <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] leading-snug mb-3">
-                Система операционной автоматизации
-              </h2>
-              <p className="text-sm sm:text-base text-[var(--t-text-2)] leading-relaxed mb-5">
-                ASI — это не дашборд и не ПО, которым вы управляете вручную. Это операционная инфраструктура: ИИ-слой, который ведёт ваш портфель объектов от начала до конца — без персонала и ручного контроля.
-              </p>
-              <ul className="space-y-2">
-                {[
-                  'Не дашборд',
-                  'Не ПО для ручного управления',
-                  'Заменяет операционный слой целиком',
-                ].map((pt) => (
-                  <li key={pt} className="flex items-center gap-2 text-sm text-[var(--t-muted)]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--t-muted)] shrink-0" aria-hidden />
-                    {pt}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="sm:flex sm:flex-col sm:items-end">
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)] mb-4">
-                Контакты
-              </p>
-              <div className="flex flex-col items-start sm:items-end gap-3">
-                <a
-                  href="https://t.me/ASI_core_bot"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Telegram"
-                  title="Telegram"
-                  className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all"
-                >
-                  <TgIcon className="w-4 h-4 shrink-0" />
-                  <span className="sr-only">Telegram</span>
-                </a>
-                <a
-                  href={`mailto:${productSupportEmail}`}
-                  className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)] transition-all text-sm"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-[var(--t-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
-                  </svg>
-                  {productSupportEmail}
-                </a>
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)] transition-all text-sm"
-                >
-                  Войти
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
 
         {/* ── Два рабочих модуля ── */}
         <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t-2 border-[color:var(--t-accent)]">
@@ -285,6 +238,18 @@ export default function HomeRu() {
                 </span>
               </Link>
 
+            </div>
+          </div>
+        </section>
+
+        {/* ── Контакты (компактный блок ниже) ── */}
+        <section className="py-10 sm:py-12 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-6 py-6 sm:px-8 sm:py-7">
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)] mb-3 text-center">
+                Контакты
+              </p>
+              <ContactLinks orientation="row" showLogin telegramIconClassName="w-8 h-8" />
             </div>
           </div>
         </section>
