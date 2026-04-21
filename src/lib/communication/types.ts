@@ -158,7 +158,6 @@ export interface IntentResult {
 export interface ConversationContext {
   lastIntent?: IntentCategory;
   guestName?: string;
-  reservationId?: string;
   /** RU staff-group bridge: operator-provided booking reference (reservation_ref). */
   bookingReference?: string;
   /** RU staff-group bridge: operator-provided property clue (address / name / location). */

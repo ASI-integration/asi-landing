@@ -11,6 +11,57 @@ function sourceLabel(usedFallback: boolean | undefined): string {
   return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';
 }
 
+function buildWarnings(args: {
+  elementsCount: number;
+  usedFallbackQuery?: boolean;
+  hadProviderFailure?: boolean;
+  locale: 'en' | 'ru';
+}): NonNullable<AnalysisMeta['warnings']> {
+  const { elementsCount, usedFallbackQuery, hadProviderFailure, locale } = args;
+  const warnings: NonNullable<AnalysisMeta['warnings']> = [];
+
+  if (hadProviderFailure) {
+    warnings.push({
+      code: 'osm_provider_unavailable',
+      message: locale === 'ru'
+        ? 'Источник карт временно недоступен: часть сигналов может отсутствовать.'
+        : 'Map provider temporarily unavailable: some signals may be missing.',
+    });
+  }
+  if (usedFallbackQuery) {
+    warnings.push({
+      code: 'osm_fallback_query',
+      message: locale === 'ru'
+        ? 'Часть запросов к карте выполнена в упрощённом режиме — детализация может быть ниже.'
+        : 'Some map queries ran in simplified mode — detail may be lower.',
+    });
+  }
+
+  // Heuristic "sparse" threshold: low object density means weaker confidence in magnets/competitors.
+  if (elementsCount < 60) {
+    warnings.push({
+      code: 'osm_sparse',
+      message: locale === 'ru'
+        ? 'Мало объектов в OpenStreetMap рядом с адресом — выводы менее надёжны.'
+        : 'Sparse OpenStreetMap coverage near this address — results are less reliable.',
+    });
+  }
+
+  return warnings;
+}
+
+function confidenceFromSignals(args: {
+  elementsCount: number;
+  usedFallbackQuery?: boolean;
+  hadProviderFailure?: boolean;
+}): NonNullable<AnalysisMeta['confidence']> {
+  const { elementsCount, usedFallbackQuery, hadProviderFailure } = args;
+  if (hadProviderFailure) return 'low';
+  if (elementsCount < 60) return 'low';
+  if (usedFallbackQuery || elementsCount < 140) return 'medium';
+  return 'high';
+}
+
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
@@ -25,10 +76,11 @@ async function fetchAndCache(lat: number, lon: number): Promise<void> {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { lat?: unknown; lon?: unknown; spatialFoundation?: unknown };
+    const body = await req.json() as { lat?: unknown; lon?: unknown; spatialFoundation?: unknown; locale?: unknown };
     const lat = typeof body.lat === 'number' ? body.lat : null;
     const lon = typeof body.lon === 'number' ? body.lon : null;
     const wantSpatial = body.spatialFoundation === true;
+    const locale: 'en' | 'ru' = body.locale === 'en' ? 'en' : 'ru';
 
     if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       return NextResponse.json({ error: 'lat/lon required' }, { status: 400 });
@@ -46,6 +98,15 @@ export async function POST(req: NextRequest) {
         cached: true,
         ...(cached.freshness === 'stale' ? { refreshing: true } : {}),
       };
+      meta.warnings = buildWarnings({
+        elementsCount: cached.entry.elementsCount,
+        usedFallbackQuery: meta.usedFallbackQuery,
+        locale,
+      });
+      meta.confidence = confidenceFromSignals({
+        elementsCount: cached.entry.elementsCount,
+        usedFallbackQuery: meta.usedFallbackQuery,
+      });
 
       // Return cached result immediately — no "Нет данных" when data exists.
       // If stale, kick off a background refresh (fire-and-forget).
@@ -107,6 +168,17 @@ export async function POST(req: NextRequest) {
       cached: false,
       ...(usedFallbackQuery ? { usedFallbackQuery: true } : {}),
     };
+    meta.warnings = buildWarnings({
+      elementsCount: elements.length,
+      usedFallbackQuery,
+      hadProviderFailure,
+      locale,
+    });
+    meta.confidence = confidenceFromSignals({
+      elementsCount: elements.length,
+      usedFallbackQuery,
+      hadProviderFailure,
+    });
 
     // ── Structured diagnostics — always logged; helps detect silent regressions ──
     console.info(

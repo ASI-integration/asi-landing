@@ -164,6 +164,8 @@ async function fetchLocationAnalysis(
       body: JSON.stringify({
         lat,
         lon,
+        // Used only to localize warning strings from the server.
+        locale: typeof window !== 'undefined' && window.location?.pathname?.startsWith('/ru') ? 'ru' : 'en',
         ...(opts?.spatialFoundation ? { spatialFoundation: true } : {}),
       }),
       signal,
@@ -428,7 +430,7 @@ function MarketSnapshotTable({
     },
     { label: c.marketRows.competitors500m, value: `${competitorCount}` },
     { label: c.marketRows.avgAdr,          value: isRu ? fmtRub(adrRub) : `$${adr}`,       tooltip: c.marketTooltips.avgAdr },
-    { label: c.marketRows.estOccupancy,    value: `${occupancy}%` },
+    { label: c.marketRows.estOccupancy,    value: `${occupancy}%`, tooltip: c.marketTooltips.estOccupancy },
     { label: c.marketRows.revpar,          value: isRu ? fmtRub(revparRub) : `$${revpar}`, tooltip: c.marketTooltips.revpar },
     { label: c.marketRows.strategy,        value: strategyLabelMap[strategy] },
   ];
@@ -436,6 +438,7 @@ function MarketSnapshotTable({
   return (
     <div className="px-5 py-5 border-b border-slate-800/40">
       <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-4">{c.marketSnapshotTitle}</p>
+      <p className="text-[12px] text-slate-500 mb-4">{c.marketSnapshotNote}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {rows.map((row) => (
           <div key={row.label}>
@@ -479,6 +482,44 @@ function AnalysisFreshnessStrip({ meta, locale, c }: { meta: AnalysisMeta; local
       <span className={`text-[11px] font-semibold uppercase tracking-[0.15em] ${statusClass}`}>{statusLabel}</span>
       <span className="text-[11px] text-slate-600">{formatUpdatedRelative(meta.updatedAt, c)}</span>
       <span className="text-[11px] text-slate-700">{baseSource} · {sourceKind}{meta.usedFallbackQuery ? ` · ${c.analysisFreshness.simplifiedMode}` : ''}</span>
+    </div>
+  );
+}
+
+function ConfidenceWarningsStrip({ meta, locale }: { meta: AnalysisMeta; locale: LocDemoLocale }) {
+  const confidence = meta.confidence;
+  const warnings = meta.warnings ?? [];
+  if (!confidence && warnings.length === 0) return null;
+
+  const confLabel =
+    confidence === 'high'
+      ? (locale === 'ru' ? 'высокая уверенность' : 'high confidence')
+      : confidence === 'medium'
+        ? (locale === 'ru' ? 'средняя уверенность' : 'medium confidence')
+        : confidence === 'low'
+          ? (locale === 'ru' ? 'низкая уверенность' : 'low confidence')
+          : null;
+
+  const confClass =
+    confidence === 'high' ? 'text-emerald-400'
+    : confidence === 'medium' ? 'text-amber-400'
+    : confidence === 'low' ? 'text-orange-400'
+    : 'text-slate-400';
+
+  return (
+    <div className="px-5 py-2 border-b border-slate-800/40 bg-slate-950/20">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {confLabel ? (
+          <span className={`text-[11px] font-semibold uppercase tracking-[0.15em] ${confClass}`}>
+            {confLabel}
+          </span>
+        ) : null}
+        {warnings.slice(0, 3).map((w) => (
+          <span key={w.code} className="text-[11px] text-slate-400">
+            {w.message}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1742,6 +1783,7 @@ function ASIPanel({
       }}
     >
       {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
+      {meta ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
 
       {/* ── KPI summary row — horizontal on desktop, 2-col grid on mobile ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">
@@ -2545,6 +2587,7 @@ export function LocationIntelligenceDemo({
   const [addressDraft, setAddressDraft] = useState('');
   const [geocodeFallbackBusy, setGeocodeFallbackBusy] = useState(false);
   const [fallbackGeocodeErr, setFallbackGeocodeErr] = useState<string | null>(null);
+  const [usedFallbackGeocode, setUsedFallbackGeocode] = useState(false);
   const [inputKey, setInputKey] = useState(0);
   const [activeTag, setActiveTag] = useState<number | null>(null);
   const [mapFeedback, setMapFeedback] = useState<string | null>(null);
@@ -2625,6 +2668,7 @@ export function LocationIntelligenceDemo({
         lon: raw.lon,
       });
       setSelected({ value: label, lat: raw.lat, lon: raw.lon });
+      setUsedFallbackGeocode(true);
       locTel?.pushLine({
         badge: 'ADR',
         text: c.addrChosenLog(truncateForLog(label)),
@@ -2653,6 +2697,7 @@ export function LocationIntelligenceDemo({
     setAddressDraft('');
     setFallbackGeocodeErr(null);
     setGeocodeFallbackBusy(false);
+    setUsedFallbackGeocode(false);
     setInputKey(k => k + 1);
     setActiveTag(null);
     locTel?.resetTelemetry();
@@ -2678,7 +2723,22 @@ export function LocationIntelligenceDemo({
       const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon, {
         spatialFoundation: mode === 'commercial',
       });
-      const resolvedMeta = result?.meta ?? null;
+      const resolvedMetaBase = result?.meta ?? null;
+      const resolvedMeta: AnalysisMeta | null =
+        resolvedMetaBase && usedFallbackGeocode
+          ? {
+            ...resolvedMetaBase,
+            warnings: [
+              ...(resolvedMetaBase.warnings ?? []),
+              {
+                code: 'geocode_fallback',
+                message: locale === 'ru'
+                  ? 'Адрес был геокодирован по введённому тексту — точность может быть ниже.'
+                  : 'Address was geocoded from typed text — precision may be lower.',
+              },
+            ],
+          }
+          : resolvedMetaBase;
       const elapsed = Date.now() - fetchStart;
       setTimeout(() => {
         if (cancelled) return;
@@ -2699,7 +2759,7 @@ export function LocationIntelligenceDemo({
       clearTimeout(abortTimeout);
       tickers.forEach(clearTimeout);
     };
-  }, [phase, selected, locale, c, mode]);
+  }, [phase, selected, locale, c, mode, usedFallbackGeocode]);
 
   return (
     <section
@@ -2979,6 +3039,7 @@ export function LocationIntelligenceDemo({
                     setSelected(addr);
                     setValidationErr(false);
                     setFallbackGeocodeErr(null);
+                    setUsedFallbackGeocode(false);
                     locTel?.pushLine({
                       badge: 'ADR',
                       text: c.addrChosenLog(truncateForLog(addr.value)),

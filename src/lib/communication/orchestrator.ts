@@ -780,8 +780,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Send the response abstractly
-    const targetId = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
-    cp('outbound.dispatch.start', { chat_id: chatId, target_id: String(targetId), used_path: usedPath, llm_succeeded: llmSucceeded, reply_len: replyText.length });
+    const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+    if (!targetIdRaw) throw new Error('No outbound target id');
+    const targetId = String(targetIdRaw);
+    cp('outbound.dispatch.start', { chat_id: chatId, target_id: targetId, used_path: usedPath, llm_succeeded: llmSucceeded, reply_len: replyText.length });
     if (ruDebug) {
       console.log('[ru:tg] reply.computed', {
         chat_id: chatId,
@@ -809,7 +811,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       : await withAwaitCheckpoint(
           'outbound.dispatch.await',
           () => adapter.sendMessage(targetId, replyText),
-          { chat_id: chatId, target_id: String(targetId), channel: envelope.channel },
+          { chat_id: chatId, target_id: targetId, channel: envelope.channel },
           Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS ?? 10000) + 5_000,
         );
     if (pipeDebug) {

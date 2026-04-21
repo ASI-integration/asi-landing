@@ -299,6 +299,24 @@ export interface AnalysisMeta {
   refreshing?: boolean;
   /** Live fetch used a reduced Overpass query after primary queries failed */
   usedFallbackQuery?: boolean;
+  /**
+   * Confidence in this analysis given available signals.
+   * This is not a "model accuracy" claim — it is a surface for demos and validation harnesses.
+   */
+  confidence?: 'high' | 'medium' | 'low';
+  /**
+   * Human-readable warnings about weak or missing inputs.
+   * Clients should display these verbatim (demo) or log them (validation).
+   */
+  warnings?: Array<{
+    code:
+      | 'osm_sparse'
+      | 'osm_provider_unavailable'
+      | 'osm_fallback_query'
+      | 'geocode_fallback'
+      | 'competitor_data_unavailable';
+    message: string;
+  }>;
 }
 
 /** Concern tier for the neighborhood environment / livability-friction layer (not commercial strength). */

@@ -190,11 +190,12 @@ export function LocationStandaloneFullReport({
                 <p className="mt-2 text-sm text-slate-200 leading-snug">{report.address}</p>
               </div>
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу</p>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу (оценка)</p>
                 <p className="mt-2 text-xl font-bold text-white tabular-nums">
                   {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">До расходов и комиссий управления</p>
+                <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
+                <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
               </div>
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Рекомендуемая стратегия</p>

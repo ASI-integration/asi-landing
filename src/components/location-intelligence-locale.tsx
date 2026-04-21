@@ -120,6 +120,7 @@ export const LOC_COPY: Record<
     strategyHybrid: string[];
     strategyShortTerm: string[];
     marketSnapshotTitle: string;
+    marketSnapshotNote: string;
     marketRows: {
       locationScore: string;
       demandLevel: string;
@@ -133,6 +134,7 @@ export const LOC_COPY: Record<
     marketTooltips: {
       demandStability: string;
       avgAdr: string;
+      estOccupancy: string;
       revpar: string;
     };
     incomeTitle: string;
@@ -173,7 +175,7 @@ export const LOC_COPY: Record<
     mapTitle2gis: 'Property surroundings map — 2GIS',
     mapTitleOsm: 'Property surroundings map — OpenStreetMap',
     heatmapHeader: 'ASI · Influence map',
-    heatmapSub: '· real values',
+    heatmapSub: '· map signals',
     heatmapAria: 'Location attraction heatmap',
     legendMagnets: 'Magnets',
     legendCompetitors: 'Competitors',
@@ -213,7 +215,7 @@ export const LOC_COPY: Record<
     loadingSteps: [
       'Analyzing location...',
       'Evaluating demand...',
-      'Calculating revenue...',
+      'Summarizing signals...',
     ],
     runStarted: 'Run started',
     sectionTitle: 'Location analysis runs automatically',
@@ -268,26 +270,29 @@ export const LOC_COPY: Record<
       'Leverage peak seasons',
     ],
     marketSnapshotTitle: 'Market Snapshot',
+    marketSnapshotNote:
+      'Demo-safe view: ADR / occupancy / RevPAR are heuristic estimates (not fetched market truth).',
     marketRows: {
       locationScore: 'Location Score',
       demandLevel: 'Demand Level',
       demandStability: 'Demand Stability',
       competitors500m: 'Competitors (500m)',
-      avgAdr: 'Avg ADR',
-      estOccupancy: 'Est. Occupancy',
-      revpar: 'RevPAR',
+      avgAdr: 'Avg ADR (est.)',
+      estOccupancy: 'Est. Occupancy (est.)',
+      revpar: 'RevPAR (est.)',
       strategy: 'Strategy',
     },
     marketTooltips: {
       demandStability: 'How consistent demand is over time, adjusted for seasonality and competition',
-      avgAdr: 'Average daily rate based on nearby listings',
-      revpar: 'Revenue per available rental night',
+      avgAdr: 'Heuristic ADR estimate derived from map signals (not live listing prices).',
+      estOccupancy: 'Heuristic occupancy estimate derived from map signals (not actual bookings).',
+      revpar: 'Heuristic RevPAR proxy computed from estimated ADR × estimated occupancy.',
     },
     incomeTitle: 'Estimated Monthly Income',
     incomeSuffix: '/ mo',
     incomeDisclaimer1: 'Before expenses and management fees',
-    incomeDisclaimer2: 'Estimated using market data (Zillow, Airbnb comps, local demand signals)',
-    incomeDisclaimer3: 'Range varies by occupancy, seasonality, and pricing strategy',
+    incomeDisclaimer2: 'Estimate / proxy only — not guaranteed market truth',
+    incomeDisclaimer3: 'Varies by occupancy, seasonality, and execution quality',
     incomeStrategyLabel: (s) =>
       s === 'short_term' ? 'short-term rental model'
       : s === 'hybrid'   ? 'hybrid (short + mid-term) model'
@@ -327,7 +332,7 @@ export const LOC_COPY: Record<
     mapTitle2gis: 'Карта окружения объекта — 2GIS',
     mapTitleOsm: 'Карта окружения объекта — OpenStreetMap',
     heatmapHeader: 'ASI · Карта влияния',
-    heatmapSub: '· реальные значения',
+    heatmapSub: '· сигналы карты',
     heatmapAria: 'Карта притяжения локации',
     legendMagnets: 'Магниты',
     legendCompetitors: 'Конкуренты',
@@ -367,12 +372,12 @@ export const LOC_COPY: Record<
     loadingSteps: [
       'Анализируем локацию…',
       'Оцениваем спрос…',
-      'Рассчитываем доход…',
+      'Собираем вывод…',
     ],
     runStarted: 'расчёт запущен',
     sectionTitle: 'Оцените потенциал вашего объекта',
     sectionLead:
-      'Введите адрес — система покажет реальный спрос, конкурентов и ориентир по доходу на основе фактических данных, а не усреднённых отчётов.',
+      'Введите адрес — система покажет сигналы спроса по карте (магниты и окружение), конкурентов рядом и ориентир по доходу (оценка).',
     sectionSub1:
       'Подходит для инвесторов, управляющих и собственников,\nкоторые принимают решения на основе цифр',
     sectionSub2: '',
@@ -420,26 +425,29 @@ export const LOC_COPY: Record<
       'Фокус на корпоративных каналах, загрузке и динамическом ценообразовании',
     ],
     marketSnapshotTitle: 'Снимок рынка',
+    marketSnapshotNote:
+      'Для демо: ADR / загрузка / RevPAR — оценка по сигналам окружения (не гарантированная «рыночная правда»).',
     marketRows: {
       locationScore: 'Индекс локации',
       demandLevel: 'Профиль спроса',
       demandStability: 'Устойчивость спроса',
       competitors500m: 'Конкуренты (500 м)',
-      avgAdr: 'Средний ADR',
-      estOccupancy: 'Оценка загрузки',
-      revpar: 'RevPAR',
+      avgAdr: 'ADR (оценка)',
+      estOccupancy: 'Загрузка (оценка)',
+      revpar: 'RevPAR (оценка)',
       strategy: 'Стратегия',
     },
     marketTooltips: {
       demandStability: 'Насколько спрос стабилен во времени с учётом сезонности и конкуренции',
-      avgAdr: 'Средняя цена ночи по ближайшим размещениям',
-      revpar: 'Доход на доступную ночь аренды',
+      avgAdr: 'Оценка ADR по сигналам локации (не фактические цены из OTA).',
+      estOccupancy: 'Оценка загрузки по сигналам локации (не фактические бронирования).',
+      revpar: 'Прокси RevPAR: оценка ADR × оценка загрузки.',
     },
     incomeTitle: 'Оценка дохода в месяц',
     incomeSuffix: '/ мес',
     incomeDisclaimer1: 'До расходов и комиссий управления',
-    incomeDisclaimer2: 'Оценка по рыночным данным (аналоги STR-объектов в России, сигналы спроса)',
-    incomeDisclaimer3: 'Диапазон зависит от загрузки, сезонности и стратегии ценообразования',
+    incomeDisclaimer2: 'Оценка / прокси — не гарантированная «рыночная правда»',
+    incomeDisclaimer3: 'Зависит от загрузки, сезонности и качества исполнения',
     incomeStrategyLabel: (s) =>
       s === 'short_term' ? 'посуточная аренда'
       : s === 'hybrid'   ? 'гибридная модель (посуточная + среднесрочная)'

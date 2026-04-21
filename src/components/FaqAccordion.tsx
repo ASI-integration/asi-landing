@@ -21,7 +21,7 @@ const FAQ_EN = [
   },
   {
     q: 'How does the system handle pricing? Will it replace a revenue manager?',
-    a: 'Yes — dynamically, in real time. Competitor pricing, local events, OTA signals, and historical demand feed the model; the system adjusts rates and availability automatically. That is the revenue-manager function, executed continuously without a person reconciling spreadsheets.',
+    a: 'Pricing automation is on the roadmap. Today, ASI focuses on execution and location intelligence: it surfaces demand and competitive context around an address, and helps standardize operational decisions. Any pricing outputs shown in demos are estimates and not guaranteed market truth.',
   },
   {
     q: 'I only have a few apartments. Is this system too complex for me?',
@@ -68,7 +68,7 @@ const FAQ_RU = [
   },
   {
     q: 'Как система выстраивает ценообразование? Заменит ли она ревеню-менеджера?',
-    a: 'Да — динамически и в реальном времени. Цены конкурентов, локальные события, сигналы OTA и история спроса идут в модель; система сама двигает тарифы и доступность. Это функция ревеню-менеджера, выполняемая непрерывно без человека со сводными таблицами.',
+    a: 'Автоматизация ценообразования — в дорожной карте. Сейчас ASI фокусируется на исполнении и Location Intelligence: показывает сигналы спроса и конкурентный контекст вокруг адреса, помогает стандартизировать решения. Любые цифры по цене/доходу в демо — это оценка, а не гарантированная «рыночная правда».',
   },
   {
     q: 'У меня всего несколько квартир. Не слишком ли это сложная система?',
