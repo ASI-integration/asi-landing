@@ -98,7 +98,7 @@ async function callProvider(
   const isOpenRouter = cfg.baseUrl.includes('openrouter.ai');
   const extraHeaders: Record<string, string> = isOpenRouter
     ? {
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://asi-landing.vercel.app',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'https://asi-landing.local',
         'X-Title': 'ASI Telegram Bot',
       }
     : {};

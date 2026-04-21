@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import type { LocationCommercialReport } from '@/lib/location';
-import { FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from '@/lib/location';
+import type { LocationCommercialReport } from '@/lib/location/client';
+import { FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from '@/lib/location/client';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

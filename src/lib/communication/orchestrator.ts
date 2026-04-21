@@ -37,6 +37,13 @@ import {
 import { getContext, updateContext } from './memory';
 import { mergeAutonomousSessionFromInbound, setAutonomousSessionIdentity } from './conversation-session-store';
 import {
+  appendSessionMessage,
+  buildSessionContextForLLM,
+  getOrCreateConversationSession,
+  transitionConversationSessionState,
+  updateSessionFactsAndSummary,
+} from './conversation-session-engine';
+import {
   extractStaffClues,
   hasMinimalStaffClues,
   buildStaffClarifyQuestion,
@@ -172,6 +179,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const chatId = stableNumericChatId(envelope, identity.guestId);
   cp('channel.resolved', { chat_id: chatId });
   cp('text.extracted', { chat_id: chatId, text_len: text.length });
+
+  // Conversation session engine: resolve/create session by channel + actor identity.
+  const { session: baseSession, key: sessionKey } = getOrCreateConversationSession({
+    envelope,
+    identity,
+  });
+  let convSession = baseSession;
+  convSession = appendSessionMessage({
+    key: sessionKey,
+    session: convSession,
+    direction: 'inbound',
+    content: text,
+    meta: envelope.metadata,
+  });
+  convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
 
   // Harden session memory with identity binding (safe defaults when unknown).
   updateContext(chatId, {
@@ -414,6 +436,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = buildStaffClarifyQuestion(scenario);
       llmSucceeded = true;
       usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'staff_clarify_question');
     } else if (ctx.incident) {
       cp('branch.incident', { chat_id: chatId });
       const incidentMsg =
@@ -479,6 +502,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
       usedPath = 'deterministic';
       cp('branch.policy_escalation.done', { chat_id: chatId });
+      convSession = transitionConversationSessionState(convSession, 'escalated', 'policy_escalation');
     } else if (safety.action === 'ask_clarifying_question') {
       cp('branch.ask_clarifying_question', { chat_id: chatId });
       const askRu =
@@ -490,6 +514,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(classification.lang === 'ru' ? askRu : askEn, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'clarifying_question');
     } else if (intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
       cp('branch.checkininfo.no_template', { chat_id: chatId });
       const ru =
@@ -500,6 +525,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(classification.lang === 'ru' ? ru : en, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'missing_checkin_template_needs_details');
     } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
       cp('branch.provide_check_in_instructions.start', { chat_id: chatId });
       // ── Check-in readiness gate ──────────────────────────────────────
@@ -606,11 +632,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         );
       }
       cp('branch.provide_check_in_instructions.done', { chat_id: chatId, allowed: gateResult.allowed });
+      if (gateResult.allowed) {
+        convSession = transitionConversationSessionState(convSession, 'resolved', 'checkin_instructions_provided');
+      } else {
+        convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'checkin_blocked_holding_message');
+      }
     } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       cp('branch.provide_checkout_instructions', { chat_id: chatId });
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'resolved', 'checkout_instructions_provided');
     } else if (safety.action === 'trigger_payment_request') {
       cp('branch.trigger_payment_request.start', { chat_id: chatId });
       const payment = await createPaymentRequest({
@@ -637,13 +669,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       cp('branch.trigger_payment_request.done', { chat_id: chatId });
+      convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'payment_link_sent');
     } else {
       cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
         : null;
       let llmReply: string | null = null;
-      const prompt = buildIntelligentPrompt(commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0], text, classification, followupHint);
+      const sessionContextBlock = buildSessionContextForLLM(convSession);
+      const prompt = buildIntelligentPrompt(
+        commContext as unknown as Parameters<typeof buildIntelligentPrompt>[0],
+        text,
+        classification,
+        followupHint,
+        sessionContextBlock,
+      );
       llmReply = await withAwaitCheckpoint(
         'llm.call.await',
         () => callLLM({ systemPrompt: SYSTEM_PROMPT, userMessage: prompt }),
@@ -702,6 +742,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     );
     cp('persistence.assistant_turn.done', { chat_id: chatId });
 
+    // Session memory: persist assistant outbound in the session engine.
+    try {
+      convSession = appendSessionMessage({
+        key: sessionKey,
+        session: convSession,
+        direction: 'outbound',
+        content: replyText,
+      });
+    } catch {
+      // best-effort
+    }
+
     if (!escalation && shouldEscalate(classification, llmSucceeded)) {
       cp('escalation.post_reply.start', { chat_id: chatId });
       const reason = deriveEscalationReason(classification, llmSucceeded);
@@ -753,6 +805,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         },
       );
       cp('escalation.post_reply.done', { chat_id: chatId, reason });
+      convSession = transitionConversationSessionState(convSession, 'escalated', 'post_reply_escalation');
     }
 
     // Ops task: checkout intent → checkout task (fire-and-forget)

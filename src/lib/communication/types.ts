@@ -24,6 +24,29 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export type ConversationSession = {
+  sessionId: string;
+  actorId?: string;
+  role: 'guest' | 'lead' | 'operator' | 'owner' | 'unknown';
+  propertyId?: string;
+  reservationId?: string;
+  leadId?: string;
+  channel: string;
+
+  state: 'active' | 'awaiting_input' | 'resolved' | 'escalated';
+
+  memory: {
+    lastMessages: Message[];
+    extractedFacts: Record<string, any>;
+    summary?: string;
+  };
+
+  confidence: number;
+  resolutionStatus?: 'resolved' | 'ambiguous' | 'unresolved';
+  updatedAt: string;
+  createdAt: string;
+};
+
 // ─── Message Domain Model ────────────────────────────────────────────────────
 
 export enum MessageDirection {
@@ -310,7 +333,7 @@ export interface TelegramAttachmentRef {
 
 // ─── Conversation Persistence ─────────────────────────────────────────────────
 
-export interface ConversationSession {
+export interface TelegramConversationSessionRow {
   chat_id: number;
   created_at: string;
   updated_at: string;

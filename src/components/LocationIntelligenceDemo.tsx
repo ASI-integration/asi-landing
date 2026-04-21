@@ -14,7 +14,7 @@ import {
   buildCommercialFormatFit,
   FIT_LEVEL_LABEL_RU,
   FIT_LEVEL_COLOR,
-} from '@/lib/location';
+} from '@/lib/location/client';
 import type {
   LocationAnalysis,
   MagnetItem,
@@ -22,7 +22,7 @@ import type {
   AnalysisMeta,
   DemandType,
   NeighborhoodEnvironmentConcernLevel,
-} from '@/lib/location';
+} from '@/lib/location/client';
 import {
   useLocationTelemetryOptional,
   type LocationTelemetrySnapshot,
@@ -35,7 +35,7 @@ import {
   magnetWhy,
   type LocDemoLocale,
 } from '@/components/location-intelligence-locale';
-import { generateConclusion } from '@/lib/location';
+import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 
 // ── Device detection ──────────────────────────────────────────────────────────

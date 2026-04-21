@@ -272,6 +272,7 @@ export function buildIntelligentPrompt(
   text: string,
   classification: ClassifyResult,
   templateHints?: string | null,
+  sessionContext?: string | null,
 ): string {
   const base = buildUserPrompt(text, classification);
   const langCode = classification.lang as LanguageCode || 'en';
@@ -280,6 +281,7 @@ export function buildIntelligentPrompt(
 
   const lines = [
     base,
+    sessionContext ? sessionContext : null,
     `--- Context Assembly ---`,
     `Detected Intent: ${intentResult.intent} (Confidence: ${intentResult.confidence})`,
     `Reservation Match: ${reservation.status} (\${reservation.guestName || 'Unknown Name'} @ \${reservation.propertyId || 'Unknown Property'})`,
@@ -294,7 +296,7 @@ export function buildIntelligentPrompt(
     `Payment: ${knowledge.paymentRules || 'N/A'}`,
     `Upsells: ${knowledge.upsells || 'N/A'}`,
     `Emergency Contacts: ${knowledge.emergencyContacts || 'N/A'}`,
-  ];
+  ].filter(Boolean) as string[];
 
   if (templateHints) {
     lines.push(`--- Property Templates ---`, templateHints);

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { auditLog } from './audit';
-import { AuditEventType, ConversationSession, MessageTurn, TurnRole } from './types';
+import { AuditEventType, MessageTurn, TelegramConversationSessionRow, TurnRole } from './types';
 
 /**
  * Short-term conversation persistence.
@@ -56,7 +56,7 @@ export async function upsertSession(chatId: number): Promise<void> {
 /**
  * Load an existing session, or return null if not found.
  */
-export async function loadSession(chatId: number): Promise<ConversationSession | null> {
+export async function loadSession(chatId: number): Promise<TelegramConversationSessionRow | null> {
   try {
     const { data, error } = await supabase
       .from('tg_conversation_sessions')
@@ -65,7 +65,7 @@ export async function loadSession(chatId: number): Promise<ConversationSession |
       .single();
 
     if (error) return null;
-    return data as ConversationSession;
+    return data as TelegramConversationSessionRow;
   } catch {
     return null;
   }

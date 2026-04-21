@@ -21,7 +21,7 @@ import {
   PERMANENCE_MULTIPLIER,
   GRAVITY_CONFIG,
 } from './config';
-import { classifyElement } from './overpass';
+import { classifyElement } from './overpass-classify';
 import { computeHeatmap } from './heatmap';
 import { generateConclusion } from './explanation';
 import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatmapFactors } from './foot-traffic';
