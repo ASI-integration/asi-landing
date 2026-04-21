@@ -111,6 +111,8 @@ print_failure_diagnostics() {
   ss -ltnp 2>/dev/null | grep ":3000" || true
   log "  ps -ef | grep -E 'next|node|npm' | grep -v grep:"
   ps -ef 2>/dev/null | grep -E 'next|node|npm' | grep -v grep || true
+  log "  readlink -f /var/www/asi/current:"
+  readlink -f /var/www/asi/current || true
 }
 
 merge_env_kv() {
@@ -158,6 +160,38 @@ pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
 log "Starting PM2 (clean: stop→kill-port→delete→start→save)"
 pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
+
+log "Early-crash guard: wait 3s then check PM2 status/restarts"
+sleep 3
+
+EARLY_CRASH="$(
+  PM2_ONLY="$PM2_ONLY" node - <<'NODE' 2>/dev/null || echo "YES"
+const { execSync } = require('child_process');
+const name = (process.env.PM2_ONLY || 'asi-landing').trim();
+
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const p = list.find((x) => x && x.name === name);
+  const env = p?.pm2_env || {};
+  const status = String(env.status || '');
+  const restarts = Number(env.restart_time || 0);
+  if (status !== 'online' || restarts > 0) {
+    process.stdout.write('YES');
+  } else {
+    process.stdout.write('no');
+  }
+} catch {
+  process.stdout.write('YES');
+}
+NODE
+)"
+
+if [[ "${EARLY_CRASH:-}" == "YES" ]]; then
+  log "EARLY CRASH detected (PM2 status != online OR restarts > 0 immediately after start)"
+  print_failure_diagnostics
+  die "Early crash guard failed; aborting before rollback healthcheck."
+fi
 
 log "PM2 status (after reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
