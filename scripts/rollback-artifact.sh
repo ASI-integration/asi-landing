@@ -161,6 +161,31 @@ pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 log "Starting PM2 (clean: stop→kill-port→delete→start→save)"
 pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
 
+log "Resolved current symlink (readlink -f /var/www/asi/current):"
+readlink -f /var/www/asi/current || true
+
+log "PM2 runtime fingerprint (jlist) ($PM2_ONLY):"
+PM2_ONLY="$PM2_ONLY" node - <<'NODE' || true
+const { execSync } = require('child_process');
+const name = (process.env.PM2_ONLY || 'asi-landing').trim();
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    console.log(`pm2(${name}): not found`);
+    process.exit(0);
+  }
+  const env = p.pm2_env || {};
+  console.log(`pm2(${name}): status=${env.status} pid=${env.pid} restart_time=${env.restart_time}`);
+  console.log(`  pm_cwd=${env.pm_cwd}`);
+  console.log(`  pm_exec_path=${env.pm_exec_path}`);
+  console.log(`  exec_interpreter=${env.exec_interpreter}`);
+} catch (e) {
+  console.log(`pm2(${name}): jlist parse failed: ${String(e)}`);
+}
+NODE
+
 log "Early-crash guard: wait 3s then check PM2 status/restarts"
 sleep 3
 
