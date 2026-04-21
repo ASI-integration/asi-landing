@@ -206,7 +206,7 @@ export default function HomeRu() {
                   </h3>
                 </div>
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Принимает входящие обращения 24/7, ведёт переписку с гостями и поддерживает типовые сценарии сервиса — без ручной нагрузки на операторов.
+                  Обрабатывает сообщения гостей, помогает вести переписку, поддерживает голосовой сервис и развивается в сторону телефонных сценариев (звонков).
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
@@ -225,7 +225,7 @@ export default function HomeRu() {
                   </h3>
                 </div>
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Показывает спрос, конкуренцию и ценовой контекст (ставки) в зоне, а также ориентир по потенциалу доходности — как вход для решений по запуску и позиционированию.
+                  Показывает спрос, конкуренцию и уровень цен рядом с объектом, чтобы оценить его потенциал доходности.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Открыть анализ локации →
@@ -244,7 +244,7 @@ export default function HomeRu() {
                   </h3>
                 </div>
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Исполняет повторяющиеся сценарии управления объектами: доступы и check-in, задачи, инциденты, платежи и контроль исполнения — по триггерам и правилам.
+                  Берёт на себя рутинные процессы по объекту: доступы и check-in, задачи, инциденты, оплаты и контроль выполнения.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
