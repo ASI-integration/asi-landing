@@ -106,60 +106,12 @@ const CARDS = [
   },
 ];
 
-/* ─── Contacts ──────────────────────────────────────────────────────────────── */
-function ContactLinks({
-  orientation = 'row',
-  showLogin = true,
-  telegramIconClassName = 'w-8 h-8',
-}: {
-  orientation?: 'row' | 'col';
-  showLogin?: boolean;
-  telegramIconClassName?: string;
-}) {
-  const cls = orientation === 'row'
-    ? 'flex flex-col sm:flex-row justify-center gap-4'
-    : 'flex flex-col gap-3';
-
-  return (
-    <div className={cls}>
-      <a
-        href="https://t.me/ASI_core_bot"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Telegram"
-        title="Telegram"
-        className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
-      >
-        <TgIcon className={telegramIconClassName} />
-        <span className="sr-only">Telegram</span>
-      </a>
-      <a
-        href={`mailto:${productSupportEmail}`}
-        className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text)] font-semibold text-sm hover:bg-[var(--t-surface-2)] transition-all"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-[var(--t-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0L12 13.5 2.25 6.75" />
-        </svg>
-        {productSupportEmail}
-      </a>
-      {showLogin ? (
-        <Link
-          href="/login"
-          className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text)] font-semibold text-sm hover:bg-[var(--t-surface-2)] transition-all"
-        >
-          Войти
-        </Link>
-      ) : null}
-    </div>
-  );
-}
-
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
   return (
     <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
 
-      <RuPublicNavHeader surface="theme" density="landing" />
+      <RuPublicNavHeader surface="theme" density="landing" showContacts={false} />
 
       <main>
 
@@ -198,15 +150,15 @@ export default function HomeRu() {
               <Link
                 href="/connect"
                 aria-label="Открыть подключение: коммуникационный модуль"
-                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
                     Коммуникационный модуль
                   </h3>
                 </div>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Обрабатывает сообщения гостей, помогает вести переписку, поддерживает голосовой сервис и развивается в сторону телефонных сценариев (звонков).
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Обрабатывает сообщения гостей, помогает вести переписку, поддерживает голосовой сервис и готовится к работе со звонками.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
@@ -217,15 +169,15 @@ export default function HomeRu() {
               <Link
                 href="/ru/location-analysis"
                 aria-label="Открыть анализ локации"
-                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
                     Модуль оценки локации и доходности
                   </h3>
                 </div>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Показывает спрос, конкуренцию и уровень цен рядом с объектом, чтобы оценить его потенциал доходности.
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Показывает спрос, конкуренцию и уровень цен рядом с объектом, чтобы помочь оценить его потенциал доходности.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Открыть анализ локации →
@@ -236,33 +188,21 @@ export default function HomeRu() {
               <Link
                 href="/connect"
                 aria-label="Открыть подключение: операционный модуль"
-                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
                     Операционный модуль
                   </h3>
                 </div>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Берёт на себя рутинные процессы по объекту: доступы и check-in, задачи, инциденты, оплаты и контроль выполнения.
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Берёт на себя рутинные процессы по объекту: доступы, check-in, задачи, инциденты, оплаты и контроль выполнения.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
                 </span>
               </Link>
 
-            </div>
-          </div>
-        </section>
-
-        {/* ── Контакты (компактный блок ниже) ── */}
-        <section className="py-10 sm:py-12 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
-            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-6 py-6 sm:px-8 sm:py-7">
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--t-muted)] mb-3 text-center">
-                Контакты
-              </p>
-              <ContactLinks orientation="row" showLogin telegramIconClassName="w-8 h-8" />
             </div>
           </div>
         </section>

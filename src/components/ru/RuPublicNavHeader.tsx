@@ -69,9 +69,11 @@ const surfaceTg: Record<RuPublicNavSurface, string> = {
 export function RuPublicNavHeader({
   surface,
   density,
+  showContacts = true,
 }: {
   surface: RuPublicNavSurface;
   density: RuPublicNavDensity;
+  showContacts?: boolean;
 }) {
   const navCls = `text-[13px] sm:text-sm lg:text-[15px] font-medium whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
 
@@ -83,35 +85,41 @@ export function RuPublicNavHeader({
         {/* Top row: contacts + email + Telegram + lang + theme + login */}
         {density === 'landing' ? (
           <div className="py-2 sm:py-2.5 flex items-center justify-between gap-x-4 min-w-0">
-            <div className="flex items-center gap-x-3 min-w-0 overflow-hidden">
-              <Link
-                href={ruComplianceRoutes.contacts}
-                className={`text-sm font-medium transition-colors ${surfaceMuted[surface]}`}
-              >
-                Контакты
-              </Link>
-              <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
-              <a
-                href={`mailto:${productSupportEmail}`}
-                className={`hidden lg:block text-sm truncate max-w-[12rem] xl:max-w-[16rem] transition-colors ${surfaceMuted[surface]}`}
-                title={productSupportEmail}
-              >
-                {productSupportEmail}
-              </a>
-            </div>
+            {showContacts ? (
+              <div className="flex items-center gap-x-3 min-w-0 overflow-hidden">
+                <Link
+                  href={ruComplianceRoutes.contacts}
+                  className={`text-sm font-medium transition-colors ${surfaceMuted[surface]}`}
+                >
+                  Контакты
+                </Link>
+                <span className={`hidden sm:block w-px h-4 shrink-0 ${surfaceDivider[surface]}`} />
+                <a
+                  href={`mailto:${productSupportEmail}`}
+                  className={`hidden lg:block text-sm truncate max-w-[12rem] xl:max-w-[16rem] transition-colors ${surfaceMuted[surface]}`}
+                  title={productSupportEmail}
+                >
+                  {productSupportEmail}
+                </a>
+              </div>
+            ) : (
+              <div />
+            )}
 
             <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
-              <a
-                href="https://t.me/ASI_core_bot"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Telegram"
-                title="Telegram"
-                className={surfaceTg[surface]}
-              >
-                <TgIcon className="w-4 h-4 shrink-0" />
-                <span className="sr-only">Telegram</span>
-              </a>
+              {showContacts ? (
+                <a
+                  href="https://t.me/ASI_core_bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Telegram"
+                  title="Telegram"
+                  className={surfaceTg[surface]}
+                >
+                  <TgIcon className="w-4 h-4 shrink-0" />
+                  <span className="sr-only">Telegram</span>
+                </a>
+              ) : null}
               {showTheme ? <ThemeSwitcher /> : null}
               <Link href="/login" className={surfaceLogin[surface]}>
                 Войти
