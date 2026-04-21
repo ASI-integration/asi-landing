@@ -1,0 +1,282 @@
+{
+  "generatedAt": "2026-04-21T19:03:07.898Z",
+  "total": 5,
+  "completed": 5,
+  "cases": [
+    {
+      "id": "ny_times_square",
+      "address": "Times Square, Manhattan, New York, NY, USA",
+      "lat": 40.75645,
+      "lon": -73.9865,
+      "startedAtIso": "2026-04-21T19:01:37.795Z",
+      "durationMs": 22512,
+      "outcome": "warning",
+      "reason": "weak_data",
+      "error": null,
+      "elementsCount": 18,
+      "usedFallbackQuery": true,
+      "hadProviderFailure": true,
+      "cacheHit": false,
+      "confidence": "low",
+      "checks": [
+        {
+          "id": "demand_type",
+          "level": "pass",
+          "message": "demandType=mixed"
+        },
+        {
+          "id": "accessibility",
+          "level": "pass",
+          "message": "stops=10"
+        },
+        {
+          "id": "competitor_pressure",
+          "level": "pass",
+          "message": "pressure=low competitors=1"
+        },
+        {
+          "id": "score",
+          "level": "pass",
+          "message": "evergreen=5 score=23"
+        },
+        {
+          "id": "proxy_estimates",
+          "level": "pass",
+          "message": "adr≈1600₽ occ≈33%"
+        },
+        {
+          "id": "signal_quality",
+          "level": "warn",
+          "message": "low confidence (elements=18 fallback_query=true)"
+        }
+      ],
+      "summary": {
+        "demandType": "mixed",
+        "competitorPressure": "low",
+        "evergreenIndex": 5,
+        "locationScore": 23,
+        "recommendedStrategy": "mid_term"
+      }
+    },
+    {
+      "id": "paris_la_defense",
+      "address": "La Défense, Puteaux, Paris, France",
+      "lat": 48.8919,
+      "lon": 2.2387,
+      "startedAtIso": "2026-04-21T19:02:00.312Z",
+      "durationMs": 24490,
+      "outcome": "warning",
+      "reason": "weak_data",
+      "error": null,
+      "elementsCount": 54,
+      "usedFallbackQuery": true,
+      "hadProviderFailure": true,
+      "cacheHit": false,
+      "confidence": "low",
+      "checks": [
+        {
+          "id": "demand_type",
+          "level": "pass",
+          "message": "demandType=mixed"
+        },
+        {
+          "id": "accessibility",
+          "level": "pass",
+          "message": "stops=12"
+        },
+        {
+          "id": "competitor_pressure",
+          "level": "pass",
+          "message": "pressure=low competitors=0"
+        },
+        {
+          "id": "score",
+          "level": "pass",
+          "message": "evergreen=5 score=27"
+        },
+        {
+          "id": "proxy_estimates",
+          "level": "pass",
+          "message": "adr≈1600₽ occ≈37%"
+        },
+        {
+          "id": "signal_quality",
+          "level": "warn",
+          "message": "low confidence (elements=54 fallback_query=true)"
+        }
+      ],
+      "summary": {
+        "demandType": "mixed",
+        "competitorPressure": "low",
+        "evergreenIndex": 5,
+        "locationScore": 27,
+        "recommendedStrategy": "mid_term"
+      }
+    },
+    {
+      "id": "tokyo_station",
+      "address": "Tokyo Station, Chiyoda, Tokyo, Japan",
+      "lat": 35.681236,
+      "lon": 139.767125,
+      "startedAtIso": "2026-04-21T19:02:24.805Z",
+      "durationMs": 19460,
+      "outcome": "warning",
+      "reason": "weak_data",
+      "error": null,
+      "elementsCount": 67,
+      "usedFallbackQuery": true,
+      "hadProviderFailure": true,
+      "cacheHit": false,
+      "confidence": "medium",
+      "checks": [
+        {
+          "id": "demand_type",
+          "level": "pass",
+          "message": "demandType=transport-led"
+        },
+        {
+          "id": "accessibility",
+          "level": "pass",
+          "message": "stops=12"
+        },
+        {
+          "id": "competitor_pressure",
+          "level": "pass",
+          "message": "pressure=low competitors=1"
+        },
+        {
+          "id": "score",
+          "level": "pass",
+          "message": "evergreen=53 score=65"
+        },
+        {
+          "id": "proxy_estimates",
+          "level": "pass",
+          "message": "adr≈3400₽ occ≈62%"
+        },
+        {
+          "id": "signal_quality",
+          "level": "pass",
+          "message": "medium confidence (elements=67 fallback_query=true)"
+        }
+      ],
+      "summary": {
+        "demandType": "transport-led",
+        "competitorPressure": "low",
+        "evergreenIndex": 53,
+        "locationScore": 65,
+        "recommendedStrategy": "hybrid"
+      }
+    },
+    {
+      "id": "osaka_dotonbori",
+      "address": "Dotonbori, Chuo Ward, Osaka, Japan",
+      "lat": 34.6687,
+      "lon": 135.5011,
+      "startedAtIso": "2026-04-21T19:02:44.263Z",
+      "durationMs": 21075,
+      "outcome": "warning",
+      "reason": "weak_data",
+      "error": null,
+      "elementsCount": 285,
+      "usedFallbackQuery": true,
+      "hadProviderFailure": true,
+      "cacheHit": false,
+      "confidence": "medium",
+      "checks": [
+        {
+          "id": "demand_type",
+          "level": "pass",
+          "message": "demandType=transport-led"
+        },
+        {
+          "id": "accessibility",
+          "level": "warn",
+          "message": "no transport stops detected (may be sparse OSM)"
+        },
+        {
+          "id": "competitor_pressure",
+          "level": "pass",
+          "message": "pressure=high competitors=94"
+        },
+        {
+          "id": "score",
+          "level": "pass",
+          "message": "evergreen=100 score=74"
+        },
+        {
+          "id": "proxy_estimates",
+          "level": "pass",
+          "message": "adr≈5400₽ occ≈65%"
+        },
+        {
+          "id": "signal_quality",
+          "level": "pass",
+          "message": "medium confidence (elements=285 fallback_query=true)"
+        }
+      ],
+      "summary": {
+        "demandType": "transport-led",
+        "competitorPressure": "high",
+        "evergreenIndex": 100,
+        "locationScore": 74,
+        "recommendedStrategy": "short_term"
+      }
+    },
+    {
+      "id": "berlin_messe",
+      "address": "Messe Berlin, Berlin, Germany",
+      "lat": 52.5016,
+      "lon": 13.2781,
+      "startedAtIso": "2026-04-21T19:03:05.341Z",
+      "durationMs": 2556,
+      "outcome": "warning",
+      "reason": "weak_data",
+      "error": null,
+      "elementsCount": 18,
+      "usedFallbackQuery": false,
+      "hadProviderFailure": false,
+      "cacheHit": false,
+      "confidence": "low",
+      "checks": [
+        {
+          "id": "demand_type",
+          "level": "pass",
+          "message": "demandType=transport-led"
+        },
+        {
+          "id": "accessibility",
+          "level": "warn",
+          "message": "no transport stops detected (may be sparse OSM)"
+        },
+        {
+          "id": "competitor_pressure",
+          "level": "pass",
+          "message": "pressure=low competitors=3"
+        },
+        {
+          "id": "score",
+          "level": "pass",
+          "message": "evergreen=36 score=35"
+        },
+        {
+          "id": "proxy_estimates",
+          "level": "pass",
+          "message": "adr≈1800₽ occ≈52%"
+        },
+        {
+          "id": "signal_quality",
+          "level": "warn",
+          "message": "low confidence (elements=18)"
+        }
+      ],
+      "summary": {
+        "demandType": "transport-led",
+        "competitorPressure": "low",
+        "evergreenIndex": 36,
+        "locationScore": 35,
+        "recommendedStrategy": "mid_term"
+      }
+    }
+  ]
+}

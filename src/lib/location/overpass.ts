@@ -4,30 +4,39 @@ import { CATEGORY_RADIUS, COMPETITOR_RADIUS } from './config';
 // ── Overpass API — fetch real nearby objects ──────────────────────────────────
 
 const OVERPASS_ENDPOINTS = [
-  'https://z.overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://overpass-api.de/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
+  'https://overpass.maprva.org/api/interpreter',
+  // Legacy alias still used in some docs; keep as a fallback (may redirect).
   'https://overpass.kumi.systems/api/interpreter',
+  'https://z.overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
 ] as const;
 
 interface QuerySelector {
   filter: string;
   radius: number;
   includeInStrict: boolean;
+  /** Query priority: core selectors are fetched even under tight budgets. */
+  priority?: 'core' | 'extras';
   /** When set, query node+way+relation even in strict mode (needed for highways, landuse, runways). */
   allGeometries?: boolean;
 }
 
 function makeAround(filter: string, radius: number, lat: number, lon: number, allGeometryTypes: boolean): string[] {
   if (!allGeometryTypes) return [`node[${filter}](around:${radius},${lat},${lon});`];
-  return [
-    `node[${filter}](around:${radius},${lat},${lon});`,
-    `way[${filter}](around:${radius},${lat},${lon});`,
-    `relation[${filter}](around:${radius},${lat},${lon});`,
-  ];
+  // `nwr` is significantly more compact than enumerating node+way+relation.
+  // It is also the canonical Overpass shorthand for "all geometry types".
+  return [`nwr[${filter}](around:${radius},${lat},${lon});`];
 }
 
-function buildClauses(lat: number, lon: number, radiusScale: number, broad: boolean): string[] {
+function buildClauses(
+  lat: number,
+  lon: number,
+  radiusScale: number,
+  broad: boolean,
+  profile: 'core' | 'full' = 'full',
+): string[] {
   const selectors: QuerySelector[] = [
     // ── Tier 1: Strong regional anchors ──────────────────────────────────────
 
@@ -85,7 +94,7 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"amenity"="cinema"',     radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
     { filter: '"amenity"="theatre"',    radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
     { filter: '"amenity"="arts_centre"',radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
-    { filter: '"amenity"="nightclub"',  radius: CATEGORY_RADIUS.entertainment, includeInStrict: false },
+    { filter: '"amenity"="nightclub"',  radius: CATEGORY_RADIUS.entertainment, includeInStrict: false, priority: 'extras' },
 
     // Shopping major (malls / department stores)
     { filter: '"shop"="mall"',             radius: CATEGORY_RADIUS.shopping_major, includeInStrict: true },
@@ -100,17 +109,19 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     // Accessibility stops (weak bonus, not demand magnets)
     { filter: '"highway"="bus_stop"',               radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true  },
     { filter: '"public_transport"="stop_position"', radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true  },
-    { filter: '"public_transport"="platform"',      radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: false },
-    { filter: '"railway"="tram_stop"',              radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: false },
+    // In many cities stops are mapped only as platforms; keep them in strict to avoid "no stops" outcomes.
+    { filter: '"public_transport"="platform"',      radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true  },
+    { filter: '"public_transport"="station"',       radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true,  allGeometries: true },
+    { filter: '"railway"="tram_stop"',              radius: CATEGORY_RADIUS.accessibility_stop, includeInStrict: true  },
 
     // Supermarkets (weak local signal)
-    { filter: '"shop"="supermarket"', radius: CATEGORY_RADIUS.shopping_local, includeInStrict: true },
+    { filter: '"shop"="supermarket"', radius: CATEGORY_RADIUS.shopping_local, includeInStrict: true, priority: 'extras' },
 
     // Food (weak — only valuable as cluster proxy)
-    { filter: '"amenity"="restaurant"', radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="cafe"',       radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="fast_food"',  radius: CATEGORY_RADIUS.food, includeInStrict: true },
-    { filter: '"amenity"="bar"',        radius: CATEGORY_RADIUS.food, includeInStrict: false },
+    { filter: '"amenity"="restaurant"', radius: CATEGORY_RADIUS.food, includeInStrict: true, priority: 'extras' },
+    { filter: '"amenity"="cafe"',       radius: CATEGORY_RADIUS.food, includeInStrict: true, priority: 'extras' },
+    { filter: '"amenity"="fast_food"',  radius: CATEGORY_RADIUS.food, includeInStrict: true, priority: 'extras' },
+    { filter: '"amenity"="bar"',        radius: CATEGORY_RADIUS.food, includeInStrict: false, priority: 'extras' },
 
     // ── Competitors (non-hotel STR supply) ───────────────────────────────────
     // Note: tourism=hotel is handled by major_hotel selector above + classifyElement split.
@@ -120,32 +131,34 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
     { filter: '"tourism"="motel"',       radius: COMPETITOR_RADIUS, includeInStrict: false, allGeometries: true },
 
     // ── Neighborhood environment (strict + full geometry — independent of commercial score) ──
-    { filter: '"highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link)$"', radius: 520, includeInStrict: true, allGeometries: true },
-    { filter: '"aeroway"="runway"',       radius: 2600, includeInStrict: true, allGeometries: true },
-    { filter: '"aeroway"="taxiway"',      radius: 900,  includeInStrict: true, allGeometries: true },
-    { filter: '"landuse"="industrial"',  radius: 1100, includeInStrict: true, allGeometries: true },
-    { filter: '"industrial"="warehouse"', radius: 950, includeInStrict: true, allGeometries: true },
-    { filter: '"man_made"="works"',       radius: 1000, includeInStrict: true, allGeometries: true },
-    { filter: '"building"="industrial"', radius: 800,  includeInStrict: true, allGeometries: true },
-    { filter: '"amenity"="nightclub"',    radius: 360,  includeInStrict: true, allGeometries: true },
-    { filter: '"amenity"="bar"',          radius: 300,  includeInStrict: true, allGeometries: true },
-    { filter: '"amenity"="pub"',          radius: 280,  includeInStrict: true, allGeometries: true },
-    { filter: '"railway"="rail"',         radius: 520,  includeInStrict: true, allGeometries: true },
+    { filter: '"highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link)$"', radius: 520, includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"aeroway"="runway"',       radius: 2600, includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"aeroway"="taxiway"',      radius: 900,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"landuse"="industrial"',  radius: 1100, includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"industrial"="warehouse"', radius: 950, includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"man_made"="works"',       radius: 1000, includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"building"="industrial"', radius: 800,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"amenity"="nightclub"',    radius: 360,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"amenity"="bar"',          radius: 300,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"amenity"="pub"',          radius: 280,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"railway"="rail"',         radius: 520,  includeInStrict: true, allGeometries: true, priority: 'extras' },
     // Spatial foundation v1 — barrier + walkable-corridor proxies (strict; light batch)
-    { filter: '"natural"="water"',        radius: 620,  includeInStrict: true, allGeometries: true },
-    { filter: '"waterway"="riverbank"',   radius: 620,  includeInStrict: true, allGeometries: true },
-    { filter: '"landuse"="reservoir"',    radius: 620,  includeInStrict: true, allGeometries: true },
+    { filter: '"natural"="water"',        radius: 620,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"waterway"="riverbank"',   radius: 620,  includeInStrict: true, allGeometries: true, priority: 'extras' },
+    { filter: '"landuse"="reservoir"',    radius: 620,  includeInStrict: true, allGeometries: true, priority: 'extras' },
     {
       filter: '"highway"~"^(residential|secondary|tertiary|living_street|pedestrian|unclassified|service)$"',
       radius: 420,
       includeInStrict: true,
       allGeometries: true,
+      priority: 'extras',
     },
   ];
 
   const parts: string[] = [];
   for (const s of selectors) {
     if (!broad && !s.includeInStrict) continue;
+    if (!broad && profile === 'core' && (s.priority ?? 'core') !== 'core') continue;
     const radius = Math.max(150, Math.round(s.radius * radiusScale));
     const useAllGeom = s.allGeometries ?? broad;
     parts.push(...makeAround(s.filter, radius, lat, lon, useAllGeom));
@@ -154,8 +167,19 @@ function buildClauses(lat: number, lon: number, radiusScale: number, broad: bool
   return parts;
 }
 
-function buildQuery(clauses: string[]): string {
-  return `[out:json][timeout:18];(${clauses.join('')});out center;`;
+function computeOverpassTimeoutSeconds(requestTimeoutMs?: number): number {
+  // Keep the server-side timeout aligned with the client-side budget to avoid
+  // long-running queries that the client will abort anyway.
+  const ms = requestTimeoutMs ?? 20_000;
+  const sec = Math.floor(Math.max(5_000, ms - 1_200) / 1000);
+  return Math.max(5, Math.min(25, sec));
+}
+
+function buildQuery(clauses: string[], requestTimeoutMs?: number): string {
+  const timeoutSec = computeOverpassTimeoutSeconds(requestTimeoutMs);
+  // `out center;` is the most compatible output mode across Overpass instances and
+  // includes tags by default (needed for classification) plus `center` for ways/relations.
+  return `[out:json][timeout:${timeoutSec}];(${clauses.join('')});out center;`;
 }
 
 /**
@@ -182,6 +206,57 @@ function buildBackfillClauses(lat: number, lon: number): string[] {
   ];
 }
 
+function capRadius(meters: number, capMeters: number | null): number {
+  if (capMeters == null) return meters;
+  return Math.max(120, Math.min(meters, capMeters));
+}
+
+/**
+ * Validation-tight staged selectors:
+ * - Stage 1: core anchors that should be cheap even in dense cities
+ * - Stage 2: potentially heavy categories (competitors + many local stops), with smaller radii
+ *
+ * This specifically targets dense-area cases where Overpass times out and returns 0 elements.
+ */
+function buildValidationTightClausesStage1(lat: number, lon: number): string[] {
+  const r = (meters: number, filter: string, allGeom = true) => makeAround(filter, meters, lat, lon, allGeom);
+  return [
+    // Transport-led anchors (keep them first; avoid bundling with heavy supply queries)
+    ...r(CATEGORY_RADIUS.railway_station, '"railway"="station"'),
+    ...r(CATEGORY_RADIUS.railway_station, '"amenity"="bus_station"'),
+    ...r(CATEGORY_RADIUS.metro, '"station"="subway"'),
+    ...r(CATEGORY_RADIUS.metro, '"railway"="subway_entrance"', false),
+
+    // Major demand generators
+    ...r(CATEGORY_RADIUS.airport, '"aeroway"="aerodrome"', false),
+    ...r(CATEGORY_RADIUS.hospital, '"amenity"="hospital"', false),
+    ...r(CATEGORY_RADIUS.attraction, '"tourism"="attraction"', false),
+
+    // Supply proxy (major hotels) — typically manageable
+    ...r(CATEGORY_RADIUS.major_hotel, '"tourism"="hotel"'),
+  ];
+}
+
+function buildValidationTightClausesStage2(lat: number, lon: number): string[] {
+  // Dense-city hardening: competitors + stop/platform can be huge; cap radii aggressively.
+  const competitorRadius = capRadius(COMPETITOR_RADIUS, 650);
+  const stopRadius = capRadius(CATEGORY_RADIUS.accessibility_stop, 260);
+
+  const r = (meters: number, filter: string, allGeom = true) => makeAround(filter, meters, lat, lon, allGeom);
+  return [
+    // STR competitors (heavy in dense cities)
+    ...r(competitorRadius, '"tourism"="apartment"'),
+    ...r(competitorRadius, '"tourism"="guest_house"'),
+    ...r(competitorRadius, '"tourism"="hostel"'),
+
+    // Local accessibility coverage (cap to keep query size bounded)
+    ...r(stopRadius, '"highway"="bus_stop"', false),
+    ...r(stopRadius, '"public_transport"="platform"', false),
+    ...r(stopRadius, '"public_transport"="stop_position"', false),
+    ...r(stopRadius, '"railway"="tram_stop"', false),
+  ];
+}
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -198,60 +273,210 @@ function dedupeElements(elements: OSMElement[]): OSMElement[] {
   return [...byId.values()];
 }
 
-async function fetchOverpassQuery(query: string): Promise<{ elements: OSMElement[]; hadProviderFailure: boolean }> {
-  let hadProviderFailure = false;
+type FetchOverpassQueryOptions = {
+  /** Abort the whole Overpass call chain (used by harness time budgets). */
+  signal?: AbortSignal;
+  /** Hard timeout per endpoint request (ms). Default 20000. */
+  requestTimeoutMs?: number;
+};
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+type OverpassFetchOk = { ok: true; elements: OSMElement[]; endpoint: string };
+type OverpassFetchBad = { ok: false; endpoint: string; status?: number; retryAfterMs?: number };
 
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-          'User-Agent': 'asi-landing-location-demo/1.0',
+type EndpointHealth = { nextAvailableAt: number };
+const endpointHealth = new Map<string, EndpointHealth>();
+
+function getEndpointHealth(endpoint: string): EndpointHealth {
+  const existing = endpointHealth.get(endpoint);
+  if (existing) return existing;
+  const h = { nextAvailableAt: 0 };
+  endpointHealth.set(endpoint, h);
+  return h;
+}
+
+let lastOverpassRequestStartedAt = 0;
+const MIN_OVERPASS_REQUEST_INTERVAL_MS = 1_500;
+
+async function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return;
+  if (signal?.aborted) return;
+  await new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(t);
+          resolve();
         },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        hadProviderFailure = true;
-        continue;
-      }
-
-      const json = await res.json();
-      return { elements: (json.elements ?? []) as OSMElement[], hadProviderFailure };
-    } catch {
-      hadProviderFailure = true;
-      continue;
-    } finally {
-      clearTimeout(timer);
+        { once: true },
+      );
     }
+  });
+}
+
+async function fetchFromEndpoint(
+  endpoint: string,
+  query: string,
+  options?: FetchOverpassQueryOptions,
+): Promise<OverpassFetchOk | OverpassFetchBad> {
+  if (options?.signal?.aborted) return { ok: false, endpoint };
+
+  const controller = new AbortController();
+  const timeoutMs = options?.requestTimeoutMs ?? 20_000;
+  const signal =
+    options?.signal
+      ? AbortSignal.any([controller.signal, options.signal])
+      : controller.signal;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const now = Date.now();
+    const waitFor = MIN_OVERPASS_REQUEST_INTERVAL_MS - (now - lastOverpassRequestStartedAt);
+    if (waitFor > 0) await sleepMs(waitFor, options?.signal);
+    lastOverpassRequestStartedAt = Date.now();
+
+    // Start the per-endpoint timer only when the network request is about to start,
+    // so internal throttling doesn't eat into the fetch budget.
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'asi-landing-location-demo/1.0',
+      },
+      body: `data=${encodeURIComponent(query)}`,
+      signal,
+    });
+
+    if (!res.ok) {
+      const retryAfter = res.headers.get('retry-after');
+      const retryAfterMs =
+        retryAfter && Number.isFinite(Number(retryAfter))
+          ? Math.max(0, Math.floor(Number(retryAfter) * 1000))
+          : undefined;
+      return { ok: false, endpoint, status: res.status, retryAfterMs };
+    }
+    const json = await res.json();
+    return { ok: true, elements: (json.elements ?? []) as OSMElement[], endpoint };
+  } catch {
+    return { ok: false, endpoint };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function fetchOverpassQuery(
+  query: string,
+  options?: FetchOverpassQueryOptions,
+): Promise<{ elements: OSMElement[]; hadProviderFailure: boolean }> {
+  // Provider bottleneck fix:
+  // - Avoid hedged parallel requests (triggers rate limits / 429).
+  // - Track endpoint cooldowns and rotate on 429/5xx.
+  if (options?.signal?.aborted) return { elements: [], hadProviderFailure: true };
+
+  let hadProviderFailure = false;
+  const failures: Array<{ endpoint: string; status?: number }> = [];
+
+  // Prefer endpoints that are not on cooldown.
+  const ordered = [...OVERPASS_ENDPOINTS].sort((a, b) => getEndpointHealth(a).nextAvailableAt - getEndpointHealth(b).nextAvailableAt);
+
+  for (const endpoint of ordered) {
+    if (options?.signal?.aborted) break;
+
+    const h = getEndpointHealth(endpoint);
+    if (h.nextAvailableAt > Date.now()) {
+      hadProviderFailure = true;
+      failures.push({ endpoint, status: 429 });
+      continue;
+    }
+
+    const r = await fetchFromEndpoint(endpoint, query, options);
+    if (r.ok) return { elements: r.elements, hadProviderFailure };
+
+    hadProviderFailure = true;
+    failures.push({ endpoint, status: r.status });
+
+    // Cooldowns: back off on rate-limit and transient gateway errors.
+    if (r.status === 429) {
+      h.nextAvailableAt = Date.now() + Math.max(r.retryAfterMs ?? 0, 15_000);
+      // If the server provided a short Retry-After, wait and retry this endpoint once.
+      const waitMs = r.retryAfterMs != null ? Math.min(r.retryAfterMs, 6_000) : 0;
+      if (waitMs > 0 && !options?.signal?.aborted) {
+        await sleepMs(waitMs, options?.signal);
+        const retry = await fetchFromEndpoint(endpoint, query, options);
+        if (retry.ok) return { elements: retry.elements, hadProviderFailure: true };
+        failures.push({ endpoint, status: retry.status });
+      }
+    } else if (r.status === 504 || r.status === 503 || r.status === 502) {
+      h.nextAvailableAt = Date.now() + 5_000;
+    } else if (r.status != null && r.status >= 400) {
+      h.nextAvailableAt = Date.now() + 2_000;
+    }
+  }
+
+  if (failures.length) {
+    console.warn(
+      `[location] overpass_all_failed attempts=[${failures.map(f => `${f.endpoint}:${f.status ?? 'err'}`).join(',')}]`,
+    );
   }
 
   return { elements: [], hadProviderFailure };
 }
 
-async function fetchOsmByBatches(clauses: string[]): Promise<{ elements: OSMElement[]; hadProviderFailure: boolean }> {
-  let hadProviderFailure = false;
-  const all: OSMElement[] = [];
+type FetchOsmByBatchesOptions = {
+  signal?: AbortSignal;
+  requestTimeoutMs?: number;
+  batchSize?: number;
+  stopWhenAtLeast?: number;
+};
 
-  for (const part of chunk(clauses, 12)) {
-    const result = await fetchOverpassQuery(buildQuery(part));
+async function fetchOsmByBatches(
+  clauses: string[],
+  options?: FetchOsmByBatchesOptions,
+): Promise<{ elements: OSMElement[]; hadProviderFailure: boolean }> {
+  let hadProviderFailure = false;
+  const byId = new Map<string, OSMElement>();
+
+  const batchSize = options?.batchSize ?? 24;
+  for (const part of chunk(clauses, batchSize)) {
+    if (options?.signal?.aborted) {
+      hadProviderFailure = true;
+      break;
+    }
+    const result = await fetchOverpassQuery(buildQuery(part, options?.requestTimeoutMs), options);
     hadProviderFailure = hadProviderFailure || result.hadProviderFailure;
-    all.push(...result.elements);
+    for (const el of result.elements) {
+      byId.set(`${el.type}:${el.id}`, el);
+    }
+
+    if (options?.stopWhenAtLeast != null && byId.size >= options.stopWhenAtLeast && !hadProviderFailure) {
+      break;
+    }
   }
 
-  return { elements: dedupeElements(all), hadProviderFailure };
+  return { elements: [...byId.values()], hadProviderFailure };
 }
 
 export interface OsmFetchResult {
   elements: OSMElement[];
   hadProviderFailure: boolean;
   /** Primary full query failed across endpoints; a smaller query recovered data */
+  usedFallbackQuery?: boolean;
+  /** Result was served from the persistent on-disk cache (no network request made) */
+  fromDiskCache?: boolean;
+}
+
+export interface DiskCacheEntry {
+  created_at: string;
+  source_endpoint: string;
+  query_profile: string;
+  lat: number;
+  lon: number;
+  elements: OSMElement[];
+  hadProviderFailure: boolean;
   usedFallbackQuery?: boolean;
 }
 
@@ -268,9 +493,13 @@ function buildMinimalClauses(lat: number, lon: number): string[] {
   ];
 }
 
-async function fetchOsmDataMinimal(lat: number, lon: number): Promise<OsmFetchResult> {
+async function fetchOsmDataMinimal(
+  lat: number,
+  lon: number,
+  options?: FetchOverpassQueryOptions,
+): Promise<OsmFetchResult> {
   const clauses = buildMinimalClauses(lat, lon);
-  const result = await fetchOverpassQuery(buildQuery(clauses));
+  const result = await fetchOverpassQuery(buildQuery(clauses, options?.requestTimeoutMs), options);
   return {
     elements: result.elements,
     hadProviderFailure: result.hadProviderFailure,
@@ -278,55 +507,236 @@ async function fetchOsmDataMinimal(lat: number, lon: number): Promise<OsmFetchRe
   };
 }
 
-export async function fetchOsmData(lat: number, lon: number): Promise<OsmFetchResult> {
-  const strictClauses = buildClauses(lat, lon, 1, false);
-  const strictResult = await fetchOsmByBatches(strictClauses);
-  const strictElements = dedupeElements(strictResult.elements);
+export type FetchOsmDataOptions = {
+  /** Abort the full fetch (strict + fallbacks) when time budget is exceeded. */
+  signal?: AbortSignal;
+  /** Hard timeout per endpoint request (ms). Default 20000. */
+  requestTimeoutMs?: number;
+  /** Disable strict partial-failure backfill query. */
+  allowBackfill?: boolean;
+  /**
+   * Disable the broad (radiusScale=1.4, broad=true) fallback. Useful for validation harness runs
+   * where we prefer fast partial results + a warning over multi-minute retries.
+   */
+  allowBroadFallback?: boolean;
+  /**
+   * Absolute path to a directory for persistent on-disk element-set cache.
+   * When provided: cache is checked before any network request; successful fetches are persisted.
+   * Cache files are keyed by coordinates + query profile and never expire automatically.
+   */
+  diskCacheDir?: string;
+};
+
+type OsmFetchCacheEntry = { expiresAt: number; value: OsmFetchResult };
+const osmFetchCache = new Map<string, OsmFetchCacheEntry>();
+const OSM_FETCH_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// ── Persistent disk cache helpers ─────────────────────────────────────────────
+
+function makeDiskQueryProfile(validationTightMode: boolean, options?: FetchOsmDataOptions): string {
+  if (validationTightMode) return 'validation-tight';
+  if (options?.allowBroadFallback !== false) return 'full';
+  return (options?.allowBackfill ?? true) ? 'strict-backfill' : 'strict';
+}
+
+function makeDiskCacheFileName(lat: number, lon: number, profile: string): string {
+  // Use the same 5-decimal rounding as the in-memory key for coordinate stability.
+  return `${lat.toFixed(5)}_${lon.toFixed(5)}_${profile}.json`;
+}
+
+function tryReadDiskCache(dir: string, fileName: string): DiskCacheEntry | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { join } = require('node:path') as typeof import('node:path');
+    return JSON.parse(readFileSync(join(dir, fileName), 'utf8')) as DiskCacheEntry;
+  } catch {
+    return null;
+  }
+}
+
+function tryWriteDiskCache(dir: string, fileName: string, entry: DiskCacheEntry): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { mkdirSync, writeFileSync } = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { join } = require('node:path') as typeof import('node:path');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, fileName), JSON.stringify(entry, null, 2), 'utf8');
+  } catch {
+    // non-fatal — disk cache write failure does not affect fetch result
+  }
+}
+
+function saveToDiskCache(
+  diskCacheDir: string | undefined,
+  diskFileName: string,
+  lat: number,
+  lon: number,
+  diskProfile: string,
+  result: OsmFetchResult,
+): void {
+  // Never cache empty results — a failed/empty fetch should be retried on the next run.
+  if (!diskCacheDir || result.elements.length === 0) return;
+  tryWriteDiskCache(diskCacheDir, diskFileName, {
+    created_at: new Date().toISOString(),
+    source_endpoint: 'overpass-multi',
+    query_profile: diskProfile,
+    lat,
+    lon,
+    elements: result.elements,
+    hadProviderFailure: result.hadProviderFailure,
+    usedFallbackQuery: result.usedFallbackQuery,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeOsmFetchCacheKey(lat: number, lon: number, options?: FetchOsmDataOptions): string {
+  // Rounded coordinates keep keys stable and avoid cache fragmentation due to tiny float diffs.
+  const coord = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+  const flags = `broad=${options?.allowBroadFallback !== false};backfill=${options?.allowBackfill ?? true}`;
+  return `${coord}|${flags}`;
+}
+
+export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmDataOptions): Promise<OsmFetchResult> {
+  const cacheKey = makeOsmFetchCacheKey(lat, lon, options);
+  const cached = osmFetchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  // Under tight per-request budgets (e.g. harness), reduce round-trips by batching more clauses per call.
+  // This is safer than blindly increasing timeouts: we try to get *some* data within the same budget.
+  const tightBudget = (options?.requestTimeoutMs ?? 20_000) <= 7_000;
+  const validationTightMode =
+    tightBudget && options?.allowBroadFallback === false && options?.allowBackfill === false;
+
+  // Persistent disk cache: check before any network request; populate on successful live fetch.
+  const diskProfile = makeDiskQueryProfile(validationTightMode, options);
+  const diskFileName = makeDiskCacheFileName(lat, lon, diskProfile);
+  if (options?.diskCacheDir) {
+    const diskHit = tryReadDiskCache(options.diskCacheDir, diskFileName);
+    if (diskHit) {
+      const out: OsmFetchResult = {
+        elements: diskHit.elements,
+        hadProviderFailure: diskHit.hadProviderFailure,
+        usedFallbackQuery: diskHit.usedFallbackQuery,
+        fromDiskCache: true,
+      };
+      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      return out;
+    }
+  }
+
+  const strictBatchSize = tightBudget ? 34 : 24;
+
+  // Some Overpass instances have become too slow to reliably respond within 6s even for core queries.
+  // If the caller is already enforcing a global budget via AbortSignal (as the harness does),
+  // slightly increasing per-endpoint timeout improves success rates without unbounded waits.
+  const effectiveRequestTimeoutMs =
+    // In validation-tight mode, we prefer *more endpoint attempts* over longer single attempts,
+    // because dense-city queries can hit server-side timeouts and returning within the harness
+    // budget matters more than squeezing through a single slow endpoint.
+    validationTightMode
+      ? (options?.requestTimeoutMs ?? 6_000)
+      : Math.max(options?.requestTimeoutMs ?? 0, 10_000);
+  const effectiveOptions: FetchOsmDataOptions = { ...options, requestTimeoutMs: effectiveRequestTimeoutMs };
+
+  let strictElements: OSMElement[] = [];
+  let strictHadProviderFailure = false;
+
+  if (validationTightMode) {
+    // Dense-city hardening: avoid bundling heavy categories in a single request.
+    // Stage 1 gets "something reliable" fast; Stage 2 fills competitors/stops with capped radii.
+    const stage1 = buildValidationTightClausesStage1(lat, lon);
+    const r1 = await fetchOverpassQuery(buildQuery(stage1, effectiveOptions.requestTimeoutMs), effectiveOptions);
+
+    const stage2 = buildValidationTightClausesStage2(lat, lon);
+    // If we already have enough anchors and no provider failures, stop early to respect global budgets.
+    if (r1.elements.length >= 12 && !r1.hadProviderFailure) {
+      strictHadProviderFailure = false;
+      strictElements = dedupeElements(r1.elements);
+    } else {
+      const r2 = await fetchOverpassQuery(buildQuery(stage2, effectiveOptions.requestTimeoutMs), effectiveOptions);
+      strictHadProviderFailure = r1.hadProviderFailure || r2.hadProviderFailure;
+      strictElements = dedupeElements([...r1.elements, ...r2.elements]);
+    }
+  } else {
+    const strictClauses = buildClauses(lat, lon, 1, false, tightBudget ? 'core' : 'full');
+    const strictResult = await fetchOsmByBatches(strictClauses, {
+      ...effectiveOptions,
+      batchSize: strictBatchSize,
+      stopWhenAtLeast: tightBudget ? 40 : undefined,
+    });
+    strictHadProviderFailure = strictResult.hadProviderFailure;
+    strictElements = dedupeElements(strictResult.elements);
+  }
 
   // If strict filters return enough data, skip the broader fallback.
   // Exception: if Overpass had partial failures, strict results can be silently incomplete
   // (missing entire selector batches). In that case, always run the broad pass to backfill.
-  if (strictElements.length >= 12 && !strictResult.hadProviderFailure) {
-    return { elements: strictElements, hadProviderFailure: strictResult.hadProviderFailure };
+  if (strictElements.length >= 12 && !strictHadProviderFailure) {
+    const out: OsmFetchResult = { elements: strictElements, hadProviderFailure: strictHadProviderFailure };
+    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+    return out;
   }
 
   // Partial-failure recovery: run a small transport/competitor backfill query first.
   // This addresses the most damaging regressions (missing stations, metro, competitors)
   // without paying the cost of the full broad pass.
-  if (strictElements.length > 0 && strictResult.hadProviderFailure) {
-    const backfillResult = await fetchOsmByBatches(buildBackfillClauses(lat, lon));
+  if ((options?.allowBackfill ?? true) && strictElements.length > 0 && strictHadProviderFailure) {
+    const backfillResult = await fetchOsmByBatches(buildBackfillClauses(lat, lon), { ...effectiveOptions, batchSize: 28 });
     const merged = dedupeElements([...strictElements, ...backfillResult.elements]);
-    const hadProviderFailure = strictResult.hadProviderFailure || backfillResult.hadProviderFailure;
+    const hadProviderFailure = strictHadProviderFailure || backfillResult.hadProviderFailure;
     if (merged.length >= 12) {
-      return { elements: merged, hadProviderFailure, usedFallbackQuery: true };
+      const out: OsmFetchResult = { elements: merged, hadProviderFailure, usedFallbackQuery: true };
+      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+      return out;
     }
     // fall through to broad pass (still too sparse)
   }
 
-  const fallbackClauses = buildClauses(lat, lon, 1.4, true);
-  const fallbackResult = await fetchOsmByBatches(fallbackClauses);
+  if (options?.allowBroadFallback === false) {
+    const out: OsmFetchResult = { elements: strictElements, hadProviderFailure: strictHadProviderFailure, usedFallbackQuery: true };
+    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+    return out;
+  }
+
+  const fallbackClauses = buildClauses(lat, lon, 1.4, true, 'full');
+  const fallbackResult = await fetchOsmByBatches(fallbackClauses, { ...effectiveOptions, batchSize: 24 });
   const merged = dedupeElements([...strictElements, ...fallbackResult.elements]);
-  const hadProviderFailure = strictResult.hadProviderFailure || fallbackResult.hadProviderFailure;
+  const hadProviderFailure = strictHadProviderFailure || fallbackResult.hadProviderFailure;
 
   if (merged.length === 0 && hadProviderFailure) {
     console.warn(
       `[location] magnet_provider primary_exhausted lat=${lat} lon=${lon} trying=minimal_overpass`,
     );
-    const minimal = await fetchOsmDataMinimal(lat, lon);
+    const minimal = await fetchOsmDataMinimal(lat, lon, effectiveOptions);
     if (minimal.elements.length > 0) {
       console.warn(
         `[location] magnet_provider status=recovered via=minimal_overpass count=${minimal.elements.length}`,
       );
-      return {
+      const out: OsmFetchResult = {
         elements: dedupeElements(minimal.elements),
         hadProviderFailure: minimal.hadProviderFailure,
         usedFallbackQuery: true,
       };
+      osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+      saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+      return out;
     }
     console.warn(`[location] magnet_provider status=all_failed lat=${lat} lon=${lon}`);
   }
 
-  return { elements: merged, hadProviderFailure };
+  const out: OsmFetchResult = { elements: merged, hadProviderFailure };
+  osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+  saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+  return out;
 }
 
 /**
