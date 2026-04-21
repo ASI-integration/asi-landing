@@ -103,3 +103,24 @@ export async function ensureAccountForUser(opts: {
   }
 }
 
+export async function resolveAccountIdForUser(userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('account_members')
+      .select('account_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return (data?.account_id as string | undefined) ?? null;
+  } catch (e: any) {
+    const msg = typeof e?.message === 'string' ? e.message : '';
+    // Backward-compat: production DB may not have multitenant tables yet.
+    if (msg.includes('account_members') && (msg.includes('does not exist') || msg.includes('relation'))) {
+      return 'legacy';
+    }
+    throw e;
+  }
+}
+

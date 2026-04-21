@@ -72,6 +72,9 @@ src/app/
 | `/api/cron/check-trial` | Cron (trial check) |
 | `/api/yookassa/create-payment` | YooKassa payment creation |
 | `/api/yookassa/webhook` | YooKassa webhook |
+| `/api/distribution/channels` | Distribution channel catalog (Phase 1) |
+| `/api/distribution/connections` | Property ↔ channel connections (Phase 1) |
+| `/api/distribution/webhooks/:channel` | Inbound reservation ingest (Phase 1) |
 
 ## Primary internal links (for maintenance)
 

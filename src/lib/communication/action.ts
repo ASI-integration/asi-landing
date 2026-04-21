@@ -48,6 +48,14 @@ export function evaluateActionSafety(
 
   // 4. Low confidence intent — clarify only above autonomous escalation threshold
   const autoEscFloor = getAutonomousIntentEscalationThreshold();
+  if (intentResult.confidence < autoEscFloor) {
+    return {
+      safe: false,
+      action: 'escalate_to_operator',
+      reason: `Intent confidence below autonomous floor (${intentResult.confidence} < ${autoEscFloor}).`,
+      escalationReason: EscalationReason.LowIntentConfidence,
+    };
+  }
   if (intentResult.confidence < 0.6 && intentResult.confidence >= autoEscFloor) {
     return {
       safe: true,
