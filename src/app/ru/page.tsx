@@ -9,81 +9,6 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
 const DEMO_LINK = '/connect';
 
-/* ─── Что автоматизируется ───────────────────────────────────────────────────── */
-const AUTOMATED_ITEMS = [
-  {
-    title: 'Коммуникация с гостями',
-    desc: 'ИИ отвечает мгновенно, 24/7 — заменяет стойку и мониторинг почты.',
-  },
-  {
-    title: 'Управление объявлениями',
-    desc: 'Создание, обновления и синхронизация по каналам — заменяет администратора листингов.',
-  },
-  {
-    title: 'Ценообразование',
-    desc: 'Автоматически подстраивается под сигналы спроса — заменяет ручной тарифный стол.',
-  },
-  {
-    title: 'Обработка бронирований',
-    desc: 'Подтверждения и календарь исполняются автоматически — заменяет координатора броней.',
-  },
-  {
-    title: 'Отзывы',
-    desc: 'Запросы и ответы по политике — заменяет ручную работу с репутацией.',
-  },
-  {
-    title: 'Инциденты и вопросы',
-    desc: 'ИИ доводит большинство кейсов до решения — заменяет первую линию поддержки.',
-  },
-  {
-    title: 'Синхронизация каналов',
-    desc: 'Работает с площадками; заменяет менеджеров каналов и табличный операционный контур.',
-  },
-  {
-    title: 'Финансовый учёт',
-    desc: 'Доход, показатели и прогнозы собираются автоматически — заменяет операционную отчётность.',
-  },
-];
-
-/* ─── Cards ─────────────────────────────────────────────────────────────────── */
-const CARDS = [
-  {
-    icon: '📥',
-    title: 'Коммуникация с гостями',
-    desc: 'Ведёт входящие обращения гостей круглосуточно — без задержек и пропущенных тредов.',
-  },
-  {
-    icon: '📋',
-    title: 'Сбор данных и приём заявок',
-    desc: 'Исполняет квалификацию и сбор данных целиком — заменяет сотрудника на приёме.',
-  },
-  {
-    icon: '🔄',
-    title: 'Рабочие процессы и расписание',
-    desc: 'Коды доступа, уборка, повторяющиеся задачи — система выполняет и закрывает автоматически.',
-  },
-  {
-    icon: '💳',
-    title: 'Платежи и монетизация',
-    desc: 'Доплаты, поздний выезд, дополнительные услуги — счёт в чате, оплата в один клик.',
-  },
-  {
-    icon: '📊',
-    title: 'Динамическое ценообразование',
-    desc: 'Тарифы двигаются со спросом, конкурентами и загрузкой — без ревеню-менеджера в контуре.',
-  },
-  {
-    icon: '🔔',
-    title: 'Редкий вызов оператора',
-    desc: 'Истинные исключения уходят человеку с полным контекстом. Всё остальное исполняется автоматически.',
-  },
-  {
-    icon: '🔒',
-    title: 'Безопасность и контроль доступа',
-    desc: 'Мониторинг в реальном времени, контроль доступа, обнаружение инцидентов и автоматические сценарии реагирования.',
-  },
-];
-
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
   return (
@@ -112,6 +37,32 @@ export default function HomeRu() {
           ctaHref: DEMO_LINK,
           ctaExternal: false,
         }} telegramVariant="icon" showTopRow={false} />
+
+        {/* ── Что такое ASI (коротко) ── */}
+        <section className="py-14 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Что такое ASI
+            </h2>
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed max-w-3xl">
+              ASI — это операционный слой, который исполняет процессы вместо команды: принимает обращения, ведёт гостей, запускает сценарии, контролирует выполнение и собирает операционную аналитику.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/ru/how-it-works"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-colors text-sm font-semibold"
+              >
+                Подробнее о платформе и сценариях →
+              </Link>
+              <Link
+                href={DEMO_LINK}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
+              >
+                Запросить разбор объектов →
+              </Link>
+            </div>
+          </div>
+        </section>
 
         {/* ── Ключевые модули ── */}
         <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t-2 border-[color:var(--t-accent)]">
@@ -185,161 +136,6 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Почему ASI уже сейчас ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Почему ASI уже сейчас
-            </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              Два модуля уже работают. Ниже — конкретные ситуации, в которых они применяются прямо сейчас.
-            </p>
-            <div className="grid sm:grid-cols-3 gap-5">
-
-              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
-                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
-                  Сценарий 1
-                </span>
-                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
-                  Обращение в нерабочее время
-                </h3>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
-                  Гость пишет в 23:00. Без системы — обращение висит до утра. С ASI — ответ уходит сразу, данные собраны, сценарий продолжается без участия оператора.
-                </p>
-              </div>
-
-              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
-                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
-                  Сценарий 2
-                </span>
-                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
-                  Объект недозагружен
-                </h3>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
-                  Заполняемость падает, причина неочевидна. Модуль оценки локации показывает, где именно объект теряет: спрос в зоне, конкуренты, магниты трафика рядом.
-                </p>
-              </div>
-
-              <div className="flex flex-col p-6 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]">
-                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--t-muted)] mb-3">
-                  Сценарий 3
-                </span>
-                <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">
-                  Оператор работает с портфелем
-                </h3>
-                <p className="text-sm text-[var(--t-text-2)] leading-relaxed">
-                  Несколько объектов — разные чаты, задачи, аналитика по каждому. ASI сводит входящие обращения, доступы и видимость по доходности в единый рабочий контур.
-                </p>
-              </div>
-
-            </div>
-          </div>
-        </section>
-
-        {/* ── Что автоматизируется в ASI ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Что автоматизируется в ASI
-            </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              Конкретные операционные функции — не обещания. Система исполняет их без участия команды.
-            </p>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                {
-                  title: 'Входящие обращения',
-                  desc: 'Принимает запросы гостей круглосуточно, без пропущенных тредов и задержек.',
-                },
-                {
-                  title: 'Переписка с гостями',
-                  desc: 'ИИ ведёт диалог: отвечает на вопросы, уточняет детали, собирает нужные данные. Оператор включается только в исключениях.',
-                },
-                {
-                  title: 'Бронирования',
-                  desc: 'Подтверждения, изменения и отмены обрабатываются автоматически по триггеру.',
-                },
-                {
-                  title: 'Платежи',
-                  desc: 'Доплаты, ранний заезд, поздний выезд — счёт в чате, оплата в один клик.',
-                },
-                {
-                  title: 'Доступы и check-in',
-                  desc: 'Коды доступа генерируются и отправляются автоматически по триггеру бронирования.',
-                },
-                {
-                  title: 'Задачи и инциденты',
-                  desc: 'Уборка, ремонт, исключения — система создаёт задачи, назначает и контролирует исполнение.',
-                },
-                {
-                  title: 'Аналитика спроса и доходности',
-                  desc: 'Загрузка, конкурентная среда и потенциал объекта — данные собираются и обновляются автоматически.',
-                },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
-                >
-                  <h3 className="font-semibold text-[var(--t-text)] text-sm leading-snug">{item.title}</h3>
-                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Не CRM, не channel manager, не PMS ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Не CRM, не channel manager, не PMS
-            </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              Все эти инструменты требуют операторов, которые их используют. ASI — это слой исполнения: система сама ведёт операции от начала до конца.
-            </p>
-            <div className="grid sm:grid-cols-2 gap-4 mb-8">
-              {[
-                {
-                  label: 'CRM',
-                  gap: 'Фиксирует данные. Требует оператора, который с ними работает.',
-                },
-                {
-                  label: 'Channel manager',
-                  gap: 'Синхронизирует площадки. Не ведёт коммуникацию и не принимает решений.',
-                },
-                {
-                  label: 'PMS',
-                  gap: 'Управляет объектами. Не обрабатывает гостей и не закрывает инциденты.',
-                },
-                {
-                  label: 'Точечная автоматизация',
-                  gap: 'Закрывает одну функцию. Остальные всё равно требуют ручного труда.',
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="flex gap-4 p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
-                >
-                  <span className="mt-0.5 shrink-0 text-[var(--t-muted)]" aria-hidden>✗</span>
-                  <div>
-                    <p className="font-semibold text-[var(--t-text)] text-sm">{item.label}</p>
-                    <p className="mt-1 text-sm text-[var(--t-muted)] leading-relaxed">{item.gap}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-4 p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))]">
-              <span className="mt-0.5 shrink-0 text-emerald-500" aria-hidden>✓</span>
-              <div>
-                <p className="font-bold text-[var(--t-text)] text-base">ASI — операционный слой</p>
-                <p className="mt-1 text-sm text-[var(--t-text-2)] leading-relaxed">
-                  Заменяет операционный контур целиком: принимает обращения, ведёт гостей, исполняет задачи, контролирует платежи и доступы — без команды операторов в цепочке.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* ── Растёт вместе с вами ── */}
         <section id="scale" className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-4xl mx-auto">
@@ -371,30 +167,6 @@ export default function HomeRu() {
                   <span className="text-xs font-bold uppercase tracking-widest text-[var(--t-muted)] mb-3">{label}</span>
                   <h3 className="font-bold text-[var(--t-text)] text-base leading-snug mb-3">{title}</h3>
                   <p className="text-sm text-[var(--t-text-2)] leading-relaxed">{body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Слой исполнения ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Слой исполнения
-            </h2>
-            <p className="text-[var(--t-muted)] text-lg mb-10">
-              Работа, которая лежала на операционном отделе, — система ведёт от начала до конца.
-            </p>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {CARDS.map((card) => (
-                <div
-                  key={card.title}
-                  className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]"
-                >
-                  <span className="text-2xl" aria-hidden>{card.icon}</span>
-                  <h3 className="mt-3 font-semibold text-[var(--t-text)] text-sm leading-snug">{card.title}</h3>
-                  <p className="mt-1.5 text-sm text-[var(--t-muted)] leading-relaxed">{card.desc}</p>
                 </div>
               ))}
             </div>
@@ -532,27 +304,6 @@ export default function HomeRu() {
                 </details>
               ))}
             </div>
-          </div>
-        </section>
-
-        {/* ── Final CTA ── */}
-        <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-[var(--t-border)] bg-[var(--t-surface-2)]">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-              Готовы посмотреть, как это работает на ваших объектах?
-            </h2>
-            <p className="mt-4 text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed">
-              Оставьте заявку, и мы покажем, как ASI можно использовать для ваших объектов, сценариев и текущих операционных задач.
-            </p>
-            <Link
-              href="/connect"
-              className="mt-8 inline-flex items-center justify-center px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-md hover:scale-[1.02] text-base"
-            >
-              Запросить разбор объектов
-            </Link>
-            <p className="mt-3 text-sm text-[var(--t-muted)]">
-              Без лишних презентаций. Смотрим на ваши реальные задачи.
-            </p>
           </div>
         </section>
 

@@ -6,8 +6,9 @@ import { ruComplianceRoutes } from '@/config/ruCompliance';
 export const ruNavMainLinks = [
   { href: '/', label: 'Главная' },
   { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Доходность объектов' },
-  { href: '/#faq', label: 'Как это работает' },
+  { href: '/ru/how-it-works', label: 'Как это работает' },
   { href: '/#pricing', label: 'Тарифы' },
+  { href: '/#faq', label: 'FAQ' },
   { href: '/connect', label: 'Подключение' },
 ] as const;
 
