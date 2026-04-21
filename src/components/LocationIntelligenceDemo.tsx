@@ -2522,9 +2522,12 @@ export type LocationAnalysisMode = 'residential' | 'commercial';
 export function LocationIntelligenceDemo({
   locale = 'en',
   initialMode = 'residential',
+  edgeToHeader = false,
 }: {
   locale?: LocDemoLocale;
   initialMode?: LocationAnalysisMode;
+  /** When true, section sits directly under the site header (no page-level intro above). */
+  edgeToHeader?: boolean;
 }) {
   const c = LOC_COPY[locale];
   const router = useRouter();
@@ -2699,11 +2702,17 @@ export function LocationIntelligenceDemo({
   }, [phase, selected, locale, c, mode]);
 
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950">
+    <section
+      className={
+        edgeToHeader
+          ? 'pt-6 sm:pt-8 pb-20 sm:pb-24 px-4 sm:px-6 bg-slate-950'
+          : 'py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950'
+      }
+    >
       <div className="max-w-5xl mx-auto text-left">
 
         {/* Section header — mode-aware */}
-        <div className="mb-10 max-w-2xl space-y-5">
+        <div className={`max-w-2xl space-y-5 ${edgeToHeader ? 'mb-6 sm:mb-8' : 'mb-10'}`}>
           {/* Mode toggle — RU locale only (commercial mode is RU-first) */}
           {locale === 'ru' && (
             <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-slate-800 w-fit">
