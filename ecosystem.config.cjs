@@ -1,11 +1,11 @@
 /**
  * PM2 process for asi-global.ru (and related hosts).
  *
- * Uses `ASI_APP_ROOT` from `.env.production.live` when set (deploy writes `/var/www/asi/current`),
- * else `/var/www/asi/current` if that tree exists, else `__dirname` (local dev / nonstandard paths).
+ * Deterministic runtime root:
+ * - cwd is ALWAYS `/var/www/asi/current`
+ * - env.ASI_APP_ROOT is ALWAYS `/var/www/asi/current`
  *
- * Runs `next start` via Node on the bundled CLI under `node_modules/next` so cwd stays the app
- * root and no `npm` wrapper subprocess is required.
+ * This prevents any old/new release split after a symlink switch.
  */
 const fs = require('fs');
 const path = require('path');
@@ -40,19 +40,7 @@ const fromLocal = parseEnvFile(path.join(envDir, '.env.production.local'));
 const fileEnv = { ...fromLocal, ...fromLive };
 delete fileEnv.ASI_RELEASE_SHA;
 
-function resolveRuntimeRoot() {
-  const fromFile = (fileEnv.ASI_APP_ROOT || '').trim();
-  if (fromFile && fs.existsSync(path.join(fromFile, 'package.json'))) {
-    return path.resolve(fromFile);
-  }
-  const standard = '/var/www/asi/current';
-  if (fs.existsSync(path.join(standard, 'package.json'))) {
-    return standard;
-  }
-  return path.resolve(envDir);
-}
-
-const root = resolveRuntimeRoot();
+const root = '/var/www/asi/current';
 const nextBin = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
 
 module.exports = {
@@ -70,6 +58,7 @@ module.exports = {
       min_uptime: '10s',
       env: {
         ...fileEnv,
+        ASI_APP_ROOT: root,
         NODE_ENV: 'production',
         PORT: '3000',
       },

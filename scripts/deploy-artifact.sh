@@ -236,6 +236,41 @@ pm2 save || true
 log "PM2 status (after reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
+log "Post-switch debug (before healthcheck)"
+log "  readlink -f ${CURRENT_LINK}: $(readlink -f "$CURRENT_LINK" || echo "<unavailable>")"
+log "  release-meta.json (current):"
+cat "${CURRENT_LINK}/release-meta.json" 2>/dev/null || echo "<missing release-meta.json>"
+log "  PM2 describe ($PM2_ONLY):"
+pm2 describe "$PM2_ONLY" 2>/dev/null || true
+log "  PM2 env/cwd/script (jlist):"
+node - <<'NODE' || true
+const { execSync } = require('child_process');
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const name = process.env.PM2_ONLY || 'asi-landing';
+  const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    console.log('pm2-jlist: process not found:', name);
+    process.exit(0);
+  }
+  const env = p.pm2_env || {};
+  console.log(JSON.stringify({
+    name: p.name,
+    status: env.status,
+    pid: env.pid,
+    restart_time: env.restart_time,
+    pm_cwd: env.pm_cwd,
+    script: env.pm_exec_path,
+    ASI_APP_ROOT: env.env?.ASI_APP_ROOT,
+  }, null, 2));
+} catch (e) {
+  console.log('pm2-jlist: failed:', String(e));
+}
+NODE
+log "  curl /api/version (best-effort):"
+curl -fsS "http://127.0.0.1:3000/api/version" && echo "" || true
+
 log "Post-switch healthcheck (retries until SHA matches artifact metadata)"
 if ! EXPECT_SHA="$EXPECTED_SHA" node - <<'NODE'
 const timeoutMs = 45_000;
@@ -301,6 +336,41 @@ then
   log "  expected SHA (artifact): $EXPECTED_SHA"
   log "  attempted new release: $RELEASE_DIR"
   log "  previous release path: ${PREV_TARGET:-<none>}"
+
+  log "Failure diagnostics (post-switch)"
+  log "  readlink -f ${CURRENT_LINK}: $(readlink -f "$CURRENT_LINK" || echo "<unavailable>")"
+  log "  PM2 status:"
+  pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
+  log "  PM2 describe ($PM2_ONLY):"
+  pm2 describe "$PM2_ONLY" 2>/dev/null || true
+  log "  PM2 logs ($PM2_ONLY) last 100 lines:"
+  pm2 logs "$PM2_ONLY" --lines 100 --nostream 2>/dev/null || true
+  log "  Restart loop check (pm2 jlist):"
+  PM2_ONLY="$PM2_ONLY" node - <<'NODE' || true
+const { execSync } = require('child_process');
+const name = (process.env.PM2_ONLY || 'asi-landing').trim();
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    console.log('restart-loop: process not found:', name);
+    process.exit(0);
+  }
+  const env = p.pm2_env || {};
+  const restart = Number(env.restart_time || 0);
+  const status = String(env.status || '');
+  console.log('restart-loop:', { name, status, restart_time: restart, pid: env.pid });
+  if (status === 'errored' || restart >= 3) {
+    console.log('restart-loop: YES');
+  } else {
+    console.log('restart-loop: no');
+  }
+} catch (e) {
+  console.log('restart-loop: failed:', String(e));
+}
+NODE
+
   if [[ -n "${PREV_TARGET:-}" ]] && [[ -d "$PREV_TARGET" ]]; then
     rollback_to "$PREV_TARGET" "$PREV_SHA"
     log "Rollback complete; live symlink restored to previous release."
