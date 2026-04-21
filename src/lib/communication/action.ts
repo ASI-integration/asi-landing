@@ -14,6 +14,8 @@ export function evaluateActionSafety(
   text: string
 ): ActionSafetyResult {
   const { intentResult, reservation } = context;
+  const identityStatus = context.memory.identityResolutionStatus ?? 'unresolved';
+  const identityConfidence = context.memory.identityConfidence ?? 0;
   const slots = extractSlots(text);
   const priority = classifyIssuePriority(text, intentResult.intent, slots);
 
@@ -43,6 +45,20 @@ export function evaluateActionSafety(
       safe: true,
       action: 'ask_clarifying_question',
       reason: 'Multiple reservations match. Need to ask clarifying question.',
+    };
+  }
+
+  // 3b. Identity is not confidently resolved: avoid pretending we know the booking/property.
+  // Conservative: prefer clarification for flows that depend on entity context.
+  const needsStrongBinding =
+    intentResult.intent === IntentCategory.CheckInInfo ||
+    intentResult.intent === IntentCategory.CheckOut ||
+    intentResult.intent === IntentCategory.PaymentRequest;
+  if (needsStrongBinding && (identityStatus !== 'resolved' || identityConfidence < 0.8) && reservation.status !== 'matched') {
+    return {
+      safe: true,
+      action: 'ask_clarifying_question',
+      reason: `Identity not resolved confidently (status=${identityStatus} conf=${identityConfidence}). Need booking/property context.`,
     };
   }
 

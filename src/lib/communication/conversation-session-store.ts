@@ -5,6 +5,7 @@ import {
   AutonomousConversationSession,
   AutonomousSessionRole,
   AutonomousSessionStatus,
+  IdentityResolution,
   IntentCategory,
   Lang,
   SessionTimelineEntry,
@@ -105,6 +106,25 @@ function baseSession(chatId: number, channel: CommunicationChannel): AutonomousC
   };
 }
 
+function applyIdentity(
+  prev: AutonomousConversationSession,
+  identity: IdentityResolution | undefined,
+): AutonomousConversationSession {
+  if (!identity) return prev;
+  return {
+    ...prev,
+    identity_role: identity.role,
+    entity_type: identity.entityType,
+    entity_id: identity.entityId,
+    property_id: identity.propertyId,
+    reservation_id: identity.reservationId,
+    lead_id: identity.leadId,
+    identity_confidence: identity.confidence,
+    identity_resolution_status: identity.status,
+    identity_reason: identity.reason,
+  };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** Load session for this chat, or undefined if none yet. */
@@ -124,6 +144,21 @@ export function getOrCreateAutonomousSession(
     store.set(chatId, s);
   }
   return { ...s, collected_data: { ...s.collected_data }, timeline: [...s.timeline] };
+}
+
+/** Attach identity binding info to the session (best-effort). */
+export function setAutonomousSessionIdentity(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  identity: IdentityResolution;
+}): AutonomousConversationSession {
+  const prev = store.get(params.chatId) ?? baseSession(params.chatId, params.channel);
+  const next = applyIdentity(
+    { ...prev, channel: params.channel, updated_at: new Date().toISOString() },
+    params.identity,
+  );
+  store.set(params.chatId, next);
+  return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
 }
 
 /**
@@ -155,6 +190,7 @@ export function addSessionTimelineTurn(
 export function mergeAutonomousSessionFromInbound(params: {
   chatId: number;
   channel: CommunicationChannel;
+  identity?: IdentityResolution;
   intent: IntentCategory;
   intentConfidence: number;
   lang: Lang;
@@ -192,7 +228,7 @@ export function mergeAutonomousSessionFromInbound(params: {
   }
 
   const next: AutonomousConversationSession = {
-    ...prev,
+    ...applyIdentity(prev, params.identity),
     channel: params.channel,
     role: inferRole(params.chatId, params.channel),
     intent: params.intent,

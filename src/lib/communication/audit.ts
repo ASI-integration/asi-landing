@@ -104,6 +104,23 @@ export function auditAutonomousDecision(params: {
   });
 }
 
+/**
+ * Identity binding decision logger.
+ * Use this for "who/what did we resolve" + confidence + why.
+ */
+export function auditIdentityDecision(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.IdentityDecision,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
 export function auditError(params: {
   chat_id?: number;
   update_id?: number;

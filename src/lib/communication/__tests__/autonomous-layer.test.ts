@@ -27,6 +27,7 @@ describe('conversation-session-store', () => {
     mergeAutonomousSessionFromInbound({
       chatId: 42,
       channel: 'telegram',
+      identity: undefined,
       intent: IntentCategory.BookingInquiry,
       intentConfidence: 0.8,
       lang: 'en' as Lang,

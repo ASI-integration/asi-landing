@@ -1,5 +1,5 @@
 import { getChannelAdapter } from './channels';
-import { createOrMergeIdentity } from './identity';
+import { bindIdentity } from './identity-binding';
 import { appendTimelineEvent } from './timeline';
 import {
   auditDuplicate,
@@ -35,6 +35,7 @@ import {
 } from './types';
 
 import { getContext, updateContext } from './memory';
+import { mergeAutonomousSessionFromInbound, setAutonomousSessionIdentity } from './conversation-session-store';
 import {
   extractStaffClues,
   hasMinimalStaffClues,
@@ -63,6 +64,31 @@ function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.RU_TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
   if (process.env.TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
   return false;
+}
+
+function stableNumericChatId(envelope: InboundMessageEnvelope, guestId?: string): number {
+  // Prefer a real numeric chatId when available.
+  if (envelope.chatId) {
+    const n = Number(envelope.chatId);
+    if (Number.isFinite(n)) return n;
+  }
+
+  // Fall back to a stable hash so session state and routing remain consistent.
+  const basis =
+    guestId ??
+    envelope.externalUserId ??
+    envelope.email ??
+    envelope.phoneNumber ??
+    `unknown:${envelope.channel}`;
+
+  // FNV-1a 32-bit
+  let h = 2166136261;
+  for (let i = 0; i < basis.length; i++) {
+    h ^= basis.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const out = (h | 0);
+  return out === 0 ? 1 : out;
 }
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
@@ -137,15 +163,35 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   }
   cp('idempotency.check.done');
 
-  // Resolve unified identity
-  const identity = await withAwaitCheckpoint('identity.resolve', () => createOrMergeIdentity(envelope), {
+  // Resolve identity + bind to business entities (reservation/property/lead/unknown)
+  const identity = await withAwaitCheckpoint('identity.resolve', () => bindIdentity(envelope), {
     has_chat_id: Boolean(envelope.chatId),
     has_external_user_id: Boolean(envelope.externalUserId),
   });
 
-  const chatId = envelope.chatId ? parseInt(envelope.chatId, 10) : parseInt(identity.guestId, 10);
+  const chatId = stableNumericChatId(envelope, identity.guestId);
   cp('channel.resolved', { chat_id: chatId });
   cp('text.extracted', { chat_id: chatId, text_len: text.length });
+
+  // Harden session memory with identity binding (safe defaults when unknown).
+  updateContext(chatId, {
+    role: identity.role,
+    entityType: identity.entityType,
+    entityId: identity.entityId,
+    propertyId: identity.propertyId,
+    reservationId: identity.reservationId,
+    leadId: identity.leadId,
+    identityConfidence: identity.confidence,
+    identityResolutionStatus: identity.status,
+    identityReason: identity.reason,
+  });
+
+  // Store identity in the file-backed autonomous session snapshot too.
+  try {
+    setAutonomousSessionIdentity({ chatId, channel: envelope.channel, identity });
+  } catch {
+    // best-effort
+  }
 
   if (pipeDebug) {
     console.log('[comm:pipeline] message.received', {
@@ -160,7 +206,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   
   await withAwaitCheckpoint(
     'timeline.inbound.append',
-    () => appendTimelineEvent(identity.guestId, { type: 'message_inbound', channel: envelope.channel, content: text, ts: envelope.receivedAt }),
+    () =>
+      appendTimelineEvent(identity.guestId ?? String(chatId), {
+        type: 'message_inbound',
+        channel: envelope.channel,
+        content: text,
+        ts: envelope.receivedAt,
+      }),
     { chat_id: chatId },
     15_000,
   );
@@ -278,6 +330,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     );
     cp('memory/context.build.done', { chat_id: chatId });
 
+    // Harden session state snapshot for routing/escalation across turns.
+    // This persists both collected clues and identity binding into the session store.
+    try {
+      mergeAutonomousSessionFromInbound({
+        chatId,
+        channel: envelope.channel,
+        identity,
+        intent: intentResult.intent,
+        intentConfidence: intentResult.confidence,
+        lang: classification.lang,
+        mergedClues,
+      });
+    } catch {
+      // best-effort
+    }
+
     // Fetch per-property templates (null when none set or on any error)
     const propertyId = commContext.reservation.propertyId;
     const templates = propertyId
@@ -371,7 +439,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       await withAwaitCheckpoint(
         'timeline.escalation.append',
-        () => appendTimelineEvent(identity.guestId, { type: 'escalation', reason: escalation!.summary, ts: new Date() }),
+        () => appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'escalation', reason: escalation!.summary, ts: new Date() }),
         { chat_id: chatId },
         15_000,
       );
@@ -397,7 +465,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             trigger_reason: escalation!.reason,
           });
           if (task_id) {
-            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+            await appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
           }
         },
       );
@@ -451,8 +519,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         usedPath = 'deterministic';
         // Timeline: gate passed
         runInBackground(
-          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_CheckinPassed', triggerId: identity.guestId },
-          () => appendTimelineEvent(identity.guestId, {
+          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_CheckinPassed', triggerId: identity.guestId ?? String(chatId) },
+          () => appendTimelineEvent(identity.guestId ?? String(chatId), {
             type: 'checkin_gate_passed',
             property_id: propertyId!,
             reservation_id: commContext.reservation.reservationId ?? null,
@@ -484,8 +552,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
         // Timeline: gate blocked
         runInBackground(
-          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_ReadinessBlocked', triggerId: identity.guestId },
-          () => appendTimelineEvent(identity.guestId, {
+          { correlationId: corrId, module: 'orchestrator', taskName: 'appendTimelineEvent_ReadinessBlocked', triggerId: identity.guestId ?? String(chatId) },
+          () => appendTimelineEvent(identity.guestId ?? String(chatId), {
             type: 'stay_flow_readiness_blocked',
             property_id: propertyId!,
             blocked_reason: gateResult.blocked_reason ?? 'unit_not_ready',
@@ -653,7 +721,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       await withAwaitCheckpoint(
         'timeline.escalation_post_reply.append',
-        () => appendTimelineEvent(identity.guestId, { type: 'escalation', reason: esc.summary, ts: new Date() }),
+        () => appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'escalation', reason: esc.summary, ts: new Date() }),
         { chat_id: chatId },
         15_000,
       );
@@ -680,7 +748,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           });
           if (error) throw new Error(error);
           if (task_id) {
-            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
+            await appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'ops_task_created', task_type: OpsTaskType.GuestIssue, task_id, ts: new Date() });
           }
         },
       );
@@ -705,7 +773,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           });
           if (error) throw new Error(error);
           if (task_id) {
-            await appendTimelineEvent(identity.guestId, { type: 'ops_task_created', task_type: OpsTaskType.Checkout, task_id, ts: new Date() });
+            await appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'ops_task_created', task_type: OpsTaskType.Checkout, task_id, ts: new Date() });
           }
         },
       );
@@ -757,7 +825,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (!sent) throw new Error('Adapter failed to send message');
     await withAwaitCheckpoint(
       'timeline.outbound.append',
-      () => appendTimelineEvent(identity.guestId, { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() }),
+      () => appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'message_outbound', channel: envelope.channel, content: replyText, ts: new Date() }),
       { chat_id: chatId },
       15_000,
     );

@@ -170,6 +170,35 @@ export interface ConversationContext {
   incident_type?: string;
   severity?: string;
   escalation_candidate?: boolean;
+  // Identity binding and role separation
+  role?: Role;
+  entityType?: 'reservation' | 'property' | 'lead' | 'unknown';
+  entityId?: string;
+  propertyId?: string;
+  reservationId?: string;
+  leadId?: string;
+  identityConfidence?: number;
+  identityResolutionStatus?: 'resolved' | 'ambiguous' | 'unresolved';
+  /** Optional: human/audit-friendly explanation of how identity was resolved. */
+  identityReason?: string;
+}
+
+// Role and identity resolution types
+export type Role = 'guest' | 'lead' | 'operator' | 'owner' | 'unknown';
+
+export interface IdentityResolution {
+  role: Role;
+  entityType: 'reservation' | 'property' | 'lead' | 'unknown';
+  entityId?: string;
+  propertyId?: string;
+  reservationId?: string;
+  leadId?: string;
+  guestId?: string;
+  confidence: number;
+  status: 'resolved' | 'ambiguous' | 'unresolved';
+  reason?: string;
+  /** Ordered steps used to resolve identity (for audit/debug). */
+  resolutionPath?: string[];
 }
 
 // ─── Payment Stub ─────────────────────────────────────────────────────────────
@@ -320,6 +349,7 @@ export enum AuditEventType {
   LLMFallback       = 'LLM_FALLBACK',
   EscalationCreated = 'ESCALATION_CREATED',
   AutonomousDecision = 'AUTONOMOUS_DECISION',
+  IdentityDecision  = 'IDENTITY_DECISION',
   PersistError      = 'PERSIST_ERROR',
   UnhandledError    = 'UNHANDLED_ERROR',
 }
@@ -379,6 +409,16 @@ export interface AutonomousConversationSession {
   /** Channel this session was created on. Needed for outbound routing. */
   channel?: CommunicationChannel;
   role: AutonomousSessionRole;
+  // Identity binding & role separation (best-effort; safe defaults when unknown)
+  identity_role?: Role;
+  entity_type?: 'reservation' | 'property' | 'lead' | 'unknown';
+  entity_id?: string;
+  property_id?: string;
+  reservation_id?: string;
+  lead_id?: string;
+  identity_confidence?: number;
+  identity_resolution_status?: 'resolved' | 'ambiguous' | 'unresolved';
+  identity_reason?: string;
   intent?: IntentCategory;
   intent_confidence?: number;
   status: AutonomousSessionStatus;
