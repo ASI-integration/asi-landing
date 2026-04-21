@@ -1,12 +1,11 @@
 /**
  * PM2 process for asi-global.ru (and related hosts).
- * Run from repo root on the VPS: pm2 startOrReload ecosystem.config.cjs
  *
- * Reads `.env.production.live` and `.env.production.local` (deploy copies live → local before build).
- * `.env.production.live` wins on duplicate keys so a manual edit to live is not overridden by a
- * stale local copy when someone runs `pm2 restart` without re-copying.
- * Injects vars into the process env so Next `next start` always sees server secrets (e.g.
- * GOOGLE_CLIENT_SECRET) and OAuth flags even if dotenv resolution from cwd differs under PM2.
+ * Uses `ASI_APP_ROOT` from `.env.production.live` when set (deploy writes `/var/www/asi/current`),
+ * else `/var/www/asi/current` if that tree exists, else `__dirname` (local dev / nonstandard paths).
+ *
+ * Runs `next start` via Node on the bundled CLI under `node_modules/next` so cwd stays the app
+ * root and no `npm` wrapper subprocess is required.
  */
 const fs = require('fs');
 const path = require('path');
@@ -35,20 +34,35 @@ function parseEnvFile(filePath) {
   return out;
 }
 
-const root = __dirname;
-const fromLive = parseEnvFile(path.join(root, '.env.production.live'));
-const fromLocal = parseEnvFile(path.join(root, '.env.production.local'));
+const envDir = __dirname;
+const fromLive = parseEnvFile(path.join(envDir, '.env.production.live'));
+const fromLocal = parseEnvFile(path.join(envDir, '.env.production.local'));
 const fileEnv = { ...fromLocal, ...fromLive };
-// Never inject legacy release SHA from env files; /api/version reads `.release.build.json` only for artifacts.
 delete fileEnv.ASI_RELEASE_SHA;
+
+function resolveRuntimeRoot() {
+  const fromFile = (fileEnv.ASI_APP_ROOT || '').trim();
+  if (fromFile && fs.existsSync(path.join(fromFile, 'package.json'))) {
+    return path.resolve(fromFile);
+  }
+  const standard = '/var/www/asi/current';
+  if (fs.existsSync(path.join(standard, 'package.json'))) {
+    return standard;
+  }
+  return path.resolve(envDir);
+}
+
+const root = resolveRuntimeRoot();
+const nextBin = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
 
 module.exports = {
   apps: [
     {
       name: 'asi-landing',
-      cwd: __dirname,
-      script: 'npm',
-      args: ['run', 'start', '--', '-H', '127.0.0.1', '-p', '3000'],
+      cwd: root,
+      script: nextBin,
+      interpreter: 'node',
+      args: ['start', '-H', '127.0.0.1', '-p', '3000'],
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,

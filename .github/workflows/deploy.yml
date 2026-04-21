@@ -71,12 +71,14 @@ jobs:
       - name: Build (production)
         run: npm run build
 
+      - name: Prune devDependencies for runtime bundle
+        run: npm prune --omit=dev
+
       - name: Create release artifact (.tgz)
         shell: bash
         run: |
           set -euo pipefail
           SHA="${{ steps.build_meta.outputs.sha }}"
-          OUT="${{ steps.build_meta.outputs.artifact_file }}"
 
           rm -rf release
           mkdir -p release
@@ -84,25 +86,26 @@ jobs:
           cp package.json package-lock.json next.config.js ecosystem.config.cjs release/
           if [ -d public ]; then cp -R public release/; fi
           cp -R .next release/
+          cp -a node_modules release/
 
           node - <<'NODE'
           const fs = require('fs');
-          const sha = process.env.GITHUB_SHA_EXACT || '';
+          const gitSha = (process.env.GIT_SHA_EXACT || '').trim();
           const meta = {
-            sha,
-            built_at_iso: new Date().toISOString(),
+            gitSha,
+            builtAt: new Date().toISOString(),
+            workflowRunId: process.env.GITHUB_RUN_ID || null,
             github: {
-              run_id: process.env.GITHUB_RUN_ID || null,
               run_number: process.env.GITHUB_RUN_NUMBER || null,
               workflow: process.env.GITHUB_WORKFLOW || null,
               repository: process.env.GITHUB_REPOSITORY || null,
             },
             node: process.version,
           };
-          fs.writeFileSync('release/.release.build.json', JSON.stringify(meta, null, 2) + '\n');
+          fs.writeFileSync('release/release-meta.json', JSON.stringify(meta, null, 2) + '\n');
           NODE
         env:
-          GITHUB_SHA_EXACT: ${{ steps.build_meta.outputs.sha }}
+          GIT_SHA_EXACT: ${{ steps.build_meta.outputs.sha }}
 
       - name: Tar release
         shell: bash
@@ -138,7 +141,7 @@ jobs:
           name: ${{ needs.build_release.outputs.artifact_name }}
           path: release-artifact
 
-      - name: Pre-deploy artifact smoke (/api/health, /api/version, SHA)
+      - name: Pre-deploy artifact smoke (/api/health, /api/version, release-meta SHA)
         shell: bash
         env:
           EXPECT_SHA: ${{ needs.build_release.outputs.sha }}

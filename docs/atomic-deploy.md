@@ -28,17 +28,16 @@ Script:
 
 It:
 
-- unpacks the CI-built tarball into `/var/www/asi/releases/<sha>`
-- runs `npm ci --omit=dev` in that release folder (no `next build` on the VPS)
-- smoke-starts `next start` and fetches `/api/health`, `/`, `/ru`, `/api/version` (SHA must match)
-- switches `/var/www/asi/current` **only after** smoke passes
-- reloads PM2 **only after** switching `current`
-- runs post-switch healthchecks and auto-rolls back on failure
+- unpacks the CI-built tarball into `/var/www/asi/releases/<sha>` (includes `node_modules` and `release-meta.json`)
+- validates required paths and that `release-meta.json` `gitSha` matches the release id
+- switches `/var/www/asi/current` **atomically** (`ln` + `mv -Tf`)
+- reloads PM2 **once** against `current/ecosystem.config.cjs` (Next CLI via `node`, cwd `/var/www/asi/current`)
+- runs post-switch healthchecks (retries until `/api/version` matches artifact SHA) and auto-rolls back on failure
 
 ## CI vs VPS responsibilities
 
-- **GitHub Actions** (`.github/workflows/deploy.yml`): lint, typecheck, tests, `next build`, pack `.release.build.json` with the canonical full SHA, upload artifact, SCP artifact + `deploy-artifact.sh`, run deploy on the VPS.
-- **VPS**: unpack, runtime `npm ci --omit=dev`, smoke, symlink flip, PM2 reload. No legacy `deploy.sh` / `deploy-release.sh` / VPS `next build` for production.
+- **GitHub Actions** (`.github/workflows/deploy.yml`): lint, typecheck, tests, `next build`, `npm prune --omit=dev`, bundle prod `node_modules`, write `release-meta.json` with canonical `gitSha`, upload artifact, SCP artifact + `deploy-artifact.sh`, run deploy on the VPS.
+- **VPS**: unpack, preflight, symlink flip, PM2 reload. No `npm install` / `npm ci` / `next build` on the VPS for normal deploy. No legacy `deploy.sh` / `deploy-release.sh` / VPS `next build` for production.
 
 ## Manual rollback (no rebuild)
 
