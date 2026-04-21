@@ -9,7 +9,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 export const metadata: Metadata = {
   title: 'Оценка локации — ASI',
   description:
-    'Введите адрес — ASI покажет спрос, конкуренцию, магниты трафика, структуру потока и форматный потенциал точки.',
+    'Быстрый демо‑предпросмотр: введите адрес — получите предварительную оценку. Полный отчёт формируется асинхронно и может занять до ~1 минуты.',
 };
 
 export default async function RuLocationAnalysisPage(

@@ -1714,6 +1714,8 @@ function ASIPanel({
     : c.strategyShortTerm;
   const [visible, setVisible] = useState(false);
   const [magnetExpanded, setMagnetExpanded] = useState(false);
+  const [fullReportBusy, setFullReportBusy] = useState(false);
+  const [fullReportErr, setFullReportErr] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
@@ -1748,6 +1750,71 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
+
+  async function requestFullReportAsync() {
+    if (fullReportBusy) return;
+    setFullReportErr(null);
+    setFullReportBusy(true);
+    try {
+      const res = await fetch('/api/location-full-report/request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          locale,
+          mode,
+          delivery: { channel: 'dashboard', target: 'public' },
+          // Monetization hook (MVP): UI can upgrade this to 'included' or 'paid_required' later.
+          access_tier: 'unknown',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
+
+      const requestId = String(json.requestId);
+
+      // Kick off processing (do not block the UI on the long request).
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      fetch('/api/location-full-report/process', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requestId }),
+        keepalive: true,
+      });
+
+      // Poll for completion; when done, open permalink.
+      const pollStart = Date.now();
+      const poll = async () => {
+        const s = await fetch(`/api/location-full-report/request/${requestId}`, { cache: 'no-store' });
+        const sj = await s.json().catch(() => ({}));
+        if (!s.ok) return { status: 'failed' as const, error: sj?.error ?? 'status_failed' };
+        return sj as { status?: string; reportId?: string; error?: string };
+      };
+
+      // First quick poll after a short delay, then keep polling.
+      await new Promise<void>(resolve => setTimeout(resolve, 900));
+      for (;;) {
+        const st = await poll();
+        if (st.status === 'completed' && st.reportId) {
+          const reportId = String(st.reportId);
+          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          return;
+        }
+        if (st.status === 'failed') {
+          throw new Error(st.error || 'processing_failed');
+        }
+        if (Date.now() - pollStart > 90_000) {
+          throw new Error('timeout');
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, 1500));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setFullReportErr(msg);
+    } finally {
+      setFullReportBusy(false);
+    }
+  }
 
   function openStandaloneFullReportRu() {
     (async () => {
@@ -1792,7 +1859,7 @@ function ASIPanel({
         <div className="flex flex-col items-center justify-center gap-1 p-5
                         border-r border-b md:border-b-0 border-slate-800/40">
           <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">
-            {c.analysisHeader}
+            {locale === 'ru' ? 'Демо‑предпросмотр' : 'Demo preview'}
           </p>
           <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
         </div>
@@ -1832,18 +1899,50 @@ function ASIPanel({
 
       </div>
 
-      {/* Full standalone report permalink (RU-first) */}
-      {locale === 'ru' ? (
-        <div className="px-5 py-5">
+      {/* Report CTA: preview permalink + async full report */}
+      <div className="px-5 py-5 space-y-2">
+        {locale === 'ru' ? (
+          <button
+            type="button"
+            onClick={requestFullReportAsync}
+            disabled={fullReportBusy}
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          >
+            {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={requestFullReportAsync}
+            disabled={fullReportBusy}
+            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          >
+            {fullReportBusy ? 'Generating full report…' : 'Request full report (async)'}
+          </button>
+        )}
+        <p className="text-[11px] text-slate-600 text-center">
+          {locale === 'ru'
+            ? 'Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.'
+            : 'Preview is immediate and approximate. The full report is deeper and may take up to ~1 minute in dense areas.'}
+        </p>
+        {fullReportErr ? (
+          <p className="text-[11px] text-amber-400/90 text-center">
+            {locale === 'ru'
+              ? `Не удалось запустить полный отчёт: ${fullReportErr}`
+              : `Couldn’t start the full report: ${fullReportErr}`}
+          </p>
+        ) : null}
+
+        {locale === 'ru' ? (
           <button
             type="button"
             onClick={openStandaloneFullReportRu}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
           >
-            Открыть полный отчёт
+            Открыть демо‑перmalink (предпросмотр)
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
 
     {/* ── Detail sections — below summary panel ── */}
@@ -2475,6 +2574,8 @@ function CommercialASIPanel({
   const router = useRouter();
   const band = getBand(analysis.evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
   const [visible, setVisible] = useState(false);
+  const [fullReportBusy, setFullReportBusy] = useState(false);
+  const [fullReportErr, setFullReportErr] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
@@ -2487,6 +2588,56 @@ function CommercialASIPanel({
     fit.overallVerdict === 'selective' ? 'text-amber-400' :
     fit.overallVerdict === 'weak' ? 'text-orange-400' :
     'text-slate-500';
+
+  async function requestFullReportAsync() {
+    if (fullReportBusy) return;
+    setFullReportErr(null);
+    setFullReportBusy(true);
+    try {
+      const res = await fetch('/api/location-full-report/request', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          locale,
+          mode: 'commercial',
+          delivery: { channel: 'dashboard', target: 'public' },
+          access_tier: 'unknown',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
+      const requestId = String(json.requestId);
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      fetch('/api/location-full-report/process', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ requestId }),
+        keepalive: true,
+      });
+
+      const pollStart = Date.now();
+      for (;;) {
+        const s = await fetch(`/api/location-full-report/request/${requestId}`, { cache: 'no-store' });
+        const sj = await s.json().catch(() => ({}));
+        if (!s.ok) throw new Error(sj?.error ?? 'status_failed');
+        if (sj?.status === 'completed' && sj?.reportId) {
+          const reportId = String(sj.reportId);
+          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          return;
+        }
+        if (sj?.status === 'failed') throw new Error(sj?.error ?? 'processing_failed');
+        if (Date.now() - pollStart > 90_000) throw new Error('timeout');
+        await new Promise<void>(resolve => setTimeout(resolve, 1500));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setFullReportErr(msg);
+    } finally {
+      setFullReportBusy(false);
+    }
+  }
 
   function openCommercialReport() {
     (async () => {
@@ -2547,11 +2698,24 @@ function CommercialASIPanel({
           onClick={openCommercialReport}
           className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
-          Открыть пространственный отчёт
+          Открыть демо‑перmalink (пространственный)
+        </button>
+        <button
+          type="button"
+          onClick={requestFullReportAsync}
+          disabled={fullReportBusy}
+          className="mt-2 w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        >
+          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
         </button>
         <p className="mt-2 text-[11px] text-slate-600 text-center">
-          Детальный анализ · структура потока · форматная матрица · барьеры
+          Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.
         </p>
+        {fullReportErr ? (
+          <p className="mt-1 text-[11px] text-amber-400/90 text-center">
+            Не удалось запустить полный отчёт: {fullReportErr}
+          </p>
+        ) : null}
       </div>
     </div>
   );

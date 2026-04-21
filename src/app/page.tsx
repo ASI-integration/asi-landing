@@ -169,7 +169,8 @@ export default async function Home() {
                 <div className="text-3xl mb-4">📍</div>
                 <h3 className="font-bold text-white text-lg mb-2">Location Analysis</h3>
                 <p className="text-sm text-slate-400 leading-relaxed mb-6 flex-1">
-                  Enter any address — get a full demand landscape: traffic magnets, competition density, and expected income estimate.
+                  Instant demo preview: enter an address and get a fast, approximate estimate (magnets, competition density, income range).
+                  Request the full report separately — deeper signals and a slower async run for dense cities.
                 </p>
                 <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-400 group-hover:text-indigo-300 transition-colors">
                   Open demo →

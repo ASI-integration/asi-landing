@@ -69,9 +69,9 @@ export default async function LocationAnalysisPage(
                 Location Analysis
               </h1>
               <p className="text-slate-400 text-lg leading-relaxed mb-6">
-                Enter any address and ASI maps the demand landscape around it — traffic magnets,
-                competition density, foot-traffic profile, and an evergreen demand score.
-                Used to validate new listings and benchmark existing ones.
+                This page is a fast demo preview. Enter any address and get an immediate, approximate estimate
+                based on open data signals (magnets, competition density, and a directional income range).
+                For dense urban areas, the deeper “full report” runs asynchronously and may take up to ~1 minute.
               </p>
               <ul className="space-y-2 text-sm text-slate-400">
                 <li className="flex items-start gap-2">
@@ -88,7 +88,7 @@ export default async function LocationAnalysisPage(
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5 shrink-0">✓</span>
-                  Works for any city — powered by open data + AI enrichment
+                  Full report available: deeper breakdown, spatial signals, and a permalink report
                 </li>
               </ul>
             </div>
