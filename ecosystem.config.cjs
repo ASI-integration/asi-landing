@@ -34,13 +34,18 @@ function parseEnvFile(filePath) {
   return out;
 }
 
-const envDir = __dirname;
+// IMPORTANT:
+// Never anchor runtime to the directory where this config *physically* lives.
+// During deploy we read this file via `/var/www/asi/current/ecosystem.config.cjs`,
+// but depending on symlink resolution PM2/Node may treat `__dirname` as an older
+// release directory. Always use the deterministic root instead.
+const root = '/var/www/asi/current';
+const envDir = root;
 const fromLive = parseEnvFile(path.join(envDir, '.env.production.live'));
 const fromLocal = parseEnvFile(path.join(envDir, '.env.production.local'));
 const fileEnv = { ...fromLocal, ...fromLive };
 delete fileEnv.ASI_RELEASE_SHA;
 
-const root = '/var/www/asi/current';
 const nextBin = path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next');
 
 module.exports = {

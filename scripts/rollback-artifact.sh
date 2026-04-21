@@ -101,7 +101,7 @@ log "PM2 status (before reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
 log "Reloading PM2"
-pm2 startOrReload "${CURRENT_LINK}/ecosystem.config.cjs" --only "$PM2_ONLY"
+pm2 startOrReload "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
 pm2 save || true
 
 log "PM2 status (after reload):"

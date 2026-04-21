@@ -93,7 +93,7 @@ rollback_to() {
   mv -Tf "$tmp_link" "$CURRENT_LINK"
   log "PM2 status (before reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
-  pm2 startOrReload "${CURRENT_LINK}/ecosystem.config.cjs" --only "$PM2_ONLY"
+  pm2 startOrReload "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
   pm2 save || true
   log "PM2 status (after reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
@@ -230,7 +230,7 @@ mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 unset SWAP_LINK
 
 log "Reloading PM2 (single app: $PM2_ONLY)"
-pm2 startOrReload "${CURRENT_LINK}/ecosystem.config.cjs" --only "$PM2_ONLY"
+pm2 startOrReload "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
 pm2 save || true
 
 log "PM2 status (after reload):"
@@ -262,7 +262,16 @@ try {
     restart_time: env.restart_time,
     pm_cwd: env.pm_cwd,
     script: env.pm_exec_path,
-    ASI_APP_ROOT: env.env?.ASI_APP_ROOT,
+    interpreter: env.exec_interpreter,
+    node_version: env.node_version,
+    args: env.args,
+    env: {
+      ASI_APP_ROOT: env.env?.ASI_APP_ROOT ?? null,
+      ASI_RELEASE_DEPLOYED_AT_ISO: env.env?.ASI_RELEASE_DEPLOYED_AT_ISO ?? null,
+      ASI_RELEASE_PATH: env.env?.ASI_RELEASE_PATH ?? null,
+      NODE_ENV: env.env?.NODE_ENV ?? null,
+      PORT: env.env?.PORT ?? null,
+    },
   }, null, 2));
 } catch (e) {
   console.log('pm2-jlist: failed:', String(e));
@@ -285,6 +294,10 @@ async function sleep(ms) {
 let lastSha = '';
 let lastStatus = 0;
 let lastBody = '';
+let lastReleasePath = '';
+let lastAppRoot = '';
+let lastProcessCwd = '';
+let lastResolvedReleasePath = '';
 
 (async () => {
   while (Date.now() - start < timeoutMs) {
@@ -311,6 +324,11 @@ let lastBody = '';
         continue;
       }
       lastSha = typeof v?.sha === 'string' ? v.sha.trim() : '';
+      lastReleasePath = typeof v?.releasePath === 'string' ? v.releasePath.trim() : '';
+      lastAppRoot = typeof v?.appRoot === 'string' ? v.appRoot.trim() : '';
+      lastProcessCwd = typeof v?.processCwd === 'string' ? v.processCwd.trim() : '';
+      lastResolvedReleasePath =
+        typeof v?.resolvedReleasePath === 'string' ? v.resolvedReleasePath.trim() : '';
       if (lastSha === expected) {
         console.log('health: ok sha=', lastSha);
         return;
@@ -324,6 +342,10 @@ let lastBody = '';
   console.error('  expected SHA (from artifact release-meta.json):', expected);
   console.error('  last /api/version status:', lastStatus);
   console.error('  last /api/version sha:', lastSha);
+  console.error('  last /api/version releasePath:', lastReleasePath || '<missing>');
+  console.error('  last /api/version appRoot:', lastAppRoot || '<missing>');
+  console.error('  last /api/version processCwd:', lastProcessCwd || '<missing>');
+  console.error('  last /api/version resolvedReleasePath:', lastResolvedReleasePath || '<missing>');
   console.error('  last body:', lastBody.slice(0, 800));
   process.exit(1);
 })().catch((e) => {
@@ -339,10 +361,43 @@ then
 
   log "Failure diagnostics (post-switch)"
   log "  readlink -f ${CURRENT_LINK}: $(readlink -f "$CURRENT_LINK" || echo "<unavailable>")"
+  log "  Expected current target (readlink -f): $(readlink -f "$CURRENT_LINK" 2>/dev/null || echo "<unavailable>")"
+  log "  Expected SHA (artifact): $EXPECTED_SHA"
   log "  PM2 status:"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   log "  PM2 describe ($PM2_ONLY):"
   pm2 describe "$PM2_ONLY" 2>/dev/null || true
+  log "  PM2 env/cwd/script (jlist):"
+  PM2_ONLY="$PM2_ONLY" node - <<'NODE' || true
+const { execSync } = require('child_process');
+const name = (process.env.PM2_ONLY || 'asi-landing').trim();
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    console.log('pm2-jlist: process not found:', name);
+    process.exit(0);
+  }
+  const env = p.pm2_env || {};
+  console.log(JSON.stringify({
+    name: p.name,
+    status: env.status,
+    pid: env.pid,
+    restart_time: env.restart_time,
+    pm_cwd: env.pm_cwd,
+    script: env.pm_exec_path,
+    interpreter: env.exec_interpreter,
+    args: env.args,
+    env: {
+      ASI_APP_ROOT: env.env?.ASI_APP_ROOT ?? null,
+      ASI_RELEASE_PATH: env.env?.ASI_RELEASE_PATH ?? null,
+    },
+  }, null, 2));
+} catch (e) {
+  console.log('pm2-jlist: failed:', String(e));
+}
+NODE
   log "  PM2 logs ($PM2_ONLY) last 100 lines:"
   pm2 logs "$PM2_ONLY" --lines 100 --nostream 2>/dev/null || true
   log "  Restart loop check (pm2 jlist):"
@@ -378,6 +433,75 @@ NODE
     log "No valid previous release to roll back to."
   fi
   die "Deploy failed post-switch healthcheck; rolled back where possible."
+fi
+
+log "Post-switch assertions (must match CURRENT target)"
+EXPECTED_CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+log "  readlink -f ${CURRENT_LINK}: ${EXPECTED_CURRENT_TARGET:-<unavailable>}"
+log "  release-meta.json (current):"
+cat "${CURRENT_LINK}/release-meta.json" 2>/dev/null || echo "<missing release-meta.json>"
+log "  PM2 env/cwd/script (jlist):"
+PM2_ONLY="$PM2_ONLY" node - <<'NODE' || true
+const { execSync } = require('child_process');
+const name = (process.env.PM2_ONLY || 'asi-landing').trim();
+try {
+  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
+  const list = JSON.parse(raw);
+  const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    console.log('pm2-jlist: process not found:', name);
+    process.exit(0);
+  }
+  const env = p.pm2_env || {};
+  console.log(JSON.stringify({
+    name: p.name,
+    status: env.status,
+    pid: env.pid,
+    restart_time: env.restart_time,
+    pm_cwd: env.pm_cwd,
+    script: env.pm_exec_path,
+    interpreter: env.exec_interpreter,
+    args: env.args,
+    env: {
+      ASI_APP_ROOT: env.env?.ASI_APP_ROOT ?? null,
+      ASI_RELEASE_PATH: env.env?.ASI_RELEASE_PATH ?? null,
+    },
+  }, null, 2));
+} catch (e) {
+  console.log('pm2-jlist: failed:', String(e));
+}
+NODE
+
+log "  curl /api/version (assert):"
+API_VERSION_JSON="$(curl -fsS "http://127.0.0.1:3000/api/version" || true)"
+echo "$API_VERSION_JSON"
+
+EXPECTED_META_SHA="$(node -e "const j=require('/var/www/asi/current/release-meta.json'); process.stdout.write(String(j.gitSha||'').trim())" 2>/dev/null || true)"
+API_SHA="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.sha||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
+API_RELEASE_PATH="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.releasePath||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
+API_APP_ROOT="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.appRoot||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
+API_PROCESS_CWD="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.processCwd||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
+
+if [[ -z "${EXPECTED_META_SHA:-}" ]]; then
+  die "Post-switch assertion failed: could not read /var/www/asi/current/release-meta.json gitSha"
+fi
+if [[ "$API_SHA" != "$EXPECTED_META_SHA" ]]; then
+  log "Post-switch assertion mismatch: SHA"
+  log "  expected sha (current release-meta.json): $EXPECTED_META_SHA"
+  log "  actual sha (/api/version.sha): ${API_SHA:-<missing>}"
+  log "  actual /api/version.releasePath: ${API_RELEASE_PATH:-<missing>}"
+  log "  actual /api/version.appRoot: ${API_APP_ROOT:-<missing>}"
+  log "  actual /api/version.processCwd: ${API_PROCESS_CWD:-<missing>}"
+  die "Post-switch assertion failed: /api/version.sha does not match current release-meta.json gitSha"
+fi
+if [[ -n "${EXPECTED_CURRENT_TARGET:-}" && "$API_RELEASE_PATH" != "$EXPECTED_CURRENT_TARGET" ]]; then
+  log "Post-switch assertion mismatch: releasePath"
+  log "  expected releasePath (readlink -f /var/www/asi/current): $EXPECTED_CURRENT_TARGET"
+  log "  actual releasePath (/api/version.releasePath): ${API_RELEASE_PATH:-<missing>}"
+  log "  actual /api/version.sha: ${API_SHA:-<missing>}"
+  log "  actual /api/version.appRoot: ${API_APP_ROOT:-<missing>}"
+  log "  actual /api/version.processCwd: ${API_PROCESS_CWD:-<missing>}"
+  die "Post-switch assertion failed: /api/version.releasePath does not match current target"
 fi
 
 log "Writing deploy-side metadata (.release.json)"
