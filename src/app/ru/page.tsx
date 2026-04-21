@@ -183,16 +183,16 @@ export default function HomeRu() {
           ctaExternal: false,
         }} telegramVariant="icon" showTopRow={false} />
 
-        {/* ── Два рабочих модуля ── */}
+        {/* ── Ключевые модули ── */}
         <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t-2 border-[color:var(--t-accent)]">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Два рабочих модуля уже доступны
+              Ключевые модули ASI
             </h2>
             <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              Уже сейчас ASI помогает обрабатывать входящие обращения, вести коммуникацию с гостями и оценивать потенциал объекта по локации, спросу и доходности.
+              ASI объединяет ключевые операционные модули в одной системе: коммуникацию, оценку локации и доходности, а также операционные сценарии управления объектами.
             </p>
-            <div className="grid sm:grid-cols-2 gap-5">
+            <div className="grid sm:grid-cols-3 gap-5">
 
               {/* Card 1 — Коммуникационный модуль */}
               <Link
@@ -204,19 +204,16 @@ export default function HomeRu() {
                   <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
                     Коммуникационный модуль
                   </h3>
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-                    Доступно
-                  </span>
                 </div>
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Принимает входящие обращения 24/7, ведёт переписку с гостями и снижает ручную нагрузку на операционный контур. Пропущенных тредов нет.
+                  Принимает входящие обращения 24/7, ведёт переписку с гостями и поддерживает типовые сценарии сервиса — без ручной нагрузки на операторов.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Запросить подключение →
                 </span>
               </Link>
 
-              {/* Card 2 — Модуль оценки локации */}
+              {/* Card 2 — Модуль оценки локации и доходности */}
               <Link
                 href="/ru/location-analysis"
                 aria-label="Открыть анализ локации"
@@ -224,17 +221,33 @@ export default function HomeRu() {
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
-                    Модуль оценки локации
+                    Модуль оценки локации и доходности
                   </h3>
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-                    Доступно
-                  </span>
                 </div>
                 <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Показывает спрос в зоне, магниты трафика, конкурентную плотность и расчётный потенциал доходности. Полезно до запуска и при пересмотре позиционирования.
+                  Показывает спрос, конкуренцию и ценовой контекст (ставки) в зоне, а также ориентир по потенциалу доходности — как вход для решений по запуску и позиционированию.
                 </p>
                 <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
                   Открыть анализ локации →
+                </span>
+              </Link>
+
+              {/* Card 3 — Операционный модуль */}
+              <Link
+                href="/connect"
+                aria-label="Открыть подключение: операционный модуль"
+                className="group flex flex-col p-6 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+              >
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="font-bold text-[var(--t-text)] text-base leading-snug">
+                    Операционный модуль
+                  </h3>
+                </div>
+                <p className="text-sm text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Исполняет повторяющиеся сценарии управления объектами: доступы и check-in, задачи, инциденты, платежи и контроль исполнения — по триггерам и правилам.
+                </p>
+                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
+                  Запросить подключение →
                 </span>
               </Link>
 
