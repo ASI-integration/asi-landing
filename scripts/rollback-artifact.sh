@@ -100,8 +100,17 @@ mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 log "PM2 status (before reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
-log "Reloading PM2"
-pm2 startOrReload "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
+log "Starting PM2 (clean: stop→kill-port→delete→start)"
+pm2 stop "$PM2_ONLY" 2>/dev/null || true
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k 3000/tcp 2>/dev/null || true
+elif command -v lsof >/dev/null 2>&1; then
+  lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null || true
+fi
+sleep 0.5
+pm2 delete "$PM2_ONLY" 2>/dev/null || true
+sleep 0.3
+pm2 start "/var/www/asi/current/ecosystem.config.cjs" --only "$PM2_ONLY"
 pm2 save || true
 
 log "PM2 status (after reload):"
