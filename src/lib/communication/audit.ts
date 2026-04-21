@@ -65,6 +65,65 @@ export function auditDuplicate(params: { chat_id?: number; update_id: number }):
   });
 }
 
+export function auditDuplicateOutboundPrevented(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.DuplicatePreventedOutbound,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
+export function auditDecision(params: {
+  type: 'reply' | 'ignore' | 'escalate';
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  const t =
+    params.type === 'reply'
+      ? AuditEventType.DecisionReply
+      : params.type === 'ignore'
+        ? AuditEventType.DecisionIgnore
+        : AuditEventType.DecisionEscalate;
+  auditLog({
+    type: t,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
+export function auditRetryAttempt(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.RetryAttempt,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
+export function auditFailureEnqueued(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.FailureEnqueued,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
 export function auditLLM(params: {
   chat_id: number;
   update_id?: number;

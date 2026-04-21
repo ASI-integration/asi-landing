@@ -158,6 +158,19 @@ describe('processUpdate', () => {
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
+  it('prevents duplicate outbound send when same reply is attempted twice', async () => {
+    const update = makeUpdate('hello');
+    await processUpdate(update);
+    // Simulate a second processing run with a different update_id but same provider message id
+    const replay: TelegramUpdate = {
+      update_id: update.update_id + 999,
+      message: { ...update.message!, message_id: update.message!.message_id, chat: { id: 42 }, text: 'hello' },
+    };
+    await processUpdate(replay);
+    // Outbound idempotency should prevent the second send
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+  });
+
   it('returns Ignored for an update with no message', async () => {
     const update: TelegramUpdate = { update_id: nextUpdateId++ };
     const result = await processUpdate(update);
@@ -174,7 +187,7 @@ describe('processUpdate', () => {
 
   it('returns Error outcome but still does not throw when reply fails', async () => {
     // Delivery layer treats `false` as failure and orchestrator returns Error outcome
-    // sendWithRetry will retry up to 3 times; force consistent failure
+    // reliability layer will retry up to 3 times; force consistent failure
     mockSendMessage.mockResolvedValue(false);
     const result = await processUpdate(makeUpdate('check-in tomorrow'));
     expect(result.outcome).toBe(ProcessOutcome.Error);

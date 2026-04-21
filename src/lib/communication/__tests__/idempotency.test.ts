@@ -1,39 +1,40 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { checkAndMark, isDuplicate, _resetForTesting, _storeSize } from '../idempotency';
+import { checkAndMarkKey, isDuplicateKey, _resetForTesting, _storeSize } from '../idempotency';
 
 describe('idempotency', () => {
   beforeEach(() => {
     _resetForTesting();
   });
 
-  it('returns false and marks a new update_id', () => {
-    const result = checkAndMark(100);
+  it('returns false and marks a new inbound key', () => {
+    const result = checkAndMarkKey({ scope: 'inbound', key: 'telegram:42:msg:100' });
     expect(result).toBe(false);
     expect(_storeSize()).toBe(1);
   });
 
-  it('returns true for a duplicate update_id', () => {
-    checkAndMark(200);
-    const result = checkAndMark(200);
+  it('returns true for a duplicate inbound key', () => {
+    checkAndMarkKey({ scope: 'inbound', key: 'telegram:42:msg:200' });
+    const result = checkAndMarkKey({ scope: 'inbound', key: 'telegram:42:msg:200' });
     expect(result).toBe(true);
   });
 
-  it('treats different update_ids as independent', () => {
-    expect(checkAndMark(1)).toBe(false);
-    expect(checkAndMark(2)).toBe(false);
-    expect(checkAndMark(1)).toBe(true);
-    expect(checkAndMark(2)).toBe(true);
-    expect(_storeSize()).toBe(2);
+  it('treats different keys/scopes as independent', () => {
+    expect(checkAndMarkKey({ scope: 'inbound', key: 'k1' })).toBe(false);
+    expect(checkAndMarkKey({ scope: 'inbound', key: 'k2' })).toBe(false);
+    expect(checkAndMarkKey({ scope: 'outbound', key: 'k1' })).toBe(false); // scope isolation
+    expect(checkAndMarkKey({ scope: 'inbound', key: 'k1' })).toBe(true);
+    expect(checkAndMarkKey({ scope: 'inbound', key: 'k2' })).toBe(true);
+    expect(_storeSize()).toBe(3);
   });
 
-  it('isDuplicate returns true only after checkAndMark', () => {
-    expect(isDuplicate(999)).toBe(false);
-    checkAndMark(999);
-    expect(isDuplicate(999)).toBe(true);
+  it('isDuplicateKey returns true only after checkAndMarkKey', () => {
+    expect(isDuplicateKey('inbound', 'x')).toBe(false);
+    checkAndMarkKey({ scope: 'inbound', key: 'x' });
+    expect(isDuplicateKey('inbound', 'x')).toBe(true);
   });
 
   it('does not grow unboundedly for many unique ids', () => {
-    for (let i = 0; i < 100; i++) checkAndMark(i);
+    for (let i = 0; i < 100; i++) checkAndMarkKey({ scope: 'inbound', key: `k:${i}` });
     expect(_storeSize()).toBe(100);
   });
 });

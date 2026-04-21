@@ -1,51 +1,134 @@
 /**
- * Idempotency / duplicate update guard for Telegram updates.
+ * Durable idempotency / deduplication store.
  *
- * Uses an in-memory Map keyed by `update_id`. Entries expire after TTL_MS
- * (default 24 h) to prevent unbounded growth.
+ * Requirements:
+ * - Stable keying (provider message id, channel + external id, hash fallback)
+ * - Must survive process restarts on the VPS (TimeWeb)
+ * - Safe in tests (in-memory; no filesystem access)
  *
- * Limitation: this store is process-local. On cold-start / server restart it
- * resets, so an update arriving just after a restart could be processed twice.
- * For production hardening replace the backing store with Redis or a Supabase
- * dedup table — the interface is designed to make that swap trivial.
+ * Backing store:
+ * - Production: append-only JSONL file + in-memory index (best-effort)
+ * - Tests: in-memory Map only
+ *
+ * NOTE: This is intentionally lightweight and pragmatic (no Redis dependency).
  */
 
-const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+import * as fs from 'fs';
+import * as path from 'path';
+
+const TTL_MS = Number(process.env.COMM_IDEMPOTENCY_TTL_MS ?? 24 * 60 * 60 * 1000); // default 24h
+const MAX_INDEX_SIZE = Number(process.env.COMM_IDEMPOTENCY_MAX_KEYS ?? 50_000);
+
+type Scope = 'inbound' | 'outbound' | 'action';
 
 interface Entry {
-  processedAt: number;
+  k: string;
+  scope: Scope;
+  ts: number; // epoch ms
+  meta?: Record<string, unknown>;
 }
 
-// Module-level singleton — shared across requests in the same process.
-const store = new Map<number, Entry>();
+const isTest = process.env.NODE_ENV === 'test';
+const BASE_DIR =
+  process.env.COMM_STATE_DIR ??
+  process.env.CONVERSATION_SESSION_DIR ??
+  process.env.SESSION_STORE_DIR ??
+  '/tmp';
+const FILE_PATH = path.join(BASE_DIR, 'asi-comm-idempotency.jsonl');
 
-/** Returns true if this update_id has already been seen (and records it if not). */
-export function checkAndMark(updateId: number): boolean {
+// Process-local index; persisted via JSONL so it can be rebuilt on start.
+const index = new Map<string, Entry>();
+let loadedFromDisk = false;
+
+function nowMs(): number {
+  return Date.now();
+}
+
+function sweep(): void {
+  const cutoff = nowMs() - TTL_MS;
+  for (const [k, e] of index.entries()) {
+    if (e.ts < cutoff) index.delete(k);
+  }
+  // Cap worst-case memory growth. Prefer dropping oldest.
+  if (index.size > MAX_INDEX_SIZE) {
+    const entries = Array.from(index.entries()).sort((a, b) => a[1].ts - b[1].ts);
+    const toDrop = entries.slice(0, Math.max(0, index.size - MAX_INDEX_SIZE));
+    for (const [k] of toDrop) index.delete(k);
+  }
+}
+
+function safeMkdirp(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch {
+    // best-effort
+  }
+}
+
+function loadOnce(): void {
+  if (isTest || loadedFromDisk) return;
+  loadedFromDisk = true;
+  safeMkdirp(BASE_DIR);
+  try {
+    if (!fs.existsSync(FILE_PATH)) return;
+    const raw = fs.readFileSync(FILE_PATH, 'utf-8');
+    const lines = raw.split('\n').filter(Boolean);
+    for (const line of lines) {
+      try {
+        const e = JSON.parse(line) as Entry;
+        if (!e?.k || !e?.scope || typeof e.ts !== 'number') continue;
+        index.set(`${e.scope}:${e.k}`, e);
+      } catch {
+        // skip malformed line
+      }
+    }
+  } catch {
+    // best-effort
+  }
   sweep();
-  if (store.has(updateId)) return true;
-  store.set(updateId, { processedAt: Date.now() });
+}
+
+function appendToDisk(e: Entry): void {
+  if (isTest) return;
+  safeMkdirp(BASE_DIR);
+  try {
+    fs.appendFileSync(FILE_PATH, JSON.stringify(e) + '\n', 'utf-8');
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Returns true if key was already seen for scope; otherwise records and returns false.
+ */
+export function checkAndMarkKey(params: {
+  scope: Scope;
+  key: string;
+  meta?: Record<string, unknown>;
+}): boolean {
+  loadOnce();
+  sweep();
+  const idxKey = `${params.scope}:${params.key}`;
+  if (index.has(idxKey)) return true;
+  const e: Entry = { scope: params.scope, k: params.key, ts: nowMs(), meta: params.meta };
+  index.set(idxKey, e);
+  appendToDisk(e);
   return false;
 }
 
-/** Returns true if the update_id was already processed (without marking it). */
-export function isDuplicate(updateId: number): boolean {
-  return store.has(updateId);
-}
-
-/** Evict entries older than TTL_MS. Called lazily on each checkAndMark. */
-function sweep(): void {
-  const cutoff = Date.now() - TTL_MS;
-  for (const [id, entry] of Array.from(store.entries())) {
-    if (entry.processedAt < cutoff) store.delete(id);
-  }
+export function isDuplicateKey(scope: Scope, key: string): boolean {
+  loadOnce();
+  sweep();
+  return index.has(`${scope}:${key}`);
 }
 
 /** Reset the store — for testing only. */
 export function _resetForTesting(): void {
-  store.clear();
+  index.clear();
+  loadedFromDisk = false;
 }
 
 /** Current store size — for testing/observability only. */
 export function _storeSize(): number {
-  return store.size;
+  return index.size;
 }

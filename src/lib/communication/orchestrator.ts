@@ -3,11 +3,15 @@ import { bindIdentity } from './identity-binding';
 import { appendTimelineEvent } from './timeline';
 import {
   auditDuplicate,
+  auditDecision,
+  auditDuplicateOutboundPrevented,
   auditEscalation,
   auditError,
   auditInbound,
   auditLLM,
   auditOutbound,
+  auditRetryAttempt,
+  auditFailureEnqueued,
 } from './audit';
 import {
   buildIntelligentPrompt,
@@ -15,7 +19,7 @@ import {
   deterministicReply,
   SYSTEM_PROMPT,
 } from './classifier';
-import { checkAndMark } from './idempotency';
+import { checkAndMarkKey } from './idempotency';
 import {
   saveAssistantTurn,
   saveUserTurn,
@@ -65,6 +69,9 @@ import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
 import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 import { supabase } from '@/lib/supabase';
 import { runInBackground } from './background';
+import { retry, sha256Base64Url } from './reliability';
+import { writeFailure } from './failure-store';
+import { shouldEscalateByRules } from './escalation-policy';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -150,7 +157,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
   };
 
-  // Idempotency: drop duplicate update_ids
+  // Idempotency (inbound): drop duplicates using stable key (provider ids if possible)
   cp('entered.processMessage', {
     has_message_text: Boolean(envelope.messageText && envelope.messageText.length > 0),
     text_len: text.length,
@@ -162,13 +169,41 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     env_vercel_env: process.env.VERCEL_ENV ?? null,
   });
 
-  cp('idempotency.check.start');
-  if (checkAndMark(update_id)) {
-    cp('idempotency.duplicate.returning');
+  const providerMessageId = String((envelope.metadata as any)?.providerMessageId ?? '').trim();
+  const externalMessageId = String((envelope.metadata as any)?.externalMessageId ?? '').trim();
+  const actorKey = String(envelope.externalUserId ?? envelope.chatId ?? envelope.email ?? envelope.phoneNumber ?? '').trim();
+  const inboundFallback = sha256Base64Url(
+    [
+      envelope.channel,
+      envelope.externalUserId ?? '',
+      envelope.chatId ?? '',
+      envelope.email ?? '',
+      envelope.phoneNumber ?? '',
+      envelope.subject ?? '',
+      envelope.messageText ?? '',
+      JSON.stringify(envelope.metadata ?? {}),
+      String(update_id),
+    ].join('|'),
+  );
+  // Prefer provider ids (stable across redelivery). Only fall back to update_id-based hash when unavailable.
+  const inboundStableKey =
+    providerMessageId || externalMessageId
+      ? `${envelope.channel}:${actorKey}:${providerMessageId || externalMessageId}`
+      : `${envelope.channel}:${actorKey}:${String(update_id)}:${inboundFallback}`;
+
+  cp('idempotency.inbound.check.start', { inbound_key: inboundStableKey });
+  if (checkAndMarkKey({ scope: 'inbound', key: inboundStableKey, meta: { update_id } })) {
+    cp('idempotency.inbound.duplicate.returning', { inbound_key: inboundStableKey });
     auditDuplicate({ chat_id: 0, update_id });
+    auditDecision({
+      type: 'ignore',
+      chat_id: 0,
+      update_id,
+      detail: `duplicate_inbound key=${inboundStableKey}`,
+    });
     return { outcome: ProcessOutcome.Duplicate, update_id };
   }
-  cp('idempotency.check.done');
+  cp('idempotency.inbound.check.done', { inbound_key: inboundStableKey });
 
   // Resolve identity + bind to business entities (reservation/property/lead/unknown)
   const identity = await withAwaitCheckpoint('identity.resolve', () => bindIdentity(envelope), {
@@ -194,6 +229,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     meta: envelope.metadata,
   });
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
+
+  // Session safety: if already escalated, avoid "normal automation" but still allow
+  // a minimal handoff acknowledgement unless explicitly disabled.
+  const allowEscalatedAutosend = process.env.COMM_ALLOW_AUTOSEND_WHEN_ESCALATED === '1';
+  const blockNormalAutomationBecauseEscalated = convSession.state === 'escalated' && !allowEscalatedAutosend;
 
   // Harden session memory with identity binding (safe defaults when unknown).
   updateContext(chatId, {
@@ -407,12 +447,72 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
 
-    let replyText: string;
+    let replyText = '';
     let llmSucceeded = false;
     let usedPath: 'deterministic' | 'llm' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
+
+    if (blockNormalAutomationBecauseEscalated) {
+      auditDecision({
+        type: 'ignore',
+        chat_id: chatId,
+        update_id,
+        detail: 'session_escalated_block_normal_automation',
+      });
+      const base =
+        classification.lang === 'ru'
+          ? 'Запрос уже передан оператору. Мы вернёмся с ответом.'
+          : 'This conversation is already escalated to a human operator. We will follow up shortly.';
+      replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+    }
+
+    // Escalation rules (pre-reply). Conservative: prefer human handoff over unsafe automation.
+    if (classification.category !== 'start' && classification.category !== 'greeting') {
+      const preEsc = shouldEscalateByRules({
+        text,
+        classification,
+        confidence: intentResult?.confidence,
+        identity,
+        reservationResolutionStatus: commContext?.reservation?.status,
+      });
+      if (preEsc.escalate) {
+        escalation = createEscalationEvent({
+          reason: preEsc.reason,
+          chat_id: chatId,
+          update_id,
+          classification,
+          summary: preEsc.detail,
+        });
+        auditEscalation({ chat_id: chatId, update_id, detail: `pre_rule:${preEsc.detail}` });
+        auditDecision({
+          type: 'escalate',
+          chat_id: chatId,
+          update_id,
+          detail: `pre_rule_escalation reason=${preEsc.reason} detail=${preEsc.detail}`,
+        });
+        // Mark conversation-session engine state escalated so future turns are blocked by safety gate.
+        convSession = transitionConversationSessionState(convSession, 'escalated', 'pre_rule_escalation');
+      }
+    }
+
+    // If already escalated by rules, avoid normal auto reply flow when configured.
+    const stopAutoReplyOnEscalation = process.env.COMM_STOP_AUTO_REPLY_ON_ESCALATION !== '0';
+    if (escalation && stopAutoReplyOnEscalation) {
+      const escalationBase =
+        classification.lang === 'ru'
+          ? 'Не могу безопасно ответить автоматически. Передал(а) запрос в операционный поток — вернёмся с ответом.'
+          : "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
+      const escalationMsg = templates?.escalation_contact_text
+        ? `${escalationBase} ${templates.escalation_contact_text}`
+        : escalationBase;
+      replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+    }
 
     // Staff-group operational bridge: group chat (chatId < 0) without a matched
     // reservation. Only ask a clarifying question when we STILL don't have
@@ -425,19 +525,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       classification.category !== 'start' &&
       !hasMinimalStaffClues(mergedClues);
 
-    if (classification.category === 'start') {
+    if (!replyText && classification.category === 'start') {
       cp('branch.start_message', { chat_id: chatId });
       replyText = adapter.formatResponse(deterministicReply(classification), commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
-    } else if (staffNeedsContext) {
+    } else if (!replyText && staffNeedsContext) {
       cp('branch.staff_needs_context', { chat_id: chatId });
       const scenario = detectStaffScenario(intentResult.intent);
       replyText = buildStaffClarifyQuestion(scenario);
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'staff_clarify_question');
-    } else if (ctx.incident) {
+    } else if (!replyText && ctx.incident) {
       cp('branch.incident', { chat_id: chatId });
       const incidentMsg =
         'Thank you for letting us know.\n\n' +
@@ -449,7 +549,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       updateContext(chatId, { escalation_candidate: true });
-    } else if (!safety.safe && safety.action === 'escalate_to_operator') {
+    } else if (!replyText && !safety.safe && safety.action === 'escalate_to_operator') {
       cp('branch.policy_escalation.start', { chat_id: chatId });
       const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
       escalation = createEscalationEvent({
@@ -460,6 +560,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         summary: handoff.reasonForEscalation,
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
+      auditDecision({ type: 'escalate', chat_id: chatId, update_id, detail: `policy_escalation:${escalation.reason}` });
       await withAwaitCheckpoint(
         'timeline.escalation.append',
         () => appendTimelineEvent(identity.guestId ?? String(chatId), { type: 'escalation', reason: escalation!.summary, ts: new Date() }),
@@ -503,7 +604,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       cp('branch.policy_escalation.done', { chat_id: chatId });
       convSession = transitionConversationSessionState(convSession, 'escalated', 'policy_escalation');
-    } else if (safety.action === 'ask_clarifying_question') {
+    } else if (!replyText && safety.action === 'ask_clarifying_question') {
       cp('branch.ask_clarifying_question', { chat_id: chatId });
       const askRu =
         'Уточните, пожалуйста: объект/адрес, имя гостя и дата/время заезда. ' +
@@ -515,7 +616,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'clarifying_question');
-    } else if (intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
+    } else if (!replyText && intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
       cp('branch.checkininfo.no_template', { chat_id: chatId });
       const ru =
         'Чтобы помочь с заселением/кодом доступа, пришлите: объект/адрес, имя гостя и дату/время заезда. ' +
@@ -526,7 +627,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'missing_checkin_template_needs_details');
-    } else if (safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
+    } else if (!replyText && safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
       cp('branch.provide_check_in_instructions.start', { chat_id: chatId });
       // ── Check-in readiness gate ──────────────────────────────────────
       const gateResult = propertyId
@@ -637,13 +738,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       } else {
         convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'checkin_blocked_holding_message');
       }
-    } else if (safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
+    } else if (!replyText && safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       cp('branch.provide_checkout_instructions', { chat_id: chatId });
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'resolved', 'checkout_instructions_provided');
-    } else if (safety.action === 'trigger_payment_request') {
+    } else if (!replyText && safety.action === 'trigger_payment_request') {
       cp('branch.trigger_payment_request.start', { chat_id: chatId });
       const payment = await createPaymentRequest({
         amount: 100,
@@ -670,7 +771,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       cp('branch.trigger_payment_request.done', { chat_id: chatId });
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'payment_link_sent');
-    } else {
+    } else if (!replyText) {
       cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
@@ -836,6 +937,32 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
     if (!targetIdRaw) throw new Error('No outbound target id');
     const targetId = String(targetIdRaw);
+
+    // Idempotency (outbound): protect against duplicate sends across retries/replays.
+    const outboundKey = sha256Base64Url(
+      [
+        envelope.channel,
+        String(chatId),
+        String(targetId),
+        inboundStableKey,
+        replyText,
+      ].join('|'),
+    );
+    if (checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id, chatId } })) {
+      auditDuplicateOutboundPrevented({
+        chat_id: chatId,
+        update_id,
+        detail: `outbound_duplicate_prevented key=${outboundKey}`,
+      });
+      auditDecision({
+        type: 'ignore',
+        chat_id: chatId,
+        update_id,
+        detail: `outbound_duplicate_prevented key=${outboundKey}`,
+      });
+      return { outcome: ProcessOutcome.Ignored, update_id, chat_id: chatId, category: classification.category, escalation, reply: replyText };
+    }
+
     cp('outbound.dispatch.start', { chat_id: chatId, target_id: targetId, used_path: usedPath, llm_succeeded: llmSucceeded, reply_len: replyText.length });
     if (ruDebug) {
       console.log('[ru:tg] reply.computed', {
@@ -859,13 +986,58 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reply_len: replyText.length,
       });
     }
+    const attempts = Number(process.env.COMM_OUTBOUND_RETRY_ATTEMPTS ?? 3);
+    const baseDelayMs = Number(process.env.COMM_OUTBOUND_RETRY_BASE_DELAY_MS ?? 400);
     const sent = isDryRun
       ? true
-      : await withAwaitCheckpoint(
-          'outbound.dispatch.await',
-          () => adapter.sendMessage(targetId, replyText),
-          { chat_id: chatId, target_id: targetId, channel: envelope.channel },
-          Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS ?? 10000) + 5_000,
+      : (
+          await withAwaitCheckpoint(
+            'outbound.dispatch.retry.await',
+            async () => {
+              const res = await retry<boolean>({
+                attempts,
+                baseDelayMs,
+                isSuccess: v => v === true,
+                onAttempt: (info) => {
+                  if (info.attempt === 1) return;
+                  auditRetryAttempt({
+                    chat_id: chatId,
+                    update_id,
+                    detail: `outbound_retry attempt=${info.attempt} decision=${info.decision?.reason ?? 'n/a'}`,
+                  });
+                },
+                fn: () => adapter.sendMessage(targetId, replyText),
+              });
+              if (!res.ok) {
+                const reason = res.lastDecision?.reason ?? 'unknown';
+                auditFailureEnqueued({
+                  chat_id: chatId,
+                  update_id,
+                  detail: `outbound_failed attempts=${res.attempts} reason=${reason}`,
+                });
+                writeFailure({
+                  type: 'outbound_delivery_failed',
+                  ts: new Date().toISOString(),
+                  sessionId: convSession.sessionId,
+                  chat_id: chatId,
+                  update_id,
+                  channel: envelope.channel,
+                  idempotencyKey: outboundKey,
+                  payload: {
+                    targetId,
+                    replyTextPreview: replyText.slice(0, 400),
+                    usedPath,
+                    llmSucceeded,
+                  },
+                  reason: reason,
+                  attempts: res.attempts,
+                });
+              }
+              return Boolean(res.ok && res.value === true);
+            },
+            { chat_id: chatId, target_id: targetId, channel: envelope.channel },
+            Number(process.env.TELEGRAM_HTTP_TIMEOUT_MS ?? 10000) + 5_000,
+          )
         );
     if (pipeDebug) {
       console.log('[comm:pipeline] outbound.result', {
@@ -891,6 +1063,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       category: classification.category,
       lang: classification.lang,
       detail: escalation ? `escalated:${escalation.reason}` : undefined,
+    });
+
+    auditDecision({
+      type: 'reply',
+      chat_id: chatId,
+      update_id,
+      detail: `reply_sent used_path=${usedPath} llm=${llmSucceeded} outbound_key=${outboundKey}`,
     });
 
     cp('processMessage.return.success', { chat_id: chatId, outcome: ProcessOutcome.Replied });
@@ -978,7 +1157,11 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     messageText,
     receivedAt: new Date(),
     update_id: update.update_id,
-    metadata: refs.length > 0 ? { attachments: refs } : undefined,
+    metadata: {
+      ...(refs.length > 0 ? { attachments: refs } : {}),
+      providerMessageId: String(message.message_id),
+      externalMessageId: String(message.message_id),
+    },
   };
 
   const result = await processMessage(envelope);
