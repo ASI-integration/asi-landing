@@ -3,12 +3,12 @@ import { _resetForTesting } from '../idempotency';
 import { tgVoiceUpdate } from '../dev/telegram-fixtures';
 import { processTelegramVoiceUpdate } from '../telegram-voice-inbound';
 
-const mockTranscribe = vi.fn<(fileId: string, mimeType?: string) => Promise<string | null>>();
+const mockTranscribe = vi.fn<(fileId: string, mimeType?: string, ctx?: { updateId?: number }) => Promise<string | null>>();
 vi.mock('../voice-transcription', async () => {
   const actual = await vi.importActual<typeof import('../voice-transcription')>('../voice-transcription');
   return {
     ...actual,
-    transcribeVoiceMessage: (fileId: string, mimeType?: string) => mockTranscribe(fileId, mimeType),
+    transcribeVoiceMessage: (fileId: string, mimeType?: string, ctx?: { updateId?: number }) => mockTranscribe(fileId, mimeType, ctx),
   };
 });
 

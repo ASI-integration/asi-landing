@@ -2,6 +2,10 @@ const STT_TIMEOUT_MS_DEFAULT = 30_000;
 
 export type SttProviderId = 'openai' | 'llm_primary' | 'llm_fallback' | 'disabled';
 
+export interface SttContext {
+  updateId?: number;
+}
+
 export interface SttAttemptResult {
   ok: boolean;
   provider: Exclude<SttProviderId, 'disabled'>;
@@ -12,6 +16,7 @@ export interface SttAttemptResult {
     kind: 'missing_config' | 'http' | 'timeout' | 'network' | 'empty' | 'unexpected';
     status?: number;
     message?: string;
+    geoBlocked?: boolean;
   };
 }
 
@@ -27,6 +32,12 @@ function getTimeoutMs(): number {
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/$/, '');
+}
+
+function isGeoBlockedStt(status: number, body: string): boolean {
+  if (status !== 403) return false;
+  const b = (body ?? '').toLowerCase();
+  return b.includes('unsupported_country_region_territory') || b.includes('country, region, or territory not supported');
 }
 
 function isOpenRouterBaseUrl(baseUrl: string): boolean {
@@ -155,6 +166,7 @@ async function transcribeViaOpenRouterChat(params: {
   model: string;
   audioBuffer: ArrayBuffer;
   filename: string;
+  ctx?: SttContext;
 }): Promise<{ ok: true; text: string } | { ok: false; fail: SttAttemptResult['fail'] }> {
   const timeoutMs = getTimeoutMs();
   const controller = new AbortController();
@@ -163,6 +175,7 @@ async function transcribeViaOpenRouterChat(params: {
   if (debugEnabled()) {
     console.log('[voice:stt] attempt.start_openrouter_audio', {
       provider: params.provider,
+      update_id: params.ctx?.updateId ?? null,
       baseUrl: params.baseUrl,
       model: params.model,
       filename: params.filename,
@@ -203,8 +216,17 @@ async function transcribeViaOpenRouterChat(params: {
 
     if (!res.ok) {
       const body = await res.text();
-      console.error('[voice:stt] attempt.fail_http', { provider: params.provider, status: res.status, body: body.slice(0, 200) });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: body.slice(0, 200) } };
+      const geoBlocked = isGeoBlockedStt(res.status, body);
+      console.error('[voice:stt] attempt.fail_http', {
+        provider: params.provider,
+        update_id: params.ctx?.updateId ?? null,
+        baseUrl: params.baseUrl,
+        model: params.model,
+        status: res.status,
+        geo_blocked: geoBlocked,
+        body,
+      });
+      return { ok: false, fail: { kind: 'http', status: res.status, message: body, geoBlocked } };
     }
 
     const data = (await res.json()) as unknown;
@@ -219,10 +241,18 @@ async function transcribeViaOpenRouterChat(params: {
   } catch (err) {
     const name = (err as Error).name;
     if (name === 'AbortError') {
-      console.error('[voice:stt] attempt.fail_timeout', { provider: params.provider, timeout_ms: timeoutMs });
+      console.error('[voice:stt] attempt.fail_timeout', {
+        provider: params.provider,
+        update_id: params.ctx?.updateId ?? null,
+        timeout_ms: timeoutMs,
+      });
       return { ok: false, fail: { kind: 'timeout', message: `timeout_ms=${timeoutMs}` } };
     }
-    console.error('[voice:stt] attempt.fail_network', { provider: params.provider, message: (err as Error).message });
+    console.error('[voice:stt] attempt.fail_network', {
+      provider: params.provider,
+      update_id: params.ctx?.updateId ?? null,
+      message: (err as Error).message,
+    });
     return { ok: false, fail: { kind: 'network', message: (err as Error).message } };
   } finally {
     clearTimeout(timer);
@@ -236,6 +266,7 @@ async function transcribeOpenAiCompatible(params: {
   model: string;
   audioBuffer: ArrayBuffer;
   filename: string;
+  ctx?: SttContext;
 }): Promise<{ ok: true; text: string; confidence?: number } | { ok: false; fail: SttAttemptResult['fail'] }> {
   // OpenRouter does NOT implement the OpenAI Whisper `/audio/transcriptions` endpoint.
   // Instead, it accepts audio as an input modality via `/chat/completions`.
@@ -250,6 +281,7 @@ async function transcribeOpenAiCompatible(params: {
   if (debugEnabled()) {
     console.log('[voice:stt] attempt.start', {
       provider: params.provider,
+      update_id: params.ctx?.updateId ?? null,
       baseUrl: params.baseUrl,
       model: params.model,
       filename: params.filename,
@@ -273,8 +305,17 @@ async function transcribeOpenAiCompatible(params: {
 
     if (!res.ok) {
       const body = await res.text();
-      console.error('[voice:stt] attempt.fail_http', { provider: params.provider, status: res.status, body: body.slice(0, 200) });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: body.slice(0, 200) } };
+      const geoBlocked = isGeoBlockedStt(res.status, body);
+      console.error('[voice:stt] attempt.fail_http', {
+        provider: params.provider,
+        update_id: params.ctx?.updateId ?? null,
+        baseUrl: params.baseUrl,
+        model: params.model,
+        status: res.status,
+        geo_blocked: geoBlocked,
+        body,
+      });
+      return { ok: false, fail: { kind: 'http', status: res.status, message: body, geoBlocked } };
     }
 
     const data = (await res.json()) as { text?: string };
@@ -289,10 +330,18 @@ async function transcribeOpenAiCompatible(params: {
   } catch (err) {
     const name = (err as Error).name;
     if (name === 'AbortError') {
-      console.error('[voice:stt] attempt.fail_timeout', { provider: params.provider, timeout_ms: timeoutMs });
+      console.error('[voice:stt] attempt.fail_timeout', {
+        provider: params.provider,
+        update_id: params.ctx?.updateId ?? null,
+        timeout_ms: timeoutMs,
+      });
       return { ok: false, fail: { kind: 'timeout', message: `timeout_ms=${timeoutMs}` } };
     }
-    console.error('[voice:stt] attempt.fail_network', { provider: params.provider, message: (err as Error).message });
+    console.error('[voice:stt] attempt.fail_network', {
+      provider: params.provider,
+      update_id: params.ctx?.updateId ?? null,
+      message: (err as Error).message,
+    });
     return { ok: false, fail: { kind: 'network', message: (err as Error).message } };
   } finally {
     clearTimeout(timer);
@@ -302,6 +351,7 @@ async function transcribeOpenAiCompatible(params: {
 export async function transcribeWithConfiguredStt(params: {
   audioBuffer: ArrayBuffer;
   filename: string;
+  ctx?: SttContext;
 }): Promise<SttAttemptResult> {
   if (process.env.VOICE_TRANSCRIPTION_DISABLED === '1') {
     if (debugEnabled()) console.info('[voice:stt] transcription.disabled');
@@ -311,7 +361,7 @@ export async function transcribeWithConfiguredStt(params: {
   const primary = getPrimaryProvider();
   const fallback = getFallbackProvider();
 
-  console.info('[voice:stt] selection', { primary, fallback });
+  console.info('[voice:stt] selection', { update_id: params.ctx?.updateId ?? null, primary, fallback });
 
   if (primary === 'disabled') {
     return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', message: 'VOICE_STT_PRIMARY=disabled' } };
@@ -341,8 +391,35 @@ export async function transcribeWithConfiguredStt(params: {
       model: cfg.model,
       audioBuffer: params.audioBuffer,
       filename: params.filename,
+      ctx: params.ctx,
     });
     if (r.ok) return { ok: true, provider: p.provider, usedFallback: p.usedFallback, text: r.text };
+
+    // Emergency: if primary is geo-blocked (403 unsupported_country_region_territory),
+    // attempt `llm_fallback` if it is configured, even when VOICE_STT_FALLBACK is "disabled".
+    // This keeps behavior safe (no webhook changes) while enabling a production fix via env only.
+    if (!p.usedFallback && r.fail?.kind === 'http' && r.fail?.geoBlocked) {
+      const fallbackCfg = getProviderConfig('llm_fallback');
+      if (fallbackCfg && p.provider !== 'llm_fallback') {
+        console.warn('[voice:stt] geo_blocked.primary_trying_emergency_fallback', {
+          update_id: params.ctx?.updateId ?? null,
+          primary_provider: p.provider,
+          fallback_provider: 'llm_fallback',
+        });
+        const fr = await transcribeOpenAiCompatible({
+          provider: 'llm_fallback',
+          baseUrl: fallbackCfg.baseUrl,
+          apiKey: fallbackCfg.apiKey,
+          model: fallbackCfg.model,
+          audioBuffer: params.audioBuffer,
+          filename: params.filename,
+          ctx: params.ctx,
+        });
+        if (fr.ok) return { ok: true, provider: 'llm_fallback', usedFallback: true, text: fr.text };
+        return { ok: false, provider: 'llm_fallback', usedFallback: true, fail: fr.fail };
+      }
+      return { ok: false, provider: p.provider, usedFallback: false, fail: r.fail };
+    }
   }
 
   return { ok: false, provider: primary, usedFallback: false, fail: { kind: 'unexpected' } };

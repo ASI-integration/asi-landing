@@ -54,7 +54,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     file_size: voice?.file_size ?? audio?.file_size ?? null,
   });
 
-  const transcript = await transcribeVoiceMessage(fileId, voice?.mime_type ?? audio?.mime_type);
+  const transcript = await transcribeVoiceMessage(fileId, voice?.mime_type ?? audio?.mime_type, { updateId });
   if (!transcript) {
     console.warn('[tg:voice] stt.fail', { update_id: updateId, chat_id: chatId, message_id: messageId, file_id: fileId });
 

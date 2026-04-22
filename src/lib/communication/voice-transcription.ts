@@ -36,7 +36,7 @@ function getTelegramFetchRetries(): number {
   return Number.isFinite(n) && n >= 0 ? n : 2;
 }
 
-import { transcribeWithConfiguredStt } from './voice/stt';
+import { transcribeWithConfiguredStt, type SttContext } from './voice/stt';
 
 // ─── Step 1: resolve file_path from file_id ───────────────────────────────────
 
@@ -140,7 +140,7 @@ async function downloadFileBinary(filePath: string, token: string): Promise<Arra
  * Returns the transcript string on success, null on any error (missing config,
  * network failure, Whisper failure). Never throws.
  */
-export async function transcribeVoiceMessage(fileId: string, mimeType?: string): Promise<string | null> {
+export async function transcribeVoiceMessage(fileId: string, mimeType?: string, ctx?: SttContext): Promise<string | null> {
   if (process.env.VOICE_TRANSCRIPTION_DISABLED === '1') {
     if (debugEnabled()) console.info('[tg:voice] transcription.disabled');
     return null;
@@ -180,7 +180,7 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
       return null;
     }
 
-    const stt = await transcribeWithConfiguredStt({ audioBuffer, filename });
+    const stt = await transcribeWithConfiguredStt({ audioBuffer, filename, ctx });
     if (!stt.ok || !stt.text) {
       console.warn('[tg:voice] stt.attempt_failed', {
         attempt,
@@ -188,7 +188,10 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
         used_fallback: stt.usedFallback,
         fail_kind: stt.fail?.kind ?? null,
         fail_status: stt.fail?.status ?? null,
+        geo_blocked: stt.fail?.geoBlocked ?? null,
       });
+      // Geo-block is deterministic; retries won't help and just delay the operator-review path.
+      if (stt.fail?.geoBlocked) return null;
       if (attempt <= retries) continue;
       return null;
     }
