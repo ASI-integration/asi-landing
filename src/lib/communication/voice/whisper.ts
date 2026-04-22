@@ -7,7 +7,8 @@ function getWhisperTimeoutMs(): number {
 }
 
 function getWhisperApiKey(): string | null {
-  const k = process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY;
+  // Keep in sync with general LLM routing: production may run with only a fallback key configured.
+  const k = process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY ?? process.env.LLM_FALLBACK_API_KEY;
   return k && k.trim().length > 0 ? k.trim() : null;
 }
 

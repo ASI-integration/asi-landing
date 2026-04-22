@@ -151,7 +151,7 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
   if (debugEnabled()) {
     console.log('[tg:voice] env.check', {
       has_telegram_bot_token: Boolean(token),
-      has_whisper_api_key: Boolean(process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY),
+      has_whisper_api_key: Boolean(process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY ?? process.env.LLM_FALLBACK_API_KEY),
     });
   }
 
