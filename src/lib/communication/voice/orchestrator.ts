@@ -15,6 +15,16 @@ function stableUpdateId(): number {
   return Date.now();
 }
 
+function toUpdateId(input: VoiceInput): number {
+  const raw = input.providerUpdateId;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return stableUpdateId();
+}
+
 function toEnvelope(input: VoiceInput, voiceSession: VoiceSession, voiceTurnId: string): InboundMessageEnvelope {
   return {
     channel: input.channel,
@@ -22,7 +32,7 @@ function toEnvelope(input: VoiceInput, voiceSession: VoiceSession, voiceTurnId: 
     chatId: input.actorId ?? voiceSession.voiceSessionId,
     messageText: input.transcript,
     receivedAt: new Date(),
-    update_id: stableUpdateId(),
+    update_id: toUpdateId(input),
     metadata: {
       ...(input.providerMessageId ? { providerMessageId: input.providerMessageId } : {}),
       ...(input.externalMessageId ? { externalMessageId: input.externalMessageId } : {}),

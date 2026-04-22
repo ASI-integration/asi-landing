@@ -39,6 +39,8 @@ export type VoiceInput = {
   transcriptConfidence?: number;
   audioRef?: string;
   language?: string;
+  /** Stable provider update id for idempotency/audit (e.g. Telegram update_id). */
+  providerUpdateId?: number | string;
   /**
    * Optional stable provider ids for idempotency/audit.
    * When provided, these are copied into the communication envelope metadata.

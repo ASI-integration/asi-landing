@@ -17,6 +17,25 @@ function getTelegramBotToken(): string | null {
   return t && t.trim().length > 0 ? t.trim() : null;
 }
 
+function getTelegramFetchTimeoutMs(): number {
+  const raw = process.env.TELEGRAM_FILE_TIMEOUT_MS;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 20_000;
+}
+
+function getTelegramVoiceMaxBytes(): number {
+  const raw = process.env.TELEGRAM_VOICE_MAX_BYTES;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  // Default 20MB — Telegram voice notes are usually far smaller, but be defensive.
+  return Number.isFinite(n) && n > 0 ? n : 20 * 1024 * 1024;
+}
+
+function getTelegramFetchRetries(): number {
+  const raw = process.env.TELEGRAM_VOICE_FETCH_RETRIES;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : 2;
+}
+
 import { transcribeWithWhisper } from './voice/whisper';
 
 // ─── Step 1: resolve file_path from file_id ───────────────────────────────────
@@ -32,7 +51,10 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
     console.log('[tg:voice] getFile.start', { file_id: fileId });
   }
   try {
-    const res = await fetch(url, { method: 'GET' });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), getTelegramFetchTimeoutMs());
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) {
       console.error('[tg:voice] getFile.fail_http', { status: res.status });
       return null;
@@ -45,6 +67,14 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
       console.error('[tg:voice] getFile.fail_api', { ok: data.ok });
       return null;
     }
+    const maxBytes = getTelegramVoiceMaxBytes();
+    if (typeof data.result.file_size === 'number' && data.result.file_size > maxBytes) {
+      console.error('[tg:voice] getFile.reject_too_large', {
+        file_size: data.result.file_size,
+        max_bytes: maxBytes,
+      });
+      return null;
+    }
     if (debugEnabled()) {
       console.log('[tg:voice] getFile.ok', {
         file_path: data.result.file_path,
@@ -53,7 +83,12 @@ async function resolveFilePath(fileId: string, token: string): Promise<TelegramF
     }
     return { file_path: data.result.file_path, file_size: data.result.file_size };
   } catch (err) {
-    console.error('[tg:voice] getFile.fail_network', (err as Error).message);
+    const name = (err as Error).name;
+    if (name === 'AbortError') {
+      console.error('[tg:voice] getFile.fail_timeout', { timeout_ms: getTelegramFetchTimeoutMs() });
+    } else {
+      console.error('[tg:voice] getFile.fail_network', (err as Error).message);
+    }
     return null;
   }
 }
@@ -66,18 +101,31 @@ async function downloadFileBinary(filePath: string, token: string): Promise<Arra
     console.log('[tg:voice] download.start', { file_path: filePath });
   }
   try {
-    const res = await fetch(url, { method: 'GET' });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), getTelegramFetchTimeoutMs());
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) {
       console.error('[tg:voice] download.fail_http', { status: res.status });
       return null;
     }
     const buf = await res.arrayBuffer();
+    const maxBytes = getTelegramVoiceMaxBytes();
+    if (buf.byteLength > maxBytes) {
+      console.error('[tg:voice] download.reject_too_large', { bytes: buf.byteLength, max_bytes: maxBytes });
+      return null;
+    }
     if (debugEnabled()) {
       console.log('[tg:voice] download.ok', { bytes: buf.byteLength });
     }
     return buf;
   } catch (err) {
-    console.error('[tg:voice] download.fail_network', (err as Error).message);
+    const name = (err as Error).name;
+    if (name === 'AbortError') {
+      console.error('[tg:voice] download.fail_timeout', { timeout_ms: getTelegramFetchTimeoutMs() });
+    } else {
+      console.error('[tg:voice] download.fail_network', (err as Error).message);
+    }
     return null;
   }
 }
@@ -115,14 +163,29 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
   const ext = mimeTypeToExt(mimeType);
   const filename = `voice_message${ext}`;
 
-  const fileInfo = await resolveFilePath(fileId, token);
-  if (!fileInfo) return null;
+  const retries = getTelegramFetchRetries();
+  for (let attempt = 1; attempt <= Math.max(1, retries + 1); attempt++) {
+    const fileInfo = await resolveFilePath(fileId, token);
+    if (!fileInfo) {
+      if (attempt <= retries) continue;
+      return null;
+    }
 
-  const audioBuffer = await downloadFileBinary(fileInfo.file_path, token);
-  if (!audioBuffer) return null;
+    const audioBuffer = await downloadFileBinary(fileInfo.file_path, token);
+    if (!audioBuffer) {
+      if (attempt <= retries) continue;
+      return null;
+    }
 
-  const r = await transcribeWithWhisper({ audioBuffer, filename });
-  return r?.text ?? null;
+    const r = await transcribeWithWhisper({ audioBuffer, filename });
+    if (!r?.text) {
+      if (attempt <= retries) continue;
+      return null;
+    }
+    return r.text;
+  }
+
+  return null;
 }
 
 function mimeTypeToExt(mimeType?: string): string {

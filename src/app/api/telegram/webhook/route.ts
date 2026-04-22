@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
 import type { TelegramUpdate } from '@/lib/communication/types';
+import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 
 export const runtime = 'nodejs';
 
@@ -41,12 +42,14 @@ export async function POST(req: Request): Promise<Response> {
   const message = update?.message ?? update?.edited_message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
+  const hasVoice = Boolean(message?.voice);
+  const hasAudio = Boolean(message?.audio);
   // Always log webhook receipt — minimal fields, no PII beyond chat_id
   console.info('[tg:webhook] recv', {
     update_id: update?.update_id,
     chat_id: chatId,
-    has_voice: Boolean((message as any)?.voice),
-    has_audio: Boolean((message as any)?.audio),
+    has_voice: hasVoice,
+    has_audio: hasAudio,
     has_text: Boolean(text),
   });
   if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
@@ -66,6 +69,16 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
+    // Telegram voice/audio must go through the voice-ready layer:
+    // update → fetch file → STT → handleVoiceTranscript() → existing brain → outbound
+    if (update && (hasVoice || hasAudio)) {
+      const r = await processTelegramVoiceUpdate(update);
+      if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
+        console.log('[tg:webhook] voice.processed', r);
+      }
+      return NextResponse.json({ ok: true, voice: r.outcome }, { status: 200 });
+    }
+
     // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)
     const result = await processUpdate(update);
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
