@@ -54,11 +54,19 @@ export type OperatorAuditEvent =
   | { type: 'operator_reply_send_failed'; reviewId: string; operatorId: string; error: string; ts: string };
 
 const isTest = process.env.NODE_ENV === 'test';
-const BASE_DIR =
-  process.env.COMM_STATE_DIR ??
-  process.env.CONVERSATION_SESSION_DIR ??
-  process.env.SESSION_STORE_DIR ??
-  '/tmp';
+function defaultStateDir(): string {
+  // Never default to /tmp in production-like environments — it is not reliably persistent.
+  // Prefer a project-local directory (works with PM2 + artifact deployments).
+  const env =
+    process.env.COMM_STATE_DIR ??
+    process.env.CONVERSATION_SESSION_DIR ??
+    process.env.SESSION_STORE_DIR ??
+    process.env.STATE_DIR;
+  if (env && String(env).trim()) return String(env);
+  return path.join(process.cwd(), '.asi-comm-state');
+}
+
+const BASE_DIR = defaultStateDir();
 const REVIEWS_PATH = path.join(BASE_DIR, 'asi-comm-escalation-reviews.json');
 const AUDIT_PATH = path.join(BASE_DIR, 'asi-comm-escalation-reviews-audit.jsonl');
 

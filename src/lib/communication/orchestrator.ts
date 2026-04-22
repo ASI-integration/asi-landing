@@ -53,6 +53,10 @@ import {
   buildStaffClarifyQuestion,
   detectStaffScenario,
 } from './staff-bridge';
+import { resolveEntities } from './entity-resolver';
+import { buildDecisionAndPlan } from './scenario-engine';
+import { pickSingleBestClarifyingQuestion } from './clarifying-question';
+import { auditAutonomousDecision } from './audit';
 import { detectIntent } from './intent';
 import { createPaymentRequest } from '@/lib/payments/factory';
 import { callLLM } from '@/lib/openai';
@@ -453,6 +457,37 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
 
+    // ── Scenario engine + reservation-aware decision layer ────────────────────
+    // Deterministic-first: decide next action BEFORE generating any freeform LLM reply.
+    cp('scenario_engine.start', { chat_id: chatId });
+    const entityResolution = resolveEntities({ text, identity, context: commContext });
+    const { decision, plan } = buildDecisionAndPlan({
+      text,
+      classification,
+      intent: intentResult,
+      identity,
+      context: commContext,
+      entityResolution,
+    });
+    const cq = decision.nextAction === 'ask_clarifying_question'
+      ? pickSingleBestClarifyingQuestion({ decision, lang: classification.lang })
+      : null;
+    if (cq) plan.clarifyingQuestion = cq;
+    cp('scenario_engine.done', { chat_id: chatId, scenario: decision.scenario, next_action: decision.nextAction, entity_status: decision.entityResolution.status });
+    auditAutonomousDecision({
+      chat_id: chatId,
+      update_id,
+      detail: JSON.stringify({
+        scenario: decision.scenario,
+        confidence: decision.confidence,
+        nextAction: decision.nextAction,
+        missingFacts: decision.missingFacts,
+        entityStatus: decision.entityResolution.status,
+        evidence: decision.entityResolution.evidence?.slice(0, 8),
+        candidates: decision.entityResolution.candidates?.slice(0, 5),
+      }),
+    });
+
     let replyText = '';
     let llmSucceeded = false;
     let usedPath: 'deterministic' | 'llm' = 'deterministic';
@@ -501,6 +536,89 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         detail: params.detail ?? params.escalationSummary,
       });
     };
+
+    // Scenario-engine clarifying question (single best question).
+    if (!replyText && decision.nextAction === 'ask_clarifying_question' && plan.clarifyingQuestion) {
+      cp('branch.scenario_engine.ask_clarify', { chat_id: chatId, scenario: decision.scenario });
+      const qText = classification.lang === 'ru'
+        ? (plan.clarifyingQuestion.ru ?? plan.clarifyingQuestion.en)
+        : plan.clarifyingQuestion.en;
+      replyText = adapter.formatResponse(qText, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'awaiting_input', `scenario_clarify:${decision.scenario}`);
+    }
+
+    // Scenario-engine escalation (evidence-based payload).
+    if (!replyText && decision.nextAction === 'escalate') {
+      cp('branch.scenario_engine.escalate.start', { chat_id: chatId, scenario: decision.scenario });
+      const scenarioReason =
+        decision.scenario === 'payment_issue'
+          ? EscalationReason.PaymentComplaint
+          : EscalationReason.RequiresOperator;
+      escalation = createEscalationEvent({
+        reason: scenarioReason,
+        chat_id: chatId,
+        update_id,
+        classification,
+        summary: `scenario=${decision.scenario}; reason=${decision.reason}`,
+      });
+      persistEscalationReview({
+        reason: String(escalation.reason),
+        escalationSummary: `scenario=${decision.scenario}; reason=${decision.reason}`,
+        confidence: decision.confidence,
+        detail: JSON.stringify({
+          scenario: decision.scenario,
+          decisionReason: decision.reason,
+          missingFacts: decision.missingFacts,
+          entityResolution: decision.entityResolution,
+          latestMessages: convSession.memory.lastMessages?.slice(-6)?.map(m => ({ dir: m.direction, text: String(m.content ?? '').slice(0, 500) })),
+        }),
+      });
+      auditEscalation({ chat_id: chatId, update_id, detail: `scenario_engine_escalation scenario=${decision.scenario}` });
+      auditDecision({ type: 'escalate', chat_id: chatId, update_id, detail: `scenario_engine_escalation scenario=${decision.scenario}` });
+      await withAwaitCheckpoint(
+        'session.transition.operator_review_required_scenario',
+        () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+        { chat_id: chatId },
+        15_000,
+      );
+      const escalationBase =
+        classification.lang === 'ru'
+          ? 'Передал(а) запрос оператору — вернёмся с ответом.'
+          : 'I’ve forwarded this to our team to review and will get back to you shortly.';
+      const escalationMsg = templates?.escalation_contact_text
+        ? `${escalationBase} ${templates.escalation_contact_text}`
+        : escalationBase;
+      replyText = adapter.formatResponse(escalationMsg, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
+      convSession = transitionConversationSessionState(convSession, 'escalated', `scenario_escalation:${decision.scenario}`);
+      cp('branch.scenario_engine.escalate.done', { chat_id: chatId });
+    }
+
+    // Scenario-engine deterministic-first replies (safe wording, no guessing).
+    if (!replyText && decision.nextAction === 'reply' && plan.deterministicFirst) {
+      cp('branch.scenario_engine.deterministic_reply', { chat_id: chatId, scenario: decision.scenario });
+      const lang = classification.lang;
+      if (decision.scenario === 'late_arrival') {
+        const msg = lang === 'ru'
+          ? 'Спасибо за предупреждение о позднем приезде. Подтвердите, пожалуйста, ориентировочное время прибытия — мы отметим это.'
+          : 'Thanks for letting us know about a late arrival. Please confirm your approximate arrival time so we can note it.';
+        replyText = adapter.formatResponse(msg, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        usedPath = 'deterministic';
+      } else if (decision.scenario === 'invoice_receipt_request') {
+        const msg = lang === 'ru'
+          ? 'Понял(а) запрос на чек/квитанцию. Если хотите получить документ на email — пришлите email, и укажите дату заезда/имя гостя (если ещё не указано).'
+          : 'Got it — you’re requesting an invoice/receipt. If you want it by email, please share the email and confirm the guest name / check-in date (if not already provided).';
+        replyText = adapter.formatResponse(msg, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        usedPath = 'deterministic';
+      } else if (decision.scenario === 'payment_issue' || decision.scenario === 'complaint_conflict') {
+        // These are handled above as escalation; keep guard for safety.
+      }
+    }
 
     // Escalation rules (pre-reply). Conservative: prefer human handoff over unsafe automation.
     if (classification.category !== 'start' && classification.category !== 'greeting') {

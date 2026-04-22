@@ -507,6 +507,64 @@ export interface ReservationMatchResult {
   }>;
 }
 
+// ─── Phase 4: Scenario engine + structured decision ───────────────────────────
+
+export type CommunicationScenario =
+  | 'lead_availability_inquiry'
+  | 'reservation_linked_guest_message'
+  | 'checkin_checkout_question'
+  | 'late_arrival'
+  | 'invoice_receipt_request'
+  | 'payment_issue'
+  | 'complaint_conflict'
+  | 'extension_change_request'
+  | 'general_unknown';
+
+export type ScenarioPreferredMode = 'direct_reply' | 'clarify' | 'escalate' | 'handoff';
+
+export type CommunicationNextAction = 'reply' | 'ask_clarifying_question' | 'escalate';
+
+export type EntityResolutionStatus = 'resolved' | 'ambiguous' | 'unresolved';
+
+export type ResolvedCandidate = { type: 'reservation' | 'property' | 'lead'; id: string; reason: string };
+
+export type CommunicationEntityResolution = {
+  reservationId?: string;
+  propertyId?: string;
+  leadId?: string;
+  status: EntityResolutionStatus;
+  evidence?: string[];
+  candidates?: ResolvedCandidate[];
+};
+
+export type CommunicationDecision = {
+  scenario: CommunicationScenario;
+  confidence: number;
+  requiredFacts: string[];
+  knownFacts: Record<string, unknown>;
+  missingFacts: string[];
+  entityResolution: CommunicationEntityResolution;
+  nextAction: CommunicationNextAction;
+  reason: string;
+};
+
+export type ResponsePlan = {
+  scenario: CommunicationScenario;
+  resolvedEntities: {
+    reservationId?: string;
+    propertyId?: string;
+    leadId?: string;
+  };
+  knownFacts: Record<string, unknown>;
+  missingFacts: string[];
+  allowedClaims: string[];
+  forbiddenAssumptions: string[];
+  deterministicFirst: boolean;
+  llmAssistedWording: boolean;
+  /** Optional: when nextAction is ask_clarifying_question */
+  clarifyingQuestion?: { ru?: string; en: string };
+};
+
 export interface GroundedKnowledge {
   universalPolicy: string;
   propertyPolicy?: string;

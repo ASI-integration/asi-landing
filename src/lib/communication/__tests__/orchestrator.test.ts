@@ -115,11 +115,10 @@ describe('processUpdate', () => {
   it('injects session context into LLM prompt', async () => {
     mockLLM.mockResolvedValue('ok');
     await processUpdate(makeUpdate('need invoice for payment, 2 guests 2026-05-01'));
-    expect(mockLLM).toHaveBeenCalled();
-    const call = mockLLM.mock.calls[0]?.[0] as { userMessage?: string };
-    expect(call.userMessage).toContain('--- Session Context ---');
-    expect(call.userMessage).toContain('summary:');
-    expect(call.userMessage).toMatch(/payment/i);
+    // Scenario engine: deterministic clarifying question for invoice/receipt
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls[0];
+    expect(String(sentText)).toMatch(/invoice|receipt|чек|квитанц|сч/i);
   });
 
   it('escalates on low confidence intent', async () => {

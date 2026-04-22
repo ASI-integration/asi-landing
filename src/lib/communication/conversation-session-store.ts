@@ -19,7 +19,20 @@ interface SessionStore {
   clear(): void;
 }
 
-const SESSION_DIR = process.env.SESSION_STORE_DIR ?? '/tmp';
+function defaultStateDir(): string {
+  // Never default to /tmp in production-like environments — it is not reliably persistent.
+  // Prefer a project-local directory, which works well with TimeWeb + PM2 artifact deployments.
+  // Operators can override via SESSION_STORE_DIR / COMM_STATE_DIR.
+  const env =
+    process.env.SESSION_STORE_DIR ??
+    process.env.COMM_STATE_DIR ??
+    process.env.CONVERSATION_SESSION_DIR ??
+    process.env.STATE_DIR;
+  if (env && String(env).trim()) return String(env);
+  return path.join(process.cwd(), '.asi-comm-state');
+}
+
+const SESSION_DIR = defaultStateDir();
 const MAX_TIMELINE = 10;
 
 /**
