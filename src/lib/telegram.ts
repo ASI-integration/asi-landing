@@ -3,6 +3,7 @@
  * In Vercel/Next serverless builds, module-scope env reads can be surprisingly
  * sticky across build/runtime boundaries. Always read on call.
  */
+// Outbound Telegram sends use runtime TELEGRAM_BOT_TOKEN; changing local helper env files alone does not change production bot identity.
 function getTelegramBotToken(): string | null {
   const t = process.env.TELEGRAM_BOT_TOKEN;
   return t && t.trim().length > 0 ? t.trim() : null;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+// Reports webhook/bot state for the bot defined by runtime TELEGRAM_BOT_TOKEN; this endpoint does not define production identity.
 
 async function tgGet(token: string, method: string) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {

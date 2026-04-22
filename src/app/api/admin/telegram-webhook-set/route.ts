@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+// Sets webhook for the bot defined by runtime TELEGRAM_BOT_TOKEN; helper scripts calling this endpoint are not the source of truth.
 
 export async function POST(req: Request) {
   // ── Auth ──────────────────────────────────────────────────────────────────

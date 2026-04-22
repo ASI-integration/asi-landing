@@ -5,6 +5,8 @@ import type { TelegramUpdate } from '@/lib/communication/types';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 
 export const runtime = 'nodejs';
+// Production Telegram webhook entrypoint. The active production bot is determined only by runtime TELEGRAM_BOT_TOKEN;
+// local helper scripts/env files are not the source of truth for production bot identity.
 
 function getHeader(req: Request, name: string): string | null {
   // Headers are case-insensitive, but Next's Request exposes a normalized map.
