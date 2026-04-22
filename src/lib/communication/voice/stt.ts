@@ -61,7 +61,13 @@ function defaultModelForBaseUrl(baseUrl: string): string {
 
 function getPrimaryProvider(): SttProviderId {
   const raw = (process.env.VOICE_STT_PRIMARY ?? '').trim().toLowerCase();
-  if (!raw) return 'llm_primary'; // safest default: follow existing LLM routing config
+  if (!raw) {
+    // Production safety: if an explicit STT fallback is configured, prefer it by default.
+    // This avoids relying on a potentially geo-blocked "primary" provider as the default STT path.
+    const hasLlmFallback =
+      Boolean((process.env.LLM_FALLBACK_BASE_URL ?? '').trim()) && Boolean((process.env.LLM_FALLBACK_API_KEY ?? '').trim());
+    return hasLlmFallback ? 'llm_fallback' : 'llm_primary';
+  }
   if (raw === 'openai') return 'openai';
   if (raw === 'llm_primary') return 'llm_primary';
   if (raw === 'llm_fallback') return 'llm_fallback';
@@ -278,17 +284,15 @@ async function transcribeOpenAiCompatible(params: {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (debugEnabled()) {
-    console.log('[voice:stt] attempt.start', {
-      provider: params.provider,
-      update_id: params.ctx?.updateId ?? null,
-      baseUrl: params.baseUrl,
-      model: params.model,
-      filename: params.filename,
-      timeout_ms: timeoutMs,
-      bytes: params.audioBuffer.byteLength,
-    });
-  }
+  console.info('[voice:stt] attempt.start', {
+    provider: params.provider,
+    update_id: params.ctx?.updateId ?? null,
+    baseUrl: params.baseUrl,
+    model: params.model,
+    filename: params.filename,
+    timeout_ms: timeoutMs,
+    bytes: params.audioBuffer.byteLength,
+  });
 
   try {
     const blob = new Blob([params.audioBuffer]);
@@ -325,7 +329,13 @@ async function transcribeOpenAiCompatible(params: {
       return { ok: false, fail: { kind: 'empty' } };
     }
 
-    if (debugEnabled()) console.log('[voice:stt] attempt.ok', { provider: params.provider, chars: text.length });
+    console.info('[voice:stt] attempt.ok', {
+      provider: params.provider,
+      update_id: params.ctx?.updateId ?? null,
+      baseUrl: params.baseUrl,
+      model: params.model,
+      chars: text.length,
+    });
     return { ok: true, text };
   } catch (err) {
     const name = (err as Error).name;

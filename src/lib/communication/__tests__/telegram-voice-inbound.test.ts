@@ -36,6 +36,8 @@ describe('telegram voice inbound', () => {
     mockHandleVoiceTranscript.mockReset();
     mockReply.mockClear();
     mockCreateReview.mockReset();
+    delete process.env.OPERATOR_TELEGRAM_CHAT_ID;
+    delete process.env.OPERATOR_EMAIL;
   });
 
   it('normalizes voice update -> STT -> handleVoiceTranscript with provider ids', async () => {
@@ -71,6 +73,7 @@ describe('telegram voice inbound', () => {
   });
 
   it('safe failure: STT failure escalates and sends holding reply once', async () => {
+    process.env.OPERATOR_TELEGRAM_CHAT_ID = '-100123'; // enable real operator notify path for this test
     mockTranscribe.mockResolvedValue(null);
     const update = tgVoiceUpdate({ chat_id: 222, update_id: 3003, message_id: 4004, language_code: 'ru' });
 
@@ -82,6 +85,19 @@ describe('telegram voice inbound', () => {
     expect(mockCreateReview).toHaveBeenCalledTimes(1);
     expect(mockReply).toHaveBeenCalledTimes(1);
     expect(String(mockReply.mock.calls[0][1])).toMatch(/Спасибо/i);
+    expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(0);
+  });
+
+  it('safe failure: if no operator path is configured, replies honestly (no fake operator)', async () => {
+    mockTranscribe.mockResolvedValue(null);
+    const update = tgVoiceUpdate({ chat_id: 222, update_id: 3003, message_id: 4004, language_code: 'ru' });
+
+    const r = await processTelegramVoiceUpdate(update);
+
+    expect(r.outcome).toBe('stt_failed_escalated');
+    expect(mockCreateReview).toHaveBeenCalledTimes(0);
+    expect(mockReply).toHaveBeenCalledTimes(1);
+    expect(String(mockReply.mock.calls[0][1])).toMatch(/Не удалось распознать голосовое/i);
     expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(0);
   });
 });

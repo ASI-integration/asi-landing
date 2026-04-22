@@ -16,6 +16,17 @@ function holdingText(lang?: string): string {
     : 'Thanks — I got your voice message. I’m passing this to a human to review and will get back to you shortly.';
 }
 
+function sttFailText(lang?: string): string {
+  return lang === 'ru'
+    ? 'Не удалось распознать голосовое. Пришлите, пожалуйста, текстом.'
+    : "I couldn't transcribe the voice message. Please send it as text.";
+}
+
+function operatorPathEnabled(): boolean {
+  // Only claim "operator handoff" if there's an actual operator notification path configured.
+  return Boolean((process.env.OPERATOR_TELEGRAM_CHAT_ID ?? '').trim()) || Boolean((process.env.OPERATOR_EMAIL ?? '').trim());
+}
+
 export type TelegramVoiceInboundResult =
   | { outcome: 'ignored'; reason: string }
   | { outcome: 'duplicate'; key: string }
@@ -58,40 +69,43 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   if (!transcript) {
     console.warn('[tg:voice] stt.fail', { update_id: updateId, chat_id: chatId, message_id: messageId, file_id: fileId });
 
-    // Safe fail: create an operator review item with rich provider metadata and a holding reply.
-    // This does not bypass the operator review system; it creates the same review item the
-    // decision layer would create on escalation.
-    const sessionId = `tg_voice:${chatId}`; // stable enough for review grouping when STT fails pre-session
-    createOrUpdateEscalationReview({
-      sessionId,
-      channel: 'telegram_voice',
-      targetId: String(chatId),
-      actorId: String(chatId),
-      escalationReason: 'VOICE_STT_FAILED',
-      confidence: 0,
-      source: {
-        source: 'voice',
-        voiceChannel: 'telegram_voice',
-        voiceSessionId: '',
-        voiceTurnId: '',
-        transcript: '',
-        providerMessageId: String(messageId),
-        providerMediaId: fileId,
-        providerUpdateId: updateId,
-        duration: voice?.duration ?? audio?.duration ?? undefined,
-        mimeType: voice?.mime_type ?? audio?.mime_type ?? undefined,
-        fileSize: voice?.file_size ?? audio?.file_size ?? undefined,
-      },
-      detail: `telegram_voice_stt_failed update_id=${updateId} message_id=${messageId} file_id=${fileId}`,
-    });
+    const operatorEnabled = operatorPathEnabled();
+    if (operatorEnabled) {
+      // Safe fail: create an operator review item with rich provider metadata and a holding reply.
+      const sessionId = `tg_voice:${chatId}`; // stable enough for review grouping when STT fails pre-session
+      createOrUpdateEscalationReview({
+        sessionId,
+        channel: 'telegram_voice',
+        targetId: String(chatId),
+        actorId: String(chatId),
+        escalationReason: 'VOICE_STT_FAILED',
+        confidence: 0,
+        source: {
+          source: 'voice',
+          voiceChannel: 'telegram_voice',
+          voiceSessionId: '',
+          voiceTurnId: '',
+          transcript: '',
+          providerMessageId: String(messageId),
+          providerMediaId: fileId,
+          providerUpdateId: updateId,
+          duration: voice?.duration ?? audio?.duration ?? undefined,
+          mimeType: voice?.mime_type ?? audio?.mime_type ?? undefined,
+          fileSize: voice?.file_size ?? audio?.file_size ?? undefined,
+        },
+        detail: `telegram_voice_stt_failed update_id=${updateId} message_id=${messageId} file_id=${fileId}`,
+      });
+    } else {
+      console.warn('[tg:voice] stt.fail_no_operator_path', { update_id: updateId, chat_id: chatId, message_id: messageId });
+    }
 
-    const hold = holdingText(lang);
-    const outboundKey = sha256Base64Url(['tg_voice_hold', String(chatId), String(updateId), String(messageId), hold].join('|'));
+    const replyText = operatorEnabled ? holdingText(lang) : sttFailText(lang);
+    const outboundKey = sha256Base64Url(['tg_voice_reply', String(chatId), String(updateId), String(messageId), replyText].join('|'));
     if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: updateId, chat_id: chatId } })) {
-      await replyToTelegram(chatId, hold);
-      console.info('[tg:voice] holding.sent', { update_id: updateId, chat_id: chatId });
+      await replyToTelegram(chatId, replyText);
+      console.info('[tg:voice] stt_fail.reply_sent', { update_id: updateId, chat_id: chatId, operator_handoff: operatorEnabled });
     } else if (debugEnabled()) {
-      console.info('[tg:voice] holding.duplicate_prevented', { update_id: updateId, chat_id: chatId });
+      console.info('[tg:voice] stt_fail.reply_duplicate_prevented', { update_id: updateId, chat_id: chatId });
     }
 
     return { outcome: 'stt_failed_escalated', update_id: updateId, chat_id: chatId, message_id: messageId };
