@@ -5,6 +5,7 @@ import { EmailAdapter } from './email';
 import { PhoneAdapter } from './phone';
 import { MaxAdapter } from './max';
 import { VoiceChannelAdapter } from './voice';
+import { WhatsAppVoiceAdapter } from './whatsapp-voice';
 import { CommunicationChannel } from '../types';
 
 const telegram = new TelegramAdapter();
@@ -13,7 +14,7 @@ const email    = new EmailAdapter();
 const phone    = new PhoneAdapter();
 const max      = new MaxAdapter();
 const telegramVoice = new VoiceChannelAdapter('telegram_voice');
-const whatsappVoice = new VoiceChannelAdapter('whatsapp_voice');
+const whatsappVoice = new WhatsAppVoiceAdapter();
 
 export function getChannelAdapter(channel: CommunicationChannel): ChannelAdapter {
   switch (channel) {

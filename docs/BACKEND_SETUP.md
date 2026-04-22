@@ -51,6 +51,17 @@ Copy `.env.example` to `.env.local` and fill in:
 | `TELEGRAM_CHAT_ID` | Chat ID for notifications |
 | `NEXT_PUBLIC_APP_URL` | App URL (for payment return) |
 | `CRON_SECRET` | Optional, for cron auth |
+| `WHATSAPP_VERIFY_TOKEN` | WhatsApp webhook verification token (Meta Webhooks setup) |
+| `WHATSAPP_APP_SECRET` | WhatsApp App Secret for `X-Hub-Signature-256` verification (optional but recommended) |
+| `WHATSAPP_ACCESS_TOKEN` | WhatsApp Cloud API access token (used for media fetch + outbound replies) |
+| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp Cloud API phone number id (used for outbound replies) |
+| `WHATSAPP_GRAPH_VERSION` | Optional Graph API version (default `v20.0`) |
+| `WHATSAPP_GRAPH_BASE_URL` | Optional Graph base URL (default `https://graph.facebook.com`) |
+| `WHATSAPP_HTTP_TIMEOUT_MS` | Optional WhatsApp Graph/media fetch timeout |
+| `WHATSAPP_MEDIA_MAX_BYTES` | Optional inbound media size cap (bytes) |
+| `VOICE_TRANSCRIPTION_DISABLED` | Set to `1` to disable STT at runtime (safe kill-switch) |
+| `WHISPER_TIMEOUT_MS` | Optional STT timeout for Whisper requests |
+| `OPENAI_API_KEY` | Optional: STT key if `LLM_API_KEY` is not used for Whisper |
 
 ## Supabase Setup
 

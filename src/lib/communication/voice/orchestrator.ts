@@ -24,6 +24,8 @@ function toEnvelope(input: VoiceInput, voiceSession: VoiceSession, voiceTurnId: 
     receivedAt: new Date(),
     update_id: stableUpdateId(),
     metadata: {
+      ...(input.providerMessageId ? { providerMessageId: input.providerMessageId } : {}),
+      ...(input.externalMessageId ? { externalMessageId: input.externalMessageId } : {}),
       voice: {
         voiceSessionId: voiceSession.voiceSessionId,
         voiceTurnId,
@@ -31,6 +33,8 @@ function toEnvelope(input: VoiceInput, voiceSession: VoiceSession, voiceTurnId: 
         actorId: input.actorId ?? null,
         transcriptConfidence: input.transcriptConfidence ?? null,
         audioRef: input.audioRef ?? null,
+        providerMediaId: input.providerMediaId ?? null,
+        providerMessageId: input.providerMessageId ?? null,
         language: input.language ?? null,
       } satisfies Record<string, unknown>,
     },

@@ -39,6 +39,13 @@ export type VoiceInput = {
   transcriptConfidence?: number;
   audioRef?: string;
   language?: string;
+  /**
+   * Optional stable provider ids for idempotency/audit.
+   * When provided, these are copied into the communication envelope metadata.
+   */
+  providerMessageId?: string;
+  externalMessageId?: string;
+  providerMediaId?: string;
 };
 
 export type VoiceOutputMode = 'speak' | 'handoff' | 'clarify' | 'confirm';

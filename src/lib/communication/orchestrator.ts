@@ -549,6 +549,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           transcript: String(envelope.messageText ?? ''),
           transcriptConfidence: (voiceMeta as any).transcriptConfidence ?? undefined,
           audioRef: (voiceMeta as any).audioRef ?? undefined,
+          providerMessageId: (voiceMeta as any).providerMessageId ?? (envelope.metadata as any)?.providerMessageId ?? undefined,
+          providerMediaId: (voiceMeta as any).providerMediaId ?? undefined,
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;
