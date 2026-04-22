@@ -36,7 +36,7 @@ function getTelegramFetchRetries(): number {
   return Number.isFinite(n) && n >= 0 ? n : 2;
 }
 
-import { transcribeWithWhisper } from './voice/whisper';
+import { transcribeWithConfiguredStt } from './voice/stt';
 
 // ─── Step 1: resolve file_path from file_id ───────────────────────────────────
 
@@ -151,7 +151,10 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
   if (debugEnabled()) {
     console.log('[tg:voice] env.check', {
       has_telegram_bot_token: Boolean(token),
-      has_whisper_api_key: Boolean(process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY ?? process.env.LLM_FALLBACK_API_KEY),
+      voice_stt_primary: process.env.VOICE_STT_PRIMARY ?? null,
+      voice_stt_fallback: process.env.VOICE_STT_FALLBACK ?? null,
+      has_llm_api_key: Boolean(process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY),
+      has_llm_fallback: Boolean(process.env.LLM_FALLBACK_BASE_URL && process.env.LLM_FALLBACK_API_KEY),
     });
   }
 
@@ -177,12 +180,22 @@ export async function transcribeVoiceMessage(fileId: string, mimeType?: string):
       return null;
     }
 
-    const r = await transcribeWithWhisper({ audioBuffer, filename });
-    if (!r?.text) {
+    const stt = await transcribeWithConfiguredStt({ audioBuffer, filename });
+    if (!stt.ok || !stt.text) {
+      console.warn('[tg:voice] stt.attempt_failed', {
+        attempt,
+        provider: stt.provider,
+        used_fallback: stt.usedFallback,
+        fail_kind: stt.fail?.kind ?? null,
+        fail_status: stt.fail?.status ?? null,
+      });
       if (attempt <= retries) continue;
       return null;
     }
-    return r.text;
+    if (stt.usedFallback) {
+      console.info('[tg:voice] stt.ok_fallback', { attempt, provider: stt.provider, chars: stt.text.length });
+    }
+    return stt.text;
   }
 
   return null;
