@@ -15,7 +15,7 @@ vi.mock('../voice-transcription', async () => {
 const mockHandleVoiceTranscript = vi.fn<(input: any) => Promise<any>>();
 vi.mock('../voice/orchestrator', async () => {
   const actual = await vi.importActual<typeof import('../voice/orchestrator')>('../voice/orchestrator');
-  return { ...actual, handleVoiceTranscript: (...args: any[]) => mockHandleVoiceTranscript(...args) };
+  return { ...actual, handleVoiceTranscript: (input: any) => mockHandleVoiceTranscript(input) };
 });
 
 const mockReply = vi.fn().mockResolvedValue(true);
