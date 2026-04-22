@@ -3,13 +3,16 @@ import { _resetForTesting } from '../idempotency';
 import { tgVoiceUpdate } from '../dev/telegram-fixtures';
 import { processTelegramVoiceUpdate } from '../telegram-voice-inbound';
 
-const mockTranscribe = vi.fn<Parameters<typeof import('../voice-transcription').transcribeVoiceMessage>, any>();
+const mockTranscribe = vi.fn<(fileId: string, mimeType?: string) => Promise<string | null>>();
 vi.mock('../voice-transcription', async () => {
   const actual = await vi.importActual<typeof import('../voice-transcription')>('../voice-transcription');
-  return { ...actual, transcribeVoiceMessage: (...args: any[]) => mockTranscribe(...args) };
+  return {
+    ...actual,
+    transcribeVoiceMessage: (fileId: string, mimeType?: string) => mockTranscribe(fileId, mimeType),
+  };
 });
 
-const mockHandleVoiceTranscript = vi.fn();
+const mockHandleVoiceTranscript = vi.fn<(input: any) => Promise<any>>();
 vi.mock('../voice/orchestrator', async () => {
   const actual = await vi.importActual<typeof import('../voice/orchestrator')>('../voice/orchestrator');
   return { ...actual, handleVoiceTranscript: (...args: any[]) => mockHandleVoiceTranscript(...args) };
