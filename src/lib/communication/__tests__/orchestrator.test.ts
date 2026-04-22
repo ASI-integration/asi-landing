@@ -66,6 +66,7 @@ vi.mock('../reservation', () => ({
 import { processUpdate } from '../orchestrator';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
+import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,7 @@ describe('processUpdate', () => {
     _resetForTesting();
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
+    __resetEscalationReviewStoreForTests();
     mockSendMessage.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
@@ -128,6 +130,9 @@ describe('processUpdate', () => {
     expect(result.escalation?.reason).toBe(EscalationReason.LowIntentConfidence);
     const [, sentText] = mockSendMessage.mock.calls[0];
     expect(sentText).toMatch(/review|ответом|операционный/i);
+    const reviews = listEscalationReviews({ status: 'pending' });
+    expect(reviews.length).toBe(1);
+    expect(reviews[0]?.sessionId).toBeTruthy();
   });
 
   it('generates mock payment link on PaymentRequest intent', async () => {
@@ -183,6 +188,19 @@ describe('processUpdate', () => {
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.escalation).toBeDefined();
     expect(result.escalation?.reason).toBe('URGENT_ISSUE');
+    expect(listEscalationReviews().length).toBe(1);
+  });
+
+  it('blocks normal automation on subsequent turns while session is escalated', async () => {
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.Unknown, confidence: 0.4 });
+    await processUpdate(makeUpdate('first message triggers escalation'));
+    expect(listEscalationReviews({ status: 'pending' }).length).toBe(1);
+
+    mockLLM.mockClear();
+    await processUpdate(makeUpdate('followup question should not call llm'));
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(sentText)).toMatch(/escalated|human operator|оператор|вернёмся/i);
   });
 
   it('returns Error outcome but still does not throw when reply fails', async () => {

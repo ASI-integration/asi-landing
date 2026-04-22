@@ -60,6 +60,10 @@ import { buildCommunicationContext } from './context';
 import { evaluateActionSafety } from './action';
 import { buildOperatorHandoff } from './handoff';
 import {
+  createOrUpdateEscalationReview,
+  getActiveEscalationReviewIdForSession,
+} from './operator-review';
+import {
   SessionStatus,
   setPaymentExpiry,
   transitionSessionStatus,
@@ -233,7 +237,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   // Session safety: if already escalated, avoid "normal automation" but still allow
   // a minimal handoff acknowledgement unless explicitly disabled.
   const allowEscalatedAutosend = process.env.COMM_ALLOW_AUTOSEND_WHEN_ESCALATED === '1';
-  const blockNormalAutomationBecauseEscalated = convSession.state === 'escalated' && !allowEscalatedAutosend;
+  const hasActiveReviewItem = Boolean(getActiveEscalationReviewIdForSession(convSession.sessionId));
+  const blockNormalAutomationBecauseEscalated =
+    (convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
 
   // Harden session memory with identity binding (safe defaults when unknown).
   updateContext(chatId, {
@@ -470,6 +476,32 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
     }
 
+    const persistEscalationReview = (params: {
+      reason: string;
+      escalationSummary: string;
+      confidence?: number;
+      suggestedReply?: string;
+      detail?: string;
+    }) => {
+      const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+      if (!targetIdRaw) return;
+      createOrUpdateEscalationReview({
+        sessionId: convSession.sessionId,
+        channel: envelope.channel,
+        targetId: String(targetIdRaw),
+        actorId: convSession.actorId,
+        role: identity.role,
+        reservationId: commContext?.reservation?.reservationId ?? identity.reservationId,
+        propertyId: commContext?.reservation?.propertyId ?? identity.propertyId,
+        leadId: identity.leadId,
+        escalationReason: params.reason,
+        confidence: params.confidence,
+        latestMessages: convSession.memory.lastMessages,
+        suggestedReply: params.suggestedReply,
+        detail: params.detail ?? params.escalationSummary,
+      });
+    };
+
     // Escalation rules (pre-reply). Conservative: prefer human handoff over unsafe automation.
     if (classification.category !== 'start' && classification.category !== 'greeting') {
       const preEsc = shouldEscalateByRules({
@@ -486,6 +518,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           classification,
           summary: preEsc.detail,
+        });
+        persistEscalationReview({
+          reason: String(preEsc.reason),
+          escalationSummary: preEsc.detail,
+          confidence: intentResult?.confidence,
+          detail: `pre_rule_escalation detail=${preEsc.detail}`,
         });
         auditEscalation({ chat_id: chatId, update_id, detail: `pre_rule:${preEsc.detail}` });
         auditDecision({
@@ -558,6 +596,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         update_id,
         classification,
         summary: handoff.reasonForEscalation,
+      });
+      persistEscalationReview({
+        reason: String(escalation.reason),
+        escalationSummary: handoff.reasonForEscalation,
+        confidence: convSession.confidence,
+        // We intentionally do not auto-send any suggested reply while escalated.
+        suggestedReply: undefined,
+        detail: `policy_escalation:${safety.reason ?? 'n/a'}`,
       });
       auditEscalation({ chat_id: chatId, update_id, detail: escalation.summary });
       auditDecision({ type: 'escalate', chat_id: chatId, update_id, detail: `policy_escalation:${escalation.reason}` });
@@ -865,6 +911,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         update_id,
         classification,
         summary: `category=${classification.category} llm=${llmSucceeded} urgent=${classification.slots.isUrgent}`,
+      });
+      persistEscalationReview({
+        reason: String(reason),
+        escalationSummary: `post_reply_escalation ${handoff.reasonForEscalation}`,
+        confidence: intentResult?.confidence,
+        detail: `post_reply_escalation reason=${reason}`,
       });
       const esc = escalation;
       auditEscalation({

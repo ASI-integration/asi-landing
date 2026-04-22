@@ -351,6 +351,25 @@ export function buildSessionContextForLLM(session: ConversationSession): string 
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * Best-effort operator recovery: move an escalated session back to active so
+ * normal automation can resume on the next inbound turn.
+ *
+ * This intentionally does NOT create a new session if none exists.
+ */
+export function recoverConversationSessionToActive(params: {
+  channel: string;
+  actorId: string;
+  reason: string;
+}): boolean {
+  const key = sessionKey(params.channel, params.actorId);
+  const existing = store.get(key);
+  if (!existing) return false;
+  const updated = transitionConversationSessionState(existing, 'active', params.reason);
+  store.set(key, updated);
+  return updated.state === 'active';
+}
+
 /** @internal tests only */
 export function __resetConversationSessionEngineForTests(): void {
   store.clear();
