@@ -40,6 +40,9 @@ function isOpenRouterBaseUrl(baseUrl: string): boolean {
 
 function defaultModelForBaseUrl(baseUrl: string): string {
   const u = baseUrl.toLowerCase();
+  // OpenRouter STT uses chat-completions w/ audio modality (not Whisper endpoint).
+  // `whisper-1` will 400 ("not a valid model ID") on OpenRouter.
+  if (isOpenRouterBaseUrl(baseUrl)) return 'openai/gpt-4o-mini-transcribe';
   // Groq Whisper models are not "whisper-1".
   if (u.includes('api.groq.com')) return 'whisper-large-v3-turbo';
   return 'whisper-1';
@@ -58,15 +61,11 @@ function getPrimaryProvider(): SttProviderId {
 function getFallbackProvider(): SttProviderId {
   const raw = (process.env.VOICE_STT_FALLBACK ?? '').trim().toLowerCase();
   if (!raw) {
-    // If primary is OpenRouter (chat-only gateway for most setups), provide a real STT fallback by default.
-    // This keeps "LLM routing" separate from "STT routing" and avoids breaking voice when LLM_BASE_URL points to OpenRouter.
-    const primary = getPrimaryProvider();
-    const primaryCfg = primary === 'disabled' ? null : getProviderConfig(primary as Exclude<SttProviderId, 'disabled'>);
-    if (primaryCfg?.baseUrl && isOpenRouterBaseUrl(primaryCfg.baseUrl)) {
-      const hasOpenAiKey = Boolean((process.env.OPENAI_API_KEY ?? '').trim());
-      if (hasOpenAiKey) return 'openai';
-    }
-    return 'disabled';
+    // Default fallback: use an explicitly-configured LLM fallback (if present).
+    // We intentionally do NOT auto-select OpenAI here because some server regions are geo-blocked for STT.
+    const hasLlmFallback =
+      Boolean((process.env.LLM_FALLBACK_BASE_URL ?? '').trim()) && Boolean((process.env.LLM_FALLBACK_API_KEY ?? '').trim());
+    return hasLlmFallback ? 'llm_fallback' : 'disabled';
   }
   if (raw === 'openai') return 'openai';
   if (raw === 'llm_primary') return 'llm_primary';
