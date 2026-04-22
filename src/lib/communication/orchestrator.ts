@@ -517,6 +517,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       confidence?: number;
       suggestedReply?: string;
       detail?: string;
+    source?: Record<string, unknown>;
     }) => {
       const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
       if (!targetIdRaw) return;
@@ -531,11 +532,26 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         leadId: identity.leadId,
         escalationReason: params.reason,
         confidence: params.confidence,
+      source: params.source,
         latestMessages: convSession.memory.lastMessages,
         suggestedReply: params.suggestedReply,
         detail: params.detail ?? params.escalationSummary,
       });
     };
+
+    const voiceMeta = (envelope.metadata as any)?.voice as Record<string, unknown> | undefined;
+    const voiceSourceBase = voiceMeta
+      ? {
+          source: 'voice',
+          voiceChannel: envelope.channel,
+          voiceSessionId: String((voiceMeta as any).voiceSessionId ?? ''),
+          voiceTurnId: String((voiceMeta as any).voiceTurnId ?? ''),
+          transcript: String(envelope.messageText ?? ''),
+          transcriptConfidence: (voiceMeta as any).transcriptConfidence ?? undefined,
+          audioRef: (voiceMeta as any).audioRef ?? undefined,
+          language: (voiceMeta as any).language ?? undefined,
+        }
+      : null;
 
     // Scenario-engine clarifying question (single best question).
     if (!replyText && decision.nextAction === 'ask_clarifying_question' && plan.clarifyingQuestion) {
@@ -567,6 +583,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reason: String(escalation.reason),
         escalationSummary: `scenario=${decision.scenario}; reason=${decision.reason}`,
         confidence: decision.confidence,
+        source: voiceSourceBase
+          ? {
+              ...voiceSourceBase,
+              lastDecisionScenario: decision.scenario,
+              missingFacts: decision.missingFacts,
+            }
+          : undefined,
         detail: JSON.stringify({
           scenario: decision.scenario,
           decisionReason: decision.reason,
@@ -641,6 +664,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           reason: String(preEsc.reason),
           escalationSummary: preEsc.detail,
           confidence: intentResult?.confidence,
+        source: voiceSourceBase ? { ...voiceSourceBase } : undefined,
           detail: `pre_rule_escalation detail=${preEsc.detail}`,
         });
         auditEscalation({ chat_id: chatId, update_id, detail: `pre_rule:${preEsc.detail}` });
@@ -719,6 +743,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reason: String(escalation.reason),
         escalationSummary: handoff.reasonForEscalation,
         confidence: convSession.confidence,
+        source: voiceSourceBase ? { ...voiceSourceBase } : undefined,
         // We intentionally do not auto-send any suggested reply while escalated.
         suggestedReply: undefined,
         detail: `policy_escalation:${safety.reason ?? 'n/a'}`,
@@ -1034,6 +1059,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         reason: String(reason),
         escalationSummary: `post_reply_escalation ${handoff.reasonForEscalation}`,
         confidence: intentResult?.confidence,
+        source: voiceSourceBase ? { ...voiceSourceBase } : undefined,
         detail: `post_reply_escalation reason=${reason}`,
       });
       const esc = escalation;

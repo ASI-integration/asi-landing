@@ -618,7 +618,14 @@ export interface OperatorHandoffPayload {
 
 // ─── Phase 3: Multi-Channel & Multilingual ────────────────────────────────────
 
-export type CommunicationChannel = 'telegram' | 'vk' | 'email' | 'phone' | 'max';
+export type CommunicationChannel =
+  | 'telegram'
+  | 'telegram_voice'
+  | 'whatsapp_voice'
+  | 'vk'
+  | 'email'
+  | 'phone'
+  | 'max';
 
 export interface InboundMessageEnvelope {
   channel: CommunicationChannel;

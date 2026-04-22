@@ -33,6 +33,11 @@ export type EscalationReview = {
   leadId?: string;
   escalationReason: string;
   confidence?: number;
+  /**
+   * Optional origin metadata (e.g. voice handoff payload).
+   * Stored for operator context and future bridging, never required by UI.
+   */
+  source?: Record<string, unknown>;
   latestMessages: Array<{
     direction: 'inbound' | 'outbound';
     content: string;
@@ -178,6 +183,7 @@ export function createOrUpdateEscalationReview(input: {
   leadId?: string;
   escalationReason: string;
   confidence?: number;
+  source?: Record<string, unknown>;
   latestMessages?: Message[];
   suggestedReply?: string;
   detail?: string;
@@ -196,6 +202,7 @@ export function createOrUpdateEscalationReview(input: {
         reservationId: input.reservationId ?? existing.reservationId,
         propertyId: input.propertyId ?? existing.propertyId,
         leadId: input.leadId ?? existing.leadId,
+        source: input.source ?? existing.source,
         latestMessages: input.latestMessages ? summariseMessages(input.latestMessages) : existing.latestMessages,
         suggestedReply: input.suggestedReply ?? existing.suggestedReply,
         updatedAt: ts,
@@ -212,6 +219,7 @@ export function createOrUpdateEscalationReview(input: {
         leadId: input.leadId,
         escalationReason: input.escalationReason,
         confidence: input.confidence,
+        source: input.source,
         latestMessages: summariseMessages(input.latestMessages),
         suggestedReply: input.suggestedReply,
         status: 'pending',
