@@ -44,7 +44,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.property).toMatch(/Nevsky|Невск/i);
   });
 
-  it('3-message completion (RU): clarify(property) then clarify(details) then resolve', () => {
+  it('3-message completion (RU): one clarification max, then escalate, then resolve on fragment', () => {
     const chatId = 2002;
     const r1 = processTelegramOperationalIntakeWithSessionMemory({
       chatId,
@@ -69,9 +69,9 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r2.handled).toBe(true);
     if (!r2.handled) throw new Error('expected handled');
     expect(r2.hit.category).toBe('wifi_issue');
-    expect(r2.hit.finalAction).toBe('clarify');
+    expect(r2.hit.finalAction).toBe('escalate_operator');
     expect(r2.hit.missingFacts).toContain('wifi_details');
-    expect(r2.hit.reply).toMatch(/не работает|пароль|сеть/i);
+    expect(r2.hit.reply).toMatch(/передаю|оператор/i);
 
     const r3 = processTelegramOperationalIntakeWithSessionMemory({
       chatId,

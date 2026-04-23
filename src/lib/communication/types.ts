@@ -516,6 +516,11 @@ export type TelegramOperationalSessionCaseV1 = {
   extracted_facts: Record<string, unknown>;
   missing_facts: string[];
   last_question_asked?: string | null;
+  /**
+   * Missing-facts policy: at most ONE clarification question per case.
+   * If still unresolved after one clarification, we escalate with summary.
+   */
+  clarification_count?: number;
   status: TelegramOperationalSessionCaseStatusV1;
   created_at: string; // ISO
   updated_at: string; // ISO

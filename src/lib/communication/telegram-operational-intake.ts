@@ -7,14 +7,15 @@ import { decideEscalationMatrixV1 } from './escalation-matrix';
 
 export type TelegramOperationalCategory =
   | 'access_issue'
+  | 'wifi_issue'
+  | 'parking_question'
   | 'late_checkout'
   | 'early_checkin'
   | 'no_heating'
+  | 'no_hot_water'
   | 'noise_complaint'
   | 'cleaning_request'
   | 'extension_request'
-  | 'wifi_issue'
-  | 'parking_question'
   | 'payment_confirmation';
 
 export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate_operator' | 'escalate_urgent';
@@ -79,6 +80,15 @@ function hasNoHeatingIntent(n: string): boolean {
     /нет\s+отоплен|отоплен(ие|ия)\s+нет|отопление\s+не\s+работает|батаре(и|я)\s+холодн/i.test(n) ||
     (/(very\s+cold|freezing|no\s+warm)/i.test(n) && /(apartment|flat|unit|room|квартир|апарт|жиль)/i.test(n)) ||
     (/холодно/i.test(n) && /(квартир|апарт|в\s+жиль|в\s+номер)/i.test(n))
+  );
+}
+
+function hasNoHotWaterIntent(n: string): boolean {
+  return (
+    /\bno\s+hot\s+water\b|\bhot\s+water\b.*\b(not|no)\b|\bwater\b.*\bnot\s+hot\b|\bshower\b.*\b(cold|not\s+hot)\b/i.test(n) ||
+    /нет\s+горяч(ей|ая)\s+вод|горяч(ая|ей)\s+вод(а|ы)\s+нет|горячая\s+вода\s+не\s+работает|вода\s+холодн(ая|ая)\s+из\s+крана|душ\s+холодн/i.test(
+      n,
+    )
   );
 }
 
@@ -155,12 +165,29 @@ function hasPaymentConfirmationIntent(n: string): boolean {
   );
 }
 
+function extractAddressHint(text: string): string | null {
+  const t = String(text ?? '');
+  const m =
+    t.match(/\b(\d{1,4}\s*[A-Za-zА-Яа-яЁё.-]+(?:\s+(?:st|street|ave|avenue|road|rd|проспект|просп|ул\.?|улица|пер\.?|переулок|наб\.?|набережная))\b[^.\n?]{0,60})/iu) ??
+    t.match(/по\s+адресу\s+([^.\n?]{3,120})/iu) ??
+    t.match(/\b(?:at|@)\s+([^.\n?]{3,120})/iu);
+  if (!m) return null;
+  const s = String(m[1] ?? '').trim();
+  if (!s) return null;
+  if (/^\d{1,2}:\d{2}$/.test(s)) return null;
+  return s.slice(0, 120);
+}
+
 function hasPropertyHint(text: string, n: string): boolean {
   if (/по\s+адресу/i.test(text)) return true;
   // "at 11:00" is not a property; guard against time-only captures
   const atOrAtSign = text.match(/\b(?:at|@)\s+([^.\n?]+)/i);
   if (atOrAtSign) {
     const snippet = atOrAtSign[1].trim().slice(0, 40);
+    // Common non-property "at ..." phrases seen in ops chat (not an address).
+    if (/^(the\s+)?entrance\b/i.test(snippet)) return false;
+    if (/^(the\s+)?door\b/i.test(snippet)) return false;
+    if (/^(the\s+)?front\s+door\b/i.test(snippet)) return false;
     if (!/^\d{1,2}:\d{2}$/.test(snippet) && !/^\d{1,2}$/.test(snippet)) return true;
   }
   if (/(nevsky|невский|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(n)) return true;
@@ -242,6 +269,10 @@ function extractPropertySnippet(text: string): string | null {
     // "at 11:00" is timing, not a property reference
     if (/^\d{1,2}:\d{2}$/.test(s)) return null;
     if (/^\d{1,2}$/.test(s)) return null;
+    // "at the entrance" / "at the door" is not a property reference
+    if (/^(the\s+)?entrance\b/i.test(s)) return null;
+    if (/^(the\s+)?door\b/i.test(s)) return null;
+    if (/^(the\s+)?front\s+door\b/i.test(s)) return null;
     return s;
   }
   return null;
@@ -254,6 +285,30 @@ function isUrgentOrRisky(n: string): boolean {
     /\bpolice\b|\bambulance\b|\bfire\b|\bsmoke\b|\bgas\b|\bflood\b|\bthreat\b|\bviolent\b|\bfight\b/i.test(n) ||
     /полици|скорая|пожар|дым|газ|затоп|угроз|драка|насили/i.test(n)
   );
+}
+
+function normalizeFactsForOps(params: {
+  category: TelegramOperationalCategory;
+  rawText: string;
+  guestName: string | null;
+  propertySnippet: string | null;
+  addressHint: string | null;
+  timeHint: string | null;
+  urgencySignals: string[];
+}): Record<string, unknown> {
+  return {
+    // Required extracted facts (ops-friendly keys)
+    guest_name: params.guestName,
+    property_hint: params.propertySnippet ?? (params.addressHint ? params.addressHint : null),
+    address_hint: params.addressHint,
+    time_hint: params.timeHint,
+    issue_type: params.category,
+    urgency_signals: params.urgencySignals,
+    // Back-compat / internal keys (kept for existing merges)
+    guestName: params.guestName,
+    property: params.propertySnippet ?? (params.addressHint ? params.addressHint : null),
+    requestedTime: params.timeHint,
+  };
 }
 
 function logEscalationMatrixDecision(params: {
@@ -332,11 +387,15 @@ function logIntake(
     console.log(
       JSON.stringify({
         route: 'telegram_operational_intake',
+        scenario: hit.category,
         category: hit.category,
+        confidence: 1,
         extracted_facts: hit.extractedFacts,
         missing_facts: hit.missingFacts,
         final_action: hit.finalAction,
         urgency_signals: hit.urgencySignals,
+        clarification_question_used: hit.finalAction === 'clarify',
+        escalated: hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent',
         action_reason: hit.actionReason,
         update_id: params.update_id,
         chat_id: params.chat_id,
@@ -373,6 +432,7 @@ export function tryTelegramOperationalIntake(
   if (hasAccessIssueIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
@@ -383,15 +443,22 @@ export function tryTelegramOperationalIntake(
     if (!hasFail) missing.push('failure_mode');
 
     const facts: Record<string, unknown> = {
-      guestName: guest ?? null,
-      property: prop ?? (hasProp ? 'hint_present' : null),
-      requestedTime: time ?? null,
+      ...normalizeFactsForOps({
+        category: 'access_issue',
+        rawText: raw,
+        guestName: guest ?? null,
+        propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+        addressHint: addr ?? null,
+        timeHint: time ?? null,
+        urgencySignals: [],
+      }),
       requestedDateToken: dateToken ?? null,
       failureModeHint: hasFail,
     };
 
     const matrix = getMatrix('access_issue', missing);
     const finalAction: TelegramOperationalFinalAction = matrix.action;
+    (facts as any).urgency_signals = matrix.urgency_signals;
     const reply =
       finalAction === 'reply'
         ? ru
@@ -431,6 +498,7 @@ export function tryTelegramOperationalIntake(
   if (hasNoHeatingIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
 
@@ -457,7 +525,71 @@ export function tryTelegramOperationalIntake(
     const hit: TelegramOperationalIntakeHit = {
       category: 'no_heating',
       reply,
-      extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), requestedTime: time ?? null },
+      extractedFacts: normalizeFactsForOps({
+        category: 'no_heating',
+        rawText: raw,
+        guestName: guest ?? null,
+        propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+        addressHint: addr ?? null,
+        timeHint: time ?? null,
+        urgencySignals: matrix.urgency_signals,
+      }),
+      missingFacts: missing,
+      finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
+    };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
+    logIntake(params, hit);
+    return hit;
+  }
+
+  // 2b) No hot water
+  if (hasNoHotWaterIntent(loose)) {
+    const guest = extractGuestName(raw);
+    const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
+    const hasProp = hasPropertyHint(raw, loose);
+    const time = extractTimeLike(raw);
+
+    const missing: string[] = [];
+    if (!hasProp) missing.push('property');
+
+    const matrix = getMatrix('no_hot_water', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
+    const reply =
+      finalAction === 'escalate_urgent'
+        ? ru
+          ? 'Понял(а). Это срочно. Передаю заявку по горячей воде в операционную команду прямо сейчас.'
+          : 'Understood. This is urgent. I’m escalating the hot water issue right now.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю заявку по горячей воде оператору — вернёмся с обновлением.'
+            : 'Understood. I’m escalating the hot water issue to an operator and we’ll follow up shortly.'
+        : finalAction === 'reply'
+          ? ru
+            ? 'Понял(а). Зафиксировал(а) проблему с горячей водой; команда проверит и вернётся с обновлением.'
+            : 'Understood. Hot water issue logged; the team will check and update you shortly.'
+          : pickSingleClarifyingQuestion('no_hot_water', missing, ru);
+
+    const hit: TelegramOperationalIntakeHit = {
+      category: 'no_hot_water',
+      reply,
+      extractedFacts: normalizeFactsForOps({
+        category: 'no_hot_water',
+        rawText: raw,
+        guestName: guest ?? null,
+        propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+        addressHint: addr ?? null,
+        timeHint: time ?? null,
+        urgencySignals: matrix.urgency_signals,
+      }),
       missingFacts: missing,
       finalAction,
       urgencySignals: matrix.urgency_signals,
@@ -478,6 +610,7 @@ export function tryTelegramOperationalIntake(
   if (hasLateCheckoutIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
@@ -506,9 +639,15 @@ export function tryTelegramOperationalIntake(
       category: 'late_checkout',
       reply,
       extractedFacts: {
-        guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
-        requestedTime: time ?? null,
+        ...normalizeFactsForOps({
+          category: 'late_checkout',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: time ?? null,
+          urgencySignals: matrix.urgency_signals,
+        }),
         requestedDateToken: dateToken ?? null,
       },
       missingFacts: missing,
@@ -531,6 +670,7 @@ export function tryTelegramOperationalIntake(
   if (hasEarlyCheckinIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
@@ -559,9 +699,15 @@ export function tryTelegramOperationalIntake(
       category: 'early_checkin',
       reply,
       extractedFacts: {
-        guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
-        requestedTime: time ?? null,
+        ...normalizeFactsForOps({
+          category: 'early_checkin',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: time ?? null,
+          urgencySignals: matrix.urgency_signals,
+        }),
         requestedDateToken: dateToken ?? null,
       },
       missingFacts: missing,
@@ -584,6 +730,7 @@ export function tryTelegramOperationalIntake(
   if (hasNoiseComplaintIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const missing: string[] = [];
@@ -615,11 +762,15 @@ export function tryTelegramOperationalIntake(
     const hit: TelegramOperationalIntakeHit = {
       category: 'noise_complaint',
       reply,
-      extractedFacts: {
+      extractedFacts: normalizeFactsForOps({
+        category: 'noise_complaint',
+        rawText: raw,
         guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
-        requestedTime: time ?? null,
-      },
+        propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+        addressHint: addr ?? null,
+        timeHint: time ?? null,
+        urgencySignals: matrix.urgency_signals,
+      }),
       missingFacts: missing,
       finalAction,
       urgencySignals: matrix.urgency_signals,
@@ -640,6 +791,7 @@ export function tryTelegramOperationalIntake(
   if (hasCleaningRequestIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
@@ -673,9 +825,15 @@ export function tryTelegramOperationalIntake(
       category: 'cleaning_request',
       reply,
       extractedFacts: {
-        guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
-        requestedTime: time ?? null,
+        ...normalizeFactsForOps({
+          category: 'cleaning_request',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: time ?? null,
+          urgencySignals: matrix.urgency_signals,
+        }),
         requestedDateToken: dateToken ?? null,
         scope: { cleaning: wantsCleaning, towels: wantsTowels, linen: wantsLinen },
       },
@@ -699,6 +857,7 @@ export function tryTelegramOperationalIntake(
   if (hasExtensionRequestIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const dateToken = extractDateLikeToken(loose);
     const time = extractTimeLike(raw);
@@ -727,10 +886,16 @@ export function tryTelegramOperationalIntake(
       category: 'extension_request',
       reply,
       extractedFacts: {
-        guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
+        ...normalizeFactsForOps({
+          category: 'extension_request',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: time ?? null,
+          urgencySignals: matrix.urgency_signals,
+        }),
         requestedDateToken: dateToken ?? null,
-        requestedTime: time ?? null,
       },
       missingFacts: missing,
       finalAction,
@@ -752,6 +917,7 @@ export function tryTelegramOperationalIntake(
   if (hasWifiIssueIntent(loose) && !hasPaymentConfirmationIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const hasDetails =
       /\bpassword\b|\bwrong\b|\bdoesn'?t\s+work\b|\bcan'?t\s+connect\b|\bno\s+internet\b|\brouter\b/i.test(loose) ||
@@ -781,7 +947,18 @@ export function tryTelegramOperationalIntake(
     const hit: TelegramOperationalIntakeHit = {
       category: 'wifi_issue',
       reply,
-      extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), hasDetails },
+      extractedFacts: {
+        ...normalizeFactsForOps({
+          category: 'wifi_issue',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: null,
+          urgencySignals: matrix.urgency_signals,
+        }),
+        hasDetails,
+      },
       missingFacts: missing,
       finalAction,
       urgencySignals: matrix.urgency_signals,
@@ -802,12 +979,13 @@ export function tryTelegramOperationalIntake(
   if (hasParkingQuestionIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const hasVehicleDetails = /\bcar\b|\bvehicle\b|\bplate\b|\bparking\s+overnight\b/i.test(loose) || /машин|авто|номер\s+машин/i.test(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
-    if (!hasVehicleDetails) missing.push('vehicle_details');
+    else if (!hasVehicleDetails) missing.push('vehicle_details');
 
     const matrix = getMatrix('parking_question', missing);
     const finalAction: TelegramOperationalFinalAction = matrix.action;
@@ -829,7 +1007,18 @@ export function tryTelegramOperationalIntake(
     const hit: TelegramOperationalIntakeHit = {
       category: 'parking_question',
       reply,
-      extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), hasVehicleDetails },
+      extractedFacts: {
+        ...normalizeFactsForOps({
+          category: 'parking_question',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: null,
+          urgencySignals: matrix.urgency_signals,
+        }),
+        hasVehicleDetails,
+      },
       missingFacts: missing,
       finalAction,
       urgencySignals: matrix.urgency_signals,
@@ -850,6 +1039,7 @@ export function tryTelegramOperationalIntake(
   if (hasPaymentConfirmationIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const amount = extractAmountLike(raw);
     const time = extractTimeLike(raw);
@@ -880,10 +1070,16 @@ export function tryTelegramOperationalIntake(
       category: 'payment_confirmation',
       reply,
       extractedFacts: {
-        guestName: guest ?? null,
-        property: prop ?? (hasProp ? 'hint_present' : null),
+        ...normalizeFactsForOps({
+          category: 'payment_confirmation',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: time ?? null,
+          urgencySignals: matrix.urgency_signals,
+        }),
         amount: amount ?? null,
-        time: time ?? null,
       },
       missingFacts: missing,
       finalAction,

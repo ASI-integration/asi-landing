@@ -35,14 +35,17 @@ function detectChildSignal(n: string): boolean {
 }
 
 function detectActiveNow(n: string): boolean {
-  return /\b(now|right now|currently|at the door)\b/i.test(n) || /сейчас|прямо\s+сейчас|у\s+двери|на\s+месте/i.test(n);
+  return (
+    /\b(now|right now|currently|at the door|at the entrance|at entrance)\b/i.test(n) ||
+    /сейчас|прямо\s+сейчас|у\s+двери|у\s+входа|на\s+месте/i.test(n)
+  );
 }
 
 function detectLockedOut(n: string): boolean {
   return (
     /\blocked\s+out\b|\blockout\b/i.test(n) ||
     /(can'?t|cannot)\s+(get\s+in|enter|open)/i.test(n) ||
-    /не\s+могу\s+(войти|попасть)|не\s+попад(а|у)ю|стою\s+у\s+двери|закры(т|та)\s+снаружи/i.test(n)
+    /не\s+могу\s+(войти|попасть)|не\s+попад(а|у)ю|стою\s+у\s+двери|стою\s+у\s+входа|закры(т|та)\s+снаружи/i.test(n)
   );
 }
 
@@ -77,6 +80,7 @@ export function decideEscalationMatrixV1(input: {
   category:
     | 'access_issue'
     | 'no_heating'
+    | 'no_hot_water'
     | 'noise_complaint'
     | 'payment_confirmation'
     | 'late_checkout'
@@ -115,7 +119,16 @@ export function decideEscalationMatrixV1(input: {
     if (checkinContext) urgency_signals.push('checkin_context');
     if (activeNow) urgency_signals.push('active_now');
 
-    const blockedCheckin = lockedOut || (checkinContext && activeNow && /(door|lock|код|code|дверь|замок|domofon|домофон)/i.test(n));
+    const codeFailNow =
+      activeNow &&
+      /(code|код)/i.test(n) &&
+      /(doesn'?t\s+work|does\s+not\s+work|not\s+work|не\s+работает|не\s+подходит|не\s+открыва)/i.test(n);
+    if (codeFailNow) urgency_signals.push('code_fail_active_now');
+
+    const blockedCheckin =
+      lockedOut ||
+      codeFailNow ||
+      (checkinContext && activeNow && /(door|lock|код|code|дверь|замок|domofon|домофон)/i.test(n));
     if (blockedCheckin) urgency_signals.push('active_checkin_blocked');
 
     if (blockedCheckin) return { action: 'escalate_urgent', urgency_signals, reason: 'guest locked out / check-in blocked' };
@@ -137,6 +150,23 @@ export function decideEscalationMatrixV1(input: {
     if (urgent) return { action: 'escalate_urgent', urgency_signals, reason: 'no_heating urgent signals present' };
     if (input.missingFacts.length > 0) return { action: 'clarify', urgency_signals, reason: `missing_facts:${input.missingFacts.join(',')}` };
     return { action: 'reply', urgency_signals, reason: 'non-urgent heating issue acknowledged' };
+  }
+
+  if (input.category === 'no_hot_water') {
+    // Hot water outages are often urgent when "now" / "urgent" / night / child is mentioned.
+    const activeNow = detectActiveNow(n);
+    const night = detectNightSignal(n);
+    const child = detectChildSignal(n);
+    const urgentWord = detectUrgentWord(n);
+    if (activeNow) urgency_signals.push('active_now');
+    if (night) urgency_signals.push('night');
+    if (child) urgency_signals.push('child');
+    if (urgentWord) urgency_signals.push('urgent_word');
+
+    const urgent = activeNow || night || child || urgentWord;
+    if (urgent) return { action: 'escalate_urgent', urgency_signals, reason: 'no_hot_water urgent signals present' };
+    if (input.missingFacts.length > 0) return { action: 'clarify', urgency_signals, reason: `missing_facts:${input.missingFacts.join(',')}` };
+    return { action: 'reply', urgency_signals, reason: 'non-urgent hot water issue acknowledged' };
   }
 
   if (input.category === 'noise_complaint') {

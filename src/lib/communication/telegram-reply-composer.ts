@@ -118,6 +118,15 @@ function clarifyPrompt(input: ReplyComposerInput): string {
     );
   }
 
+  if (cat === 'no_hot_water') {
+    return oneQuestion(
+      lang,
+      'Which property is this for?',
+      'Для какого это объекта?',
+      '¿Para qué propiedad es?',
+    );
+  }
+
   if (cat === 'noise_complaint') {
     return oneQuestion(
       lang,
@@ -163,6 +172,9 @@ function clarifyPrompt(input: ReplyComposerInput): string {
   }
 
   if (cat === 'parking_question') {
+    if (missing.includes('property')) {
+      return oneQuestion(lang, 'Which property is this for?', 'Для какого это объекта?', '¿Para qué propiedad es?');
+    }
     return oneQuestion(
       lang,
       'Are you arriving by car and do you need overnight parking?',
@@ -239,6 +251,14 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
     const v = pickVariant(input.update_id, [
       shortHoldSentence(lang, 'the heating issue', 'проблему с отоплением', 'el problema de calefacción'),
       shortHoldSentence(lang, 'heating now', 'отопление', 'la calefacción'),
+    ]);
+    return { template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`, text: `${ack(lang)} ${v}` };
+  }
+
+  if (cat === 'no_hot_water') {
+    const v = pickVariant(input.update_id, [
+      shortHoldSentence(lang, 'the hot water issue', 'проблему с горячей водой', 'el problema de agua caliente'),
+      shortHoldSentence(lang, 'hot water now', 'горячую воду', 'el agua caliente'),
     ]);
     return { template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`, text: `${ack(lang)} ${v}` };
   }
