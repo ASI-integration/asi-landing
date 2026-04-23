@@ -83,6 +83,7 @@ import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
+import { tryTelegramOperationalIntake } from './telegram-operational-intake';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -514,8 +515,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     let replyText = '';
     let llmSucceeded = false;
-    let usedPath: 'deterministic' | 'llm' | 'telegram_meta_deterministic' = 'deterministic';
+    let usedPath:
+      | 'deterministic'
+      | 'llm'
+      | 'telegram_meta_deterministic'
+      | 'telegram_operational_intake' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
+    /** When set, pre-rule “low confidence / identity” escalation must not clobber this turn. */
+    let telegramOperationalIntakeConsumed = false;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
@@ -578,6 +585,115 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;
+
+    // Deterministic Telegram operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
+    if (!replyText && envelope.channel === 'telegram' && text.trim()) {
+      const opIntake = tryTelegramOperationalIntake({
+        text,
+        surfaceLang: classification.lang === 'ru' ? 'ru' : 'en',
+        update_id,
+        chat_id: chatId,
+      });
+      if (opIntake) {
+        telegramOperationalIntakeConsumed = true;
+        cp('branch.telegram_operational_intake', {
+          chat_id: chatId,
+          category: opIntake.category,
+          final_action: opIntake.finalAction,
+          missing_facts: opIntake.missingFacts,
+        });
+        replyText = adapter.formatResponse(opIntake.reply, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        usedPath = 'telegram_operational_intake';
+        if (opIntake.finalAction === 'escalate') {
+          escalation = createEscalationEvent({
+            reason: EscalationReason.UrgentIssue,
+            chat_id: chatId,
+            update_id,
+            classification,
+            summary: `telegram_operational_intake:${opIntake.category}`,
+          });
+          persistEscalationReview({
+            reason: String(escalation.reason),
+            escalationSummary: `telegram_operational_intake:${opIntake.category}`,
+            confidence: 1,
+            source: {
+              route: 'telegram_operational_intake',
+              category: opIntake.category,
+              extracted_facts: opIntake.extractedFacts,
+              missing_facts: opIntake.missingFacts,
+              final_action: opIntake.finalAction,
+              ...(voiceSourceBase ?? {}),
+            },
+            detail: JSON.stringify({
+              category: opIntake.category,
+              extractedFacts: opIntake.extractedFacts,
+              missingFacts: opIntake.missingFacts,
+            }),
+            suggestedReply: opIntake.reply,
+          });
+          auditEscalation({ chat_id: chatId, update_id, detail: `telegram_operational_intake:${opIntake.category}` });
+          auditDecision({
+            type: 'escalate',
+            chat_id: chatId,
+            update_id,
+            detail: `telegram_operational_intake:${opIntake.category}`,
+          });
+          await withAwaitCheckpoint(
+            'session.transition.operator_review_required_telegram_op_intake',
+            () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+            { chat_id: chatId },
+            15_000,
+          );
+          runInBackground(
+            {
+              correlationId: corrId,
+              module: 'orchestrator',
+              taskName: 'createOpsTask_TelegramOperationalIntake',
+              triggerId: String(chatId),
+            },
+            async () => {
+              const { task_id } = await createOpsTask({
+                property_id: commContext.reservation.propertyId ?? 'unknown',
+                reservation_id: commContext.reservation.reservationId ?? null,
+                chat_id: chatId,
+                task_type: OpsTaskType.GuestIssue,
+                title: `Telegram operational intake: ${opIntake.category}`,
+                description: `Automated intake.\nFacts: ${JSON.stringify(opIntake.extractedFacts)}`,
+                priority: OpsTaskPriority.Urgent,
+                source_event: 'telegram_operational_intake',
+                trigger_reason: opIntake.category,
+              });
+              if (task_id) {
+                await appendTimelineEvent(identity.guestId ?? String(chatId), {
+                  type: 'ops_task_created',
+                  task_type: OpsTaskType.GuestIssue,
+                  task_id,
+                  ts: new Date(),
+                });
+              }
+            },
+          );
+          convSession = transitionConversationSessionState(
+            convSession,
+            'escalated',
+            `telegram_operational:${opIntake.category}`,
+          );
+        } else if (opIntake.finalAction === 'clarify') {
+          convSession = transitionConversationSessionState(
+            convSession,
+            'awaiting_input',
+            `telegram_operational:${opIntake.category}`,
+          );
+        } else {
+          convSession = transitionConversationSessionState(
+            convSession,
+            'awaiting_input',
+            `telegram_operational:${opIntake.category}_reply`,
+          );
+        }
+      }
+    }
 
     // Scenario-engine clarifying question (single best question).
     if (!replyText && decision.nextAction === 'ask_clarifying_question' && plan.clarifyingQuestion) {
@@ -670,7 +786,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Escalation rules (pre-reply). Conservative: prefer human handoff over unsafe automation.
-    if (classification.category !== 'start' && classification.category !== 'greeting') {
+    if (
+      !telegramOperationalIntakeConsumed &&
+      classification.category !== 'start' &&
+      classification.category !== 'greeting'
+    ) {
       const preEsc = shouldEscalateByRules({
         text,
         classification,
@@ -707,7 +827,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // If already escalated by rules, avoid normal auto reply flow when configured.
     const stopAutoReplyOnEscalation = process.env.COMM_STOP_AUTO_REPLY_ON_ESCALATION !== '0';
-    if (escalation && stopAutoReplyOnEscalation) {
+    if (escalation && stopAutoReplyOnEscalation && !replyText) {
       const escalationBase =
         classification.lang === 'ru'
           ? 'Не могу безопасно ответить автоматически. Передал(а) запрос в операционный поток — вернёмся с ответом.'

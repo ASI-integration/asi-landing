@@ -156,6 +156,19 @@ describe('processUpdate', () => {
     expect(reviews[0]?.sessionId).toBeTruthy();
   });
 
+  it('uses Telegram operational intake instead of generic escalation on guest access relay (low intent confidence)', async () => {
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.Unknown, confidence: 0.35 });
+    const msg =
+      'Hi, guest John Smith is checking in today at 18:00 at Nevsky 24. He says the door code does not work. Can you help?';
+    const result = await processUpdate(makeUpdate(msg));
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls[0];
+    expect(String(sentText)).toMatch(/Understood|access issue/i);
+    expect(String(sentText)).not.toMatch(/not entirely sure|безопасно ответить/i);
+    expect(result.escalation).toBeUndefined();
+  });
+
   it('generates mock payment link on PaymentRequest intent', async () => {
     mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.PaymentRequest, confidence: 0.95 });
     const result = await processUpdate(makeUpdate('I want to pay'));
