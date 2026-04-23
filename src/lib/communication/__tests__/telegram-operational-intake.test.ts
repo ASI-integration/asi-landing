@@ -4,39 +4,38 @@ import { tryTelegramOperationalIntake } from '../telegram-operational-intake';
 const base = { update_id: 1, chat_id: 42 };
 
 describe('tryTelegramOperationalIntake', () => {
-  it('access_issue EN with property+fail → reply', () => {
+  it('access_issue EN with property+fail → escalate_urgent (check-in day code failure)', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Hi, guest John Smith is checking in today at 18:00 at Nevsky 24. He says the door code does not work. Can you help?',
       surfaceLang: 'en',
       ...base,
     });
     expect(hit?.category).toBe('access_issue');
-    expect(hit?.finalAction).toBe('reply');
+    expect(hit?.finalAction).toBe('escalate_urgent');
     expect(hit?.missingFacts).toEqual([]);
-    expect(hit?.reply).toMatch(/access issue logged|Understood/i);
+    expect(hit?.reply).toMatch(/urgent|escalat|передаю|срочно|операц/i);
   });
 
-  it('access_issue RU with property+fail → reply', () => {
+  it('access_issue RU with property+fail → escalate_urgent (check-in day code failure)', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Здравствуйте. Гость John Smith заселяется сегодня в 18:00 по адресу Невский 24. Он пишет, что код от двери не работает. Помогите, пожалуйста.',
       surfaceLang: 'ru',
       ...base,
     });
     expect(hit?.category).toBe('access_issue');
-    expect(hit?.finalAction).toBe('reply');
-    expect(hit?.reply).toMatch(/Понял/i);
+    expect(hit?.finalAction).toBe('escalate_urgent');
+    expect(hit?.reply).toMatch(/передаю|срочно|операц|это срочно/i);
   });
 
-  it('access_issue EN without property → clarify(property)', () => {
+  it('access_issue EN without property → escalate_urgent (check-in day code failure)', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Guest can’t open the door, code is not working. Check-in today 18:00.',
       surfaceLang: 'en',
       ...base,
     });
     expect(hit?.category).toBe('access_issue');
-    expect(hit?.finalAction).toBe('clarify');
-    expect(hit?.missingFacts).toContain('property');
-    expect(hit?.reply).toMatch(/property|address/i);
+    expect(hit?.finalAction).toBe('escalate_urgent');
+    expect(hit?.reply).toMatch(/urgent|escalat|операц/i);
   });
 
   it('access_issue RU urgent risk keyword → escalate_urgent', () => {

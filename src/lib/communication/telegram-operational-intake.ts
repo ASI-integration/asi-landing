@@ -97,22 +97,23 @@ function hasAccessIssueIntent(n: string): boolean {
 
   // Do NOT treat pure "door code" or "check-in info" as access issues.
   // Access_issue should require a failure/lockout signal, not just access data.
-  const failureOrLockout =
+  const enterOrOpenFailure =
     /(can'?t|cannot)\s+(get\s+in|enter|open)/i.test(n) ||
     /locked\s+out|lockout/i.test(n) ||
     /не\s+могу\s+(войти|попасть)|не\s+попад(а|у)ю|закры(т|та)\s+снаружи/i.test(n) ||
-    /не\s+открыва(ется|ть)?|не\s+работает|не\s+подходит/i.test(n);
+    /не\s+открыва(ется|ть)?/i.test(n);
 
   const codeDoor =
     // "door/access/entry code" only counts if it's failing / lockout
-    (/(door\s+code|access\s+code|entry\s+code|код(\s+от)?\s+двери|код)/i.test(n) && failureOrLockout) ||
+    (/(door\s+code|access\s+code|entry\s+code|код(\s+от)?\s+двери|код)/i.test(n) && enterOrOpenFailure) ||
     (/(code|код)/i.test(n) && /(doesn'?t\s+work|does\s+not\s+work|not\s+work|не\s+работает|не\s+подходит|не\s+открыва)/i.test(n)) ||
     (/(lock|замок)/i.test(n) && /(doesn'?t|does\s+not|не\s+работает|не\s+открыва|failed)/i.test(n)) ||
     (/(door|дверь)/i.test(n) && /(doesn'?t|does\s+not|не\s+открыва|won'?t\s+open|not\s+open)/i.test(n));
 
   const mentionsAccessSurface = /(code|код|door|дверь|lock|замок|intercom|домофон)/i.test(n);
 
-  return Boolean(codeDoor || (mentionsAccessSurface && failureOrLockout));
+  // "cannot enter" / "locked out" alone is enough for ops access_issue, even without explicit door/code word.
+  return Boolean(codeDoor || enterOrOpenFailure || (mentionsAccessSurface && enterOrOpenFailure));
 }
 
 function hasNoiseComplaintIntent(n: string): boolean {
@@ -143,7 +144,7 @@ function hasExtensionRequestIntent(n: string): boolean {
 
 function hasWifiIssueIntent(n: string): boolean {
   return (
-    /\bwifi\b|\bwi-fi\b|\binternet\b|\brouter\b|\bnetwork\b|\bpassword\b/i.test(n) ||
+    /\bwifi\b|\bwi[\-‑–—]?\s*fi\b|\bwi-fi\b|\binternet\b|\brouter\b|\bnetwork\b|\bpassword\b/i.test(n) ||
     /вайфай|wi-?fi|интернет|роутер|маршрутизатор|парол/i.test(n)
   );
 }
@@ -244,6 +245,17 @@ function extractDateLikeToken(n: string): 'today' | 'tomorrow' | null {
   return null;
 }
 
+function extractCheckinCheckoutHints(n: string): { checkin_hint: string | null; checkout_hint: string | null } {
+  const isCheckin = /\bcheck[-\s]?in\b|заезд|засел|checkin/i.test(n);
+  const isCheckout = /\bcheck[-\s]?out\b|выезд|checkout/i.test(n);
+  const day = extractDateLikeToken(n);
+  const dayToken = day ? day : null;
+  return {
+    checkin_hint: isCheckin ? (dayToken ?? 'checkin') : null,
+    checkout_hint: isCheckout ? (dayToken ?? 'checkout') : null,
+  };
+}
+
 function extractAmountLike(text: string): string | null {
   const t = String(text ?? '');
   const m =
@@ -294,6 +306,8 @@ function normalizeFactsForOps(params: {
   propertySnippet: string | null;
   addressHint: string | null;
   timeHint: string | null;
+  checkinHint: string | null;
+  checkoutHint: string | null;
   urgencySignals: string[];
 }): Record<string, unknown> {
   return {
@@ -301,6 +315,8 @@ function normalizeFactsForOps(params: {
     guest_name: params.guestName,
     property_hint: params.propertySnippet ?? (params.addressHint ? params.addressHint : null),
     address_hint: params.addressHint,
+    checkin_hint: params.checkinHint,
+    checkout_hint: params.checkoutHint,
     time_hint: params.timeHint,
     issue_type: params.category,
     urgency_signals: params.urgencySignals,
@@ -436,6 +452,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
+    const cc = extractCheckinCheckoutHints(loose);
     const hasFail = hasFailureModeHint(loose);
 
     const missing: string[] = [];
@@ -450,6 +467,8 @@ export function tryTelegramOperationalIntake(
         propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
         addressHint: addr ?? null,
         timeHint: time ?? null,
+        checkinHint: cc.checkin_hint,
+        checkoutHint: cc.checkout_hint,
         urgencySignals: [],
       }),
       requestedDateToken: dateToken ?? null,
@@ -501,6 +520,7 @@ export function tryTelegramOperationalIntake(
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
+    const cc = extractCheckinCheckoutHints(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
@@ -532,6 +552,8 @@ export function tryTelegramOperationalIntake(
         propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
         addressHint: addr ?? null,
         timeHint: time ?? null,
+        checkinHint: cc.checkin_hint,
+        checkoutHint: cc.checkout_hint,
         urgencySignals: matrix.urgency_signals,
       }),
       missingFacts: missing,
@@ -557,6 +579,7 @@ export function tryTelegramOperationalIntake(
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
+    const cc = extractCheckinCheckoutHints(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
@@ -588,6 +611,8 @@ export function tryTelegramOperationalIntake(
         propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
         addressHint: addr ?? null,
         timeHint: time ?? null,
+        checkinHint: cc.checkin_hint,
+        checkoutHint: cc.checkout_hint,
         urgencySignals: matrix.urgency_signals,
       }),
       missingFacts: missing,
@@ -614,6 +639,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
+    const cc = extractCheckinCheckoutHints(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
@@ -646,6 +672,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: time ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         requestedDateToken: dateToken ?? null,
@@ -674,6 +702,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
+    const cc = extractCheckinCheckoutHints(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
@@ -706,6 +735,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: time ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         requestedDateToken: dateToken ?? null,
@@ -733,6 +764,7 @@ export function tryTelegramOperationalIntake(
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
+    const cc = extractCheckinCheckoutHints(loose);
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
     // "noise" / "шум" alone is not enough — ask what kind (party/music/renovation/etc).
@@ -769,6 +801,8 @@ export function tryTelegramOperationalIntake(
         propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
         addressHint: addr ?? null,
         timeHint: time ?? null,
+        checkinHint: cc.checkin_hint,
+        checkoutHint: cc.checkout_hint,
         urgencySignals: matrix.urgency_signals,
       }),
       missingFacts: missing,
@@ -795,6 +829,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
     const dateToken = extractDateLikeToken(loose);
+    const cc = extractCheckinCheckoutHints(loose);
     const wantsTowels = /\btowel/i.test(loose) || /полотенц/i.test(loose);
     const wantsLinen = /\blinen|beds?/i.test(loose) || /постел|бель/i.test(loose);
     // Require explicit cleaning words; "housekeeping/service/горничная" without details should trigger clarification.
@@ -832,6 +867,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: time ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         requestedDateToken: dateToken ?? null,
@@ -861,6 +898,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const dateToken = extractDateLikeToken(loose);
     const time = extractTimeLike(raw);
+    const cc = extractCheckinCheckoutHints(loose);
 
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
@@ -893,6 +931,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: time ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         requestedDateToken: dateToken ?? null,
@@ -919,6 +959,7 @@ export function tryTelegramOperationalIntake(
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
+    const cc = extractCheckinCheckoutHints(loose);
     const hasDetails =
       /\bpassword\b|\bwrong\b|\bdoesn'?t\s+work\b|\bcan'?t\s+connect\b|\bno\s+internet\b|\brouter\b/i.test(loose) ||
       /парол|не\s+подход|не\s+работает|не\s+подключ|нет\s+интернет|роутер/i.test(loose);
@@ -955,6 +996,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         hasDetails,
@@ -981,6 +1024,7 @@ export function tryTelegramOperationalIntake(
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
+    const cc = extractCheckinCheckoutHints(loose);
     const hasVehicleDetails = /\bcar\b|\bvehicle\b|\bplate\b|\bparking\s+overnight\b/i.test(loose) || /машин|авто|номер\s+машин/i.test(loose);
 
     const missing: string[] = [];
@@ -1015,6 +1059,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         hasVehicleDetails,
@@ -1043,6 +1089,7 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const amount = extractAmountLike(raw);
     const time = extractTimeLike(raw);
+    const cc = extractCheckinCheckoutHints(loose);
     const hasReference = Boolean(amount || time || /\breceipt\b|\bscreenshot\b/i.test(loose) || /чек|скрин/i.test(loose));
 
     const missing: string[] = [];
@@ -1077,6 +1124,8 @@ export function tryTelegramOperationalIntake(
           propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
           addressHint: addr ?? null,
           timeHint: time ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
           urgencySignals: matrix.urgency_signals,
         }),
         amount: amount ?? null,

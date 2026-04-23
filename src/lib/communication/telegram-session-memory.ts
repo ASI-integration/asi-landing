@@ -1,6 +1,7 @@
 import { getAutonomousSessionOperationalCaseV1, setAutonomousSessionOperationalCaseV1 } from './conversation-session-store';
 import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, TelegramOperationalSessionCaseV1 } from './types';
 import { tryTelegramOperationalIntake, type TelegramOperationalFinalAction, type TelegramOperationalIntakeHit } from './telegram-operational-intake';
+import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 
 type SurfaceLang = 'en' | 'ru';
 
@@ -66,6 +67,78 @@ function buildEscalationSummaryForCase(params: {
     missing.length > 0 ? `missing=${missing.join(',')}` : null,
   ].filter(Boolean) as string[];
   return parts.join('; ');
+}
+
+function buildOperatorEscalationSummaryV1(params: {
+  scenario: string;
+  urgency: 'normal' | 'urgent';
+  extractedFacts: Record<string, unknown>;
+  missingFacts: string[];
+  matchConfidence: string | null;
+  matchedReservationId: string | null;
+  matchedPropertyLabel: string | null;
+}): string {
+  const facts = params.extractedFacts ?? {};
+  const guest = (facts as any).guest_name ?? (facts as any).guestName ?? null;
+  const propertyHint = (facts as any).property_hint ?? (facts as any).property ?? null;
+  const addressHint = (facts as any).address_hint ?? null;
+  const timeHint = (facts as any).time_hint ?? (facts as any).requestedTime ?? null;
+  const knownFacts: string[] = [];
+  if (guest) knownFacts.push(`guest_name=${String(guest)}`);
+  if (propertyHint) knownFacts.push(`property_hint=${String(propertyHint)}`);
+  if (addressHint) knownFacts.push(`address_hint=${String(addressHint)}`);
+  if (timeHint) knownFacts.push(`time_hint=${String(timeHint)}`);
+
+  const missingFacts = (params.missingFacts ?? []).map(String);
+  const suggestedNextAction =
+    params.urgency === 'urgent'
+      ? 'Handle urgently: contact guest and validate access/service immediately.'
+      : 'Resolve: confirm property/reservation context, then proceed with scenario playbook.';
+
+  return [
+    `scenario=${params.scenario}`,
+    `urgency=${params.urgency}`,
+    guest ? `guest_name=${String(guest)}` : 'guest_name=unknown',
+    params.matchedPropertyLabel ? `property=${params.matchedPropertyLabel}` : propertyHint ? `property=${String(propertyHint)}` : 'property=unknown',
+    params.matchedReservationId ? `reservation_id=${params.matchedReservationId}` : 'reservation_id=unknown',
+    params.matchConfidence ? `match_confidence=${params.matchConfidence}` : 'match_confidence=unknown',
+    knownFacts.length ? `known_facts=${knownFacts.join('|')}` : 'known_facts=none',
+    missingFacts.length ? `missing_facts=${missingFacts.join('|')}` : 'missing_facts=none',
+    `suggested_next_action=${suggestedNextAction}`,
+  ].join('; ');
+}
+
+function logOperationalMatch(params: {
+  session_id: number;
+  update_id: number;
+  scenario: string;
+  extracted_facts: Record<string, unknown>;
+  match: Awaited<ReturnType<typeof matchTelegramOperationalEntitiesV1>>;
+  clarification_question_used: boolean;
+  escalated: boolean;
+  reason: string;
+}): void {
+  try {
+    console.log(
+      JSON.stringify({
+        route: 'telegram_operational_match',
+        scenario: params.scenario,
+        extracted_facts: params.extracted_facts,
+        reservation_match_status: params.match.reservation_match_status,
+        property_match_status: params.match.property_match_status,
+        match_confidence: params.match.match_confidence,
+        matched_guest: params.match.matched_guest,
+        matched_property: params.match.matched_property,
+        matched_reservation_id: params.match.matched_reservation_id,
+        clarification_question_used: params.clarification_question_used,
+        escalated: params.escalated,
+        reason: params.reason,
+        update_id: `tg:${params.session_id}:${params.update_id}`,
+      }),
+    );
+  } catch {
+    // never throw from logging
+  }
 }
 
 function normalizeText(text: string): string {
@@ -438,13 +511,15 @@ function isCaseOpen(c: TelegramOperationalSessionCaseV1 | undefined): boolean {
   return false;
 }
 
-export function processTelegramOperationalIntakeWithSessionMemory(params: {
+export async function processTelegramOperationalIntakeWithSessionMemory(params: {
   chatId: number;
   channel: CommunicationChannel;
   text: string;
   surfaceLang: SurfaceLang;
   update_id: number;
-}): TelegramSessionMemoryResult {
+  /** Override db for deterministic matching tests */
+  db?: any;
+}): Promise<TelegramSessionMemoryResult> {
   const prevCase = getAutonomousSessionOperationalCaseV1(params.chatId);
   const ru = params.surfaceLang === 'ru';
 
@@ -458,6 +533,82 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
   // If we got a fresh deterministic hit, decide whether to start new case or merge.
   if (hit) {
     const previous_state = prevCase ? safeJsonClone(prevCase) : null;
+
+    // Matching layer: try to ground to guest/reservation/property before deciding clarify/escalate.
+    let match: Awaited<ReturnType<typeof matchTelegramOperationalEntitiesV1>> | null = null;
+    try {
+      match = await matchTelegramOperationalEntitiesV1({
+        surfaceLang: params.surfaceLang,
+        update_id: params.update_id,
+        scenario: hit.category,
+        extracted_facts: hit.extractedFacts as any,
+        db: params.db,
+      });
+    } catch {
+      match = null;
+    }
+
+    if (match) {
+      // Attach match results into extracted facts for downstream reply + operator review.
+      (hit.extractedFacts as any).reservation_match_status = match.reservation_match_status;
+      (hit.extractedFacts as any).property_match_status = match.property_match_status;
+      (hit.extractedFacts as any).match_confidence = match.match_confidence;
+      (hit.extractedFacts as any).matched_guest = match.matched_guest;
+      (hit.extractedFacts as any).matched_property_id = match.matched_property?.property_id ?? null;
+      (hit.extractedFacts as any).matched_property_label = match.matched_property?.location ?? null;
+      (hit.extractedFacts as any).matched_reservation_id = match.matched_reservation_id;
+      (hit.extractedFacts as any).match_reason = match.reason;
+
+      const alreadyUsedClarification = Boolean(prevCase && isCaseOpen(prevCase) && (prevCase.clarification_count ?? 0) >= 1);
+      const prevHasProperty = Boolean(prevCase?.property);
+      const shouldForceEscalate =
+        alreadyUsedClarification &&
+        hit.finalAction === 'clarify' &&
+        !prevHasProperty &&
+        (match.match_confidence === 'low_confidence_match' || match.match_confidence === 'no_match');
+
+      if (shouldForceEscalate) {
+        hit.finalAction = 'escalate_operator';
+        hit.reply = ru ? 'Понял(а). Передаю оператору.' : 'Understood. I’m escalating to an operator.';
+        hit.actionReason = 'matching:unresolved_after_one_clarification';
+      } else if (match.match_confidence === 'high_confidence_match') {
+        // Grounded match → never ask generic questions.
+        // If intake wanted clarify due to missing property/failure_mode, but we have a match, switch to reply.
+        hit.finalAction = hit.finalAction === 'escalate_urgent' ? 'escalate_urgent' : hit.finalAction === 'escalate_operator' ? 'escalate_operator' : 'reply';
+        hit.actionReason = `matching:high:${match.reason}`;
+      } else if (match.match_confidence === 'medium_confidence_match') {
+        // Exactly ONE targeted clarification (if any) else proceed.
+        if (match.suggested_clarification_question && hit.finalAction !== 'escalate_urgent') {
+          hit.finalAction = 'clarify';
+          hit.reply = match.suggested_clarification_question;
+          hit.actionReason = `matching:medium:clarify:${match.reason}`;
+        } else if (hit.finalAction !== 'escalate_urgent') {
+          hit.finalAction = 'reply';
+          hit.actionReason = `matching:medium:reply:${match.reason}`;
+        }
+      } else if (match.match_confidence === 'low_confidence_match' || match.match_confidence === 'no_match') {
+        // One best missing question (never generic); otherwise escalate if already used.
+        const alreadyHasProperty = Boolean((hit.extractedFacts as any)?.property_hint) || Boolean((hit.extractedFacts as any)?.property);
+        if (alreadyHasProperty) {
+          // Don't downgrade to "which property" when property is already present.
+        } else if (match.suggested_clarification_question && hit.finalAction !== 'escalate_urgent') {
+          hit.finalAction = 'clarify';
+          hit.reply = match.suggested_clarification_question;
+          hit.actionReason = `matching:${match.match_confidence}:clarify:${match.reason}`;
+        }
+      }
+
+      logOperationalMatch({
+        session_id: params.chatId,
+        update_id: params.update_id,
+        scenario: hit.category,
+        extracted_facts: safeJsonClone(hit.extractedFacts ?? {}),
+        match,
+        clarification_question_used: hit.finalAction === 'clarify',
+        escalated: hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent',
+        reason: hit.actionReason ?? 'n/a',
+      });
+    }
 
     // Missing-facts policy: never ask more than ONE clarification question in a row.
     // If we already asked once and still lack info, escalate with a summary.
@@ -501,6 +652,15 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
         updated_at: nowIso(),
         last_update_id: params.update_id,
       };
+      const opSummary = buildOperatorEscalationSummaryV1({
+        scenario: String(nextCase.category ?? 'unknown'),
+        urgency: (nextCase.urgency ?? 'normal') as any,
+        extractedFacts: nextCase.extracted_facts,
+        missingFacts: nextCase.missing_facts,
+        matchConfidence: (nextCase.extracted_facts as any)?.match_confidence ?? null,
+        matchedReservationId: (nextCase.extracted_facts as any)?.matched_reservation_id ?? null,
+        matchedPropertyLabel: (nextCase.extracted_facts as any)?.matched_property_label ?? null,
+      });
       const reply = ru
         ? `Понял(а). Я уже уточнял(а) детали — передаю оператору. (${buildEscalationSummaryForCase({
             category: nextCase.category,
@@ -519,7 +679,7 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
         missingFacts: [...(nextCase.missing_facts ?? [])],
         finalAction: 'escalate_operator',
         urgencySignals: hit.urgencySignals ?? [],
-        actionReason: 'missing_facts_policy:clarification_already_used',
+        actionReason: `missing_facts_policy:clarification_already_used; operator_summary=${opSummary}`,
       };
       setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
       logSessionMemoryUpdate({

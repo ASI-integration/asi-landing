@@ -131,7 +131,18 @@ export function decideEscalationMatrixV1(input: {
       (checkinContext && activeNow && /(door|lock|код|code|дверь|замок|domofon|домофон)/i.test(n));
     if (blockedCheckin) urgency_signals.push('active_checkin_blocked');
 
+    const explicitToday =
+      /\b(today|tonight)\b/i.test(n) ||
+      /\bchecking\s+in\s+today\b/i.test(n) ||
+      /сегодня/i.test(n);
+    const codeFailOnCheckinDay =
+      explicitToday &&
+      /(code|код)/i.test(n) &&
+      /(doesn'?t\s+work|does\s+not\s+work|not\s+work|не\s+работает|не\s+подходит|не\s+открыва)/i.test(n);
+    if (codeFailOnCheckinDay) urgency_signals.push('code_fail_checkin_context');
+
     if (blockedCheckin) return { action: 'escalate_urgent', urgency_signals, reason: 'guest locked out / check-in blocked' };
+    if (codeFailOnCheckinDay) return { action: 'escalate_urgent', urgency_signals, reason: 'door code failing on check-in day' };
     if (input.missingFacts.length > 0) return { action: 'clarify', urgency_signals, reason: `missing_facts:${input.missingFacts.join(',')}` };
     return { action: 'reply', urgency_signals, reason: 'non-urgent access issue acknowledged' };
   }

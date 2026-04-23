@@ -58,6 +58,24 @@ function ack(lang: Lang): string {
   return 'Understood.';
 }
 
+function matchedContextSuffix(input: ReplyComposerInput, lang: Lang): string {
+  const facts = input.extractedFacts ?? {};
+  const guest = (facts as any).matched_guest ?? (facts as any).guest_name ?? (facts as any).guestName ?? null;
+  const rawProp = (facts as any).matched_property_label ?? (facts as any).property_hint ?? (facts as any).property ?? null;
+  const prop =
+    typeof rawProp === 'string' && rawProp.trim()
+      ? // Avoid appending non-address snippets like "the entrance and the code does not work"
+        (/\d{1,4}/.test(rawProp) || /(nevsky|невск|liteyn|литейн|ул\.?|улиц|просп|наб\.?)/i.test(rawProp))
+        ? rawProp
+        : null
+      : null;
+  const parts: string[] = [];
+  if (guest) parts.push(lang === 'ru' ? `гость ${String(guest)}` : `guest ${String(guest)}`);
+  if (prop) parts.push(String(prop));
+  if (parts.length === 0) return '';
+  return lang === 'ru' ? ` (${parts.join(', ')})` : ` (${parts.join(', ')})`;
+}
+
 function escalateNow(lang: Lang, urgent: boolean): string {
   if (urgent) {
     if (lang === 'ru') return 'Похоже, это срочно. Передаю в приоритетную обработку.';
@@ -164,9 +182,9 @@ function clarifyPrompt(input: ReplyComposerInput): string {
     return knowsProperty
       ? oneQuestion(
           lang,
-          'What exactly fails: no network, can’t connect, or password not working?',
-          'Что именно не работает: нет сети, не подключается или пароль не подходит?',
-          '¿Qué falla: no hay red, no conecta, o la contraseña no funciona?',
+          'What exactly fails with Wi‑Fi: no network, can’t connect, or password not working?',
+          'Что именно не работает с Wi‑Fi: нет сети, не подключается или пароль не подходит?',
+          '¿Qué falla con el Wi‑Fi: no hay red, no conecta, o la contraseña no funciona?',
         )
       : oneQuestion(lang, 'Which property is this for?', 'Для какого это объекта?', '¿Para qué propiedad es?');
   }
@@ -211,15 +229,21 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
       : lang === 'es'
         ? `Entendido. ${q}`
         : `Understood. ${q}`;
-    return { template_key: `${cat}.clarify.q1`, text: t };
+    return { template_key: `${cat}.clarify.q1`, text: `${t}${matchedContextSuffix(input, lang)}` };
   }
 
   if (input.action === 'escalate_operator') {
-    return { template_key: `${cat}.escalate_operator.v1`, text: `${ack(lang)} ${escalateNow(lang, false)}` };
+    return {
+      template_key: `${cat}.escalate_operator.v1`,
+      text: `${ack(lang)} ${escalateNow(lang, false)}${matchedContextSuffix(input, lang)}`,
+    };
   }
 
   if (input.action === 'escalate_urgent') {
-    return { template_key: `${cat}.escalate_urgent.v1`, text: `${ack(lang)} ${escalateNow(lang, true)}` };
+    return {
+      template_key: `${cat}.escalate_urgent.v1`,
+      text: `${ack(lang)} ${escalateNow(lang, true)}${matchedContextSuffix(input, lang)}`,
+    };
   }
 
   // action === 'reply'
@@ -228,7 +252,10 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
       shortHoldSentence(lang, 'the access issue', 'проблему с доступом', 'el problema de acceso'),
       shortHoldSentence(lang, 'access now', 'доступ сейчас', 'el acceso ahora'),
     ]);
-    return { template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`, text: `${ack(lang)} ${v}` };
+    return {
+      template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`,
+      text: `${ack(lang)} ${v}${matchedContextSuffix(input, lang)}`,
+    };
   }
 
   if (cat === 'late_checkout') {
@@ -288,19 +315,29 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   }
 
   if (cat === 'wifi_issue') {
-    const v = pickVariant(input.update_id, [
-      lang === 'ru'
-        ? 'Пожалуйста, пришлите объект, и я проверю данные по Wi‑Fi.'
-        : lang === 'es'
-          ? 'Envíame la propiedad y reviso los datos de Wi‑Fi.'
-          : 'Please send the property and I’ll check the Wi‑Fi details.',
-      lang === 'ru'
-        ? 'Пришлите объект — проверю сеть и пароль Wi‑Fi.'
-        : lang === 'es'
-          ? 'Envíame la propiedad y reviso la red y la contraseña de Wi‑Fi.'
-          : 'Send the property and I’ll confirm the Wi‑Fi network and password.',
-    ]);
-    return { template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`, text: `${ack(lang)} ${v}` };
+    const hasMatchedProp = Boolean((input.extractedFacts as any)?.matched_property_id || (input.extractedFacts as any)?.matched_property_label);
+    const v = hasMatchedProp
+      ? (lang === 'ru'
+          ? 'Проверю Wi‑Fi по этому объекту и вернусь с обновлением.'
+          : lang === 'es'
+            ? 'Revisaré el Wi‑Fi de esa propiedad y te confirmo.'
+            : 'I’ll check the Wi‑Fi for this property and confirm shortly.')
+      : pickVariant(input.update_id, [
+          lang === 'ru'
+            ? 'Пожалуйста, пришлите объект, и я проверю данные по Wi‑Fi.'
+            : lang === 'es'
+              ? 'Envíame la propiedad y reviso los datos de Wi‑Fi.'
+              : 'Please send the property and I’ll check the Wi‑Fi details.',
+          lang === 'ru'
+            ? 'Пришлите объект — проверю сеть и пароль Wi‑Fi.'
+            : lang === 'es'
+              ? 'Envíame la propiedad y reviso la red y la contraseña de Wi‑Fi.'
+              : 'Send the property and I’ll confirm the Wi‑Fi network and password.',
+        ]);
+    return {
+      template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`,
+      text: `${ack(lang)} ${v}${matchedContextSuffix(input, lang)}`,
+    };
   }
 
   if (cat === 'parking_question') {

@@ -782,7 +782,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // Deterministic Telegram operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (!replyText && envelope.channel === 'telegram' && text.trim()) {
-      const opIntakeResult = processTelegramOperationalIntakeWithSessionMemory({
+      const opIntakeResult = await processTelegramOperationalIntakeWithSessionMemory({
         chatId,
         channel: envelope.channel,
         text,

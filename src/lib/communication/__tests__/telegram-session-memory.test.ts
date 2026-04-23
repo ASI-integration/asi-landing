@@ -3,6 +3,26 @@ import { processTelegramOperationalIntakeWithSessionMemory } from '../telegram-s
 import { __resetAutonomousSessionStoreForTests, getAutonomousSessionOperationalCaseV1 } from '../conversation-session-store';
 
 describe('telegram session memory v1 (operational cases)', () => {
+  function makeEmptyDb() {
+    return {
+      from: () => {
+        const q: any = {
+          select: () => q,
+          ilike: () => q,
+          eq: () => q,
+          in: () => q,
+          gte: () => q,
+          lte: () => q,
+          order: () => q,
+          limit: () => q,
+          maybeSingle: async () => ({ data: null, error: { message: 'not used' } }),
+          then: (resolve: any, reject: any) => Promise.resolve({ data: [], error: null }).then(resolve, reject),
+        };
+        return q;
+      },
+    };
+  }
+
   beforeEach(() => {
     __resetAutonomousSessionStoreForTests();
   });
@@ -11,14 +31,15 @@ describe('telegram session memory v1 (operational cases)', () => {
     __resetAutonomousSessionStoreForTests();
   });
 
-  it('2-message completion (EN): escalate_urgent then property fragment resolves same case', () => {
+  it('2-message completion (EN): escalate_urgent then property fragment resolves same case', async () => {
     const chatId = 1001;
-    const r1 = processTelegramOperationalIntakeWithSessionMemory({
+    const r1 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 1,
       surfaceLang: 'en',
       text: "Guest John Smith can't enter, door code does not work. Today at 18:00.",
+      db: makeEmptyDb(),
     });
     expect(r1.handled).toBe(true);
     if (!r1.handled) throw new Error('expected handled');
@@ -26,12 +47,13 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r1.hit.finalAction).toBe('escalate_urgent');
     expect(r1.hit.missingFacts).toContain('property');
 
-    const r2 = processTelegramOperationalIntakeWithSessionMemory({
+    const r2 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 2,
       surfaceLang: 'en',
       text: 'Nevsky 24',
+      db: makeEmptyDb(),
     });
     expect(r2.handled).toBe(true);
     if (!r2.handled) throw new Error('expected handled');
@@ -44,14 +66,15 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.property).toMatch(/Nevsky|Невск/i);
   });
 
-  it('3-message completion (RU): one clarification max, then escalate, then resolve on fragment', () => {
+  it('3-message completion (RU): one clarification max, then escalate, then resolve on fragment', async () => {
     const chatId = 2002;
-    const r1 = processTelegramOperationalIntakeWithSessionMemory({
+    const r1 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 10,
       surfaceLang: 'ru',
       text: 'WiFi',
+      db: makeEmptyDb(),
     });
     expect(r1.handled).toBe(true);
     if (!r1.handled) throw new Error('expected handled');
@@ -59,12 +82,13 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r1.hit.finalAction).toBe('clarify');
     expect(r1.hit.missingFacts).toContain('property');
 
-    const r2 = processTelegramOperationalIntakeWithSessionMemory({
+    const r2 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 11,
       surfaceLang: 'ru',
       text: 'Невский 24',
+      db: makeEmptyDb(),
     });
     expect(r2.handled).toBe(true);
     if (!r2.handled) throw new Error('expected handled');
@@ -73,12 +97,13 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r2.hit.missingFacts).toContain('wifi_details');
     expect(r2.hit.reply).toMatch(/передаю|оператор/i);
 
-    const r3 = processTelegramOperationalIntakeWithSessionMemory({
+    const r3 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 12,
       surfaceLang: 'ru',
       text: 'Пароль не подходит, не подключается.',
+      db: makeEmptyDb(),
     });
     expect(r3.handled).toBe(true);
     if (!r3.handled) throw new Error('expected handled');
@@ -90,26 +115,28 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.missing_facts).toEqual([]);
   });
 
-  it('unrelated message starts a new case (EN)', () => {
+  it('unrelated message starts a new case (EN)', async () => {
     const chatId = 3003;
-    const r1 = processTelegramOperationalIntakeWithSessionMemory({
+    const r1 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 1,
       surfaceLang: 'en',
       text: "Guest can't enter, door code does not work.",
+      db: makeEmptyDb(),
     });
     expect(r1.handled).toBe(true);
     if (!r1.handled) throw new Error('expected handled');
     expect(r1.hit.category).toBe('access_issue');
     expect(r1.hit.finalAction).toBe('escalate_urgent');
 
-    const r2 = processTelegramOperationalIntakeWithSessionMemory({
+    const r2 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 2,
       surfaceLang: 'en',
       text: 'Late checkout tomorrow until 13:00 @ Nevsky 24.',
+      db: makeEmptyDb(),
     });
     expect(r2.handled).toBe(true);
     if (!r2.handled) throw new Error('expected handled');
@@ -122,16 +149,17 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.status).toBe('resolved');
   });
 
-  it('emits deterministic session_memory_update logs with required keys', () => {
+  it('emits deterministic session_memory_update logs with required keys', async () => {
     const chatId = 4004;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    processTelegramOperationalIntakeWithSessionMemory({
+    await processTelegramOperationalIntakeWithSessionMemory({
       chatId,
       channel: 'telegram',
       update_id: 55,
       surfaceLang: 'en',
       text: 'Wi-Fi is not working.',
+      db: makeEmptyDb(),
     });
 
     const calls = spy.mock.calls
