@@ -286,15 +286,15 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   if (cat === 'parking_question') {
     const v = pickVariant(input.update_id, [
       lang === 'ru'
-        ? 'Пришлите объект, и я уточню правила парковки.'
+        ? 'Уточню правила парковки для этого адреса и вернусь с инструкцией.'
         : lang === 'es'
-          ? 'Envíame la propiedad y confirmo las opciones de estacionamiento.'
-          : 'Send the property and I’ll confirm the parking options.',
+          ? 'Revisaré las opciones de estacionamiento para esa dirección y te confirmo.'
+          : 'I’ll confirm the parking options for that address and send the instructions.',
       lang === 'ru'
-        ? 'Для какого объекта это? Проверю, где можно парковаться рядом.'
+        ? 'Проверю, где можно парковаться рядом (платно/бесплатно), и вернусь с ответом.'
         : lang === 'es'
-          ? '¿Para qué propiedad es? Revisaré dónde se puede aparcar cerca.'
-          : 'Which property is this for? I’ll check where you can park nearby.',
+          ? 'Revisaré dónde se puede aparcar cerca (gratis/de pago) y te confirmo.'
+          : 'I’ll check where you can park nearby (paid/free) and confirm.',
     ]);
     return { template_key: `${cat}.reply.v${input.update_id % 2 === 0 ? 1 : 2}`, text: `${ack(lang)} ${v}` };
   }
