@@ -137,11 +137,27 @@ function parseAllowlistedChatIds(raw: string | undefined): Set<number> {
   return out;
 }
 
+function matchTelegramCommand(text: string, command: string): { matched: boolean; raw: string } {
+  const t = String(text ?? '').trim();
+  if (!t.startsWith('/')) return { matched: false, raw: '' };
+  // Telegram may send `/cmd@BotName` in group chats, and may include args after whitespace.
+  const m = t.match(/^\/([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?(?:\s|$)/);
+  if (!m) return { matched: false, raw: '' };
+  const cmd = String(m[1] ?? '').toLowerCase();
+  return { matched: cmd === command.toLowerCase(), raw: `/${m[1]}${m[2] ? `@${m[2]}` : ''}` };
+}
+
 function logSessionResetOrCaseReopen(params: {
   previous_status: string;
   new_status: string;
   reason: string;
   update_id: number;
+  // Optional structured debug fields for Telegram command routing (required in production triage).
+  command?: string;
+  chat_id?: number;
+  allowlisted?: boolean;
+  prod_reset_enabled?: boolean;
+  matched?: boolean;
 }): void {
   try {
     console.log(
@@ -151,6 +167,11 @@ function logSessionResetOrCaseReopen(params: {
         new_status: params.new_status,
         reason: params.reason,
         update_id: params.update_id,
+        ...(params.command ? { command: params.command } : {}),
+        ...(typeof params.chat_id === 'number' ? { chat_id: params.chat_id } : {}),
+        ...(typeof params.allowlisted === 'boolean' ? { allowlisted: params.allowlisted } : {}),
+        ...(typeof params.prod_reset_enabled === 'boolean' ? { prod_reset_enabled: params.prod_reset_enabled } : {}),
+        ...(typeof params.matched === 'boolean' ? { matched: params.matched } : {}),
       }),
     );
   } catch {
@@ -291,12 +312,64 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     (convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
 
   // Acceptance/admin escape hatch: /reset_session (guarded by allowlist + non-prod by default).
-  const resetCmd = text.trim().toLowerCase() === '/reset_session';
-  if (resetCmd && envelope.channel === 'telegram') {
+  const resetMatch = envelope.channel === 'telegram' ? matchTelegramCommand(text, 'reset_session') : { matched: false, raw: '' };
+  if (envelope.channel === 'telegram') {
     const allowlist = parseAllowlistedChatIds(process.env.COMM_TELEGRAM_RESET_ALLOWLIST);
     const chatIdForAllow = stableNumericChatId(envelope, identity.guestId);
     const nonProd = (process.env.VERCEL_ENV ?? process.env.NODE_ENV) !== 'production';
-    const allowed = allowlist.has(chatIdForAllow) && (nonProd || process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD === '1');
+    const allowlisted = allowlist.has(chatIdForAllow);
+    const prod_reset_enabled = nonProd ? true : process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD === '1';
+    const allowed = resetMatch.matched && allowlisted && prod_reset_enabled;
+
+    // Always log routing decision for reset command, including explicit denial reasons.
+    if (resetMatch.matched) {
+      const denialReason = !allowlisted
+        ? 'deny:not_allowlisted'
+        : !prod_reset_enabled
+          ? 'deny:prod_reset_disabled'
+          : 'allow';
+      logSessionResetOrCaseReopen({
+        previous_status: convSession.state,
+        new_status: allowed ? 'active' : convSession.state,
+        reason: denialReason,
+        update_id,
+        command: '/reset_session',
+        chat_id: chatIdForAllow,
+        allowlisted,
+        prod_reset_enabled,
+        matched: true,
+      });
+      if (!allowed) {
+        // Do not silently fall through in logs — this is a common production triage failure mode.
+        console.warn('[comm:routing] telegram reset denied', {
+          route: 'session_reset_or_case_reopen',
+          command: '/reset_session',
+          update_id,
+          chat_id: chatIdForAllow,
+          allowlisted,
+          prod_reset_enabled,
+          matched: true,
+          reason: denialReason,
+          raw_command: resetMatch.raw || null,
+        });
+      }
+    } else {
+      // Only log non-match when message *looks like* a Telegram command, to avoid noise.
+      const looksLikeCommand = String(text ?? '').trim().startsWith('/');
+      if (looksLikeCommand) {
+        logSessionResetOrCaseReopen({
+          previous_status: convSession.state,
+          new_status: convSession.state,
+          reason: 'not_matched',
+          update_id,
+          command: '/reset_session',
+          chat_id: chatIdForAllow,
+          allowlisted,
+          prod_reset_enabled,
+          matched: false,
+        });
+      }
+    }
 
     if (allowed) {
       const previous = convSession.state;
@@ -327,6 +400,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         new_status: 'active',
         reason: 'reset_command',
         update_id,
+        command: '/reset_session',
+        chat_id: chatIdForAllow,
+        allowlisted: true,
+        prod_reset_enabled: true,
+        matched: true,
       });
 
       const adapter = getChannelAdapter(envelope.channel);
