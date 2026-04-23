@@ -150,7 +150,7 @@ describe('processUpdate', () => {
     expect(result.escalation).toBeDefined();
     expect(result.escalation?.reason).toBe(EscalationReason.LowIntentConfidence);
     const [, sentText] = mockSendMessage.mock.calls[0];
-    expect(sentText).toMatch(/review|ответом|операционный/i);
+    expect(String(sentText)).toMatch(/passing this to the team|Передал\(а\) запрос|оператор/i);
     const reviews = listEscalationReviews({ status: 'pending' });
     expect(reviews.length).toBe(1);
     expect(reviews[0]?.sessionId).toBeTruthy();

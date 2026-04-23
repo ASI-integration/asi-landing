@@ -85,6 +85,7 @@ import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
 import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
+import { composeTelegramOperationalReply } from './telegram-reply-composer';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -520,7 +521,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       | 'deterministic'
       | 'llm'
       | 'telegram_meta_deterministic'
-      | 'telegram_operational_intake' = 'deterministic';
+      | 'telegram_operational_intake'
+      | 'reply_composer' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     /** When set, pre-rule “low confidence / identity” escalation must not clobber this turn. */
     let telegramOperationalIntakeConsumed = false;
@@ -657,9 +659,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
 
         if (!replyText) {
-          replyText = adapter.formatResponse(opIntake.reply, commContext as unknown as Record<string, unknown>);
+          const memNow = getContext(chatId);
+          const composed = composeTelegramOperationalReply({
+            update_id,
+            category: opIntake.category,
+            action: opIntake.finalAction,
+            lang: classification.lang,
+            text,
+            extractedFacts: opIntake.extractedFacts ?? {},
+            missingFacts: opIntake.missingFacts ?? [],
+            urgency: opIntake.finalAction === 'escalate_urgent' ? 'urgent' : 'normal',
+            linkingState: memNow.reservationPropertyLinkingV1 ?? null,
+            sessionCase: opIntakeResult.case ?? null,
+            sessionMemory: memNow ?? null,
+          });
+          replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;
-          usedPath = 'telegram_operational_intake';
+          usedPath = 'reply_composer';
         }
         if (opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent') {
           const urgent = opIntake.finalAction === 'escalate_urgent';
@@ -892,8 +908,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (escalation && stopAutoReplyOnEscalation && !replyText) {
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Не могу безопасно ответить автоматически. Передал(а) запрос в операционный поток — вернёмся с ответом.'
-          : "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
+          ? 'Понял(а). Передал(а) запрос команде — вернёмся с ответом.'
+          : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
         : escalationBase;
@@ -992,8 +1008,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       );
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Не могу безопасно ответить автоматически. Передал(а) запрос в операционный поток — вернёмся с ответом.'
-          : "I'm not entirely sure how to answer that. I have flagged this for our team to review!";
+          ? 'Понял(а). Передал(а) запрос команде — вернёмся с ответом.'
+          : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
         : escalationBase;

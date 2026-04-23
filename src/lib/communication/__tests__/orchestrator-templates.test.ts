@@ -192,7 +192,7 @@ describe('orchestrator: property template usage', () => {
 
     await processUpdate(makeUpdate('something weird'));
     const [, sentText] = mockReply.mock.calls[0];
-    expect(sentText).toContain('flagged this for our team');
+    expect(sentText).toMatch(/passing this to the team|Передал\(а\) запрос/i);
     expect(sentText).not.toContain('Call us:');
   });
 });
