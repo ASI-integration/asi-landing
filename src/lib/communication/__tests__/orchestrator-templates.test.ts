@@ -84,6 +84,8 @@ vi.mock('../reservation', () => ({
 
 import { processUpdate } from '../orchestrator';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
+import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
+import { __resetEscalationReviewStoreForTests } from '../operator-review';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,6 +103,8 @@ describe('orchestrator: property template usage', () => {
   beforeEach(() => {
     _resetForTesting();
     __resetAutonomousSessionStoreForTests();
+    __resetConversationSessionEngineForTests();
+    __resetEscalationReviewStoreForTests();
     mockReply.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');

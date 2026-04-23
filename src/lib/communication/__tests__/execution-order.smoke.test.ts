@@ -258,7 +258,7 @@ describe('execution order smoke test', () => {
     // Avoid Telegram meta short-circuit (greetings / language checks) so this
     // smoke test still exercises the full orchestrator + LLM ordering.
     const result = await processUpdate(
-      makeUpdate('execution order pipeline guest says the wifi is intermittent'),
+      makeUpdate('execution order pipeline guest asks about museum opening hours nearby'),
     );
 
     // ── Flush boundary ────────────────────────────────────────────────────────
