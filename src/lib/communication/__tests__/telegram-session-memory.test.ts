@@ -11,7 +11,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     __resetAutonomousSessionStoreForTests();
   });
 
-  it('2-message completion (EN): clarify(property) then property fragment resolves same case', () => {
+  it('2-message completion (EN): escalate_urgent then property fragment resolves same case', () => {
     const chatId = 1001;
     const r1 = processTelegramOperationalIntakeWithSessionMemory({
       chatId,
@@ -23,7 +23,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r1.handled).toBe(true);
     if (!r1.handled) throw new Error('expected handled');
     expect(r1.hit.category).toBe('access_issue');
-    expect(r1.hit.finalAction).toBe('clarify');
+    expect(r1.hit.finalAction).toBe('escalate_urgent');
     expect(r1.hit.missingFacts).toContain('property');
 
     const r2 = processTelegramOperationalIntakeWithSessionMemory({
@@ -102,7 +102,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r1.handled).toBe(true);
     if (!r1.handled) throw new Error('expected handled');
     expect(r1.hit.category).toBe('access_issue');
-    expect(r1.hit.finalAction).toBe('clarify');
+    expect(r1.hit.finalAction).toBe('escalate_urgent');
 
     const r2 = processTelegramOperationalIntakeWithSessionMemory({
       chatId,

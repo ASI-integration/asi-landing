@@ -641,7 +641,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           }
 
           // If intake would "reply" but linking is missing exactly one key fact, ask ONE short question.
-          if (opIntake.finalAction !== 'escalate' && opIntake.finalAction === 'reply' && link.outcome === 'unresolved_needs_one_fact') {
+          if (
+            opIntake.finalAction !== 'escalate_operator' &&
+            opIntake.finalAction !== 'escalate_urgent' &&
+            opIntake.finalAction === 'reply' &&
+            link.outcome === 'unresolved_needs_one_fact'
+          ) {
             replyText = adapter.formatResponse(link.question, commContext as unknown as Record<string, unknown>);
             llmSucceeded = true;
             usedPath = 'telegram_operational_intake';
@@ -656,17 +661,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           llmSucceeded = true;
           usedPath = 'telegram_operational_intake';
         }
-        if (opIntake.finalAction === 'escalate') {
+        if (opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent') {
+          const urgent = opIntake.finalAction === 'escalate_urgent';
           escalation = createEscalationEvent({
-            reason: EscalationReason.UrgentIssue,
+            reason: urgent ? EscalationReason.UrgentIssue : EscalationReason.RequiresOperator,
             chat_id: chatId,
             update_id,
             classification,
-            summary: `telegram_operational_intake:${opIntake.category}`,
+            summary: `telegram_operational_intake:${opIntake.category}; action=${opIntake.finalAction}; signals=${(opIntake.urgencySignals ?? []).slice(0, 6).join(',')}`,
           });
           persistEscalationReview({
             reason: String(escalation.reason),
-            escalationSummary: `telegram_operational_intake:${opIntake.category}`,
+            escalationSummary: `telegram_operational_intake:${opIntake.category}; action=${opIntake.finalAction}`,
             confidence: 1,
             source: {
               route: 'telegram_operational_intake',
@@ -675,12 +681,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               extracted_facts: opIntake.extractedFacts,
               missing_facts: opIntake.missingFacts,
               final_action: opIntake.finalAction,
+              urgency_signals: opIntake.urgencySignals,
+              action_reason: opIntake.actionReason,
               ...(voiceSourceBase ?? {}),
             },
             detail: JSON.stringify({
               category: opIntake.category,
               extractedFacts: opIntake.extractedFacts,
               missingFacts: opIntake.missingFacts,
+              urgencySignals: opIntake.urgencySignals,
+              action: opIntake.finalAction,
             }),
             suggestedReply: opIntake.reply,
           });
@@ -712,7 +722,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                 task_type: OpsTaskType.GuestIssue,
                 title: `Telegram operational intake: ${opIntake.category}`,
                 description: `Automated intake.\nFacts: ${JSON.stringify(opIntake.extractedFacts)}`,
-                priority: OpsTaskPriority.Urgent,
+                priority: urgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
                 source_event: 'telegram_operational_intake',
                 trigger_reason: opIntake.category,
               });

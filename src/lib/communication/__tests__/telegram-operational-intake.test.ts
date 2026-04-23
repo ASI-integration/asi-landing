@@ -39,14 +39,14 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.reply).toMatch(/property|address/i);
   });
 
-  it('access_issue RU urgent risk keyword → escalate', () => {
+  it('access_issue RU urgent risk keyword → escalate_urgent', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Срочно: гость не может попасть внутрь, вызывает полицию. Код не подходит.',
       surfaceLang: 'ru',
       ...base,
     });
     expect(hit?.category).toBe('access_issue');
-    expect(hit?.finalAction).toBe('escalate');
+    expect(hit?.finalAction).toBe('escalate_urgent');
     expect(hit?.reply).toMatch(/срочн|передаю/i);
   });
 
@@ -136,25 +136,25 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.missingFacts).toContain('property');
   });
 
-  it('no_heating EN urgent cold → escalate', () => {
+  it('no_heating EN urgent cold → escalate_urgent', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Hello. Guest says there is no heating in the apartment and it is very cold. Please help urgently.',
       surfaceLang: 'en',
       ...base,
     });
     expect(hit?.category).toBe('no_heating');
-    expect(hit?.finalAction).toBe('escalate');
+    expect(hit?.finalAction).toBe('escalate_urgent');
     expect(hit?.reply).toMatch(/urgent|escalat/i);
   });
 
-  it('no_heating RU urgent signal → escalate', () => {
+  it('no_heating RU urgent signal → escalate_urgent', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Очень холодно, отопление не работает, срочно помогите. По адресу Невский 24.',
       surfaceLang: 'ru',
       ...base,
     });
     expect(hit?.category).toBe('no_heating');
-    expect(hit?.finalAction).toBe('escalate');
+    expect(hit?.finalAction).toBe('escalate_urgent');
   });
 
   it('no_heating EN non-urgent with property → reply', () => {
@@ -188,14 +188,14 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.finalAction).toBe('reply');
   });
 
-  it('noise_complaint RU now → escalate', () => {
+  it('noise_complaint RU now → escalate_operator', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Сейчас шум, музыка и крики у соседей по адресу Невский 24. Срочно.',
       surfaceLang: 'ru',
       ...base,
     });
     expect(hit?.category).toBe('noise_complaint');
-    expect(hit?.finalAction).toBe('escalate');
+    expect(hit?.finalAction).toBe('escalate_operator');
   });
 
   it('noise_complaint EN without property → clarify(property)', () => {

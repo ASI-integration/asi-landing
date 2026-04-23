@@ -228,8 +228,7 @@ function defaultReplyForCategory(category: string, ru: boolean): string {
 }
 
 function determineUrgency(hit: TelegramOperationalIntakeHit): 'normal' | 'urgent' {
-  // The deterministic intake already uses 'escalate' only for urgent/risky situations.
-  if (hit.finalAction === 'escalate') return 'urgent';
+  if (hit.finalAction === 'escalate_urgent') return 'urgent';
   return 'normal';
 }
 
@@ -248,7 +247,12 @@ function buildCaseFromHit(params: { hit: TelegramOperationalIntakeHit; update_id
     extracted_facts: safeJsonClone(params.hit.extractedFacts ?? {}),
     missing_facts: [...(params.hit.missingFacts ?? [])],
     last_question_asked: params.hit.finalAction === 'clarify' ? params.hit.reply : null,
-    status: params.hit.finalAction === 'escalate' ? 'escalated' : params.hit.finalAction === 'clarify' ? 'clarifying' : 'resolved',
+    status:
+      params.hit.finalAction === 'escalate_operator' || params.hit.finalAction === 'escalate_urgent'
+        ? 'escalated'
+        : params.hit.finalAction === 'clarify'
+          ? 'clarifying'
+          : 'resolved',
     created_at: ts,
     updated_at: ts,
     last_update_id: params.update_id,
@@ -356,11 +360,13 @@ function applyFragmentToCase(params: {
 
   const nextMissing = Array.from(missing);
   const nextStatus: TelegramOperationalSessionCaseStatusV1 =
-    prev.status === 'escalated' || prev.status === 'resolved'
-      ? prev.status
-      : nextMissing.length === 0
-        ? 'resolved'
-        : 'clarifying';
+    prev.status === 'resolved'
+      ? 'resolved'
+      : prev.status === 'escalated'
+        ? (nextMissing.length === 0 ? 'resolved' : 'escalated')
+        : nextMissing.length === 0
+          ? 'resolved'
+          : 'clarifying';
 
   const ru = params.surfaceLang === 'ru';
   const lastQuestion =
@@ -384,7 +390,11 @@ function applyFragmentToCase(params: {
 
 function isCaseOpen(c: TelegramOperationalSessionCaseV1 | undefined): boolean {
   if (!c) return false;
-  return c.status === 'intake' || c.status === 'clarifying';
+  if (c.status === 'intake' || c.status === 'clarifying') return true;
+  // If we already escalated but are still missing facts, allow follow-up fragments
+  // to fill in key fields (address/time) for operator context.
+  if (c.status === 'escalated' && (c.missing_facts ?? []).length > 0) return true;
+  return false;
 }
 
 export function processTelegramOperationalIntakeWithSessionMemory(params: {
@@ -411,7 +421,6 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
     const startNew =
       !prevCase ||
       prevCase.status === 'resolved' ||
-      prevCase.status === 'escalated' ||
       // A new category while awaiting clarification is treated as a new/unrelated case.
       (isCaseOpen(prevCase) && prevCase.category && prevCase.category !== hit.category);
 
@@ -450,7 +459,7 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
       if (hasPaymentRefFlag) mergedMissing = mergedMissing.filter(k => k !== 'payment_reference');
 
       const nextStatus: TelegramOperationalSessionCaseStatusV1 =
-        hit.finalAction === 'escalate'
+        hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent'
           ? 'escalated'
           : mergedMissing.length === 0
             ? 'resolved'
@@ -472,13 +481,20 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
         nextStatus === 'resolved'
           ? defaultReplyForCategory(String(nextCase.category ?? ''), ru)
           : (nextCase.last_question_asked ?? pickClarifyingQuestion(nextCase.missing_facts ?? [], ru));
-      const finalActionForMerged: TelegramOperationalFinalAction = nextStatus === 'resolved' ? 'reply' : 'clarify';
+      const finalActionForMerged: TelegramOperationalFinalAction =
+        nextStatus === 'resolved'
+          ? 'reply'
+          : nextStatus === 'escalated'
+            ? hit.finalAction
+            : 'clarify';
       const mergedHit: TelegramOperationalIntakeHit = {
         category: hit.category,
         reply: replyForMerged,
         extractedFacts: safeJsonClone(nextCase.extracted_facts ?? {}),
         missingFacts: [...(nextCase.missing_facts ?? [])],
         finalAction: finalActionForMerged,
+        urgencySignals: hit.urgencySignals ?? [],
+        actionReason: hit.actionReason ?? 'merged_case',
       };
 
       setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
@@ -530,6 +546,8 @@ export function processTelegramOperationalIntakeWithSessionMemory(params: {
       extractedFacts: safeJsonClone(next.extracted_facts ?? {}),
       missingFacts: [...(next.missing_facts ?? [])],
       finalAction,
+      urgencySignals: [],
+      actionReason: 'followup_fragment',
     };
 
     const nextCase: TelegramOperationalSessionCaseV1 = {

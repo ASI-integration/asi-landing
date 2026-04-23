@@ -3,6 +3,8 @@
  * Matches obvious staff→ops guest relay patterns without LLM confidence.
  */
 
+import { decideEscalationMatrixV1 } from './escalation-matrix';
+
 export type TelegramOperationalCategory =
   | 'access_issue'
   | 'late_checkout'
@@ -15,7 +17,7 @@ export type TelegramOperationalCategory =
   | 'parking_question'
   | 'payment_confirmation';
 
-export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate';
+export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate_operator' | 'escalate_urgent';
 
 export type TelegramOperationalIntakeHit = {
   category: TelegramOperationalCategory;
@@ -23,6 +25,8 @@ export type TelegramOperationalIntakeHit = {
   extractedFacts: Record<string, unknown>;
   missingFacts: string[];
   finalAction: TelegramOperationalFinalAction;
+  urgencySignals: string[];
+  actionReason: string;
 };
 
 export type TelegramOperationalIntakeParams = {
@@ -252,6 +256,29 @@ function isUrgentOrRisky(n: string): boolean {
   );
 }
 
+function logEscalationMatrixDecision(params: {
+  update_id: number;
+  category: TelegramOperationalCategory;
+  urgency_signals: string[];
+  action: TelegramOperationalFinalAction;
+  reason: string;
+}): void {
+  try {
+    console.log(
+      JSON.stringify({
+        route: 'escalation_matrix',
+        category: params.category,
+        urgency_signals: params.urgency_signals,
+        action: params.action,
+        reason: params.reason,
+        update_id: params.update_id,
+      }),
+    );
+  } catch {
+    // never throw from logging
+  }
+}
+
 function pickSingleClarifyingQuestion(
   category: TelegramOperationalCategory,
   missingFacts: string[],
@@ -309,6 +336,8 @@ function logIntake(
         extracted_facts: hit.extractedFacts,
         missing_facts: hit.missingFacts,
         final_action: hit.finalAction,
+        urgency_signals: hit.urgencySignals,
+        action_reason: hit.actionReason,
         update_id: params.update_id,
         chat_id: params.chat_id,
       }),
@@ -331,8 +360,14 @@ export function tryTelegramOperationalIntake(
   const loose = stripPunctForMatch(raw);
   const ru = params.surfaceLang === 'ru';
 
-  // Urgent/risk signal always escalates (but still categorized deterministically if possible).
-  const risky = isUrgentOrRisky(loose);
+  const getMatrix = (category: TelegramOperationalCategory, missingFacts: string[]) =>
+    decideEscalationMatrixV1({
+      // categories match exactly; this narrows the union for TS
+      category: category as any,
+      text: raw,
+      surfaceLang: params.surfaceLang,
+      missingFacts,
+    });
 
   // 1) Access / door code / lock / check-in access
   if (hasAccessIssueIntent(loose)) {
@@ -355,16 +390,21 @@ export function tryTelegramOperationalIntake(
       failureModeHint: hasFail,
     };
 
-    const finalAction: TelegramOperationalFinalAction = risky ? 'escalate' : missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('access_issue', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) проблему с доступом (код/замок/дверь). Команда сейчас проверит и поможет гостю попасть внутрь.'
           : 'Understood — access issue logged (code/lock/door). Our team will verify and help the guest get inside now.'
-        : finalAction === 'escalate'
+        : finalAction === 'escalate_urgent'
           ? ru
             ? 'Понял(а). Похоже на срочную ситуацию с доступом. Передаю в операционную команду прямо сейчас.'
             : 'Understood. This looks urgent (access/safety). I’m escalating this now.'
+          : finalAction === 'escalate_operator'
+            ? ru
+              ? 'Понял(а). Передаю проблему с доступом оператору для оперативного решения.'
+              : 'Understood. I’m escalating the access issue to an operator for quick resolution.'
           : pickSingleClarifyingQuestion('access_issue', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -373,7 +413,16 @@ export function tryTelegramOperationalIntake(
       extractedFacts: facts,
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -385,20 +434,20 @@ export function tryTelegramOperationalIntake(
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
 
-    const urgentCold =
-      risky ||
-      /\bvery\s+cold\b|\bfreezing\b|\bno\s+heat\b/i.test(loose) ||
-      /очень\s+холодно|замерза|нет\s+отоплен/i.test(loose);
-
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
 
-    const finalAction: TelegramOperationalFinalAction = urgentCold ? 'escalate' : missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('no_heating', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
-      finalAction === 'escalate'
+      finalAction === 'escalate_urgent'
         ? ru
           ? 'Понял(а). Это срочно. Передаю заявку по отоплению в операционную команду прямо сейчас.'
           : 'Understood. This is urgent. I’m escalating the heating issue right now.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю заявку по отоплению оператору — вернёмся с обновлением.'
+            : 'Understood. I’m escalating the heating issue to an operator and we’ll follow up shortly.'
         : finalAction === 'reply'
           ? ru
             ? 'Понял(а). Зафиксировал(а) проблему с отоплением; команда проверит и вернётся с обновлением.'
@@ -411,7 +460,16 @@ export function tryTelegramOperationalIntake(
       extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), requestedTime: time ?? null },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -427,12 +485,21 @@ export function tryTelegramOperationalIntake(
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('late_checkout', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) запрос на поздний выезд; проверим возможность и вернёмся с ответом.'
           : 'Understood. I’ve logged the late checkout request and will confirm availability shortly.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю запрос на поздний выезд оператору для проверки и подтверждения.'
+            : 'Understood. I’m escalating the late checkout request to an operator to verify and confirm.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('late_checkout', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -446,7 +513,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -462,12 +538,21 @@ export function tryTelegramOperationalIntake(
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('early_checkin', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) запрос на ранний заезд; проверим возможность и вернёмся с подтверждением.'
           : 'Understood. I’ve logged the early check-in request and will confirm availability shortly.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю запрос на ранний заезд оператору для проверки и подтверждения.'
+            : 'Understood. I’m escalating the early check-in request to an operator to verify and confirm.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('early_checkin', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -481,7 +566,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -492,8 +586,6 @@ export function tryTelegramOperationalIntake(
     const prop = extractPropertySnippet(raw);
     const hasProp = hasPropertyHint(raw, loose);
     const time = extractTimeLike(raw);
-    const urgent = risky || /\bnow\b|\bright\s+now\b|\bcan'?t\s+sleep\b/i.test(loose) || /сейчас|прямо\s+сейчас|не\s+могу\s+спать/i.test(loose);
-
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
     // "noise" / "шум" alone is not enough — ask what kind (party/music/renovation/etc).
@@ -503,12 +595,17 @@ export function tryTelegramOperationalIntake(
     );
     if (hasAnyNoiseKeyword && !hasTypeKeyword) missing.push('noise_details');
 
-    const finalAction: TelegramOperationalFinalAction = urgent ? 'escalate' : missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('noise_complaint', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
-      finalAction === 'escalate'
+      finalAction === 'escalate_urgent'
         ? ru
-          ? 'Понял(а). Передаю шумовую жалобу в операционную команду прямо сейчас.'
-          : 'Understood. I’m escalating the noise complaint to the ops team now.'
+          ? 'Понял(а). Это срочно. Передаю шумовую жалобу в операционную команду прямо сейчас.'
+          : 'Understood. This is urgent. I’m escalating the noise complaint to the ops team now.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю шумовую жалобу оператору для оперативного решения.'
+            : 'Understood. I’m escalating the noise complaint to an operator for quick resolution.'
         : finalAction === 'reply'
           ? ru
             ? 'Понял(а). Зафиксировал(а) жалобу на шум; команда свяжется и постарается быстро решить.'
@@ -525,7 +622,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -546,12 +652,21 @@ export function tryTelegramOperationalIntake(
     if (!hasProp) missing.push('property');
     if (!(wantsTowels || wantsLinen || wantsCleaning)) missing.push('cleaning_scope');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('cleaning_request', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) запрос на уборку/сервис; согласуем время и вернёмся с подтверждением.'
           : 'Understood. Housekeeping request logged; we’ll coordinate timing and confirm shortly.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю запрос на уборку оператору для согласования.'
+            : 'Understood. I’m escalating the housekeeping request to an operator to coordinate.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('cleaning_request', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -566,7 +681,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -582,12 +706,21 @@ export function tryTelegramOperationalIntake(
     const missing: string[] = [];
     if (!hasProp) missing.push('property');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('extension_request', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) запрос на продление проживания; проверим доступность и стоимость и вернёмся с ответом.'
           : 'Understood. Extension request logged; we’ll confirm availability and pricing shortly.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю запрос на продление оператору для проверки доступности и стоимости.'
+            : 'Understood. I’m escalating the extension request to an operator to verify availability and pricing.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('extension_request', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -601,7 +734,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -619,12 +761,21 @@ export function tryTelegramOperationalIntake(
     if (!hasProp) missing.push('property');
     if (!hasDetails) missing.push('wifi_details');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('wifi_issue', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Зафиксировал(а) проблему с Wi‑Fi; команда проверит сеть/пароль и вернётся с решением.'
           : 'Understood. Wi‑Fi issue logged; the team will check the network/password and get back with a fix.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю проблему с Wi‑Fi оператору для проверки и решения.'
+            : 'Understood. I’m escalating the Wi‑Fi issue to an operator to check and resolve.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('wifi_issue', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -633,7 +784,16 @@ export function tryTelegramOperationalIntake(
       extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), hasDetails },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -649,12 +809,21 @@ export function tryTelegramOperationalIntake(
     if (!hasProp) missing.push('property');
     if (!hasVehicleDetails) missing.push('vehicle_details');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('parking_question', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Уточню правила парковки для этого адреса и вернусь с инструкцией (где можно/нельзя, платно/бесплатно).'
           : 'Understood. I’ll confirm parking options for this address and return with clear instructions (where to park, paid/free).'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Передаю вопрос по парковке оператору для уточнения правил по адресу.'
+            : 'Understood. I’m escalating the parking question to an operator to confirm the exact rules for this address.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('parking_question', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -663,7 +832,16 @@ export function tryTelegramOperationalIntake(
       extractedFacts: { guestName: guest ?? null, property: prop ?? (hasProp ? 'hint_present' : null), hasVehicleDetails },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
@@ -681,12 +859,21 @@ export function tryTelegramOperationalIntake(
     if (!hasProp) missing.push('property');
     if (!hasReference) missing.push('payment_reference');
 
-    const finalAction: TelegramOperationalFinalAction = missing.length === 0 ? 'reply' : 'clarify';
+    const matrix = getMatrix('payment_confirmation', missing);
+    const finalAction: TelegramOperationalFinalAction = matrix.action;
     const reply =
       finalAction === 'reply'
         ? ru
           ? 'Понял(а). Спасибо — передаю подтверждение оплаты в операционную команду для сверки. Если есть чек/скрин, пришлите — это ускорит.'
           : 'Understood, thank you — I’m forwarding the payment confirmation to ops to verify. If you have a receipt/screenshot, please share it to speed things up.'
+        : finalAction === 'escalate_operator'
+          ? ru
+            ? 'Понял(а). Есть признаки расхождения по оплате/брони. Передаю оператору для проверки и решения.'
+            : 'Understood. There are signs of a payment/booking mismatch. I’m escalating to an operator to verify and resolve.'
+          : finalAction === 'escalate_urgent'
+            ? ru
+              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('payment_confirmation', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
@@ -700,7 +887,16 @@ export function tryTelegramOperationalIntake(
       },
       missingFacts: missing,
       finalAction,
+      urgencySignals: matrix.urgency_signals,
+      actionReason: matrix.reason,
     };
+    logEscalationMatrixDecision({
+      update_id: params.update_id,
+      category: hit.category,
+      urgency_signals: hit.urgencySignals,
+      action: hit.finalAction,
+      reason: hit.actionReason,
+    });
     logIntake(params, hit);
     return hit;
   }
