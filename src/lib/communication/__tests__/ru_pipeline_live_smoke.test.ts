@@ -25,6 +25,11 @@ function parseEnvFile(path: string): Record<string, string> {
 
 describe('RU Telegram live-data smoke', () => {
   it('computes replies using live Supabase (dry-run)', async () => {
+    if (process.env.RUN_LIVE_SMOKE !== '1') {
+      // This test depends on real network + real Supabase credentials.
+      // Keep it opt-in so CI/dev unit runs remain deterministic.
+      return;
+    }
     const envPath = process.env.RU_ENV_PATH || '.env.ru.production.pulled';
     const env = parseEnvFile(envPath);
 

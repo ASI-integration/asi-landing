@@ -204,10 +204,46 @@ export interface ConversationContext {
   identityResolutionStatus?: 'resolved' | 'ambiguous' | 'unresolved';
   /** Optional: human/audit-friendly explanation of how identity was resolved. */
   identityReason?: string;
+  /** Telegram operational intake: deterministic reservation/property linking layer. */
+  reservationPropertyLinkingV1?: ReservationPropertyLinkingStateV1;
 }
 
 // Role and identity resolution types
 export type Role = 'guest' | 'lead' | 'operator' | 'owner' | 'unknown';
+
+export type ReservationPropertyLinkingOutcomeV1 =
+  | 'linked_to_property'
+  | 'linked_to_reservation'
+  | 'unresolved_needs_one_fact'
+  | 'unresolved_escalate';
+
+export type ReservationPropertyLinkingMissingFactV1 =
+  | 'property_or_address'
+  | 'guest_name'
+  | 'checkin_or_checkout_timing';
+
+export type ReservationPropertyLinkingCategoryV1 =
+  | 'property_address_text'
+  | 'guest_name'
+  | 'checkin_checkout_timing'
+  | 'booking_reference'
+  | 'none';
+
+export type ReservationPropertyLinkingCandidateV1 = {
+  type: 'property' | 'reservation';
+  id: string;
+  reason: string;
+};
+
+export type ReservationPropertyLinkingStateV1 = {
+  outcome: ReservationPropertyLinkingOutcomeV1;
+  category: ReservationPropertyLinkingCategoryV1;
+  candidate_matches: ReservationPropertyLinkingCandidateV1[];
+  chosen_match?: ReservationPropertyLinkingCandidateV1;
+  confidence_type: 'deterministic';
+  missing_fact_for_linking?: ReservationPropertyLinkingMissingFactV1;
+  update_id: string;
+};
 
 export interface IdentityResolution {
   role: Role;

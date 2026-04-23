@@ -84,6 +84,7 @@ import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
 import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
+import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -604,9 +605,57 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           final_action: opIntake.finalAction,
           missing_facts: opIntake.missingFacts,
         });
-        replyText = adapter.formatResponse(opIntake.reply, commContext as unknown as Record<string, unknown>);
-        llmSucceeded = true;
-        usedPath = 'telegram_operational_intake';
+
+        // Deterministic reservation/property linking v1 (after intake + session memory).
+        // Never invent matches; store unresolved state for future turns.
+        try {
+          const mem = getContext(chatId);
+          const link = await linkReservationOrPropertyDeterministicV1({
+            text,
+            surfaceLang: classification.lang === 'ru' ? 'ru' : 'en',
+            update_id,
+            propertyLocation: mem.propertyLocation ?? (opIntakeResult.case.property ?? null),
+            guestName: mem.guestName ?? (opIntakeResult.case.guest_name ?? null),
+            checkInDate: mem.checkInDate ?? null,
+            bookingReference: mem.bookingReference ?? null,
+          });
+
+          updateContext(chatId, { reservationPropertyLinkingV1: link.state });
+          if (link.outcome === 'linked_to_property') {
+            updateContext(chatId, {
+              propertyId: mem.propertyId ?? link.propertyId,
+              entityType: mem.entityType ?? 'property',
+              entityId: mem.entityId ?? link.propertyId,
+              identityResolutionStatus: mem.identityResolutionStatus ?? 'resolved',
+              identityReason: mem.identityReason ?? 'deterministic_linking_v1:property',
+            });
+          } else if (link.outcome === 'linked_to_reservation') {
+            updateContext(chatId, {
+              reservationId: mem.reservationId ?? link.reservationId,
+              propertyId: mem.propertyId ?? link.propertyId ?? mem.propertyId,
+              entityType: mem.entityType ?? 'reservation',
+              entityId: mem.entityId ?? link.reservationId,
+              identityResolutionStatus: mem.identityResolutionStatus ?? 'resolved',
+              identityReason: mem.identityReason ?? 'deterministic_linking_v1:reservation',
+            });
+          }
+
+          // If intake would "reply" but linking is missing exactly one key fact, ask ONE short question.
+          if (opIntake.finalAction !== 'escalate' && opIntake.finalAction === 'reply' && link.outcome === 'unresolved_needs_one_fact') {
+            replyText = adapter.formatResponse(link.question, commContext as unknown as Record<string, unknown>);
+            llmSucceeded = true;
+            usedPath = 'telegram_operational_intake';
+            convSession = transitionConversationSessionState(convSession, 'awaiting_input', `reservation_property_linking:${link.state.missing_fact_for_linking ?? 'unknown'}`);
+          }
+        } catch {
+          // best-effort
+        }
+
+        if (!replyText) {
+          replyText = adapter.formatResponse(opIntake.reply, commContext as unknown as Record<string, unknown>);
+          llmSucceeded = true;
+          usedPath = 'telegram_operational_intake';
+        }
         if (opIntake.finalAction === 'escalate') {
           escalation = createEscalationEvent({
             reason: EscalationReason.UrgentIssue,
