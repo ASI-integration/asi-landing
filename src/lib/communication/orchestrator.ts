@@ -1342,6 +1342,15 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   const message = update.message ?? update.edited_message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
 
+  console.info('[comm:routing]', {
+    path: 'telegram_text',
+    update_id: update.update_id,
+    chat_id: message.chat.id,
+    has_text: Boolean(message.text ?? message.caption),
+    has_photo: Boolean(message.photo && message.photo.length > 0),
+    has_document: Boolean(message.document),
+  });
+
   const { textHint, refs } = extractAttachments(message);
   const baseText = message.text ?? message.caption ?? '';
   // If message has attachments but no text, synthesise a description so the

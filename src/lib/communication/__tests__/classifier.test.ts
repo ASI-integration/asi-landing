@@ -219,6 +219,11 @@ describe('deterministicReply', () => {
     expect(reply).toMatch(/^Здравствуйте!/);
   });
 
+  it('RU LanguageCheck reply is short and direct', () => {
+    const reply = deterministicReply(classify('ты понимаешь русский?'));
+    expect(reply).toMatch(/^Да, понимаю/);
+  });
+
   it('RU GuestMessage reply opens with Здравствуйте!', () => {
     const reply = deterministicReply(classify('гость пишет что нет воды'));
     expect(reply).toMatch(/^Здравствуйте!/);
@@ -246,6 +251,12 @@ describe('deterministicReply', () => {
     const reply = deterministicReply(classify('hello'));
     expect(reply).toContain('Hi!');
     expect(reply).toContain('can I help');
+  });
+
+  it('EN LanguageCheck reply confirms understanding and asks for text', () => {
+    const reply = deterministicReply(classify('can you understand me?'));
+    expect(reply.toLowerCase()).toContain('please send');
+    expect(reply.toLowerCase()).toContain('text');
   });
 
   it('returns escalated RU reply for urgent+access issue', () => {

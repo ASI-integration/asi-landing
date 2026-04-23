@@ -154,6 +154,7 @@ export type Lang = 'zh' | 'en' | 'es' | 'ar' | 'fr' | 'de' | 'ru';
 export enum MessageCategory {
   Start        = 'start',
   Greeting     = 'greeting',
+  LanguageCheck = 'language-check',
   GuestMessage = 'guest-message',
   Issue        = 'issue',
   Booking      = 'booking',

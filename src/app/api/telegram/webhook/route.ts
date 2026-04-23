@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
 import type { TelegramUpdate } from '@/lib/communication/types';
-import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
+import { replyToTelegram } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
 // Production Telegram webhook entrypoint. The active production bot is determined only by runtime TELEGRAM_BOT_TOKEN;
@@ -16,6 +16,12 @@ function getHeader(req: Request, name: string): string | null {
 function preview(text: string, max = 120): string {
   const t = String(text ?? '');
   return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+function telegramVoiceFallbackText(lang?: string): string {
+  return lang === 'ru'
+    ? 'Не удалось распознать голосовое. Пришлите, пожалуйста, текстом.'
+    : "I couldn't transcribe the voice message. Please send it as text.";
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -46,6 +52,7 @@ export async function POST(req: Request): Promise<Response> {
   const text = message?.text ?? message?.caption ?? '';
   const hasVoice = Boolean(message?.voice);
   const hasAudio = Boolean(message?.audio);
+  const lang = message?.from?.language_code;
   // Always log webhook receipt — minimal fields, no PII beyond chat_id
   console.info('[tg:webhook] recv', {
     update_id: update?.update_id,
@@ -71,14 +78,18 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    // Telegram voice/audio must go through the voice-ready layer:
-    // update → fetch file → STT → handleVoiceTranscript() → existing brain → outbound
-    if (update && (hasVoice || hasAudio)) {
-      const r = await processTelegramVoiceUpdate(update);
-      if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
-        console.log('[tg:webhook] voice.processed', r);
-      }
-      return NextResponse.json({ ok: true, voice: r.outcome }, { status: 200 });
+    // Telegram is intentionally text-first for the current production scope.
+    // Voice is *not* a production capability right now. Keep an honest fallback.
+    if (update && (hasVoice || hasAudio) && chatId) {
+      console.info('[comm:routing]', {
+        path: 'telegram_voice_fallback',
+        update_id: update.update_id,
+        chat_id: chatId,
+        has_voice: hasVoice,
+        has_audio: hasAudio,
+      });
+      await replyToTelegram(chatId, telegramVoiceFallbackText(lang));
+      return NextResponse.json({ ok: true, path: 'telegram_voice_fallback' }, { status: 200 });
     }
 
     // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)

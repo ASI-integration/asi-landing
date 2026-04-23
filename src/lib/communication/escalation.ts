@@ -48,7 +48,7 @@ export function shouldEscalate(
   }
 
   // LLM failed on a guest message or issue — operator attention needed.
-  if (!llmSucceeded && category !== MessageCategory.Start && category !== MessageCategory.Greeting) {
+  if (!llmSucceeded && category !== MessageCategory.Start && category !== MessageCategory.Greeting && category !== MessageCategory.LanguageCheck) {
     return true;
   }
 

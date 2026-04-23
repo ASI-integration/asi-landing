@@ -42,7 +42,10 @@ POST /api/telegram/webhook
   │
   ├─ 2. Body parse → TelegramUpdate
   │
-  └─ orchestrator.processUpdate(update)
+  ├─ (Voice/audio) → **telegram_voice_fallback** (text-only scope)
+  │     Reply: “Не удалось распознать голосовое. Пришлите, пожалуйста, текстом.”
+  │
+  └─ (Text/caption/attachments) → **telegram_text** → orchestrator.processUpdate(update)
        │
        ├─ 2a. Idempotency check (checkAndMark)
        │       Duplicate? → audit DUPLICATE_DROPPED → return {outcome:duplicate}

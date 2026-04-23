@@ -56,6 +56,24 @@ export const emptySlots: MessageSlots = {
 const GREETINGS_EN = ['hi', 'hello', 'hey', 'test', 'ping'];
 const GREETINGS_RU = ['привет', 'здравствуйте', 'добрый день', 'добрый вечер', 'доброе утро', 'тест', 'пинг'];
 
+/** Language / capability check (text-first): should get a short direct reply. */
+const LANGUAGE_CHECK_EN = [
+  'can you understand me',
+  'do you understand me',
+  'can you understand',
+  'do you understand',
+  'can you read',
+];
+const LANGUAGE_CHECK_RU = [
+  'ты понимаешь русский',
+  'ты понимаешь по-русски',
+  'ты понимаешь',
+  'понимаешь русский',
+  'ты читаешь по-русски',
+  'ты читаешь русский',
+  'ты понимаешь меня',
+];
+
 /** Forwarded-guest-message intro phrases. */
 const GUEST_FWD_EN = ['guest says', 'client says', 'message from guest', 'guest wrote', 'tenant says', 'forwarded from guest'];
 const GUEST_FWD_RU = ['гость пишет', 'гость сказал', 'сообщение от гостя', 'клиент пишет', 'пересылаю от гостя'];
@@ -149,6 +167,15 @@ export function classify(text: string, langOverride?: string): ClassifyResult {
     return { category: MessageCategory.Greeting, lang, slots };
   }
 
+  // ── Language/capability check: short direct reply, no generic fallback ──────
+  if (
+    normalized.length <= 80 &&
+    (LANGUAGE_CHECK_EN.some(t => normalized.includes(t)) ||
+      LANGUAGE_CHECK_RU.some(t => normalized.includes(t)))
+  ) {
+    return { category: MessageCategory.LanguageCheck, lang, slots };
+  }
+
   // ── Forwarded guest message ───────────────────────────────────────────────
   if (GUEST_FWD_EN.some(t => normalized.includes(t)) ||
       GUEST_FWD_RU.some(t => normalized.includes(t))) {
@@ -191,6 +218,8 @@ export function deterministicReply(result: ClassifyResult): string {
         return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
       case MessageCategory.Greeting:
         return 'Здравствуйте! Чем могу помочь? Отправьте запрос гостя, проблему или детали заезда.';
+      case MessageCategory.LanguageCheck:
+        return 'Да, понимаю. Пришлите, пожалуйста, запрос текстом — помогу.';
       case MessageCategory.GuestMessage:
         return 'Здравствуйте! Получили сообщение. Пришлите точный текст от гостя — разберём и поможем с ответом.';
       case MessageCategory.Issue:
@@ -209,6 +238,8 @@ export function deterministicReply(result: ClassifyResult): string {
       return 'ASI online.\nSend a guest message, issue, or request.';
     case MessageCategory.Greeting:
       return 'Hi! How can I help? Send a guest message, issue, or check-in details.';
+    case MessageCategory.LanguageCheck:
+      return 'Yes — I can understand. Please send your request as text and I’ll help.';
     case MessageCategory.GuestMessage:
       return "Got it. Share the exact guest message and I'll help route or draft a reply.";
     case MessageCategory.Issue:

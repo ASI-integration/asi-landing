@@ -40,61 +40,58 @@ describe('telegram voice inbound', () => {
     delete process.env.OPERATOR_EMAIL;
   });
 
-  it('normalizes voice update -> STT -> handleVoiceTranscript with provider ids', async () => {
+  it('de-scoped: always replies with honest "send text" fallback', async () => {
     mockTranscribe.mockResolvedValue('hello from voice');
     const update = tgVoiceUpdate({ chat_id: 111, update_id: 1001, message_id: 2002, language_code: 'en' });
 
     const r = await processTelegramVoiceUpdate(update);
 
-    expect(r.outcome).toBe('transcribed');
-    expect(mockTranscribe).toHaveBeenCalledTimes(1);
-    expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(1);
-
-    const args = mockHandleVoiceTranscript.mock.calls[0][0];
-    expect(args.channel).toBe('telegram_voice');
-    expect(args.actorId).toBe('111');
-    expect(args.transcript).toBe('hello from voice');
-    expect(args.providerUpdateId).toBe(1001);
-    expect(args.providerMessageId).toBe('2002');
-    expect(args.providerMediaId).toMatch(/^voice_/);
+    expect(r.outcome).toBe('voice_fallback_sent');
+    expect(mockTranscribe).toHaveBeenCalledTimes(0);
+    expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(0);
+    expect(mockCreateReview).toHaveBeenCalledTimes(0);
+    expect(mockReply).toHaveBeenCalledTimes(1);
+    expect(String(mockReply.mock.calls[0][1])).toMatch(/send it as text/i);
   });
 
-  it('dedupes duplicate update delivery (no second STT, no second brain call)', async () => {
+  it('dedupes duplicate update delivery (no second reply)', async () => {
     mockTranscribe.mockResolvedValue('hi');
     const update = tgVoiceUpdate({ chat_id: 111, update_id: 1001, message_id: 2002, language_code: 'en' });
 
     const r1 = await processTelegramVoiceUpdate(update);
     const r2 = await processTelegramVoiceUpdate(update);
 
-    expect(r1.outcome).toBe('transcribed');
+    expect(r1.outcome).toBe('voice_fallback_sent');
     expect(r2.outcome).toBe('duplicate');
-    expect(mockTranscribe).toHaveBeenCalledTimes(1);
-    expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(1);
+    expect(mockTranscribe).toHaveBeenCalledTimes(0);
+    expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(0);
+    expect(mockCreateReview).toHaveBeenCalledTimes(0);
+    expect(mockReply).toHaveBeenCalledTimes(1);
   });
 
-  it('safe failure: STT failure escalates and sends holding reply once', async () => {
-    process.env.OPERATOR_TELEGRAM_CHAT_ID = '-100123'; // enable real operator notify path for this test
+  it('does not claim operator handoff even if operator env vars exist', async () => {
+    process.env.OPERATOR_TELEGRAM_CHAT_ID = '-100123';
     mockTranscribe.mockResolvedValue(null);
     const update = tgVoiceUpdate({ chat_id: 222, update_id: 3003, message_id: 4004, language_code: 'ru' });
 
     const r1 = await processTelegramVoiceUpdate(update);
     const r2 = await processTelegramVoiceUpdate(update);
 
-    expect(r1.outcome).toBe('stt_failed_escalated');
+    expect(r1.outcome).toBe('voice_fallback_sent');
     expect(r2.outcome).toBe('duplicate');
-    expect(mockCreateReview).toHaveBeenCalledTimes(1);
+    expect(mockCreateReview).toHaveBeenCalledTimes(0);
     expect(mockReply).toHaveBeenCalledTimes(1);
-    expect(String(mockReply.mock.calls[0][1])).toMatch(/Спасибо/i);
+    expect(String(mockReply.mock.calls[0][1])).toMatch(/Не удалось распознать голосовое/i);
     expect(mockHandleVoiceTranscript).toHaveBeenCalledTimes(0);
   });
 
-  it('safe failure: if no operator path is configured, replies honestly (no fake operator)', async () => {
+  it('replies honestly (RU) with the requested fallback text', async () => {
     mockTranscribe.mockResolvedValue(null);
     const update = tgVoiceUpdate({ chat_id: 222, update_id: 3003, message_id: 4004, language_code: 'ru' });
 
     const r = await processTelegramVoiceUpdate(update);
 
-    expect(r.outcome).toBe('stt_failed_escalated');
+    expect(r.outcome).toBe('voice_fallback_sent');
     expect(mockCreateReview).toHaveBeenCalledTimes(0);
     expect(mockReply).toHaveBeenCalledTimes(1);
     expect(String(mockReply.mock.calls[0][1])).toMatch(/Не удалось распознать голосовое/i);

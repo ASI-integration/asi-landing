@@ -1,19 +1,10 @@
 import type { TelegramUpdate } from './types';
 import { checkAndMarkKey } from './idempotency';
 import { sha256Base64Url } from './reliability';
-import { transcribeVoiceMessage } from './voice-transcription';
-import { handleVoiceTranscript } from './voice/orchestrator';
-import { createOrUpdateEscalationReview } from './operator-review';
 import { replyToTelegram } from '../telegram';
 
 function debugEnabled(): boolean {
   return process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1';
-}
-
-function holdingText(lang?: string): string {
-  return lang === 'ru'
-    ? 'Спасибо! Я получил(а) голосовое. Сейчас передам это оператору и вернусь с ответом.'
-    : 'Thanks — I got your voice message. I’m passing this to a human to review and will get back to you shortly.';
 }
 
 function sttFailText(lang?: string): string {
@@ -22,16 +13,10 @@ function sttFailText(lang?: string): string {
     : "I couldn't transcribe the voice message. Please send it as text.";
 }
 
-function operatorPathEnabled(): boolean {
-  // Only claim "operator handoff" if there's an actual operator notification path configured.
-  return Boolean((process.env.OPERATOR_TELEGRAM_CHAT_ID ?? '').trim()) || Boolean((process.env.OPERATOR_EMAIL ?? '').trim());
-}
-
 export type TelegramVoiceInboundResult =
   | { outcome: 'ignored'; reason: string }
   | { outcome: 'duplicate'; key: string }
-  | { outcome: 'transcribed'; transcript: string; update_id: number; chat_id: number; message_id: number }
-  | { outcome: 'stt_failed_escalated'; update_id: number; chat_id: number; message_id: number };
+  | { outcome: 'voice_fallback_sent'; update_id: number; chat_id: number; message_id: number };
 
 export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promise<TelegramVoiceInboundResult> {
   const message = update.message ?? update.edited_message;
@@ -55,7 +40,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     return { outcome: 'duplicate', key: inboundKey };
   }
 
-  console.info('[tg:voice] inbound', {
+  console.info('[tg:voice] inbound (de-scoped)', {
     update_id: updateId,
     chat_id: chatId,
     message_id: messageId,
@@ -65,66 +50,16 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     file_size: voice?.file_size ?? audio?.file_size ?? null,
   });
 
-  const transcript = await transcribeVoiceMessage(fileId, voice?.mime_type ?? audio?.mime_type, { updateId });
-  if (!transcript) {
-    console.warn('[tg:voice] stt.fail', { update_id: updateId, chat_id: chatId, message_id: messageId, file_id: fileId });
-
-    const operatorEnabled = operatorPathEnabled();
-    if (operatorEnabled) {
-      // Safe fail: create an operator review item with rich provider metadata and a holding reply.
-      const sessionId = `tg_voice:${chatId}`; // stable enough for review grouping when STT fails pre-session
-      createOrUpdateEscalationReview({
-        sessionId,
-        channel: 'telegram_voice',
-        targetId: String(chatId),
-        actorId: String(chatId),
-        escalationReason: 'VOICE_STT_FAILED',
-        confidence: 0,
-        source: {
-          source: 'voice',
-          voiceChannel: 'telegram_voice',
-          voiceSessionId: '',
-          voiceTurnId: '',
-          transcript: '',
-          providerMessageId: String(messageId),
-          providerMediaId: fileId,
-          providerUpdateId: updateId,
-          duration: voice?.duration ?? audio?.duration ?? undefined,
-          mimeType: voice?.mime_type ?? audio?.mime_type ?? undefined,
-          fileSize: voice?.file_size ?? audio?.file_size ?? undefined,
-        },
-        detail: `telegram_voice_stt_failed update_id=${updateId} message_id=${messageId} file_id=${fileId}`,
-      });
-    } else {
-      console.warn('[tg:voice] stt.fail_no_operator_path', { update_id: updateId, chat_id: chatId, message_id: messageId });
-    }
-
-    const replyText = operatorEnabled ? holdingText(lang) : sttFailText(lang);
-    const outboundKey = sha256Base64Url(['tg_voice_reply', String(chatId), String(updateId), String(messageId), replyText].join('|'));
-    if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: updateId, chat_id: chatId } })) {
-      await replyToTelegram(chatId, replyText);
-      console.info('[tg:voice] stt_fail.reply_sent', { update_id: updateId, chat_id: chatId, operator_handoff: operatorEnabled });
-    } else if (debugEnabled()) {
-      console.info('[tg:voice] stt_fail.reply_duplicate_prevented', { update_id: updateId, chat_id: chatId });
-    }
-
-    return { outcome: 'stt_failed_escalated', update_id: updateId, chat_id: chatId, message_id: messageId };
+  console.info('[tg:voice] fallback.only', { update_id: updateId, chat_id: chatId, message_id: messageId });
+  const replyText = sttFailText(lang);
+  const outboundKey = sha256Base64Url(['tg_voice_fallback', String(chatId), String(updateId), String(messageId), replyText].join('|'));
+  if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: updateId, chat_id: chatId } })) {
+    await replyToTelegram(chatId, replyText);
+    console.info('[tg:voice] fallback.reply_sent', { update_id: updateId, chat_id: chatId });
+  } else if (debugEnabled()) {
+    console.info('[tg:voice] fallback.reply_duplicate_prevented', { update_id: updateId, chat_id: chatId });
   }
 
-  console.info('[tg:voice] stt.ok', { update_id: updateId, chat_id: chatId, message_id: messageId, chars: transcript.length });
-
-  await handleVoiceTranscript({
-    channel: 'telegram_voice',
-    actorId: String(chatId),
-    transcript,
-    providerUpdateId: updateId,
-    providerMessageId: String(messageId),
-    externalMessageId: String(messageId),
-    providerMediaId: fileId,
-    audioRef: fileId,
-    language: lang,
-  });
-
-  return { outcome: 'transcribed', transcript, update_id: updateId, chat_id: chatId, message_id: messageId };
+  return { outcome: 'voice_fallback_sent', update_id: updateId, chat_id: chatId, message_id: messageId };
 }
 
