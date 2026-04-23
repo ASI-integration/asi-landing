@@ -28,6 +28,12 @@ vi.mock('../channels', () => ({
   }),
 }));
 
+// Mock Telegram outbound helper for hard short-circuit replies
+const mockReplyToTelegram = vi.fn().mockResolvedValue(true);
+vi.mock('@/lib/telegram', () => ({
+  replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
+}));
+
 // Mock callLLM — returns a string by default, can be overridden per test
 const mockLLM = vi.fn().mockResolvedValue('LLM reply text');
 vi.mock('@/lib/openai', () => ({
@@ -92,6 +98,7 @@ describe('processUpdate', () => {
     __resetConversationSessionEngineForTests();
     __resetEscalationReviewStoreForTests();
     mockSendMessage.mockClear();
+    mockReplyToTelegram.mockClear();
     mockLLM.mockClear();
     mockLLM.mockResolvedValue('LLM reply text');
     mockDetectIntent.mockClear();
@@ -102,7 +109,8 @@ describe('processUpdate', () => {
   it('replies to a valid message and returns Replied outcome', async () => {
     const result = await processUpdate(makeUpdate('hello'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(mockSendMessage).toHaveBeenCalledOnce();
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('sends the LLM reply when LLM succeeds on an issue', async () => {
@@ -172,7 +180,8 @@ describe('processUpdate', () => {
     };
     await processUpdate(replay);
     // Outbound idempotency should prevent the second send
-    expect(mockSendMessage).toHaveBeenCalledOnce();
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it('returns Ignored for an update with no message', async () => {

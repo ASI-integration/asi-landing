@@ -36,6 +36,7 @@ import {
   EscalationReason,
   InboundMessageEnvelope,
   IntentCategory,
+  MessageCategory,
 } from './types';
 
 import { getContext, updateContext } from './memory';
@@ -80,6 +81,7 @@ import { runInBackground } from './background';
 import { retry, sha256Base64Url } from './reliability';
 import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
+import { replyToTelegram } from '@/lib/telegram';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -1338,6 +1340,68 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
   return { textHint: parts.join(' '), refs };
 }
 
+function tgPreview(text: string, max = 120): string {
+  const t = String(text ?? '');
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+type TgShortCircuitLang = 'en' | 'ru' | 'es';
+
+function detectTgShortCircuitLang(params: {
+  text: string;
+  telegramLangCode?: string;
+}): TgShortCircuitLang {
+  const code = (params.telegramLangCode ?? '').toLowerCase();
+  if (code.startsWith('ru')) return 'ru';
+  if (code.startsWith('es')) return 'es';
+
+  const text = params.text ?? '';
+  if (/[а-яё]/i.test(text)) return 'ru';
+  if (/(español|espanol|hablas|te\s+habla)/i.test(text)) return 'es';
+
+  return 'en';
+}
+
+function tgMetaReplyText(lang: TgShortCircuitLang): string {
+  if (lang === 'ru') {
+    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
+  }
+  if (lang === 'es') {
+    return 'Sí, entiendo mensajes de texto. Envíe su solicitud por texto, por favor.';
+  }
+  return 'Yes, I understand English and Russian. Please send your request as text.';
+}
+
+function normalizeTgMeta(text: string): string {
+  return String(text ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[“”„"']/g, '')
+    .replace(/[?!.,;:(){}\[\]<>]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isTgMetaQuestionOrGreeting(text: string): boolean {
+  const t = normalizeTgMeta(text);
+  if (!t) return false;
+
+  // greetings (exact-only to avoid eating real requests)
+  if (t === 'hello' || t === 'hi' || t === 'hey') return true;
+
+  // capability / language checks (exact-only, punctuation-tolerant via normalization)
+  if (t === 'can you understand me') return true;
+  if (t === 'can u understand me') return true;
+  if (t === 'do you understand english') return true;
+  if (t === 'do you speak spanish') return true;
+  if (t === 'ты понимаешь русский') return true;
+  if (t === 'понимаешь русский') return true;
+  if (t === 'te habla espanol') return true;
+  if (t === 'hablas español' || t === 'hablas espanol') return true;
+
+  return false;
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
   const message = update.message ?? update.edited_message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
@@ -1356,6 +1420,40 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   // If message has attachments but no text, synthesise a description so the
   // orchestrator can still classify and create an ops task.
   const messageText = baseText || textHint || '';
+
+  // Hard deterministic short-circuit for Telegram TEXT meta-questions.
+  // Must never reach classifier/orchestrator uncertainty/escalation paths.
+  if (message.chat?.id && baseText && isTgMetaQuestionOrGreeting(baseText)) {
+    const detected = detectTgShortCircuitLang({ text: baseText, telegramLangCode: message.from?.language_code });
+    const reply = tgMetaReplyText(detected);
+    console.info('[comm:routing]', {
+      route: 'telegram_text_short_circuit',
+      reason: 'greeting_or_language_check',
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      text_preview: tgPreview(baseText),
+      detected_language: detected,
+    });
+    const outboundKey = sha256Base64Url(
+      [
+        'tg_text_short_circuit',
+        String(message.chat.id),
+        // Prefer provider message id to dedupe across Telegram redelivery/update_id variance
+        String(message.message_id),
+        reply,
+      ].join('|'),
+    );
+    if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: update.update_id, chatId: message.chat.id } })) {
+      await replyToTelegram(message.chat.id, reply);
+    }
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      category: MessageCategory.Greeting,
+      reply,
+    };
+  }
 
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
