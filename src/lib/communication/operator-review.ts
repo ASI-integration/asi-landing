@@ -156,6 +156,65 @@ export function getActiveEscalationReviewIdForSession(sessionId: string): string
   return cache.activeReviewIdBySessionId[sessionId] ?? null;
 }
 
+/**
+ * Test/admin escape hatch: force-close the active review for a session (if any).
+ *
+ * This should only be called from guarded code paths (allowlist / non-prod).
+ * It intentionally does NOT attempt to send any outbound operator message.
+ */
+export function forceCloseActiveReviewForSession(params: {
+  sessionId: string;
+  operatorId: string;
+  reason: string;
+}): { closedReviewId: string | null } {
+  loadOnce();
+  const reviewId = cache.activeReviewIdBySessionId[params.sessionId] ?? null;
+  if (!reviewId) return { closedReviewId: null };
+
+  try {
+    const cur = cache.reviewsById[reviewId];
+    if (!cur) {
+      delete cache.activeReviewIdBySessionId[params.sessionId];
+      persist();
+      return { closedReviewId: null };
+    }
+    const updated: EscalationReview = { ...cur, status: 'closed', updatedAt: nowIso() };
+    cache.reviewsById[reviewId] = updated;
+    if (cache.activeReviewIdBySessionId[updated.sessionId] === reviewId) {
+      delete cache.activeReviewIdBySessionId[updated.sessionId];
+    }
+    persist();
+    appendAuditLine({
+      type: 'review_closed',
+      reviewId,
+      operatorId: params.operatorId,
+      ts: nowIso(),
+    });
+  } catch {
+    // best-effort
+  }
+
+  // Best-effort: let automation resume for next turn (same behavior as closeEscalationReview).
+  try {
+    const closed = cache.reviewsById[reviewId];
+    if (closed?.actorId) {
+      recoverConversationSessionToActive({
+        channel: closed.channel,
+        actorId: closed.actorId,
+        reason: `force_close_review ${params.reason}`,
+      });
+    }
+    const chatId = Number(closed?.targetId);
+    if (Number.isFinite(chatId)) {
+      transitionSessionStatus(chatId, SessionStatus.Active).catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
+
+  return { closedReviewId: reviewId };
+}
+
 export function getEscalationReview(reviewId: string): EscalationReview | null {
   loadOnce();
   return cache.reviewsById[reviewId] ?? null;

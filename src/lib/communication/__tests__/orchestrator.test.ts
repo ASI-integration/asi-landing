@@ -97,6 +97,8 @@ describe('processUpdate', () => {
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
     __resetEscalationReviewStoreForTests();
+    delete process.env.COMM_TELEGRAM_RESET_ALLOWLIST;
+    delete process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD;
     mockSendMessage.mockClear();
     mockReplyToTelegram.mockClear();
     mockLLM.mockClear();
@@ -236,6 +238,48 @@ describe('processUpdate', () => {
     expect(mockLLM).not.toHaveBeenCalled();
     const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
     expect(String(sentText)).toMatch(/escalated|human operator|оператор|вернёмся/i);
+  });
+
+  it('resumes the same telegram operational intake case after escalation (followup fragment)', async () => {
+    // First: operational intake escalation (deterministic)
+    await processUpdate(makeUpdate("Guest can't enter, door code does not work. Today at 18:00."));
+    // Second: follow-up fragment should be processed by session-memory intake, NOT blocked by escalated safety ack
+    mockLLM.mockClear();
+    await processUpdate(makeUpdate('Nevsky 24'));
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(sentText)).toMatch(/Understood|Понял/i);
+    expect(String(sentText)).not.toMatch(/already escalated to a human operator/i);
+  });
+
+  it('starts a new telegram operational case for a clearly unrelated message after escalation', async () => {
+    await processUpdate(makeUpdate("Guest can't enter, door code does not work."));
+    mockLLM.mockClear();
+    await processUpdate(makeUpdate('Late checkout tomorrow until 13:00 @ Nevsky 24.'));
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(sentText)).toMatch(/late checkout|поздн/i);
+    expect(String(sentText)).not.toMatch(/already escalated to a human operator/i);
+  });
+
+  it('allows /reset_session for allowlisted chat ids and unblocks further testing', async () => {
+    process.env.COMM_TELEGRAM_RESET_ALLOWLIST = '42';
+
+    // Get into escalated state
+    mockDetectIntent.mockResolvedValueOnce({ intent: IntentCategory.Unknown, confidence: 0.4 });
+    await processUpdate(makeUpdate('first message triggers escalation'));
+    expect(listEscalationReviews({ status: 'pending' }).length).toBe(1);
+
+    // Reset
+    await processUpdate(makeUpdate('/reset_session'));
+    const [, resetReply] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(resetReply)).toMatch(/Session reset/i);
+
+    // After reset, a normal issue should route through LLM again (not blocked)
+    mockLLM.mockResolvedValueOnce('LLM: after reset ok');
+    await processUpdate(makeUpdate('problem with the lock'));
+    const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
+    expect(String(sentText)).toBe('LLM: after reset ok');
   });
 
   it('returns Error outcome but still does not throw when reply fails', async () => {

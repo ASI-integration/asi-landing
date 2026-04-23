@@ -370,6 +370,38 @@ export function recoverConversationSessionToActive(params: {
   return updated.state === 'active';
 }
 
+/**
+ * Acceptance/admin escape hatch: wipe the session memory and set state to active.
+ *
+ * This MUST be guarded by the caller (allowlist / non-prod). It does not create
+ * a new actor key; it only resets the stored session contents.
+ */
+export function resetConversationSessionForAcceptance(params: {
+  channel: string;
+  actorId: string;
+  reason: string;
+}): boolean {
+  const key = sessionKey(params.channel, params.actorId);
+  const existing = store.get(key);
+  if (!existing) return false;
+  const now = nowIso();
+  const cleared: ConversationSession = {
+    ...existing,
+    state: 'active',
+    memory: { lastMessages: [], extractedFacts: {}, summary: undefined },
+    updatedAt: now,
+  };
+  store.set(key, cleared);
+  log('acceptance.reset', {
+    session_id: existing.sessionId,
+    key,
+    from: existing.state,
+    to: 'active',
+    reason: params.reason,
+  });
+  return true;
+}
+
 /** @internal tests only */
 export function __resetConversationSessionEngineForTests(): void {
   store.clear();

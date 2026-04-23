@@ -40,11 +40,17 @@ import {
 } from './types';
 
 import { getContext, updateContext } from './memory';
-import { mergeAutonomousSessionFromInbound, setAutonomousSessionIdentity } from './conversation-session-store';
+import {
+  mergeAutonomousSessionFromInbound,
+  resetAutonomousSessionSnapshot,
+  setAutonomousSessionIdentity,
+} from './conversation-session-store';
 import {
   appendSessionMessage,
   buildSessionContextForLLM,
   getOrCreateConversationSession,
+  resolveActorId,
+  resetConversationSessionForAcceptance,
   transitionConversationSessionState,
   updateSessionFactsAndSummary,
 } from './conversation-session-engine';
@@ -67,6 +73,7 @@ import { buildOperatorHandoff } from './handoff';
 import {
   createOrUpdateEscalationReview,
   getActiveEscalationReviewIdForSession,
+  forceCloseActiveReviewForSession,
 } from './operator-review';
 import {
   SessionStatus,
@@ -117,6 +124,38 @@ function stableNumericChatId(envelope: InboundMessageEnvelope, guestId?: string)
   }
   const out = (h | 0);
   return out === 0 ? 1 : out;
+}
+
+function parseAllowlistedChatIds(raw: string | undefined): Set<number> {
+  const out = new Set<number>();
+  const s = String(raw ?? '').trim();
+  if (!s) return out;
+  for (const part of s.split(/[,\s]+/g)) {
+    const n = Number(String(part).trim());
+    if (Number.isFinite(n)) out.add(n);
+  }
+  return out;
+}
+
+function logSessionResetOrCaseReopen(params: {
+  previous_status: string;
+  new_status: string;
+  reason: string;
+  update_id: number;
+}): void {
+  try {
+    console.log(
+      JSON.stringify({
+        route: 'session_reset_or_case_reopen',
+        previous_status: params.previous_status,
+        new_status: params.new_status,
+        reason: params.reason,
+        update_id: params.update_id,
+      }),
+    );
+  } catch {
+    // never throw from logging
+  }
 }
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
@@ -244,12 +283,61 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   });
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
 
-  // Session safety: if already escalated, avoid "normal automation" but still allow
-  // a minimal handoff acknowledgement unless explicitly disabled.
+  // Session safety: if already escalated, avoid "normal automation" by default.
+  // We still allow limited deterministic-only tooling for acceptance testing.
   const allowEscalatedAutosend = process.env.COMM_ALLOW_AUTOSEND_WHEN_ESCALATED === '1';
   const hasActiveReviewItem = Boolean(getActiveEscalationReviewIdForSession(convSession.sessionId));
   const blockNormalAutomationBecauseEscalated =
     (convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
+
+  // Acceptance/admin escape hatch: /reset_session (guarded by allowlist + non-prod by default).
+  const resetCmd = text.trim().toLowerCase() === '/reset_session';
+  if (resetCmd && envelope.channel === 'telegram') {
+    const allowlist = parseAllowlistedChatIds(process.env.COMM_TELEGRAM_RESET_ALLOWLIST);
+    const chatIdForAllow = stableNumericChatId(envelope, identity.guestId);
+    const nonProd = (process.env.VERCEL_ENV ?? process.env.NODE_ENV) !== 'production';
+    const allowed = allowlist.has(chatIdForAllow) && (nonProd || process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD === '1');
+
+    if (allowed) {
+      const previous = convSession.state;
+
+      // Close operator review flag (if any) so escalation block is cleared.
+      forceCloseActiveReviewForSession({
+        sessionId: convSession.sessionId,
+        operatorId: 'acceptance_reset',
+        reason: 'telegram_reset_session',
+      });
+
+      // Reset the conversation-session engine memory/state.
+      const actorId = resolveActorId(envelope, identity);
+      resetConversationSessionForAcceptance({
+        channel: envelope.channel,
+        actorId,
+        reason: `telegram:/reset_session update_id=${update_id}`,
+      });
+
+      // Reset file-backed autonomous snapshot (used by telegram operational intake memory).
+      resetAutonomousSessionSnapshot({ chatId: chatIdForAllow, channel: envelope.channel, preserveIdentity: true });
+
+      // Best-effort: move durable operational session status back to active.
+      await transitionSessionStatus(chatIdForAllow, SessionStatus.Active);
+
+      logSessionResetOrCaseReopen({
+        previous_status: previous,
+        new_status: 'active',
+        reason: 'reset_command',
+        update_id,
+      });
+
+      const adapter = getChannelAdapter(envelope.channel);
+      const sent = await adapter.sendMessage(String(chatIdForAllow), 'Session reset for acceptance testing.', {
+        reply_handler: 'acceptance_reset',
+        update_id,
+      });
+      if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
+      return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: 'Session reset for acceptance testing.' };
+    }
+  }
 
   // Harden session memory with identity binding (safe defaults when unknown).
   updateContext(chatId, {
@@ -529,21 +617,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
-    if (blockNormalAutomationBecauseEscalated) {
-      auditDecision({
-        type: 'ignore',
-        chat_id: chatId,
-        update_id,
-        detail: 'session_escalated_block_normal_automation',
-      });
-      const base =
-        classification.lang === 'ru'
-          ? 'Запрос уже передан оператору. Мы вернёмся с ответом.'
-          : 'This conversation is already escalated to a human operator. We will follow up shortly.';
-      replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
-      llmSucceeded = true;
-      usedPath = 'deterministic';
-    }
+    const escalationSafetyGate = blockNormalAutomationBecauseEscalated;
 
     const persistEscalationReview = (params: {
       reason: string;
@@ -601,6 +675,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       if (opIntakeResult.handled) {
         const opIntake = opIntakeResult.hit;
         telegramOperationalIntakeConsumed = true;
+        if (escalationSafetyGate) {
+          logSessionResetOrCaseReopen({
+            previous_status: 'escalated',
+            new_status: 'escalated',
+            reason: `operational_intake:${opIntakeResult.mode}`,
+            update_id,
+          });
+        }
         cp('branch.telegram_operational_intake', {
           chat_id: chatId,
           category: opIntake.category,
@@ -774,7 +856,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Scenario-engine clarifying question (single best question).
-    if (!replyText && decision.nextAction === 'ask_clarifying_question' && plan.clarifyingQuestion) {
+    if (!replyText && !escalationSafetyGate && decision.nextAction === 'ask_clarifying_question' && plan.clarifyingQuestion) {
       cp('branch.scenario_engine.ask_clarify', { chat_id: chatId, scenario: decision.scenario });
       const qText = classification.lang === 'ru'
         ? (plan.clarifyingQuestion.ru ?? plan.clarifyingQuestion.en)
@@ -786,7 +868,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Scenario-engine escalation (evidence-based payload).
-    if (!replyText && decision.nextAction === 'escalate') {
+    if (!replyText && !escalationSafetyGate && decision.nextAction === 'escalate') {
       cp('branch.scenario_engine.escalate.start', { chat_id: chatId, scenario: decision.scenario });
       const scenarioReason =
         decision.scenario === 'payment_issue'
@@ -841,7 +923,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
 
     // Scenario-engine deterministic-first replies (safe wording, no guessing).
-    if (!replyText && decision.nextAction === 'reply' && plan.deterministicFirst) {
+    if (!replyText && !escalationSafetyGate && decision.nextAction === 'reply' && plan.deterministicFirst) {
       cp('branch.scenario_engine.deterministic_reply', { chat_id: chatId, scenario: decision.scenario });
       const lang = classification.lang;
       if (decision.scenario === 'late_arrival') {
@@ -866,6 +948,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Escalation rules (pre-reply). Conservative: prefer human handoff over unsafe automation.
     if (
       !telegramOperationalIntakeConsumed &&
+      !escalationSafetyGate &&
       classification.category !== 'start' &&
       classification.category !== 'greeting'
     ) {
@@ -929,19 +1012,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       classification.category !== 'start' &&
       !hasMinimalStaffClues(mergedClues);
 
-    if (!replyText && classification.category === 'start') {
+    if (!replyText && !escalationSafetyGate && classification.category === 'start') {
       cp('branch.start_message', { chat_id: chatId });
       replyText = adapter.formatResponse(deterministicReply(classification), commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
-    } else if (!replyText && staffNeedsContext) {
+    } else if (!replyText && !escalationSafetyGate && staffNeedsContext) {
       cp('branch.staff_needs_context', { chat_id: chatId });
       const scenario = detectStaffScenario(intentResult.intent);
       replyText = buildStaffClarifyQuestion(scenario);
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'staff_clarify_question');
-    } else if (!replyText && ctx.incident) {
+    } else if (!replyText && !escalationSafetyGate && ctx.incident) {
       cp('branch.incident', { chat_id: chatId });
       const incidentMsg =
         'Thank you for letting us know.\n\n' +
@@ -953,7 +1036,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       updateContext(chatId, { escalation_candidate: true });
-    } else if (!replyText && !safety.safe && safety.action === 'escalate_to_operator') {
+    } else if (!replyText && !escalationSafetyGate && !safety.safe && safety.action === 'escalate_to_operator') {
       cp('branch.policy_escalation.start', { chat_id: chatId });
       const handoff = buildOperatorHandoff(commContext, text, safety.action, safety.reason || 'Escalated by policy');
       escalation = createEscalationEvent({
@@ -1017,7 +1100,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       cp('branch.policy_escalation.done', { chat_id: chatId });
       convSession = transitionConversationSessionState(convSession, 'escalated', 'policy_escalation');
-    } else if (!replyText && safety.action === 'ask_clarifying_question') {
+    } else if (!replyText && !escalationSafetyGate && safety.action === 'ask_clarifying_question') {
       cp('branch.ask_clarifying_question', { chat_id: chatId });
       const askRu =
         'Уточните, пожалуйста: объект/адрес, имя гостя и дата/время заезда. ' +
@@ -1029,7 +1112,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'clarifying_question');
-    } else if (!replyText && intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
+    } else if (!replyText && !escalationSafetyGate && intentResult.intent === IntentCategory.CheckInInfo && !templates?.pre_checkin_template) {
       cp('branch.checkininfo.no_template', { chat_id: chatId });
       const ru =
         'Чтобы помочь с заселением/кодом доступа, пришлите: объект/адрес, имя гостя и дату/время заезда. ' +
@@ -1040,7 +1123,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'missing_checkin_template_needs_details');
-    } else if (!replyText && safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
+    } else if (!replyText && !escalationSafetyGate && safety.action === 'provide_check_in_instructions' && templates?.pre_checkin_template) {
       cp('branch.provide_check_in_instructions.start', { chat_id: chatId });
       // ── Check-in readiness gate ──────────────────────────────────────
       const gateResult = propertyId
@@ -1151,13 +1234,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       } else {
         convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'checkin_blocked_holding_message');
       }
-    } else if (!replyText && safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
+    } else if (!replyText && !escalationSafetyGate && safety.action === 'provide_checkout_instructions' && templates?.checkout_template) {
       cp('branch.provide_checkout_instructions', { chat_id: chatId });
       replyText = adapter.formatResponse(templates.checkout_template, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
       convSession = transitionConversationSessionState(convSession, 'resolved', 'checkout_instructions_provided');
-    } else if (!replyText && safety.action === 'trigger_payment_request') {
+    } else if (!replyText && !escalationSafetyGate && safety.action === 'trigger_payment_request') {
       cp('branch.trigger_payment_request.start', { chat_id: chatId });
       const payment = await createPaymentRequest({
         amount: 100,
@@ -1184,12 +1267,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       cp('branch.trigger_payment_request.done', { chat_id: chatId });
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'payment_link_sent');
-    } else if (!replyText && envelope.channel === 'telegram' && telegramMetaStoredReply) {
+    } else if (!replyText && !escalationSafetyGate && envelope.channel === 'telegram' && telegramMetaStoredReply) {
       cp('branch.telegram_text_meta_deterministic', { chat_id: chatId, kind: telegramMetaRouteKind });
       replyText = adapter.formatResponse(telegramMetaStoredReply, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'telegram_meta_deterministic';
-    } else if (!replyText) {
+    } else if (!replyText && !escalationSafetyGate) {
       cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
@@ -1216,6 +1299,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
       auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
       cp('branch.llm.done', { chat_id: chatId, llm_succeeded: llmSucceeded });
+    }
+
+    // Final safety ack: if session is escalated, do not run normal automation.
+    if (!replyText && escalationSafetyGate) {
+      auditDecision({
+        type: 'ignore',
+        chat_id: chatId,
+        update_id,
+        detail: 'session_escalated_block_normal_automation',
+      });
+      const base =
+        classification.lang === 'ru'
+          ? 'Запрос уже передан оператору. Мы вернёмся с ответом.'
+          : 'This conversation is already escalated to a human operator. We will follow up shortly.';
+      replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'deterministic';
     }
 
     updateContext(chatId, { lastIntent: intentResult.intent });

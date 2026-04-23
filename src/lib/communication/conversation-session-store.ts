@@ -286,6 +286,37 @@ export function setAutonomousSessionOperationalCaseV1(params: {
   store.set(params.chatId, next);
 }
 
+/**
+ * Reset the autonomous session snapshot to a clean baseline.
+ *
+ * This is intended for acceptance testing / controlled admin tooling and MUST
+ * be guarded by the caller (allowlist / non-prod).
+ */
+export function resetAutonomousSessionSnapshot(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  preserveIdentity?: boolean;
+}): AutonomousConversationSession {
+  const prev = store.get(params.chatId);
+  const base = baseSession(params.chatId, params.channel);
+  const next: AutonomousConversationSession = params.preserveIdentity && prev
+    ? {
+        ...base,
+        identity_role: prev.identity_role,
+        entity_type: prev.entity_type,
+        entity_id: prev.entity_id,
+        property_id: prev.property_id,
+        reservation_id: prev.reservation_id,
+        lead_id: prev.lead_id,
+        identity_confidence: prev.identity_confidence,
+        identity_resolution_status: prev.identity_resolution_status,
+        identity_reason: prev.identity_reason,
+      }
+    : base;
+  store.set(params.chatId, next);
+  return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
+}
+
 /** @internal tests only */
 export function __resetAutonomousSessionStoreForTests(): void {
   store.clear();
