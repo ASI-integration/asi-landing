@@ -83,7 +83,7 @@ import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
-import { tryTelegramOperationalIntake } from './telegram-operational-intake';
+import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -588,13 +588,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     // Deterministic Telegram operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (!replyText && envelope.channel === 'telegram' && text.trim()) {
-      const opIntake = tryTelegramOperationalIntake({
+      const opIntakeResult = processTelegramOperationalIntakeWithSessionMemory({
+        chatId,
+        channel: envelope.channel,
         text,
         surfaceLang: classification.lang === 'ru' ? 'ru' : 'en',
         update_id,
-        chat_id: chatId,
       });
-      if (opIntake) {
+      if (opIntakeResult.handled) {
+        const opIntake = opIntakeResult.hit;
         telegramOperationalIntakeConsumed = true;
         cp('branch.telegram_operational_intake', {
           chat_id: chatId,
@@ -619,6 +621,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             confidence: 1,
             source: {
               route: 'telegram_operational_intake',
+              session_memory_mode: opIntakeResult.mode,
               category: opIntake.category,
               extracted_facts: opIntake.extractedFacts,
               missing_facts: opIntake.missingFacts,

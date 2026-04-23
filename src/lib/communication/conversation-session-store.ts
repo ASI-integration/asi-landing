@@ -9,6 +9,7 @@ import {
   IntentCategory,
   Lang,
   SessionTimelineEntry,
+  TelegramOperationalSessionCaseV1,
 } from './types';
 
 // ─── Storage abstraction ──────────────────────────────────────────────────────
@@ -263,6 +264,26 @@ export function markAutonomousSessionStatus(
   const next = { ...prev, status, updated_at: new Date().toISOString() };
   store.set(chatId, next);
   return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
+}
+
+export function getAutonomousSessionOperationalCaseV1(chatId: number): TelegramOperationalSessionCaseV1 | undefined {
+  const prev = store.get(chatId);
+  return prev?.operational_case ? JSON.parse(JSON.stringify(prev.operational_case)) : undefined;
+}
+
+export function setAutonomousSessionOperationalCaseV1(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  operationalCase?: TelegramOperationalSessionCaseV1;
+}): void {
+  const prev = store.get(params.chatId) ?? baseSession(params.chatId, params.channel);
+  const next: AutonomousConversationSession = {
+    ...prev,
+    channel: params.channel,
+    operational_case: params.operationalCase,
+    updated_at: new Date().toISOString(),
+  };
+  store.set(params.chatId, next);
 }
 
 /** @internal tests only */

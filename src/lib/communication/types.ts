@@ -456,7 +456,35 @@ export interface AutonomousConversationSession {
   updated_at: string;
   /** Last 10 turns used for context-aware decision and escalation logic. */
   timeline: SessionTimelineEntry[];
+  /**
+   * Telegram-only: short-term memory of the current operational hospitality case
+   * within a single Telegram chat. Used to merge follow-up messages that provide
+   * missing facts (e.g., address/time) without restarting intake.
+   */
+  operational_case?: TelegramOperationalSessionCaseV1;
 }
+
+export type TelegramOperationalSessionCaseStatusV1 =
+  | 'intake'
+  | 'clarifying'
+  | 'escalated'
+  | 'resolved';
+
+export type TelegramOperationalSessionCaseV1 = {
+  version: 1;
+  category?: string;
+  guest_name?: string | null;
+  property?: string | null;
+  date_time?: string | null;
+  urgency?: 'normal' | 'urgent';
+  extracted_facts: Record<string, unknown>;
+  missing_facts: string[];
+  last_question_asked?: string | null;
+  status: TelegramOperationalSessionCaseStatusV1;
+  created_at: string; // ISO
+  updated_at: string; // ISO
+  last_update_id?: number;
+};
 
 export interface EscalationEvent {
   reason: EscalationReason;
