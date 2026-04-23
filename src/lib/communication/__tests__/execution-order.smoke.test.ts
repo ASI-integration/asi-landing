@@ -138,12 +138,16 @@ vi.mock('@/lib/openai', () => ({
 
 // ─── Classifier / intent ──────────────────────────────────────────────────────
 
-vi.mock('../classifier', () => ({
-  classifyMessage:        async () => ({ category: 'general_question', lang: 'en', slots: { isUrgent: false } }),
-  deterministicReply:     () => 'fallback',
-  buildIntelligentPrompt: () => 'prompt',
-  SYSTEM_PROMPT:          'system',
-}));
+vi.mock('../classifier', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../classifier')>();
+  return {
+    ...actual,
+    classifyMessage: async () => ({ category: 'general_question', lang: 'en', slots: { isUrgent: false } }),
+    deterministicReply: () => 'fallback',
+    buildIntelligentPrompt: () => 'prompt',
+    SYSTEM_PROMPT: 'system',
+  };
+});
 
 vi.mock('../intent', () => ({
   detectIntent: async () => ({ intent: IntentCategory.GeneralQuestion, confidence: 0.9 }),
@@ -251,7 +255,11 @@ describe('execution order smoke test', () => {
   it('records every step in order: await steps finish before flush, background steps settle after', async () => {
     log.push('[step 1] inbound event received     ← sync (idempotency check)');
 
-    const result = await processUpdate(makeUpdate('hello smoke test'));
+    // Avoid Telegram meta short-circuit (greetings / language checks) so this
+    // smoke test still exercises the full orchestrator + LLM ordering.
+    const result = await processUpdate(
+      makeUpdate('execution order pipeline guest says the wifi is intermittent'),
+    );
 
     // ── Flush boundary ────────────────────────────────────────────────────────
     // processUpdate has returned. All `await` steps above are guaranteed complete.

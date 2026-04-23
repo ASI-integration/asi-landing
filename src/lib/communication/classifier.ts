@@ -63,6 +63,11 @@ const LANGUAGE_CHECK_EN = [
   'can you understand',
   'do you understand',
   'can you read',
+  'can u understand me',
+  'do u understand me',
+  'can u understand',
+  'do u understand',
+  'u understand me',
 ];
 const LANGUAGE_CHECK_RU = [
   'ты понимаешь русский',

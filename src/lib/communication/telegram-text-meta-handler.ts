@@ -1,4 +1,4 @@
-import { classify, deterministicReply } from './classifier';
+import { classify } from './classifier';
 import { MessageCategory, type ClassifyResult } from './types';
 
 /**
@@ -31,31 +31,80 @@ function isSpanishTelegramMeta(normalized: string): boolean {
   return (
     normalized === 'do you speak spanish' ||
     normalized === 'te habla espanol' ||
+    normalized === 'te hablas espanol' ||
     normalized === 'hablas español' ||
-    normalized === 'hablas espanol'
+    normalized === 'hablas espanol' ||
+    normalized.includes('hablas espanol') ||
+    normalized.includes('hablas español')
   );
 }
 
-type CapabilitySurfaceLang = 'en' | 'ru' | 'es';
+type MetaSurfaceLang = 'en' | 'ru' | 'es';
 
-function detectCapabilitySurfaceLang(text: string, telegramLangCode?: string): CapabilitySurfaceLang {
+/**
+ * Combine Telegram `language_code` with message text so English/Spanish/Russian
+ * prompts get matching replies even when the Telegram client locale differs.
+ */
+export function inferMetaSurfaceLang(text: string, telegramLangCode?: string): MetaSurfaceLang {
+  const raw = String(text ?? '');
+  if (/[а-яё]/i.test(raw)) return 'ru';
+
+  const loose = raw.toLowerCase();
+  if (
+    /(español|espanol|hablas|te\s+habla|te\s+hablas|hola\b|buenos\s+dias|buenas\s+tardes)/i.test(raw) ||
+    isSpanishTelegramMeta(normalizeForMetaMatch(raw))
+  ) {
+    return 'es';
+  }
+
+  const norm = normalizeForMetaMatch(raw);
+  const englishCapabilityOrGreeting =
+    /\b(hello|hi|hey|ping|test)\b/.test(loose) ||
+    /\b(can|do)\s+u\s+understand/.test(loose) ||
+    /\b(can|do)\s+you\s+understand/.test(loose) ||
+    /\bu\s+understand\s+me\b/.test(loose) ||
+    /\bcan\s+u\s+read\b/.test(loose) ||
+    /\bcan\s+you\s+read\b/.test(loose) ||
+    norm.includes('understand me') ||
+    norm.includes('understand you');
+
+  if (englishCapabilityOrGreeting) return 'en';
+
   const code = (telegramLangCode ?? '').toLowerCase();
   if (code.startsWith('ru')) return 'ru';
   if (code.startsWith('es')) return 'es';
-  if (/[а-яё]/i.test(text)) return 'ru';
-  if (/(español|espanol|hablas|te\s+habla)/i.test(text)) return 'es';
   return 'en';
 }
 
-/** Unified copy for language / capability meta (Telegram-only product wording). */
-function unifiedLanguageCapabilityReply(surface: CapabilitySurfaceLang): string {
+/** Product copy for language / capability meta (Telegram-only). */
+function unifiedLanguageCapabilityReply(surface: MetaSurfaceLang): string {
   if (surface === 'ru') {
     return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
   }
   if (surface === 'es') {
-    return 'Sí, entiendo mensajes de texto. Envíe su solicitud por texto, por favor.';
+    return 'Sí, entiendo mensajes en inglés y ruso. Envíe su solicitud por texto, por favor.';
   }
   return 'Yes, I understand English and Russian. Please send your request as text.';
+}
+
+function telegramMetaStartReply(surface: MetaSurfaceLang): string {
+  if (surface === 'ru') {
+    return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
+  }
+  if (surface === 'es') {
+    return 'ASI online.\nEnvíe el mensaje del huésped, el problema o la solicitud.';
+  }
+  return 'ASI online.\nSend a guest message, issue, or request.';
+}
+
+function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
+  if (surface === 'ru') {
+    return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
+  }
+  if (surface === 'es') {
+    return 'Hola. Envíe el mensaje del huésped, el problema o los datos de entrada.';
+  }
+  return 'Hi! Send a guest message, issue, or check-in details.';
 }
 
 function applyRuTelegramForceRu(c: ClassifyResult): ClassifyResult {
@@ -65,16 +114,34 @@ function applyRuTelegramForceRu(c: ClassifyResult): ClassifyResult {
   return c;
 }
 
-function buildTelegramMetaReply(rawText: string, telegramLangCode: string | undefined, c: ClassifyResult): string {
+function buildTelegramMetaReply(
+  kind: TelegramTextMetaKind,
+  rawText: string,
+  telegramLangCode: string | undefined,
+  c: ClassifyResult,
+): string {
   const working = applyRuTelegramForceRu(c);
-  if (working.category === MessageCategory.LanguageCheck) {
-    const surface =
-      process.env.RU_TELEGRAM_FORCE_RU === '1'
-        ? 'ru'
-        : detectCapabilitySurfaceLang(rawText, telegramLangCode);
+  const surface: MetaSurfaceLang =
+    process.env.RU_TELEGRAM_FORCE_RU === '1' ? 'ru' : inferMetaSurfaceLang(rawText, telegramLangCode);
+
+  if (working.category === MessageCategory.LanguageCheck || kind === 'es_locale_meta') {
     return unifiedLanguageCapabilityReply(surface);
   }
-  return deterministicReply(working);
+  if (working.category === MessageCategory.Start) {
+    return telegramMetaStartReply(surface);
+  }
+  if (working.category === MessageCategory.Greeting) {
+    return telegramMetaGreetingReply(surface);
+  }
+  return unifiedLanguageCapabilityReply(surface);
+}
+
+function patchClassificationLang(classification: ClassifyResult, surface: MetaSurfaceLang): ClassifyResult {
+  if (process.env.RU_TELEGRAM_FORCE_RU === '1') {
+    return { ...classification, lang: 'ru' };
+  }
+  const lang = surface === 'es' ? 'es' : surface === 'ru' ? 'ru' : 'en';
+  return { ...classification, lang };
 }
 
 /**
@@ -88,20 +155,23 @@ export function resolveTelegramTextMeta(params: {
   const raw = String(params.baseText ?? '').trim();
   if (!raw) return null;
 
+  // Text-first `lang`; do not pass Telegram `language_code` into `classify` or it
+  // overrides Cyrillic/Latin detection and biases capability replies to the UI locale.
   const spanishKey = normalizeForMetaMatch(raw);
   if (isSpanishTelegramMeta(spanishKey)) {
-    const classification = classify(raw, params.telegramLangCode);
+    const classification = classify(raw);
     const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
     return {
       handler: 'telegram_text_meta_deterministic',
       kind: 'es_locale_meta',
-      reply: buildTelegramMetaReply(raw, params.telegramLangCode, patched),
+      reply: buildTelegramMetaReply('es_locale_meta', raw, params.telegramLangCode, patched),
       category: MessageCategory.LanguageCheck,
-      classification: patched,
+      classification: patchClassificationLang(patched, surface),
     };
   }
 
-  const classification = classify(raw, params.telegramLangCode);
+  const classification = classify(raw);
   if (
     classification.category === MessageCategory.Start ||
     classification.category === MessageCategory.Greeting ||
@@ -113,12 +183,13 @@ export function resolveTelegramTextMeta(params: {
         : classification.category === MessageCategory.Greeting
           ? 'greeting'
           : 'language_check';
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
     return {
       handler: 'telegram_text_meta_deterministic',
       kind,
-      reply: buildTelegramMetaReply(raw, params.telegramLangCode, classification),
+      reply: buildTelegramMetaReply(kind, raw, params.telegramLangCode, classification),
       category: classification.category,
-      classification,
+      classification: patchClassificationLang(classification, surface),
     };
   }
 

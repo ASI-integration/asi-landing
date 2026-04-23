@@ -514,7 +514,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     let replyText = '';
     let llmSucceeded = false;
-    let usedPath: 'deterministic' | 'llm' = 'deterministic';
+    let usedPath: 'deterministic' | 'llm' | 'telegram_meta_deterministic' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
