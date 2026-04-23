@@ -173,9 +173,14 @@ function extractAddressHint(text: string): string | null {
     t.match(/по\s+адресу\s+([^.\n?]{3,120})/iu) ??
     t.match(/\b(?:at|@)\s+([^.\n?]{3,120})/iu);
   if (!m) return null;
-  const s = String(m[1] ?? '').trim();
+  let s = String(m[1] ?? '').trim();
   if (!s) return null;
   if (/^\d{1,2}:\d{2}$/.test(s)) return null;
+  // Trim trailing non-address fragments often present in ops relays.
+  s = s
+    .replace(/\b(can'?t|cannot)\s+(enter|get\s+in|open)\b.*$/i, '')
+    .replace(/\bне\s+могу\s+(войти|попасть)\b.*$/i, '')
+    .trim();
   return s.slice(0, 120);
 }
 
@@ -277,7 +282,7 @@ function extractPropertySnippet(text: string): string | null {
   }
   const m2 = text.match(/\b(?:at|@)\s+([^.\n?]+)/i);
   if (m2) {
-    const s = m2[1].trim().slice(0, 120);
+    let s = m2[1].trim().slice(0, 120);
     // "at 11:00" is timing, not a property reference
     if (/^\d{1,2}:\d{2}$/.test(s)) return null;
     if (/^\d{1,2}$/.test(s)) return null;
@@ -285,6 +290,11 @@ function extractPropertySnippet(text: string): string | null {
     if (/^(the\s+)?entrance\b/i.test(s)) return null;
     if (/^(the\s+)?door\b/i.test(s)) return null;
     if (/^(the\s+)?front\s+door\b/i.test(s)) return null;
+    // Trim trailing action fragments ("cannot enter", etc.)
+    s = s
+      .replace(/\b(can'?t|cannot)\s+(enter|get\s+in|open)\b.*$/i, '')
+      .replace(/\bне\s+могу\s+(войти|попасть)\b.*$/i, '')
+      .trim();
     return s;
   }
   return null;
