@@ -113,6 +113,20 @@ describe('processUpdate', () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
+  it('short-circuits classifier language-check phrases without LLM', async () => {
+    const result = await processUpdate(makeUpdate('do you understand me'));
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+    expect(mockLLM).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits RU greeting without LLM', async () => {
+    await processUpdate(makeUpdate('привет', 'ru'));
+    expect(mockLLM).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalled();
+  });
+
   it('sends the LLM reply when LLM succeeds on an issue', async () => {
     mockLLM.mockResolvedValue('LLM: issue acknowledged');
     const result = await processUpdate(makeUpdate('problem with the lock'));

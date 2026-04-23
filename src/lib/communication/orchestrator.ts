@@ -82,6 +82,7 @@ import { retry, sha256Base64Url } from './reliability';
 import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
+import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
 
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
@@ -300,6 +301,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   cp('session.active.mark.fire_and_forget.queued', { chat_id: chatId });
 
   try {
+    let telegramMetaStoredReply: string | null = null;
+    let telegramMetaRouteKind: TelegramTextMetaKind | null = null;
+
     // RU Telegram: log runtime-critical env state (never print secrets).
     if (ruDebug) {
       const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -325,11 +329,29 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }
     cp('classifier.precheck.keywords.done', { chat_id: chatId });
 
+    const telegramLangForMeta =
+      envelope.channel === 'telegram'
+        ? String((envelope.metadata as Record<string, unknown> | undefined)?.telegram_user_language_code ?? '')
+            .trim() || undefined
+        : undefined;
+
     cp('classifier.start', { chat_id: chatId });
     const classification = await withAwaitCheckpoint('classifier.await', () => classifyMessage(text), { chat_id: chatId }, 30_000);
     cp('classifier.done', { chat_id: chatId, category: classification.category, lang: classification.lang });
     if (process.env.RU_TELEGRAM_FORCE_RU === '1' && envelope.channel === 'telegram') {
       classification.lang = 'ru';
+    }
+    if (envelope.channel === 'telegram') {
+      const tm = resolveTelegramTextMeta({ baseText: text, telegramLangCode: telegramLangForMeta });
+      if (tm) {
+        telegramMetaStoredReply = tm.reply;
+        telegramMetaRouteKind = tm.kind;
+        classification.category = tm.category;
+        classification.slots = tm.classification.slots;
+        if (process.env.RU_TELEGRAM_FORCE_RU !== '1') {
+          classification.lang = tm.classification.lang;
+        }
+      }
     }
     if (pipeDebug) {
       console.log('[comm:pipeline] classification.done', {
@@ -964,6 +986,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       usedPath = 'deterministic';
       cp('branch.trigger_payment_request.done', { chat_id: chatId });
       convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'payment_link_sent');
+    } else if (!replyText && envelope.channel === 'telegram' && telegramMetaStoredReply) {
+      cp('branch.telegram_text_meta_deterministic', { chat_id: chatId, kind: telegramMetaRouteKind });
+      replyText = adapter.formatResponse(telegramMetaStoredReply, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'telegram_meta_deterministic';
     } else if (!replyText) {
       cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
@@ -1206,7 +1233,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                     detail: `outbound_retry attempt=${info.attempt} decision=${info.decision?.reason ?? 'n/a'}`,
                   });
                 },
-                fn: () => adapter.sendMessage(targetId, replyText),
+                fn: () =>
+                  adapter.sendMessage(
+                    targetId,
+                    replyText,
+                    envelope.channel === 'telegram'
+                      ? {
+                          reply_handler: `orchestrator:${usedPath}${
+                            telegramMetaRouteKind ? `:telegram_meta=${telegramMetaRouteKind}` : ''
+                          }:category=${classification.category}`,
+                          update_id,
+                        }
+                      : undefined,
+                  ),
               });
               if (!res.ok) {
                 const reason = res.lastDecision?.reason ?? 'unknown';
@@ -1340,68 +1379,6 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
   return { textHint: parts.join(' '), refs };
 }
 
-function tgPreview(text: string, max = 120): string {
-  const t = String(text ?? '');
-  return t.length > max ? `${t.slice(0, max)}…` : t;
-}
-
-type TgShortCircuitLang = 'en' | 'ru' | 'es';
-
-function detectTgShortCircuitLang(params: {
-  text: string;
-  telegramLangCode?: string;
-}): TgShortCircuitLang {
-  const code = (params.telegramLangCode ?? '').toLowerCase();
-  if (code.startsWith('ru')) return 'ru';
-  if (code.startsWith('es')) return 'es';
-
-  const text = params.text ?? '';
-  if (/[а-яё]/i.test(text)) return 'ru';
-  if (/(español|espanol|hablas|te\s+habla)/i.test(text)) return 'es';
-
-  return 'en';
-}
-
-function tgMetaReplyText(lang: TgShortCircuitLang): string {
-  if (lang === 'ru') {
-    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
-  }
-  if (lang === 'es') {
-    return 'Sí, entiendo mensajes de texto. Envíe su solicitud por texto, por favor.';
-  }
-  return 'Yes, I understand English and Russian. Please send your request as text.';
-}
-
-function normalizeTgMeta(text: string): string {
-  return String(text ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[“”„"']/g, '')
-    .replace(/[?!.,;:(){}\[\]<>]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isTgMetaQuestionOrGreeting(text: string): boolean {
-  const t = normalizeTgMeta(text);
-  if (!t) return false;
-
-  // greetings (exact-only to avoid eating real requests)
-  if (t === 'hello' || t === 'hi' || t === 'hey') return true;
-
-  // capability / language checks (exact-only, punctuation-tolerant via normalization)
-  if (t === 'can you understand me') return true;
-  if (t === 'can u understand me') return true;
-  if (t === 'do you understand english') return true;
-  if (t === 'do you speak spanish') return true;
-  if (t === 'ты понимаешь русский') return true;
-  if (t === 'понимаешь русский') return true;
-  if (t === 'te habla espanol') return true;
-  if (t === 'hablas español' || t === 'hablas espanol') return true;
-
-  return false;
-}
-
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
   const message = update.message ?? update.edited_message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
@@ -1421,37 +1398,44 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   // orchestrator can still classify and create an ops task.
   const messageText = baseText || textHint || '';
 
-  // Hard deterministic short-circuit for Telegram TEXT meta-questions.
-  // Must never reach classifier/orchestrator uncertainty/escalation paths.
-  if (message.chat?.id && baseText && isTgMetaQuestionOrGreeting(baseText)) {
-    const detected = detectTgShortCircuitLang({ text: baseText, telegramLangCode: message.from?.language_code });
-    const reply = tgMetaReplyText(detected);
+  // Deterministic Telegram-only social/meta lines (must not touch LLM / scenario engine).
+  const meta =
+    message.chat?.id && baseText
+      ? resolveTelegramTextMeta({
+          baseText,
+          telegramLangCode: message.from?.language_code,
+        })
+      : null;
+  if (meta) {
+    const preview = baseText.length > 120 ? `${baseText.slice(0, 120)}…` : baseText;
     console.info('[comm:routing]', {
-      route: 'telegram_text_short_circuit',
-      reason: 'greeting_or_language_check',
+      path: 'telegram_text',
+      route: 'telegram_text_meta_short',
+      handler: `${meta.handler}/${meta.kind}`,
       update_id: update.update_id,
       chat_id: message.chat.id,
-      text_preview: tgPreview(baseText),
-      detected_language: detected,
+      text_preview: preview,
     });
     const outboundKey = sha256Base64Url(
       [
-        'tg_text_short_circuit',
+        'tg_text_meta',
         String(message.chat.id),
-        // Prefer provider message id to dedupe across Telegram redelivery/update_id variance
         String(message.message_id),
-        reply,
+        meta.reply,
       ].join('|'),
     );
     if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: update.update_id, chatId: message.chat.id } })) {
-      await replyToTelegram(message.chat.id, reply);
+      await replyToTelegram(message.chat.id, meta.reply, {
+        handler: `${meta.handler}/${meta.kind}`,
+        update_id: update.update_id,
+      });
     }
     return {
       outcome: ProcessOutcome.Replied,
       update_id: update.update_id,
       chat_id: message.chat.id,
-      category: MessageCategory.Greeting,
-      reply,
+      category: meta.category,
+      reply: meta.reply,
     };
   }
 
@@ -1466,6 +1450,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       ...(refs.length > 0 ? { attachments: refs } : {}),
       providerMessageId: String(message.message_id),
       externalMessageId: String(message.message_id),
+      telegram_user_language_code: message.from?.language_code,
     },
   };
 

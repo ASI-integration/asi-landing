@@ -129,6 +129,12 @@ async function sendOnce(url: string, body: Record<string, unknown>): Promise<boo
   return ok;
 }
 
+export type TelegramReplyLogContext = {
+  /** Stable tag for logs: which code path produced this outbound (e.g. orchestrator:llm). */
+  handler: string;
+  update_id?: number;
+};
+
 export async function sendTelegramMessage(text: string): Promise<boolean> {
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   const TELEGRAM_CHAT_ID = getTelegramChatId();
@@ -153,11 +159,23 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
   return sendOnce(url, { chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true });
 }
 
-export async function replyToTelegram(chatId: number | string, text: string): Promise<boolean> {
+export async function replyToTelegram(
+  chatId: number | string,
+  text: string,
+  logCtx?: TelegramReplyLogContext,
+): Promise<boolean> {
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
     return false;
+  }
+
+  if (logCtx?.handler) {
+    console.info('[tg:reply:handler]', {
+      handler: logCtx.handler,
+      chat_id: String(chatId),
+      update_id: logCtx.update_id ?? null,
+    });
   }
 
   if (process.env.TELEGRAM_DRY_RUN === '1') {

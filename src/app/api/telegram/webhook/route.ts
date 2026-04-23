@@ -88,7 +88,10 @@ export async function POST(req: Request): Promise<Response> {
         has_voice: hasVoice,
         has_audio: hasAudio,
       });
-      await replyToTelegram(chatId, telegramVoiceFallbackText(lang));
+      await replyToTelegram(chatId, telegramVoiceFallbackText(lang), {
+        handler: 'telegram_voice_fallback',
+        update_id: update.update_id,
+      });
       return NextResponse.json({ ok: true, path: 'telegram_voice_fallback' }, { status: 200 });
     }
 
