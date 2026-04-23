@@ -152,12 +152,16 @@ function logSessionResetOrCaseReopen(params: {
   new_status: string;
   reason: string;
   update_id: number;
-  // Optional structured debug fields for Telegram command routing (required in production triage).
-  command?: string;
+  // Structured debug fields for Telegram command routing.
+  command_raw_text?: string;
+  command_raw?: string;
+  normalized_command?: string;
   chat_id?: number;
   allowlisted?: boolean;
   prod_reset_enabled?: boolean;
   matched?: boolean;
+  intercepted_before_escalation?: boolean;
+  final_reply?: string | null;
 }): void {
   try {
     console.log(
@@ -167,16 +171,37 @@ function logSessionResetOrCaseReopen(params: {
         new_status: params.new_status,
         reason: params.reason,
         update_id: params.update_id,
-        ...(params.command ? { command: params.command } : {}),
+        ...(typeof params.command_raw_text === 'string' ? { command_raw_text: params.command_raw_text } : {}),
+        ...(typeof params.command_raw === 'string' ? { command_raw: params.command_raw } : {}),
+        ...(typeof params.normalized_command === 'string' ? { normalized_command: params.normalized_command } : {}),
         ...(typeof params.chat_id === 'number' ? { chat_id: params.chat_id } : {}),
         ...(typeof params.allowlisted === 'boolean' ? { allowlisted: params.allowlisted } : {}),
         ...(typeof params.prod_reset_enabled === 'boolean' ? { prod_reset_enabled: params.prod_reset_enabled } : {}),
         ...(typeof params.matched === 'boolean' ? { matched: params.matched } : {}),
+        ...(typeof params.intercepted_before_escalation === 'boolean'
+          ? { intercepted_before_escalation: params.intercepted_before_escalation }
+          : {}),
+        ...(typeof params.final_reply === 'string' || params.final_reply === null ? { final_reply: params.final_reply } : {}),
       }),
     );
   } catch {
     // never throw from logging
   }
+}
+
+function normalizeTelegramSlashCommand(text: string): {
+  raw_text: string;
+  raw_command: string | null;
+  normalized_command: string | null;
+} {
+  const raw_text = String(text ?? '');
+  const t = raw_text.trim();
+  if (!t.startsWith('/')) return { raw_text, raw_command: null, normalized_command: null };
+  const m = t.match(/^\/([A-Za-z0-9_]+)(?:@([A-Za-z0-9_]+))?(?:\s|$)/);
+  if (!m) return { raw_text, raw_command: null, normalized_command: null };
+  const raw_command = `/${m[1]}${m[2] ? `@${m[2]}` : ''}`;
+  const normalized_command = String(m[1] ?? '').toLowerCase();
+  return { raw_text, raw_command, normalized_command };
 }
 
 export async function processMessage(envelope: InboundMessageEnvelope): Promise<ProcessResult> {
@@ -312,6 +337,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     (convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
 
   // Acceptance/admin escape hatch: /reset_session (guarded by allowlist + non-prod by default).
+  const cmdNorm = envelope.channel === 'telegram' ? normalizeTelegramSlashCommand(text) : null;
   const resetMatch = envelope.channel === 'telegram' ? matchTelegramCommand(text, 'reset_session') : { matched: false, raw: '' };
   if (envelope.channel === 'telegram') {
     const allowlist = parseAllowlistedChatIds(process.env.COMM_TELEGRAM_RESET_ALLOWLIST);
@@ -333,17 +359,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         new_status: allowed ? 'active' : convSession.state,
         reason: denialReason,
         update_id,
-        command: '/reset_session',
+        command_raw_text: cmdNorm?.raw_text ?? text,
+        command_raw: cmdNorm?.raw_command ?? resetMatch.raw ?? null,
+        normalized_command: cmdNorm?.normalized_command ?? null,
         chat_id: chatIdForAllow,
         allowlisted,
         prod_reset_enabled,
         matched: true,
+        intercepted_before_escalation: allowed ? true : false,
+        final_reply: allowed ? 'Session reset for acceptance testing.' : null,
       });
       if (!allowed) {
         // Do not silently fall through in logs — this is a common production triage failure mode.
         console.warn('[comm:routing] telegram reset denied', {
           route: 'session_reset_or_case_reopen',
-          command: '/reset_session',
+          command_raw_text: cmdNorm?.raw_text ?? text,
+          normalized_command: cmdNorm?.normalized_command ?? null,
           update_id,
           chat_id: chatIdForAllow,
           allowlisted,
@@ -362,11 +393,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           new_status: convSession.state,
           reason: 'not_matched',
           update_id,
-          command: '/reset_session',
+          command_raw_text: cmdNorm?.raw_text ?? text,
+          command_raw: cmdNorm?.raw_command ?? null,
+          normalized_command: cmdNorm?.normalized_command ?? null,
           chat_id: chatIdForAllow,
           allowlisted,
           prod_reset_enabled,
           matched: false,
+          intercepted_before_escalation: false,
+          final_reply: null,
         });
       }
     }
@@ -400,11 +435,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         new_status: 'active',
         reason: 'reset_command',
         update_id,
-        command: '/reset_session',
+        command_raw_text: cmdNorm?.raw_text ?? text,
+        command_raw: cmdNorm?.raw_command ?? resetMatch.raw ?? null,
+        normalized_command: cmdNorm?.normalized_command ?? 'reset_session',
         chat_id: chatIdForAllow,
         allowlisted: true,
         prod_reset_enabled: true,
         matched: true,
+        intercepted_before_escalation: true,
+        final_reply: 'Session reset for acceptance testing.',
       });
 
       const adapter = getChannelAdapter(envelope.channel);
@@ -1394,6 +1433,46 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'deterministic';
+    }
+
+    // If this was a /reset_session attempt that was NOT allowed, emit a final trace line
+    // that captures the actual reply that was sent (to prove overwrite/fallthrough in prod).
+    if (envelope.channel === 'telegram' && cmdNorm?.normalized_command === 'reset_session' && !resetMatch.matched) {
+      // This case should be rare (normalized says reset_session but match failed), but log anyway.
+      logSessionResetOrCaseReopen({
+        previous_status: convSession.state,
+        new_status: convSession.state,
+        reason: 'reset_normalized_but_not_matched',
+        update_id,
+        command_raw_text: cmdNorm.raw_text,
+        command_raw: cmdNorm.raw_command,
+        normalized_command: cmdNorm.normalized_command,
+        chat_id: chatId,
+        matched: false,
+        intercepted_before_escalation: false,
+        final_reply: replyText ?? null,
+      });
+    } else if (envelope.channel === 'telegram' && resetMatch.matched) {
+      // This line is the "must appear in prod" end-of-path trace, even when denied.
+      const allowlist = parseAllowlistedChatIds(process.env.COMM_TELEGRAM_RESET_ALLOWLIST);
+      const nonProd = (process.env.VERCEL_ENV ?? process.env.NODE_ENV) !== 'production';
+      const prod_reset_enabled = nonProd ? true : process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD === '1';
+      const allowlisted = allowlist.has(chatId);
+      logSessionResetOrCaseReopen({
+        previous_status: convSession.state,
+        new_status: convSession.state,
+        reason: allowlisted && prod_reset_enabled ? 'fallthrough_unexpected' : 'deny_fallthrough_final_reply',
+        update_id,
+        command_raw_text: cmdNorm?.raw_text ?? text,
+        command_raw: cmdNorm?.raw_command ?? resetMatch.raw ?? null,
+        normalized_command: cmdNorm?.normalized_command ?? 'reset_session',
+        chat_id: chatId,
+        allowlisted,
+        prod_reset_enabled,
+        matched: true,
+        intercepted_before_escalation: false,
+        final_reply: replyText ?? null,
+      });
     }
 
     updateContext(chatId, { lastIntent: intentResult.intent });
