@@ -60,6 +60,17 @@ function normalizeKnownRuStreetForms(snippet: string): string {
   return s;
 }
 
+function extractExplicitRuPropertyLabel(text: string): string | null {
+  const t = String(text ?? '');
+  // Unicode-safe boundary: avoid JS `\b` (ASCII-centric) for Cyrillic.
+  const m = t.match(/(?:^|[^\p{L}])((?:невск[\p{L}]*|литейн[\p{L}]*)\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
+  if (!m) return null;
+  const s = normalizeKnownRuStreetForms(String(m[1] ?? '').trim()).slice(0, 120);
+  if (!s) return null;
+  if (/^\d{1,2}:\d{2}$/.test(s)) return null;
+  return s;
+}
+
 function hasLateCheckoutIntent(n: string): boolean {
   return (
     /\blate\s+checkout\b/i.test(n) ||
@@ -207,7 +218,7 @@ function hasPropertyHint(text: string, n: string): boolean {
   }
   if (/(nevsky|невск|liteyn|литейн|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(n)) return true;
   // Russian "street-in-locative + number": "в Невском 24", "в Литейном 12"
-  if (/(?:\bв|\bна)\s+[а-яёa-z.\-]{3,40}\s+\d{1,4}\b/i.test(n)) return true;
+  if (/(?:^|[^\p{L}])(в|на)\s+[а-яёa-z.\-]{3,40}\s+\d{1,4}\b/iu.test(n)) return true;
   if (/\b\d{1,4}\s*[A-Za-zА-Яа-яЁё.-]+(?:st|street|str|ave|просп|пер|шоссе)\b/i.test(n)) return true;
   return false;
 }
@@ -286,11 +297,8 @@ function extractAmountLike(text: string): string | null {
 function extractPropertySnippet(text: string): string | null {
   // Fast-path for our priority RU objects: "Невском 24", "Литейном 12" (any case/declension),
   // including mid-sentence: "... у входа в Невском 24, ..."
-  const m0 = text.match(/\b(невск[\p{L}]*\s+\d{1,4}(?:\s*к\d+)?|литейн[\p{L}]*\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
-  if (m0) {
-    const s = normalizeKnownRuStreetForms(String(m0[1] ?? '').trim()).slice(0, 120);
-    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
-  }
+  const explicit = extractExplicitRuPropertyLabel(text);
+  if (explicit) return explicit;
 
   const m1 = text.match(/по\s+адресу\s+([^.\n?]+)/i);
   if (m1) {
@@ -317,9 +325,9 @@ function extractPropertySnippet(text: string): string | null {
     return s;
   }
   // Russian locative address fragment: "в Невском 24", "на Литейном 12"
-  const m3 = text.match(/(?:\bв|\bна)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  const m3 = text.match(/(?:^|[^\p{L}])(в|на)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/iu);
   if (m3) {
-    const s = normalizeKnownRuStreetForms(String(m3[1] ?? '').trim()).slice(0, 120);
+    const s = normalizeKnownRuStreetForms(String(m3[2] ?? '').trim()).slice(0, 120);
     if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
   }
   // Word+number without explicit preposition: "Невском 24", "Литейном 12"

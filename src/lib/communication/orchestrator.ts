@@ -121,11 +121,14 @@ function logTelegramLivePath(params: {
   raw_text: string;
   scenario: string | null;
   extracted_facts: Record<string, unknown> | null;
+  explicit_property_detected: boolean;
+  property_hint: string | null;
   matched_property_id: string | null;
   property_match_confidence: string | null;
   matched_reservation_id: string | null;
   knowledge_lookup_attempted: boolean;
   knowledge_lookup_result: string;
+  knowledge_skip_reason: string | null;
   knowledge_fields_available: string[];
   reply_mode: 'grounded_reply' | 'clarification' | 'escalation';
   clarification_question_used: boolean;
@@ -138,11 +141,14 @@ function logTelegramLivePath(params: {
     raw_text: params.raw_text,
     scenario: params.scenario,
     extracted_facts: params.extracted_facts,
+    explicit_property_detected: params.explicit_property_detected,
+    property_hint: params.property_hint,
     matched_property_id: params.matched_property_id,
     property_match_confidence: params.property_match_confidence,
     matched_reservation_id: params.matched_reservation_id,
     knowledge_lookup_attempted: params.knowledge_lookup_attempted,
     knowledge_lookup_result: params.knowledge_lookup_result,
+    knowledge_skip_reason: params.knowledge_skip_reason,
     knowledge_fields_available: params.knowledge_fields_available,
     reply_mode: params.reply_mode,
     clarification_question_used: params.clarification_question_used,
@@ -857,17 +863,28 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           const ef = (opIntake.extractedFacts ?? {}) as any;
           const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
           const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+          const explicitProp = Boolean(ef?.explicit_property_detected);
+          const propHint =
+            typeof ef?.property_hint === 'string'
+              ? String(ef.property_hint)
+              : typeof ef?.property === 'string'
+                ? String(ef.property)
+                : null;
+          const knSkip = typeof ef?.knowledge_skip_reason === 'string' ? String(ef.knowledge_skip_reason) : null;
           logTelegramLivePath({
             stage: 'intake',
             update_id,
             raw_text: text,
             scenario: opIntake.category,
             extracted_facts: ef,
+            explicit_property_detected: explicitProp,
+            property_hint: propHint,
             matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
             property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
             matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
             knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
             knowledge_lookup_result: knStatus ?? 'skipped',
+            knowledge_skip_reason: knStatus ? null : knSkip,
             knowledge_fields_available: knFields,
             reply_mode:
               opIntake.finalAction === 'clarify'
@@ -971,17 +988,28 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             const ef = (opIntake.extractedFacts ?? {}) as any;
             const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
             const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+          const explicitProp = Boolean(ef?.explicit_property_detected);
+          const propHint =
+            typeof ef?.property_hint === 'string'
+              ? String(ef.property_hint)
+              : typeof ef?.property === 'string'
+                ? String(ef.property)
+                : null;
+          const knSkip = typeof ef?.knowledge_skip_reason === 'string' ? String(ef.knowledge_skip_reason) : null;
             logTelegramLivePath({
               stage: 'reply_composed',
               update_id,
               raw_text: text,
               scenario: opIntake.category,
               extracted_facts: ef,
+            explicit_property_detected: explicitProp,
+            property_hint: propHint,
               matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
               property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
               matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
               knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
               knowledge_lookup_result: knStatus ?? 'skipped',
+            knowledge_skip_reason: knStatus ? null : knSkip,
               knowledge_fields_available: knFields,
               reply_mode:
                 opIntake.finalAction === 'clarify'
@@ -1036,17 +1064,28 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             const ef = (opIntake.extractedFacts ?? {}) as any;
             const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
             const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+            const explicitProp = Boolean(ef?.explicit_property_detected);
+            const propHint =
+              typeof ef?.property_hint === 'string'
+                ? String(ef.property_hint)
+                : typeof ef?.property === 'string'
+                  ? String(ef.property)
+                  : null;
+            const knSkip = typeof ef?.knowledge_skip_reason === 'string' ? String(ef.knowledge_skip_reason) : null;
             logTelegramLivePath({
               stage: 'escalation_payload',
               update_id,
               raw_text: text,
               scenario: opIntake.category,
               extracted_facts: ef,
+              explicit_property_detected: explicitProp,
+              property_hint: propHint,
               matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
               property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
               matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
               knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
               knowledge_lookup_result: knStatus ?? 'skipped',
+              knowledge_skip_reason: knStatus ? null : knSkip,
               knowledge_fields_available: knFields,
               reply_mode: 'escalation',
               clarification_question_used: false,

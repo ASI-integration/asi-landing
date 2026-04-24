@@ -159,6 +159,17 @@ function normalizeKnownRuStreetForms(snippet: string): string {
   return s;
 }
 
+function extractExplicitRuPropertyLabel(text: string): string | null {
+  const t = String(text ?? '');
+  // Unicode-safe "word boundary" for Cyrillic: avoid `\b` (ASCII-centric).
+  const m = t.match(/(?:^|[^\p{L}])((?:невск[\p{L}]*|литейн[\p{L}]*)\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
+  if (!m) return null;
+  const s = normalizeKnownRuStreetForms(String(m[1] ?? '').trim()).slice(0, 120);
+  if (!s) return null;
+  if (/^\d{1,2}:\d{2}$/.test(s)) return null;
+  return s;
+}
+
 function extractTimeLike(text: string): string | null {
   const t = String(text ?? '');
   const m = t.match(/\b(\d{1,2}:\d{2})\b/);
@@ -200,11 +211,8 @@ function looksLikePropertyHint(text: string, normalized: string): boolean {
 }
 
 function extractPropertySnippet(text: string): string | null {
-  const m0 = text.match(/\b(невск[\p{L}]*\s+\d{1,4}(?:\s*к\d+)?|литейн[\p{L}]*\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
-  if (m0) {
-    const s = normalizeKnownRuStreetForms(String(m0[1] ?? '').trim()).slice(0, 120);
-    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
-  }
+  const explicit = extractExplicitRuPropertyLabel(text);
+  if (explicit) return explicit;
 
   const m1 = text.match(/по\s+адресу\s+([^.\n?]+)/i);
   if (m1) {
@@ -219,9 +227,9 @@ function extractPropertySnippet(text: string): string | null {
     if (/^\d{1,2}$/.test(s)) return null;
     return s;
   }
-  const m3 = text.match(/(?:\bв|\bна)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  const m3 = text.match(/(?:^|[^\p{L}])(в|на)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/iu);
   if (m3) {
-    const s = normalizeKnownRuStreetForms(String(m3[1] ?? '').trim()).slice(0, 120);
+    const s = normalizeKnownRuStreetForms(String(m3[2] ?? '').trim()).slice(0, 120);
     if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
   }
   const m4 = text.match(/\b([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
@@ -550,6 +558,8 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
 }): Promise<TelegramSessionMemoryResult> {
   const prevCase = getAutonomousSessionOperationalCaseV1(params.chatId);
   const ru = params.surfaceLang === 'ru';
+  const explicitProp = params.surfaceLang === 'ru' ? extractExplicitRuPropertyLabel(params.text) : null;
+  const explicit_property_detected = Boolean(explicitProp);
 
   const hit = tryTelegramOperationalIntake({
     text: params.text,
@@ -563,19 +573,26 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
     const previous_state = prevCase ? safeJsonClone(prevCase) : null;
     // If the message already contains an explicit property/address clue, never ask "which property" again.
     // This is critical for RU live Telegram flows like "в Невском 24".
-    if (!hit.missingFacts?.includes('property')) {
-      // nothing to do
-    } else {
-      const propSnippet = extractPropertySnippet(params.text);
-      const normalized = normalizeText(params.text);
-      if (propSnippet || looksLikePropertyHint(params.text, normalized)) {
-        hit.missingFacts = (hit.missingFacts ?? []).filter(k => k !== 'property');
+    const propSnippet = extractPropertySnippet(params.text);
+    const normalized = normalizeText(params.text);
+    const hasAnyPropClue = Boolean(propSnippet) || Boolean(explicitProp) || looksLikePropertyHint(params.text, normalized);
+    if (hasAnyPropClue) {
+      hit.missingFacts = (hit.missingFacts ?? []).filter(k => k !== 'property');
+      const bestHint = (propSnippet ?? explicitProp ?? null) as string | null;
+      // Never degrade explicit property into 'hint_present' — it breaks DB location matching.
+      if (bestHint) {
+        (hit.extractedFacts as any).property_hint = bestHint;
+        (hit.extractedFacts as any).property = bestHint;
+      } else {
+        // Keep back-compat boolean hint only when we truly cannot capture a snippet.
         (hit.extractedFacts as any).property_hint =
           (hit.extractedFacts as any).property_hint && (hit.extractedFacts as any).property_hint !== 'hint_present'
             ? (hit.extractedFacts as any).property_hint
-            : (propSnippet ? propSnippet : 'hint_present');
+            : 'hint_present';
       }
     }
+
+    (hit.extractedFacts as any).explicit_property_detected = explicit_property_detected;
 
     // Matching layer: try to ground to guest/reservation/property before deciding clarify/escalate.
     let match: Awaited<ReturnType<typeof matchTelegramOperationalEntitiesV1>> | null = null;
@@ -655,9 +672,14 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       // Property knowledge lookup (Task 8): after matching but before reply composition.
       const matchedPropertyId = match.matched_property?.property_id ?? null;
       const propertyMatchConfidence = match.match_confidence;
+      const isPriorityScenario = hit.category === 'wifi_issue' || hit.category === 'late_checkout' || hit.category === 'access_issue';
       const shouldLookup =
         Boolean(matchedPropertyId) &&
-        (propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match');
+        (isPriorityScenario
+          ? // Priority live scenarios: if property is deterministically matched, do not skip.
+            match.property_match_status === 'matched' && propertyMatchConfidence !== 'no_match'
+          : // Other scenarios: keep existing conservative rule to avoid unnecessary DB lookups.
+            (propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match'));
 
       if (shouldLookup && matchedPropertyId) {
         const kn = await loadTelegramPropertyKnowledgeV1({
@@ -698,7 +720,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
           }
         }
 
-        // Late checkout policy-aware behavior: escalate only if policy explicitly requires approval.
+        // Late checkout policy-aware behavior: if policy explicitly requires approval, say so and escalate.
         if (hit.category === 'late_checkout' && kn.status === 'knowledge_found' && kn.knowledge?.late_checkout_policy) {
           const p = String(kn.knowledge.late_checkout_policy).toLowerCase();
           const requiresApproval =
@@ -706,6 +728,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
           if (requiresApproval) {
             hit.finalAction = 'escalate_operator';
             hit.actionReason = 'knowledge:late_checkout:policy_requires_approval';
+            (hit.extractedFacts as any).late_checkout_requires_approval = true;
           }
         }
 
@@ -725,6 +748,20 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
           reason: hit.actionReason ?? 'n/a',
         });
       } else {
+        const skipReason = !isPriorityScenario
+          ? !matchedPropertyId
+            ? 'skip:no_matched_property_id'
+            : !(propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match')
+              ? `skip:match_confidence_${propertyMatchConfidence}`
+              : 'skip:unknown'
+          : !matchedPropertyId
+            ? 'skip:no_matched_property_id'
+            : match.property_match_status !== 'matched'
+              ? `skip:property_match_status_${match.property_match_status}`
+              : propertyMatchConfidence === 'no_match'
+                ? 'skip:match_confidence_no_match'
+                : 'skip:unknown';
+        (hit.extractedFacts as any).knowledge_skip_reason = skipReason;
         logTelegramPropertyKnowledgeLookup({
           update_id: params.update_id,
           chat_id: params.chatId,

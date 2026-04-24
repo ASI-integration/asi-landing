@@ -83,6 +83,10 @@ function extractPropertyKnowledge(input: ReplyComposerInput): PropertyKnowledgeS
   return k as PropertyKnowledgeShape;
 }
 
+function lateCheckoutRequiresApproval(input: ReplyComposerInput): boolean {
+  return Boolean((input.extractedFacts as any)?.late_checkout_requires_approval);
+}
+
 function shortTrim(s: string | null | undefined, limit: number): string | null {
   if (!s) return null;
   const v = String(s).trim();
@@ -362,6 +366,18 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
     const k = extractPropertyKnowledge(input);
     const policy = k ? shortTrim(k.late_checkout_policy ?? null, 180) : null;
     if (policy) {
+      if (lateCheckoutRequiresApproval(input)) {
+        const approvalLine =
+          lang === 'ru'
+            ? 'По этой политике требуется согласование — я передаю запрос оператору.'
+            : lang === 'es'
+              ? 'Según esta política se requiere aprobación — lo escalo a un operador.'
+              : 'This policy requires approval — I’m escalating to an operator.';
+        return {
+          template_key: `${cat}.reply.policy_requires_approval.v1`,
+          text: `${ack(lang)} ${lang === 'ru' ? 'Политика позднего выезда' : lang === 'es' ? 'Política de late checkout' : 'Late checkout policy'}: ${policy}. ${approvalLine}${matchedContextSuffix(input, lang)}`,
+        };
+      }
       return {
         template_key: `${cat}.reply.grounded.v1`,
         text: `${ack(lang)} ${lang === 'ru' ? 'Политика позднего выезда' : lang === 'es' ? 'Política de late checkout' : 'Late checkout policy'}: ${policy}.${matchedContextSuffix(input, lang)}`,
