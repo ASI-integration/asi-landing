@@ -49,6 +49,35 @@ const ESCALATION_KEYWORDS = [
   'поддержк',
 ];
 
+const GENERIC_FALLBACK_PHRASES = [
+  // English fallback that sometimes leaks.
+  'please share one key detail',
+  // RU generic “I can’t help / no access” style.
+  'не могу помочь',
+  'не могу подсказать',
+  'не располагаю информацией',
+  'у меня нет информации',
+  'у меня нет доступа',
+  'я не имею доступа',
+  'как искусственный интеллект',
+  // RU overly generic “write to support” without content.
+  'обратитесь в поддержку',
+  'напишите в поддержку',
+];
+
+const ALREADY_ESCALATED_PHRASES = [
+  // Right after reset we should not claim something is already escalated.
+  'уже передал',
+  'уже передала',
+  'уже передали',
+  'уже сообщил',
+  'уже сообщила',
+  'уже сообщили',
+  'уже отправил',
+  'уже отправила',
+  'уже отправили',
+];
+
 async function tgCall(token, method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
@@ -133,9 +162,9 @@ async function waitForBotReply(args) {
 }
 
 function evaluateCase(caseDef, replyText) {
-  const mustNot = caseDef.assertions?.must_not_include ?? [];
+  const mustNot = [...(caseDef.assertions?.must_not_include ?? []), ...GENERIC_FALLBACK_PHRASES];
   const shouldAny = caseDef.assertions?.should_include_any ?? [];
-  const maxClar = caseDef.assertions?.max_clarifications ?? 999;
+  const maxClar = caseDef.assertions?.max_clarifications ?? 1;
   const allowEsc = caseDef.assertions?.allow_escalation ?? false;
 
   const matchedMustNot = mustNot.filter((s) => includesCI(replyText, s));
@@ -236,6 +265,17 @@ async function main() {
   const chatIdRaw = requireEnv('TELEGRAM_TEST_CHAT_ID');
   const botUsername = process.env.TELEGRAM_BOT_USERNAME?.trim() || undefined;
 
+  const mainChatId = process.env.TELEGRAM_CHAT_ID?.trim() || '';
+  if (mainChatId && mainChatId === chatIdRaw) {
+    throw new Error(
+      [
+        'Refusing to run against TELEGRAM_CHAT_ID (manual/main chat).',
+        'Set TELEGRAM_TEST_CHAT_ID to a dedicated acceptance test chat id (separate from main).',
+        `Current TELEGRAM_TEST_CHAT_ID=${chatIdRaw}`,
+      ].join('\n'),
+    );
+  }
+
   const chatIdNum = Number(chatIdRaw);
   if (!Number.isFinite(chatIdNum)) {
     throw new Error(`TELEGRAM_TEST_CHAT_ID must be numeric chat id. Got: ${chatIdRaw}`);
@@ -298,7 +338,8 @@ async function main() {
     return;
   }
 
-  for (const c of parsed.cases) {
+  for (let i = 0; i < parsed.cases.length; i++) {
+    const c = parsed.cases[i];
     const sent = await tgSendMessage(token, chatIdRaw, c.input);
     try {
       const got = await waitForBotReply({
@@ -312,6 +353,32 @@ async function main() {
       });
       offset = got.next_offset;
       const replyText = got.msg.text?.trim() ?? '';
+
+      if (i === 0) {
+        const matchedAlready = ALREADY_ESCALATED_PHRASES.filter((s) => includesCI(replyText, s));
+        if (matchedAlready.length) {
+          results.push({
+            case_name: c.name,
+            input: c.input,
+            actual_reply: replyText,
+            pass: false,
+            failure_reason: `Already-escalated wording is forbidden right after reset: ${matchedAlready.join(
+              ', ',
+            )}`,
+            meta: {
+              sent_message_id: sent.message_id,
+              received_message_id: got.msg.message_id,
+              received_date_unix: got.msg.date,
+              clarifications: countClarifications(replyText),
+              matched_includes: [],
+              matched_must_not: matchedAlready,
+              matched_escalation: [],
+            },
+          });
+          continue;
+        }
+      }
+
       const baseEval = evaluateCase(c, replyText);
       results.push({
         ...baseEval,
