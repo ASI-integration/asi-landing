@@ -2,6 +2,7 @@ import { getAutonomousSessionOperationalCaseV1, setAutonomousSessionOperationalC
 import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, TelegramOperationalSessionCaseV1 } from './types';
 import { tryTelegramOperationalIntake, type TelegramOperationalFinalAction, type TelegramOperationalIntakeHit } from './telegram-operational-intake';
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
+import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
 
 type SurfaceLang = 'en' | 'ru';
 
@@ -608,6 +609,84 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         escalated: hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent',
         reason: hit.actionReason ?? 'n/a',
       });
+
+      // Property knowledge lookup (Task 8): after matching but before reply composition.
+      const matchedPropertyId = match.matched_property?.property_id ?? null;
+      const propertyMatchConfidence = match.match_confidence;
+      const shouldLookup =
+        Boolean(matchedPropertyId) &&
+        (propertyMatchConfidence === 'high_confidence_match' || propertyMatchConfidence === 'medium_confidence_match');
+
+      if (shouldLookup && matchedPropertyId) {
+        const kn = await loadTelegramPropertyKnowledgeV1({
+          matched_property_id: matchedPropertyId,
+          db: params.db,
+        });
+
+        (hit.extractedFacts as any).property_knowledge_status = kn.status;
+        (hit.extractedFacts as any).property_knowledge_fields = kn.available_fields;
+        (hit.extractedFacts as any).property_knowledge = kn.knowledge;
+
+        // Category-specific grounded-reply upgrade: when we have the data a guest needs,
+        // turn clarify/escalate_operator into a grounded reply.
+        let groundedReply = false;
+        if (kn.status === 'knowledge_found' && hit.finalAction === 'clarify') {
+          const k = kn.knowledge;
+          const wifiOk = !!(k.wifi_name || k.wifi_password || k.wifi_notes);
+          const parkingOk = !!(k.parking_rules || k.parking_paid_or_free || k.parking_location_notes);
+          const lateOk = !!k.late_checkout_policy;
+          const earlyOk = !!k.early_checkin_policy;
+
+          if (hit.category === 'wifi_issue' && wifiOk) {
+            hit.finalAction = 'reply';
+            hit.actionReason = `knowledge:wifi_issue:grounded`;
+            groundedReply = true;
+          } else if (hit.category === 'parking_question' && parkingOk) {
+            hit.finalAction = 'reply';
+            hit.actionReason = `knowledge:parking_question:grounded`;
+            groundedReply = true;
+          } else if (hit.category === 'late_checkout' && lateOk) {
+            hit.finalAction = 'reply';
+            hit.actionReason = `knowledge:late_checkout:grounded`;
+            groundedReply = true;
+          } else if (hit.category === 'early_checkin' && earlyOk) {
+            hit.finalAction = 'reply';
+            hit.actionReason = `knowledge:early_checkin:grounded`;
+            groundedReply = true;
+          }
+        }
+
+        logTelegramPropertyKnowledgeLookup({
+          update_id: params.update_id,
+          chat_id: params.chatId,
+          scenario: hit.category,
+          matched_property_id: matchedPropertyId,
+          property_match_confidence: propertyMatchConfidence,
+          knowledge_lookup_attempted: true,
+          knowledge_lookup_result: kn.status,
+          knowledge_fields_available: kn.available_fields,
+          reply_used_grounded_property_data:
+            groundedReply || (hit.finalAction === 'escalate_urgent' && kn.status === 'knowledge_found'),
+          clarification_question_used: hit.finalAction === 'clarify',
+          escalated: hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent',
+          reason: hit.actionReason ?? 'n/a',
+        });
+      } else {
+        logTelegramPropertyKnowledgeLookup({
+          update_id: params.update_id,
+          chat_id: params.chatId,
+          scenario: hit.category,
+          matched_property_id: matchedPropertyId,
+          property_match_confidence: propertyMatchConfidence,
+          knowledge_lookup_attempted: false,
+          knowledge_lookup_result: 'skipped',
+          knowledge_fields_available: [],
+          reply_used_grounded_property_data: false,
+          clarification_question_used: hit.finalAction === 'clarify',
+          escalated: hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent',
+          reason: hit.actionReason ?? 'n/a',
+        });
+      }
     }
 
     // Missing-facts policy: never ask more than ONE clarification question in a row.

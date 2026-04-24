@@ -58,6 +58,75 @@ function ack(lang: Lang): string {
   return 'Understood.';
 }
 
+type PropertyKnowledgeShape = {
+  wifi_name?: string | null;
+  wifi_password?: string | null;
+  wifi_notes?: string | null;
+  checkin_instructions?: string | null;
+  door_code_notes?: string | null;
+  access_notes?: string | null;
+  parking_rules?: string | null;
+  parking_paid_or_free?: string | null;
+  parking_location_notes?: string | null;
+  quiet_hours?: string | null;
+  house_rules?: string | null;
+  heating_notes?: string | null;
+  emergency_contact_notes?: string | null;
+  checkout_notes?: string | null;
+  late_checkout_policy?: string | null;
+  early_checkin_policy?: string | null;
+};
+
+function extractPropertyKnowledge(input: ReplyComposerInput): PropertyKnowledgeShape | null {
+  const k = (input.extractedFacts as any)?.property_knowledge;
+  if (!k || typeof k !== 'object') return null;
+  return k as PropertyKnowledgeShape;
+}
+
+function shortTrim(s: string | null | undefined, limit: number): string | null {
+  if (!s) return null;
+  const v = String(s).trim();
+  if (!v) return null;
+  return v.length > limit ? `${v.slice(0, limit - 1).trim()}…` : v;
+}
+
+function wifiSnippet(k: PropertyKnowledgeShape): string | null {
+  const parts: string[] = [];
+  if (k.wifi_name) parts.push(`network ${String(k.wifi_name)}`);
+  if (k.wifi_password) parts.push(`password ${String(k.wifi_password)}`);
+  if (parts.length === 0 && k.wifi_notes) return shortTrim(k.wifi_notes, 140);
+  if (parts.length === 0) return null;
+  const base = parts.join(', ');
+  const notes = shortTrim(k.wifi_notes, 80);
+  return notes ? `${base} (${notes})` : base;
+}
+
+function parkingSnippet(k: PropertyKnowledgeShape): string | null {
+  const parts: string[] = [];
+  if (k.parking_paid_or_free) parts.push(String(k.parking_paid_or_free));
+  if (k.parking_rules) parts.push(String(k.parking_rules));
+  if (k.parking_location_notes) parts.push(String(k.parking_location_notes));
+  const joined = parts.map(p => p.trim()).filter(Boolean).join('; ');
+  return shortTrim(joined, 160);
+}
+
+function accessSnippet(k: PropertyKnowledgeShape): string | null {
+  const parts: string[] = [];
+  if (k.door_code_notes) parts.push(String(k.door_code_notes));
+  if (k.access_notes) parts.push(String(k.access_notes));
+  if (k.checkin_instructions && parts.length === 0) parts.push(String(k.checkin_instructions));
+  const joined = parts.map(p => p.trim()).filter(Boolean).join('; ');
+  return shortTrim(joined, 160);
+}
+
+function heatingSnippet(k: PropertyKnowledgeShape): string | null {
+  const parts: string[] = [];
+  if (k.heating_notes) parts.push(String(k.heating_notes));
+  if (k.emergency_contact_notes) parts.push(String(k.emergency_contact_notes));
+  const joined = parts.map(p => p.trim()).filter(Boolean).join('; ');
+  return shortTrim(joined, 160);
+}
+
 function matchedContextSuffix(input: ReplyComposerInput, lang: Lang): string {
   const facts = input.extractedFacts ?? {};
   const guest = (facts as any).matched_guest ?? (facts as any).guest_name ?? (facts as any).guestName ?? null;
@@ -240,9 +309,23 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   }
 
   if (input.action === 'escalate_urgent') {
+    const k = extractPropertyKnowledge(input);
+    let opsAppend = '';
+    if (k) {
+      if (cat === 'access_issue') {
+        const snip = accessSnippet(k);
+        if (snip) opsAppend = lang === 'ru' ? ` [доступ: ${snip}]` : ` [access: ${snip}]`;
+      } else if (cat === 'no_heating') {
+        const snip = heatingSnippet(k);
+        if (snip) opsAppend = lang === 'ru' ? ` [отопление: ${snip}]` : ` [heating: ${snip}]`;
+      } else if (cat === 'no_hot_water') {
+        const em = shortTrim(k.emergency_contact_notes, 120);
+        if (em) opsAppend = lang === 'ru' ? ` [экстренный контакт: ${em}]` : ` [emergency: ${em}]`;
+      }
+    }
     return {
       template_key: `${cat}.escalate_urgent.v1`,
-      text: `${ack(lang)} ${escalateNow(lang, true)}${matchedContextSuffix(input, lang)}`,
+      text: `${ack(lang)} ${escalateNow(lang, true)}${matchedContextSuffix(input, lang)}${opsAppend}`,
     };
   }
 
@@ -259,6 +342,14 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   }
 
   if (cat === 'late_checkout') {
+    const k = extractPropertyKnowledge(input);
+    const policy = k ? shortTrim(k.late_checkout_policy ?? null, 180) : null;
+    if (policy) {
+      return {
+        template_key: `${cat}.reply.grounded.v1`,
+        text: `${ack(lang)} ${lang === 'ru' ? 'Политика позднего выезда' : lang === 'es' ? 'Política de late checkout' : 'Late checkout policy'}: ${policy}.${matchedContextSuffix(input, lang)}`,
+      };
+    }
     const v = pickVariant(input.update_id, [
       shortHoldSentence(lang, 'late checkout availability', 'возможность позднего выезда', 'la disponibilidad de late checkout'),
       shortHoldSentence(lang, 'a late checkout option', 'вариант позднего выезда', 'la opción de late checkout'),
@@ -267,6 +358,14 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   }
 
   if (cat === 'early_checkin') {
+    const k = extractPropertyKnowledge(input);
+    const policy = k ? shortTrim(k.early_checkin_policy ?? null, 180) : null;
+    if (policy) {
+      return {
+        template_key: `${cat}.reply.grounded.v1`,
+        text: `${ack(lang)} ${lang === 'ru' ? 'Политика раннего заезда' : lang === 'es' ? 'Política de early check-in' : 'Early check-in policy'}: ${policy}.${matchedContextSuffix(input, lang)}`,
+      };
+    }
     const v = pickVariant(input.update_id, [
       shortHoldSentence(lang, 'early check-in availability', 'возможность раннего заезда', 'la disponibilidad de early check-in'),
       shortHoldSentence(lang, 'an early check-in option', 'вариант раннего заезда', 'la opción de early check-in'),
@@ -316,6 +415,27 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
 
   if (cat === 'wifi_issue') {
     const hasMatchedProp = Boolean((input.extractedFacts as any)?.matched_property_id || (input.extractedFacts as any)?.matched_property_label);
+    const k = extractPropertyKnowledge(input);
+    const wifiInfo = k ? wifiSnippet(k) : null;
+    if (wifiInfo) {
+      const label = (input.extractedFacts as any)?.matched_property_label ?? (input.extractedFacts as any)?.property_hint ?? '';
+      const base =
+        lang === 'ru'
+          ? `Wi‑Fi${label ? ` для ${label}` : ''}: ${wifiInfo}.`
+          : lang === 'es'
+            ? `Wi‑Fi${label ? ` para ${label}` : ''}: ${wifiInfo}.`
+            : `Wi‑Fi${label ? ` for ${label}` : ''}: ${wifiInfo}.`;
+      const followUp =
+        lang === 'ru'
+          ? ' Если всё ещё не работает — уточните: нет сети, не подключается или пароль не подходит?'
+          : lang === 'es'
+            ? ' Si aún no funciona: ¿no hay red, no conecta o la contraseña no funciona?'
+            : ' If it still fails: no network, can’t connect, or password not working?';
+      return {
+        template_key: `${cat}.reply.grounded.v1`,
+        text: `${ack(lang)} ${base}${followUp}`,
+      };
+    }
     const v = hasMatchedProp
       ? (lang === 'ru'
           ? 'Проверю Wi‑Fi по этому объекту и вернусь с обновлением.'
@@ -341,6 +461,21 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   }
 
   if (cat === 'parking_question') {
+    const k = extractPropertyKnowledge(input);
+    const parkInfo = k ? parkingSnippet(k) : null;
+    if (parkInfo) {
+      const label = (input.extractedFacts as any)?.matched_property_label ?? (input.extractedFacts as any)?.property_hint ?? '';
+      const base =
+        lang === 'ru'
+          ? `Парковка${label ? ` (${label})` : ''}: ${parkInfo}.`
+          : lang === 'es'
+            ? `Estacionamiento${label ? ` (${label})` : ''}: ${parkInfo}.`
+            : `Parking${label ? ` (${label})` : ''}: ${parkInfo}.`;
+      return {
+        template_key: `${cat}.reply.grounded.v1`,
+        text: `${ack(lang)} ${base}`,
+      };
+    }
     const v = pickVariant(input.update_id, [
       lang === 'ru'
         ? 'Уточню правила парковки для этого адреса и вернусь с инструкцией.'
