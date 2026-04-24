@@ -1,70 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-type TgApiOk<T> = { ok: true; result: T };
-type TgApiErr = { ok: false; error_code?: number; description?: string };
-type TgApiResponse<T> = TgApiOk<T> | TgApiErr;
-
-type TgUser = {
-  id: number;
-  is_bot?: boolean;
-  username?: string;
-};
-
-type TgChat = {
-  id: number;
-  type: string;
-};
-
-type TgMessage = {
-  message_id: number;
-  date: number;
-  chat: TgChat;
-  from?: TgUser;
-  text?: string;
-  reply_to_message?: { message_id: number };
-};
-
-type TgUpdate = {
-  update_id: number;
-  message?: TgMessage;
-};
-
-type LiveAssertionSpec = {
-  must_not_include?: string[];
-  should_include_any?: string[];
-  max_clarifications?: number;
-  allow_escalation?: boolean;
-};
-
-type LiveCase = {
-  name: string;
-  input: string;
-  assertions: LiveAssertionSpec;
-};
-
-type LiveCasesFile = {
-  cases: LiveCase[];
-};
-
-type CaseResult = {
-  case_name: string;
-  input: string;
-  actual_reply: string | null;
-  pass: boolean;
-  failure_reason: string | null;
-  meta: {
-    sent_message_id: number | null;
-    received_message_id: number | null;
-    received_date_unix: number | null;
-    clarifications: number;
-    matched_includes: string[];
-    matched_must_not: string[];
-    matched_escalation: string[];
-  };
-};
-
-function requireEnv(name: string): string {
+function requireEnv(name) {
   const v = process.env[name];
   if (!v || !v.trim()) {
     throw new Error(
@@ -79,20 +16,20 @@ function requireEnv(name: string): string {
   return v.trim();
 }
 
-function sleep(ms: number) {
+function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function norm(s: string) {
-  return s.toLowerCase();
+function norm(s) {
+  return String(s ?? '').toLowerCase();
 }
 
-function includesCI(haystack: string, needle: string) {
+function includesCI(haystack, needle) {
   return norm(haystack).includes(norm(needle));
 }
 
-function countClarifications(reply: string): number {
-  const m = reply.match(/\?/g);
+function countClarifications(reply) {
+  const m = String(reply ?? '').match(/\?/g);
   return m ? m.length : 0;
 }
 
@@ -112,11 +49,7 @@ const ESCALATION_KEYWORDS = [
   'поддержк',
 ];
 
-async function tgCall<T>(
-  token: string,
-  method: string,
-  body: Record<string, unknown>,
-): Promise<{ http_status: number; json: TgApiResponse<T> }> {
+async function tgCall(token, method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -124,7 +57,7 @@ async function tgCall<T>(
   });
   const http_status = res.status;
   const text = await res.text();
-  let json: TgApiResponse<T>;
+  let json;
   try {
     json = JSON.parse(text);
   } catch {
@@ -133,11 +66,8 @@ async function tgCall<T>(
   return { http_status, json };
 }
 
-async function tgGetUpdates(
-  token: string,
-  args: { offset?: number; timeout?: number; limit?: number; allowed_updates?: string[] },
-): Promise<{ updates: TgUpdate[]; next_offset: number }> {
-  const { http_status, json } = await tgCall<TgUpdate[]>(token, 'getUpdates', args);
+async function tgGetUpdates(token, args) {
+  const { http_status, json } = await tgCall(token, 'getUpdates', args);
   if (!json.ok) {
     throw new Error(
       `Telegram getUpdates failed (http ${http_status}): ${json.description ?? 'unknown error'}`,
@@ -148,12 +78,8 @@ async function tgGetUpdates(
   return { updates, next_offset: maxId >= 0 ? maxId + 1 : args.offset ?? 0 };
 }
 
-async function tgSendMessage(
-  token: string,
-  chatId: string,
-  text: string,
-): Promise<{ message_id: number; date: number }> {
-  const { http_status, json } = await tgCall<TgMessage>(token, 'sendMessage', {
+async function tgSendMessage(token, chatId, text) {
+  const { http_status, json } = await tgCall(token, 'sendMessage', {
     chat_id: chatId,
     text,
   });
@@ -168,26 +94,14 @@ async function tgSendMessage(
   return { message_id: json.result.message_id, date: json.result.date };
 }
 
-function isBotReplyMessage(
-  msg: TgMessage,
-  chatIdNum: number,
-  botUsername?: string,
-): boolean {
+function isBotReplyMessage(msg, chatIdNum, botUsername) {
   if (!msg?.chat || msg.chat.id !== chatIdNum) return false;
   if (!msg.from?.is_bot) return false;
   if (botUsername && msg.from?.username && msg.from.username !== botUsername) return false;
   return typeof msg.text === 'string' && msg.text.trim().length > 0;
 }
 
-async function waitForBotReply(args: {
-  token: string;
-  chatIdNum: number;
-  offset: number;
-  afterDateUnix: number;
-  replyToMessageId?: number;
-  botUsername?: string;
-  timeoutMs: number;
-}): Promise<{ msg: TgMessage; next_offset: number }> {
+async function waitForBotReply(args) {
   const start = Date.now();
   let offset = args.offset;
 
@@ -200,7 +114,7 @@ async function waitForBotReply(args: {
     });
     offset = next_offset;
 
-    const messages: TgMessage[] = updates.map((u) => u.message).filter(Boolean) as TgMessage[];
+    const messages = updates.map((u) => u.message).filter(Boolean);
     const candidates = messages
       .filter((m) => isBotReplyMessage(m, args.chatIdNum, args.botUsername))
       .filter((m) => m.date >= args.afterDateUnix);
@@ -218,11 +132,11 @@ async function waitForBotReply(args: {
   throw new Error(`Timed out waiting for bot reply (${args.timeoutMs}ms).`);
 }
 
-function evaluateCase(caseDef: LiveCase, replyText: string): Omit<CaseResult, 'actual_reply'> {
-  const mustNot = caseDef.assertions.must_not_include ?? [];
-  const shouldAny = caseDef.assertions.should_include_any ?? [];
-  const maxClar = caseDef.assertions.max_clarifications ?? 999;
-  const allowEsc = caseDef.assertions.allow_escalation ?? false;
+function evaluateCase(caseDef, replyText) {
+  const mustNot = caseDef.assertions?.must_not_include ?? [];
+  const shouldAny = caseDef.assertions?.should_include_any ?? [];
+  const maxClar = caseDef.assertions?.max_clarifications ?? 999;
+  const allowEsc = caseDef.assertions?.allow_escalation ?? false;
 
   const matchedMustNot = mustNot.filter((s) => includesCI(replyText, s));
   if (matchedMustNot.length) {
@@ -331,7 +245,7 @@ async function main() {
     process.env.TELEGRAM_LIVE_CASES_PATH?.trim() ||
     path.join(process.cwd(), 'tests', 'telegram-live-cases.ru.json');
   const raw = fs.readFileSync(casesPath, 'utf8');
-  const parsed = JSON.parse(raw) as LiveCasesFile;
+  const parsed = JSON.parse(raw);
   if (!parsed?.cases?.length) {
     throw new Error(`No cases found in ${casesPath}`);
   }
@@ -346,7 +260,7 @@ async function main() {
     offset = maxId >= 0 ? maxId + 1 : next_offset;
   }
 
-  const results: CaseResult[] = [];
+  const results = [];
 
   // /reset_session must reply exactly.
   const reset = await tgSendMessage(token, chatIdRaw, '/reset_session');
@@ -457,8 +371,6 @@ async function main() {
   );
 
   const passed = results.filter((r) => r.pass).length;
-  const failed = results.length - passed;
-
   for (const r of results) {
     const tag = r.pass ? 'PASS' : 'FAIL';
     const extra = r.pass ? '' : ` — ${r.failure_reason ?? 'unknown failure'}`;
