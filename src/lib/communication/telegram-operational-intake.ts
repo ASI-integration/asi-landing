@@ -284,6 +284,14 @@ function extractAmountLike(text: string): string | null {
 }
 
 function extractPropertySnippet(text: string): string | null {
+  // Fast-path for our priority RU objects: "Невском 24", "Литейном 12" (any case/declension),
+  // including mid-sentence: "... у входа в Невском 24, ..."
+  const m0 = text.match(/\b(невск\w*\s+\d{1,4}(?:\s*к\d+)?|литейн\w*\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
+  if (m0) {
+    const s = normalizeKnownRuStreetForms(String(m0[1] ?? '').trim()).slice(0, 120);
+    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+  }
+
   const m1 = text.match(/по\s+адресу\s+([^.\n?]+)/i);
   if (m1) {
     const s = m1[1].trim().slice(0, 120);

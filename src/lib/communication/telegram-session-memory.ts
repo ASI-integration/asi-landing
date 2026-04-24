@@ -200,6 +200,12 @@ function looksLikePropertyHint(text: string, normalized: string): boolean {
 }
 
 function extractPropertySnippet(text: string): string | null {
+  const m0 = text.match(/\b(невск\w*\s+\d{1,4}(?:\s*к\d+)?|литейн\w*\s+\d{1,4}(?:\s*к\d+)?)\b/iu);
+  if (m0) {
+    const s = normalizeKnownRuStreetForms(String(m0[1] ?? '').trim()).slice(0, 120);
+    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+  }
+
   const m1 = text.match(/по\s+адресу\s+([^.\n?]+)/i);
   if (m1) {
     const s = m1[1].trim().slice(0, 120);
