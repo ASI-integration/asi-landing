@@ -162,6 +162,12 @@ function shortHoldSentence(lang: Lang, topicEn: string, topicRu: string, topicEs
   return `I’ll check ${topicEn} and confirm shortly.`;
 }
 
+function textHasExplicitRuProperty(text: string): boolean {
+  const t = String(text ?? '');
+  // Priority RU patterns we must treat as an explicit object mention.
+  return /\b(невск[\p{L}]*\s+\d{1,4}|литейн[\p{L}]*\s+\d{1,4})\b/iu.test(t);
+}
+
 function clarifyPrompt(input: ReplyComposerInput): string {
   const lang = normalizeLang(input.lang, input.text);
   const cat = input.category;
@@ -178,6 +184,15 @@ function clarifyPrompt(input: ReplyComposerInput): string {
   }
 
   if (cat === 'late_checkout') {
+    if (lang === 'ru' && textHasExplicitRuProperty(input.text)) {
+      // Object is already explicit; do not ask "Для какого это объекта?"
+      return oneQuestion(
+        lang,
+        'What time would you like for late checkout?',
+        'До какого времени нужен поздний выезд?',
+        '¿Hasta qué hora necesitas el late checkout?',
+      );
+    }
     return oneQuestion(
       lang,
       'Which property is this for?',
@@ -247,7 +262,8 @@ function clarifyPrompt(input: ReplyComposerInput): string {
       Boolean((input.sessionMemory as any)?.propertyLocation) ||
       Boolean((input.sessionMemory as any)?.propertyId) ||
       Boolean((input.sessionCase as any)?.property) ||
-      Boolean((input.extractedFacts as any)?.property && (input.extractedFacts as any).property !== 'hint_present');
+      Boolean((input.extractedFacts as any)?.property && (input.extractedFacts as any).property !== 'hint_present') ||
+      (lang === 'ru' && textHasExplicitRuProperty(input.text));
     return knowsProperty
       ? oneQuestion(
           lang,
