@@ -84,6 +84,9 @@ jobs:
           mkdir -p release
 
           cp package.json package-lock.json next.config.js ecosystem.config.cjs release/
+          mkdir -p release/scripts release/tests
+          cp scripts/telegram-live-acceptance.mjs release/scripts/
+          cp tests/telegram-live-cases.ru.json release/tests/
           if [ -d public ]; then cp -R public release/; fi
           cp -R .next release/
           cp -a node_modules release/
