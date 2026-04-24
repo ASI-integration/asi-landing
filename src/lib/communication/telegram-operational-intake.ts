@@ -55,8 +55,10 @@ function normalizeKnownRuStreetForms(snippet: string): string {
   let s = normalizeSpace(snippet);
   // Heuristic normalization for common declensions so DB "location" matches:
   // "в Невском 24" -> "Невский 24", "в Литейном 12" -> "Литейный 12"
-  s = s.replace(/\b(невск)(ий|ого|ому|ом|ая|ую|ой|им)\b/iu, 'Невский');
-  s = s.replace(/\b(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)\b/iu, 'Литейный');
+  // Do NOT use `\b` here — JS word boundaries are ASCII-centric and break on Cyrillic,
+  // which caused "Невском/Литейном" to not normalize → DB location mismatch.
+  s = s.replace(/(невск)(ий|ого|ому|ом|ая|ую|ой|им)/iu, 'Невский');
+  s = s.replace(/(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)/iu, 'Литейный');
   return s;
 }
 

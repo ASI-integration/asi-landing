@@ -154,8 +154,10 @@ function normalizeText(text: string): string {
 
 function normalizeKnownRuStreetForms(snippet: string): string {
   let s = String(snippet ?? '').replace(/\s+/g, ' ').trim();
-  s = s.replace(/\b(невск)(ий|ого|ому|ом|ая|ую|ой|им)\b/iu, 'Невский');
-  s = s.replace(/\b(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)\b/iu, 'Литейный');
+  // Do NOT use `\b` here — JS word boundaries are ASCII-centric and break on Cyrillic,
+  // which caused "Невском/Литейном" to not normalize → DB location mismatch.
+  s = s.replace(/(невск)(ий|ого|ому|ом|ая|ую|ой|им)/iu, 'Невский');
+  s = s.replace(/(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)/iu, 'Литейный');
   return s;
 }
 
