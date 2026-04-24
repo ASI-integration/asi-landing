@@ -165,7 +165,8 @@ function shortHoldSentence(lang: Lang, topicEn: string, topicRu: string, topicEs
 function textHasExplicitRuProperty(text: string): boolean {
   const t = String(text ?? '');
   // Priority RU patterns we must treat as an explicit object mention.
-  return /\b(невск[\p{L}]*\s+\d{1,4}|литейн[\p{L}]*\s+\d{1,4})\b/iu.test(t);
+  // IMPORTANT: do NOT use `\b` here because JS word-boundaries are ASCII-centric and fail on Cyrillic.
+  return /(?:^|[^\p{L}])(невск[\p{L}]*\s+\d{1,4}|литейн[\p{L}]*\s+\d{1,4})(?=$|[^\p{L}\d])/iu.test(t);
 }
 
 function clarifyPrompt(input: ReplyComposerInput): string {
