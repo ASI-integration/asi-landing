@@ -620,6 +620,9 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       (hit.extractedFacts as any).matched_property_label = match.matched_property?.location ?? null;
       (hit.extractedFacts as any).matched_reservation_id = match.matched_reservation_id;
       (hit.extractedFacts as any).match_reason = match.reason;
+      (hit.extractedFacts as any).normalized_property_hint = match.normalized_property_hint;
+      (hit.extractedFacts as any).candidate_matches = match.candidate_matches;
+      (hit.extractedFacts as any).chosen_match = match.chosen_match;
 
       const alreadyUsedClarification = Boolean(prevCase && isCaseOpen(prevCase) && (prevCase.clarification_count ?? 0) >= 1);
       const prevHasProperty = Boolean(prevCase?.property);
