@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "name": "access_first_person",
+      "input": "Здравствуйте. Я уже у двери и не могу попасть в квартиру — код доступа не подходит. Что мне делать?",
+      "assertions": {
+        "must_not_include": ["как искусственный интеллект", "не могу помочь", "я не имею доступа"],
+        "should_include_any": ["код", "доступ", "замок", "двер"],
+        "max_clarifications": 2,
+        "allow_escalation": false
+      }
+    },
+    {
+      "name": "wifi_first_person",
+      "input": "Я уже заселился и не могу подключиться к Wi‑Fi. Подскажите, пожалуйста, название сети и пароль.",
+      "assertions": {
+        "must_not_include": ["как искусственный интеллект", "не могу помочь", "я не имею доступа"],
+        "should_include_any": ["wi", "wifi", "вай", "сеть", "парол"],
+        "max_clarifications": 2,
+        "allow_escalation": false
+      }
+    },
+    {
+      "name": "parking_first_person",
+      "input": "Я приехал на машине. Где мне можно припарковаться рядом с домом и нужен ли пропуск/разрешение?",
+      "assertions": {
+        "must_not_include": ["как искусственный интеллект", "не могу помочь", "я не имею доступа"],
+        "should_include_any": ["парков", "стоян", "машин", "пропуск", "разреш"],
+        "max_clarifications": 2,
+        "allow_escalation": false
+      }
+    },
+    {
+      "name": "late_checkout_first_person",
+      "input": "Я хотел бы выехать завтра позже. Можно ли продлить выезд до 13:00 и сколько это будет стоить?",
+      "assertions": {
+        "must_not_include": ["как искусственный интеллект", "не могу помочь", "я не имею доступа"],
+        "should_include_any": ["поздн", "выезд", "late", "13:00", "стоим", "оплат"],
+        "max_clarifications": 2,
+        "allow_escalation": false
+      }
+    },
+    {
+      "name": "no_heating_first_person",
+      "input": "У меня в квартире совсем нет отопления, очень холодно. Что мне сделать прямо сейчас?",
+      "assertions": {
+        "must_not_include": ["как искусственный интеллект", "не могу помочь", "я не имею доступа"],
+        "should_include_any": ["отоп", "батар", "холод", "температур", "сроч"],
+        "max_clarifications": 3,
+        "allow_escalation": true
+      }
+    }
+  ]
+}

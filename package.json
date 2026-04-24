@@ -19,7 +19,8 @@
     "test:a11y": "playwright test tests/a11y.spec.ts --project=desktop",
     "test:e2e": "playwright test",
     "test:e2e:report": "playwright show-report",
-    "lighthouse": "node scripts/lighthouse.mjs"
+    "lighthouse": "node scripts/lighthouse.mjs",
+    "test:telegram:live": "tsx scripts/telegram-live-acceptance.ts"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
@@ -50,6 +51,7 @@
     "lighthouse": "^13.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
+    "tsx": "^4.20.5",
     "typescript": "^5.6.3",
     "vitest": "^4.1.0"
   }
