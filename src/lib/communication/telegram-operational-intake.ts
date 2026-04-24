@@ -51,6 +51,15 @@ function stripPunctForMatch(s: string): string {
   return normalizeSpace(String(s ?? '').toLowerCase().replace(/[“”„"']/g, '').replace(/[?!.,;:(){}\[\]<>]/g, ' '));
 }
 
+function normalizeKnownRuStreetForms(snippet: string): string {
+  let s = normalizeSpace(snippet);
+  // Heuristic normalization for common declensions so DB "location" matches:
+  // "в Невском 24" -> "Невский 24", "в Литейном 12" -> "Литейный 12"
+  s = s.replace(/\b(невск)(ий|ого|ому|ом|ая|ую|ой|им)\b/iu, 'Невский');
+  s = s.replace(/\b(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)\b/iu, 'Литейный');
+  return s;
+}
+
 function hasLateCheckoutIntent(n: string): boolean {
   return (
     /\blate\s+checkout\b/i.test(n) ||
@@ -196,7 +205,9 @@ function hasPropertyHint(text: string, n: string): boolean {
     if (/^(the\s+)?front\s+door\b/i.test(snippet)) return false;
     if (!/^\d{1,2}:\d{2}$/.test(snippet) && !/^\d{1,2}$/.test(snippet)) return true;
   }
-  if (/(nevsky|невский|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(n)) return true;
+  if (/(nevsky|невск|liteyn|литейн|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(n)) return true;
+  // Russian "street-in-locative + number": "в Невском 24", "в Литейном 12"
+  if (/(?:\bв|\bна)\s+[а-яёa-z.\-]{3,40}\s+\d{1,4}\b/i.test(n)) return true;
   if (/\b\d{1,4}\s*[A-Za-zА-Яа-яЁё.-]+(?:st|street|str|ave|просп|пер|шоссе)\b/i.test(n)) return true;
   return false;
 }
@@ -296,6 +307,21 @@ function extractPropertySnippet(text: string): string | null {
       .replace(/\bне\s+могу\s+(войти|попасть)\b.*$/i, '')
       .trim();
     return s;
+  }
+  // Russian locative address fragment: "в Невском 24", "на Литейном 12"
+  const m3 = text.match(/(?:\bв|\bна)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  if (m3) {
+    const s = normalizeKnownRuStreetForms(String(m3[1] ?? '').trim()).slice(0, 120);
+    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+  }
+  // Word+number without explicit preposition: "Невском 24", "Литейном 12"
+  const m4 = text.match(/\b([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  if (m4) {
+    const candidate = String(m4[1] ?? '').trim();
+    if (candidate && (/(невск|литейн|tversk|тверск|ул\.?|улиц|просп|наб\.)/iu.test(candidate))) {
+      const s = normalizeKnownRuStreetForms(candidate).slice(0, 120);
+      if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+    }
   }
   return null;
 }
@@ -486,8 +512,20 @@ export function tryTelegramOperationalIntake(
     };
 
     const matrix = getMatrix('access_issue', missing);
-    const finalAction: TelegramOperationalFinalAction = matrix.action;
+    let finalAction: TelegramOperationalFinalAction = matrix.action;
     (facts as any).urgency_signals = matrix.urgency_signals;
+
+    // RU live rule: if guest is "right now at the entrance/door" and we have a property clue,
+    // treat it as urgent access escalation.
+    const urgentAtDoor =
+      /сейчас\s+у\s+(входа|двери)|я\s+сейчас\s+у\s+(входа|двери)|прямо\s+сейчас\s+у\s+(входа|двери)/i.test(raw) ||
+      /i'?m\s+at\s+the\s+(entrance|door)\s+now/i.test(raw);
+    if (urgentAtDoor && hasProp) {
+      finalAction = 'escalate_urgent';
+      (facts as any).urgency_signals = Array.isArray((facts as any).urgency_signals)
+        ? Array.from(new Set([...(facts as any).urgency_signals, 'at_door_now']))
+        : ['at_door_now'];
+    }
     const reply =
       finalAction === 'reply'
         ? ru

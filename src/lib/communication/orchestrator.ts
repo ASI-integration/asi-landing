@@ -94,6 +94,66 @@ import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-se
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
 
+type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
+
+function isTgLivePriorityScenario(s: unknown): s is TgLivePriorityScenario {
+  return s === 'access_issue' || s === 'wifi_issue' || s === 'late_checkout';
+}
+
+function safeLogJson(tag: string, payload: Record<string, unknown>): void {
+  try {
+    console.log(tag, payload);
+  } catch {
+    // never throw from logging
+  }
+}
+
+function logTelegramLivePath(params: {
+  stage:
+    | 'inbound'
+    | 'intake'
+    | 'matching'
+    | 'knowledge_lookup'
+    | 'reply_decision'
+    | 'reply_composed'
+    | 'escalation_payload';
+  update_id: number;
+  raw_text: string;
+  scenario: string | null;
+  extracted_facts: Record<string, unknown> | null;
+  matched_property_id: string | null;
+  property_match_confidence: string | null;
+  matched_reservation_id: string | null;
+  knowledge_lookup_attempted: boolean;
+  knowledge_lookup_result: string;
+  knowledge_fields_available: string[];
+  reply_mode: 'grounded_reply' | 'clarification' | 'escalation';
+  clarification_question_used: boolean;
+  clarification_question_used_text: string | null;
+  escalation_reason: string | null;
+  final_reply_text: string | null;
+}): void {
+  safeLogJson('[tg:live:path]', {
+    update_id: params.update_id,
+    raw_text: params.raw_text,
+    scenario: params.scenario,
+    extracted_facts: params.extracted_facts,
+    matched_property_id: params.matched_property_id,
+    property_match_confidence: params.property_match_confidence,
+    matched_reservation_id: params.matched_reservation_id,
+    knowledge_lookup_attempted: params.knowledge_lookup_attempted,
+    knowledge_lookup_result: params.knowledge_lookup_result,
+    knowledge_fields_available: params.knowledge_fields_available,
+    reply_mode: params.reply_mode,
+    clarification_question_used: params.clarification_question_used,
+    clarification_question_used_text: params.clarification_question_used_text,
+    escalation_reason: params.escalation_reason,
+    final_reply_text: params.final_reply_text,
+    stage: params.stage,
+    ts: new Date().toISOString(),
+  });
+}
+
 function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
   if (process.env.COMM_PIPELINE_DEBUG === '1') return true;
   if (process.env.RU_TELEGRAM_DEBUG === '1' && envelope?.channel === 'telegram') return true;
@@ -792,6 +852,38 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       if (opIntakeResult.handled) {
         const opIntake = opIntakeResult.hit;
         telegramOperationalIntakeConsumed = true;
+        const tgPriority = isTgLivePriorityScenario(opIntake.category);
+        if (tgPriority) {
+          const ef = (opIntake.extractedFacts ?? {}) as any;
+          const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
+          const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+          logTelegramLivePath({
+            stage: 'intake',
+            update_id,
+            raw_text: text,
+            scenario: opIntake.category,
+            extracted_facts: ef,
+            matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
+            property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
+            matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
+            knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
+            knowledge_lookup_result: knStatus ?? 'skipped',
+            knowledge_fields_available: knFields,
+            reply_mode:
+              opIntake.finalAction === 'clarify'
+                ? 'clarification'
+                : opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent'
+                  ? 'escalation'
+                  : 'grounded_reply',
+            clarification_question_used: opIntake.finalAction === 'clarify',
+            clarification_question_used_text: opIntake.finalAction === 'clarify' ? String(opIntake.reply ?? '') : null,
+            escalation_reason:
+              opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent'
+                ? String(opIntake.actionReason ?? 'n/a')
+                : null,
+            final_reply_text: null,
+          });
+        }
         if (escalationSafetyGate) {
           logSessionResetOrCaseReopen({
             previous_status: 'escalated',
@@ -875,6 +967,37 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;
           usedPath = 'reply_composer';
+          if (tgPriority) {
+            const ef = (opIntake.extractedFacts ?? {}) as any;
+            const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
+            const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+            logTelegramLivePath({
+              stage: 'reply_composed',
+              update_id,
+              raw_text: text,
+              scenario: opIntake.category,
+              extracted_facts: ef,
+              matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
+              property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
+              matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
+              knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
+              knowledge_lookup_result: knStatus ?? 'skipped',
+              knowledge_fields_available: knFields,
+              reply_mode:
+                opIntake.finalAction === 'clarify'
+                  ? 'clarification'
+                  : opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent'
+                    ? 'escalation'
+                    : 'grounded_reply',
+              clarification_question_used: opIntake.finalAction === 'clarify',
+              clarification_question_used_text: opIntake.finalAction === 'clarify' ? String(composed.text ?? '') : null,
+              escalation_reason:
+                opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent'
+                  ? String(opIntake.actionReason ?? 'n/a')
+                  : null,
+              final_reply_text: replyText,
+            });
+          }
         }
         if (opIntake.finalAction === 'escalate_operator' || opIntake.finalAction === 'escalate_urgent') {
           const urgent = opIntake.finalAction === 'escalate_urgent';
@@ -909,6 +1032,29 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             }),
             suggestedReply: opIntake.reply,
           });
+          if (tgPriority) {
+            const ef = (opIntake.extractedFacts ?? {}) as any;
+            const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
+            const knFields = Array.isArray(ef?.property_knowledge_fields) ? ef.property_knowledge_fields.map(String) : [];
+            logTelegramLivePath({
+              stage: 'escalation_payload',
+              update_id,
+              raw_text: text,
+              scenario: opIntake.category,
+              extracted_facts: ef,
+              matched_property_id: ef?.matched_property_id ? String(ef.matched_property_id) : null,
+              property_match_confidence: ef?.match_confidence ? String(ef.match_confidence) : null,
+              matched_reservation_id: ef?.matched_reservation_id ? String(ef.matched_reservation_id) : null,
+              knowledge_lookup_attempted: Boolean(knStatus && knStatus !== 'skipped'),
+              knowledge_lookup_result: knStatus ?? 'skipped',
+              knowledge_fields_available: knFields,
+              reply_mode: 'escalation',
+              clarification_question_used: false,
+              clarification_question_used_text: null,
+              escalation_reason: String(opIntake.actionReason ?? 'n/a'),
+              final_reply_text: replyText || null,
+            });
+          }
           auditEscalation({ chat_id: chatId, update_id, detail: `telegram_operational_intake:${opIntake.category}` });
           auditDecision({
             type: 'escalate',

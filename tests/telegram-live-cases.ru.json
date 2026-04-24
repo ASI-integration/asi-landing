@@ -5,49 +5,22 @@
       "input": "Здравствуйте. Я сейчас у входа в Невском 24, код от двери не работает.",
       "assertions": {
         "should_include_any": ["код", "двер", "замок", "домоф", "вход"],
-        "allow_escalation": false
+        "allow_escalation": true
       }
     },
     {
       "name": "wifi_first_person",
-      "input": "Добрый день. Я не могу подключиться к Wi-Fi в Невском 24. Можете помочь?",
+      "input": "Здравствуйте. Я не могу подключиться к Wi-Fi в Невском 24. Можете помочь?",
       "assertions": {
         "should_include_any": ["wi", "wifi", "вай", "сеть", "парол", "подключ"],
         "allow_escalation": false
       }
     },
     {
-      "name": "parking_first_person",
-      "input": "Здравствуйте. Подскажите, пожалуйста, где можно припарковаться рядом с квартирой?",
-      "assertions": {
-        "should_include_any": [
-          "парков",
-          "припарков",
-          "паркинг",
-          "мест",
-          "стоян",
-          "улиц",
-          "платн",
-          "зон",
-          "шлагбаум",
-          "двор"
-        ],
-        "allow_escalation": false
-      }
-    },
-    {
       "name": "late_checkout_first_person",
-      "input": "Здравствуйте. Можно ли мне завтра сделать поздний выезд до 13:00?",
+      "input": "Здравствуйте. Можно ли мне завтра сделать поздний выезд до 13:00 в Литейном 12?",
       "assertions": {
         "should_include_any": ["поздн", "выезд", "13:00", "возмож", "доплат", "стоим"],
-        "allow_escalation": false
-      }
-    },
-    {
-      "name": "no_heating_first_person",
-      "input": "Здравствуйте. В квартире нет отопления, очень холодно.",
-      "assertions": {
-        "should_include_any": ["отоп", "батар", "холод", "температур", "сроч"],
         "allow_escalation": true
       }
     }

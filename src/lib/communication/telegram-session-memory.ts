@@ -152,6 +152,13 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+function normalizeKnownRuStreetForms(snippet: string): string {
+  let s = String(snippet ?? '').replace(/\s+/g, ' ').trim();
+  s = s.replace(/\b(невск)(ий|ого|ому|ом|ая|ую|ой|им)\b/iu, 'Невский');
+  s = s.replace(/\b(литейн)(ый|ого|ому|ом|ая|ую|ой|ым)\b/iu, 'Литейный');
+  return s;
+}
+
 function extractTimeLike(text: string): string | null {
   const t = String(text ?? '');
   const m = t.match(/\b(\d{1,2}:\d{2})\b/);
@@ -186,7 +193,8 @@ function extractGuestName(text: string): string | null {
 
 function looksLikePropertyHint(text: string, normalized: string): boolean {
   if (/по\s+адресу/i.test(text)) return true;
-  if (/(nevsky|невский|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(normalized)) return true;
+  if (/(nevsky|невск|liteyn|литейн|tversk|тверск|ул\.?\s|улиц|проспект|набережн)/i.test(normalized)) return true;
+  if (/(?:\bв|\bна)\s+[а-яёa-z.\-]{3,40}\s+\d{1,4}\b/i.test(normalized)) return true;
   if (/\b\d{1,4}\s*[A-Za-zА-Яа-яЁё.-]+(?:st|street|str|ave|просп|пер|шоссе)\b/i.test(normalized)) return true;
   return false;
 }
@@ -204,6 +212,19 @@ function extractPropertySnippet(text: string): string | null {
     if (/^\d{1,2}:\d{2}$/.test(s)) return null;
     if (/^\d{1,2}$/.test(s)) return null;
     return s;
+  }
+  const m3 = text.match(/(?:\bв|\bна)\s+([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  if (m3) {
+    const s = normalizeKnownRuStreetForms(String(m3[1] ?? '').trim()).slice(0, 120);
+    if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+  }
+  const m4 = text.match(/\b([А-Яа-яЁёA-Za-z.\-]{3,60}\s+\d{1,4}(?:\s*к\d+)*)\b/u);
+  if (m4) {
+    const candidate = String(m4[1] ?? '').trim();
+    if (candidate && (/(невск|литейн|tversk|тверск|ул\.?|улиц|просп|наб\.)/iu.test(candidate))) {
+      const s = normalizeKnownRuStreetForms(candidate).slice(0, 120);
+      if (s && !/^\d{1,2}:\d{2}$/.test(s)) return s;
+    }
   }
   // if the entire message looks like a property clue, keep it verbatim (short).
   const trimmed = String(text ?? '').trim();
@@ -534,6 +555,21 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
   // If we got a fresh deterministic hit, decide whether to start new case or merge.
   if (hit) {
     const previous_state = prevCase ? safeJsonClone(prevCase) : null;
+    // If the message already contains an explicit property/address clue, never ask "which property" again.
+    // This is critical for RU live Telegram flows like "в Невском 24".
+    if (!hit.missingFacts?.includes('property')) {
+      // nothing to do
+    } else {
+      const propSnippet = extractPropertySnippet(params.text);
+      const normalized = normalizeText(params.text);
+      if (propSnippet || looksLikePropertyHint(params.text, normalized)) {
+        hit.missingFacts = (hit.missingFacts ?? []).filter(k => k !== 'property');
+        (hit.extractedFacts as any).property_hint =
+          (hit.extractedFacts as any).property_hint && (hit.extractedFacts as any).property_hint !== 'hint_present'
+            ? (hit.extractedFacts as any).property_hint
+            : (propSnippet ? propSnippet : 'hint_present');
+      }
+    }
 
     // Matching layer: try to ground to guest/reservation/property before deciding clarify/escalate.
     let match: Awaited<ReturnType<typeof matchTelegramOperationalEntitiesV1>> | null = null;
@@ -653,6 +689,17 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
             hit.finalAction = 'reply';
             hit.actionReason = `knowledge:early_checkin:grounded`;
             groundedReply = true;
+          }
+        }
+
+        // Late checkout policy-aware behavior: escalate only if policy explicitly requires approval.
+        if (hit.category === 'late_checkout' && kn.status === 'knowledge_found' && kn.knowledge?.late_checkout_policy) {
+          const p = String(kn.knowledge.late_checkout_policy).toLowerCase();
+          const requiresApproval =
+            /согласован|по\s+согласован|только\s+по\s+согласован|нужно\s+одобрен|только\s+с\s+разрешен|требует\s+одобрен/.test(p);
+          if (requiresApproval) {
+            hit.finalAction = 'escalate_operator';
+            hit.actionReason = 'knowledge:late_checkout:policy_requires_approval';
           }
         }
 
