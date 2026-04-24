@@ -597,6 +597,18 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
     (hit.extractedFacts as any).explicit_property_detected = explicit_property_detected;
 
     // Matching layer: try to ground to guest/reservation/property before deciding clarify/escalate.
+    // Pass session context (prev matched ids) so the matcher can fall back to chat-based
+    // reservation lookup when the guest does not restate the address in a follow-up message.
+    // Explicit property hints still win — the matcher's Step 3 runs before the fallback.
+    const sessionContextForMatch: {
+      matched_property_id: string | null;
+      matched_property_label: string | null;
+      matched_reservation_id: string | null;
+    } = {
+      matched_property_id: ((prevCase?.extracted_facts ?? {}) as any)?.matched_property_id ?? null,
+      matched_property_label: ((prevCase?.extracted_facts ?? {}) as any)?.matched_property_label ?? null,
+      matched_reservation_id: ((prevCase?.extracted_facts ?? {}) as any)?.matched_reservation_id ?? null,
+    };
     let match: Awaited<ReturnType<typeof matchTelegramOperationalEntitiesV1>> | null = null;
     try {
       match = await matchTelegramOperationalEntitiesV1({
@@ -604,6 +616,8 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         update_id: params.update_id,
         scenario: hit.category,
         extracted_facts: hit.extractedFacts as any,
+        chat_id: params.chatId,
+        session_context: sessionContextForMatch,
         db: params.db,
       });
     } catch {
@@ -623,6 +637,11 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       (hit.extractedFacts as any).normalized_property_hint = match.normalized_property_hint;
       (hit.extractedFacts as any).candidate_matches = match.candidate_matches;
       (hit.extractedFacts as any).chosen_match = match.chosen_match;
+      (hit.extractedFacts as any).explicit_property_hint = match.explicit_property_hint;
+      (hit.extractedFacts as any).session_property_match = match.session_property_match;
+      (hit.extractedFacts as any).reservation_match = match.reservation_match;
+      (hit.extractedFacts as any).candidate_reservations = match.candidate_reservations;
+      (hit.extractedFacts as any).clarification_required = match.clarification_required;
 
       const alreadyUsedClarification = Boolean(prevCase && isCaseOpen(prevCase) && (prevCase.clarification_count ?? 0) >= 1);
       const prevHasProperty = Boolean(prevCase?.property);
