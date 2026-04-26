@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzeLocation } from '@/lib/core-api';
+import { analyzeLocation, isCoreApiConfigured } from '@/lib/core-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +33,16 @@ export async function POST(req: NextRequest) {
     if (typeof body.lon === 'number') lon = body.lon;
   } catch {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
+  }
+
+  if (!isCoreApiConfigured()) {
+    return NextResponse.json(
+      {
+        error: 'Location analysis is temporarily unavailable',
+        code:  'CORE_API_NOT_CONFIGURED',
+      },
+      { status: 503 },
+    );
   }
 
   try {

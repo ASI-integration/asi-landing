@@ -18,6 +18,10 @@
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+export function isCoreApiConfigured(): boolean {
+  return Boolean(process.env.ASI_CORE_BASE_URL) && Boolean(process.env.ASI_CORE_API_SECRET);
+}
+
 function baseUrl(): string {
   const url = process.env.ASI_CORE_BASE_URL;
   if (!url) throw new Error('[core-api] ASI_CORE_BASE_URL is not set');
