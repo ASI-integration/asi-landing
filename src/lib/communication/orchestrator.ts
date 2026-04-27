@@ -2091,6 +2091,8 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       providerMessageId: String(message.message_id),
       externalMessageId: String(message.message_id),
       telegram_user_language_code: message.from?.language_code,
+      ...(message.from?.id != null ? { telegram_from_user_id: String(message.from.id) } : {}),
+      ...(message.from?.username ? { telegram_from_username: message.from.username } : {}),
     },
   };
 

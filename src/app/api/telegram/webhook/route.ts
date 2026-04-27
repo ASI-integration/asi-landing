@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
+import { ProcessOutcome } from '@/lib/communication/types';
 import type { TelegramUpdate } from '@/lib/communication/types';
 import { replyToTelegram } from '@/lib/telegram';
 
@@ -103,6 +104,9 @@ export async function POST(req: Request): Promise<Response> {
         update_id: result.update_id,
         chat_id: (result as any).chat_id,
       });
+    }
+    if (result.outcome === ProcessOutcome.Duplicate) {
+      return NextResponse.json({ ok: true, duplicate: true }, { status: 200 });
     }
   } catch (e) {
     console.error('[tg:webhook] processUpdate threw', e);
