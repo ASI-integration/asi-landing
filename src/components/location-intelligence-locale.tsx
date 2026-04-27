@@ -523,3 +523,5 @@ export function magnetWhy(categoryId: string, locale: LocDemoLocale): string | u
   const m = locale === 'ru' ? MAGNET_WHY_RU : MAGNET_WHY_EN;
   return m[categoryId];
 }
+
+export { RU_DEMO_COPY } from './ru-demo-copy';
