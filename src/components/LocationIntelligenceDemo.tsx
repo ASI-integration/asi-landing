@@ -35,6 +35,7 @@ import {
   magnetWhy,
   type LocDemoLocale,
 } from '@/components/location-intelligence-locale';
+import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 
@@ -1859,7 +1860,7 @@ function ASIPanel({
         <div className="flex flex-col items-center justify-center gap-1 p-5
                         border-r border-b md:border-b-0 border-slate-800/40">
           <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">
-            {locale === 'ru' ? 'Демо‑предпросмотр' : 'Demo preview'}
+            {locale === 'ru' ? RU_DEMO_COPY.demoScoreLabel : 'Demo preview'}
           </p>
           <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
         </div>
@@ -2000,8 +2001,10 @@ function ASIPanel({
 
       <NeighborhoodEnvironmentPanel analysis={analysis} locale={locale} c={c} />
 
-      {/* Audience reasoning — why this audience was determined */}
+      {/* Audience reasoning — why this audience was determined (EN only; RU hides raw internal magnets) */}
       {(() => {
+        const _loc: string = locale; // prevents TS from narrowing `locale` inside this block
+        if (_loc === 'ru') return null;
         const aa = analysis.audienceAnalysis;
         if (!aa) return null;
         const topMagnets = aa.primaryMagnets.slice(0, 3);
@@ -2058,9 +2061,21 @@ function ASIPanel({
         );
       })()}
 
-      {/* Score breakdown — what drives the index */}
+      {/* Score explanation — friendly copy for RU; internal breakdown for EN */}
+      {locale === 'ru' && (
+        <div className="px-5 py-5 border-b border-slate-800/40">
+          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            {RU_DEMO_COPY.scoreExplanationTitle}
+          </p>
+          <p className="text-[14px] text-slate-400 leading-relaxed">
+            {RU_DEMO_COPY.scoreExplanationBody}
+          </p>
+        </div>
+      )}
       {analysis.locationScore && (() => {
-        const ls = analysis.locationScore;
+        const _loc: string = locale;
+        if (_loc === 'ru') return null;
+        const ls = analysis.locationScore!
         const bd = ls.breakdown;
 
         const components: Array<{
@@ -2182,7 +2197,7 @@ function ASIPanel({
         </ul>
       </div>
 
-      {/* Income formula — ADR × occupancy × 30 days */}
+      {/* Income scenarios — RU shows 3 scenarios without internal formula; EN shows full formula */}
       {analysis.locationScore?.income_model && (() => {
         const { base_adr_rub, base_occupancy_pct } = analysis.locationScore!.income_model;
         const stratMul = {
@@ -2198,123 +2213,187 @@ function ASIPanel({
           ? (strategy === 'short_term' ? 'посуточная аренда' : strategy === 'hybrid' ? 'гибридная модель' : 'среднесрочная аренда')
           : (strategy === 'short_term' ? 'short-term' : strategy === 'hybrid' ? 'hybrid model' : 'mid-term');
 
+        const isRu = locale === 'ru';
+        const level = analysis.gravityExplanation.competitorPressureLevel;
+        const cautAdr = Math.round(adjAdr * 0.88 / 100) * 100;
+        const cautOcc = Math.max(20, adjOcc - 15);
+        const cautious = Math.round(cautAdr * (cautOcc / 100) * 30 / 1000) * 1000;
+        const strongAdr = Math.round(adjAdr * 1.12 / 100) * 100;
+        const strongOcc = Math.min(90, adjOcc + 10);
+        const strong = Math.round(strongAdr * (strongOcc / 100) * 30 / 1000) * 1000;
+
+        const competitionNote = isRu
+          ? (level === 'high' ? 'давление конкурентов' : level === 'medium' ? 'умеренная конкуренция' : 'свободная ниша')
+          : (level === 'high' ? 'high competition' : level === 'medium' ? 'moderate competition' : 'open niche');
+
+        const scenarios: Array<{ labelRu: string; labelEn: string; value: number; reasonRu: string; reasonEn: string; dim: boolean }> = [
+          {
+            labelRu: 'Осторожный',
+            labelEn: 'Conservative',
+            value: cautious,
+            reasonRu: `слабая загрузка · ${competitionNote}`,
+            reasonEn: `lower occupancy · ${competitionNote}`,
+            dim: true,
+          },
+          {
+            labelRu: 'Базовый',
+            labelEn: 'Base',
+            value: formulaResult,
+            reasonRu: 'расчётная модель',
+            reasonEn: 'model estimate',
+            dim: false,
+          },
+          {
+            labelRu: 'Сильный',
+            labelEn: 'Upside',
+            value: strong,
+            reasonRu: 'высокий рейтинг · пиковый спрос',
+            reasonEn: 'high ratings · peak demand',
+            dim: false,
+          },
+        ];
+
         return (
           <div className="px-5 py-4 border-b border-slate-800/30">
             <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
-              {locale === 'ru' ? 'Как посчитан доход' : 'How income is estimated'}
+              {isRu ? RU_DEMO_COPY.revenueTitle : 'How income is estimated'}
             </p>
-            {/* Formula row */}
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 text-[14px]">
-              <span className="text-slate-200 font-medium">{adjAdr.toLocaleString('ru-RU')} ₽</span>
-              <span className="text-slate-600">ставка/ночь</span>
-              <span className="text-slate-700">×</span>
-              <span className="text-slate-200 font-medium">{adjOcc}%</span>
-              <span className="text-slate-600">загрузка</span>
-              <span className="text-slate-700">×</span>
-              <span className="text-slate-200 font-medium">30</span>
-              <span className="text-slate-600">дней</span>
-              <span className="text-slate-700">=</span>
-              <span className="text-slate-100 font-semibold">≈ {formulaResult.toLocaleString('ru-RU')} ₽</span>
+
+            {/* Internal formula — EN only; RU skips to keep scoring model private */}
+            {!isRu && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 text-[14px]">
+                <span className="text-slate-200 font-medium">{adjAdr.toLocaleString('ru-RU')} ₽</span>
+                <span className="text-slate-600">ставка/ночь</span>
+                <span className="text-slate-700">×</span>
+                <span className="text-slate-200 font-medium">{adjOcc}%</span>
+                <span className="text-slate-600">загрузка</span>
+                <span className="text-slate-700">×</span>
+                <span className="text-slate-200 font-medium">30</span>
+                <span className="text-slate-600">дней</span>
+                <span className="text-slate-700">=</span>
+                <span className="text-slate-100 font-semibold">≈ {formulaResult.toLocaleString('ru-RU')} ₽</span>
+              </div>
+            )}
+
+            {/* Scenarios: Осторожный / Базовый / Сильный */}
+            <div className={isRu ? '' : 'mt-3 pt-3 border-t border-slate-800/30'}>
+              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-2">
+                {isRu ? 'Сценарии' : 'Scenarios'}
+              </p>
+              <div className="space-y-1.5">
+                {scenarios.map((s) => {
+                  const isBase = s.labelRu === 'Базовый';
+                  return (
+                    <div key={s.labelRu} className="flex items-baseline justify-between gap-3">
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span className={`text-[13px] shrink-0 ${isBase ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
+                          {isRu ? s.labelRu : s.labelEn}
+                        </span>
+                        <span className="text-[11px] text-slate-700 truncate">
+                          {isRu ? s.reasonRu : s.reasonEn}
+                        </span>
+                      </div>
+                      <span className={`text-[13px] tabular-nums shrink-0 ${
+                        isBase ? 'text-slate-100 font-semibold'
+                        : s.dim ? 'text-slate-500'
+                        : 'text-emerald-400'
+                      }`}>
+                        {s.value.toLocaleString('ru-RU')} ₽
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Income scenarios — cautious / base / upside */}
-            {(() => {
-              const isRu = locale === 'ru';
-              const level = analysis.gravityExplanation.competitorPressureLevel;
-              // Cautious: -12% ADR, -15 pp occupancy (higher competition, weaker demand)
-              const cautAdr = Math.round(adjAdr * 0.88 / 100) * 100;
-              const cautOcc = Math.max(20, adjOcc - 15);
-              const cautious = Math.round(cautAdr * (cautOcc / 100) * 30 / 1000) * 1000;
-              // Strong: +12% ADR, +10 pp occupancy (high rating, peak demand)
-              const strongAdr = Math.round(adjAdr * 1.12 / 100) * 100;
-              const strongOcc = Math.min(90, adjOcc + 10);
-              const strong = Math.round(strongAdr * (strongOcc / 100) * 30 / 1000) * 1000;
-
-              const competitionNote = isRu
-                ? (level === 'high' ? 'давление конкурентов' : level === 'medium' ? 'умеренная конкуренция' : 'свободная ниша')
-                : (level === 'high' ? 'high competition' : level === 'medium' ? 'moderate competition' : 'open niche');
-
-              const scenarios: Array<{ labelRu: string; labelEn: string; value: number; reasonRu: string; reasonEn: string; dim: boolean }> = [
-                {
-                  labelRu: 'Осторожный',
-                  labelEn: 'Conservative',
-                  value: cautious,
-                  reasonRu: `слабая загрузка · ${competitionNote}`,
-                  reasonEn: `lower occupancy · ${competitionNote}`,
-                  dim: true,
-                },
-                {
-                  labelRu: 'Базовый',
-                  labelEn: 'Base',
-                  value: formulaResult,
-                  reasonRu: 'расчётная модель',
-                  reasonEn: 'model estimate',
-                  dim: false,
-                },
-                {
-                  labelRu: 'Сильный',
-                  labelEn: 'Upside',
-                  value: strong,
-                  reasonRu: 'высокий рейтинг · пиковый спрос',
-                  reasonEn: 'high ratings · peak demand',
-                  dim: false,
-                },
-              ];
-
-              return (
-                <div className="mt-3 pt-3 border-t border-slate-800/30">
-                  <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-2">
-                    {isRu ? 'Сценарии' : 'Scenarios'}
-                  </p>
-                  <div className="space-y-1.5">
-                    {scenarios.map((s) => {
-                      const isBase = s.labelRu === 'Базовый';
-                      return (
-                        <div key={s.labelRu} className="flex items-baseline justify-between gap-3">
-                          <div className="flex items-baseline gap-1.5 min-w-0">
-                            <span className={`text-[13px] shrink-0 ${isBase ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
-                              {isRu ? s.labelRu : s.labelEn}
-                            </span>
-                            <span className="text-[11px] text-slate-700 truncate">
-                              {isRu ? s.reasonRu : s.reasonEn}
-                            </span>
-                          </div>
-                          <span className={`text-[13px] tabular-nums shrink-0 ${
-                            isBase ? 'text-slate-100 font-semibold'
-                            : s.dim ? 'text-slate-500'
-                            : 'text-emerald-400'
-                          }`}>
-                            {s.value.toLocaleString('ru-RU')} ₽
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
             <div className="space-y-0.5 mt-3">
-              <p className="text-[12px] text-slate-600">
-                {locale === 'ru' ? `Модель: ${stratLabel}` : `Model: ${stratLabel}`}
-              </p>
-              <p className="text-[12px] text-slate-600">{c.incomeDisclaimer1}</p>
-              <p className="text-[12px] text-slate-700">{c.incomeDisclaimer2}</p>
-              <p className="text-[12px] text-slate-700">{c.incomeDisclaimer3}</p>
+              {isRu ? (
+                <p className="text-[12px] text-slate-500 leading-relaxed">
+                  {RU_DEMO_COPY.revenueDisclaimer}
+                </p>
+              ) : (
+                <>
+                  <p className="text-[12px] text-slate-600">{`Model: ${stratLabel}`}</p>
+                  <p className="text-[12px] text-slate-600">{c.incomeDisclaimer1}</p>
+                  <p className="text-[12px] text-slate-700">{c.incomeDisclaimer2}</p>
+                  <p className="text-[12px] text-slate-700">{c.incomeDisclaimer3}</p>
+                </>
+              )}
             </div>
           </div>
         );
       })()}
 
-      {/* Market Snapshot */}
-      <MarketSnapshotTable
-        evergreenIndex={evergreenIndex}
-        demandType={analysis.demandType}
-        competitorCount={competitors.length}
-        strategy={strategy}
-        locale={locale}
-        c={c}
-      />
+      {/* Market context — RU shows public-facing "Рыночное окружение"; EN shows full market snapshot */}
+      {locale === 'ru' ? (
+        <div className="px-5 py-5 border-b border-slate-800/40">
+          <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-4">
+            {RU_DEMO_COPY.marketEnvironmentTitle}
+          </p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
+                {RU_DEMO_COPY.competitionLevelLabel}
+              </p>
+              <p className={`text-base font-medium leading-snug ${
+                gravityExplanation.competitorPressureLevel === 'high' ? 'text-rose-400'
+                : gravityExplanation.competitorPressureLevel === 'medium' ? 'text-amber-400'
+                : 'text-emerald-400'
+              }`}>
+                {competitorLabel(gravityExplanation.competitorPressureLevel, 'ru')}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
+                {RU_DEMO_COPY.nearbyObjectsLabel}
+              </p>
+              <p className="text-base text-slate-100 font-medium leading-snug">
+                {competitors.length}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
+                {RU_DEMO_COPY.locationIndexLabel}
+              </p>
+              <p className="text-base text-slate-100 font-medium leading-snug">
+                {evergreenIndex} / 100
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
+                {RU_DEMO_COPY.demandStabilityLabel}
+              </p>
+              <p className="text-base text-slate-100 font-medium leading-snug">
+                {footTraffic.flowStability}
+              </p>
+            </div>
+          </div>
+          <p className="text-[13px] text-slate-500 leading-relaxed">
+            {RU_DEMO_COPY.marketEnvironmentNote}
+          </p>
+        </div>
+      ) : (
+        <MarketSnapshotTable
+          evergreenIndex={evergreenIndex}
+          demandType={analysis.demandType}
+          competitorCount={competitors.length}
+          strategy={strategy}
+          locale={locale}
+          c={c}
+        />
+      )}
+
+      {/* Trust block — RU only */}
+      {locale === 'ru' && (
+        <div className="px-5 py-5 border-b border-slate-800/40">
+          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            {RU_DEMO_COPY.premiumTrustTitle}
+          </p>
+          <p className="text-[14px] text-slate-400 leading-relaxed">
+            {RU_DEMO_COPY.premiumTrustBody}
+          </p>
+        </div>
+      )}
 
       {/* CTA — lead capture */}
       <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
@@ -2332,8 +2411,8 @@ function ASIPanel({
         <p className="mt-2 text-[13px] text-slate-500 text-center">{c.ctaBlock.note}</p>
       </div>
 
-      {/* Analytics: gravity signals + foot traffic — combined compact grid */}
-      {hasMagnets && (
+      {/* Analytics: gravity signals + foot traffic — EN only; RU hides internal zone/magnet labels */}
+      {hasMagnets && locale !== 'ru' && (
         <div className="px-5 py-4 border-b border-slate-800/40">
           <div className="grid grid-cols-2 gap-x-5 gap-y-3">
             {gravityExplanation.strongestZoneLabel && (
@@ -2384,8 +2463,10 @@ function ASIPanel({
         </div>
       )}
 
-      {/* Magnets */}
+      {/* Magnets — EN only; RU hides raw internal POI distance list */}
       {hasMagnets && (() => {
+        const _loc: string = locale;
+        if (_loc === 'ru') return null;
         const isResidentialPrime = mode === 'residential';
         const MAGNET_DEFAULT_LIMIT = isResidentialPrime ? 5 : 6;
         const allFiltered = isResidentialPrime
@@ -3141,16 +3222,18 @@ export function LocationIntelligenceDemo({
                 )}
               </div>
 
-              {/* Influence heatmap — real calculation, not decoration */}
-              <div ref={heatmapDivRef}>
-                <InfluenceHeatmapPanel
-                  analysis={analysis}
-                  subjectLat={selected!.lat}
-                  subjectLon={selected!.lon}
-                  locale={locale}
-                  c={c}
-                />
-              </div>
+              {/* Influence heatmap — EN only; hidden on RU public demo */}
+              {locale !== 'ru' && (
+                <div ref={heatmapDivRef}>
+                  <InfluenceHeatmapPanel
+                    analysis={analysis}
+                    subjectLat={selected!.lat}
+                    subjectLon={selected!.lon}
+                    locale={locale}
+                    c={c}
+                  />
+                </div>
+              )}
 
               <button
                 onClick={reset}
