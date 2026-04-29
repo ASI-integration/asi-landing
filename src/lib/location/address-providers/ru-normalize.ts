@@ -83,6 +83,23 @@ export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
   return { raw: q0, normalized: q, providerQuery: buildRuProviderQuery(q) };
 }
 
+/**
+ * Canonicalize RU suggestion labels so house + corpus are displayed as "7к1"
+ * instead of verbose "7 корпус 1". This is presentation-level only (does not
+ * change the provider placeId / selection payload).
+ */
+export function canonicalizeRuSuggestionValue(value: string): string {
+  let v = value.trim();
+  if (!v) return value;
+  for (const r of RU_CORPUS_RULES) {
+    v = v.replace(r.re, r.replace);
+  }
+  // Keep whitespace/punctuation stable for UI.
+  v = v.replace(/\s*,\s*/g, ', ');
+  v = v.replace(/\s+/g, ' ').trim();
+  return v || value;
+}
+
 function normalizeForMatch(s: string): string {
   return s
     .toLowerCase()
