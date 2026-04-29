@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyResidentialDemoSanity } from '../residential-demo-sanity';
+import { getBand } from '../explanation';
 import type {
   LocationAnalysis,
   MagnetItem,
@@ -165,6 +166,47 @@ describe('applyResidentialDemoSanity — Komendantsky-like residential block', (
 
     expect(sanity.displayScore).toBeLessThanOrEqual(65);
     expect(sanity.displayAudience).toBe('RESIDENTIAL');
+  });
+});
+
+describe('applyResidentialDemoSanity — Komendantsky 23к1 weak-office cluster', () => {
+  // Real coords: lat 60.014315, lon 30.253552
+  it('caps score <= 70 and downgrades BUSINESS when weak office cluster + metro is present', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 250, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 310, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 280, subType: 'travel_agency', weight: 3 }),
+      magnet({ categoryId: 'business', name: 'Сбербанк', distance: 410, subType: 'bank', weight: 3 }),
+      magnet({
+        categoryId: 'metro',
+        name: 'Комендантский проспект',
+        distance: 850,
+        weight: 9,
+        strengthClass: 'strong',
+      }),
+      magnet({ categoryId: 'education_local', name: 'Школа №555', distance: 200 }),
+      magnet({ categoryId: 'education_local', name: 'Детский сад №42', distance: 180 }),
+    ];
+
+    const analysis = fixture({
+      evergreenIndex: 99,
+      magnets,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 62,
+      audienceSharePct: 70,
+    });
+    analysis.audienceAnalysis!.businessClusterDetected = true;
+
+    const sanity = applyResidentialDemoSanity(analysis);
+
+    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(sanity.displayAudience).not.toBe('BUSINESS');
+    expect(sanity.verdictLabelRu).not.toContain('Сильная');
+    expect(sanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
+    expect(getBand(sanity.displayScore)).not.toBe('strong');
+    expect(sanity.capReasonsRu.join(' ')).toContain(
+      'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',
+    );
   });
 });
 
