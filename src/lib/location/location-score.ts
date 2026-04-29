@@ -180,7 +180,22 @@ export function buildLocationScoreOutput(input: {
   if (primaryAudience === 'BUSINESS') {
     const topBusiness = primaryMagnets.find(m => m.type === 'business');
 
-    if (topBusiness) {
+    // Single bank/insurance branch is a tier-2 signal — it must not produce
+    // "stable corporate flow" copy on its own without a real business cluster.
+    const BANK_INSURANCE_NAME_RE = /банк|bank|страхов|insurance|ингосстрах|сбер|втб|альфа|росгосстрах|ренессанс|тинькоф|тиньк|райффайзен|открытие/i;
+    const topBusinessIsWeakOffice =
+      !!topBusiness &&
+      (topBusiness.subType === 'bank' ||
+        topBusiness.subType === 'office_anon' ||
+        BANK_INSURANCE_NAME_RE.test(topBusiness.name));
+
+    if (topBusiness && topBusinessIsWeakOffice && !businessClusterDetected) {
+      factors.push({
+        text: 'Рядом только локальные офисные сигналы (банк/страховая) — устойчивый деловой поток не подтверждается.',
+        kind: 'negative',
+        weight: 70,
+      });
+    } else if (topBusiness) {
       const d = formatDistRu(topBusiness.distance);
 
       if (topBusiness.distance <= 500) {
