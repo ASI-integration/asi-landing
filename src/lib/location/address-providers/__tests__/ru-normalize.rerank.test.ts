@@ -30,5 +30,32 @@ describe('ru-normalize: rerankRuSuggestionsByLocality', () => {
     expect(out[0]?.value).toContain('Санкт-Петербург');
     expect(out[0]?.value).toContain(', 2');
   });
+
+  it('prefers Санкт-Петербург for "ушинского 7, к1" when no city is in the query', () => {
+    const { normalized } = normalizeRuAddressQuery('ушинского 7, к1');
+    const input = rows([
+      'улица Ушинского, 7, Пермь',
+      'улица Ушинского, 7, Абакан',
+      'улица Ушинского, 7, Майкоп',
+      'улица Ушинского, 7, Нижний Тагил',
+      'улица Ушинского, 7к1, Санкт-Петербург',
+      'улица Ушинского, 7, Москва',
+    ]);
+    const out = rerankRuSuggestionsByLocality(normalized, input);
+    expect(out[0]?.value).toContain('улица Ушинского');
+    expect(out[0]?.value).toContain('7к1');
+    expect(out[0]?.value).toContain('Санкт-Петербург');
+  });
+
+  it('respects an explicit city — does not force SPb when user typed Москва', () => {
+    const { normalized } = normalizeRuAddressQuery('Москва, ушинского 7');
+    const input = rows([
+      'улица Ушинского, 7, Москва',
+      'улица Ушинского, 7к1, Санкт-Петербург',
+      'улица Ушинского, 7, Пермь',
+    ]);
+    const out = rerankRuSuggestionsByLocality(normalized, input);
+    expect(out[0]?.value).toContain('Москва');
+  });
 });
 

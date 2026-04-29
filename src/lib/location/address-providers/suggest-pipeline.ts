@@ -3,7 +3,11 @@ import { dadataAddressSuggest } from './suggest-dadata';
 import { googlePlacesAutocomplete } from './suggest-google';
 import { twogisAddressSuggest } from './suggest-2gis';
 import { photonSuggest } from './suggest-photon';
-import { normalizeRuAddressQuery, rerankRuSuggestionsByLocality } from './ru-normalize';
+import {
+  buildProviderQueryWithDefaultCity,
+  normalizeRuAddressQuery,
+  rerankRuSuggestionsByLocality,
+} from './ru-normalize';
 import { geocodePlainAddressForMarket } from './geocode-pipeline';
 
 function googleMapsKey(): string | null {
@@ -32,10 +36,17 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
     return { suggestions: [], status: 'ok', elapsed_ms: Date.now() - t0 };
   }
 
-  const { normalized, providerQuery } =
+  const { normalized, providerQuery: providerQueryRaw } =
     market === 'ru'
       ? normalizeRuAddressQuery(trimmed)
       : { normalized: trimmed, providerQuery: trimmed };
+
+  // For RU queries that don't name a city, append a Saint Petersburg hint so
+  // providers return local matches first instead of street-name lookalikes
+  // scattered across the country (Perm, Abakan, Maykop, etc.). Reranking still
+  // runs on the user's original input.
+  const providerQuery =
+    market === 'ru' ? buildProviderQueryWithDefaultCity(providerQueryRaw) : providerQueryRaw;
 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;

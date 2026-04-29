@@ -20,6 +20,16 @@ const RU_ABBREV_RULES: Array<{ re: RegExp; replace: string }> = [
   { re: /(^|[\s,.-])обл\.?(?=$|[\s,.-])/giu, replace: '$1область' },
 ];
 
+// House + corpus → canonical "<house>к<corpus>". Long forms first so the short
+// "к N" rule does not eat the prefix of "корпус". Applied after RU_ABBREV_RULES.
+const RU_CORPUS_RULES: Array<{ re: RegExp; replace: string }> = [
+  { re: /(\b\d{1,4})\s*,?\s*корпус\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+  { re: /(\b\d{1,4})\s*,?\s*корп\.?\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+  { re: /(\b\d{1,4})к\.\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+  { re: /(\b\d{1,4})\s*,\s*к\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+  { re: /(\b\d{1,4})\s+к\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+];
+
 // Matches a leading settlement-type qualifier in a single address segment.
 // Must be kept in sync with RU_ABBREV_RULES expansions above.
 const LEADING_LOCALITY_TYPE_RE =
@@ -62,6 +72,10 @@ export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
     q = q.replace(r.re, r.replace);
   }
 
+  for (const r of RU_CORPUS_RULES) {
+    q = q.replace(r.re, r.replace);
+  }
+
   // Normalize spaces around commas.
   q = q.replace(/\s*,\s*/g, ', ');
   q = q.replace(/\s+/g, ' ').trim();
@@ -76,6 +90,114 @@ function normalizeForMatch(s: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// Major Russian-market cities the user might type explicitly. If the query
+// already names one of them, the SPb default-city bias must be a no-op so we
+// don't override an explicit city choice.
+const EXPLICIT_RU_CITY_TOKENS: readonly string[] = [
+  'санкт петербург',
+  'петербург',
+  'спб',
+  'питер',
+  'ленинград',
+  'москва',
+  'мск',
+  'екатеринбург',
+  'новосибирск',
+  'казань',
+  'нижний новгород',
+  'самара',
+  'челябинск',
+  'омск',
+  'ростов на дону',
+  'уфа',
+  'красноярск',
+  'воронеж',
+  'волгоград',
+  'пермь',
+  'краснодар',
+  'сочи',
+  'тюмень',
+  'тольятти',
+  'ижевск',
+  'барнаул',
+  'ульяновск',
+  'иркутск',
+  'хабаровск',
+  'ярославль',
+  'владивосток',
+  'махачкала',
+  'оренбург',
+  'кемерово',
+  'новокузнецк',
+  'рязань',
+  'томск',
+  'астрахань',
+  'пенза',
+  'липецк',
+  'тула',
+  'киров',
+  'чебоксары',
+  'калининград',
+  'брянск',
+  'курск',
+  'иваново',
+  'магнитогорск',
+  'тверь',
+  'ставрополь',
+  'симферополь',
+  'белгород',
+  'архангельск',
+  'владимир',
+  'сургут',
+  'смоленск',
+  'калуга',
+  'чита',
+  'орел',
+  'волжский',
+  'череповец',
+  'вологда',
+  'саратов',
+  'абакан',
+  'майкоп',
+  'нижний тагил',
+];
+
+/**
+ * True when the user query already names a Russian city. Used to skip the
+ * default-Saint-Petersburg bias when the user has been explicit.
+ */
+export function hasExplicitRuCity(normalizedQuery: string): boolean {
+  const q = normalizeForMatch(normalizedQuery);
+  if (!q) return false;
+  const padded = ` ${q} `;
+  for (const city of EXPLICIT_RU_CITY_TOKENS) {
+    if (padded.includes(` ${city} `)) return true;
+  }
+  return false;
+}
+
+const DEFAULT_RU_CITY_HINT = ', Санкт-Петербург, Россия';
+
+/**
+ * If the query looks like a street/house address but does not name any Russian
+ * city, append a Saint Petersburg hint so geocoders return local matches first
+ * instead of street-name lookalikes scattered across the country.
+ *
+ * The original normalized query is unchanged — only the string sent to providers
+ * is augmented. Locality-aware reranking continues to run on the user's input.
+ */
+export function buildProviderQueryWithDefaultCity(providerQuery: string): string {
+  const trimmed = providerQuery.trim();
+  if (!trimmed) return providerQuery;
+  if (hasExplicitRuCity(trimmed)) return providerQuery;
+  const matchQ = normalizeForMatch(trimmed);
+  if (!matchQ) return providerQuery;
+  const looksLikeStreet =
+    detectStreetType(matchQ) !== 'unknown' || /\d/u.test(matchQ);
+  if (!looksLikeStreet) return providerQuery;
+  return `${trimmed}${DEFAULT_RU_CITY_HINT}`;
 }
 
 function extractRuLocalityTokens(normalizedQuery: string): string[] {
@@ -194,16 +316,30 @@ function streetTypeMatchScore(type: RuStreetType, v: string): number {
   return hasAnyType ? -18 : 0;
 }
 
-function cityTieBreakScore(v: string): number {
-  // Keep tiny: only breaks ties once street+house plausibility is strong.
+function cityTieBreakScore(v: string, opts: { biasSpb: boolean }): number {
   const spb = v.includes('санкт петербург') || v.includes('санкт-петербург') || v.includes('петербург');
   const msk = v.includes('москва');
+  if (opts.biasSpb) {
+    // Query has no explicit city — strongly prefer SPb, then Moscow, over the
+    // long tail of same-named streets in distant cities. Both bonuses stay
+    // strictly below the street-stem bonus (140) so a perfect street+house
+    // match in an explicit city still wins on its own merits.
+    if (spb) return 80;
+    if (msk) return 30;
+    return 0;
+  }
+  // Tie-break only — used when the user named a city already.
   if (spb && !msk) return 6;
   if (msk && !spb) return 0;
   return 0;
 }
 
-function scoreRuSuggestionByStreetHouse(normalizedQuery: string, suggestionValue: string, idx: number): number {
+function scoreRuSuggestionByStreetHouse(
+  normalizedQuery: string,
+  suggestionValue: string,
+  idx: number,
+  opts: { biasSpb: boolean },
+): number {
   const q = normalizeForMatch(normalizedQuery);
   const v = normalizeForMatch(suggestionValue);
   if (!q || !v) return -idx * 0.01;
@@ -221,7 +357,7 @@ function scoreRuSuggestionByStreetHouse(normalizedQuery: string, suggestionValue
   const streetScore = allStems ? 140 : stemHits * 35;
   const houseScore = houseHit ? 120 : 0;
   const typeScore = streetTypeMatchScore(type, v);
-  const cityScore = cityTieBreakScore(v);
+  const cityScore = cityTieBreakScore(v, opts);
 
   return streetScore + houseScore + typeScore + cityScore - idx * 0.01;
 }
@@ -233,12 +369,14 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
   const localityTokens = extractRuLocalityTokens(normalizedQuery);
   if (suggestions.length < 2) return suggestions;
 
+  const biasSpb = !hasExplicitRuCity(normalizedQuery);
+
   // If there is no locality information in the query, fall back to a
   // street+house plausibility rerank (prevents provider population bias).
   if (localityTokens.length === 0) {
     const scored = suggestions.map((s, idx) => ({
       s,
-      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx),
+      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { biasSpb }),
     }));
     scored.sort((a, b) => b.score - a.score);
     return scored.map(x => x.s);
@@ -252,7 +390,8 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
     // Prefer locality match, but still let strong street+house plausibility
     // break ties for partial/locality-ambiguous queries.
     const localityScore = all * 120 + hits * 14;
-    const plausibilityScore = scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx) * 0.12;
+    const plausibilityScore =
+      scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { biasSpb }) * 0.12;
     const score = localityScore + plausibilityScore - idx * 0.01;
     return { s, score };
   });
@@ -260,4 +399,3 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
   scored.sort((a, b) => b.score - a.score);
   return scored.map(x => x.s);
 }
-
