@@ -10,13 +10,22 @@ interface GoogleAutocompleteResponse {
 export async function googlePlacesAutocomplete(
   query: string,
   apiKey: string,
-  options?: { language?: string; components?: string },
+  options?: {
+    language?: string;
+    components?: string;
+    /** Optional viewport bias from browser geolocation. `location` is "lat,lon"; radius in meters. */
+    bias?: { location: string; radius: number };
+  },
 ): Promise<AddressSuggestionRow[]> {
   const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
   url.searchParams.set('input', query);
   url.searchParams.set('language', options?.language ?? 'en');
   if (options?.components) {
     url.searchParams.set('components', options.components);
+  }
+  if (options?.bias) {
+    url.searchParams.set('location', options.bias.location);
+    url.searchParams.set('radius', String(options.bias.radius));
   }
   url.searchParams.set('key', apiKey);
 

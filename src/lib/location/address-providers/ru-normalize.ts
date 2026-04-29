@@ -182,6 +182,35 @@ const EXPLICIT_RU_CITY_TOKENS: readonly string[] = [
 ];
 
 /**
+ * Extract a known Russian city name from a free-form suggestion value (e.g.
+ * "улица Ушинского, 7к1, Санкт-Петербург, Россия" → "Санкт-Петербург").
+ * Returns null when the value matches no known city.
+ *
+ * Used by the demo client to remember which city the user accepted, so
+ * subsequent ambiguous queries can be biased toward that context city.
+ */
+export function extractRuCityFromValue(value: string): string | null {
+  const q = normalizeForMatch(value);
+  if (!q) return null;
+  const padded = ` ${q} `;
+  // Prefer multi-word matches first ("нижний новгород" before "новгород").
+  const ordered = [...EXPLICIT_RU_CITY_TOKENS].sort((a, b) => b.length - a.length);
+  for (const city of ordered) {
+    if (padded.includes(` ${city} `)) {
+      // Return a presentation-friendly canonical for the most common cases;
+      // otherwise capitalize the first letter of each token.
+      if (city === 'санкт петербург' || city === 'петербург') return 'Санкт-Петербург';
+      if (city === 'москва') return 'Москва';
+      return city
+        .split(' ')
+        .map(t => t.charAt(0).toUpperCase() + t.slice(1))
+        .join(' ');
+    }
+  }
+  return null;
+}
+
+/**
  * True when the user query already names a Russian city. Used to skip the
  * default-Saint-Petersburg bias when the user has been explicit.
  */
@@ -195,17 +224,21 @@ export function hasExplicitRuCity(normalizedQuery: string): boolean {
   return false;
 }
 
-const DEFAULT_RU_CITY_HINT = ', Санкт-Петербург, Россия';
-
 /**
  * If the query looks like a street/house address but does not name any Russian
- * city, append a Saint Petersburg hint so geocoders return local matches first
- * instead of street-name lookalikes scattered across the country.
+ * city, append a context-supplied city hint so geocoders return local matches
+ * first instead of street-name lookalikes scattered across the country.
  *
  * The original normalized query is unchanged — only the string sent to providers
  * is augmented. Locality-aware reranking continues to run on the user's input.
+ *
+ * No city is forced when contextCity is empty: the query is sent as-is and
+ * providers return nationwide candidates that the UI can disambiguate.
  */
-export function buildProviderQueryWithDefaultCity(providerQuery: string): string {
+export function buildProviderQueryWithContextCity(
+  providerQuery: string,
+  contextCity?: string | null,
+): string {
   const trimmed = providerQuery.trim();
   if (!trimmed) return providerQuery;
   if (hasExplicitRuCity(trimmed)) return providerQuery;
@@ -214,7 +247,31 @@ export function buildProviderQueryWithDefaultCity(providerQuery: string): string
   const looksLikeStreet =
     detectStreetType(matchQ) !== 'unknown' || /\d/u.test(matchQ);
   if (!looksLikeStreet) return providerQuery;
-  return `${trimmed}${DEFAULT_RU_CITY_HINT}`;
+  const city = (contextCity ?? '').trim();
+  if (!city) return providerQuery;
+  return `${trimmed}, ${city}, Россия`;
+}
+
+/**
+ * Tokens used by `cityTieBreakScore` to bias suggestions toward a context city.
+ * Returns normalized substrings (with ё→е, lowercase, digits/letters only) that
+ * any matching suggestion value should contain.
+ *
+ * Recognizes a small set of well-known city aliases (Санкт-Петербург / Питер /
+ * СПб, Москва / МСК) so the bias is robust to provider output spelling.
+ */
+export function cityBiasTokensFor(contextCity?: string | null): string[] {
+  const c = (contextCity ?? '').trim();
+  if (!c) return [];
+  const n = normalizeForMatch(c);
+  if (!n) return [];
+  if (n.includes('петербург') || n === 'спб' || n === 'питер' || n === 'ленинград') {
+    return ['санкт петербург', 'петербург'];
+  }
+  if (n === 'москва' || n === 'мск') {
+    return ['москва'];
+  }
+  return [n];
 }
 
 function extractRuLocalityTokens(normalizedQuery: string): string[] {
@@ -333,29 +390,63 @@ function streetTypeMatchScore(type: RuStreetType, v: string): number {
   return hasAnyType ? -18 : 0;
 }
 
-function cityTieBreakScore(v: string, opts: { biasSpb: boolean }): number {
-  const spb = v.includes('санкт петербург') || v.includes('санкт-петербург') || v.includes('петербург');
-  const msk = v.includes('москва');
-  if (opts.biasSpb) {
-    // Query has no explicit city — strongly prefer SPb, then Moscow, over the
-    // long tail of same-named streets in distant cities. Both bonuses stay
-    // strictly below the street-stem bonus (140) so a perfect street+house
-    // match in an explicit city still wins on its own merits.
-    if (spb) return 80;
-    if (msk) return 30;
-    return 0;
+// Words that mark a suggestion's first segment as a settlement / region rather
+// than a street or city proper. Suggestions whose first segment is one of these
+// (or a non-city locality name) are demoted unless the user explicitly typed it.
+const SETTLEMENT_TYPE_WORDS = new Set([
+  'поселок', 'посёлок', 'село', 'деревня', 'хутор',
+  'район', 'область', 'край', 'округ', 'территория',
+]);
+
+const STREET_TYPE_WORDS_SET = new Set([
+  'улица', 'ул', 'проспект', 'пр', 'переулок', 'пер', 'проезд',
+  'шоссе', 'набережная', 'наб', 'бульвар', 'бул', 'площадь', 'пл', 'аллея',
+]);
+
+/**
+ * Demote suggestions whose first comma-segment is a settlement / region rather
+ * than a street or city — e.g. "Левашово, улица Маяковского, 6", "Ленинградская
+ * область, ...". Skipped when the suggestion's leading segment is a known
+ * Russian city (Москва, Санкт-Петербург, Екатеринбург, …) or a street.
+ *
+ * Magnitude is small (-50) so it never overcomes a strong locality match when
+ * the user explicitly typed the settlement (locality branch dominates).
+ */
+function settlementDemoteScore(suggestionValue: string): number {
+  const trimmed = suggestionValue.trim();
+  if (!trimmed) return 0;
+  const firstSeg = (trimmed.split(',')[0] ?? '').trim();
+  if (!firstSeg) return 0;
+  const segNorm = normalizeForMatch(firstSeg);
+  if (!segNorm) return 0;
+  const segTokens = segNorm.split(' ').filter(Boolean);
+  // Street-led segment ("улица Маяковского") — never demote.
+  if (segTokens.some(t => STREET_TYPE_WORDS_SET.has(t))) return 0;
+  // Known city — never demote.
+  for (const city of EXPLICIT_RU_CITY_TOKENS) {
+    if (` ${segNorm} `.includes(` ${city} `)) return 0;
   }
-  // Tie-break only — used when the user named a city already.
-  if (spb && !msk) return 6;
-  if (msk && !spb) return 0;
-  return 0;
+  // Settlement-type word, or any unrecognized non-city / non-street first segment.
+  if (segTokens.some(t => SETTLEMENT_TYPE_WORDS.has(t))) return -50;
+  return -50;
+}
+
+function cityTieBreakScore(v: string, opts: { cityBiasTokens: string[] }): number {
+  // Query has no explicit city — bias toward the caller-supplied context city
+  // (typed > last selection > viewport > session). With no context, return 0:
+  // ranking falls through to pure street+house plausibility so no city is
+  // silently preferred. Magnitude (80) stays strictly below the street-stem
+  // bonus (140) so a perfect street+house match in any city still wins.
+  if (opts.cityBiasTokens.length === 0) return 0;
+  const matches = opts.cityBiasTokens.some(t => t && v.includes(t));
+  return matches ? 80 : 0;
 }
 
 function scoreRuSuggestionByStreetHouse(
   normalizedQuery: string,
   suggestionValue: string,
   idx: number,
-  opts: { biasSpb: boolean },
+  opts: { cityBiasTokens: string[] },
 ): number {
   const q = normalizeForMatch(normalizedQuery);
   const v = normalizeForMatch(suggestionValue);
@@ -375,25 +466,31 @@ function scoreRuSuggestionByStreetHouse(
   const houseScore = houseHit ? 120 : 0;
   const typeScore = streetTypeMatchScore(type, v);
   const cityScore = cityTieBreakScore(v, opts);
+  const settlementScore = settlementDemoteScore(suggestionValue);
 
-  return streetScore + houseScore + typeScore + cityScore - idx * 0.01;
+  return streetScore + houseScore + typeScore + cityScore + settlementScore - idx * 0.01;
 }
 
 export function rerankRuSuggestionsByLocality<T extends { value: string }>(
   normalizedQuery: string,
   suggestions: T[],
+  opts?: { contextCity?: string | null },
 ): T[] {
   const localityTokens = extractRuLocalityTokens(normalizedQuery);
   if (suggestions.length < 2) return suggestions;
 
-  const biasSpb = !hasExplicitRuCity(normalizedQuery);
+  // Caller-supplied context city (last selection / viewport / session) only
+  // applies when the user did not already name a city in the query itself.
+  const cityBiasTokens = hasExplicitRuCity(normalizedQuery)
+    ? []
+    : cityBiasTokensFor(opts?.contextCity);
 
   // If there is no locality information in the query, fall back to a
   // street+house plausibility rerank (prevents provider population bias).
   if (localityTokens.length === 0) {
     const scored = suggestions.map((s, idx) => ({
       s,
-      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { biasSpb }),
+      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { cityBiasTokens }),
     }));
     scored.sort((a, b) => b.score - a.score);
     return scored.map(x => x.s);
@@ -408,7 +505,7 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
     // break ties for partial/locality-ambiguous queries.
     const localityScore = all * 120 + hits * 14;
     const plausibilityScore =
-      scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { biasSpb }) * 0.12;
+      scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { cityBiasTokens }) * 0.12;
     const score = localityScore + plausibilityScore - idx * 0.01;
     return { s, score };
   });

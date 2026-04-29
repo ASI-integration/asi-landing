@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildProviderQueryWithDefaultCity,
+  buildProviderQueryWithContextCity,
   hasExplicitRuCity,
   normalizeRuAddressQuery,
 } from '../ru-normalize';
@@ -61,24 +61,37 @@ describe('ru-normalize: hasExplicitRuCity', () => {
   });
 });
 
-describe('ru-normalize: buildProviderQueryWithDefaultCity', () => {
-  it('appends Санкт-Петербург when query has street/house but no city', () => {
-    const out = buildProviderQueryWithDefaultCity('улица Ушинского, 7к1');
+describe('ru-normalize: buildProviderQueryWithContextCity', () => {
+  it('appends the supplied context city when query has street/house but no city', () => {
+    const out = buildProviderQueryWithContextCity('улица Ушинского, 7к1', 'Санкт-Петербург');
     expect(out).toMatch(/Санкт-Петербург, Россия$/u);
   });
 
+  it('appends a different context city (Екатеринбург) when supplied', () => {
+    const out = buildProviderQueryWithContextCity('улица Ушинского, 7к1', 'Екатеринбург');
+    expect(out).toMatch(/Екатеринбург, Россия$/u);
+    expect(out).not.toMatch(/Санкт-Петербург/u);
+  });
+
+  it('does NOT append any city when no context city is supplied (no global SPb default)', () => {
+    const out = buildProviderQueryWithContextCity('улица Ушинского, 7к1');
+    expect(out).toBe('улица Ушинского, 7к1');
+    expect(out).not.toMatch(/Санкт-Петербург/u);
+    expect(out).not.toMatch(/Россия/u);
+  });
+
   it('does NOT append when query already names Москва', () => {
-    const out = buildProviderQueryWithDefaultCity('Москва, улица Ушинского, 7к1');
+    const out = buildProviderQueryWithContextCity('Москва, улица Ушинского, 7к1', 'Санкт-Петербург');
     expect(out).not.toMatch(/Санкт-Петербург/u);
   });
 
   it('does NOT append when query already names Санкт-Петербург', () => {
-    const out = buildProviderQueryWithDefaultCity('Санкт-Петербург, улица Ушинского, 7к1');
+    const out = buildProviderQueryWithContextCity('Санкт-Петербург, улица Ушинского, 7к1', 'Санкт-Петербург');
     expect(out.match(/Санкт-Петербург/gu)?.length ?? 0).toBe(1);
   });
 
   it('does NOT append for a bare locality name (no street/house)', () => {
-    const out = buildProviderQueryWithDefaultCity('Невская Дубровка');
+    const out = buildProviderQueryWithContextCity('Невская Дубровка', 'Санкт-Петербург');
     expect(out).not.toMatch(/Санкт-Петербург/u);
   });
 });
