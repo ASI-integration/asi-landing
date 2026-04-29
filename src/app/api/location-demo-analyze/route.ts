@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchOsmData, buildAnalysis } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, applyResidentialDemoSanity } from '@/lib/location';
 import { cacheGet, cacheSet } from '@/lib/location/cache';
 import type { AnalysisMeta } from '@/lib/location/types';
 
@@ -60,6 +60,32 @@ function confidenceFromSignals(args: {
   if (elementsCount < 60) return 'low';
   if (usedFallbackQuery || elementsCount < 140) return 'medium';
   return 'high';
+}
+
+function withDemoSanityPayload(args: {
+  analysis: Awaited<ReturnType<typeof buildAnalysis>>;
+  elementsCount: number;
+  meta: AnalysisMeta;
+  locale: 'en' | 'ru';
+  wantSpatial: boolean;
+}) {
+  const { analysis, elementsCount, meta, locale, wantSpatial } = args;
+  const demoSanity = locale === 'ru' && !wantSpatial
+    ? applyResidentialDemoSanity(analysis)
+    : null;
+  const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
+  return {
+    analysis,
+    elementsCount,
+    meta: metaWithDemo,
+    ...(demoSanity ? {
+      demoSanity,
+      displayScore: demoSanity.displayScore,
+      displayAudience: demoSanity.displayAudience,
+      displayAudienceLabelRu: demoSanity.audienceLabelRu,
+      displayVerdictLabelRu: demoSanity.verdictLabelRu,
+    } : {}),
+  };
 }
 
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
@@ -137,11 +163,13 @@ export async function POST(req: NextRequest) {
         `cached=true freshness=${cached.freshness}`,
       );
 
-      return NextResponse.json({
+      return NextResponse.json(withDemoSanityPayload({
         analysis: cached.entry.analysis,
         elementsCount: cached.entry.elementsCount,
         meta,
-      });
+        locale,
+        wantSpatial,
+      }));
     }
 
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
@@ -202,11 +230,13 @@ export async function POST(req: NextRequest) {
         `cached=false`,
     );
 
-    return NextResponse.json({
+    return NextResponse.json(withDemoSanityPayload({
       analysis,
       elementsCount: elements.length,
       meta,
-    });
+      locale,
+      wantSpatial,
+    }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[location-demo-analyze] failed: ${message}`);

@@ -22,6 +22,7 @@ import type {
   AnalysisMeta,
   DemandType,
   NeighborhoodEnvironmentConcernLevel,
+  ResidentialDemoSanity,
 } from '@/lib/location/client';
 import {
   useLocationTelemetryOptional,
@@ -73,6 +74,7 @@ interface SelectedAddress {
 }
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
+type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
 
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
@@ -173,18 +175,25 @@ async function fetchLocationAnalysis(
       signal,
     });
     if (!res.ok) return null;
-    const data = await res.json() as { analysis?: LocationAnalysis; meta?: AnalysisMeta };
+    const data = await res.json() as {
+      analysis?: LocationAnalysis;
+      meta?: AnalysisMetaWithDemoSanity;
+      demoSanity?: ResidentialDemoSanity;
+    };
     if (!data.analysis) return null;
     const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
       ...data.analysis,
       accessibilityStops: data.analysis.accessibilityStops ?? [],
     });
-    const meta: AnalysisMeta = data.meta ?? {
+    const metaBase: AnalysisMetaWithDemoSanity = data.meta ?? {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
       source: 'osm-overpass',
       cached: false,
     };
+    const meta: AnalysisMetaWithDemoSanity = data.demoSanity
+      ? { ...metaBase, demoSanity: data.demoSanity }
+      : metaBase;
     return { analysis, meta };
   } catch {
     return null;
@@ -1770,7 +1779,8 @@ function ASIPanel({
       :                              '$1 800 – $3 300';
   })();
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const sanity = isRuResidentialDemo ? applyResidentialDemoSanity(analysis) : null;
+  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
+  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
   const aboveFoldReasons = (() => {
     const ls = analysis.locationScore;
     const specificFactors = [

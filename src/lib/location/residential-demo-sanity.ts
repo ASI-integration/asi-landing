@@ -3,7 +3,7 @@
  *
  * Purpose: prevent inflated headline scores and misleading "Сильная локация
  * для командированных" verdicts on ordinary residential addresses where the
- * only "business" signal is a single bank/insurance branch or anonymous office.
+ * only "business" signal is a weak office cluster (bank/insurance/travel/sales office).
  *
  * Pure presentation layer — does NOT mutate `LocationAnalysis`. Applied only
  * by the RU residential demo path. The commercial engine, paywalled report,
@@ -11,14 +11,14 @@
  *
  * Rules:
  *   1. Tier-1 demand magnets — reuse `filterResidentialPrimeMagnets` with
- *      additional bank/insurance name guard so Ингосстрах / СберБанк do not
- *      qualify as a strong magnet.
+ *      stronger weak-office deny list and named business-center requirement.
  *   2. Cap rules (lowest result wins):
  *      - 0 tier-1 magnets within 1 km        → score ≤ 70
  *      - 0 tier-1, only tier-2 office/bank   → score ≤ 65
  *      - tier-1 < 2 and headline > 80        → score ≤ 80
- *   3. Audience override — when tier-1 < 1 OR the engine locked BUSINESS
- *      with low audience-fit, present audience as "Жилая".
+ *      - business cluster is weak-office-only → score ≤ 70
+ *   3. Audience override — when weak-office-only cluster drives BUSINESS,
+ *      downgrade to MIXED/RESIDENTIAL.
  *   4. Verdict map — replaces `getBand` label only on the demo headline.
  */
 
@@ -46,18 +46,28 @@ export interface ResidentialDemoSanity {
   tier1Magnets: ResidentialPrimeMagnet[];
 }
 
-// ── Bank / insurance name guard ───────────────────────────────────────────────
+// ── Weak office guards ────────────────────────────────────────────────────────
 
 /**
- * Names that look like bank or insurance branches.
- * These are tier-2 in residential demand terms even when tagged as named offices.
+ * Weak office names that should stay tier-2 in residential demand terms.
  */
-const BANK_INSURANCE_NAME_RE =
-  /банк|bank|страхов|insurance|ингосстрах|сбер|втб|альфа|росгосстрах|ренессанс|тинькоф|тиньк|райффайзен|открытие/i;
+const WEAK_OFFICE_NAME_RE =
+  /банк|bank|страх|insurance|ингосстрах|росгосстрах|ренессанс|сбер|втб|альфа|тинькоф|тиньк|райффайзен|открытие|турагентств|travel|слетать|офис\s+продаж|салон|local\s+office/i;
 
-function looksLikeBankOrInsurance(name: string | undefined): boolean {
+const WEAK_OFFICE_SUBTYPES: ReadonlySet<string> = new Set([
+  'bank',
+  'insurance',
+  'commercial',
+  'office_anon',
+  'travel_agency',
+]);
+
+const STRONG_BUSINESS_NAME_RE =
+  /бизнес-центр|business\s+center|бц\s|technopark|технопарк|industrial\s+park|завод|industrial|factory|кампус|campus/i;
+
+function looksLikeWeakOffice(name: string | undefined): boolean {
   if (!name) return false;
-  return BANK_INSURANCE_NAME_RE.test(name);
+  return WEAK_OFFICE_NAME_RE.test(name);
 }
 
 // ── Tier-1 detection ──────────────────────────────────────────────────────────
@@ -84,11 +94,10 @@ const TIER1_SOFT_EXTENSION: ReadonlySet<string> = new Set([
 
 function isTier1Business(magnet: ResidentialPrimeMagnet, raw: MagnetItem | undefined): boolean {
   if (magnet.anchorType !== 'POSITIVE_DEMAND_ANCHOR') return false;
-  if (looksLikeBankOrInsurance(magnet.name)) return false;
-  // raw.subType info is the source of truth; bank/office_anon/commercial are
-  // already excluded by `filterResidentialPrimeMagnets`. We still defensively
-  // require a non-bank subType when present.
-  if (raw && raw.subType === 'bank') return false;
+  if (looksLikeWeakOffice(magnet.name)) return false;
+  if (raw?.subType && WEAK_OFFICE_SUBTYPES.has(raw.subType)) return false;
+  const strongSubtype = raw?.subType === 'factory' || raw?.subType === 'industrial';
+  if (!strongSubtype && !STRONG_BUSINESS_NAME_RE.test(magnet.name)) return false;
   return true;
 }
 
@@ -120,10 +129,8 @@ function hasTier2OfficeOnlySignal(magnets: MagnetItem[]): boolean {
   if (businessMagnets.length === 0) return false;
   return businessMagnets.every(
     m =>
-      m.subType === 'bank' ||
-      m.subType === 'commercial' ||
-      m.subType === 'office_anon' ||
-      looksLikeBankOrInsurance(m.name),
+      (m.subType ? WEAK_OFFICE_SUBTYPES.has(m.subType) : false) ||
+      looksLikeWeakOffice(m.name),
   );
 }
 
@@ -183,6 +190,8 @@ const CAP_REASON_OFFICE_ONLY =
   'Рядом только локальные офисные сигналы (банк/страховая) — деловой профиль не подтверждён.';
 const CAP_REASON_SINGLE_TIER1 =
   '«Сильный» диапазон требует не менее двух независимых магнитов — один сигнал недостаточен.';
+const CAP_REASON_WEAK_CLUSTER =
+  'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.';
 
 export function applyResidentialDemoSanity(analysis: LocationAnalysis): ResidentialDemoSanity {
   const tier1 = detectTier1(analysis);
@@ -211,13 +220,25 @@ export function applyResidentialDemoSanity(analysis: LocationAnalysis): Resident
     if (!capReasons.includes(CAP_REASON_SINGLE_TIER1)) capReasons.push(CAP_REASON_SINGLE_TIER1);
   }
 
+  const businessClusterDetected = analysis.audienceAnalysis?.businessClusterDetected === true;
+  const weakOnly = hasTier2OfficeOnlySignal(analysis.magnets);
+  const weakClusterOnly = businessClusterDetected && weakOnly;
+  // Cap D: detected business cluster made only of weak offices must not exceed 70.
+  if (weakClusterOnly && cappedScore > 70) {
+    cappedScore = 70;
+    if (!capReasons.includes(CAP_REASON_WEAK_CLUSTER)) capReasons.push(CAP_REASON_WEAK_CLUSTER);
+  }
+
   const capApplied = cappedScore !== baseScore;
 
   // Audience override
   const aa = analysis.audienceAnalysis;
   const audienceFit = analysis.locationScore?.breakdown.audience_fit_score ?? 0;
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
-  if (tier1Count >= 2 && aa) {
+  const hasTier1Transit = tier1.some(m => m.categoryId === 'metro' || m.categoryId === 'railway_station' || m.categoryId === 'airport');
+  if (weakClusterOnly) {
+    displayAudience = audienceFit >= 35 && hasTier1Transit ? 'MIXED' : 'RESIDENTIAL';
+  } else if (tier1Count >= 2 && aa) {
     if (aa.primaryAudience === 'BUSINESS' && audienceFit >= 35) {
       displayAudience = 'BUSINESS';
     } else if (aa.primaryAudience === 'TOURIST' && !aa.fallbackMode) {
