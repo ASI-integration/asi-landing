@@ -38,6 +38,7 @@ import {
 import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
+import { applyResidentialDemoSanity } from '@/lib/location/client';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -1769,6 +1770,7 @@ function ASIPanel({
       :                              '$1 800 – $3 300';
   })();
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const sanity = isRuResidentialDemo ? applyResidentialDemoSanity(analysis) : null;
   const aboveFoldReasons = (() => {
     const ls = analysis.locationScore;
     const specificFactors = [
@@ -1776,8 +1778,9 @@ function ASIPanel({
       ...(ls?.top_negative_factors ?? []),
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
+    const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
 
-    return factors.slice(0, 2).map((factor) => {
+    return merged.slice(0, 2).map((factor) => {
       const normalized = factor.replace(/\s+/g, ' ').trim();
       return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
     });
@@ -1884,18 +1887,27 @@ function ASIPanel({
       {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       {meta ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
 
-      {isRuResidentialDemo ? (
+      {isRuResidentialDemo && sanity ? (() => {
+        const displayScore = sanity.displayScore;
+        const displayBand = getBand(displayScore);
+        const verdictTextColor =
+          sanity.verdictTone === 'strong'
+            ? 'text-emerald-400'
+            : sanity.verdictTone === 'medium'
+              ? 'text-amber-400'
+              : 'text-yellow-400';
+        return (
         <div className="px-5 sm:px-6 py-5 sm:py-6 space-y-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
                 {RU_DEMO_COPY.demoScoreLabel}
               </p>
-              <p className={`text-[32px] sm:text-[38px] font-bold leading-none ${band.textColor}`}>
-                {evergreenIndex} / 100
+              <p className={`text-[32px] sm:text-[38px] font-bold leading-none ${verdictTextColor}`}>
+                {displayScore} / 100
               </p>
             </div>
-            <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
+            <EvergreenRing index={displayScore} band={displayBand} animated={animated} copy={c} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1903,8 +1915,8 @@ function ASIPanel({
               <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
                 Аудитория
               </p>
-              <p className={`text-[27px] font-bold leading-tight ${band.textColor}`}>
-                {audienceLabelRu}
+              <p className={`text-[27px] font-bold leading-tight ${verdictTextColor}`}>
+                {sanity.audienceLabelRu}
               </p>
             </div>
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
@@ -1921,10 +1933,10 @@ function ASIPanel({
             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
               Итог
             </p>
-            <p className={`text-[28px] font-bold leading-tight ${band.textColor}`}>
-              {band.label}
+            <p className={`text-[28px] font-bold leading-tight ${verdictTextColor}`}>
+              {sanity.verdictLabelRu}
             </p>
-            {conclusion ? (
+            {conclusion && !sanity.capApplied ? (
               <p className="mt-2 text-[14px] text-slate-400 leading-snug">
                 {conclusion}
               </p>
@@ -1958,7 +1970,8 @@ function ASIPanel({
             ) : null}
           </div>
         </div>
-      ) : (
+        );
+      })() : (
       <>
       {/* ── KPI summary row — horizontal on desktop, 2-col grid on mobile ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">

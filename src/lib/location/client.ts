@@ -36,6 +36,12 @@ export { patchLegacyLocationAnalysis, emptyFootTrafficSummary } from './foot-tra
 export { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
 export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 export { buildNeighborhoodEnvironmentLayer, emptyNeighborhoodEnvironmentLayer, mergeNeighborhoodEnvironmentLayer } from './neighborhood-environment';
+export { applyResidentialDemoSanity } from './residential-demo-sanity';
+export type {
+  ResidentialDemoSanity,
+  ResidentialDemoAudience,
+  ResidentialDemoVerdictTone,
+} from './residential-demo-sanity';
 
 export type {
   DemandType,

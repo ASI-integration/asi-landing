@@ -137,3 +137,10 @@ export { buildLocationStandaloneReport, isLocationStandaloneReportV1 } from './s
 export type { PrimeMagnetAnchorType } from './residential-prime-magnets';
 
 export { buildResidentialAnalysis } from './residential-analysis';
+
+export { applyResidentialDemoSanity } from './residential-demo-sanity';
+export type {
+  ResidentialDemoSanity,
+  ResidentialDemoAudience,
+  ResidentialDemoVerdictTone,
+} from './residential-demo-sanity';

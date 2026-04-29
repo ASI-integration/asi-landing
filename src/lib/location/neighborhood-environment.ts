@@ -95,7 +95,7 @@ const LABELS_EN: Record<NeighborhoodEnvironmentConcernLevel, string> = {
 };
 
 const LABELS_RU: Record<NeighborhoodEnvironmentConcernLevel, string> = {
-  low: 'Низкая нагрузка среды',
+  low: 'Окружение: спокойное',
   moderate: 'Умеренная нагрузка среды',
   elevated: 'Повышенная нагрузка среды',
   high: 'Высокая нагрузка среды',
