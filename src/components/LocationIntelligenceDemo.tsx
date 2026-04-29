@@ -746,8 +746,7 @@ function TwoGISMapPanel({
   if (apiKey) {
     return (
       <div
-        className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
-        style={{ height }}
+        className="relative w-full rounded-2xl border border-slate-800 overflow-hidden h-[320px] sm:h-[380px] lg:h-[360px] xl:h-[420px]"
       >
         <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
         {(!sdkReady || loading) && <MapLoadingOverlay c={c} />}
@@ -765,8 +764,7 @@ function TwoGISMapPanel({
 
   return (
     <div
-      className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
-      style={{ height }}
+      className="relative w-full rounded-2xl border border-slate-800 overflow-hidden h-[320px] sm:h-[380px] lg:h-[360px] xl:h-[420px]"
     >
       <iframe
         src={osmSrc}
@@ -1556,10 +1554,10 @@ function CompetitorBreakdownBlock({
 
   return (
     <div className="px-5 py-4 border-b border-slate-800/40">
-      <div className="flex items-baseline justify-between mb-3">
-        <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em]">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight">
           {isRu ? 'Конкурентная среда' : 'Competitive landscape'}
-        </p>
+        </h3>
         <span className={`text-[13px] font-medium ${levelColor}`}>{levelLabel}</span>
       </div>
 
@@ -1650,15 +1648,22 @@ function NeighborhoodEnvironmentPanel({
   const keyReasons = substantiveReasons.slice(0, 4);
   const coverageLine = coverageNotes.join(' ');
 
+  const title =
+    locale === 'ru'
+      ? 'Среда вокруг объекта'
+      : c.envBlockTitle;
+
   return (
     <div className="px-5 py-4 border-b border-slate-800/40 bg-slate-950/40">
-      <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-1">
-        {c.envBlockTitle}
+      <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-2">
+        {title}
+      </h3>
+      <p className="text-[14px] text-slate-500 leading-snug mb-3">
+        {locale === 'ru' ? 'Короткая оценка окружения по карте и сигналам района.' : c.envLayerLead}
       </p>
-      <p className="text-[13px] text-slate-600 leading-snug mb-3">{c.envLayerLead}</p>
       <div className="flex flex-wrap items-end gap-3 mb-2">
         <div>
-          <p className="text-[11px] text-slate-500 uppercase tracking-[0.14em] mb-0.5">{c.envLayerScoreLabel}</p>
+          <p className="text-[13px] text-slate-500 mb-0.5">{c.envLayerScoreLabel}</p>
           <p className="text-[24px] font-bold tabular-nums text-slate-100 leading-none">{score}</p>
         </div>
         <span
@@ -1884,6 +1889,23 @@ function ASIPanel({
     })();
   }
 
+  const dashboardBullets: string[] = (() => {
+    const ls = analysis.locationScore;
+    const pos = ls?.top_positive_factors ?? [];
+    const neg = ls?.top_negative_factors ?? [];
+    const merged: string[] = [];
+    for (const p of pos) {
+      if (typeof p === 'string' && p.trim()) merged.push(p.trim());
+      if (merged.length >= 2) return merged.slice(0, 2);
+    }
+    for (const n of neg) {
+      if (typeof n === 'string' && n.trim()) merged.push(n.trim());
+      if (merged.length >= 2) return merged.slice(0, 2);
+    }
+    const generic = generateScoreFactors(analysis, locale);
+    return generic.slice(0, 2);
+  })();
+
   return (
     <>
     <div
@@ -1896,183 +1918,96 @@ function ASIPanel({
     >
       {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       {meta ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
+      {/* Main result dashboard — 3 columns on desktop */}
+      <div className="p-5 md:p-6">
+        <div className="grid md:grid-cols-3 gap-4 md:gap-5 items-stretch">
 
-      {isRuResidentialDemo && sanity ? (() => {
-        const displayScore = sanity.displayScore;
-        const displayBand = getBand(displayScore);
-        const verdictTextColor =
-          sanity.verdictTone === 'strong'
-            ? 'text-emerald-400'
-            : sanity.verdictTone === 'medium'
-              ? 'text-amber-400'
-              : 'text-yellow-400';
-        return (
-        <div className="px-5 sm:px-6 py-5 sm:py-6 space-y-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
-                {RU_DEMO_COPY.demoScoreLabel}
-              </p>
-              <p className={`text-[32px] sm:text-[38px] font-bold leading-none ${verdictTextColor}`}>
-                {displayScore} / 100
-              </p>
-            </div>
-            <EvergreenRing index={displayScore} band={displayBand} animated={animated} copy={c} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-                Аудитория
-              </p>
-              <p className={`text-[27px] font-bold leading-tight ${verdictTextColor}`}>
-                {sanity.audienceLabelRu}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-                Доход в месяц
-              </p>
-              <p className="text-[24px] font-bold text-slate-100 leading-tight">
-                {incomeRange}
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-              Итог
+          {/* Left: Score / index */}
+          <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
+            <p className="text-[13px] text-slate-400 font-medium">
+              {locale === 'ru' ? 'Индекс' : 'Index'}
             </p>
-            <p className={`text-[28px] font-bold leading-tight ${verdictTextColor}`}>
-              {sanity.verdictLabelRu}
-            </p>
-            {conclusion && !sanity.capApplied ? (
-              <p className="mt-2 text-[14px] text-slate-400 leading-snug">
-                {conclusion}
-              </p>
-            ) : null}
-          </div>
-
-          {aboveFoldReasons.length > 0 ? (
-            <div className="space-y-2">
-              {aboveFoldReasons.map((reason, i) => (
-                <div key={i} className="flex items-start gap-2 text-[14px] text-slate-300 leading-snug">
-                  <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-indigo-400/80" />
-                  {reason}
-                </div>
-              ))}
+            <div className="mt-2 flex items-end gap-3">
+              <div className="leading-none">
+                <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
+                  {evergreenIndex}
+                </span>
+                <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
+              </div>
+              <div className="ml-auto hidden lg:block">
+                <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
+              </div>
             </div>
-          ) : null}
+            {dashboardBullets.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {dashboardBullets.map((line, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[14px] text-slate-300 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={requestFullReportAsync}
-              disabled={fullReportBusy}
-              className="w-full py-3.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[15px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-            >
-              {fullReportBusy ? 'Готовим полный отчёт...' : 'Заказать полный отчёт'}
-            </button>
-            {fullReportErr ? (
-              <p className="text-[11px] text-amber-400/90 text-center">
-                Не удалось запустить полный отчёт: {fullReportErr}
-              </p>
-            ) : null}
+          {/* Middle: Audience + income */}
+          <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
+            <p className="text-[13px] text-slate-400 font-medium">
+              {locale === 'ru' ? 'Профиль спроса' : 'Demand profile'}
+            </p>
+            <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
+              {locale === 'ru'
+                ? (mode === 'commercial' ? 'Коммерческая' : 'Жилая')
+                : (mode === 'commercial' ? 'Commercial' : 'Residential')}
+              <span className="text-slate-700 font-semibold"> | </span>
+              <span className="text-slate-200">{locale === 'ru' ? audienceLabelRu : audienceLabelEn}</span>
+            </p>
+            <p className="mt-2 text-[22px] md:text-[24px] font-bold text-slate-100 leading-tight">
+              {incomeRange}
+            </p>
+            <p className="mt-1 text-[14px] text-slate-500 leading-snug">
+              {locale === 'ru' ? 'Доход — ориентир для сравнения локаций.' : c.incomeSuffix}
+            </p>
+          </div>
+
+          {/* Right: Verdict + CTA */}
+          <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5 flex flex-col">
+            <p className="text-[13px] text-slate-400 font-medium">
+              {locale === 'ru' ? 'Вердикт' : 'Verdict'}
+            </p>
+            <p className={`mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
+              {band.label}
+            </p>
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={requestFullReportAsync}
+                disabled={fullReportBusy}
+                className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              >
+                {locale === 'ru'
+                  ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                  : (fullReportBusy ? 'Generating…' : 'Request report')}
+              </button>
+              {locale === 'ru' ? (
+                <button
+                  type="button"
+                  onClick={openStandaloneFullReportRu}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                >
+                  Открыть демо‑permalink
+                </button>
+              ) : null}
+              {fullReportErr ? (
+                <p className="text-[12px] text-amber-400/90 leading-snug">
+                  {locale === 'ru'
+                    ? `Не удалось запустить отчёт: ${fullReportErr}`
+                    : `Couldn’t start the report: ${fullReportErr}`}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
-        );
-      })() : (
-      <>
-      {/* ── KPI summary row — horizontal on desktop, 2-col grid on mobile ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">
-
-        {/* Col 1 — Score ring */}
-        <div className="flex flex-col items-center justify-center gap-1 p-5
-                        border-r border-b md:border-b-0 border-slate-800/40">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">
-            {locale === 'ru' ? RU_DEMO_COPY.demoScoreLabel : 'Demo preview'}
-          </p>
-          <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
-        </div>
-
-        {/* Col 2 — Audience */}
-        <div className="flex flex-col justify-center gap-0.5 p-5
-                        border-b md:border-b-0 md:border-r border-slate-800/40">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
-            {locale === 'ru' ? 'Аудитория' : 'Audience'}
-          </p>
-          <p className={`text-[26px] font-bold leading-tight ${band.textColor}`}>
-            {locale === 'ru' ? audienceLabelRu : audienceLabelEn}
-          </p>
-        </div>
-
-        {/* Col 3 — Income estimate */}
-        <div className="flex flex-col justify-center gap-0.5 p-5
-                        border-r border-slate-800/40">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
-            {c.incomeTitle}
-          </p>
-          <p className="text-[22px] font-bold text-slate-100 leading-tight">
-            {incomeRange}
-          </p>
-          <p className="text-[13px] text-slate-500 mt-0.5">{c.incomeSuffix}</p>
-        </div>
-
-        {/* Col 4 — Verdict + conclusion (spans full width on mobile) */}
-        <div className="col-span-2 md:col-span-1 flex flex-col justify-center gap-1 p-5">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
-            {locale === 'ru' ? 'Итог' : 'Summary'}
-          </p>
-          <p className={`text-[24px] font-bold leading-tight ${band.textColor}`}>
-            {band.label}
-          </p>
-        </div>
-
-      </div>
-
-      {/* Report CTA: preview permalink + async full report */}
-      <div className="px-5 py-5 space-y-2">
-        {locale === 'ru' ? (
-          <button
-            type="button"
-            onClick={requestFullReportAsync}
-            disabled={fullReportBusy}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={requestFullReportAsync}
-            disabled={fullReportBusy}
-            className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            {fullReportBusy ? 'Generating full report…' : 'Request full report (async)'}
-          </button>
-        )}
-        <p className="text-[11px] text-slate-600 text-center">
-          {locale === 'ru'
-            ? 'Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.'
-            : 'Preview is immediate and approximate. The full report is deeper and may take up to ~1 minute in dense areas.'}
-        </p>
-        {fullReportErr ? (
-          <p className="text-[11px] text-amber-400/90 text-center">
-            {locale === 'ru'
-              ? `Не удалось запустить полный отчёт: ${fullReportErr}`
-              : `Couldn’t start the full report: ${fullReportErr}`}
-          </p>
-        ) : null}
-
-        {locale === 'ru' ? (
-          <button
-            type="button"
-            onClick={openStandaloneFullReportRu}
-            className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            Открыть демо‑перmalink (предпросмотр)
-          </button>
-        ) : null}
       </div>
       </>
       )}
@@ -2086,6 +2021,13 @@ function ASIPanel({
         transition: 'opacity 0.5s ease 0.15s',
       }}
     >
+      <div className="px-5 py-4 border-b border-slate-800/40">
+        <p className="text-[14px] text-slate-500 leading-snug">
+          {locale === 'ru'
+            ? 'Демо‑результат — быстрый ориентир. Детали ниже объясняют факторы, конкуренцию и окружение.'
+            : 'Demo result is a fast preview. Details below explain factors, competition, and environment.'}
+        </p>
+      </div>
 
       {isRuResidentialDemo ? (
         <div className="px-5 py-4 border-b border-slate-800/40">
@@ -2333,7 +2275,9 @@ function ASIPanel({
 
       {/* Recommended Strategy */}
       <div className="px-5 py-5 border-b border-slate-800/40">
-        <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-3">{c.strategyTitle}</p>
+        <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
+          {c.strategyTitle}
+        </h3>
         <ul className="space-y-2.5">
           {strategyPoints.map((point, i) => (
             <li key={i} className="flex items-start gap-2 text-[16px] text-slate-300 leading-snug">
@@ -3161,7 +3105,7 @@ export function LocationIntelligenceDemo({
           : 'py-20 sm:py-24 px-4 sm:px-6 border-t border-slate-800/60 bg-slate-950'
       }
     >
-      <div className="max-w-5xl mx-auto text-left">
+      <div className="max-w-6xl mx-auto text-left">
 
         {/* Section header — mode-aware */}
         <div className={`max-w-2xl space-y-5 ${edgeToHeader ? 'mb-6 sm:mb-8' : 'mb-10'}`}>
@@ -3244,21 +3188,20 @@ export function LocationIntelligenceDemo({
 
         {/* ── RESULT PHASE ── */}
         {phase === 'result' && analysis ? (
-          <div className={locale === 'ru' && mode === 'residential'
-            ? 'grid lg:grid-cols-12 gap-6 lg:gap-8 items-start'
-            : 'grid lg:grid-cols-2 gap-10 lg:gap-14 items-start'
-          }>
+          <div className="space-y-8">
 
-            {/* Left: OSM map + influence heatmap */}
-            <div className={locale === 'ru' && mode === 'residential' ? 'lg:col-span-7' : undefined}>
-              {!(locale === 'ru' && mode === 'residential') && (
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                    {c.envMapTitle}
-                  </span>
-                  <span className="text-[17px] text-slate-700">· 2GIS</span>
-                </div>
-              )}
+            {/* Above the fold: big map + wide result dashboard */}
+            <div className="space-y-6">
+
+              {/* Map */}
+              <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  {c.envMapTitle}
+                </span>
+                <span className="text-[17px] text-slate-700">· 2GIS</span>
+              </div>
+              </div>
               {mapFeedback && (
                 <div className="text-sm text-slate-400 mb-2 transition-opacity">
                   {mapFeedback}
@@ -3395,47 +3338,43 @@ export function LocationIntelligenceDemo({
                 </div>
               )}
 
-              {!(locale === 'ru' && mode === 'residential') && (
-                <button
-                  onClick={reset}
-                  className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
-                >
-                  {c.tryAnother}
-                </button>
-              )}
-            </div>
+              <button
+                onClick={reset}
+                className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
+              >
+                {c.tryAnother}
+              </button>
+              </div>
 
-            {/* Right: ASI analysis — mode-aware */}
-            <div className={locale === 'ru' && mode === 'residential' ? 'lg:col-span-5 lg:pt-8' : undefined}>
-              {!(locale === 'ru' && mode === 'residential') && (
+              {/* Wide dashboard (full-width; no narrow right column) */}
+              <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+                  <span className="text-[18px] font-semibold tracking-tight text-indigo-300">
                     {mode === 'commercial' && locale === 'ru' ? 'ASI · Коммерческий анализ' : c.asiPanelTitle}
                   </span>
                 </div>
-              )}
-              {mode === 'commercial' && locale === 'ru' ? (
-                <CommercialASIPanel
-                  analysis={analysis}
-                  address={selected?.value ?? ''}
-                  animated={animated}
-                  meta={analysisMeta}
-                  locale={locale}
-                  c={c}
-                />
-              ) : (
-                <ASIPanel
-                  analysis={analysis}
-                  address={selected?.value ?? ''}
-                  animated={animated}
-                  meta={analysisMeta}
-                  locale={locale}
-                  c={c}
-                  mode={mode}
-                />
-              )}
+                {mode === 'commercial' && locale === 'ru' ? (
+                  <CommercialASIPanel
+                    analysis={analysis}
+                    address={selected?.value ?? ''}
+                    animated={animated}
+                    meta={analysisMeta}
+                    locale={locale}
+                    c={c}
+                  />
+                ) : (
+                  <ASIPanel
+                    analysis={analysis}
+                    address={selected?.value ?? ''}
+                    animated={animated}
+                    meta={analysisMeta}
+                    locale={locale}
+                    c={c}
+                    mode={mode}
+                  />
+                )}
+              </div>
             </div>
-
           </div>
         ) : (
           // ── IDLE / LOADING PHASE ──
