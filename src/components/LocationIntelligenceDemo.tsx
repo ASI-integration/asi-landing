@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useId, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { extractRuCityFromValue } from '@/lib/location/address-providers/ru-normalize';
 import {
   CATEGORY_COLOR,
   buildAnalysis,
@@ -89,10 +90,66 @@ function truncateForLog(s: string, max = 52): string {
   return `${t.slice(0, max - 1)}…`;
 }
 
+// City-context priority for RU autocomplete:
+//   a) explicit city in the query   (resolved server-side)
+//   b) last-selected address city   (sessionStorage)
+//   c) browser geolocation viewport (lat/lon, no reverse-geocode)
+//   d) previous-session city        (sessionStorage, persists across reloads)
+//   e) none — nationwide; UI must show city in suggestion labels
+const LAST_CITY_KEY = 'location-demo:lastCity';
+const PREV_CITY_KEY = 'location-demo:prevCity';
+
+interface CityHint {
+  cityHint?: string;
+  biasLat?: number;
+  biasLon?: number;
+  source: 'session' | 'geolocation' | 'previous' | 'none';
+}
+
+function readSessionString(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = window.sessionStorage.getItem(key);
+    return v && v.trim() ? v.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionString(key: string, value: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (value) window.sessionStorage.setItem(key, value);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    /* ignore quota/private-mode errors */
+  }
+}
+
+function rememberSelectedCity(suggestionValue: string): void {
+  const city = extractRuCityFromValue(suggestionValue);
+  if (!city) return;
+  // Roll the previous "last" forward into "prev" so cold reloads still have
+  // a session-level fallback even if the user clears their last pick.
+  const existing = readSessionString(LAST_CITY_KEY);
+  if (existing && existing !== city) writeSessionString(PREV_CITY_KEY, existing);
+  writeSessionString(LAST_CITY_KEY, city);
+}
+
+function resolveCityHint(geo: { lat: number; lon: number } | null): CityHint {
+  const last = readSessionString(LAST_CITY_KEY);
+  if (last) return { cityHint: last, source: 'session' };
+  if (geo) return { biasLat: geo.lat, biasLon: geo.lon, source: 'geolocation' };
+  const prev = readSessionString(PREV_CITY_KEY);
+  if (prev) return { cityHint: prev, source: 'previous' };
+  return { source: 'none' };
+}
+
 async function fetchAddressSuggestions(
   locale: LocDemoLocale,
   q: string,
   externalSignal?: AbortSignal,
+  hint?: CityHint,
 ): Promise<{ suggestions: Suggestion[]; status: SuggestStatus }> {
   const merged = new AbortController();
   const extHandler = () => merged.abort();
@@ -108,10 +165,21 @@ async function fetchAddressSuggestions(
   const qLog = truncateForLog(q, 48);
   console.info('[location-demo] addressSuggest request_start', { locale, qLen: q.length, q: qLog });
   try {
-    const res = await fetch(
-      `/api/address-suggest?q=${encodeURIComponent(q)}&locale=${locale}`,
-      { signal: merged.signal, cache: 'no-store' },
-    );
+    const url = new URL('/api/address-suggest', window.location.origin);
+    url.searchParams.set('q', q);
+    url.searchParams.set('locale', locale);
+    if (hint && locale === 'ru') {
+      if (hint.cityHint) url.searchParams.set('cityHint', hint.cityHint);
+      if (Number.isFinite(hint.biasLat) && Number.isFinite(hint.biasLon)) {
+        url.searchParams.set('biasLat', String(hint.biasLat));
+        url.searchParams.set('biasLon', String(hint.biasLon));
+      }
+      url.searchParams.set('cityHintSource', hint.source);
+    }
+    const res = await fetch(url.toString().replace(window.location.origin, ''), {
+      signal: merged.signal,
+      cache: 'no-store',
+    });
     const data = (await res.json()) as {
       suggestions?: Array<{
         value: string;
@@ -1025,10 +1093,35 @@ function AddressInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const geoRef = useRef<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => () => {
     suggestAbortRef.current?.abort();
   }, []);
+
+  // Best-effort one-shot geolocation for RU autocomplete viewport bias.
+  // Silently no-ops if unsupported, denied, or non-RU. Never blocks suggest.
+  useEffect(() => {
+    if (locale !== 'ru') return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        if (cancelled) return;
+        const { latitude, longitude } = pos.coords;
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+          geoRef.current = { lat: latitude, lon: longitude };
+        }
+      },
+      () => {
+        /* permission denied or timeout — silent fallback to other hints */
+      },
+      { enableHighAccuracy: false, timeout: 4_000, maximumAge: 600_000 },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
@@ -1045,7 +1138,8 @@ function AddressInput({
       suggestAbortRef.current = ac;
       debounceRef.current = setTimeout(async () => {
         try {
-          const result = await fetchAddressSuggestions(locale, val, ac.signal);
+          const hint = locale === 'ru' ? resolveCityHint(geoRef.current) : undefined;
+          const result = await fetchAddressSuggestions(locale, val, ac.signal, hint);
           if (suggestAbortRef.current !== ac) return;
           setSuggestions(result.suggestions);
           setSuggestStatus(result.status);
@@ -1089,6 +1183,7 @@ function AddressInput({
         value: truncateForLog(s.value, 64),
         source: s.lat != null && s.lon != null ? 'inline_coords' : 'resolved',
       });
+      if (locale === 'ru') rememberSelectedCity(s.value);
       onSelect({ value: s.value, lat, lon });
     };
 

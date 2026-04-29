@@ -4,7 +4,7 @@ import { googlePlacesAutocomplete } from './suggest-google';
 import { twogisAddressSuggest } from './suggest-2gis';
 import { photonSuggest } from './suggest-photon';
 import {
-  buildProviderQueryWithDefaultCity,
+  buildProviderQueryWithContextCity,
   canonicalizeRuSuggestionValue,
   normalizeRuAddressQuery,
   rerankRuSuggestionsByLocality,
@@ -23,13 +23,28 @@ function twogisCatalogKey(): string | null {
   return k || null;
 }
 
+export interface RunSuggestPipelineOptions {
+  /** Resolved city context for the RU market (typed > viewport > last-pick > session).
+   *  Used both as a provider-query hint (when query has no explicit city) and as
+   *  the city-bias signal for the local reranker. */
+  contextCity?: string | null;
+  /** Optional viewport bias (browser geolocation lat/lon). Forwarded to providers
+   *  that accept location/radius bias (Google Places). Not converted to a city. */
+  biasLat?: number | null;
+  biasLon?: number | null;
+}
+
 /**
  * Locale-routed suggestion chain. Always returns a terminal status (never hangs).
  *
  * RU and EN: Google Places Autocomplete (language/bias by market) → Photon → optional DaData (RU only)
  * RU only: optional 2GIS Catalog suggest is tried before Photon if configured.
  */
-export async function runSuggestPipeline(market: AddressMarket, query: string): Promise<SuggestPipelineResult> {
+export async function runSuggestPipeline(
+  market: AddressMarket,
+  query: string,
+  opts?: RunSuggestPipelineOptions,
+): Promise<SuggestPipelineResult> {
   const t0 = Date.now();
   const raw = query;
   const trimmed = raw.trim();
@@ -42,15 +57,25 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
       ? normalizeRuAddressQuery(trimmed)
       : { normalized: trimmed, providerQuery: trimmed };
 
-  // For RU queries that don't name a city, append a Saint Petersburg hint so
-  // providers return local matches first instead of street-name lookalikes
-  // scattered across the country (Perm, Abakan, Maykop, etc.). Reranking still
-  // runs on the user's original input.
+  const contextCity = opts?.contextCity ?? null;
+
+  // For RU queries that don't name a city, append the caller-supplied context
+  // city (typed > viewport > last selection > session) so providers return
+  // local matches first instead of street-name lookalikes scattered across the
+  // country. With no context the query is sent as-is — UI disambiguates.
   const providerQuery =
-    market === 'ru' ? buildProviderQueryWithDefaultCity(providerQueryRaw) : providerQueryRaw;
+    market === 'ru'
+      ? buildProviderQueryWithContextCity(providerQueryRaw, contextCity)
+      : providerQueryRaw;
 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;
+  const biasLat = Number.isFinite(opts?.biasLat ?? NaN) ? (opts?.biasLat as number) : null;
+  const biasLon = Number.isFinite(opts?.biasLon ?? NaN) ? (opts?.biasLon as number) : null;
+  const googleBias =
+    biasLat !== null && biasLon !== null
+      ? { location: `${biasLat},${biasLon}`, radius: 50_000 }
+      : undefined;
 
   const finalize = (suggestions: AddressSuggestionRow[]): AddressSuggestionRow[] =>
     market === 'ru'
@@ -63,9 +88,10 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
       let primary = await googlePlacesAutocomplete(providerQuery, gKey, {
         language: googleLang,
         components: googleComponents,
+        bias: googleBias,
       });
       if (market === 'ru') {
-        primary = rerankRuSuggestionsByLocality(normalized, primary);
+        primary = rerankRuSuggestionsByLocality(normalized, primary, { contextCity });
       }
       if (primary.length > 0) {
         return {
@@ -82,7 +108,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
       const dgKey = twogisCatalogKey();
       if (dgKey) {
         let dg = await twogisAddressSuggest(providerQuery, dgKey);
-        dg = rerankRuSuggestionsByLocality(normalized, dg);
+        dg = rerankRuSuggestionsByLocality(normalized, dg, { contextCity });
         if (dg.length > 0) {
           console.warn('[address-suggest] ru fallback=2gis_catalog');
           return {
@@ -98,7 +124,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
 
     let photon = await photonSuggest(providerQuery, market);
     if (market === 'ru') {
-      photon = rerankRuSuggestionsByLocality(normalized, photon);
+      photon = rerankRuSuggestionsByLocality(normalized, photon, { contextCity });
     }
     if (photon.length > 0) {
       console.warn(`[address-suggest] market=${market} fallback=photon after_google_empty_or_no_key`);
@@ -115,7 +141,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
       const dadataKey = (process.env.DADATA_API_KEY ?? '').trim();
       if (dadataKey) {
         let dd = await dadataAddressSuggest(providerQuery, dadataKey);
-        dd = rerankRuSuggestionsByLocality(normalized, dd);
+        dd = rerankRuSuggestionsByLocality(normalized, dd, { contextCity });
         if (dd.length > 0) {
           console.warn('[address-suggest] ru fallback=dadata');
           return {
