@@ -1,4 +1,4 @@
-import type { AddressMarket, SuggestPipelineResult } from './types';
+import type { AddressMarket, AddressSuggestionRow, SuggestPipelineResult } from './types';
 import { dadataAddressSuggest } from './suggest-dadata';
 import { googlePlacesAutocomplete } from './suggest-google';
 import { twogisAddressSuggest } from './suggest-2gis';
@@ -52,7 +52,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;
 
-  const finalize = (suggestions: Array<{ value: string; lat?: string | null; lon?: string | null; placeId?: string }>) =>
+  const finalize = (suggestions: AddressSuggestionRow[]): AddressSuggestionRow[] =>
     market === 'ru'
       ? suggestions.map(s => ({ ...s, value: canonicalizeRuSuggestionValue(s.value) }))
       : suggestions;
