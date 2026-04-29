@@ -5,6 +5,7 @@ import { twogisAddressSuggest } from './suggest-2gis';
 import { photonSuggest } from './suggest-photon';
 import {
   buildProviderQueryWithDefaultCity,
+  canonicalizeRuSuggestionValue,
   normalizeRuAddressQuery,
   rerankRuSuggestionsByLocality,
 } from './ru-normalize';
@@ -51,6 +52,11 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;
 
+  const finalize = (suggestions: Array<{ value: string; lat?: string | null; lon?: string | null; placeId?: string }>) =>
+    market === 'ru'
+      ? suggestions.map(s => ({ ...s, value: canonicalizeRuSuggestionValue(s.value) }))
+      : suggestions;
+
   try {
     const gKey = googleMapsKey();
     if (gKey) {
@@ -63,7 +69,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
       }
       if (primary.length > 0) {
         return {
-          suggestions: primary,
+          suggestions: finalize(primary),
           status: 'ok',
           elapsed_ms: Date.now() - t0,
           raw_query: trimmed,
@@ -80,7 +86,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
         if (dg.length > 0) {
           console.warn('[address-suggest] ru fallback=2gis_catalog');
           return {
-            suggestions: dg,
+            suggestions: finalize(dg),
             status: 'ok',
             elapsed_ms: Date.now() - t0,
             raw_query: trimmed,
@@ -97,7 +103,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
     if (photon.length > 0) {
       console.warn(`[address-suggest] market=${market} fallback=photon after_google_empty_or_no_key`);
       return {
-        suggestions: photon,
+        suggestions: finalize(photon),
         status: 'ok',
         elapsed_ms: Date.now() - t0,
         raw_query: trimmed,
@@ -113,7 +119,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
         if (dd.length > 0) {
           console.warn('[address-suggest] ru fallback=dadata');
           return {
-            suggestions: dd,
+            suggestions: finalize(dd),
             status: 'ok',
             elapsed_ms: Date.now() - t0,
             raw_query: trimmed,
@@ -136,7 +142,7 @@ export async function runSuggestPipeline(market: AddressMarket, query: string): 
         return {
           suggestions: [
             {
-              value: label,
+              value: market === 'ru' ? canonicalizeRuSuggestionValue(label) : label,
               lat: String(r.lat),
               lon: String(r.lon),
             },
