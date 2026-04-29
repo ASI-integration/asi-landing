@@ -42,6 +42,7 @@ const EXCLUDED_CATEGORIES = new Set([
   'education_local', // schools, colleges, kindergartens
   'shopping_local',  // supermarkets, convenience stores
   'major_hotel',     // not on residential prime magnet allowlist (STR competitor proxy only)
+  'mid_hotel',       // secondary cluster signal only — never a prime magnet
   'entertainment',   // cinemas, theatres, nightclubs — mostly local/episodic;
                      // major venues that qualify as landmarks appear under 'attraction'
 ]);
@@ -137,6 +138,7 @@ export function residentialMagnetCategoryLabelRu(categoryId: string, subType?: s
     case 'railway_station': return 'Ж/д вокзал / автовокзал / транспортный узел';
     case 'shopping_major':  return 'Крупный торговый центр / ритейл-кластер';
     case 'stadium':         return 'Стадион / арена';
+    case 'civic':           return 'Гражданский/административный центр';
     case 'business':
       if (subType === 'factory' || subType === 'industrial') {
         return 'Промышленная зона / завод';
@@ -288,9 +290,10 @@ export function filterResidentialPrimeMagnets(
     university: 4,
     hospital: 5,
     shopping_major: 6,
-    business: 7,
-    stadium: 8,
-    convention: 9,
+    civic: 7,
+    business: 8,
+    stadium: 9,
+    convention: 10,
   };
   deduped.sort((a, b) => {
     const tDiff = typeOrder[a.anchorType] - typeOrder[b.anchorType];
@@ -377,9 +380,10 @@ export function selectResidentialPrimeMagnetItems(
     university: 4,
     hospital: 5,
     shopping_major: 6,
-    business: 7,
-    stadium: 8,
-    convention: 9,
+    civic: 7,
+    business: 8,
+    stadium: 9,
+    convention: 10,
   };
   deduped.sort((a, b) => {
     const tA = classifyPrimeMagnetAnchorType(a.categoryId, a.subType);

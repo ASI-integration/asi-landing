@@ -18,6 +18,13 @@ const LUXURY_CHAINS = [
  * Checks: OSM stars tag ≥ 4 first; then chain-name heuristic as fallback.
  * Returns false for untagged, 1–3★, or unknown hotels (→ classified as competitor).
  */
+/**
+ * Russian ЗАГС / civil registry name pattern. ZAGS offices are tagged
+ * inconsistently in OSM (sometimes office=government, sometimes amenity=public_building,
+ * sometimes nothing). When the name matches we surface them as a civic anchor.
+ */
+const ZAGS_NAME_RE = /\bЗАГС\b|registry\s+office|записи\s+актов\s+гражданского/i;
+
 function isMajorHotel(t: Record<string, string>): boolean {
   const stars = parseInt(t.stars ?? '0', 10);
   if (stars >= 4) return true;
@@ -58,8 +65,27 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.tourism === 'hotel') {
     if (isMajorHotel(t))
       return { categoryId: 'major_hotel', name: t.name || 'Крупный отель' };
+    // Mid-tier hotels (1–3★ / unknown stars but named): surfaced as a Tier-2
+    // demand anchor for the secondary-cluster rule. Untagged anonymous hotels
+    // stay as competitor-only (no name = no positive demand evidence).
+    const stars = parseInt(t.stars ?? '0', 10);
+    const hasName = Boolean(t.name && t.name.trim());
+    if (hasName || (stars >= 1 && stars <= 3)) {
+      return { categoryId: 'mid_hotel', name: t.name || 'Отель', subType: stars > 0 ? `stars_${stars}` : undefined };
+    }
     return { categoryId: 'competitor', name: t.name || 'Отель' };
   }
+
+  // Civic / administrative anchors — Tier-2 demand anchor.
+  if (t.amenity === 'townhall')
+    return { categoryId: 'civic', name: t.name || 'Администрация', subType: 'townhall' };
+  if (t.office === 'government' && (t.name && t.name.trim()))
+    return { categoryId: 'civic', name: t.name, subType: 'government' };
+  if (
+    (t.amenity === 'public_building' || t.office === 'register' || t.office === 'notary') &&
+    t.name && ZAGS_NAME_RE.test(t.name)
+  )
+    return { categoryId: 'civic', name: t.name, subType: 'zags' };
 
   // Convention / expo / conference centers — corporate demand anchor
   if (t.amenity === 'conference_centre' || t.amenity === 'exhibition_centre' || t.amenity === 'convention_centre')

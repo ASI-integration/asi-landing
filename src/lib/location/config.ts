@@ -19,6 +19,12 @@ export const MAGNET_CATEGORIES: MagnetCategory[] = [
   { id: 'entertainment',    label: 'Entertainment',                    labelRu: 'Развлечения',                        icon: '▶',  weight: 5,   permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
   { id: 'shopping_major',   label: 'Malls & major retail',            labelRu: 'ТЦ и крупная розница',               icon: '⊞',  weight: 5,   permanenceType: 'permanent', scopeLevel: 'city',     strengthClass: 'medium' },
   { id: 'stadium',          label: 'Stadiums & arenas',               labelRu: 'Стадионы и арены',                   icon: '⬡',  weight: 5,   permanenceType: 'semi',      scopeLevel: 'city',     strengthClass: 'medium' },
+  // Secondary district anchors — civic/admin and mid-tier hotels.
+  // Low weights: these contribute to the "secondary cluster" rule
+  // (rules/residential-location-rules.ts) but must not push
+  // evergreenIndex into a strong band on their own.
+  { id: 'civic',            label: 'Civic / administrative anchors',  labelRu: 'Гражданские/административные центры', icon: '⌂',  weight: 3,   permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
+  { id: 'mid_hotel',        label: 'Mid-tier hotels (1–3★)',          labelRu: 'Отели среднего класса (1–3★)',       icon: '⛟',  weight: 2.5, permanenceType: 'permanent', scopeLevel: 'district', strengthClass: 'medium' },
   // ── Tier 3: Local / weak signals (weight 1–1.5) ───────────────────────────────
   { id: 'education_local',  label: 'Local schools',                   labelRu: 'Локальные учебные заведения',        icon: 'у',  weight: 1.5, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
   { id: 'shopping_local',   label: 'Supermarkets',                    labelRu: 'Супермаркеты',                       icon: '⊕',  weight: 1.2, permanenceType: 'permanent', scopeLevel: 'local',    strengthClass: 'weak' },
@@ -39,6 +45,8 @@ export const CATEGORY_RADIUS: Record<string, number> = {
   entertainment:      800,
   shopping_major:     900,
   stadium:           1500,
+  civic:              900,
+  mid_hotel:          700,
   education_local:    650,
   shopping_local:     450,
   food:               450,
@@ -60,6 +68,8 @@ export const CATEGORY_MAX_SHOW: Record<string, number> = {
   entertainment:     3,
   shopping_major:    3,
   stadium:           2,
+  civic:             2,
+  mid_hotel:         2,
   education_local:   1,
   shopping_local:    1,
   food:              3,
@@ -127,6 +137,8 @@ export const CATEGORY_COLOR: Record<string, string> = {
   entertainment:     '#f472b6',
   shopping_major:    '#2dd4bf',
   stadium:           '#a3e635',
+  civic:             '#fcd34d',
+  mid_hotel:         '#fde68a',
   education_local:   '#94a3b8',
   shopping_local:    '#4ade80',
   food:              '#fb923c',

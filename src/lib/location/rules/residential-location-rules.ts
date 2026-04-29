@@ -17,6 +17,7 @@ import {
   filterResidentialPrimeMagnets,
   type ResidentialPrimeMagnet,
 } from '../residential-prime-magnets';
+import { GRAVITY_CONFIG } from '../config';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -201,6 +202,67 @@ function hasTier2OfficeOnlySignal(magnets: MagnetItem[]): boolean {
   });
 }
 
+// ── Tier-2 secondary-cluster detection ────────────────────────────────────────
+//
+// When a location has no Tier-1 magnet but has multiple credible Tier-2 demand
+// anchors within walking range (civic/admin, mid-tier hotel, named attraction,
+// food cluster, etc.), the gravity engine collapses the score to ~5/100 because
+// raw attraction × decay never reaches the moderate band. This count drives a
+// presentation-only moderate floor in `applyResidentialLocationRules`.
+
+/**
+ * Counts independent Tier-2 demand signals near the subject.
+ * Each row contributes at most 1.
+ */
+function detectTier2ClusterCount(analysis: LocationAnalysis): number {
+  const m = analysis.magnets;
+  let count = 0;
+
+  // Civic / administrative anchor (townhall, government office, ZAGS)
+  if (m.some(x => x.categoryId === 'civic' && x.distance <= 900)) count++;
+
+  // Mid-tier (1–3★) hotel
+  if (m.some(x => x.categoryId === 'mid_hotel' && x.distance <= 700)) count++;
+
+  // Major (4–5★) hotel
+  if (m.some(x => x.categoryId === 'major_hotel' && x.distance <= 900)) count++;
+
+  // Convention / expo center
+  if (m.some(x => x.categoryId === 'convention' && x.distance <= 900)) count++;
+
+  // Major shopping cluster
+  if (m.some(x => x.categoryId === 'shopping_major' && x.distance <= 900)) count++;
+
+  // Named attraction (even if not "major tourist" by the strict Tier-1 filter)
+  if (m.some(x => x.categoryId === 'attraction' && x.distance <= 800)) count++;
+
+  // Dense food cluster — uses existing GRAVITY_CONFIG thresholds.
+  const foodNearby = m.filter(
+    x => x.categoryId === 'food' && x.distance <= GRAVITY_CONFIG.foodClusterRadius,
+  );
+  if (foodNearby.length >= GRAVITY_CONFIG.foodClusterMinCount) count++;
+
+  // Real (non-weak) business cluster: ≥2 named business magnets that are
+  // neither weak-office subtypes nor on the weak-office name list.
+  const realBusiness = m.filter(x => {
+    if (x.categoryId !== 'business') return false;
+    if (x.distance > 700) return false;
+    if (looksLikeWeakOffice(x.name)) return false;
+    if (x.subType && WEAK_OFFICE_SUBTYPES.has(x.subType)) return false;
+    return true;
+  });
+  if (realBusiness.length >= 2) count++;
+
+  // Transit access only counts as a +1 modifier if at least one other Tier-2
+  // signal already fired (must not become a sole signal).
+  if (
+    count > 0 &&
+    analysis.accessibilityStops.some(s => s.distance <= 350)
+  ) count++;
+
+  return count;
+}
+
 // ── Audience helpers ───────────────────────────────────────────────────────────
 
 function audienceLabelRu(a: ResidentialDemoAudience): string {
@@ -263,6 +325,9 @@ const CAP_REASON_SINGLE_TIER1 =
 const CAP_REASON_WEAK_CLUSTER =
   'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.';
 
+const FLOOR_REASON_TIER2_CLUSTER =
+  'Есть несколько локальных магнитов спроса (вторичный кластер); оценка не должна схлопываться в «почти ноль».';
+
 /**
  * Apply RU residential demo sanity rules.
  *
@@ -277,6 +342,7 @@ export function applyResidentialLocationRules(
   const capReasons: string[] = [];
 
   let cappedScore = baseScore;
+  const tier2ClusterCount = detectTier2ClusterCount(analysis);
 
   // Cap A: no tier-1 magnets at all → ≤ 70
   if (tier1Count === 0 && cappedScore > 70) {
@@ -309,6 +375,14 @@ export function applyResidentialLocationRules(
   if (weakClusterOnly && cappedScore > 70) {
     cappedScore = 70;
     if (!capReasons.includes(CAP_REASON_WEAK_CLUSTER)) capReasons.push(CAP_REASON_WEAK_CLUSTER);
+  }
+
+  // Floor: if there are several independent Tier-2 demand anchors but no Tier-1,
+  // a near-zero score looks like a bug/regression for "secondary cluster" areas.
+  // Keep the floor conservative: still weak-to-moderate, never "strong".
+  if (tier1Count === 0 && tier2ClusterCount >= 3 && cappedScore < 35) {
+    cappedScore = 35;
+    if (!capReasons.includes(FLOOR_REASON_TIER2_CLUSTER)) capReasons.push(FLOOR_REASON_TIER2_CLUSTER);
   }
 
   const capApplied = cappedScore !== baseScore;
