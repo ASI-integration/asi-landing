@@ -63,7 +63,39 @@ const WEAK_OFFICE_SUBTYPES: ReadonlySet<string> = new Set([
 ]);
 
 const STRONG_BUSINESS_NAME_RE =
-  /бизнес-центр|business\s+center|бц\s|technopark|технопарк|industrial\s+park|завод|industrial|factory|кампус|campus/i;
+  // Real business/employment magnets — used to decide Tier-1 strength.
+  // Important: generic brand offices (e.g. "Марио") must NOT match.
+  /бизнес-центр|business\s+center|бц\b|technopark|технопарк|industrial\s+park|industrial|factory|завод\b|кампус|campus|штаб-квартира|headquarters|office\s+cluster|деловой\s+центр/i;
+
+function isStrongTier1BusinessByName(name: string | undefined): boolean {
+  if (!name) return false;
+  return STRONG_BUSINESS_NAME_RE.test(name);
+}
+
+const METRO_ENTRANCE_OR_EXIT_RE =
+  // Names like "Вход 1", "Вход 2", "Выход 3", "Entrance 1", "Exit 2"
+  /(?:вход|выход|entrance|exit)\s*(?:№\s*)?\d+/i;
+
+function isMetroEntranceOrExit(name: string | undefined): boolean {
+  if (!name) return false;
+  return METRO_ENTRANCE_OR_EXIT_RE.test(name);
+}
+
+const MAJOR_TOURIST_ATTRACTION_NAME_RE =
+  // Explicit major tourist categories. Keep strict to avoid
+  // demoting everything (e.g. generic sculptures should stay Tier-2).
+  /(?:музей|театр|театральный|концертный\s+зал|концерт|стадион|арена|конгресс-центр|выставка|выставочный\s+центр|конвенц|экспо|landmark|достопримечательность|major\s+attraction)/i;
+
+function isMajorTouristAttraction(magnet: ResidentialPrimeMagnet, raw: MagnetItem | undefined): boolean {
+  if (isStrongTier1BusinessByName(magnet.name)) return false; // defensive: business word in attraction name shouldn't promote it
+  if (MAJOR_TOURIST_ATTRACTION_NAME_RE.test(magnet.name)) return true;
+
+  // "Tourist site with strong category/source" fallback — only when both
+  // strength + attractionScore are clearly high.
+  if (raw?.strengthClass === 'strong' && raw.attractionScore >= 4.2) return true;
+
+  return false;
+}
 
 function looksLikeWeakOffice(name: string | undefined): boolean {
   if (!name) return false;
@@ -114,12 +146,34 @@ function detectTier1(analysis: LocationAnalysis): ResidentialPrimeMagnet[] {
     const inPrimary = m.distance <= 1000;
     const inSoft = m.distance <= 1500 && TIER1_SOFT_EXTENSION.has(m.categoryId);
     if (!inPrimary && !inSoft) continue;
+    const raw = rawByKey.get(`${m.categoryId}:${m.name.toLowerCase().trim()}`);
+
+    // Business: only count real business/employment magnets as Tier-1.
     if (m.categoryId === 'business') {
       const raw = rawByKey.get(`${m.categoryId}:${m.name.toLowerCase().trim()}`);
       if (!isTier1Business(m, raw)) continue;
     }
+    // Attractions: generic sculptures/art objects must not become Tier-1 tourist magnets.
+    if (m.categoryId === 'attraction') {
+      if (!isMajorTouristAttraction(m, raw)) continue;
+    }
     out.push(m);
   }
+
+  // Metro anchors: station + entrances/exits count as a single Tier-1 transport anchor.
+  const metros = out.filter(m => m.categoryId === 'metro');
+  if (metros.length > 0) {
+    const nonEntranceMetros = metros.filter(m => !isMetroEntranceOrExit(m.name));
+    if (nonEntranceMetros.length > 0) {
+      // Keep station entries; drop entrance/exit entries.
+      return out.filter(m => m.categoryId !== 'metro' || !isMetroEntranceOrExit(m.name));
+    }
+
+    // If we only have entrances/exits, keep just the closest one.
+    const closest = [...metros].sort((a, b) => a.distance - b.distance)[0];
+    return out.filter(m => m.categoryId !== 'metro' || m.name === closest.name);
+  }
+
   return out;
 }
 
@@ -127,11 +181,18 @@ function detectTier1(analysis: LocationAnalysis): ResidentialPrimeMagnet[] {
 function hasTier2OfficeOnlySignal(magnets: MagnetItem[]): boolean {
   const businessMagnets = magnets.filter(m => m.categoryId === 'business');
   if (businessMagnets.length === 0) return false;
-  return businessMagnets.every(
-    m =>
-      (m.subType ? WEAK_OFFICE_SUBTYPES.has(m.subType) : false) ||
-      looksLikeWeakOffice(m.name),
-  );
+  return businessMagnets.every(m => {
+    const st = m.subType?.toLowerCase().trim();
+    if (st === 'office') {
+      // Generic "office" subType is weak/local by default.
+      // Only real employment/business magnets qualify as Tier-1 by name.
+      return !isStrongTier1BusinessByName(m.name);
+    }
+    return (
+      (st ? WEAK_OFFICE_SUBTYPES.has(st) : false) ||
+      looksLikeWeakOffice(m.name)
+    );
+  });
 }
 
 // ── Audience helpers ──────────────────────────────────────────────────────────
@@ -234,13 +295,23 @@ export function applyResidentialDemoSanity(analysis: LocationAnalysis): Resident
   // Audience override
   const aa = analysis.audienceAnalysis;
   const audienceFit = analysis.locationScore?.breakdown.audience_fit_score ?? 0;
+  const hasTier1BusinessMagnet = tier1.some(m => m.categoryId === 'business');
+  const hasBusinessRelevantDemandAnchor = tier1.some(m =>
+    m.categoryId === 'hospital' ||
+    m.categoryId === 'university' ||
+    m.categoryId === 'railway_station' ||
+    m.categoryId === 'airport',
+  );
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
   const hasTier1Transit = tier1.some(m => m.categoryId === 'metro' || m.categoryId === 'railway_station' || m.categoryId === 'airport');
   if (weakClusterOnly) {
     displayAudience = audienceFit >= 35 && hasTier1Transit ? 'MIXED' : 'RESIDENTIAL';
   } else if (tier1Count >= 2 && aa) {
     if (aa.primaryAudience === 'BUSINESS' && audienceFit >= 35) {
-      displayAudience = 'BUSINESS';
+      // RU demo must not show BUSINESS based on metro + weak offices + local amenities.
+      // Allow only when there's at least one real business Tier-1 magnet
+      // OR a strong medical/university/rail/airport demand anchor.
+      displayAudience = (hasTier1BusinessMagnet || hasBusinessRelevantDemandAnchor) ? 'BUSINESS' : 'MIXED';
     } else if (aa.primaryAudience === 'TOURIST' && !aa.fallbackMode) {
       displayAudience = 'TOURIST';
     } else {

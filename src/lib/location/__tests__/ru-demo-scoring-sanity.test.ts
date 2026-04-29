@@ -210,6 +210,70 @@ describe('applyResidentialDemoSanity — Komendantsky 23к1 weak-office cluster'
   });
 });
 
+describe('applyResidentialDemoSanity — Komendantsky production magnet list', () => {
+  it('caps score <= 70, dedupes metro, demotes minor attraction, and blocks BUSINESS', () => {
+    // Address: Комендантский проспект / production-like magnet set
+    const magnets: MagnetItem[] = [
+      // Metro station + entrances (must dedupe to 1 Tier-1 anchor)
+      magnet({ categoryId: 'metro', name: 'Комендантский проспект', distance: 473, weight: 9, strengthClass: 'strong' }),
+      magnet({ categoryId: 'metro', name: 'Вход 1', distance: 680, weight: 9, strengthClass: 'medium' }),
+      magnet({ categoryId: 'metro', name: 'Вход 2', distance: 686, weight: 9, strengthClass: 'medium' }),
+
+      // Minor tourist attraction (must NOT become Tier-1)
+      magnet({ categoryId: 'attraction', name: 'Самолет - стрекоза', distance: 481, attractionScore: 2.1, strengthClass: 'weak' }),
+
+      // Business offices — subType=office must be treated as weak unless name clearly indicates a real Tier-1 business magnet.
+      magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 3, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 236, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Марио', distance: 282, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Ренессанс Страхование', distance: 412, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 445, subType: 'office', weight: 3 }),
+
+      // Shopping major nearby (should not by itself produce strong BUSINESS headline)
+      magnet({ categoryId: 'shopping_major', name: 'Крокус', distance: 794, weight: 4, strengthClass: 'medium' }),
+      magnet({ categoryId: 'shopping_major', name: 'Сабина', distance: 854, weight: 4, strengthClass: 'medium' }),
+
+      // Local food/shop magnets (Tier-1 filter should ignore them)
+      magnet({ categoryId: 'food', name: 'Локальное кафе', distance: 380 }),
+      magnet({ categoryId: 'shopping_local', name: 'Локальный магазин', distance: 410 }),
+    ];
+
+    const analysis = fixture({
+      evergreenIndex: 93,
+      magnets,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 62,
+      audienceSharePct: 70,
+    });
+    analysis.audienceAnalysis!.businessClusterDetected = true;
+
+    const sanity = applyResidentialDemoSanity(analysis);
+
+    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(sanity.displayAudience).not.toBe('BUSINESS');
+    expect(sanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
+    expect(sanity.capApplied).toBe(true);
+    expect(sanity.capReasonsRu.join(' ')).toContain(
+      'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',
+    );
+
+    // Metro dedupe: only the station counts as a single Tier-1 transport anchor.
+    const metroTier1Names = sanity.tier1Magnets
+      .filter(m => m.categoryId === 'metro')
+      .map(m => m.name);
+    expect(metroTier1Names).toHaveLength(1);
+    expect(metroTier1Names[0]).toBe('Комендантский проспект');
+
+    // Minor attraction demotion: "Самолет - стрекоза" must not be Tier-1.
+    expect(
+      sanity.tier1Magnets.some(m => m.categoryId === 'attraction' && m.name === 'Самолет - стрекоза'),
+    ).toBe(false);
+
+    // Generic offices must not become Tier-1 business magnets.
+    expect(sanity.tier1Magnets.some(m => m.categoryId === 'business')).toBe(false);
+  });
+});
+
 describe('applyResidentialDemoSanity — real strong location', () => {
   it('preserves headline when ≥2 tier-1 magnets are present', () => {
     const magnets: MagnetItem[] = [

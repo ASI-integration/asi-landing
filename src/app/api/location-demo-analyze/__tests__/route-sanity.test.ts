@@ -59,7 +59,7 @@ const baseEnv: NeighborhoodEnvironmentLayer = {
 
 function komendantskyFixture(): LocationAnalysis {
   return {
-    evergreenIndex: 99,
+    evergreenIndex: 93,
     scoreBand: 'strong' as ScoreBand,
     locationScore: {
       location_score: 99,
@@ -79,11 +79,28 @@ function komendantskyFixture(): LocationAnalysis {
       recommended_strategy: 'hybrid',
     },
     magnets: [
-      magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 250, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 310, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 280, subType: 'travel_agency', weight: 3 }),
-      magnet({ categoryId: 'business', name: 'Сбербанк', distance: 410, subType: 'bank', weight: 3 }),
-      magnet({ categoryId: 'metro', name: 'Комендантский проспект', distance: 850, weight: 9, strengthClass: 'strong' }),
+      // Metro station + entrances (should dedupe to 1 transport anchor)
+      magnet({ categoryId: 'metro', name: 'Комендантский проспект', distance: 473, weight: 9, strengthClass: 'strong' }),
+      magnet({ categoryId: 'metro', name: 'Вход 1', distance: 680, weight: 9, strengthClass: 'medium' }),
+      magnet({ categoryId: 'metro', name: 'Вход 2', distance: 686, weight: 9, strengthClass: 'medium' }),
+
+      // Minor tourist attraction (must NOT become Tier-1)
+      magnet({ categoryId: 'attraction', name: 'Самолет - стрекоза', distance: 481, attractionScore: 2.1, strengthClass: 'weak' }),
+
+      // Business offices (subType=office must be treated as weak/local unless name is a real Tier-1 employment magnet)
+      magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 3, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 236, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Марио', distance: 282, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Ренессанс Страхование', distance: 412, subType: 'office', weight: 4 }),
+      magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 445, subType: 'office', weight: 3 }),
+
+      // Shopping major nearby (should not produce strong BUSINESS verdict by itself)
+      magnet({ categoryId: 'shopping_major', name: 'Крокус', distance: 794, weight: 4, strengthClass: 'medium' }),
+      magnet({ categoryId: 'shopping_major', name: 'Сабина', distance: 854, weight: 4, strengthClass: 'medium' }),
+
+      // Local food/shop magnets
+      magnet({ categoryId: 'food', name: 'Локальное кафе', distance: 380 }),
+      magnet({ categoryId: 'shopping_local', name: 'Локальный магазин', distance: 410 }),
     ],
     magnetCountByCategory: {},
     accessibilityStops: [],
@@ -153,6 +170,7 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
     expect(res.status).toBe(200);
     expect(body.displayScore).toBeLessThanOrEqual(70);
     expect(body.displayAudience).not.toBe('BUSINESS');
+    expect(body.meta.demoSanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
     expect(body.meta.demoSanity.capReasonsRu).toContain(
       'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',
     );
