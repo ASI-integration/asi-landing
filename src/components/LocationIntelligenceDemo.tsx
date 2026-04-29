@@ -22,7 +22,6 @@ import type {
   AnalysisMeta,
   DemandType,
   NeighborhoodEnvironmentConcernLevel,
-  ResidentialDemoSanity,
 } from '@/lib/location/client';
 import {
   useLocationTelemetryOptional,
@@ -39,7 +38,6 @@ import {
 import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
-import { applyResidentialDemoSanity } from '@/lib/location/client';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -74,7 +72,6 @@ interface SelectedAddress {
 }
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
-type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
 
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
@@ -175,25 +172,18 @@ async function fetchLocationAnalysis(
       signal,
     });
     if (!res.ok) return null;
-    const data = await res.json() as {
-      analysis?: LocationAnalysis;
-      meta?: AnalysisMetaWithDemoSanity;
-      demoSanity?: ResidentialDemoSanity;
-    };
+    const data = await res.json() as { analysis?: LocationAnalysis; meta?: AnalysisMeta };
     if (!data.analysis) return null;
     const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
       ...data.analysis,
       accessibilityStops: data.analysis.accessibilityStops ?? [],
     });
-    const metaBase: AnalysisMetaWithDemoSanity = data.meta ?? {
+    const meta: AnalysisMeta = data.meta ?? {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
       source: 'osm-overpass',
       cached: false,
     };
-    const meta: AnalysisMetaWithDemoSanity = data.demoSanity
-      ? { ...metaBase, demoSanity: data.demoSanity }
-      : metaBase;
     return { analysis, meta };
   } catch {
     return null;
@@ -502,28 +492,13 @@ function ConfidenceWarningsStrip({ meta, locale }: { meta: AnalysisMeta; locale:
   const warnings = meta.warnings ?? [];
   if (!confidence && warnings.length === 0) return null;
 
-  if (locale === 'ru') {
-    return (
-      <div className="px-5 py-2 border-b border-slate-800/40 bg-slate-950/20">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400">
-            Демо-режим
-          </span>
-          <span className="text-[11px] text-slate-500">
-            Часть картографических сигналов ограничена
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   const confLabel =
     confidence === 'high'
-      ? 'high confidence'
+      ? (locale === 'ru' ? 'высокая уверенность' : 'high confidence')
       : confidence === 'medium'
-        ? 'medium confidence'
+        ? (locale === 'ru' ? 'средняя уверенность' : 'medium confidence')
         : confidence === 'low'
-          ? 'low confidence'
+          ? (locale === 'ru' ? 'низкая уверенность' : 'low confidence')
           : null;
 
   const confClass =
@@ -686,14 +661,12 @@ function TwoGISMapPanel({
   loading,
   locale: _locale,
   c,
-  height = 420,
 }: {
   lat: number;
   lon: number;
   loading: boolean;
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
-  height?: number;
 }) {
   const apiKey = process.env.NEXT_PUBLIC_TWOGIS_API_KEY;
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -747,7 +720,7 @@ function TwoGISMapPanel({
     return (
       <div
         className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
-        style={{ height }}
+        style={{ height: 420 }}
       >
         <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
         {(!sdkReady || loading) && <MapLoadingOverlay c={c} />}
@@ -766,7 +739,7 @@ function TwoGISMapPanel({
   return (
     <div
       className="relative w-full rounded-2xl border border-slate-800 overflow-hidden"
-      style={{ height }}
+      style={{ height: 420 }}
     >
       <iframe
         src={osmSrc}
@@ -1778,23 +1751,6 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
-  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
-  const aboveFoldReasons = (() => {
-    const ls = analysis.locationScore;
-    const specificFactors = [
-      ...(ls?.top_positive_factors ?? []),
-      ...(ls?.top_negative_factors ?? []),
-    ];
-    const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
-    const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
-
-    return merged.slice(0, 2).map((factor) => {
-      const normalized = factor.replace(/\s+/g, ' ').trim();
-      return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
-    });
-  })();
 
   async function requestFullReportAsync() {
     if (fullReportBusy) return;
@@ -1894,95 +1850,9 @@ function ASIPanel({
         transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}
     >
-      {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
+      {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       {meta ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
 
-      {isRuResidentialDemo && sanity ? (() => {
-        const displayScore = sanity.displayScore;
-        const displayBand = getBand(displayScore);
-        const verdictTextColor =
-          sanity.verdictTone === 'strong'
-            ? 'text-emerald-400'
-            : sanity.verdictTone === 'medium'
-              ? 'text-amber-400'
-              : 'text-yellow-400';
-        return (
-        <div className="px-5 sm:px-6 py-5 sm:py-6 space-y-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">
-                {RU_DEMO_COPY.demoScoreLabel}
-              </p>
-              <p className={`text-[32px] sm:text-[38px] font-bold leading-none ${verdictTextColor}`}>
-                {displayScore} / 100
-              </p>
-            </div>
-            <EvergreenRing index={displayScore} band={displayBand} animated={animated} copy={c} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-                Аудитория
-              </p>
-              <p className={`text-[27px] font-bold leading-tight ${verdictTextColor}`}>
-                {sanity.audienceLabelRu}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-                Доход в месяц
-              </p>
-              <p className="text-[24px] font-bold text-slate-100 leading-tight">
-                {incomeRange}
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800/60 bg-slate-950/25 p-4">
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-[0.16em] mb-1">
-              Итог
-            </p>
-            <p className={`text-[28px] font-bold leading-tight ${verdictTextColor}`}>
-              {sanity.verdictLabelRu}
-            </p>
-            {conclusion && !sanity.capApplied ? (
-              <p className="mt-2 text-[14px] text-slate-400 leading-snug">
-                {conclusion}
-              </p>
-            ) : null}
-          </div>
-
-          {aboveFoldReasons.length > 0 ? (
-            <div className="space-y-2">
-              {aboveFoldReasons.map((reason, i) => (
-                <div key={i} className="flex items-start gap-2 text-[14px] text-slate-300 leading-snug">
-                  <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-indigo-400/80" />
-                  {reason}
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={requestFullReportAsync}
-              disabled={fullReportBusy}
-              className="w-full py-3.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[15px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-            >
-              {fullReportBusy ? 'Готовим полный отчёт...' : 'Заказать полный отчёт'}
-            </button>
-            {fullReportErr ? (
-              <p className="text-[11px] text-amber-400/90 text-center">
-                Не удалось запустить полный отчёт: {fullReportErr}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        );
-      })() : (
-      <>
       {/* ── KPI summary row — horizontal on desktop, 2-col grid on mobile ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800/60">
 
@@ -2074,8 +1944,6 @@ function ASIPanel({
           </button>
         ) : null}
       </div>
-      </>
-      )}
     </div>
 
     {/* ── Detail sections — below summary panel ── */}
@@ -2086,21 +1954,6 @@ function ASIPanel({
         transition: 'opacity 0.5s ease 0.15s',
       }}
     >
-
-      {isRuResidentialDemo ? (
-        <div className="px-5 py-4 border-b border-slate-800/40">
-          <button
-            type="button"
-            onClick={openStandaloneFullReportRu}
-            className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            Открыть демо-permalink (предпросмотр)
-          </button>
-          <p className="mt-2 text-[11px] text-slate-600 text-center">
-            Предпросмотр быстрый и приблизительный; полный отчёт глубже.
-          </p>
-        </div>
-      ) : null}
 
       {/* Why this score? — uses locationScore factors when available, falls back to generic */}
       {(() => {
@@ -2114,9 +1967,9 @@ function ASIPanel({
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/40">
-            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
               {locale === 'ru' ? 'Почему такой балл?' : 'Why this score?'}
-            </p>
+            </h3>
             {hasDetailed ? (
               <div className="space-y-1.5">
                 {posFactors.map((factor, i) => (
@@ -2164,11 +2017,11 @@ function ASIPanel({
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/40">
-            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
               {locale === 'ru' ? 'Почему такая аудитория?' : 'Why this audience?'}
-            </p>
+            </h3>
             {aa.primaryDriverLabel && (
-              <p className="text-[14px] text-slate-300 leading-snug mb-3">{aa.primaryDriverLabel}</p>
+              <p className="text-[15px] text-slate-300 leading-relaxed mb-3">{aa.primaryDriverLabel}</p>
             )}
             {topMagnets.length > 0 && (
               <div className="space-y-2 mb-2">
@@ -2211,10 +2064,10 @@ function ASIPanel({
       {/* Score explanation — friendly copy for RU; internal breakdown for EN */}
       {locale === 'ru' && (
         <div className="px-5 py-5 border-b border-slate-800/40">
-          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+          <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
             {RU_DEMO_COPY.scoreExplanationTitle}
-          </p>
-          <p className="text-[14px] text-slate-400 leading-relaxed">
+          </h3>
+          <p className="text-[15px] text-slate-400 leading-relaxed">
             {RU_DEMO_COPY.scoreExplanationBody}
           </p>
         </div>
@@ -2402,9 +2255,9 @@ function ASIPanel({
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/30">
-            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
               {isRu ? RU_DEMO_COPY.revenueTitle : 'How income is estimated'}
-            </p>
+            </h3>
 
             {/* Internal formula — EN only; RU skips to keep scoring model private */}
             {!isRu && (
@@ -2533,10 +2386,10 @@ function ASIPanel({
       {/* Trust block — RU only */}
       {locale === 'ru' && (
         <div className="px-5 py-5 border-b border-slate-800/40">
-          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+          <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-3">
             {RU_DEMO_COPY.premiumTrustTitle}
-          </p>
-          <p className="text-[14px] text-slate-400 leading-relaxed">
+          </h3>
+          <p className="text-[15px] text-slate-400 leading-relaxed">
             {RU_DEMO_COPY.premiumTrustBody}
           </p>
         </div>
@@ -2544,8 +2397,10 @@ function ASIPanel({
 
       {/* CTA — lead capture */}
       <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
-        <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
-        <p className="text-[14px] text-slate-400 leading-snug mb-4">
+        <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-2">
+          {c.ctaBlock.title}
+        </h3>
+        <p className="text-[15px] text-slate-400 leading-relaxed mb-4">
           {c.ctaBlock.body}
         </p>
         <button
@@ -3244,21 +3099,16 @@ export function LocationIntelligenceDemo({
 
         {/* ── RESULT PHASE ── */}
         {phase === 'result' && analysis ? (
-          <div className={locale === 'ru' && mode === 'residential'
-            ? 'grid lg:grid-cols-12 gap-6 lg:gap-8 items-start'
-            : 'grid lg:grid-cols-2 gap-10 lg:gap-14 items-start'
-          }>
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
 
             {/* Left: OSM map + influence heatmap */}
-            <div className={locale === 'ru' && mode === 'residential' ? 'lg:col-span-7' : undefined}>
-              {!(locale === 'ru' && mode === 'residential') && (
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                    {c.envMapTitle}
-                  </span>
-                  <span className="text-[17px] text-slate-700">· 2GIS</span>
-                </div>
-              )}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  {c.envMapTitle}
+                </span>
+                <span className="text-[17px] text-slate-700">· 2GIS</span>
+              </div>
               {mapFeedback && (
                 <div className="text-sm text-slate-400 mb-2 transition-opacity">
                   {mapFeedback}
@@ -3271,114 +3121,106 @@ export function LocationIntelligenceDemo({
                   loading={false}
                   locale={locale}
                   c={c}
-                  height={locale === 'ru' && mode === 'residential' ? 520 : undefined}
                 />
               </div>
               <div className="mt-3">
-                <p className={locale === 'ru' && mode === 'residential'
-                  ? 'text-[17px] sm:text-[19px] text-slate-300 leading-snug'
-                  : 'text-[20px] text-slate-500 mb-2 truncate'
-                }>{selected?.value}</p>
-                {!(locale === 'ru' && mode === 'residential') && (
-                  <>
-                    <div className="flex flex-wrap gap-1.5">
-                      {c.tags.map((tag, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          title={c.tagTooltips[i]}
-                          onClick={() => {
-                            if (i === 0) {
-                              setActiveTag(0);
-                              showMapFeedback(c.mapFeedback.showingProperty);
-                              mapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                              return;
-                            }
+                <p className="text-[20px] text-slate-500 mb-2 truncate">{selected?.value}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {c.tags.map((tag, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      title={c.tagTooltips[i]}
+                      onClick={() => {
+                        if (i === 0) {
+                          setActiveTag(0);
+                          showMapFeedback(c.mapFeedback.showingProperty);
+                          mapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          return;
+                        }
 
-                            // RU: chips are only internal navigation (no external side-effects)
-                            if (locale === 'ru') {
-                              if (i === 1) {
-                                setActiveTag(1);
-                                showMapFeedback(c.mapFeedback.showingNearbyPlaces);
-                                heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                              }
-                              return;
-                            }
-
-                            // EN: keep legacy behavior for 4 chips
-                            if (i === 1) {
-                              setActiveTag(1);
-                              showMapFeedback('Showing transport routes...');
-                              if (selected) {
-                                const url = isIOS()
-                                  ? `http://maps.apple.com/?daddr=${encodeURIComponent(selected.value)}&dirflg=r`
-                                  : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`;
-                                window.open(url, '_blank');
-                              }
-                            } else if (i === 2) {
-                              setActiveTag(2);
-                              showMapFeedback('Showing nearby places...');
-                              heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            } else if (i === 3) {
-                              showMapFeedback('Opening full map...');
-                              if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
-                            }
-                          }}
-                          className={`text-[17px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
-                            activeTag === i
-                              ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700/60'
-                              : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200 hover:border-slate-700'
-                          }`}
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                    </div>
-                    {selected && (
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                        <a
-                          href={
-                            isIOS()
-                              ? `http://maps.apple.com/?daddr=${encodeURIComponent(selected.value)}&dirflg=r`
-                              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`
+                        // RU: chips are only internal navigation (no external side-effects)
+                        if (locale === 'ru') {
+                          if (i === 1) {
+                            setActiveTag(1);
+                            showMapFeedback(c.mapFeedback.showingNearbyPlaces);
+                            heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                           }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
-                        >
-                          {c.routeTransit}
-                        </a>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.value)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
-                        >
-                          {c.openInGoogleMaps}
-                        </a>
-                        {isIOS() && (
-                          <a
-                            href={`http://maps.apple.com/?q=${encodeURIComponent(selected.value)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
-                          >
-                            {c.openInAppleMaps}
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            showMapFeedback(c.mapFeedback.openingFullMap);
-                            if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
-                          }}
-                          className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
-                        >
-                          {c.openMapNewTab}
-                        </button>
-                      </div>
+                          return;
+                        }
+
+                        // EN: keep legacy behavior for 4 chips
+                        if (i === 1) {
+                          setActiveTag(1);
+                          showMapFeedback('Showing transport routes...');
+                          if (selected) {
+                            const url = isIOS()
+                              ? `http://maps.apple.com/?daddr=${encodeURIComponent(selected.value)}&dirflg=r`
+                              : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`;
+                            window.open(url, '_blank');
+                          }
+                        } else if (i === 2) {
+                          setActiveTag(2);
+                          showMapFeedback('Showing nearby places...');
+                          heatmapDivRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        } else if (i === 3) {
+                          showMapFeedback('Opening full map...');
+                          if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
+                        }
+                      }}
+                      className={`text-[17px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 ${
+                        activeTag === i
+                          ? 'bg-indigo-900/50 text-indigo-300 border-indigo-700/60'
+                          : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+                {selected && (
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                    <a
+                      href={
+                        isIOS()
+                          ? `http://maps.apple.com/?daddr=${encodeURIComponent(selected.value)}&dirflg=r`
+                          : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(selected.value)}&travelmode=transit`
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                    >
+                      {c.routeTransit}
+                    </a>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.value)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                    >
+                      {c.openInGoogleMaps}
+                    </a>
+                    {isIOS() && (
+                      <a
+                        href={`http://maps.apple.com/?q=${encodeURIComponent(selected.value)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                      >
+                        {c.openInAppleMaps}
+                      </a>
                     )}
-                  </>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        showMapFeedback(c.mapFeedback.openingFullMap);
+                        if (selected) window.open(getExternalMapUrl(selected.value), '_blank');
+                      }}
+                      className="text-[13px] text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors"
+                    >
+                      {c.openMapNewTab}
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -3395,25 +3237,21 @@ export function LocationIntelligenceDemo({
                 </div>
               )}
 
-              {!(locale === 'ru' && mode === 'residential') && (
-                <button
-                  onClick={reset}
-                  className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
-                >
-                  {c.tryAnother}
-                </button>
-              )}
+              <button
+                onClick={reset}
+                className="mt-5 w-full py-3 px-6 rounded-xl border border-slate-700/80 text-sm text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-800/40 transition-all"
+              >
+                {c.tryAnother}
+              </button>
             </div>
 
             {/* Right: ASI analysis — mode-aware */}
-            <div className={locale === 'ru' && mode === 'residential' ? 'lg:col-span-5 lg:pt-8' : undefined}>
-              {!(locale === 'ru' && mode === 'residential') && (
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
-                    {mode === 'commercial' && locale === 'ru' ? 'ASI · Коммерческий анализ' : c.asiPanelTitle}
-                  </span>
-                </div>
-              )}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-indigo-400">
+                  {mode === 'commercial' && locale === 'ru' ? 'ASI · Коммерческий анализ' : c.asiPanelTitle}
+                </span>
+              </div>
               {mode === 'commercial' && locale === 'ru' ? (
                 <CommercialASIPanel
                   analysis={analysis}
