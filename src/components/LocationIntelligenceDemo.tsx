@@ -2009,8 +2009,6 @@ function ASIPanel({
           </div>
         </div>
       </div>
-      </>
-      )}
     </div>
 
     {/* ── Detail sections — below summary panel ── */}
@@ -3188,44 +3186,39 @@ export function LocationIntelligenceDemo({
 
         {/* ── RESULT PHASE ── */}
         {phase === 'result' && analysis ? (
-          <div className="space-y-8">
+          <div className="space-y-6">
 
-            {/* Above the fold: big map + wide result dashboard */}
-            <div className="space-y-6">
-
-              {/* Map */}
-              <div>
-              <div className="flex items-center gap-2 mb-3">
+            {/* Map */}
+            <div className="flex items-center gap-2 mb-3">
                 <span className="text-[18px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   {c.envMapTitle}
                 </span>
                 <span className="text-[17px] text-slate-700">· 2GIS</span>
+            </div>
+            {mapFeedback && (
+              <div className="text-sm text-slate-400 mb-2 transition-opacity">
+                {mapFeedback}
               </div>
-              </div>
-              {mapFeedback && (
-                <div className="text-sm text-slate-400 mb-2 transition-opacity">
-                  {mapFeedback}
-                </div>
-              )}
-              <div ref={mapDivRef}>
-                <TwoGISMapPanel
-                  lat={selected!.lat}
-                  lon={selected!.lon}
-                  loading={false}
-                  locale={locale}
-                  c={c}
-                  height={locale === 'ru' && mode === 'residential' ? 520 : undefined}
-                />
-              </div>
-              <div className="mt-3">
-                <p className={locale === 'ru' && mode === 'residential'
-                  ? 'text-[17px] sm:text-[19px] text-slate-300 leading-snug'
-                  : 'text-[20px] text-slate-500 mb-2 truncate'
-                }>{selected?.value}</p>
-                {!(locale === 'ru' && mode === 'residential') && (
-                  <>
-                    <div className="flex flex-wrap gap-1.5">
-                      {c.tags.map((tag, i) => (
+            )}
+            <div ref={mapDivRef}>
+              <TwoGISMapPanel
+                lat={selected!.lat}
+                lon={selected!.lon}
+                loading={false}
+                locale={locale}
+                c={c}
+                height={locale === 'ru' && mode === 'residential' ? 520 : undefined}
+              />
+            </div>
+            <div className="mt-3">
+              <p className={locale === 'ru' && mode === 'residential'
+                ? 'text-[17px] sm:text-[19px] text-slate-300 leading-snug'
+                : 'text-[20px] text-slate-500 mb-2 truncate'
+              }>{selected?.value}</p>
+              {!(locale === 'ru' && mode === 'residential') && (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.tags.map((tag, i) => (
                         <button
                           key={i}
                           type="button"
@@ -3276,9 +3269,9 @@ export function LocationIntelligenceDemo({
                           {tag}
                         </button>
                       ))}
-                    </div>
-                    {selected && (
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  </div>
+                  {selected && (
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                         <a
                           href={
                             isIOS()
@@ -3319,11 +3312,11 @@ export function LocationIntelligenceDemo({
                         >
                           {c.openMapNewTab}
                         </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
               {/* Influence heatmap — EN only; hidden on RU public demo */}
               {locale !== 'ru' && (
@@ -3344,7 +3337,6 @@ export function LocationIntelligenceDemo({
               >
                 {c.tryAnother}
               </button>
-              </div>
 
               {/* Wide dashboard (full-width; no narrow right column) */}
               <div>
@@ -3375,7 +3367,6 @@ export function LocationIntelligenceDemo({
                 )}
               </div>
             </div>
-          </div>
         ) : (
           // ── IDLE / LOADING PHASE ──
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-start">
