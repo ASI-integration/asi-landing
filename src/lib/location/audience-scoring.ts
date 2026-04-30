@@ -23,6 +23,11 @@ import type {
   TargetAudience,
   LocationType,
 } from './types';
+import {
+  classifyMagnetSignal,
+  hasCredibleBusinessAnchors,
+  FORBIDDEN_PUBLIC_WORDING_RU,
+} from './signals/location-signal-taxonomy';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 
@@ -88,14 +93,11 @@ function distRu(meters: number): string {
 // ── Category classification ───────────────────────────────────────────────────
 
 /**
- * Category IDs that generate business (corporate / commanded traveler) demand.
- * hospital and convention contribute strongly to business-type visitor flows.
+ * Audience taxonomy contract:
+ * BUSINESS must be unlocked only by credible anchors (see `classifyMagnetSignal`).
+ * Weak/local POIs (bank/insurance/person-name offices/etc) must never unlock BUSINESS
+ * and must never generate strong public driver copy.
  */
-const BUSINESS_CATEGORY_IDS: ReadonlySet<string> = new Set([
-  'business',
-  'hospital',    // medical staff, corporate health travel, visiting colleagues
-  'convention',  // conference attendees, corporate events
-]);
 
 /**
  * Category IDs that generate tourist demand.
@@ -108,6 +110,19 @@ const TOURIST_CATEGORY_IDS: ReadonlySet<string> = new Set([
   'stadium',
 ]);
 
+function isCredibleBusinessMagnet(m: MagnetItem): boolean {
+  const t = classifyMagnetSignal(m);
+  if (t.domain === 'business') {
+    return t.level === 'tier1_anchor' || t.level === 'tier2_anchor';
+  }
+  // Allowed BUSINESS unlockers that are not strictly "business" domain.
+  return t.allowsBusinessAudience === true;
+}
+
+function isTouristMagnet(m: MagnetItem): boolean {
+  return TOURIST_CATEGORY_IDS.has(m.categoryId);
+}
+
 // ── Primary magnets classifier ────────────────────────────────────────────────
 
 /**
@@ -118,8 +133,8 @@ export function classifyPrimaryMagnets(magnets: MagnetItem[]): PrimaryMagnet[] {
   const result: PrimaryMagnet[] = [];
 
   for (const m of magnets) {
-    const isBusiness = BUSINESS_CATEGORY_IDS.has(m.categoryId);
-    const isTourist  = TOURIST_CATEGORY_IDS.has(m.categoryId);
+    const isBusiness = isCredibleBusinessMagnet(m);
+    const isTourist  = isTouristMagnet(m);
     if (!isBusiness && !isTourist) continue;
 
     const decayed   = m.weight * Math.exp(-m.distance / DECAY_FACTOR);
@@ -151,9 +166,9 @@ export function detectLocationType(magnets: MagnetItem[]): LocationType {
 
   for (const m of magnets) {
     // Use attractionScore (already decay-weighted by gravity engine) for consistency
-    if (BUSINESS_CATEGORY_IDS.has(m.categoryId)) {
+    if (isCredibleBusinessMagnet(m)) {
       businessScore += m.attractionScore * subtypeWeight(m.subType);
-    } else if (TOURIST_CATEGORY_IDS.has(m.categoryId)) {
+    } else if (isTouristMagnet(m)) {
       touristScore += m.attractionScore;
     }
   }
@@ -186,8 +201,10 @@ export function calculateAudienceFitScore(
   audience: TargetAudience,
   locationType: LocationType,
 ): number {
-  const targetIds = audience === 'BUSINESS' ? BUSINESS_CATEGORY_IDS : TOURIST_CATEGORY_IDS;
-  const relevant  = magnets.filter(m => targetIds.has(m.categoryId));
+  const relevant =
+    audience === 'BUSINESS'
+      ? magnets.filter(isCredibleBusinessMagnet)
+      : magnets.filter(isTouristMagnet);
 
   if (relevant.length === 0) return 0;
 
@@ -232,9 +249,9 @@ export function computeAudienceSharePct(magnets: MagnetItem[]): number {
 
   for (const m of magnets) {
     const decayed = m.weight * Math.exp(-m.distance / DECAY_FACTOR);
-    if (BUSINESS_CATEGORY_IDS.has(m.categoryId)) {
+    if (isCredibleBusinessMagnet(m)) {
       businessScore += decayed * subtypeWeight(m.subType);
-    } else if (TOURIST_CATEGORY_IDS.has(m.categoryId)) {
+    } else if (isTouristMagnet(m)) {
       touristScore += decayed;
     }
   }
@@ -253,20 +270,44 @@ function buildPrimaryDriverLabel(
   businessClusterDetected: boolean,
 ): string {
   if (primaryAudience === 'BUSINESS') {
-    const top =
-      primaryMagnets.find(m => m.type === 'business' && m.categoryId === 'hospital')
-      ?? primaryMagnets.find(m => m.type === 'business');
-    if (!top) {
-      return `Основной поток: BUSINESS (${audienceSharePct}%) — деловые объекты не обнаружены`;
+    const top = primaryMagnets.find(m => m.type === 'business');
+    if (!top) return `Деловых якорей рядом не обнаружено (${audienceSharePct}%).`;
+
+    const topTax = classifyMagnetSignal({
+      // minimal MagnetItem shape for taxonomy
+      categoryId: top.categoryId,
+      name: top.name,
+      distance: top.distance,
+      subType: top.subType,
+      // unused fields
+      categoryLabel: top.categoryId,
+      icon: '',
+      lat: 0,
+      lon: 0,
+      weight: top.weight,
+      permanenceType: 'permanent',
+      scopeLevel: 'local',
+      strengthClass: 'medium',
+      attractionScore: top.relevanceScore,
+    } as MagnetItem);
+
+    // If taxonomy says "weak/hidden", never use strong public framing.
+    if (topTax.publicClaimStrength === 'hidden_from_public_copy' || topTax.level === 'weak_local_signal') {
+      return `Локальные деловые сигналы рядом (${distRu(top.distance)}), но сильный деловой драйвер не подтверждён.`;
     }
-    const cluster = businessClusterDetected ? ' · кластер деловых объектов' : '';
-    const role =
-      top.categoryId === 'hospital' ? 'медцентр / больница' : subtypeLabel(top.subType);
-    return (
-      `Основной драйвер: деловой поток — ${top.name} ` +
-      `(${distRu(top.distance)}, ${role})` +
-      cluster
-    );
+
+    const cluster = businessClusterDetected ? ' · деловой кластер' : '';
+    const role = top.categoryId === 'hospital' ? 'больница' : subtypeLabel(top.subType);
+    const label = `Деловой поток: ${top.name} (${distRu(top.distance)}, ${role})${cluster}`;
+
+    // Defensive: ensure forbidden wording cannot leak.
+    const lowered = label.toLowerCase();
+    for (const bad of FORBIDDEN_PUBLIC_WORDING_RU) {
+      if (lowered.includes(bad)) {
+        return `Деловой поток подтверждён якорями поблизости.`;
+      }
+    }
+    return label;
   }
 
   // TOURIST (primary or fallback)
@@ -296,7 +337,7 @@ export function buildAudienceAnalysis(magnets: MagnetItem[]): AudienceAnalysis {
   const audienceSharePct  = computeAudienceSharePct(magnets);
 
   const businessMagnets   = allPrimary.filter(m => m.type === 'business');
-  const hasViableBusiness = businessMagnets.some(m => m.distance <= MAX_BUSINESS_DISTANCE);
+  const hasViableBusiness = hasCredibleBusinessAnchors(magnets);
 
   // ── Mode lock ────────────────────────────────────────────────────────────────
   let primaryAudience: TargetAudience;
@@ -327,10 +368,8 @@ export function buildAudienceAnalysis(magnets: MagnetItem[]): AudienceAnalysis {
 
   const audienceFitScore  = calculateAudienceFitScore(magnets, primaryAudience, locationType);
 
-  // Cluster: ≥2 meaningful (non-bank) business magnets within cluster radius
-  const businessClusterDetected = businessMagnets.filter(
-    m => m.distance <= BUSINESS_CLUSTER_RADIUS && m.subType !== 'bank',
-  ).length >= CLUSTER_MIN_COUNT;
+  // Cluster: ≥2 credible business anchors within cluster radius (weak/local POIs excluded)
+  const businessClusterDetected = businessMagnets.filter(m => m.distance <= BUSINESS_CLUSTER_RADIUS).length >= CLUSTER_MIN_COUNT;
 
   // ── Demand-flow consistency label ────────────────────────────────────────────
   const hasStrongClose = businessMagnets.some(
