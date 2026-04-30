@@ -1,4 +1,5 @@
 import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand, AudienceAnalysis, TargetAudience } from './types';
+import { hasCredibleBusinessAnchors } from './signals/location-signal-taxonomy';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
@@ -239,7 +240,7 @@ export function generateConclusion(
   const nearestMetroM = nearestDistance(magnets, 'metro');
   const hasMetro       = (countByCategory.metro ?? 0) > 0;
   const hasAttractions = (countByCategory.attraction ?? 0) > 0;
-  const hasBusiness    = (countByCategory.business ?? 0) > 0;
+  const hasBusinessAnchors = hasCredibleBusinessAnchors(magnets);
 
   const driversLine = buildDriversLine(magnets, locale);
 
@@ -271,7 +272,7 @@ export function generateConclusion(
 
   if (locale === 'ru') {
     // Audience-specific driver line
-    const audienceDriver = buildAudienceDriverRu(audienceAnalysis, nearestMetroM, hasAttractions, hasBusiness);
+    const audienceDriver = buildAudienceDriverRu(audienceAnalysis, nearestMetroM, hasAttractions, hasBusinessAnchors);
 
     if (idx >= 70) {
       const strongLabel =
@@ -288,7 +289,7 @@ export function generateConclusion(
     if (idx >= 45) {
       const note = audienceAnalysis?.primaryAudience === 'BUSINESS'
         ? 'Подходит для делового потока и командированных.'
-        : !hasMetro && !hasBusiness
+        : !hasMetro && !hasBusinessAnchors
           ? 'Транспортная доступность — ключевой фактор усиления.'
           : audienceDriver;
       const driverPart = driversLine ? ` Ближайшие магниты: ${driversLine}.` : '';
@@ -317,7 +318,7 @@ export function generateConclusion(
   }
 
   if (idx >= 45) {
-    const note = !hasMetro && !hasBusiness
+    const note = !hasMetro && !hasBusinessAnchors
       ? 'Transit access is the main lever to improve performance.'
       : 'The surroundings support moderate demand.';
     const driverPart = driversLine ? ` Key nearby drivers: ${driversLine}.` : '';
@@ -334,7 +335,7 @@ function buildAudienceDriverRu(
   audienceAnalysis: AudienceAnalysis | undefined,
   nearestMetroM: number | null,
   hasAttractions: boolean,
-  hasBusiness: boolean,
+  hasBusinessAnchors: boolean,
 ): string {
   if (!audienceAnalysis) {
     // Fallback when audienceAnalysis is not available
@@ -361,7 +362,7 @@ function buildAudienceDriverRu(
     if (topBusiness) {
       return `Деловой поток: ${topBusiness.name} (${fmRu(topBusiness.distance)}) — ${demandFlowLabel}.`;
     }
-    if (hasBusiness) {
+    if (hasBusinessAnchors) {
       return `Деловое окружение — ${demandFlowLabel}.`;
     }
     if (nearestMetroM != null) {
