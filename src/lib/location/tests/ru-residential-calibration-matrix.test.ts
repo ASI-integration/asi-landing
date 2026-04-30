@@ -199,12 +199,17 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
       expectedBand: 'moderate',
       expectedRange: [35, 55],
       expectedAudience: ['mixed', 'residential'],
-      mustNotHappen: ['Сильная туристическая локация'],
+      mustNotHappen: ['Сильная'],
       analysis: {
-        evergreenIndex: 6, // simulate gravity collapse; rules must floor it
+        // Production regression: raw model can surface this as "strong business" even though
+        // it is driven by secondary cluster signals (not Tier-1 business/transport anchors).
+        evergreenIndex: 86,
         magnets: [
           magnet({ categoryId: 'civic', name: 'ЗАГС Красногвардейского района', distance: 420, weight: 3 }),
           magnet({ categoryId: 'mid_hotel', name: 'Отель Охта', distance: 620, weight: 2.5 }),
+          // Nearby city-scale magnets that can bias the raw model but should not yield a strong BUSINESS headline.
+          magnet({ categoryId: 'shopping_major', name: 'Охта Молл', distance: 880, strengthClass: 'strong', weight: 5 }),
+          magnet({ categoryId: 'attraction', name: 'Набережная Охты', distance: 650, strengthClass: 'medium', attractionScore: 4.1, weight: 5 }),
           // Food cluster
           magnet({ categoryId: 'food', name: 'Кафе 1', distance: 180 }),
           magnet({ categoryId: 'food', name: 'Кафе 2', distance: 220 }),
@@ -1056,11 +1061,40 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
   });
 
   it('explicit regressions: secondary cluster does not collapse to near-zero', () => {
+    const sanity = applyResidentialDemoSanity(
+      fixture({
+        evergreenIndex: 6, // simulate gravity collapse; rules must floor it
+        magnets: [
+          magnet({ categoryId: 'civic', name: 'ЗАГС Красногвардейского района', distance: 420, weight: 3 }),
+          magnet({ categoryId: 'mid_hotel', name: 'Отель Охта', distance: 620, weight: 2.5 }),
+          // Food cluster
+          magnet({ categoryId: 'food', name: 'Кафе 1', distance: 180 }),
+          magnet({ categoryId: 'food', name: 'Кафе 2', distance: 220 }),
+          magnet({ categoryId: 'food', name: 'Кафе 3', distance: 260 }),
+          magnet({ categoryId: 'food', name: 'Кафе 4', distance: 300 }),
+          magnet({ categoryId: 'food', name: 'Кафе 5', distance: 340 }),
+          magnet({ categoryId: 'food', name: 'Кафе 6', distance: 360 }),
+          magnet({ categoryId: 'food', name: 'Кафе 7', distance: 380 }),
+        ],
+        primaryAudience: 'BUSINESS',
+        audienceFitScore: 40,
+        businessClusterDetected: false,
+        accessibilityStopDistances: [320],
+      }),
+    );
+    expect(sanity.displayScore).toBeGreaterThanOrEqual(35);
+  });
+
+  it('explicit regressions: Bolshokhtinsky public display is capped + has secondary-cluster reason', () => {
     const okhta = cases.find(x => x.address.includes('Большeохтинский'));
     expect(okhta).toBeTruthy();
 
     const sanity = applyResidentialDemoSanity(fixture(okhta!.analysis));
     expect(sanity.displayScore).toBeGreaterThanOrEqual(35);
+    expect(sanity.displayScore).toBeLessThanOrEqual(55);
+    expect(sanity.displayAudience).not.toBe('BUSINESS');
+    expect(sanity.verdictLabelRu).not.toContain('Сильная');
+    expect(sanity.capReasonsRu.join(' ')).toContain('вторичный кластер');
   });
 
   it('explicit regressions: empty/weak residential stays weak', () => {

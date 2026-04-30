@@ -325,6 +325,9 @@ const CAP_REASON_SINGLE_TIER1 =
 const CAP_REASON_WEAK_CLUSTER =
   'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.';
 
+const CAP_REASON_BUSINESS_WITHOUT_TIER1_ANCHORS =
+  'Деловой профиль не подтверждён сильными магнитами (вторичный кластер); оценка ограничена для публичного вывода.';
+
 const FLOOR_REASON_TIER2_CLUSTER =
   'Есть несколько локальных магнитов спроса (вторичный кластер); оценка не должна схлопываться в «почти ноль».';
 
@@ -343,6 +346,22 @@ export function applyResidentialLocationRules(
 
   let cappedScore = baseScore;
   const tier2ClusterCount = detectTier2ClusterCount(analysis);
+
+  const aa = analysis.audienceAnalysis;
+  const audienceFit = analysis.locationScore?.breakdown.audience_fit_score ?? 0;
+
+  const hasTier1BusinessMagnet = tier1.some(m => m.categoryId === 'business');
+  const hasTier1Transit = tier1.some(m =>
+    m.categoryId === 'metro' ||
+    m.categoryId === 'railway_station' ||
+    m.categoryId === 'airport',
+  );
+  const hasBusinessRelevantDemandAnchor = tier1.some(m =>
+    m.categoryId === 'hospital' ||
+    m.categoryId === 'university' ||
+    m.categoryId === 'railway_station' ||
+    m.categoryId === 'airport',
+  );
 
   // Cap A: no tier-1 magnets at all → ≤ 70
   if (tier1Count === 0 && cappedScore > 70) {
@@ -377,6 +396,26 @@ export function applyResidentialLocationRules(
     if (!capReasons.includes(CAP_REASON_WEAK_CLUSTER)) capReasons.push(CAP_REASON_WEAK_CLUSTER);
   }
 
+  // Cap E: "BUSINESS" primary audience without any Tier-1 business-relevant anchors must not display
+  // a strong headline (prevents secondary-cluster areas from surfacing as "Сильная ... командированных").
+  //
+  // This is intentionally stricter than the general verdict rules: it applies even when Tier-1 magnets
+  // exist (e.g. shopping_major + attraction), because those can bias the model towards BUSINESS without
+  // representing true employment / commute-driven demand.
+  if (
+    aa?.primaryAudience === 'BUSINESS' &&
+    !hasTier1BusinessMagnet &&
+    !hasBusinessRelevantDemandAnchor &&
+    !hasTier1Transit &&
+    tier2ClusterCount >= 3 &&
+    cappedScore > 55
+  ) {
+    cappedScore = 55;
+    if (!capReasons.includes(CAP_REASON_BUSINESS_WITHOUT_TIER1_ANCHORS)) {
+      capReasons.push(CAP_REASON_BUSINESS_WITHOUT_TIER1_ANCHORS);
+    }
+  }
+
   // Floor: if there are several independent Tier-2 demand anchors but no Tier-1,
   // a near-zero score looks like a bug/regression for "secondary cluster" areas.
   // Keep the floor conservative: still weak-to-moderate, never "strong".
@@ -393,21 +432,7 @@ export function applyResidentialLocationRules(
   // business audience is allowed only when there's at least one real business Tier-1
   // OR a strong medical/university/rail/airport demand anchor.
   // "shopping_major" itself must not be sufficient.
-  const aa = analysis.audienceAnalysis;
-  const audienceFit = analysis.locationScore?.breakdown.audience_fit_score ?? 0;
-
-  const hasTier1BusinessMagnet = tier1.some(m => m.categoryId === 'business');
-  const hasBusinessRelevantDemandAnchor = tier1.some(m =>
-    m.categoryId === 'hospital' ||
-    m.categoryId === 'university' ||
-    m.categoryId === 'railway_station' ||
-    m.categoryId === 'airport',
-  );
-
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
-  const hasTier1Transit = tier1.some(m =>
-    m.categoryId === 'metro' || m.categoryId === 'railway_station' || m.categoryId === 'airport',
-  );
 
   if (weakClusterOnly) {
     displayAudience = audienceFit >= 35 && hasTier1Transit ? 'MIXED' : 'RESIDENTIAL';
