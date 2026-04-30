@@ -1560,6 +1560,75 @@ function generateScoreFactors(analysis: LocationAnalysis, locale: LocDemoLocale)
   return factors.slice(0, 5);
 }
 
+// ── Public-copy sanitiser (RU) ────────────────────────────────────────────────
+// Maps internal cap/sanity/scoring vocabulary to business-friendly wording at
+// the render layer. The canonical source strings live in
+// `src/lib/location/rules/**` and `location-score.ts` and stay untouched.
+function sanitizeRuPublicFactor(line: string): string | null {
+  const trimmed = (line ?? '').trim();
+  if (!trimmed) return null;
+
+  const dropPatterns = [
+    /модель\s+ограничила/i,
+    /sanity/i,
+    /weak[- ]office/i,
+    /\bcap\b/i,
+    /\braw\b/i,
+  ];
+  if (dropPatterns.some(rx => rx.test(trimmed))) return null;
+
+  const replacements: Array<[RegExp, string]> = [
+    [
+      /Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён\.?/u,
+      'Рядом есть отдельные деловые точки, но нет крупного якоря спроса уровня БЦ, вокзала или делового кластера.',
+    ],
+    [
+      /Рядом только локальные офисные сигналы[^.]*?деловой профиль не подтверждён\.?/u,
+      'Рядом есть отдельные офисы, но крупного якоря спроса (БЦ, вокзал, деловой кластер) поблизости нет.',
+    ],
+    [
+      /Рядом только локальные офисные сигналы[^.]*?устойчивый деловой поток не подтверждается\.?/u,
+      'Рядом есть отдельные офисы, но устойчивого делового потока поблизости нет.',
+    ],
+    [
+      /Нет сильных магнитов спроса в радиусе 1 км;\s*оценка ограничена\.?/u,
+      'В радиусе 1 км нет крупных якорей спроса (БЦ, вокзала, делового кластера).',
+    ],
+    [
+      /«Сильный» диапазон требует не менее двух независимых магнитов — один сигнал недостаточен\.?/u,
+      'Поблизости только один крупный якорь спроса.',
+    ],
+    [
+      /Деловой профиль не подтверждён сильными магнитами \(вторичный кластер\);\s*оценка ограничена для публичного вывода\.?/u,
+      'Деловые сигналы есть, но без крупного якоря спроса уровня БЦ или вокзала.',
+    ],
+    [
+      /Есть несколько локальных магнитов спроса \(вторичный кластер\);\s*оценка не должна схлопываться в «почти ноль»\.?/u,
+      'Поблизости есть несколько локальных точек спроса.',
+    ],
+    [/;?\s*оценка ограничена(?:[^.]*)\.?/giu, '.'],
+    [/\s*\(вторичный кластер\)/giu, ''],
+  ];
+
+  let out = trimmed;
+  for (const [rx, repl] of replacements) out = out.replace(rx, repl);
+  out = out.replace(/\s+/g, ' ').replace(/\s+\./g, '.').trim();
+  return out || null;
+}
+
+function sanitizeRuFactorList(lines: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const cleaned = sanitizeRuPublicFactor(line);
+    if (!cleaned) continue;
+    if (seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    out.push(cleaned);
+  }
+  return out;
+}
+
 // ── Competitor Breakdown Block ────────────────────────────────────────────────
 
 function CompetitorBreakdownBlock({
@@ -1739,7 +1808,10 @@ function NeighborhoodEnvironmentPanel({
   const score = ne.environmentalFrictionScore;
 
   const coverageNotes = reasons.filter(isEnvironmentMapCoverageFootnote);
-  const substantiveReasons = reasons.filter(line => !isEnvironmentMapCoverageFootnote(line));
+  const substantiveReasonsRaw = reasons.filter(line => !isEnvironmentMapCoverageFootnote(line));
+  const substantiveReasons = locale === 'ru'
+    ? sanitizeRuFactorList(substantiveReasonsRaw)
+    : substantiveReasonsRaw;
   const keyReasons = substantiveReasons.slice(0, 4);
   const coverageLine = coverageNotes.join(' ');
 
@@ -1889,8 +1961,9 @@ function ASIPanel({
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
     const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
+    const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(merged) : merged;
 
-    return merged.slice(0, 2).map((factor) => {
+    return cleaned.slice(0, 2).map((factor) => {
       const normalized = factor.replace(/\s+/g, ' ').trim();
       return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
     });
@@ -1991,14 +2064,15 @@ function ASIPanel({
     const merged: string[] = [];
     for (const p of pos) {
       if (typeof p === 'string' && p.trim()) merged.push(p.trim());
-      if (merged.length >= 2) return merged.slice(0, 2);
+      if (merged.length >= 4) break;
     }
     for (const n of neg) {
+      if (merged.length >= 4) break;
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
-      if (merged.length >= 2) return merged.slice(0, 2);
     }
-    const generic = generateScoreFactors(analysis, locale);
-    return generic.slice(0, 2);
+    const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
+    const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(base) : base;
+    return cleaned.slice(0, 2);
   })();
 
   return (
@@ -2140,18 +2214,21 @@ function ASIPanel({
       {/* Why this score? — uses locationScore factors when available, falls back to generic */}
       {(() => {
         const ls = analysis.locationScore;
-        const posFactors = ls?.top_positive_factors ?? [];
-        const negFactors = ls?.top_negative_factors ?? [];
+        const rawPos = ls?.top_positive_factors ?? [];
+        const rawNeg = ls?.top_negative_factors ?? [];
+        const posFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawPos) : [...rawPos];
+        const negFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawNeg) : [...rawNeg];
         const hasDetailed = posFactors.length > 0 || negFactors.length > 0;
-        const genericFactors = hasDetailed ? [] : generateScoreFactors(analysis, locale);
+        const rawGeneric = hasDetailed ? [] : generateScoreFactors(analysis, locale);
+        const genericFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawGeneric) : rawGeneric;
 
         if (!hasDetailed && genericFactors.length === 0) return null;
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/40">
-            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
               {locale === 'ru' ? 'Почему такой балл?' : 'Why this score?'}
-            </p>
+            </h3>
             {hasDetailed ? (
               <div className="space-y-1.5">
                 {posFactors.map((factor, i) => (
@@ -2243,17 +2320,6 @@ function ASIPanel({
         );
       })()}
 
-      {/* Score explanation — friendly copy for RU; internal breakdown for EN */}
-      {locale === 'ru' && (
-        <div className="px-5 py-5 border-b border-slate-800/40">
-          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
-            {RU_DEMO_COPY.scoreExplanationTitle}
-          </p>
-          <p className="text-[14px] text-slate-400 leading-relaxed">
-            {RU_DEMO_COPY.scoreExplanationBody}
-          </p>
-        </div>
-      )}
       {analysis.locationScore && (() => {
         const _loc: string = locale;
         if (_loc === 'ru') return null;
@@ -2439,9 +2505,9 @@ function ASIPanel({
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/30">
-            <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
+            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
               {isRu ? RU_DEMO_COPY.revenueTitle : 'How income is estimated'}
-            </p>
+            </h3>
 
             {/* Internal formula — EN only; RU skips to keep scoring model private */}
             {!isRu && (
@@ -2508,55 +2574,8 @@ function ASIPanel({
         );
       })()}
 
-      {/* Market context — RU shows public-facing "Рыночное окружение"; EN shows full market snapshot */}
-      {locale === 'ru' ? (
-        <div className="px-5 py-5 border-b border-slate-800/40">
-          <p className="text-[11px] text-slate-500 uppercase tracking-[0.16em] mb-4">
-            {RU_DEMO_COPY.marketEnvironmentTitle}
-          </p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">
-            <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
-                {RU_DEMO_COPY.competitionLevelLabel}
-              </p>
-              <p className={`text-base font-medium leading-snug ${
-                gravityExplanation.competitorPressureLevel === 'high' ? 'text-rose-400'
-                : gravityExplanation.competitorPressureLevel === 'medium' ? 'text-amber-400'
-                : 'text-emerald-400'
-              }`}>
-                {competitorLabel(gravityExplanation.competitorPressureLevel, 'ru')}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
-                {RU_DEMO_COPY.nearbyObjectsLabel}
-              </p>
-              <p className="text-base text-slate-100 font-medium leading-snug">
-                {competitors.length}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
-                {RU_DEMO_COPY.locationIndexLabel}
-              </p>
-              <p className="text-base text-slate-100 font-medium leading-snug">
-                {evergreenIndex} / 100
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-500 uppercase tracking-[0.12em] mb-0.5">
-                {RU_DEMO_COPY.demandStabilityLabel}
-              </p>
-              <p className="text-base text-slate-100 font-medium leading-snug">
-                {footTraffic.flowStability}
-              </p>
-            </div>
-          </div>
-          <p className="text-[13px] text-slate-500 leading-relaxed">
-            {RU_DEMO_COPY.marketEnvironmentNote}
-          </p>
-        </div>
-      ) : (
+      {/* Market snapshot — EN only; RU keeps the result page focused on the five core sections. */}
+      {locale !== 'ru' && (
         <MarketSnapshotTable
           evergreenIndex={evergreenIndex}
           demandType={analysis.demandType}
@@ -2565,18 +2584,6 @@ function ASIPanel({
           locale={locale}
           c={c}
         />
-      )}
-
-      {/* Trust block — RU only */}
-      {locale === 'ru' && (
-        <div className="px-5 py-5 border-b border-slate-800/40">
-          <p className="text-[12px] text-slate-500 uppercase tracking-[0.16em] mb-3">
-            {RU_DEMO_COPY.premiumTrustTitle}
-          </p>
-          <p className="text-[14px] text-slate-400 leading-relaxed">
-            {RU_DEMO_COPY.premiumTrustBody}
-          </p>
-        </div>
       )}
 
       {/* CTA — lead capture */}
