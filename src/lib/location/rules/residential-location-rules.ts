@@ -63,6 +63,22 @@ function isStrongTier1BusinessByName(name: string | undefined): boolean {
   return STRONG_BUSINESS_NAME_RE.test(name);
 }
 
+/**
+ * CBD / major business-transit hubs.
+ *
+ * Used to prevent “weak office only” caps from firing in true CBD contexts
+ * where the office POI naming may be generic but the transit anchors are explicit.
+ *
+ * IMPORTANT: keep conservative — do not match ordinary residential metro stations.
+ */
+const CBD_TRANSIT_ANCHOR_NAME_RE =
+  /москва[-\s]?сити|moscow\s+city|деловой\s+центр|мцк\s*деловой\s*центр|city\s+center|central\s+business\s+district|\bcbd\b/i;
+
+function isCbdTransitAnchorName(name: string | undefined): boolean {
+  if (!name) return false;
+  return CBD_TRANSIT_ANCHOR_NAME_RE.test(name);
+}
+
 const METRO_ENTRANCE_OR_EXIT_RE =
   // Names like "Вход 1", "Вход 2", "Выход 3", "Entrance 1", "Exit 2"
   /(?:вход|выход|entrance|exit)\s*(?:№\s*)?\d+/i;
@@ -356,11 +372,19 @@ export function applyResidentialLocationRules(
     m.categoryId === 'railway_station' ||
     m.categoryId === 'airport',
   );
-  const hasBusinessRelevantDemandAnchor = tier1.some(m =>
+  // “True business/corporate/transit” anchors: these can justify BUSINESS display
+  // and exempt from “no true business anchor” caps. Universities are NOT in this
+  // list: they support demand but are not a reliable corporate-travel driver alone.
+  const hasTrueBusinessContextAnchor = tier1.some(m =>
     m.categoryId === 'hospital' ||
-    m.categoryId === 'university' ||
     m.categoryId === 'railway_station' ||
-    m.categoryId === 'airport',
+    m.categoryId === 'airport' ||
+    (m.categoryId === 'metro' && isCbdTransitAnchorName(m.name)),
+  );
+
+  const hasCbdTransitContext = tier1.some(m =>
+    (m.categoryId === 'metro' || m.categoryId === 'railway_station') &&
+    isCbdTransitAnchorName(m.name),
   );
 
   // Cap A: no tier-1 magnets at all → ≤ 70
@@ -388,7 +412,9 @@ export function applyResidentialLocationRules(
 
   const businessClusterDetected = analysis.audienceAnalysis?.businessClusterDetected === true;
   const weakOnly = hasTier2OfficeOnlySignal(analysis.magnets);
-  const weakClusterOnly = businessClusterDetected && weakOnly;
+  // Weak-office-only cluster is a residential guard, but must NOT apply in explicit
+  // CBD / transit hubs where office POI naming is frequently generic.
+  const weakClusterOnly = businessClusterDetected && weakOnly && !hasCbdTransitContext;
 
   // Cap D: detected business cluster made only of weak offices must not exceed 70.
   if (weakClusterOnly && cappedScore > 70) {
@@ -405,9 +431,9 @@ export function applyResidentialLocationRules(
   if (
     aa?.primaryAudience === 'BUSINESS' &&
     !hasTier1BusinessMagnet &&
-    !hasBusinessRelevantDemandAnchor &&
+    !hasTrueBusinessContextAnchor &&
     !hasTier1Transit &&
-    tier2ClusterCount >= 3 &&
+    tier2ClusterCount >= 2 &&
     cappedScore > 55
   ) {
     cappedScore = 55;
@@ -430,7 +456,7 @@ export function applyResidentialLocationRules(
 
   // Shopping_major limitation:
   // business audience is allowed only when there's at least one real business Tier-1
-  // OR a strong medical/university/rail/airport demand anchor.
+  // OR a strong medical/rail/airport/CBD-transit demand anchor.
   // "shopping_major" itself must not be sufficient.
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
 
@@ -438,7 +464,7 @@ export function applyResidentialLocationRules(
     displayAudience = audienceFit >= 35 && hasTier1Transit ? 'MIXED' : 'RESIDENTIAL';
   } else if (tier1Count >= 2 && aa) {
     if (aa.primaryAudience === 'BUSINESS' && audienceFit >= 35) {
-      displayAudience = (hasTier1BusinessMagnet || hasBusinessRelevantDemandAnchor)
+      displayAudience = (hasTier1BusinessMagnet || hasTrueBusinessContextAnchor)
         ? 'BUSINESS'
         : 'MIXED';
     } else if (aa.primaryAudience === 'TOURIST' && !aa.fallbackMode) {

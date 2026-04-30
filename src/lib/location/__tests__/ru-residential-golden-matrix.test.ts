@@ -272,9 +272,89 @@ describe('RU residential golden regression matrix', () => {
       expected: {
         displayScoreMin: 91,
         displayScoreMax: 91,
-        displayAudience: 'BUSINESS',
+        displayAudience: 'MIXED',
         verdictTone: 'strong',
-        allowedPrimaryDriverCategories: ['university'],
+        allowedPrimaryDriverCategories: ['university', 'metro'],
+      },
+    },
+
+    // 6b) Bolshokhtinsky-like: attraction + shopping + university + weak offices (no true business/transit anchor)
+    {
+      name: 'Bolshokhtinsky-like secondary cluster must not surface as strong BUSINESS',
+      magnets: [
+        magnet({ categoryId: 'attraction', name: 'Историко-мемориальный музей «Смольный»', distance: 650, strengthClass: 'strong', attractionScore: 4.6, weight: 6 }),
+        magnet({ categoryId: 'university', name: 'Факультет Международных Отношений', distance: 780, strengthClass: 'strong', weight: 6 }),
+        magnet({ categoryId: 'shopping_major', name: 'Охта', distance: 880, strengthClass: 'medium', weight: 5 }),
+        magnet({ categoryId: 'attraction', name: 'Музей-квартира П. К. Козлова', distance: 740, strengthClass: 'strong', attractionScore: 4.4, weight: 6 }),
+        // Weak “office” noise: should not become Tier-1 business and should not exempt Cap E.
+        magnet({ categoryId: 'business', name: 'Офис продаж', distance: 320, subType: 'office', weight: 3 }),
+        magnet({ categoryId: 'business', name: 'Bank branch', distance: 410, subType: 'bank', weight: 3 }),
+      ],
+      evergreenIndex: 86,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 55,
+      businessClusterDetected: true,
+      audienceSharePct: 65,
+      expected: {
+        displayScoreMin: 35,
+        displayScoreMax: 55,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'weak',
+        allowedPrimaryDriverCategories: ['attraction', 'shopping_major', 'university'],
+        forbiddenPhrasesExtra: ['Сильная'],
+      },
+      extraAssertions: (sanity) => {
+        expect(sanity.capApplied || sanity.capReasonsRu.length > 0).toBe(true);
+        expect(sanity.displayAudience).not.toBe('BUSINESS');
+      },
+    },
+
+    // 6c) Moscow City / Presnenskaya-like: CBD transit anchors must escape weak-office-only cap
+    {
+      name: 'CBD transit hub must not be weak-office-only capped (Moscow City-like)',
+      magnets: [
+        magnet({ categoryId: 'railway_station', name: 'Москва-Сити', distance: 520, strengthClass: 'strong', weight: 7 }),
+        magnet({ categoryId: 'metro', name: 'Деловой центр', distance: 640, strengthClass: 'strong', weight: 9 }),
+        magnet({ categoryId: 'attraction', name: 'Центр профориентации Московского метрополитена', distance: 700, strengthClass: 'medium', attractionScore: 3.4, weight: 4 }),
+        // Generic office POIs: businessClusterDetected=true but should not trigger Cap D due to CBD context above.
+        magnet({ categoryId: 'business', name: 'Офис', distance: 280, subType: 'office', weight: 4 }),
+        magnet({ categoryId: 'business', name: 'Офис 2', distance: 360, subType: 'office', weight: 4 }),
+      ],
+      evergreenIndex: 70,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 65,
+      businessClusterDetected: true,
+      audienceSharePct: 70,
+      expected: {
+        displayScoreMin: 70,
+        displayScoreMax: 70,
+        displayAudience: 'BUSINESS',
+        verdictTone: 'medium',
+        allowedPrimaryDriverCategories: ['railway_station', 'metro'],
+      },
+      extraAssertions: (sanity) => {
+        // Ensure the weak-office-only cap reason is NOT present.
+        expect(sanity.capReasonsRu.join(' ')).not.toContain('локальные офисные точки');
+      },
+    },
+
+    // 6d) Gorelovo-like: weak/cautious, no strong verdict
+    {
+      name: 'Gorelovo-like low-signal area stays weak/cautious',
+      magnets: [
+        magnet({ categoryId: 'shopping_local', name: 'Магазин у дома', distance: 250, weight: 2 }),
+        magnet({ categoryId: 'education_local', name: 'Школа', distance: 450, weight: 2 }),
+      ],
+      evergreenIndex: 42,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 18,
+      businessClusterDetected: false,
+      expected: {
+        displayScoreMin: 42,
+        displayScoreMax: 42,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'weak',
+        allowedPrimaryDriverCategories: [],
       },
     },
 
