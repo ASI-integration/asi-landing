@@ -26,6 +26,8 @@ import type {
 import {
   classifyMagnetSignal,
   hasCredibleBusinessAnchors,
+  isCredibleTouristAnchor,
+  looksLikeWeakLocalAttractionPoi,
   FORBIDDEN_PUBLIC_WORDING_RU,
 } from './signals/location-signal-taxonomy';
 
@@ -120,7 +122,11 @@ function isCredibleBusinessMagnet(m: MagnetItem): boolean {
 }
 
 function isTouristMagnet(m: MagnetItem): boolean {
-  return TOURIST_CATEGORY_IDS.has(m.categoryId);
+  if (!TOURIST_CATEGORY_IDS.has(m.categoryId)) return false;
+  // Weak/hidden tourist signals (corporate museums, factory museums, mini-markets
+  // tagged as shopping_major, etc.) must not contribute to TOURIST audience score
+  // and cannot become primary tourist anchors on their own.
+  return isCredibleTouristAnchor(m);
 }
 
 // ── Primary magnets classifier ────────────────────────────────────────────────
@@ -268,8 +274,24 @@ function buildPrimaryDriverLabel(
   primaryMagnets: PrimaryMagnet[],
   audienceSharePct: number,
   businessClusterDetected: boolean,
+  allMagnets: MagnetItem[],
 ): string {
   if (primaryAudience === 'BUSINESS') {
+    // Anchor recall: prefer the nearest must-surface transport / business
+    // anchor (railway / airport / CBD metro / business center) over weaker
+    // primaryMagnets that may have edged ahead by relevance score.
+    const surfacing = allMagnets
+      .filter(m =>
+        (m.categoryId === 'railway_station' || m.categoryId === 'airport') &&
+        classifyMagnetSignal(m).level === 'tier1_anchor',
+      )
+      .sort((a, b) => a.distance - b.distance);
+    const transportTop = surfacing[0];
+    if (transportTop) {
+      const role = transportTop.categoryId === 'airport' ? 'аэропорт' : 'ж/д вокзал';
+      return `Ключевой транспортный якорь: ${transportTop.name} (${distRu(transportTop.distance)}, ${role})`;
+    }
+
     const top = primaryMagnets.find(m => m.type === 'business');
     if (!top) return `Деловых якорей рядом не обнаружено (${audienceSharePct}%).`;
 
@@ -313,8 +335,46 @@ function buildPrimaryDriverLabel(
   // TOURIST (primary or fallback)
   const top = primaryMagnets.find(m => m.type === 'tourist');
   if (!top) {
+    // Weak-only context: corporate/industrial museum, single small clinic,
+    // school/kindergarten, single small hotel, civic office, mini-market.
+    const hasWeakAttraction = allMagnets.some(looksLikeWeakLocalAttractionPoi);
+    if (hasWeakAttraction) {
+      return 'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён.';
+    }
+    const hasAnyWeakSignal = allMagnets.some(m => {
+      const t = classifyMagnetSignal(m);
+      return t.level === 'weak_local_signal' && t.publicClaimStrength !== 'hidden_from_public_copy';
+    });
+    if (hasAnyWeakSignal) {
+      return 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+    }
     return `Туристический поток (слабый сигнал — объекты не обнаружены)`;
   }
+
+  // Credible tourist anchor present — but if it is in fact weak per taxonomy,
+  // suppress strong wording symmetrically with the BUSINESS branch above.
+  const topTax = classifyMagnetSignal({
+    categoryId: top.categoryId,
+    name: top.name,
+    distance: top.distance,
+    subType: top.subType,
+    categoryLabel: top.categoryId,
+    icon: '',
+    lat: 0,
+    lon: 0,
+    weight: top.weight,
+    permanenceType: 'permanent',
+    scopeLevel: 'local',
+    strengthClass: 'medium',
+    attractionScore: top.relevanceScore,
+  } as MagnetItem);
+  if (topTax.level === 'weak_local_signal' || topTax.publicClaimStrength === 'hidden_from_public_copy') {
+    if (top.categoryId === 'attraction') {
+      return 'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён.';
+    }
+    return 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+  }
+
   return `Основной поток: TOURIST — ${top.name} (${distRu(top.distance)})`;
 }
 
@@ -389,6 +449,7 @@ export function buildAudienceAnalysis(magnets: MagnetItem[]): AudienceAnalysis {
     primaryMagnets,
     audienceSharePct,
     businessClusterDetected,
+    magnets,
   );
 
   return {

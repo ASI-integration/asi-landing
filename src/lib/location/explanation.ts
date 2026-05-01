@@ -1,5 +1,14 @@
 import type { MagnetItem, CompetitorItem, GravityExplanation, Band, ScoreBand, AudienceAnalysis, TargetAudience } from './types';
-import { hasCredibleBusinessAnchors } from './signals/location-signal-taxonomy';
+import {
+  hasCredibleBusinessAnchors,
+  classifyMagnetSignal,
+  hasCredibleTouristAnchors,
+  hasCredibleMedicalAnchors,
+  hasCredibleEducationAnchors,
+  hasCredibleHospitalityCluster,
+  looksLikeWeakLocalAttractionPoi,
+  getMustSurfaceAnchors,
+} from './signals/location-signal-taxonomy';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
@@ -143,6 +152,18 @@ function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
   const out: MagnetItem[] = [];
   const usedCats = new Set<string>();
 
+  // Anchor recall contract: must-surface anchors (credible airport / railway /
+  // CBD metro / business center / hospital / university / attraction / mall)
+  // always lead the drivers list. They cannot be displaced by weaker POIs.
+  const mustSurface = getMustSurfaceAnchors(magnets);
+  for (const m of mustSurface) {
+    if (out.length >= 2) break;
+    if (usedCats.has(m.categoryId)) continue;
+    out.push(m);
+    usedCats.add(m.categoryId);
+  }
+  if (out.length >= 2) return out;
+
   // Pre-compute best attraction score so we can deprioritise hospital
   // when tourist anchors clearly dominate (e.g. Kremlin museums vs distant
   // military-medical office).
@@ -159,6 +180,12 @@ function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
       .filter(m => {
         if (m.strengthClass === 'weak') return false;
         if (m.categoryId !== cat) return false;
+        // Domain anchor validity: weak/local POIs (corporate museum, small clinic,
+        // school/kindergarten, single small hotel, civic office, mini-market) must
+        // never appear in the strong-driver sentence even if their strengthClass
+        // is medium — the per-domain taxonomy is authoritative.
+        const tax = classifyMagnetSignal(m);
+        if (tax.level === 'weak_local_signal' || tax.publicClaimStrength === 'hidden_from_public_copy') return false;
         if (cat === 'airport') {
           if (m.attractionScore >= 3.8) return true;
           return m.distance <= 2200 && m.attractionScore >= 2;
@@ -273,6 +300,27 @@ export function generateConclusion(
   if (locale === 'ru') {
     // Audience-specific driver line
     const audienceDriver = buildAudienceDriverRu(audienceAnalysis, nearestMetroM, hasAttractions, hasBusinessAnchors);
+
+    // Domain anchor validity: never emit a "Сильная …" verdict unless at least
+    // one credible anchor (business / tourist / medical / education /
+    // hospitality cluster) backs it. Weak-only contexts (corporate museum,
+    // small clinic, school, single small hotel, civic, mini-market) get the
+    // moderate fallback wording.
+    const hasAnyCredibleAnchor =
+      hasBusinessAnchors ||
+      hasCredibleTouristAnchors(magnets) ||
+      hasCredibleMedicalAnchors(magnets) ||
+      hasCredibleEducationAnchors(magnets) ||
+      hasCredibleHospitalityCluster(magnets);
+
+    if (idx >= 70 && !hasAnyCredibleAnchor) {
+      const hasWeakAttraction = magnets.some(looksLikeWeakLocalAttractionPoi);
+      const fallback = hasWeakAttraction
+        ? 'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён.'
+        : 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+      const driverPart = driversLine ? ` Сигналы: ${driversLine}.` : '';
+      return `${fallback}${driverPart}${hotelNote}${splitNote}${compNote}`.trim();
+    }
 
     if (idx >= 70) {
       const strongLabel =
