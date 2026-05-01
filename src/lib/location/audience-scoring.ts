@@ -30,6 +30,7 @@ import {
   looksLikeWeakLocalAttractionPoi,
   FORBIDDEN_PUBLIC_WORDING_RU,
 } from './signals/location-signal-taxonomy';
+import { classifyCanonicalMagnet } from './canonical/magnet-registry';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 
@@ -101,31 +102,18 @@ function distRu(meters: number): string {
  * and must never generate strong public driver copy.
  */
 
-/**
- * Category IDs that generate tourist demand.
- * stadium contributes partial tourist demand (events, sports tourism).
- */
-const TOURIST_CATEGORY_IDS: ReadonlySet<string> = new Set([
-  'attraction',
-  'entertainment',
-  'shopping_major',
-  'stadium',
-]);
-
 function isCredibleBusinessMagnet(m: MagnetItem): boolean {
-  const t = classifyMagnetSignal(m);
-  if (t.domain === 'business') {
-    return t.level === 'tier1_anchor' || t.level === 'tier2_anchor';
-  }
-  // Allowed BUSINESS unlockers that are not strictly "business" domain.
-  return t.allowsBusinessAudience === true;
+  const c = classifyCanonicalMagnet({ magnet: m });
+  const t = classifyMagnetSignal(m); // legacy safety gate; taxonomy is registry-backed
+  const credibleLevel = t.level === 'tier1_anchor' || t.level === 'tier2_anchor';
+  // BUSINESS must be unlocked only by canonical eligibility + credible taxonomy.
+  return (c.audiences.business || c.audiences.corporate) && credibleLevel;
 }
 
 function isTouristMagnet(m: MagnetItem): boolean {
-  if (!TOURIST_CATEGORY_IDS.has(m.categoryId)) return false;
-  // Weak/hidden tourist signals (corporate museums, factory museums, mini-markets
-  // tagged as shopping_major, etc.) must not contribute to TOURIST audience score
-  // and cannot become primary tourist anchors on their own.
+  const c = classifyCanonicalMagnet({ magnet: m });
+  if (!c.audiences.tourist) return false;
+  // Weak/hidden tourist signals must not contribute to TOURIST audience score.
   return isCredibleTouristAnchor(m);
 }
 

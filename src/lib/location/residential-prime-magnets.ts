@@ -13,6 +13,7 @@
  */
 
 import type { MagnetItem } from './types';
+import { classifyCanonicalMagnet } from './canonical/magnet-registry';
 
 // ── Anchor type ───────────────────────────────────────────────────────────────
 
@@ -108,10 +109,27 @@ export function classifyPrimeMagnetAnchorType(
   categoryId: string,
   subType?: string,
 ): PrimeMagnetAnchorType {
-  if (categoryId === 'business') {
-    if (subType === 'factory' || subType === 'industrial') {
-      return 'MIXED_CONTEXT_ANCHOR';
-    }
+  // Legacy signature retained for compatibility, but canonical registry decides the meaning.
+  const canonical = classifyCanonicalMagnet({
+    magnet: {
+      // minimal MagnetItem; only fields used by canonical classifier are needed
+      categoryId,
+      name: categoryId,
+      distance: 0,
+      subType,
+      categoryLabel: categoryId,
+      icon: '',
+      lat: 0,
+      lon: 0,
+      weight: 0,
+      permanenceType: 'permanent',
+      scopeLevel: 'local',
+      strengthClass: 'medium',
+      attractionScore: 0,
+    } as MagnetItem,
+  });
+  if (canonical.family === 'industrial_anchor' || canonical.family === 'industrial_zone') {
+    return 'MIXED_CONTEXT_ANCHOR';
   }
   return 'POSITIVE_DEMAND_ANCHOR';
 }
@@ -128,25 +146,25 @@ function anchorLabelRu(anchorType: PrimeMagnetAnchorType): string {
 
 /** User-facing category label in Russian, consistent with the canonical policy. */
 export function residentialMagnetCategoryLabelRu(categoryId: string, subType?: string): string {
-  switch (categoryId) {
-    case 'metro':           return 'Метро / пересадочный узел';
-    case 'airport':         return 'Аэропорт';
-    case 'attraction':      return 'Достопримечательность / культурный объект';
-    case 'hospital':        return 'Больница / медицинский кластер';
-    case 'convention':      return 'Конгресс-центр / выставочный центр';
-    case 'university':      return 'Университет / кампус';
-    case 'railway_station': return 'Ж/д вокзал / автовокзал / транспортный узел';
-    case 'shopping_major':  return 'Крупный торговый центр / ритейл-кластер';
-    case 'stadium':         return 'Стадион / арена';
-    case 'civic':           return 'Гражданский/административный центр';
-    case 'business':
-      if (subType === 'factory' || subType === 'industrial') {
-        return 'Промышленная зона / завод';
-      }
-      return 'Деловой кластер / офисный центр';
-    default:
-      return categoryId;
-  }
+  // Canonical registry output is the only public label source.
+  const canonical = classifyCanonicalMagnet({
+    magnet: {
+      categoryId,
+      name: categoryId,
+      distance: 0,
+      subType,
+      categoryLabel: categoryId,
+      icon: '',
+      lat: 0,
+      lon: 0,
+      weight: 0,
+      permanenceType: 'permanent',
+      scopeLevel: 'local',
+      strengthClass: 'medium',
+      attractionScore: 0,
+    } as MagnetItem,
+  });
+  return canonical.public.labelRu || categoryId;
 }
 
 // ── Filter rules ──────────────────────────────────────────────────────────────
@@ -259,14 +277,19 @@ export function filterResidentialPrimeMagnets(
   for (const m of [...marketFiltered].sort((a, b) => a.distance - b.distance)) {
     const key = `${m.categoryId}:${m.name.toLowerCase().trim()}`;
     if (seen.has(key)) continue;
-    const anchorType = classifyPrimeMagnetAnchorType(m.categoryId, m.subType);
+    const anchorType = (() => {
+      const c = classifyCanonicalMagnet({ magnet: m });
+      if (c.family === 'industrial_anchor' || c.family === 'industrial_zone') return 'MIXED_CONTEXT_ANCHOR';
+      return classifyPrimeMagnetAnchorType(m.categoryId, m.subType);
+    })();
+    const canonicalLabelRu = classifyCanonicalMagnet({ magnet: m }).public.labelRu;
     seen.set(key, {
       categoryId: m.categoryId,
       name: m.name,
       distance: m.distance,
       anchorType,
       anchorLabelRu: anchorLabelRu(anchorType),
-      categoryLabelRu: residentialMagnetCategoryLabelRu(m.categoryId, m.subType),
+      categoryLabelRu: canonicalLabelRu || residentialMagnetCategoryLabelRu(m.categoryId, m.subType),
     });
   }
 

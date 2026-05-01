@@ -23,6 +23,7 @@ import {
   hasCredibleTouristAnchors,
   looksLikeWeakLocalAttractionPoi,
 } from '../signals/location-signal-taxonomy';
+import { classifyCanonicalMagnet } from '../canonical/magnet-registry';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -93,11 +94,6 @@ function isMetroEntranceOrExit(name: string | undefined): boolean {
   return METRO_ENTRANCE_OR_EXIT_RE.test(name);
 }
 
-const MAJOR_TOURIST_ATTRACTION_NAME_RE =
-  // Explicit major tourist categories. Keep strict to avoid
-  // demoting everything (e.g. generic sculptures should stay Tier-2).
-  /(?:музей|театр|театральный|концертный\s+зал|концерт|стадион|арена|конгресс-центр|выставка|выставочный\s+центр|конвенц|экспо|landmark|достопримечательность|major\s+attraction)/i;
-
 function isMajorTouristAttraction(
   magnet: ResidentialPrimeMagnet,
   raw: MagnetItem | undefined,
@@ -105,19 +101,20 @@ function isMajorTouristAttraction(
   if (isStrongTier1BusinessByName(magnet.name)) return false; // defensive: business word in attraction name shouldn't promote it
   if (!raw) return false;
 
-  // Taxonomy is authoritative: corporate/industrial/factory museums are weak/local
-  // signals and must never become Tier-1 tourist anchors.
+  // Canonical rule: attractions (including museums/theaters) MUST NOT become Tier‑1
+  // residential anchors by raw name/category. Tier‑1 eligibility is decided only by
+  // canonical registry output (which may incorporate taxonomy/context).
+  const canonical = classifyCanonicalMagnet({ magnet: raw });
+  if (canonical.maxResidentialTier !== 1) return false;
+  if (canonical.anchorStrength !== 'tier1') return false;
+
+  // Defensive: still respect weak/hidden taxonomy outputs while legacy callers exist.
   if (looksLikeWeakLocalAttractionPoi(raw)) return false;
   const tax = classifyMagnetSignal(raw);
   if (tax.level === 'weak_local_signal') return false;
   if (tax.publicClaimStrength === 'hidden_from_public_copy') return false;
-  if (MAJOR_TOURIST_ATTRACTION_NAME_RE.test(magnet.name)) return true;
 
-  // "Tourist site with strong category/source" fallback — only when both
-  // strength + attractionScore are clearly high.
-  if (raw?.strengthClass === 'strong' && raw.attractionScore >= 4.2) return true;
-
-  return false;
+  return true;
 }
 
 function looksLikeWeakOffice(name: string | undefined): boolean {
@@ -155,9 +152,11 @@ function isTier1Business(
   if (looksLikeWeakOffice(magnet.name)) return false;
   if (raw?.subType && WEAK_OFFICE_SUBTYPES.has(raw.subType)) return false;
 
-  const strongSubtype = raw?.subType === 'factory' || raw?.subType === 'industrial';
-  if (!strongSubtype && !STRONG_BUSINESS_NAME_RE.test(magnet.name)) return false;
-
+  if (!raw) return false;
+  const canonical = classifyCanonicalMagnet({ magnet: raw });
+  if (canonical.maxResidentialTier !== 1) return false;
+  if (canonical.anchorStrength !== 'tier1') return false;
+  if (!canonical.audiences.business && !canonical.audiences.corporate) return false;
   return true;
 }
 

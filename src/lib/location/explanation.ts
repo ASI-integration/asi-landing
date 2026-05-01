@@ -9,6 +9,7 @@ import {
   looksLikeWeakLocalAttractionPoi,
   getMustSurfaceAnchors,
 } from './signals/location-signal-taxonomy';
+import { classifyCanonicalMagnet, type CanonicalMagnetFamily } from './canonical/magnet-registry';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
@@ -102,36 +103,62 @@ function nearestDistance(magnets: MagnetItem[], categoryId: string): number | nu
 
 // ── Revenue-connected magnet reason lines ─────────────────────────────────────
 
-/** Short revenue-logic explanations per category (English) */
-const MAGNET_REASON_EN: Record<string, string> = {
-  airport:        'air hub — strong traveler flow, stable ADR',
-  metro:          'metro access — reliable year-round guest flow',
-  hospital:       'medical cluster — steady staff & visitor demand',
-  major_hotel:    'quality signal — commercially validated location',
+type FamilyReasonMap = Readonly<Record<CanonicalMagnetFamily, string>>;
+
+/** Short revenue-logic explanations per canonical magnet family (English) */
+const MAGNET_REASON_EN_BY_FAMILY: FamilyReasonMap = {
   railway_station: 'rail hub — stable transit and business demand',
-  attraction:     'tourist anchor — consistent leisure demand',
-  convention:     'conference hub — strong corporate demand spikes',
-  university:     'education cluster — recurring semester demand',
-  business:       'office district — corporate and workforce demand',
-  stadium:        'event venue — periodic occupancy spikes',
-  entertainment:  'entertainment anchor — leisure footfall driver',
-  shopping_major: 'retail anchor — sustained visitor traffic',
+  metro_station: 'metro access — reliable year-round guest flow',
+  transport_hub: 'major transit hub — high recurring flow',
+  airport: 'air hub — strong traveler flow, stable ADR',
+  port: 'port/terminal — mixed trade and passenger flow',
+  industrial_anchor: 'industrial anchor — workforce-driven demand (mixed context)',
+  industrial_zone: 'industrial zone — limited STR demand (mixed context)',
+  business_center: 'business center — corporate and workforce demand',
+  office_cluster: 'office cluster — recurring corporate demand',
+  hospital: 'medical anchor — steady staff & visitor demand',
+  medical_cluster: 'medical cluster — steady staff & visitor demand',
+  university: 'education cluster — recurring semester demand',
+  shopping_mall: 'retail anchor — sustained visitor traffic',
+  park: 'park — lifestyle and family context (not a tier-1 anchor by itself)',
+  beach_waterfront: 'waterfront — leisure context (seasonality depends on market)',
+  resort_area: 'resort area — leisure demand (seasonality depends on market)',
+  stadium_event_venue: 'event venue — periodic occupancy spikes',
+  cultural_landmark: 'cultural landmark — leisure demand context',
+  museum: 'museum — leisure demand context',
+  theater: 'theater — leisure demand context',
+  tourist_attraction: 'tourist attraction — leisure demand context',
+  hotel_cluster: 'hotel cluster — confirms commercial viability',
+  residential_density: 'residential density — local demand context',
+  weak_amenity: 'local amenity — weak context signal',
 };
 
-/** Short revenue-logic explanations per category (Russian) */
-const MAGNET_REASON_RU: Record<string, string> = {
-  airport:        'аэропорт — мощный поток деловых и туристических гостей',
-  metro:          'метро — стабильный круглогодичный поток',
-  hospital:       'медкластер — стабильный поток персонала и посетителей',
-  major_hotel:    'индикатор качества — коммерчески подтверждённая локация',
+/** Short revenue-logic explanations per canonical magnet family (Russian) */
+const MAGNET_REASON_RU_BY_FAMILY: FamilyReasonMap = {
   railway_station: 'ж/д узел — устойчивый транспортный и деловой спрос',
-  attraction:     'туристический якорь — постоянный досуговый спрос',
-  convention:     'конгресс-центр — корпоративный спрос, деловые мероприятия',
-  university:     'университет — сезонный и долгосрочный образовательный спрос',
-  business:       'деловой кластер — корпоративный спрос, командированные',
-  stadium:        'стадион / арена — периодические пики спроса в дни матчей',
-  entertainment:  'развлекательный якорь — досуговый трафик',
-  shopping_major: 'торговый центр — высокий поток посетителей',
+  metro_station: 'метро — стабильный круглогодичный поток',
+  transport_hub: 'крупный транспортный узел — устойчивый поток',
+  airport: 'аэропорт — мощный поток деловых и туристических гостей',
+  port: 'порт/терминал — смешанный пассажирский/грузовой контекст',
+  industrial_anchor: 'промышленный якорь — спрос от занятости (смешанный контекст)',
+  industrial_zone: 'промзона — ограниченный спрос на STR (смешанный контекст)',
+  business_center: 'деловой центр — корпоративный спрос, командированные',
+  office_cluster: 'офисный кластер — повторяющийся деловой спрос',
+  hospital: 'медкластер — стабильный поток персонала и посетителей',
+  medical_cluster: 'медкластер — стабильный поток персонала и посетителей',
+  university: 'университет — сезонный и долгосрочный образовательный спрос',
+  shopping_mall: 'торговый центр — высокий поток посетителей',
+  park: 'парк — семейный/лайфстайл контекст (не Tier‑1 сам по себе)',
+  beach_waterfront: 'набережная/пляж — досуговый контекст (сезонность зависит от рынка)',
+  resort_area: 'курортная зона — досуговый спрос (сезонность зависит от рынка)',
+  stadium_event_venue: 'площадка мероприятий — периодические пики спроса',
+  cultural_landmark: 'культурный объект — досуговый контекст',
+  museum: 'музей — досуговый контекст',
+  theater: 'театр — досуговый контекст',
+  tourist_attraction: 'туристический объект — досуговый контекст',
+  hotel_cluster: 'кластер отелей — подтверждение коммерческой состоятельности зоны',
+  residential_density: 'жилая плотность — локальный контекст',
+  weak_amenity: 'локальная инфраструктура — слабый сигнал',
 };
 
 /**
@@ -215,26 +242,9 @@ function fmDist(m: number, locale: 'en' | 'ru'): string {
 
 /** Resolve a per-magnet reason line, with subType overrides for business magnets */
 function getMagnetReason(m: MagnetItem, locale: 'en' | 'ru'): string | undefined {
-  if (m.categoryId === 'business' && m.subType) {
-    if (m.subType === 'industrial' || m.subType === 'factory') {
-      return locale === 'ru'
-        ? 'промзона — ограниченный спрос на STR'
-        : 'industrial zone — limited STR demand';
-    }
-    if (m.subType === 'commercial') {
-      return locale === 'ru'
-        ? 'коммерческая зона — смешанный деловой профиль'
-        : 'commercial zone — mixed demand profile';
-    }
-    // office_anon: honest about low signal quality
-    if (m.subType === 'office_anon') {
-      return locale === 'ru'
-        ? 'офисная активность (слабый сигнал)'
-        : 'office activity — weak signal';
-    }
-  }
-  const REASONS = locale === 'ru' ? MAGNET_REASON_RU : MAGNET_REASON_EN;
-  return REASONS[m.categoryId];
+  const c = classifyCanonicalMagnet({ magnet: m });
+  const reasons = locale === 'ru' ? MAGNET_REASON_RU_BY_FAMILY : MAGNET_REASON_EN_BY_FAMILY;
+  return reasons[c.family];
 }
 
 /** Build a concise "key drivers" sentence from the top magnets */
