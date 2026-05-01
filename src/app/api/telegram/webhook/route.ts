@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
 import type { TelegramUpdate } from '@/lib/communication/types';
+import { postTelegramUpdateToBackendPipeline } from '@/lib/telegram/backend-pipeline-bridge';
 import { replyToTelegram } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
@@ -95,7 +96,41 @@ export async function POST(req: Request): Promise<Response> {
       return NextResponse.json({ ok: true, path: 'telegram_voice_fallback' }, { status: 200 });
     }
 
-    // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)
+    const backendPipelineUrl = process.env.TELEGRAM_BACKEND_PIPELINE_URL?.trim();
+    if (backendPipelineUrl && update) {
+      const piped = await postTelegramUpdateToBackendPipeline(update as Record<string, unknown>);
+      if (piped.ok) {
+        const d = piped.decision;
+        const outboundText = d.outbound_payload?.text;
+        const maySend =
+          d.outbound_send_allowed !== false &&
+          typeof outboundText === 'string' &&
+          outboundText.trim().length > 0;
+        if (maySend && chatId != null) {
+          await replyToTelegram(chatId, outboundText, {
+            handler: 'backend_pipeline',
+            update_id: update.update_id,
+          });
+        }
+        if (d.owner_notification_allowed) {
+          console.info('[tg:webhook] backend_pipeline owner_notification_allowed', {
+            update_id: update.update_id,
+            chat_id: chatId,
+            action_type: d.action_type,
+            session_id: d.session_id ?? null,
+          });
+        }
+        return NextResponse.json({ ok: true, path: 'backend_pipeline' }, { status: 200 });
+      }
+
+      console.error('[tg:webhook] backend_pipeline_fallback', {
+        reason: piped.error,
+        update_id: update?.update_id,
+        chat_id: chatId ?? null,
+      });
+    }
+
+    // Legacy fallback: processUpdate → session store → LLM intent → rule-based routing (see orchestrator)
     const result = await processUpdate(update);
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {
