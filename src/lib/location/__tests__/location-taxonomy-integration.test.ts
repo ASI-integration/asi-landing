@@ -83,5 +83,90 @@ describe('location taxonomy integration — weak/local POIs cannot become strong
     expect(aa.primaryAudience).not.toBe('BUSINESS');
     expect(aa.primaryDriverLabel.toLowerCase()).not.toContain('кластер деловых объектов');
   });
+
+  // ── Per-domain anchor validity regressions ────────────────────────────────
+
+  function gravityStub() {
+    return {
+      dominantMagnets: [],
+      strongestZoneLabel: '',
+      competitorPressureLevel: 'low' as const,
+      demandDistribution: 'weak' as const,
+      demandType: 'mixed' as const,
+      clusterDetected: false,
+      clusterSize: 0,
+      scoreBreakdown: { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 },
+    };
+  }
+
+  it('corporate museum at 140m alone is not a strong tourist driver', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'attraction', name: 'Музей истории завода', distance: 140 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    expect(aa.audienceFitScore).toBeLessThan(70);
+    expect(aa.primaryDriverLabel).toContain('сильный туристический поток не подтверждён');
+
+    const conclusion = generateConclusion(85, magnets, [], { attraction: 1 }, gravityStub(), 'ru', aa);
+    const c = conclusion.toLowerCase();
+    expect(c).not.toContain('сильная туристическая локация');
+    expect(c).not.toContain('основной драйвер');
+  });
+
+  it('single small clinic is not a strong medical driver', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'hospital', name: 'Стоматология «Улыбка»', distance: 200, weight: 2 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    const conclusion = generateConclusion(60, magnets, [], { hospital: 1 }, gravityStub(), 'ru', aa);
+    const c = conclusion.toLowerCase();
+    expect(c).not.toContain('медицинский кластер');
+    expect(c).not.toContain('медкластер');
+    expect(aa.audienceFitScore).toBeLessThan(70);
+  });
+
+  it('school/kindergarten only does not unlock strong education wording', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'university', name: 'Школа №42', distance: 180 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    const conclusion = generateConclusion(60, magnets, [], { university: 1 }, gravityStub(), 'ru', aa);
+    const c = conclusion.toLowerCase();
+    expect(c).not.toContain('студенческий поток');
+    expect(c).not.toContain('сильная образовательная локация');
+  });
+
+  it('single small hotel is not a strong tourist/hospitality anchor', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'mid_hotel', name: 'Хостел Сова', distance: 240 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    expect(aa.audienceFitScore).toBeLessThan(70);
+    const conclusion = generateConclusion(85, magnets, [], { mid_hotel: 1 }, gravityStub(), 'ru', aa);
+    expect(conclusion.toLowerCase()).not.toContain('сильная туристическая локация');
+  });
+
+  it('ZAGS / local civic office only is not BUSINESS and not strong tourist', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'civic', name: 'ЗАГС Кировского района', distance: 220 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    expect(aa.primaryAudience).not.toBe('BUSINESS');
+    expect(aa.businessClusterDetected).toBe(false);
+    const conclusion = generateConclusion(85, magnets, [], { civic: 1 }, gravityStub(), 'ru', aa);
+    const c = conclusion.toLowerCase();
+    expect(c).not.toContain('сильная туристическая локация');
+    expect(c).not.toContain('сильная локация для командированных');
+  });
+
+  it('local mini-market only is not a strong retail driver', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'shopping_major', name: 'Магазин у дома', distance: 120 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    expect(aa.audienceFitScore).toBeLessThan(70);
+    const conclusion = generateConclusion(85, magnets, [], { shopping_major: 1 }, gravityStub(), 'ru', aa);
+    expect(conclusion.toLowerCase()).not.toContain('сильная туристическая локация');
+  });
 });
 
