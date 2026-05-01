@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { MagnetItem } from '../../types';
-import { classifyMagnetSignal } from '../location-signal-taxonomy';
+import {
+  classifyMagnetSignal,
+  isMustSurfaceAnchor,
+  getMustSurfaceAnchors,
+  getCredibleAnchorsByDomain,
+} from '../location-signal-taxonomy';
 
 function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' | 'distance'>): MagnetItem {
   return {
@@ -176,6 +181,66 @@ describe('location signal taxonomy contract', () => {
     }));
     expect(t.level === 'tier1_anchor' || t.level === 'tier2_anchor').toBe(true);
     expect(t.domain).toBe('tourist');
+  });
+});
+
+describe('anchor recall — must-surface helpers', () => {
+  it('railway station within 1500m is must-surface', () => {
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'railway_station', name: 'Московский вокзал', distance: 900,
+    }))).toBe(true);
+  });
+
+  it('railway station beyond 1500m is NOT must-surface', () => {
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'railway_station', name: 'Московский вокзал', distance: 2000,
+    }))).toBe(false);
+  });
+
+  it('weak/local POIs are never must-surface', () => {
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'business', name: 'Иванов И.И.', distance: 100, subType: 'office',
+    }))).toBe(false);
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'attraction', name: 'Музей истории завода', distance: 140,
+    }))).toBe(false);
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'hospital', name: 'Стоматология «Улыбка»', distance: 200, weight: 2,
+    }))).toBe(false);
+  });
+
+  it('non-CBD metro is not must-surface; CBD metro is', () => {
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'metro', name: 'Купчино', distance: 400,
+    }))).toBe(false);
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'metro', name: 'Деловой центр (Москва-Сити)', distance: 400,
+    }))).toBe(true);
+  });
+
+  it('getMustSurfaceAnchors returns nearest-first credible anchors only', () => {
+    const list = getMustSurfaceAnchors([
+      magnet({ categoryId: 'railway_station', name: 'Московский вокзал', distance: 900 }),
+      magnet({ categoryId: 'airport', name: 'Шереметьево', distance: 6000 }),
+      magnet({ categoryId: 'business', name: 'Иванов И.И.', distance: 100, subType: 'office' }),
+      magnet({ categoryId: 'attraction', name: 'Музей истории завода', distance: 120 }),
+    ]);
+    expect(list.map(m => m.name)).toEqual(['Московский вокзал', 'Шереметьево']);
+  });
+
+  it('getCredibleAnchorsByDomain groups credible magnets and excludes weak/hidden', () => {
+    const grouped = getCredibleAnchorsByDomain([
+      magnet({ categoryId: 'railway_station', name: 'Московский вокзал', distance: 900 }),
+      magnet({ categoryId: 'business', name: 'Иванов И.И.', distance: 100, subType: 'office' }),
+      magnet({ categoryId: 'business', name: 'Бизнес-центр «Сити»', distance: 500, subType: 'office' }),
+      magnet({ categoryId: 'attraction', name: 'Эрмитаж', distance: 700, weight: 6 }),
+      magnet({ categoryId: 'attraction', name: 'Музей истории завода', distance: 140 }),
+    ]);
+    expect(grouped.transport.map(m => m.name)).toContain('Московский вокзал');
+    expect(grouped.business.map(m => m.name)).toContain('Бизнес-центр «Сити»');
+    expect(grouped.business.map(m => m.name)).not.toContain('Иванов И.И.');
+    expect(grouped.tourist.map(m => m.name)).toContain('Эрмитаж');
+    expect(grouped.tourist.map(m => m.name)).not.toContain('Музей истории завода');
   });
 });
 

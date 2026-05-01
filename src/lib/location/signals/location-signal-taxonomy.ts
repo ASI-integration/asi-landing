@@ -502,3 +502,94 @@ export function hasCredibleHospitalityCluster(magnets: MagnetItem[]): boolean {
   const credible = magnets.filter(isCredibleHospitalityAnchor);
   return credible.length >= 2;
 }
+
+// ── Anchor recall / mandatory surfacing contract ────────────────────────────
+
+/**
+ * Per-category must-surface radius (meters). When a credible anchor of the
+ * category is closer than this, the public explanation is required to mention
+ * it — weaker POIs cannot displace it from the primary driver / drivers line.
+ *
+ * Radii reflect realistic guest-facing relevance: airports stay relevant much
+ * further than business centers, transport hubs further than hotels, etc.
+ */
+const MUST_SURFACE_RADIUS_M: Readonly<Record<string, number>> = {
+  airport:         8000,
+  railway_station: 1500,
+  metro:           1200,
+  hospital:        1500,
+  university:      1500,
+  attraction:      1200,
+  convention:      1500,
+  business:         800,
+  shopping_major:  1500,
+  major_hotel:      800,
+  stadium:         1500,
+};
+
+/**
+ * True when this magnet is a credible domain anchor (per-domain validity)
+ * AND it sits within its must-surface radius. The public explanation MUST
+ * mention every such magnet — they cannot be hidden, displaced, or replaced
+ * by weak/local POIs (banks, person-name offices, corporate museums, small
+ * clinics, schools, mini-markets, civic offices).
+ */
+export function isMustSurfaceAnchor(m: MagnetItem): boolean {
+  const radius = MUST_SURFACE_RADIUS_M[m.categoryId];
+  if (radius == null) return false;
+  if (!Number.isFinite(m.distance) || m.distance > radius) return false;
+
+  const t = classifyMagnetSignal(m);
+  // Only credible anchors surface. Weak/hidden signals never qualify.
+  if (t.level !== 'tier1_anchor' && t.level !== 'tier2_anchor') return false;
+  if (t.publicClaimStrength === 'hidden_from_public_copy') return false;
+
+  // Metro: only the CBD-context tier1 variant is must-surface; ordinary metro
+  // is universal context, not a domain anchor by itself.
+  if (m.categoryId === 'metro' && !isCbdTransitAnchorPoi(m)) return false;
+
+  // shopping_major: only the strong retail variant (mall / TRC) — weak retail
+  // (mini-markets) is already filtered out by the credibility check above
+  // (domain becomes 'retail' / weak_local_signal), but be defensive.
+  if (m.categoryId === 'shopping_major' && t.domain === 'retail') return false;
+
+  return true;
+}
+
+/**
+ * All credible anchors grouped by domain — used to decide which anchors
+ * deserve mention even when audience-scoring picks a different primary
+ * audience.
+ */
+export function getCredibleAnchorsByDomain(magnets: MagnetItem[]): Record<SignalDomain, MagnetItem[]> {
+  const out: Record<SignalDomain, MagnetItem[]> = {
+    business: [],
+    tourist: [],
+    medical: [],
+    education: [],
+    transport: [],
+    civic: [],
+    hospitality: [],
+    retail: [],
+    residential_support: [],
+    environment_negative: [],
+  };
+  for (const m of magnets) {
+    const t = classifyMagnetSignal(m);
+    if (t.level !== 'tier1_anchor' && t.level !== 'tier2_anchor') continue;
+    if (t.publicClaimStrength === 'hidden_from_public_copy') continue;
+    out[t.domain].push(m);
+  }
+  return out;
+}
+
+/**
+ * The list of magnets the public explanation MUST surface — sorted nearest
+ * first, then by category priority. A driver picker that ignores this list
+ * is in violation of the recall contract.
+ */
+export function getMustSurfaceAnchors(magnets: MagnetItem[]): MagnetItem[] {
+  const surfacing = magnets.filter(isMustSurfaceAnchor);
+  // Stable, deterministic order: nearest first, then preserve input order.
+  return [...surfacing].sort((a, b) => a.distance - b.distance);
+}

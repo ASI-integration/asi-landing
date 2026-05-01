@@ -196,6 +196,80 @@ Array‑level audience eligibility gates:
   `hasCredibleMedicalAnchors`, `hasCredibleEducationAnchors`,
   `hasCredibleHospitalityCluster` *(≥ 2 credible hospitality anchors)*
 
+## Anchor recall / mandatory surfacing contract
+
+The precision contract above (weak POIs cannot become strong anchors) is paired
+with a **recall** contract: real major anchors **cannot be hidden, displaced,
+or replaced** by weaker POIs.
+
+| Side | Rule |
+|---|---|
+| Precision | Weak / local POI ⇒ never a strong driver, never an audience switch |
+| Recall | Credible anchor within radius ⇒ MUST be mentioned in public copy and eligible to drive score / audience |
+
+### Must-surface radii
+
+A magnet is **must-surface** when it is a credible (`tier1_anchor` /
+`tier2_anchor`) anchor whose `publicClaimStrength` is not
+`hidden_from_public_copy` AND its distance is within the per-category radius:
+
+| Category | Must-surface radius (m) |
+|---|---|
+| `airport` | 8000 |
+| `railway_station` | 1500 |
+| `metro` (CBD only) | 1200 |
+| `hospital` (credible) | 1500 |
+| `university` (credible) | 1500 |
+| `attraction` (credible) | 1200 |
+| `convention` | 1500 |
+| `business` (named BC / CBD / тех.) | 800 |
+| `shopping_major` (mall / TRC) | 1500 |
+| `major_hotel` (cluster context) | 800 |
+| `stadium` | 1500 |
+
+Non-CBD metro is universal context, not a domain anchor by itself, so it is
+not must-surface.
+
+### Public-factor priority order
+
+Driver pickers and primary-driver labels must select in this order:
+
+1. must-surface credible anchor (`getMustSurfaceAnchors`)
+2. credible domain cluster (≥ 2 credible anchors of the same domain)
+3. moderate domain context
+4. weak / local signals (only as secondary context, never as the primary driver)
+
+### Helpers
+
+`src/lib/location/signals/location-signal-taxonomy.ts`:
+
+- `isMustSurfaceAnchor(m)` — single-POI must-surface check (category + radius
+  + credibility).
+- `getMustSurfaceAnchors(magnets)` — list of must-surface magnets, sorted
+  nearest first.
+- `getCredibleAnchorsByDomain(magnets)` — credible magnets grouped by
+  `SignalDomain`, with weak / hidden signals excluded.
+
+### Omission guard
+
+If `getMustSurfaceAnchors` returns one or more anchors but the public
+`primaryDriverLabel` and the conclusion text mention none of them, the recall
+contract is broken. Tests in
+[__tests__/location-taxonomy-integration.test.ts](src/lib/location/__tests__/location-taxonomy-integration.test.ts)
+fail in that case.
+
+### Examples (before / after)
+
+**Railway station hidden by weak POIs** — magnets:
+`[Московский вокзал @ 600 m, Иванов И.И. @ 130 m, Магазин у дома @ 120 m, Кафе @ 90 m]`
+
+- Before: `primaryDriverLabel` could be dominated by the closer weak office or
+  shop ("Деловой поток: Иванов И.И. (130 м, офис)"); the station could be
+  absent from the conclusion's drivers line entirely.
+- After: `primaryDriverLabel = "Ключевой транспортный якорь: Московский вокзал
+  (600 м, ж/д вокзал)"`; conclusion drivers line leads with the station;
+  weak office / mini-market never appear in the strong-claim path.
+
 ## Test expectations (contract coverage)
 
 Tests validating the contract live in:

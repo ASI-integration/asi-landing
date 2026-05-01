@@ -7,6 +7,7 @@ import {
   hasCredibleEducationAnchors,
   hasCredibleHospitalityCluster,
   looksLikeWeakLocalAttractionPoi,
+  getMustSurfaceAnchors,
 } from './signals/location-signal-taxonomy';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
@@ -150,6 +151,18 @@ const CONCLUSION_PRIORITY = [
 function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
   const out: MagnetItem[] = [];
   const usedCats = new Set<string>();
+
+  // Anchor recall contract: must-surface anchors (credible airport / railway /
+  // CBD metro / business center / hospital / university / attraction / mall)
+  // always lead the drivers list. They cannot be displaced by weaker POIs.
+  const mustSurface = getMustSurfaceAnchors(magnets);
+  for (const m of mustSurface) {
+    if (out.length >= 2) break;
+    if (usedCats.has(m.categoryId)) continue;
+    out.push(m);
+    usedCats.add(m.categoryId);
+  }
+  if (out.length >= 2) return out;
 
   // Pre-compute best attraction score so we can deprioritise hospital
   // when tourist anchors clearly dominate (e.g. Kremlin museums vs distant

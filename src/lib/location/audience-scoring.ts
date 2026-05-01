@@ -277,6 +277,21 @@ function buildPrimaryDriverLabel(
   allMagnets: MagnetItem[],
 ): string {
   if (primaryAudience === 'BUSINESS') {
+    // Anchor recall: prefer the nearest must-surface transport / business
+    // anchor (railway / airport / CBD metro / business center) over weaker
+    // primaryMagnets that may have edged ahead by relevance score.
+    const surfacing = allMagnets
+      .filter(m =>
+        (m.categoryId === 'railway_station' || m.categoryId === 'airport') &&
+        classifyMagnetSignal(m).level === 'tier1_anchor',
+      )
+      .sort((a, b) => a.distance - b.distance);
+    const transportTop = surfacing[0];
+    if (transportTop) {
+      const role = transportTop.categoryId === 'airport' ? 'аэропорт' : 'ж/д вокзал';
+      return `Ключевой транспортный якорь: ${transportTop.name} (${distRu(transportTop.distance)}, ${role})`;
+    }
+
     const top = primaryMagnets.find(m => m.type === 'business');
     if (!top) return `Деловых якорей рядом не обнаружено (${audienceSharePct}%).`;
 
