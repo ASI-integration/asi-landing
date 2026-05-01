@@ -160,6 +160,7 @@ function looksLikeWeakLocalRetailPoi(m: MagnetItem): boolean {
 }
 
 function inferCanonicalTypeFromMagnet(m: MagnetItem): CanonicalMagnetType {
+  if (m.canonicalType) return m.canonicalType;
   const name = n(m.name);
 
   // Transport

@@ -111,6 +111,21 @@ export const GRAVITY_CONFIG = {
 } as const;
 
 /**
+ * Strict canonical input mode (default-on).
+ *
+ * Contract:
+ * - Unknown raw categories/tags must produce warnings.
+ * - Unknowns must fall back to weak/tertiary canonical types.
+ * - Unknowns must not become prime/Tier‑1 by any raw shortcut.
+ *
+ * This is intentionally enabled by default in production AND tests.
+ * For local debugging, it may be disabled explicitly via env:
+ *   STRICT_CANONICAL_LOCATION_MODE=0
+ */
+export const STRICT_CANONICAL_LOCATION_MODE: boolean =
+  process.env.STRICT_CANONICAL_LOCATION_MODE !== '0';
+
+/**
  * Optional soft headline adjustment for the explainable composite `location_score`
  * when neighborhood-environment concern is elevated/high with sufficient OSM confidence.
  * Does not change `evergreenIndex` or score breakdown inputs.

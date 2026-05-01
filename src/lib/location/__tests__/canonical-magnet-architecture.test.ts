@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { STRICT_CANONICAL_LOCATION_MODE } from '../config';
 
 function read(p: string): string {
   return fs.readFileSync(p, 'utf8');
@@ -11,6 +12,10 @@ function repoPath(...parts: string[]) {
 }
 
 describe('canonical magnet architecture (no raw bypasses)', () => {
+  it('strict canonical mode is enabled by default (tests/prod)', () => {
+    expect(STRICT_CANONICAL_LOCATION_MODE).toBe(true);
+  });
+
   it('residential-location-rules.ts has no standalone Tier-1 attraction regex promotion', () => {
     const p = repoPath('src', 'lib', 'location', 'rules', 'residential-location-rules.ts');
     const s = read(p);
@@ -43,6 +48,23 @@ describe('canonical magnet architecture (no raw bypasses)', () => {
     // UI should render labels provided by report, not map from raw category ids.
     expect(s).toContain('category_label_ru');
     expect(s).not.toMatch(/switch\s*\(\s*m\.category_id/i);
+  });
+
+  it('scoring/explanation/rules do not inspect raw OSM tags/categories/names directly', () => {
+    const targets = [
+      repoPath('src', 'lib', 'location', 'gravity-scoring.ts'),
+      repoPath('src', 'lib', 'location', 'audience-scoring.ts'),
+      repoPath('src', 'lib', 'location', 'rules', 'residential-location-rules.ts'),
+      repoPath('src', 'lib', 'location', 'residential-analysis.ts'),
+      repoPath('src', 'lib', 'location', 'explanation.ts'),
+      repoPath('src', 'lib', 'location', 'residential-prime-magnets.ts'),
+    ];
+
+    for (const p of targets) {
+      const s = read(p);
+      // No direct access to OSM tags or tag keys for tier/score/audience decisions.
+      expect(s).not.toMatch(/\.\s*tags\b/);
+    }
   });
 });
 

@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npm run generate:magnet-registry",
     "build": "next build",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run",
+    "test": "npm run check:magnet-canon && vitest run",
     "test:location-golden": "vitest run src/lib/location/__tests__",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

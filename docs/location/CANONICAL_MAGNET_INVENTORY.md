@@ -47,16 +47,16 @@
 
 ### Classification: raw OSM/Overpass → internal category/subType
 #### `src/lib/location/overpass-classify.ts`
-- **Role**: maps a raw `OSMElement` to `{ categoryId, name, subType? }`.
+- **Role**: compatibility bridge that attaches canonical mapping results and maps to legacy gravity categories.
 - **Runtime-executed**: yes (via `gravity-scoring.ts` → `buildAnalysis`).
-- **Currently source of truth**: **yes** for:
-  - allowed raw tags → categories
-  - business subType derivation (`factory`, `industrial`, `commercial`, `bank`, `office`, `office_anon`)
-  - attraction mapping (`tourism=museum/theatre/...` currently mostly goes to `attraction` or `entertainment`)
-- **Conflicts / duplicated logic**:
-  - Encodes “museum / theatre / attraction” mapping without any canonical registry gate beyond coarse `categoryId`.
-  - Does not support many canon families (port, beach, park, resort, hotel_cluster, etc.).
-- **Recommended future role**: become a **raw mapper only**; should return raw hints used by canonical registry (e.g. `rawCategoryHints`, `rawTags`, `rawKind`) and let registry determine canonical magnet type and eligibility.
+- **Currently source of truth**: **no** — raw interpretation must live in the canonical mapping layer.
+- **Conflicts / duplicated logic**: should not contain tier/prime/scoring decisions.
+- **Recommended role**: keep minimal bridging only; do not inspect raw tags for semantics beyond handing them to the mapping layer.
+
+#### `src/lib/location/canonical/overpass-to-canonical.ts`
+- **Role**: **the single sanctioned mapping layer** from raw Overpass/OSM POI tags/name/category hints into canonical magnet candidates.
+- **Runtime-executed**: yes (via `overpass-classify.ts` → `gravity-scoring.ts`).
+- **Source of truth**: yes, for raw input interpretation and strict unknown handling.
 
 ### Category weights / strength classes / radii / caps
 #### `src/lib/location/config.ts`
@@ -71,6 +71,11 @@
   - “Strength class” is used as a proxy for “destination magnet” (`gravity-scoring.ts`) but it is not canonical taxonomy.
   - Category list is small vs the required magnet families list in the task; also mixes business factories with office districts under one `business` category.
 - **Recommended future role**: low-level scoring configuration *consuming canonical registry outputs* (or moved into registry where it is truly magnet truth).
+
+### Safe data-driven tuning (new scaffold)
+#### `src/lib/location/canonical/magnet-tuning.ts`
+- **Role**: safe tuning layer that can only adjust bounded numeric multipliers for score contribution.
+- **Runtime-executed**: yes (importable), but must not bypass canonical identity/tier caps/eligibility/anti-signals.
 
 ### Gravity scoring and magnet selection
 #### `src/lib/location/gravity-scoring.ts`

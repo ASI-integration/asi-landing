@@ -487,6 +487,16 @@ export function buildAnalysis(
       scopeLevel: cat.scopeLevel,
       strengthClass: cat.strengthClass,
       attractionScore: calcMagnetAttraction(effectiveWeight, cat.permanenceType, dist),
+      canonicalType: classified.canonicalType,
+      canonicalMapping: {
+        confidence: classified.mapping.confidence,
+        matchedBy: classified.mapping.matchedBy,
+        ambiguous: classified.mapping.ambiguous,
+        ambiguityReasons: classified.mapping.ambiguityReasons,
+        warnings: classified.mapping.warnings,
+        normalizedTags: classified.mapping.normalizedTags,
+        source: 'osm-overpass',
+      },
     });
   }
 

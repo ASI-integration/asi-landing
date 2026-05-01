@@ -23,12 +23,14 @@ Everything else is either:
 
 ## Mandatory pipeline (enforced)
 **raw POI**
+→ **Overpass → canonical mapping** (`src/lib/location/canonical/overpass-to-canonical.ts`)
 → **canonical magnet registry** (`classifyCanonicalMagnet`)
 → **taxonomy classification** (registry-backed adapter: `signals/location-signal-taxonomy.ts`)
 → **anchor strength + tier caps** (from canonical output)
 → **distance band** (from canonical output)
 → **audience eligibility** (from canonical output)
 → **score contribution / caps** (consumer uses canonical caps)
+→ **safe tuning (optional)** (`src/lib/location/canonical/magnet-tuning.ts` — bounded multipliers only)
 → **explanation generator** (uses canonical labels/reasons)
 → **UI display** (renders canonical public labels, never raw assumptions)
 
@@ -58,6 +60,7 @@ The following are forbidden outside the canonical registry:
 - Any rule like **“museum/theater/tourist attraction = Tier‑1”** based on raw name/category/regex
 - Any rule like **“factory/industrial = business anchor”** without canonical classification
 - Any direct mapping from raw Overpass/OSM category to public label (UI copy must come from canonical labels)
+- Any scoring/explanation/UI logic that inspects raw `tags`, raw `category/subType`, or name regexes to decide tier/prime/score outside the canonical pipeline
 
 Concrete examples of forbidden patterns:
 - `if (name.match(/музей|театр/)) tier = 1`
@@ -68,6 +71,7 @@ Concrete examples of forbidden patterns:
 - **Museums, theaters, and generic tourist attractions must not automatically become Tier‑1 residential anchors** by raw name/category alone.
 - **Weak local amenities** must never appear as prime residential magnets.
 - **Business/corporate scoring** must be driven by canonical audience eligibility, not ad-hoc category matching.
+- **Tuning must never bypass canon**: it may only adjust bounded multipliers and must not change identity, tier caps, eligibility, or anti-signals.
 
 ## How to add a new magnet type safely
 1. Add a new entry to `src/lib/location/canonical/magnet-canon.json`.

@@ -1,9 +1,7 @@
 import type { OSMElement } from './types';
+import { overpassToCanonical } from './canonical/overpass-to-canonical';
+import type { CanonicalMagnetType } from './canonical/generated-magnet-registry';
 
-/**
- * Luxury hotel chains: their presence is a quality signal independent of star rating.
- * These brands do not operate in commercially weak locations.
- */
 const LUXURY_CHAINS = [
   'marriott', 'hilton', 'hyatt', 'sheraton', 'radisson', 'intercontinental',
   'four seasons', 'ritz', 'pullman', 'doubletree', 'crowne plaza', 'holiday inn',
@@ -13,142 +11,138 @@ const LUXURY_CHAINS = [
   'national hotel', 'metropol', 'savoy', 'astoria', 'lotte',
 ] as const;
 
-/**
- * Returns true when a tourism=hotel element represents a major 4–5★ property.
- * Checks: OSM stars tag ≥ 4 first; then chain-name heuristic as fallback.
- * Returns false for untagged, 1–3★, or unknown hotels (→ classified as competitor).
- */
-/**
- * Russian ЗАГС / civil registry name pattern. ZAGS offices are tagged
- * inconsistently in OSM (sometimes office=government, sometimes amenity=public_building,
- * sometimes nothing). When the name matches we surface them as a civic anchor.
- */
-const ZAGS_NAME_RE = /\bЗАГС\b|registry\s+office|записи\s+актов\s+гражданского/i;
+function n(s: string | undefined): string {
+  return (s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
 
-function isMajorHotel(t: Record<string, string>): boolean {
-  const stars = parseInt(t.stars ?? '0', 10);
+function isMajorHotel(normTags: Record<string, string>): boolean {
+  const stars = parseInt(normTags.stars ?? '0', 10);
   if (stars >= 4) return true;
-  const nameLower = (t.name ?? '').toLowerCase();
+  const nameLower = n(normTags.name);
   return LUXURY_CHAINS.some(chain => nameLower.includes(chain));
 }
 
-/** Map a raw OSM element to a category id + display name (+ optional subType), or null if unrecognised */
-export function classifyElement(el: OSMElement): { categoryId: string; name: string; subType?: string } | null {
-  const t = el.tags ?? {};
+function legacyCategoryForCanonical(t: CanonicalMagnetType): { categoryId: string; subType?: string } | null {
+  switch (t) {
+    case 'airport': return { categoryId: 'airport' };
+    case 'metro_station': return { categoryId: 'metro' };
+    case 'railway_station':
+    case 'transport_hub':
+    case 'port':
+      return { categoryId: 'railway_station' };
+    case 'hospital':
+    case 'medical_cluster':
+      return { categoryId: 'hospital' };
+    case 'university':
+      return { categoryId: 'university' };
+    case 'shopping_mall':
+      return { categoryId: 'shopping_major' };
+    case 'stadium':
+      return { categoryId: 'stadium' };
+    case 'event_venue':
+      return { categoryId: 'convention' };
+    case 'museum':
+    case 'theater':
+    case 'tourist_attraction':
+    case 'cultural_landmark':
+    case 'park':
+    case 'beach':
+    case 'waterfront':
+    case 'resort_area':
+      return { categoryId: 'attraction' };
+    case 'business_center':
+    case 'office_cluster':
+      return { categoryId: 'business', subType: 'office' };
+    case 'industrial_anchor':
+      return { categoryId: 'business', subType: 'factory' };
+    case 'industrial_zone':
+      return { categoryId: 'business', subType: 'industrial' };
+    case 'weak_amenity':
+    case 'tertiary_local_amenity':
+    case 'residential_density':
+    default:
+      return null;
+  }
+}
 
-  // ── Tier 1: Regional / city-scale anchors ──────────────────────────────────
+/**
+ * Map a raw OSM element to a legacy category id (+ optional subType),
+ * but ONLY after canonical mapping has produced a canonicalType.
+ *
+ * NOTE: No Tier/score decisions are allowed here; this is a compatibility bridge
+ * for the existing gravity-scoring categories.
+ */
+export function classifyElement(el: OSMElement): { categoryId: string; name: string; subType?: string; canonicalType: CanonicalMagnetType; mapping: ReturnType<typeof overpassToCanonical> } | null {
+  const tags = el.tags ?? {};
+  const mapped = overpassToCanonical({
+    name: tags.name,
+    tags,
+    source: 'osm-overpass',
+  });
 
-  // Metro: only actual subway systems (underground rapid transit).
-  if (t.railway === 'subway_entrance' || t.station === 'subway')
-    return { categoryId: 'metro', name: t.name || 'Метро' };
+  const norm = mapped.normalizedTags;
+  const name = (tags.name && tags.name.trim()) ? tags.name.trim() : '';
 
-  // Airports: scheduled / general aviation hubs — exclude helipads (noise + false transport-led).
-  if (t.aeroway === 'helipad') return null;
-  if (t.aeroway === 'aerodrome' || t.aeroway === 'terminal') {
-    const nameLower = (t.name ?? '').toLowerCase();
-    if (t.aerodrome === 'helipad' || /heliport|helipad|\bheli pad\b/i.test(nameLower)) return null;
-    return { categoryId: 'airport', name: t.name || 'Аэропорт' };
+  // Competitors: non-hotel STR supply
+  if (norm.tourism === 'apartment' || norm.tourism === 'guest_house' || norm.tourism === 'hostel' || norm.tourism === 'motel') {
+    return { categoryId: 'competitor', name: name || tags.tourism || 'Объект аренды', canonicalType: mapped.canonicalType, mapping: mapped };
   }
 
-  // Major tourism/cultural objects — local memorials and parks excluded
-  if (t.tourism === 'attraction' || t.tourism === 'museum' || t.tourism === 'gallery' || t.historic === 'monument')
-    return { categoryId: 'attraction', name: t.name || 'Достопримечательность' };
-
-  // Hospitals / major medical clusters — evergreen demand from staff and visitors
-  if (t.amenity === 'hospital' || t.healthcare === 'hospital')
-    return { categoryId: 'hospital', name: t.name || 'Больница' };
-
-  // ── Tier 2: District anchors ────────────────────────────────────────────────
-
-  // Major hotels (4–5★ / luxury chains): quality proxy signal.
-  // buildAnalysis also adds these to the competitor array for supply pressure.
-  if (t.tourism === 'hotel') {
-    if (isMajorHotel(t))
-      return { categoryId: 'major_hotel', name: t.name || 'Крупный отель' };
-    // Mid-tier hotels (1–3★ / unknown stars but named): surfaced as a Tier-2
-    // demand anchor for the secondary-cluster rule. Untagged anonymous hotels
-    // stay as competitor-only (no name = no positive demand evidence).
-    const stars = parseInt(t.stars ?? '0', 10);
-    const hasName = Boolean(t.name && t.name.trim());
-    if (hasName || (stars >= 1 && stars <= 3)) {
-      return { categoryId: 'mid_hotel', name: t.name || 'Отель', subType: stars > 0 ? `stars_${stars}` : undefined };
-    }
-    return { categoryId: 'competitor', name: t.name || 'Отель' };
-  }
-
-  // Civic / administrative anchors — Tier-2 demand anchor.
-  if (t.amenity === 'townhall')
-    return { categoryId: 'civic', name: t.name || 'Администрация', subType: 'townhall' };
-  if (t.office === 'government' && (t.name && t.name.trim()))
-    return { categoryId: 'civic', name: t.name, subType: 'government' };
+  // Accessibility stops: tiny bonus only
   if (
-    (t.amenity === 'public_building' || t.office === 'register' || t.office === 'notary') &&
-    t.name && ZAGS_NAME_RE.test(t.name)
-  )
-    return { categoryId: 'civic', name: t.name, subType: 'zags' };
-
-  // Convention / expo / conference centers — corporate demand anchor
-  if (t.amenity === 'conference_centre' || t.amenity === 'exhibition_centre' || t.amenity === 'convention_centre')
-    return { categoryId: 'convention', name: t.name || 'Конгресс-центр' };
-
-  if (t.amenity === 'university')
-    return { categoryId: 'university', name: t.name || 'Университет' };
-
-  // Vocational / local colleges
-  if (t.amenity === 'college')
-    return { categoryId: 'education_local', name: t.name || 'Колледж' };
-
-  // Railway stations + major bus hubs (classified AFTER metro)
-  if (t.amenity === 'bus_station')
-    return { categoryId: 'railway_station', name: t.name || 'Транспортный узел' };
-  if (t.railway === 'station' || t.railway === 'halt')
-    return { categoryId: 'railway_station', name: t.name || 'Станция' };
-
-  // City-scale entertainment (sports centres excluded — local only)
-  if (t.amenity === 'cinema' || t.amenity === 'theatre' || t.amenity === 'arts_centre' || t.amenity === 'nightclub')
-    return { categoryId: 'entertainment', name: t.name || t.amenity || 'Развлечение' };
-
-  // Large shopping formats (city-scale draw)
-  if (t.shop === 'mall' || t.shop === 'department_store')
-    return { categoryId: 'shopping_major', name: t.name || 'ТЦ' };
-
-  // Stadiums / arenas — year-round event venues with periodic demand spikes
-  if (t.leisure === 'stadium')
-    return { categoryId: 'stadium', name: t.name || 'Стадион' };
-  if (t.leisure === 'sports_centre' && t.name)
-    return { categoryId: 'stadium', name: t.name, subType: 'sports_centre' };
-
-  // Business: factories, works, offices, industrial zones
-  if (t.man_made === 'works')
-    return { categoryId: 'business', name: t.name || 'Завод', subType: 'factory' };
-  if (t.landuse === 'industrial')
-    return { categoryId: 'business', name: t.name || 'Промзона', subType: 'industrial' };
-  if (t.building === 'industrial')
-    return { categoryId: 'business', name: t.name || 'Производство', subType: 'factory' };
-  if (t.landuse === 'commercial')
-    return { categoryId: 'business', name: t.name || 'Коммерческая зона', subType: 'commercial' };
-  if (t.amenity === 'bank')
-    return { categoryId: 'business', name: t.name || 'Банк', subType: 'bank' };
-  if (t.office) {
-    const hasName = Boolean(t.name && t.name.trim());
-    return { categoryId: 'business', name: t.name || 'Офис', subType: hasName ? 'office' : 'office_anon' };
+    norm.highway === 'bus_stop' ||
+    norm.public_transport === 'stop_position' ||
+    norm.public_transport === 'platform' ||
+    norm.railway === 'tram_stop'
+  ) {
+    return { categoryId: 'accessibility_stop', name: name || 'Остановка', canonicalType: mapped.canonicalType, mapping: mapped };
   }
 
-  // ── Tier 3: Local / accessibility-only ──────────────────────────────────────
+  // Hotels: canonical type is hotel_cluster, but legacy needs split (major/mid/competitor)
+  if (norm.tourism === 'hotel') {
+    if (isMajorHotel({ ...norm, name: tags.name ?? '' })) {
+      return { categoryId: 'major_hotel', name: name || 'Крупный отель', canonicalType: 'hotel_cluster', mapping: mapped };
+    }
+    const stars = parseInt(norm.stars ?? '0', 10);
+    const hasName = Boolean(name);
+    if (hasName || (stars >= 1 && stars <= 3)) {
+      return {
+        categoryId: 'mid_hotel',
+        name: name || 'Отель',
+        subType: stars > 0 ? `stars_${stars}` : undefined,
+        canonicalType: 'hotel_cluster',
+        mapping: mapped,
+      };
+    }
+    return { categoryId: 'competitor', name: name || 'Отель', canonicalType: 'hotel_cluster', mapping: mapped };
+  }
 
-  if (t.highway === 'bus_stop' || t.public_transport === 'stop_position' || t.public_transport === 'platform' || t.railway === 'tram_stop')
-    return { categoryId: 'accessibility_stop', name: t.name || 'Остановка' };
+  const legacy = legacyCategoryForCanonical(mapped.canonicalType);
+  if (!legacy) return null;
 
-  if (t.shop === 'supermarket' || t.shop === 'convenience')
-    return { categoryId: 'shopping_local', name: t.name || 'Магазин' };
+  // Provide safe display names when OSM name is missing
+  const fallbackName = (() => {
+    switch (legacy.categoryId) {
+      case 'metro': return 'Метро';
+      case 'airport': return 'Аэропорт';
+      case 'hospital': return 'Больница';
+      case 'railway_station': return 'Транспортный узел';
+      case 'university': return 'Университет';
+      case 'shopping_major': return 'ТЦ';
+      case 'stadium': return 'Стадион';
+      case 'convention': return 'Конгресс-центр';
+      case 'business': return legacy.subType === 'industrial' ? 'Промзона' : legacy.subType === 'factory' ? 'Завод' : 'Офис';
+      case 'attraction': return 'Достопримечательность';
+      default: return legacy.categoryId;
+    }
+  })();
 
-  if (t.amenity === 'restaurant' || t.amenity === 'cafe' || t.amenity === 'fast_food' || t.amenity === 'bar' || t.amenity === 'pub')
-    return { categoryId: 'food', name: t.name || t.amenity || 'Кафе' };
-
-  // ── Competitors (non-major STR supply) ─────────────────────────────────────
-  if (t.tourism === 'apartment' || t.tourism === 'guest_house' || t.tourism === 'hostel' || t.tourism === 'motel')
-    return { categoryId: 'competitor', name: t.name || t.tourism || 'Объект аренды' };
-
-  return null;
+  return {
+    categoryId: legacy.categoryId,
+    name: name || fallbackName,
+    subType: legacy.subType,
+    canonicalType: mapped.canonicalType,
+    mapping: mapped,
+  };
 }
 

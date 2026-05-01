@@ -49,6 +49,27 @@ export interface MagnetItem {
   strengthClass: StrengthClass;
   attractionScore: number; // ASI computed gravity score
   /**
+   * Canonical magnet family/type id derived from raw POI input via the single
+   * mapping layer (`canonical/overpass-to-canonical.ts`).
+   *
+   * When present, downstream logic MUST prefer this over inferring from
+   * `categoryId` / name patterns.
+   */
+  canonicalType?: import('./canonical/generated-magnet-registry').CanonicalMagnetType;
+  /**
+   * Mapping diagnostics from raw POI → canonical candidate.
+   * Used to harden strict mode behavior and to surface warnings in harnesses.
+   */
+  canonicalMapping?: {
+    confidence: number; // 0..1
+    matchedBy: 'tag' | 'category' | 'alias' | 'nameFallback' | 'unknownFallback';
+    ambiguous: boolean;
+    ambiguityReasons: string[];
+    warnings: string[];
+    normalizedTags: Record<string, string>;
+    source?: string;
+  };
+  /**
    * Sub-type for business magnets: 'factory' | 'industrial' | 'office' | 'commercial' | 'bank'.
    * Undefined for non-business categories.
    */
