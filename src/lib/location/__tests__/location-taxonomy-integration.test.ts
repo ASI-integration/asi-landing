@@ -113,6 +113,15 @@ describe('location taxonomy integration — weak/local POIs cannot become strong
     expect(c).not.toContain('основной драйвер');
   });
 
+  it('Kirov factory museum wording stays cautious (production name)', () => {
+    const magnets: MagnetItem[] = [
+      magnet({ categoryId: 'attraction', name: 'Музей истории и техники ОАО «Кировский завод»', distance: 260 }),
+    ];
+    const aa = buildAudienceAnalysis(magnets);
+    expect(aa.primaryDriverLabel).toContain('сильный туристический поток не подтверждён');
+    expect(aa.primaryDriverLabel.toLowerCase()).not.toContain('сильная туристическая локация');
+  });
+
   it('single small clinic is not a strong medical driver', () => {
     const magnets: MagnetItem[] = [
       magnet({ categoryId: 'hospital', name: 'Стоматология «Улыбка»', distance: 200, weight: 2 }),

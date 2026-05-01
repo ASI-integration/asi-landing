@@ -18,6 +18,11 @@ import {
   type ResidentialPrimeMagnet,
 } from '../residential-prime-magnets';
 import { GRAVITY_CONFIG } from '../config';
+import {
+  classifyMagnetSignal,
+  hasCredibleTouristAnchors,
+  looksLikeWeakLocalAttractionPoi,
+} from '../signals/location-signal-taxonomy';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -98,6 +103,14 @@ function isMajorTouristAttraction(
   raw: MagnetItem | undefined,
 ): boolean {
   if (isStrongTier1BusinessByName(magnet.name)) return false; // defensive: business word in attraction name shouldn't promote it
+  if (!raw) return false;
+
+  // Taxonomy is authoritative: corporate/industrial/factory museums are weak/local
+  // signals and must never become Tier-1 tourist anchors.
+  if (looksLikeWeakLocalAttractionPoi(raw)) return false;
+  const tax = classifyMagnetSignal(raw);
+  if (tax.level === 'weak_local_signal') return false;
+  if (tax.publicClaimStrength === 'hidden_from_public_copy') return false;
   if (MAJOR_TOURIST_ATTRACTION_NAME_RE.test(magnet.name)) return true;
 
   // "Tourist site with strong category/source" fallback — only when both
@@ -249,8 +262,16 @@ function detectTier2ClusterCount(analysis: LocationAnalysis): number {
   // Major shopping cluster
   if (m.some(x => x.categoryId === 'shopping_major' && x.distance <= 900)) count++;
 
-  // Named attraction (even if not "major tourist" by the strict Tier-1 filter)
-  if (m.some(x => x.categoryId === 'attraction' && x.distance <= 800)) count++;
+  // Named attraction (even if not "major tourist" by the strict Tier-1 filter),
+  // but only when credible per taxonomy (corporate/factory museums must not inflate
+  // the secondary-cluster counter).
+  if (m.some(x => {
+    if (x.categoryId !== 'attraction' || x.distance > 800) return false;
+    const t = classifyMagnetSignal(x);
+    if (t.level !== 'tier1_anchor' && t.level !== 'tier2_anchor') return false;
+    if (t.publicClaimStrength === 'hidden_from_public_copy') return false;
+    return true;
+  })) count++;
 
   // Dense food cluster — uses existing GRAVITY_CONFIG thresholds.
   const foodNearby = m.filter(
@@ -343,6 +364,9 @@ const CAP_REASON_WEAK_CLUSTER =
 
 const CAP_REASON_BUSINESS_WITHOUT_TIER1_ANCHORS =
   'Деловой профиль не подтверждён сильными магнитами (вторичный кластер); оценка ограничена для публичного вывода.';
+
+const CAP_REASON_TOURIST_WEAK_ONLY =
+  'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён; оценка ограничена.';
 
 const FLOOR_REASON_TIER2_CLUSTER =
   'Есть несколько локальных магнитов спроса (вторичный кластер); оценка не должна схлопываться в «почти ноль».';
@@ -476,6 +500,15 @@ export function applyResidentialLocationRules(
     displayAudience = 'TOURIST';
   } else {
     displayAudience = 'RESIDENTIAL';
+  }
+
+  // Guard: TOURIST must be backed by at least one credible tourist anchor.
+  // If only weak/local/corporate cultural POIs exist, do not allow "strong tourist"
+  // display or a 100/100 headline.
+  if (displayAudience === 'TOURIST' && !hasCredibleTouristAnchors(analysis.magnets)) {
+    displayAudience = tier1Count > 0 ? 'MIXED' : 'RESIDENTIAL';
+    if (cappedScore > 70) cappedScore = 70;
+    if (!capReasons.includes(CAP_REASON_TOURIST_WEAK_ONLY)) capReasons.push(CAP_REASON_TOURIST_WEAK_ONLY);
   }
 
   const verdict = buildVerdict({
