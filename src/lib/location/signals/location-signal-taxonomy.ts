@@ -75,7 +75,9 @@ function domainFor(m: MagnetItem): SignalDomain {
       // Keep legacy behavior: strong malls behave like tourist/leisure anchors;
       // weak retail signals are a separate retail/weak branch.
       return d.anchorStrength === 'weak' ? 'retail' : 'tourist';
-    case 'stadium_event_venue':
+    case 'stadium':
+      return 'tourist';
+    case 'event_venue':
       return m.categoryId === 'convention' ? 'civic' : 'tourist';
     case 'hotel_cluster':
       return 'hospitality';
@@ -84,7 +86,8 @@ function domainFor(m: MagnetItem): SignalDomain {
     case 'tourist_attraction':
     case 'cultural_landmark':
     case 'park':
-    case 'beach_waterfront':
+    case 'beach':
+    case 'waterfront':
     case 'resort_area':
       return 'tourist';
     case 'weak_amenity':

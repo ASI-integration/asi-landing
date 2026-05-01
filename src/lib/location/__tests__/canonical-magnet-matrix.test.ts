@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { MagnetItem } from '../types';
 import {
-  CANONICAL_MAGNET_REGISTRY,
+  GENERATED_MAGNET_REGISTRY,
   classifyCanonicalMagnet,
-  type CanonicalMagnetFamily,
+  type CanonicalMagnetType,
 } from '../canonical/magnet-registry';
 
 function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' | 'distance'>): MagnetItem {
@@ -23,7 +23,7 @@ function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' 
 
 describe('canonical magnet registry matrix', () => {
   it('contains all major required magnet families', () => {
-    const required: CanonicalMagnetFamily[] = [
+    const required: CanonicalMagnetType[] = [
       'railway_station',
       'metro_station',
       'transport_hub',
@@ -38,9 +38,11 @@ describe('canonical magnet registry matrix', () => {
       'university',
       'shopping_mall',
       'park',
-      'beach_waterfront',
+      'beach',
+      'waterfront',
       'resort_area',
-      'stadium_event_venue',
+      'stadium',
+      'event_venue',
       'cultural_landmark',
       'museum',
       'theater',
@@ -48,9 +50,10 @@ describe('canonical magnet registry matrix', () => {
       'hotel_cluster',
       'residential_density',
       'weak_amenity',
+      'tertiary_local_amenity',
     ];
     for (const k of required) {
-      expect(CANONICAL_MAGNET_REGISTRY[k]).toBeTruthy();
+      expect(GENERATED_MAGNET_REGISTRY[k]).toBeTruthy();
     }
   });
 
@@ -86,7 +89,7 @@ describe('canonical magnet registry matrix', () => {
     const d = classifyCanonicalMagnet({ magnet: magnet({ categoryId: 'business', subType: 'industrial', name: 'Промзона', distance: 650 }) });
     expect(d.family).toBe('industrial_zone');
     expect(d.maxResidentialTier).not.toBe(1);
-    expect(d.audiences.industrial_worker).toBe(true);
+    expect(d.audiences.industrialWorker).toBe(true);
   });
 
   it('business center by name: tier1 business', () => {

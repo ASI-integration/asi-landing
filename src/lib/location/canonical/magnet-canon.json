@@ -1,0 +1,727 @@
+{
+  "schemaVersion": 1,
+  "magnets": [
+    {
+      "canonicalType": "railway_station",
+      "publicLabel": { "ru": "Ж/д вокзал / транспортный узел", "en": "Railway station / transit hub" },
+      "aliases": ["rail", "station", "вокзал", "автовокзал"],
+      "rawCategories": ["railway_station"],
+      "allowedTaxonomyTypes": ["transport"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": {
+        "mustSurfaceRadiusM": 1500,
+        "softenTier2AfterM": 1500
+      },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [],
+      "downgradeRules": [
+        { "id": "too_far_for_tier2", "when": { "anchorStrength": "tier2", "distanceGreaterThanM": 1500 }, "set": { "anchorStrength": "weak", "maxTier": 3 } }
+      ],
+      "notes": "City-forming transport anchor; must surface in reports."
+    },
+    {
+      "canonicalType": "metro_station",
+      "publicLabel": { "ru": "Метро", "en": "Metro" },
+      "aliases": ["metro", "метро"],
+      "rawCategories": ["metro"],
+      "allowedTaxonomyTypes": ["transport"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": {
+        "mustSurfaceRadiusM": 1200,
+        "softenTier2AfterM": 1500
+      },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        {
+          "id": "entrance_exit_only",
+          "kind": "name_regex",
+          "pattern": "(?:вход|выход|entrance|exit)\\s*(?:№\\s*)?\\d+",
+          "effect": "suppress_public_claim"
+        }
+      ],
+      "downgradeRules": [
+        { "id": "requires_context_for_business", "when": { "requiresContext": true }, "set": { "audienceEligibility.business": false, "audienceEligibility.corporate": false } }
+      ],
+      "notes": "Business unlock requires explicit CBD context (handled by classifier); keep conservative by default."
+    },
+    {
+      "canonicalType": "transport_hub",
+      "publicLabel": { "ru": "Крупный транспортный узел", "en": "Major transport hub" },
+      "aliases": ["transport hub"],
+      "rawCategories": ["railway_station", "metro"],
+      "allowedTaxonomyTypes": ["transport"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Requires context confirmation (handled by classifier); treated as city-forming transport hub."
+    },
+    {
+      "canonicalType": "airport",
+      "publicLabel": { "ru": "Аэропорт", "en": "Airport" },
+      "aliases": ["airport", "аэропорт"],
+      "rawCategories": ["airport"],
+      "allowedTaxonomyTypes": ["transport"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": { "mustSurfaceRadiusM": 8000, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Long must-surface radius; city/region-scale anchor."
+    },
+    {
+      "canonicalType": "port",
+      "publicLabel": { "ru": "Порт / терминал", "en": "Port / terminal" },
+      "aliases": ["port", "порт", "terminal"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["transport", "industrial"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": true
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Requires context confirmation; mixed passenger/logistics anchor."
+    },
+    {
+      "canonicalType": "industrial_anchor",
+      "publicLabel": { "ru": "Крупный промышленный объект", "en": "Industrial anchor" },
+      "aliases": ["factory", "works", "завод", "фабрика"],
+      "rawCategories": ["business"],
+      "allowedTaxonomyTypes": ["industrial"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": false },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": true
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 900, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        {
+          "id": "corporate_museum_disguise",
+          "kind": "name_regex",
+          "pattern": "музей\\s+истории\\s+(?:предприятия|завода|фабрики|комбината|техники)|корпоративный\\s+музей|(?:^|\\s)(?:оао|ао|ооо)(?:$|\\s|\\W)",
+          "effect": "force_weak_context"
+        }
+      ],
+      "downgradeRules": [],
+      "notes": "Mixed context anchor; explicitly NOT a residential prime magnet."
+    },
+    {
+      "canonicalType": "industrial_zone",
+      "publicLabel": { "ru": "Промышленная зона", "en": "Industrial zone" },
+      "aliases": ["industrial", "промзона"],
+      "rawCategories": ["business"],
+      "allowedTaxonomyTypes": ["industrial"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 3, "primeEligible": false },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": true,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": true
+      },
+      "anchorStrength": "weak",
+      "maxTier": 3,
+      "distanceBands": { "mustSurfaceRadiusM": 900, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 35, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Never a prime magnet; weak/mixed context by default."
+    },
+    {
+      "canonicalType": "business_center",
+      "publicLabel": { "ru": "Деловой центр", "en": "Business center" },
+      "aliases": ["business center", "бизнес-центр", "бц", "moscow city", "москва-сити"],
+      "rawCategories": ["business"],
+      "allowedTaxonomyTypes": ["business"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": { "mustSurfaceRadiusM": 800, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [
+        { "id": "weak_local_office", "kind": "taxonomy_hint", "pattern": "weak_local_business", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Tier-1 business anchor only when credible (classifier/taxonomy guards)."
+    },
+    {
+      "canonicalType": "office_cluster",
+      "publicLabel": { "ru": "Офисный кластер", "en": "Office cluster" },
+      "aliases": ["office cluster", "деловой центр", "office complex", "technopark", "технопарк"],
+      "rawCategories": ["business"],
+      "allowedTaxonomyTypes": ["business"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 900, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_office", "kind": "taxonomy_hint", "pattern": "weak_local_business", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "May become tier1 only with explicit strong name patterns and proximity (classifier)."
+    },
+    {
+      "canonicalType": "hospital",
+      "publicLabel": { "ru": "Больница / медцентр", "en": "Hospital / medical center" },
+      "aliases": ["hospital", "больниц", "госпитал"],
+      "rawCategories": ["hospital"],
+      "allowedTaxonomyTypes": ["medical"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": false,
+        "family": true,
+        "medical": true,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [
+        { "id": "weak_local_clinic", "kind": "taxonomy_hint", "pattern": "weak_local_medical", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Small clinics/dentistry must downgrade (classifier/taxonomy guards)."
+    },
+    {
+      "canonicalType": "medical_cluster",
+      "publicLabel": { "ru": "Медицинский кластер", "en": "Medical cluster" },
+      "aliases": ["medical cluster", "медкластер"],
+      "rawCategories": ["hospital"],
+      "allowedTaxonomyTypes": ["medical"],
+      "role": "primary",
+      "residentialEligibility": { "maxTier": 1, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": false,
+        "family": true,
+        "medical": true,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier1",
+      "maxTier": 1,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 100, "tier1CreditMax": 1 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Promotion is contextual; canon entry exists to represent explicit cluster detection."
+    },
+    {
+      "canonicalType": "university",
+      "publicLabel": { "ru": "Университет / кампус", "en": "University / campus" },
+      "aliases": ["university", "университет", "институт", "академия", "campus", "кампус"],
+      "rawCategories": ["university"],
+      "allowedTaxonomyTypes": ["education"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": false,
+        "family": true,
+        "medical": false,
+        "student": true,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_school", "kind": "taxonomy_hint", "pattern": "weak_local_education", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Schools/kindergarten must downgrade (classifier/taxonomy guards)."
+    },
+    {
+      "canonicalType": "shopping_mall",
+      "publicLabel": { "ru": "Крупный торговый центр", "en": "Shopping mall" },
+      "aliases": ["mall", "молл", "трц", "торгово-развлекательн"],
+      "rawCategories": ["shopping_major"],
+      "allowedTaxonomyTypes": ["retail", "tourist"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1500, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_retail", "kind": "taxonomy_hint", "pattern": "weak_local_retail", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Mini-markets must downgrade; malls are not Tier-1 by themselves."
+    },
+    {
+      "canonicalType": "park",
+      "publicLabel": { "ru": "Парк", "en": "Park" },
+      "aliases": ["park", "парк"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["tourist", "residential_support"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Lifestyle context; tier1 promotion only via explicit contextual rules (classifier)."
+    },
+    {
+      "canonicalType": "beach",
+      "publicLabel": { "ru": "Пляж", "en": "Beach" },
+      "aliases": ["beach", "пляж"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Tier-1 only via contextual promotion rules; never via raw name/category shortcuts."
+    },
+    {
+      "canonicalType": "waterfront",
+      "publicLabel": { "ru": "Набережная", "en": "Waterfront" },
+      "aliases": ["waterfront", "набережн"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["tourist", "residential_support"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Tier-1 only via contextual promotion rules."
+    },
+    {
+      "canonicalType": "resort_area",
+      "publicLabel": { "ru": "Курортная зона", "en": "Resort area" },
+      "aliases": ["resort", "курорт", "ski", "горнолыж"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Tier-1 only via explicit contextual rules; avoid raw promotion."
+    },
+    {
+      "canonicalType": "stadium",
+      "publicLabel": { "ru": "Стадион", "en": "Stadium" },
+      "aliases": ["stadium", "arena", "стадион", "арена"],
+      "rawCategories": ["stadium"],
+      "allowedTaxonomyTypes": ["tourist", "civic"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 900, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Episodic; never Tier-1 by raw signals."
+    },
+    {
+      "canonicalType": "event_venue",
+      "publicLabel": { "ru": "Площадка мероприятий", "en": "Event venue" },
+      "aliases": ["expo", "конгресс", "выстав", "convention"],
+      "rawCategories": ["convention", "entertainment"],
+      "allowedTaxonomyTypes": ["civic", "tourist"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 900, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Events are episodic; keep tier2 context unless other signals promote."
+    },
+    {
+      "canonicalType": "cultural_landmark",
+      "publicLabel": { "ru": "Культурный объект", "en": "Cultural landmark" },
+      "aliases": ["landmark"],
+      "rawCategories": ["attraction"],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_attraction", "kind": "taxonomy_hint", "pattern": "weak_local_attraction", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Generic attractions must stay capped; tier1 only via contextual promotion."
+    },
+    {
+      "canonicalType": "museum",
+      "publicLabel": { "ru": "Музей", "en": "Museum" },
+      "aliases": ["museum", "музей"],
+      "rawCategories": ["attraction"],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": true,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        {
+          "id": "corporate_or_industrial_museum",
+          "kind": "name_regex",
+          "pattern": "музей\\s+истории\\s+(?:предприятия|завода|фабрики|комбината|техники)|корпоративный\\s+музей|(?:^|\\s)(?:оао|ао|ооо)(?:$|\\s|\\W)|завод|фабрика|комбинат",
+          "effect": "force_weak_context"
+        }
+      ],
+      "downgradeRules": [],
+      "notes": "Hard cap: cannot be Tier-1 by raw name/category; tier1 only via explicit contextual rules."
+    },
+    {
+      "canonicalType": "theater",
+      "publicLabel": { "ru": "Театр", "en": "Theater" },
+      "aliases": ["theatre", "theater", "театр"],
+      "rawCategories": ["attraction", "entertainment"],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": true,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Hard cap: cannot be Tier-1 by raw name/category alone."
+    },
+    {
+      "canonicalType": "tourist_attraction",
+      "publicLabel": { "ru": "Туристический объект", "en": "Tourist attraction" },
+      "aliases": ["attraction", "tourist", "достопримечательность"],
+      "rawCategories": ["attraction"],
+      "allowedTaxonomyTypes": ["tourist"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": true },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1200, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_attraction", "kind": "taxonomy_hint", "pattern": "weak_local_attraction", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Hard cap: generic attractions cannot be Tier-1 by raw shortcuts; promotion is contextual."
+    },
+    {
+      "canonicalType": "hotel_cluster",
+      "publicLabel": { "ru": "Кластер отелей", "en": "Hotel cluster" },
+      "aliases": ["hotel cluster"],
+      "rawCategories": ["major_hotel", "mid_hotel"],
+      "allowedTaxonomyTypes": ["hospitality"],
+      "role": "secondary",
+      "residentialEligibility": { "maxTier": 2, "primeEligible": false },
+      "audienceEligibility": {
+        "business": true,
+        "corporate": true,
+        "tourist": true,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "tier2",
+      "maxTier": 2,
+      "distanceBands": { "mustSurfaceRadiusM": 1000, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 75, "tier1CreditMax": 0 },
+      "antiSignals": [
+        { "id": "weak_local_hospitality", "kind": "name_regex", "pattern": "хостел|гостевой\\s+дом|апарт-отель|hostel|guest\\s+house", "effect": "force_weak_context" }
+      ],
+      "downgradeRules": [],
+      "notes": "Never tier1 by itself; hostels/guest-houses downgrade to weak."
+    },
+    {
+      "canonicalType": "residential_density",
+      "publicLabel": { "ru": "Жилая плотность", "en": "Residential density" },
+      "aliases": ["residential density"],
+      "rawCategories": [],
+      "allowedTaxonomyTypes": ["residential_support"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 3, "primeEligible": false },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": false,
+        "family": true,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "weak",
+      "maxTier": 3,
+      "distanceBands": { "mustSurfaceRadiusM": 0, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 35, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Context only; never a prime magnet."
+    },
+    {
+      "canonicalType": "weak_amenity",
+      "publicLabel": { "ru": "Локальная инфраструктура", "en": "Local amenity" },
+      "aliases": ["amenity", "local"],
+      "rawCategories": ["food", "shopping_local", "education_local", "civic", "mid_hotel"],
+      "allowedTaxonomyTypes": ["residential_support"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 3, "primeEligible": false },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "weak",
+      "maxTier": 3,
+      "distanceBands": { "mustSurfaceRadiusM": 0, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 10, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Explicitly forbidden from prime magnets; weak context only."
+    },
+    {
+      "canonicalType": "tertiary_local_amenity",
+      "publicLabel": { "ru": "Третичная локальная инфраструктура", "en": "Tertiary local amenity" },
+      "aliases": ["tertiary", "local amenity"],
+      "rawCategories": ["food", "shopping_local", "education_local", "civic"],
+      "allowedTaxonomyTypes": ["residential_support"],
+      "role": "tertiary",
+      "residentialEligibility": { "maxTier": 3, "primeEligible": false },
+      "audienceEligibility": {
+        "business": false,
+        "corporate": false,
+        "tourist": false,
+        "family": false,
+        "medical": false,
+        "student": false,
+        "industrialWorker": false
+      },
+      "anchorStrength": "weak",
+      "maxTier": 3,
+      "distanceBands": { "mustSurfaceRadiusM": 0, "softenTier2AfterM": 1500 },
+      "scoringCaps": { "audienceFitMax": 5, "tier1CreditMax": 0 },
+      "antiSignals": [],
+      "downgradeRules": [],
+      "notes": "Even weaker than weak_amenity; never prime-eligible."
+    }
+  ]
+}

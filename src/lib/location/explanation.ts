@@ -9,7 +9,7 @@ import {
   looksLikeWeakLocalAttractionPoi,
   getMustSurfaceAnchors,
 } from './signals/location-signal-taxonomy';
-import { classifyCanonicalMagnet, type CanonicalMagnetFamily } from './canonical/magnet-registry';
+import { classifyCanonicalMagnet, type CanonicalMagnetType } from './canonical/magnet-registry';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ function nearestDistance(magnets: MagnetItem[], categoryId: string): number | nu
 
 // ── Revenue-connected magnet reason lines ─────────────────────────────────────
 
-type FamilyReasonMap = Readonly<Record<CanonicalMagnetFamily, string>>;
+type FamilyReasonMap = Readonly<Record<CanonicalMagnetType, string>>;
 
 /** Short revenue-logic explanations per canonical magnet family (English) */
 const MAGNET_REASON_EN_BY_FAMILY: FamilyReasonMap = {
@@ -121,9 +121,11 @@ const MAGNET_REASON_EN_BY_FAMILY: FamilyReasonMap = {
   university: 'education cluster — recurring semester demand',
   shopping_mall: 'retail anchor — sustained visitor traffic',
   park: 'park — lifestyle and family context (not a tier-1 anchor by itself)',
-  beach_waterfront: 'waterfront — leisure context (seasonality depends on market)',
+  beach: 'beach — leisure context (seasonality depends on market)',
+  waterfront: 'waterfront — leisure context (seasonality depends on market)',
   resort_area: 'resort area — leisure demand (seasonality depends on market)',
-  stadium_event_venue: 'event venue — periodic occupancy spikes',
+  stadium: 'stadium — periodic occupancy spikes',
+  event_venue: 'event venue — periodic occupancy spikes',
   cultural_landmark: 'cultural landmark — leisure demand context',
   museum: 'museum — leisure demand context',
   theater: 'theater — leisure demand context',
@@ -131,6 +133,7 @@ const MAGNET_REASON_EN_BY_FAMILY: FamilyReasonMap = {
   hotel_cluster: 'hotel cluster — confirms commercial viability',
   residential_density: 'residential density — local demand context',
   weak_amenity: 'local amenity — weak context signal',
+  tertiary_local_amenity: 'local amenity — weak context signal',
 };
 
 /** Short revenue-logic explanations per canonical magnet family (Russian) */
@@ -149,9 +152,11 @@ const MAGNET_REASON_RU_BY_FAMILY: FamilyReasonMap = {
   university: 'университет — сезонный и долгосрочный образовательный спрос',
   shopping_mall: 'торговый центр — высокий поток посетителей',
   park: 'парк — семейный/лайфстайл контекст (не Tier‑1 сам по себе)',
-  beach_waterfront: 'набережная/пляж — досуговый контекст (сезонность зависит от рынка)',
+  beach: 'пляж — досуговый контекст (сезонность зависит от рынка)',
+  waterfront: 'набережная — досуговый контекст (сезонность зависит от рынка)',
   resort_area: 'курортная зона — досуговый спрос (сезонность зависит от рынка)',
-  stadium_event_venue: 'площадка мероприятий — периодические пики спроса',
+  stadium: 'стадион — периодические пики спроса',
+  event_venue: 'площадка мероприятий — периодические пики спроса',
   cultural_landmark: 'культурный объект — досуговый контекст',
   museum: 'музей — досуговый контекст',
   theater: 'театр — досуговый контекст',
@@ -159,6 +164,7 @@ const MAGNET_REASON_RU_BY_FAMILY: FamilyReasonMap = {
   hotel_cluster: 'кластер отелей — подтверждение коммерческой состоятельности зоны',
   residential_density: 'жилая плотность — локальный контекст',
   weak_amenity: 'локальная инфраструктура — слабый сигнал',
+  tertiary_local_amenity: 'локальная инфраструктура — слабый сигнал',
 };
 
 /**

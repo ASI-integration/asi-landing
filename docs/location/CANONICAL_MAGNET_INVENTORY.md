@@ -39,6 +39,12 @@
 
 ## Runtime-executed sources of truth (code)
 
+## Canonical JSON → Generated Runtime Registry (current contract)
+- **Source of truth (human-editable)**: `src/lib/location/canonical/magnet-canon.json`
+- **Generated runtime code (do not edit)**: `src/lib/location/canonical/generated-magnet-registry.ts`
+- **Facade (deprecated handwritten registry; stable import path)**: `src/lib/location/canonical/magnet-registry.ts`
+  - Must remain a thin re-export layer; no manual magnet definitions are allowed here.
+
 ### Classification: raw OSM/Overpass → internal category/subType
 #### `src/lib/location/overpass-classify.ts`
 - **Role**: maps a raw `OSMElement` to `{ categoryId, name, subType? }`.
@@ -91,7 +97,7 @@
 - **Conflicts / duplicated logic**:
   - Contains name/subType regex logic that overlaps with other layers (e.g. `residential-location-rules.ts` has its own attraction regexes and business name regex).
   - Encodes must-surface radii separate from `CATEGORY_RADIUS` in `config.ts`.
-- **Recommended future role**: its logic should be **migrated into / replaced by the canonical executable registry** so that all credibility, audience eligibility, labels, and downgrade rules are sourced from one place.
+- **Recommended future role**: remains a consumer/adapter over canonical outputs. Magnet truth is now defined in `magnet-canon.json` and emitted into `generated-magnet-registry.ts`.
 
 ### Audience scoring / audience eligibility
 #### `src/lib/location/audience-scoring.ts`

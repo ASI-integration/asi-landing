@@ -5,9 +5,17 @@ This repository must have **one executable source of truth** for residential loc
 Any code that influences scoring, explanations, or UI magnet display must **consume canonical output** and must not promote magnets by raw name/category shortcuts.
 
 ## Single source of truth
-- **Executable registry**: `src/lib/location/canonical/magnet-registry.ts`
-  - Defines canonical magnet families, aliases, audience eligibility, tier caps, public labels, and anti-signal downgrades.
-  - Exposes the mandatory classifier: `classifyCanonicalMagnet({ magnet })`.
+### Canonical JSON → Generated Runtime Registry
+- **Human-editable canon (ONLY editable source of truth)**: `src/lib/location/canonical/magnet-canon.json`
+  - Defines canonical magnet types, labels, aliases, raw category mapping, eligibility, caps, and anti-signals.
+- **Generated runtime registry (DO NOT EDIT)**: `src/lib/location/canonical/generated-magnet-registry.ts`
+  - Auto-generated from the JSON canon.
+  - Exposes runtime exports used by the app/tests (registry + helper getters).
+- **Stable public facade (import from here)**: `src/lib/location/canonical/magnet-registry.ts`
+  - Re-exports the generated runtime registry and classifier.
+  - Exists to keep import paths stable while canon evolves.
+
+The mandatory classifier remains: `classifyCanonicalMagnet({ magnet })` (exported via the facade).
 
 Everything else is either:
 - **raw mapping** (OSM/Overpass → raw POI fields), or
@@ -26,11 +34,11 @@ Everything else is either:
 
 ## Allowed vs forbidden rule ownership
 ### Allowed to define rules
-Only `src/lib/location/canonical/magnet-registry.ts` may define:
+Only `src/lib/location/canonical/magnet-canon.json` may define magnet truth:
 - canonical magnet family/type
 - aliasing / raw category hints
 - anti-signals / downgrades (e.g. corporate museums)
-- audience eligibility (business/tourist/family/medical/student/industrial_worker/corporate)
+- audience eligibility (business/tourist/family/medical/student/industrialWorker/corporate)
 - anchor strength (tier1/tier2/weak/noise/negative)
 - residential tier caps
 - public labels (RU/EN) and claim strength
@@ -62,15 +70,16 @@ Concrete examples of forbidden patterns:
 - **Business/corporate scoring** must be driven by canonical audience eligibility, not ad-hoc category matching.
 
 ## How to add a new magnet type safely
-1. Add a new `CanonicalMagnetFamily` entry to `src/lib/location/canonical/magnet-registry.ts`.
-2. Define:
+1. Add a new entry to `src/lib/location/canonical/magnet-canon.json`.
+2. Define (in JSON):
    - aliases/raw-category ids/subtypes (if any)
-   - audiences (business/tourist/family/medical/student/industrial_worker/corporate)
+- audiences (business/tourist/family/medical/student/industrialWorker/corporate)
    - tier caps and default strength
    - public labels and anti-signals
-3. Add matrix expectations in:
+3. Run `npm run generate:magnet-registry` to regenerate runtime code.
+4. Add matrix expectations in:
    - `src/lib/location/__tests__/canonical-magnet-matrix.test.ts`
-4. If any consumer logic needs changes, update it to read canonical output (not raw category).
+5. If any consumer logic needs changes, update it to read canonical output (not raw category).
 
 ## How tests prevent bypasses
 - **Architecture test**: `src/lib/location/__tests__/canonical-magnet-architecture.test.ts`
