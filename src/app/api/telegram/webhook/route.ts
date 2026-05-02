@@ -98,7 +98,7 @@ export async function POST(req: Request): Promise<Response> {
 
     const backendPipelineUrl = process.env.TELEGRAM_BACKEND_PIPELINE_URL?.trim();
     if (backendPipelineUrl && update) {
-      const piped = await postTelegramUpdateToBackendPipeline(update as Record<string, unknown>);
+      const piped = await postTelegramUpdateToBackendPipeline(update as unknown as Record<string, unknown>);
       if (piped.ok) {
         const d = piped.decision;
         const outboundText = d.outbound_payload?.text;
