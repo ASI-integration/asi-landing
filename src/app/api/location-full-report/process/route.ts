@@ -6,6 +6,7 @@ import { buildLocationStandaloneReport, buildCommercialReport } from '@/lib/loca
 import { createStandaloneReport } from '@/lib/location/standalone-report-store';
 import {
   getLocationReportRequestById,
+  hasPaidLocationReportAccess,
   markLocationReportRequestCompleted,
   markLocationReportRequestFailed,
   markLocationReportRequestProcessing,
@@ -32,9 +33,28 @@ export async function POST(req: NextRequest) {
   const entity = await getLocationReportRequestById(requestId);
   if (!entity) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
+  if (entity.locale === 'ru' && !hasPaidLocationReportAccess(entity)) {
+    return NextResponse.json({
+      error: 'payment_required',
+      status: entity.status,
+      access_status: entity.access_status,
+      payment_provider: entity.payment_provider,
+      product_type: entity.product_type,
+      requestId,
+      next_action: {
+        type: 'payment_required',
+        url: `/ru/location-report?requestId=${encodeURIComponent(requestId)}`,
+      },
+    }, { status: 402 });
+  }
+
   // Idempotency: if already done, return the result.
   if (entity.status === 'completed' && entity.report_id) {
-    return NextResponse.json({ status: 'completed', reportId: entity.report_id });
+    return NextResponse.json({
+      status: 'completed',
+      access_status: entity.access_status,
+      reportId: entity.report_id,
+    });
   }
   if (entity.status === 'processing') {
     return NextResponse.json({ status: 'processing' }, { status: 202 });
@@ -78,7 +98,7 @@ export async function POST(req: NextRequest) {
     const { reportId } = await createStandaloneReport({ locale, report: report as any });
     await markLocationReportRequestCompleted({ requestId, reportId });
 
-    return NextResponse.json({ status: 'completed', reportId });
+    return NextResponse.json({ status: 'completed', access_status: 'generated', reportId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await markLocationReportRequestFailed({ requestId, errorMessage: msg });

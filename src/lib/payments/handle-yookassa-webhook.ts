@@ -6,6 +6,7 @@ import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/ev
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
+import { markLocationReportRequestPaid } from '@/lib/location/report-request-store';
 
 /**
  * Общая обработка уведомлений ЮKassa.
@@ -40,7 +41,28 @@ export async function handleYookassaWebhook(req: Request): Promise<NextResponse>
     const paymentObj = raw?.object ?? {};
     const meta = paymentObj.metadata as Record<string, string> | undefined;
     const userId = meta?.user_id || meta?.userId;
+    const locationReportRequestId = meta?.location_report_request_id || meta?.locationReportRequestId;
+    const productType = meta?.product_type || meta?.productType;
     const paymentMethodId = (paymentObj.payment_method as Record<string, string> | undefined)?.id;
+
+    // TODO: YooKassa retry can be restored after website maturity review.
+    // Location report webhooks must include both location_report_request_id and
+    // product_type=location_report_detail before server-side access is opened.
+    if (
+      raw?.event === 'payment.succeeded'
+      && locationReportRequestId
+      && productType === 'location_report_detail'
+      && status === 'paid'
+    ) {
+      await markLocationReportRequestPaid({
+        requestId: locationReportRequestId,
+        paymentId: transactionId,
+        paymentProvider: 'yookassa',
+      });
+
+      if (eventId) markWebhookProcessed('yookassa', eventId);
+      return NextResponse.json({ received: true });
+    }
 
     const isSubscriptionSuccess =
       raw?.event === 'payment.succeeded' && userId && status === 'paid';

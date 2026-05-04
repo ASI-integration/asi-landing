@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLocationReportRequest } from '@/lib/location/report-request-store';
+import {
+  createLocationReportRequest,
+  type LocationReportPaymentProvider,
+} from '@/lib/location/report-request-store';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { resolveAccountIdForUser } from '@/lib/accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,6 +14,20 @@ function parseLocale(v: unknown): 'ru' | 'en' {
 
 function parseMode(v: unknown): 'residential' | 'commercial' {
   return v === 'commercial' ? 'commercial' : 'residential';
+}
+
+function resolveRuPaymentProvider(): LocationReportPaymentProvider {
+  return process.env.LOCATION_REPORT_PAYMENT_PROVIDER === 'prodamus'
+    ? 'prodamus'
+    : 'manual';
+}
+
+function resolveRuPaymentUrl(provider: LocationReportPaymentProvider): string | null {
+  if (provider === 'prodamus') {
+    return process.env.LOCATION_REPORT_PAYMENT_URL || process.env.PRODAMUS_PAYMENT_URL || null;
+  }
+
+  return process.env.LOCATION_REPORT_PAYMENT_URL || null;
 }
 
 export async function POST(req: NextRequest) {
@@ -26,6 +45,9 @@ export async function POST(req: NextRequest) {
   const lon = typeof body?.lon === 'number' && Number.isFinite(body.lon) ? body.lon : null;
   const locale = parseLocale(body?.locale);
   const mode = parseMode(body?.mode);
+  const email = typeof body?.email === 'string' && body.email.includes('@')
+    ? body.email.trim()
+    : null;
 
   // Delivery is optional in this MVP: we persist intent, but actual sending is handled later.
   const deliveryChannel = body?.delivery?.channel;
@@ -37,11 +59,31 @@ export async function POST(req: NextRequest) {
       ? { channel: deliveryChannel as any, target: deliveryTarget.trim() }
       : null;
 
-  // Monetization hook: for now we don’t enforce here; callers can show paywall based on their auth/subscription.
-  const accessTier =
-    body?.access_tier === 'included' || body?.access_tier === 'paid_required'
+  let userId: string | null = null;
+  let accountId: string | null = null;
+  let sessionEmail: string | null = null;
+
+  if (isSessionSecretConfigured()) {
+    try {
+      const session = await getSession();
+      userId = session.userId ?? null;
+      sessionEmail = session.email ?? null;
+      const resolvedAccountId = userId ? await resolveAccountIdForUser(userId) : null;
+      accountId = resolvedAccountId === 'legacy' ? null : resolvedAccountId;
+    } catch {
+      // Public RU order can be created without auth; account binding is best-effort.
+    }
+  }
+
+  const isRuPaidProduct = locale === 'ru';
+  const paymentProvider = isRuPaidProduct ? resolveRuPaymentProvider() : 'manual';
+  const paymentUrl = isRuPaidProduct ? resolveRuPaymentUrl(paymentProvider) : null;
+  const accessTier = isRuPaidProduct
+    ? 'paid_required'
+    : body?.access_tier === 'included' || body?.access_tier === 'paid_required'
       ? body.access_tier
       : 'unknown';
+  const accessStatus = isRuPaidProduct ? 'pending_payment' : 'draft';
 
   try {
     const { requestId } = await createLocationReportRequest({
@@ -52,13 +94,33 @@ export async function POST(req: NextRequest) {
       lon,
       delivery,
       accessTier,
+      accessStatus,
+      paymentProvider,
+      paymentUrl,
+      userId,
+      accountId,
+      email: email ?? sessionEmail,
+      productType: 'location_report_detail',
     });
 
     return NextResponse.json({
       requestId,
+      report_request_id: requestId,
       status: 'queued',
+      access_status: accessStatus,
+      payment_provider: paymentProvider,
+      payment_url: paymentUrl,
+      product_type: 'location_report_detail',
+      next_action: isRuPaidProduct
+        ? {
+          type: 'payment_required',
+          url: `/ru/location-report?requestId=${encodeURIComponent(requestId)}`,
+        }
+        : {
+          type: 'process_async',
+        },
       note: locale === 'ru'
-        ? 'Полный отчёт рассчитывается асинхронно. В плотных городских локациях расчёт может занять до ~1 минуты.'
+        ? 'Заявка на полный отчёт создана. Доступ к полному отчёту откроется после подтверждения оплаты.'
         : 'The full report runs asynchronously. Dense urban areas may take up to ~1 minute.',
     });
   } catch (err) {

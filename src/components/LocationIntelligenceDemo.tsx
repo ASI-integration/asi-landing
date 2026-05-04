@@ -1982,14 +1982,19 @@ function ASIPanel({
           locale,
           mode,
           delivery: { channel: 'dashboard', target: 'public' },
-          // Monetization hook (MVP): UI can upgrade this to 'included' or 'paid_required' later.
-          access_tier: 'unknown',
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
 
       const requestId = String(json.requestId);
+      if (locale === 'ru') {
+        const nextUrl = typeof json?.next_action?.url === 'string'
+          ? json.next_action.url
+          : `/ru/location-report?requestId=${encodeURIComponent(requestId)}`;
+        router.push(nextUrl);
+        return;
+      }
 
       // Kick off processing (do not block the UI on the long request).
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -2015,7 +2020,7 @@ function ASIPanel({
         const st = await poll();
         if (st.status === 'completed' && st.reportId) {
           const reportId = String(st.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(`/location-report/${reportId}`);
           return;
         }
         if (st.status === 'failed') {
@@ -2155,7 +2160,7 @@ function ASIPanel({
                 className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {locale === 'ru'
-                  ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                  ? (fullReportBusy ? 'Создаём заказ…' : 'Заказать полный отчёт')
                   : (fullReportBusy ? 'Generating…' : 'Request report')}
               </button>
               {locale === 'ru' ? (
@@ -2206,7 +2211,7 @@ function ASIPanel({
             Открыть демо-permalink (предпросмотр)
           </button>
           <p className="mt-2 text-[11px] text-slate-600 text-center">
-            Предпросмотр быстрый и приблизительный; полный отчёт глубже.
+            Демо‑оценка быстрая и приблизительная; полный отчёт включает магниты, расстояния, доход, риски и рекомендации.
           </p>
         </div>
       ) : null}
@@ -2874,12 +2879,18 @@ function CommercialASIPanel({
           locale,
           mode: 'commercial',
           delivery: { channel: 'dashboard', target: 'public' },
-          access_tier: 'unknown',
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
       const requestId = String(json.requestId);
+      if (locale === 'ru') {
+        const nextUrl = typeof json?.next_action?.url === 'string'
+          ? json.next_action.url
+          : `/ru/location-report?requestId=${encodeURIComponent(requestId)}`;
+        router.push(nextUrl);
+        return;
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       fetch('/api/location-full-report/process', {
@@ -2896,7 +2907,7 @@ function CommercialASIPanel({
         if (!s.ok) throw new Error(sj?.error ?? 'status_failed');
         if (sj?.status === 'completed' && sj?.reportId) {
           const reportId = String(sj.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(`/location-report/${reportId}`);
           return;
         }
         if (sj?.status === 'failed') throw new Error(sj?.error ?? 'processing_failed');
@@ -2978,10 +2989,10 @@ function CommercialASIPanel({
           disabled={fullReportBusy}
           className="mt-2 w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
-          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
+          {fullReportBusy ? 'Создаём заказ…' : 'Заказать полный отчёт'}
         </button>
         <p className="mt-2 text-[11px] text-slate-600 text-center">
-          Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.
+          Демо‑оценка — быстрый ориентир. Полный отчёт включает магниты, расстояния, сценарии дохода, риски и рекомендации.
         </p>
         {fullReportErr ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
