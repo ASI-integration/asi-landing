@@ -4,8 +4,11 @@
       "type": "stdio",
       "command": "node",
       "args": [
-        "c:\\Users\\Admin\\.vscode\\extensions\\vexp.vexp-vscode-1.2.30\\dist\\mcp-server.cjs"
-      ]
+        "c:\\Users\\Admin\\.vscode\\extensions\\vexp.vexp-vscode-2.0.12-win32-x64\\dist\\mcp-server.cjs"
+      ],
+      "env": {
+        "VEXP_WORKSPACE": "c:\\ASI\\asi-landing"
+      }
     }
   }
 }
