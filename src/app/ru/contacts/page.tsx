@@ -32,7 +32,7 @@ export default function RuContactsPage() {
             @ASI_core_bot
           </a>
         </li>
-        <li>Телефон: {ruCompliance.phone}</li>
+        {ruCompliance.phone ? <li>Телефон: {ruCompliance.phone}</li> : null}
       </ul>
       <p>
         Мы отвечаем на обращения пользователей по вопросам подключения, оплаты, возврата денежных средств, доступа к
@@ -47,7 +47,7 @@ export default function RuContactsPage() {
       <ul className="list-disc pl-5 space-y-2">
         <li>Самозанятый: {ruCompliance.fullName}</li>
         <li>ИНН: {ruCompliance.inn}</li>
-        <li>Адрес для корреспонденции: {ruCompliance.address}</li>
+        {ruCompliance.address ? <li>Адрес для корреспонденции: {ruCompliance.address}</li> : null}
       </ul>
     </RuLegalPageLayout>
   );

@@ -147,9 +147,9 @@ export default function OnboardingPageContent() {
 
   const selectedPlanLabel = useMemo(() => {
     const plan = selectedPlanValue;
-    if (plan === 'small') return 'Базовый';
-    if (plan === 'growth') return 'Масштабирование';
-    return 'Крупный портфель';
+    if (plan === 'small') return 'Для собственника';
+    if (plan === 'growth') return 'Для оператора';
+    return 'Для управляющей компании';
   }, [selectedPlanValue]);
 
   const planAfterTrial = useMemo(() => {

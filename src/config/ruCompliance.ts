@@ -9,8 +9,8 @@ export const ruCompliance = {
   inn: '235307941957',
   email: productSupportEmail,
   telegram: 'https://t.me/ASI_core_bot',
-  phone: 'сделаем позже',
-  address: 'сделаем позже',
+  phone: null as string | null,
+  address: null as string | null,
 };
 
 export const ruComplianceRoutes = {

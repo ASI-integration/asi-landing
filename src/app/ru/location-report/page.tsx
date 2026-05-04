@@ -10,9 +10,9 @@ export default function RuLocationFullReportPage() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
           <div className="rounded-3xl border border-slate-800/70 bg-slate-900/20 p-8 sm:p-10">
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт</p>
-            <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Страница обновлена</h1>
+            <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Отчёт открывается по постоянной ссылке</h1>
             <p className="mt-3 text-slate-300 leading-relaxed">
-              Полный отчёт теперь открывается по постоянной ссылке с идентификатором отчёта (permalink) и больше не зависит от данных текущей сессии.
+              Запустите анализ — мы сформируем отчёт и откроем его по уникальной ссылке, которой можно делиться.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row gap-3">
               <Link
