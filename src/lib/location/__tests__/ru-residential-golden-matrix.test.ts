@@ -450,9 +450,12 @@ describe('RU residential golden regression matrix', () => {
       },
     },
 
-    // 11) industrial/employment cluster
+    // 11) industrial cluster — under the new residential policy heavy industry
+    //     does NOT unlock BUSINESS or count as a Tier-1 business anchor.
+    //     With only a metro Tier-1 + factories nearby, the industrial-edge cap
+    //     fires: score ≤ 55, audience RESIDENTIAL, verdict cannot be "strong".
     {
-      name: 'industrial/employment cluster',
+      name: 'industrial cluster — must not surface as strong BUSINESS (new policy)',
       magnets: [
         magnet({ categoryId: 'business', name: 'Завод Север', distance: 400, subType: 'industrial', weight: 6, strengthClass: 'strong' }),
         magnet({ categoryId: 'business', name: 'Кампус производственный', distance: 800, subType: 'industrial', weight: 6, strengthClass: 'strong' }),
@@ -464,11 +467,18 @@ describe('RU residential golden regression matrix', () => {
       audienceFitScore: 78,
       businessClusterDetected: true,
       expected: {
-        displayScoreMin: 92,
-        displayScoreMax: 92,
-        displayAudience: 'MIXED',
-        verdictTone: 'strong',
-        allowedPrimaryDriverCategories: ['metro', 'shopping_major'],
+        displayScoreMin: 40,
+        displayScoreMax: 55,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'weak',
+        allowedPrimaryDriverCategories: ['metro'],
+        forbiddenPhrasesExtra: ['Сильная', 'командированных'],
+      },
+      extraAssertions: (sanity) => {
+        // Industrial business POIs must NOT qualify as Tier-1 business anchors.
+        expect(sanity.tier1Magnets.some(m => m.categoryId === 'business')).toBe(false);
+        // Industrial-edge cap reason must be present.
+        expect(sanity.capReasonsRu.join(' ')).toContain('промышленные объекты');
       },
     },
 
@@ -560,6 +570,38 @@ describe('RU residential golden regression matrix', () => {
         expect(sanity.tier1Magnets.some(m => m.categoryId === 'attraction' && m.name === 'Самолет - стрекоза')).toBe(false);
 
         // Generic offices must not become Tier-1 business magnets.
+        expect(sanity.tier1Magnets.some(m => m.categoryId === 'business')).toBe(false);
+      },
+    },
+
+    // 14) Мурино-style industrial-edge residential (Оборонная 37, Мурино).
+    //     Factory POI nearby, residential character. The audience model may
+    //     hard-lock BUSINESS via factory subtype weight, but the residential
+    //     demo MUST cap to 40–55 and force RESIDENTIAL. No "Сильная локация
+    //     для командированных" allowed.
+    {
+      name: 'Мурино-style industrial-edge residential — must score 40–55 RESIDENTIAL',
+      magnets: [
+        magnet({ categoryId: 'business', name: 'Производство Мурино', distance: 600, subType: 'factory', weight: 6, strengthClass: 'strong' }),
+        magnet({ categoryId: 'metro', name: 'Девяткино', distance: 1400, strengthClass: 'strong', weight: 9 }),
+        magnet({ categoryId: 'shopping_local', name: 'Магазин у дома', distance: 250, weight: 2 }),
+      ],
+      evergreenIndex: 71,
+      primaryAudience: 'BUSINESS',
+      audienceFitScore: 60,
+      audienceSharePct: 80,
+      businessClusterDetected: false,
+      expected: {
+        displayScoreMin: 40,
+        displayScoreMax: 55,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'weak',
+        allowedPrimaryDriverCategories: ['metro'],
+        forbiddenPhrasesExtra: ['Сильная', 'командированных'],
+      },
+      extraAssertions: (sanity) => {
+        expect(sanity.capApplied).toBe(true);
+        expect(sanity.capReasonsRu.join(' ')).toContain('промышленные объекты');
         expect(sanity.tier1Magnets.some(m => m.categoryId === 'business')).toBe(false);
       },
     },

@@ -55,8 +55,12 @@ const WEAK_OFFICE_SUBTYPES: ReadonlySet<string> = new Set([
 
 const STRONG_BUSINESS_NAME_RE =
   // Real business/employment magnets — used to decide Tier-1 strength.
-  // Important: generic brand offices (e.g. "Марио") must NOT match.
-  /бизнес-центр|business\s+center|бц\b|technopark|технопарк|industrial\s+park|industrial|factory|завод\b|кампус|campus|штаб-квартира|headquarters|office\s+cluster|деловой\s+центр/i;
+  // Important:
+  //   - generic brand offices (e.g. "Марио") must NOT match
+  //   - heavy industry (factory / завод / industrial / промзона) is NOT a corporate-travel
+  //     demand driver for the residential demo and must NOT match here. Industrial-edge
+  //     residential is handled by a dedicated cap below.
+  /бизнес-центр|business\s+center|бц\b|technopark|технопарк|industrial\s+park|кампус|campus|штаб-квартира|headquarters|office\s+cluster|деловой\s+центр/i;
 
 function isStrongTier1BusinessByName(name: string | undefined): boolean {
   if (!name) return false;
@@ -142,8 +146,12 @@ function isTier1Business(
   if (looksLikeWeakOffice(magnet.name)) return false;
   if (raw?.subType && WEAK_OFFICE_SUBTYPES.has(raw.subType)) return false;
 
-  const strongSubtype = raw?.subType === 'factory' || raw?.subType === 'industrial';
-  if (!strongSubtype && !STRONG_BUSINESS_NAME_RE.test(magnet.name)) return false;
+  // Heavy industry (factory / industrial) is not a corporate-travel demand driver.
+  // It must NOT qualify as a Tier-1 business anchor for the residential demo —
+  // industrial-edge residential is handled by its own cap below.
+  if (raw?.subType === 'factory' || raw?.subType === 'industrial') return false;
+
+  if (!STRONG_BUSINESS_NAME_RE.test(magnet.name)) return false;
 
   return true;
 }
@@ -344,6 +352,9 @@ const CAP_REASON_WEAK_CLUSTER =
 const CAP_REASON_BUSINESS_WITHOUT_TIER1_ANCHORS =
   'Деловой профиль не подтверждён сильными магнитами (вторичный кластер); оценка ограничена для публичного вывода.';
 
+const CAP_REASON_INDUSTRIAL_EDGE =
+  'Рядом промышленные объекты, но деловых магнитов нет — оценка ограничена для жилого сценария.';
+
 const FLOOR_REASON_TIER2_CLUSTER =
   'Есть несколько локальных магнитов спроса (вторичный кластер); оценка не должна схлопываться в «почти ноль».';
 
@@ -367,6 +378,16 @@ export function applyResidentialLocationRules(
   const audienceFit = analysis.locationScore?.breakdown.audience_fit_score ?? 0;
 
   const hasTier1BusinessMagnet = tier1.some(m => m.categoryId === 'business');
+
+  // Industrial-edge residential: factory/industrial business POIs are present but
+  // no real corporate-travel anchor (Tier-1 business / hospital / rail / airport /
+  // CBD-transit metro). This is the canonical Мурино-style case — must not surface
+  // as "Сильная локация для командированных" and must not score in the strong band.
+  const hasIndustrialBusinessNearby = analysis.magnets.some(m =>
+    m.categoryId === 'business' &&
+    (m.subType === 'factory' || m.subType === 'industrial') &&
+    m.distance <= 1500,
+  );
   const hasTier1Transit = tier1.some(m =>
     m.categoryId === 'metro' ||
     m.categoryId === 'railway_station' ||
@@ -442,6 +463,22 @@ export function applyResidentialLocationRules(
     }
   }
 
+  // Cap F: industrial-edge residential.
+  // Factory / industrial POIs nearby with no real corporate-travel anchor (Tier-1
+  // business / hospital / rail / airport / CBD-transit metro) — must not score
+  // in the strong band and must not display BUSINESS audience. Targets the
+  // Мурино-style case (industrial fringe of a residential district).
+  const isIndustrialEdgeResidential =
+    hasIndustrialBusinessNearby &&
+    !hasTier1BusinessMagnet &&
+    !hasTrueBusinessContextAnchor;
+  if (isIndustrialEdgeResidential && cappedScore > 55) {
+    cappedScore = 55;
+    if (!capReasons.includes(CAP_REASON_INDUSTRIAL_EDGE)) {
+      capReasons.push(CAP_REASON_INDUSTRIAL_EDGE);
+    }
+  }
+
   // Floor: if there are several independent Tier-2 demand anchors but no Tier-1,
   // a near-zero score looks like a bug/regression for "secondary cluster" areas.
   // Keep the floor conservative: still weak-to-moderate, never "strong".
@@ -460,7 +497,10 @@ export function applyResidentialLocationRules(
   // "shopping_major" itself must not be sufficient.
   let displayAudience: ResidentialDemoAudience = 'RESIDENTIAL';
 
-  if (weakClusterOnly) {
+  if (isIndustrialEdgeResidential) {
+    // Industrial-edge residential: never display BUSINESS / TOURIST headline.
+    displayAudience = 'RESIDENTIAL';
+  } else if (weakClusterOnly) {
     displayAudience = audienceFit >= 35 && hasTier1Transit ? 'MIXED' : 'RESIDENTIAL';
   } else if (tier1Count >= 2 && aa) {
     if (aa.primaryAudience === 'BUSINESS' && audienceFit >= 35) {

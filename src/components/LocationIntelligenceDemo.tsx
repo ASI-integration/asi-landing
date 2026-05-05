@@ -1258,7 +1258,49 @@ function AddressInput({
     onClear();
   }
 
+  function unlockForEdit(initialText: string) {
+    setLocked(false);
+    setLockedValue('');
+    setText(initialText);
+    onDraftChange?.(initialText);
+    setSuggestions([]);
+    setOpen(false);
+    setActiveIdx(-1);
+    setSuggestStatus('idle');
+    setResolveFailed(false);
+    onClear();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // When an address is locked, Backspace / Delete / printable keys must
+    // unlock the input so the user can edit without having to click ✕.
+    if (locked) {
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        unlockForEdit(lockedValue.slice(0, -1));
+        return;
+      }
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        unlockForEdit('');
+        return;
+      }
+      // Printable single-character keys (no modifier other than shift): replace
+      // the locked value with the typed character so editing starts cleanly.
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        unlockForEdit(e.key);
+        return;
+      }
+      // Other keys (Tab, Arrow, Escape, Ctrl+combos) fall through unchanged.
+      return;
+    }
+
     if (!open || suggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1298,11 +1340,10 @@ function AddressInput({
         <input
           type="text"
           value={locked ? lockedValue : text}
-          onChange={locked ? () => undefined : handleChange}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={c.addressPlaceholder}
           disabled={disabled || resolvingPick}
-          readOnly={locked}
           autoComplete="off"
           role="combobox"
           aria-autocomplete="list"
@@ -1603,6 +1644,10 @@ function sanitizeRuPublicFactor(line: string): string | null {
       'Деловые сигналы есть, но без крупного якоря спроса уровня БЦ или вокзала.',
     ],
     [
+      /Рядом промышленные объекты, но деловых магнитов нет — оценка ограничена для жилого сценария\.?/u,
+      'Рядом есть промышленные объекты, но нет крупного делового якоря для устойчивого потока командированных.',
+    ],
+    [
       /Есть несколько локальных магнитов спроса \(вторичный кластер\);\s*оценка не должна схлопываться в «почти ноль»\.?/u,
       'Поблизости есть несколько локальных точек спроса.',
     ],
@@ -1888,8 +1933,16 @@ function ASIPanel({
 }) {
   const router = useRouter();
   const {
-    magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
+    magnets, evergreenIndex: rawEvergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
+  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
+  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
+  const evergreenIndex = sanity?.displayScore ?? rawEvergreenIndex;
+  const bandAudience =
+    sanity?.displayAudience === 'BUSINESS' || sanity?.displayAudience === 'TOURIST'
+      ? sanity.displayAudience
+      : analysis.audienceAnalysis?.primaryAudience;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
   const conclusion =
     locale === 'ru'
@@ -1903,7 +1956,7 @@ function ASIPanel({
           analysis.audienceAnalysis,
         )
       : analysis.conclusion;
-  const band = getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+  const band = getBand(evergreenIndex, bandAudience);
   // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
   const strategy: 'mid_term' | 'hybrid' | 'short_term' =
     analysis.locationScore?.recommended_strategy ??
@@ -1924,7 +1977,9 @@ function ASIPanel({
 
   const hasMagnets = magnets.length > 0;
   const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
-  const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
+  const audienceLabelRu =
+    sanity?.audienceLabelRu
+    ?? (primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—');
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
   const incomeRange = (() => {
     const income = analysis.locationScore?.estimated_monthly_income;
@@ -1950,9 +2005,6 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
-  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
   const aboveFoldReasons = (() => {
     const ls = analysis.locationScore;
     const specificFactors = [
@@ -2150,7 +2202,7 @@ function ASIPanel({
               {locale === 'ru' ? 'Вердикт' : 'Verdict'}
             </p>
             <p className={`mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
-              {band.label}
+              {sanity?.verdictLabelRu ?? band.label}
             </p>
             <div className="mt-4 space-y-2">
               <button
