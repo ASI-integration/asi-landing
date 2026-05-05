@@ -144,3 +144,11 @@ export type {
   ResidentialDemoAudience,
   ResidentialDemoVerdictTone,
 } from './residential-demo-sanity';
+
+export { buildLocationDisplayModel } from './location-display-model';
+export type {
+  LocationDisplayModel,
+  LocationDisplayAudience,
+  LocationSafeDriver,
+  BuildLocationDisplayModelOptions,
+} from './location-display-model';

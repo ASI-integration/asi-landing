@@ -518,7 +518,7 @@ export function LocationStandaloneFullReport({
                     <span className="text-[11px] uppercase tracking-[0.18em] text-slate-300">Вердикт</span>
                   </div>
                   <p className={`mt-3 text-3xl sm:text-4xl font-black leading-tight ${summaryDecisionTone.text}`}>
-                    {summary?.verdict ?? '—'}
+                    {summary?.verdict_label_ru ?? summary?.verdict ?? '—'}
                   </p>
                   <p className="mt-3 text-base sm:text-lg text-slate-100 leading-relaxed max-w-2xl">
                     {summary?.short_reason ?? 'Нет короткого объяснения.'}

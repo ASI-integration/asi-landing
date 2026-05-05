@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchOsmData, buildAnalysis, applyResidentialDemoSanity } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, buildLocationDisplayModel } from '@/lib/location';
 import { cacheGet, cacheSet } from '@/lib/location/cache';
 import type { AnalysisMeta } from '@/lib/location/types';
 
@@ -70,21 +70,26 @@ function withDemoSanityPayload(args: {
   wantSpatial: boolean;
 }) {
   const { analysis, elementsCount, meta, locale, wantSpatial } = args;
-  const demoSanity = locale === 'ru' && !wantSpatial
-    ? applyResidentialDemoSanity(analysis)
-    : null;
-  const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
+  const displayModel = buildLocationDisplayModel(analysis, {
+    locale,
+    mode: wantSpatial ? 'commercial' : 'residential',
+  });
+  const demoSanity = displayModel.demoSanity ?? null;
+  const metaWithDemo = {
+    ...meta,
+    displayModel,
+    ...(demoSanity ? { demoSanity } : {}),
+  };
   return {
     analysis,
     elementsCount,
     meta: metaWithDemo,
-    ...(demoSanity ? {
-      demoSanity,
-      displayScore: demoSanity.displayScore,
-      displayAudience: demoSanity.displayAudience,
-      displayAudienceLabelRu: demoSanity.audienceLabelRu,
-      displayVerdictLabelRu: demoSanity.verdictLabelRu,
-    } : {}),
+    displayModel,
+    ...(demoSanity ? { demoSanity } : {}),
+    displayScore: displayModel.displayScore,
+    displayAudience: displayModel.displayAudience,
+    displayAudienceLabelRu: displayModel.audienceLabelRu,
+    displayVerdictLabelRu: displayModel.verdictLabelRu,
   };
 }
 

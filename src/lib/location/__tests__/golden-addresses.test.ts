@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { OSMElement } from '../types';
 import { buildAnalysis } from '../gravity-scoring';
+import { buildLocationDisplayModel } from '../location-display-model';
 import { buildLocationStandaloneReport } from '../standalone-report';
 
 /**
@@ -95,9 +96,11 @@ describe('location-analysis golden addresses', () => {
     ];
 
     const analysis = buildAnalysis(elements, subject.lat, subject.lon);
+    const displayModel = buildLocationDisplayModel(analysis, { locale: 'ru', mode: 'residential' });
     const report = buildLocationStandaloneReport({
       address: 'Москва, аналитический отчёт',
       analysis,
+      displayModel,
       verdict: 'synthetic input must not be used',
       market: 'RU',
     });
@@ -106,11 +109,13 @@ describe('location-analysis golden addresses', () => {
     expect(summary && summary.id === 'summary').toBe(true);
     if (!summary || summary.id !== 'summary') return;
 
-    expect(report.location_score).toBe(analysis.locationScore?.location_score);
-    expect(summary.location_score).toBe(analysis.locationScore?.location_score);
+    expect(report.location_score).toBe(displayModel.displayScore);
+    expect(summary.location_score).toBe(displayModel.displayScore);
+    expect(summary.display_audience).toBe(displayModel.displayAudience);
+    expect(summary.verdict_label_ru).toBe(displayModel.verdictLabelRu);
     expect(['стоит', 'осторожно', 'не стоит']).toContain(summary.verdict);
     expect(summary.verdict).not.toBe('synthetic input must not be used');
-    expect(summary.short_reason).toContain('Location_score');
+    expect(summary.short_reason).toBe(displayModel.reportNarrative);
 
     const risks = report.sections.find(s => s.id === 'risks');
     expect(risks && risks.id === 'risks').toBe(true);

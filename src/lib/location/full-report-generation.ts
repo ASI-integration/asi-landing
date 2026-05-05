@@ -1,6 +1,6 @@
 import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
 import type { AddressMarket } from '@/lib/location/address-providers/types';
-import { fetchOsmData, buildAnalysis } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, buildLocationDisplayModel } from '@/lib/location';
 import { buildCommercialReport, buildLocationStandaloneReport } from '@/lib/location/standalone-report';
 import { createStandaloneReport } from '@/lib/location/standalone-report-store';
 import {
@@ -31,6 +31,10 @@ export async function generateLocationStandaloneReportForRequest(
 
   const { elements } = await fetchOsmData(lat, lon);
   const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
+  const displayModel = buildLocationDisplayModel(analysis, {
+    locale: entity.locale === 'ru' ? 'ru' : 'en',
+    mode: entity.mode === 'commercial' ? 'commercial' : 'residential',
+  });
 
   const report =
     entity.mode === 'commercial'
@@ -38,6 +42,7 @@ export async function generateLocationStandaloneReportForRequest(
       : buildLocationStandaloneReport({
         address: entity.address,
         analysis,
+        displayModel,
         market: entity.locale === 'ru' ? 'RU' : 'INTERNATIONAL',
       });
 

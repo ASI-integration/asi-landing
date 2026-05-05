@@ -170,6 +170,9 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
     expect(res.status).toBe(200);
     expect(body.displayScore).toBeLessThanOrEqual(70);
     expect(body.displayAudience).not.toBe('BUSINESS');
+    expect(body.displayModel.displayScore).toBe(body.displayScore);
+    expect(body.displayModel.displayAudience).toBe(body.displayAudience);
+    expect(body.meta.displayModel.verdictLabelRu).toBe(body.displayModel.verdictLabelRu);
     expect(body.meta.demoSanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
     expect(body.meta.demoSanity.capReasonsRu).toContain(
       'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',

@@ -24,6 +24,7 @@ import type {
   DemandType,
   NeighborhoodEnvironmentConcernLevel,
   ResidentialDemoSanity,
+  LocationDisplayModel,
 } from '@/lib/location/client';
 import {
   useLocationTelemetryOptional,
@@ -40,7 +41,6 @@ import {
 import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
-import { applyResidentialDemoSanity } from '@/lib/location/client';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -75,7 +75,10 @@ interface SelectedAddress {
 }
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
-type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
+type AnalysisMetaWithDisplayModel = AnalysisMeta & {
+  demoSanity?: ResidentialDemoSanity;
+  displayModel?: LocationDisplayModel;
+};
 
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
@@ -228,7 +231,7 @@ async function fetchLocationAnalysis(
   lon: number,
   signal?: AbortSignal,
   opts?: { spatialFoundation?: boolean },
-): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
+): Promise<{ analysis: LocationAnalysis; meta: AnalysisMetaWithDisplayModel } | null> {
   try {
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
@@ -245,23 +248,26 @@ async function fetchLocationAnalysis(
     if (!res.ok) return null;
     const data = await res.json() as {
       analysis?: LocationAnalysis;
-      meta?: AnalysisMetaWithDemoSanity;
+      meta?: AnalysisMetaWithDisplayModel;
       demoSanity?: ResidentialDemoSanity;
+      displayModel?: LocationDisplayModel;
     };
     if (!data.analysis) return null;
     const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
       ...data.analysis,
       accessibilityStops: data.analysis.accessibilityStops ?? [],
     });
-    const metaBase: AnalysisMetaWithDemoSanity = data.meta ?? {
+    const metaBase: AnalysisMetaWithDisplayModel = data.meta ?? {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
       source: 'osm-overpass',
       cached: false,
     };
-    const meta: AnalysisMetaWithDemoSanity = data.demoSanity
-      ? { ...metaBase, demoSanity: data.demoSanity }
-      : metaBase;
+    const meta: AnalysisMetaWithDisplayModel = {
+      ...metaBase,
+      ...(data.demoSanity ? { demoSanity: data.demoSanity } : {}),
+      ...(data.displayModel ? { displayModel: data.displayModel } : {}),
+    };
     return { analysis, meta };
   } catch {
     return null;
@@ -1936,17 +1942,19 @@ function ASIPanel({
     magnets, evergreenIndex: rawEvergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
-  const evergreenIndex = sanity?.displayScore ?? rawEvergreenIndex;
+  const displayModel = isRuResidentialDemo
+    ? (meta as AnalysisMetaWithDisplayModel | null)?.displayModel
+    : null;
+  const sanity = displayModel?.demoSanity ?? (meta as AnalysisMetaWithDisplayModel | null)?.demoSanity ?? null;
+  const evergreenIndex = displayModel?.displayScore ?? rawEvergreenIndex;
   const bandAudience =
-    sanity?.displayAudience === 'BUSINESS' || sanity?.displayAudience === 'TOURIST'
-      ? sanity.displayAudience
+    displayModel?.displayAudience === 'BUSINESS' || displayModel?.displayAudience === 'TOURIST'
+      ? displayModel.displayAudience
       : analysis.audienceAnalysis?.primaryAudience;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
   const conclusion =
     locale === 'ru'
-      ? generateConclusion(
+      ? displayModel?.reportNarrative ?? generateConclusion(
           evergreenIndex,
           magnets,
           competitors,
@@ -1978,7 +1986,7 @@ function ASIPanel({
   const hasMagnets = magnets.length > 0;
   const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
   const audienceLabelRu =
-    sanity?.audienceLabelRu
+    displayModel?.audienceLabelRu
     ?? (primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—');
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
   const incomeRange = (() => {
@@ -2012,7 +2020,8 @@ function ASIPanel({
       ...(ls?.top_negative_factors ?? []),
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
-    const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
+    const canonical = displayModel?.safeDrivers.map(d => d.labelRu) ?? [];
+    const merged = canonical.length > 0 ? canonical : (sanity ? [...sanity.capReasonsRu, ...factors] : factors);
     const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(merged) : merged;
 
     return cleaned.slice(0, 2).map((factor) => {
@@ -2097,6 +2106,7 @@ function ASIPanel({
         address,
         analysis,
         verdict: conclusion || 'Итог: данных недостаточно для уверенного вывода.',
+        displayModel: displayModel ?? undefined,
       });
 
       try {
@@ -2127,7 +2137,8 @@ function ASIPanel({
       if (merged.length >= 4) break;
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
-    const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
+    const canonical = displayModel?.safeDrivers.map(d => d.labelRu) ?? [];
+    const base = canonical.length > 0 ? canonical : (merged.length > 0 ? merged : generateScoreFactors(analysis, locale));
     const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(base) : base;
     return cleaned.slice(0, 2);
   })();
@@ -2202,7 +2213,7 @@ function ASIPanel({
               {locale === 'ru' ? 'Вердикт' : 'Verdict'}
             </p>
             <p className={`mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
-              {sanity?.verdictLabelRu ?? band.label}
+              {displayModel?.verdictLabelRu ?? band.label}
             </p>
             <div className="mt-4 space-y-2">
               <button

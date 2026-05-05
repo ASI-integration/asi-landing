@@ -14,6 +14,10 @@ import {
   type PrimeMagnetAnchorType,
   type ResidentialMarketMode,
 } from './residential-prime-magnets';
+import {
+  buildLocationDisplayModel,
+  type LocationDisplayModel,
+} from './location-display-model';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -37,14 +41,18 @@ export type LocationStandaloneReport = {
   version: 'v1';
   address: string;
   generated_at_iso: string;
-  /** Real score from analysis.locationScore.location_score, never derived in UI. */
+  /** Public display score from the canonical display model, never derived in UI. */
   location_score: number | null;
+  display_model?: LocationDisplayModel;
   fields_used: string[];
   data_sources: Array<{ field: string; source: string }>;
   sections: Array<
     | {
         id: 'summary';
         verdict: LocationStandaloneVerdict;
+        display_audience?: LocationDisplayModel['displayAudience'];
+        verdict_label_ru?: string;
+        cap_reasons?: string[];
         short_reason: string;
         location_score: number | null;
         drivers: string[];
@@ -302,12 +310,20 @@ function strategyTitleRu(s: RecommendedStrategy): string {
 function pickBusinessFitVerdict(
   analysis: LocationAnalysis,
   primeMagnets: ReturnType<typeof filterResidentialPrimeMagnets>,
+  displayModel: LocationDisplayModel,
 ): {
   business_fit_verdict: 'fit' | 'not_fit' | 'unknown';
   note: string | null;
 } {
   const aa = analysis.audienceAnalysis;
   if (!aa) return { business_fit_verdict: 'unknown', note: null };
+
+  if (displayModel.displayAudience !== 'BUSINESS') {
+    return {
+      business_fit_verdict: 'not_fit',
+      note: 'Публичная модель не подтверждает деловой сценарий: сильный деловой якорь спроса отсутствует.',
+    };
+  }
 
   // Use policy-filtered prime magnets (within 1.5 km) for business-fit determination
   const hasPrimaryAccess = primeMagnets.some(m => m.distance <= 1500);
@@ -347,45 +363,46 @@ function residentialAudienceTitleRu(type: ResidentialAudienceType | null, analys
 }
 
 function buildStandaloneVerdict(args: {
-  score: LocationAnalysis['locationScore'];
+  displayModel: LocationDisplayModel;
   residentialConfidence: ResidentialAnalysisConfidence | null;
   competitorPressureLevel: LocationAnalysis['gravityExplanation']['competitorPressureLevel'];
 }): { verdict: LocationStandaloneVerdict; shortReason: string } {
-  const { score, residentialConfidence, competitorPressureLevel } = args;
-  const locationScore = score?.location_score;
+  const { displayModel, residentialConfidence, competitorPressureLevel } = args;
+  const locationScore = displayModel.displayScore;
 
-  if (!score || typeof locationScore !== 'number' || !Number.isFinite(locationScore)) {
+  if (typeof locationScore !== 'number' || !Number.isFinite(locationScore)) {
     return {
       verdict: 'осторожно',
-      shortReason: 'Итоговый location_score отсутствует в анализе, поэтому решение нужно подтверждать вручную.',
+      shortReason: 'Итоговый публичный score отсутствует в анализе, поэтому решение нужно подтверждать вручную.',
     };
   }
 
-  const demand = score.breakdown.demand_score;
-  const supply = score.breakdown.supply_score;
+  const demand = args.displayModel.residentialSanityApplied ? locationScore : 100;
+  const supply = args.displayModel.residentialSanityApplied ? locationScore : 100;
   const hasHardRisk =
     competitorPressureLevel === 'high' ||
     supply <= 45 ||
     demand <= 45 ||
-    residentialConfidence === 'low';
+    residentialConfidence === 'low' ||
+    displayModel.verdictTone === 'weak';
 
-  if (locationScore >= 72 && !hasHardRisk) {
+  if (locationScore >= 72 && !hasHardRisk && displayModel.displayAudience !== 'RESIDENTIAL') {
     return {
       verdict: 'стоит',
-      shortReason: `Location_score ${locationScore}/100: сильный потенциал без критичного риска по спросу, конкуренции или уверенности модели.`,
+      shortReason: displayModel.reportNarrative,
     };
   }
 
   if (locationScore < 48 || (locationScore < 55 && hasHardRisk)) {
     return {
       verdict: 'не стоит',
-      shortReason: `Location_score ${locationScore}/100: потенциал слабый, а риски спроса/конкуренции требуют слишком большой компенсации.`,
+      shortReason: displayModel.reportNarrative,
     };
   }
 
   return {
     verdict: 'осторожно',
-    shortReason: `Location_score ${locationScore}/100: объект можно рассматривать только после ручной проверки цены, аудитории и конкурентного окружения.`,
+    shortReason: displayModel.reportNarrative,
   };
 }
 
@@ -507,15 +524,22 @@ function buildRecommendations(args: {
 export function buildLocationStandaloneReport(args: {
   address: string;
   analysis: LocationAnalysis;
-  /** Deprecated: verdict is now generated from analysis.locationScore. */
+  /** Deprecated: public verdict is generated from LocationDisplayModel. */
   verdict?: string;
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
   market?: ResidentialMarketMode;
+  displayModel?: LocationDisplayModel;
 }): LocationStandaloneReport {
   const { analysis } = args;
   const market = args.market ?? 'RU';
+  const displayModel = args.displayModel ?? buildLocationDisplayModel(analysis, {
+    locale: market === 'RU' ? 'ru' : 'en',
+    mode: 'residential',
+  });
   const score = analysis.locationScore;
-  const drivers = (score?.top_positive_factors ?? []).slice(0, 3);
+  const drivers = displayModel.safeDrivers.length > 0
+    ? displayModel.safeDrivers.map(d => d.labelRu).slice(0, 3)
+    : (score?.top_positive_factors ?? []).slice(0, 3);
 
   const recommended = score?.recommended_strategy ?? null;
   const incomeRecommended =
@@ -539,7 +563,7 @@ export function buildLocationStandaloneReport(args: {
   const secondaryPrime = primeMagnets.slice(3, 5);
 
   // Business-fit section: use prime-filtered magnets within 1.5 km
-  const businessFit = pickBusinessFitVerdict(analysis, primeMagnets);
+  const businessFit = pickBusinessFitVerdict(analysis, primeMagnets, displayModel);
   const primaryMagnetRows = primaryPrime.map(m => ({
     title: `${m.categoryLabelRu}: ${m.name}`,
     distance_m: Math.round(m.distance),
@@ -555,10 +579,10 @@ export function buildLocationStandaloneReport(args: {
     category_label_ru: m.categoryLabelRu,
   });
 
-  const locationScore = score?.location_score ?? null;
+  const locationScore = displayModel.displayScore;
   const residential = analysis.residentialAnalysis;
   const { verdict, shortReason } = buildStandaloneVerdict({
-    score,
+    displayModel,
     residentialConfidence: residential?.confidence ?? null,
     competitorPressureLevel: analysis.gravityExplanation.competitorPressureLevel,
   });
@@ -570,7 +594,13 @@ export function buildLocationStandaloneReport(args: {
     address: args.address,
     generated_at_iso: new Date().toISOString(),
     location_score: locationScore,
+    display_model: displayModel,
     fields_used: [
+      'locationDisplayModel.displayScore',
+      'locationDisplayModel.displayAudience',
+      'locationDisplayModel.verdictLabelRu',
+      'locationDisplayModel.safeDrivers',
+      'locationDisplayModel.capReasons',
       'analysis.locationScore.location_score',
       'analysis.locationScore.top_positive_factors',
       'analysis.locationScore.top_negative_factors',
@@ -585,8 +615,8 @@ export function buildLocationStandaloneReport(args: {
       'analysis.residentialAnalysis',
     ],
     data_sources: [
-      { field: 'location_score', source: 'analysis.locationScore.location_score from buildAnalysis()' },
-      { field: 'summary.verdict / short_reason', source: 'analysis.locationScore + competition + residential confidence' },
+      { field: 'location_score', source: 'locationDisplayModel.displayScore from buildLocationDisplayModel()' },
+      { field: 'summary.verdict / short_reason', source: 'locationDisplayModel + competition + residential confidence' },
       { field: 'risks', source: 'top_negative_factors + magnets + competition + score breakdown + data confidence' },
       { field: 'recommendations', source: 'generated from verdict, risks, residentialAnalysis and recommended strategy' },
       { field: 'income assumptions', source: 'analysis.locationScore.income_model and model limitations' },
@@ -596,6 +626,9 @@ export function buildLocationStandaloneReport(args: {
       {
         id: 'summary',
         verdict,
+        display_audience: displayModel.displayAudience,
+        verdict_label_ru: displayModel.verdictLabelRu,
+        cap_reasons: displayModel.capReasons,
         short_reason: shortReason,
         location_score: locationScore,
         drivers,
