@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  attachLocationReportRequestPayment,
   createLocationReportRequest,
+  getLocationReportRequestById,
   type LocationReportPaymentProvider,
 } from '@/lib/location/report-request-store';
+import { generateAndAttachLocationReportForRequest } from '@/lib/location/full-report-generation';
+import { createLocationReportYooKassaPayment } from '@/lib/location/yookassa-payment';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { resolveAccountIdForUser } from '@/lib/accounts';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function parseLocale(v: unknown): 'ru' | 'en' {
   return v === 'en' ? 'en' : 'ru';
@@ -17,16 +22,13 @@ function parseMode(v: unknown): 'residential' | 'commercial' {
 }
 
 function resolveRuPaymentProvider(): LocationReportPaymentProvider {
-  return process.env.LOCATION_REPORT_PAYMENT_PROVIDER === 'prodamus'
-    ? 'prodamus'
+  return process.env.LOCATION_REPORT_PAYMENT_PROVIDER === 'yookassa'
+    ? 'yookassa'
     : 'manual';
 }
 
 function resolveRuPaymentUrl(provider: LocationReportPaymentProvider): string | null {
-  if (provider === 'prodamus') {
-    return process.env.LOCATION_REPORT_PAYMENT_URL || process.env.PRODAMUS_PAYMENT_URL || null;
-  }
-
+  if (provider === 'yookassa') return null;
   return process.env.LOCATION_REPORT_PAYMENT_URL || null;
 }
 
@@ -102,15 +104,38 @@ export async function POST(req: NextRequest) {
       email: email ?? sessionEmail,
       productType: 'location_report_detail',
     });
+    let providerPaymentId: string | null = null;
+    let providerPaymentUrl = paymentUrl;
+
+    if (isRuPaidProduct && paymentProvider === 'yookassa') {
+      const payment = await createLocationReportYooKassaPayment({
+        requestId,
+        email: email ?? sessionEmail,
+        description: `ASI: полный отчет по локации (${address})`,
+      });
+      providerPaymentId = payment.paymentId;
+      providerPaymentUrl = payment.paymentUrl;
+      await attachLocationReportRequestPayment({
+        requestId,
+        paymentId: providerPaymentId,
+        paymentUrl: providerPaymentUrl,
+        paymentProvider: 'yookassa',
+      });
+    }
+
+    const { reportId } = await generateAndAttachLocationReportForRequest(requestId);
+    const entity = await getLocationReportRequestById(requestId);
 
     return NextResponse.json({
       requestId,
       report_request_id: requestId,
-      status: 'queued',
-      access_status: accessStatus,
-      payment_provider: paymentProvider,
-      payment_url: paymentUrl,
+      status: entity?.status ?? 'completed',
+      access_status: entity?.access_status ?? accessStatus,
+      payment_provider: entity?.payment_provider ?? paymentProvider,
+      payment_id: entity?.payment_id ?? providerPaymentId,
+      payment_url: entity?.payment_url ?? providerPaymentUrl,
       product_type: 'location_report_detail',
+      reportId,
       next_action: isRuPaidProduct
         ? {
           type: 'payment_required',

@@ -17,7 +17,9 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ requestId: st
       status: entity.status,
       access_status: entity.access_status,
       payment_provider: entity.payment_provider,
+      payment_id: entity.payment_id,
       payment_url: entity.payment_url,
+      payment_confirmed_at: entity.payment_confirmed_at,
       product_type: entity.product_type,
       reportId: entity.report_id,
       error: entity.error,
@@ -25,7 +27,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ requestId: st
       updatedAt: entity.updated_at,
       mode: entity.mode,
       locale: entity.locale,
-      next_action: entity.access_status === 'generated' && entity.report_id
+      next_action: (entity.access_status === 'generated' || entity.access_status === 'granted') && entity.report_id
         ? {
           type: 'open_report',
           url: entity.locale === 'ru'
@@ -34,6 +36,8 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ requestId: st
         }
         : entity.access_status === 'paid'
           ? { type: 'generate_report' }
+          : entity.access_status === 'granted'
+            ? { type: 'processing_unlocked' }
           : entity.access_status === 'pending_payment'
             ? {
               type: 'payment_required',

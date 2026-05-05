@@ -2,7 +2,7 @@ import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 
 const YOOKASSA_SECRET = process.env.YOOKASSA_SECRET_KEY || 'test_secret';
 const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || 'test_shop';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const APP_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 export class YookassaProvider implements PaymentProvider {
   async createPaymentLink(

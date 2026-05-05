@@ -104,6 +104,7 @@ function FitBadge({ level }: { level: 'high' | 'medium' | 'low' | 'poor' }) {
 
 export function CommercialReportView({ report }: { report: LocationCommercialReport }) {
   const pressure = pressureLabel(report.competition.pressure_level);
+  const isPreliminary = report.formatFit.overallVerdict === 'weak';
 
   const tocItems = [
     { id: 'flow', label: 'Структура потока' },
@@ -128,6 +129,11 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
           <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-400 mb-2">
             Пространственный анализ локации · Коммерческий режим
           </p>
+          {isPreliminary ? (
+            <div className="mb-3 inline-flex rounded-full border border-orange-900/60 bg-orange-950/35 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-orange-200">
+              Предварительный анализ
+            </div>
+          ) : null}
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
             Детальная пространственная карта локации
           </h1>
@@ -183,7 +189,9 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
 
           {/* Overall verdict pill */}
           <div className={`mt-5 inline-flex items-center gap-3 px-5 py-3 rounded-2xl border ${verdictColor(report.formatFit.overallVerdict)}`}>
-            <span className="text-sm font-bold">{report.formatFit.overallVerdictLabelRu}</span>
+            <span className="text-sm font-bold">
+              {isPreliminary ? 'Предварительный анализ: ' : ''}{report.formatFit.overallVerdictLabelRu}
+            </span>
           </div>
         </div>
 
@@ -344,7 +352,9 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
           title="Итоговый вывод"
         >
           <div className={`p-5 rounded-xl border ${verdictColor(report.formatFit.overallVerdict)}`}>
-            <p className="text-base font-semibold mb-2">{report.formatFit.overallVerdictLabelRu}</p>
+            <p className="text-base font-semibold mb-2">
+              {isPreliminary ? 'Предварительный анализ: ' : ''}{report.formatFit.overallVerdictLabelRu}
+            </p>
             <p className="text-sm leading-relaxed text-slate-300">{report.recommendation}</p>
           </div>
           <p className="mt-5 text-[12px] text-slate-600 leading-relaxed">

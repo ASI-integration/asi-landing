@@ -6,7 +6,11 @@ import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/ev
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
-import { markLocationReportRequestPaid } from '@/lib/location/report-request-store';
+import {
+  confirmLocationReportPayment,
+  getLocationReportRequestById,
+  getLocationReportRequestByPaymentId,
+} from '@/lib/location/report-request-store';
 
 /**
  * Общая обработка уведомлений ЮKassa.
@@ -45,21 +49,35 @@ export async function handleYookassaWebhook(req: Request): Promise<NextResponse>
     const productType = meta?.product_type || meta?.productType;
     const paymentMethodId = (paymentObj.payment_method as Record<string, string> | undefined)?.id;
 
-    // TODO: YooKassa retry can be restored after website maturity review.
-    // Location report webhooks must include both location_report_request_id and
-    // product_type=location_report_detail before server-side access is opened.
+    const locationRequestFromMetadata = locationReportRequestId
+      ? await getLocationReportRequestById(locationReportRequestId)
+      : null;
+    const existingLocationRequest = locationRequestFromMetadata
+      ?? await getLocationReportRequestByPaymentId(transactionId);
+    const isLocationReportPaymentMatch =
+      existingLocationRequest?.payment_provider === 'yookassa'
+      && existingLocationRequest.payment_id === transactionId;
+
     if (
       raw?.event === 'payment.succeeded'
-      && locationReportRequestId
-      && productType === 'location_report_detail'
+      && existingLocationRequest
+      && (productType === 'location_report_detail' || existingLocationRequest?.product_type === 'location_report_detail')
       && status === 'paid'
     ) {
-      await markLocationReportRequestPaid({
-        requestId: locationReportRequestId,
+      if (!isLocationReportPaymentMatch) {
+        console.warn(
+          `[YooKassa Webhook] Location report payment mismatch request_id=${existingLocationRequest.id} tx=${transactionId} stored_tx=${existingLocationRequest.payment_id ?? 'null'}`
+        );
+        if (eventId) markWebhookProcessed('yookassa', eventId);
+        return NextResponse.json({ received: true });
+      }
+
+      const entity = await confirmLocationReportPayment(existingLocationRequest.id, {
         paymentId: transactionId,
         paymentProvider: 'yookassa',
       });
 
+      console.log(`[YooKassa Webhook] location report access granted request_id=${entity.id}`);
       if (eventId) markWebhookProcessed('yookassa', eventId);
       return NextResponse.json({ received: true });
     }

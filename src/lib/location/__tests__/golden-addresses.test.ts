@@ -76,6 +76,75 @@ describe('location-analysis golden addresses', () => {
     expect(surfacedNames).not.toContain('Супермаркет');
   });
 
+  it('standalone paid report exposes analytical sections from real analysis fields', () => {
+    const subject = { lat: 55.751, lon: 37.618 };
+    const elements: OSMElement[] = [
+      {
+        type: 'relation',
+        id: 401,
+        center: { lat: 55.755, lon: 37.616 },
+        tags: { name: 'Метро Охотный Ряд', station: 'subway', railway: 'station' },
+      },
+      {
+        type: 'node',
+        id: 402,
+        lat: 55.7525,
+        lon: 37.623,
+        tags: { name: 'Городская больница №1', amenity: 'hospital' },
+      },
+    ];
+
+    const analysis = buildAnalysis(elements, subject.lat, subject.lon);
+    const report = buildLocationStandaloneReport({
+      address: 'Москва, аналитический отчёт',
+      analysis,
+      verdict: 'synthetic input must not be used',
+      market: 'RU',
+    });
+
+    const summary = report.sections.find(s => s.id === 'summary');
+    expect(summary && summary.id === 'summary').toBe(true);
+    if (!summary || summary.id !== 'summary') return;
+
+    expect(report.location_score).toBe(analysis.locationScore?.location_score);
+    expect(summary.location_score).toBe(analysis.locationScore?.location_score);
+    expect(['стоит', 'осторожно', 'не стоит']).toContain(summary.verdict);
+    expect(summary.verdict).not.toBe('synthetic input must not be used');
+    expect(summary.short_reason).toContain('Location_score');
+
+    const risks = report.sections.find(s => s.id === 'risks');
+    expect(risks && risks.id === 'risks').toBe(true);
+    if (!risks || risks.id !== 'risks') return;
+    expect(risks.items.every(item => item.title && item.explanation)).toBe(true);
+
+    const recommendations = report.sections.find(s => s.id === 'recommendations');
+    expect(recommendations && recommendations.id === 'recommendations').toBe(true);
+    if (!recommendations || recommendations.id !== 'recommendations') return;
+    expect(recommendations.location_action).toBeTruthy();
+    expect(recommendations.best_rental_strategy).toBeTruthy();
+    expect(recommendations.target_audience).toBeTruthy();
+    expect(recommendations.avoid).toBeTruthy();
+
+    const income = report.sections.find(s => s.id === 'income_strategy');
+    expect(income && income.id === 'income_strategy').toBe(true);
+    if (!income || income.id !== 'income_strategy') return;
+    expect(income.assumptions.map(a => a.title)).toEqual([
+      'До расходов',
+      'Occupancy proxy',
+      'ADR assumptions',
+      'Ограничения данных',
+    ]);
+
+    const residential = report.sections.find(s => s.id === 'residential_analysis');
+    expect(residential && residential.id === 'residential_analysis').toBe(true);
+    if (!residential || residential.id !== 'residential_analysis') return;
+    expect(residential.residentialAudienceType).toBe(analysis.residentialAnalysis?.residentialAudienceType);
+    expect(residential.residentialStrategy).toBe(analysis.residentialAnalysis?.residentialStrategy);
+    expect(residential.confidence).toBe(analysis.residentialAnalysis?.confidence);
+    expect(residential.strategyRationaleRu).toBe(analysis.residentialAnalysis?.strategyRationaleRu);
+    expect(residential.operationalNoteRu).toBe(analysis.residentialAnalysis?.operationalNoteRu);
+  });
+
   it('INTERNATIONAL residential: suppresses conditional-persistence categories (stadium/convention) more aggressively', () => {
     // Keep anchors within the prime-magnet reporting radius.
     const subject = { lat: 51.5306, lon: -0.1242 };
