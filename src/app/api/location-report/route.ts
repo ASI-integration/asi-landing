@@ -21,7 +21,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
 import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress, cacheSet } from '@/lib/location/cache';
-import { fetchOsmData, buildAnalysis, wrapLocationReport } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, buildLocationDisplayModel, wrapLocationReport } from '@/lib/location';
 import {
   getLocationReportRequestById,
   hasPaidLocationReportAccess,
@@ -120,7 +120,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const report = wrapLocationReport(locationScore, isPaid);
+    const displayModel = buildLocationDisplayModel(analysis, {
+      locale: market === 'ru' ? 'ru' : 'en',
+      mode: 'residential',
+    });
+    const report = wrapLocationReport(locationScore, isPaid, displayModel);
 
     return NextResponse.json({
       address: normalizeAddress(rawAddress),

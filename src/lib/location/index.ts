@@ -135,6 +135,21 @@ export {
 
 export { buildLocationStandaloneReport, isLocationStandaloneReportV1 } from './standalone-report';
 export type { PrimeMagnetAnchorType } from './residential-prime-magnets';
+export {
+  LOCATION_REPORT_OBJECT_TYPES,
+  LOCATION_REPORT_OBJECT_STATUSES,
+  LOCATION_REPORT_INTENDED_STRATEGIES,
+  LOCATION_REPORT_RENOVATION_LEVELS,
+  LOCATION_REPORT_PARKING_VALUES,
+  LOCATION_REPORT_MODULES,
+  LOCATION_REPORT_INCOME_DISCLAIMER_RU,
+  validateLocationReportIntake,
+} from './report-intake';
+export type {
+  LocationReportIntake,
+  LocationReportModule,
+  LocationReportObjectParams,
+} from './report-intake';
 
 export { buildResidentialAnalysis } from './residential-analysis';
 

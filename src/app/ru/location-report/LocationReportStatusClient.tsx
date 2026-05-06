@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getLocationReportPaymentAction } from './payment-actions';
 
 const manualReportPriceRub = Number(process.env.NEXT_PUBLIC_LOCATION_REPORT_PRICE_RUB);
 const MANUAL_REPORT_PRICE_RUB =
@@ -35,7 +36,6 @@ export function LocationReportStatusClient({
   const [status, setStatus] = useState<RequestStatus | null>(initialStatus ?? null);
   const [loading, setLoading] = useState(Boolean(requestId) && !initialStatus);
   const [generating, setGenerating] = useState(false);
-  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,40 +97,6 @@ export function LocationReportStatusClient({
     }
   }
 
-  async function confirmPayment() {
-    if (!requestId || confirmingPayment) return;
-    setConfirmingPayment(true);
-    setErr(null);
-    try {
-      const res = await fetch('/api/location-full-report/confirm-payment', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ requestId }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || 'confirm_failed');
-
-      setStatus(current => ({
-        ...current,
-        ...json,
-        requestId,
-        reportId: json?.reportId ?? current?.reportId ?? null,
-        access_status: json?.access_status ?? current?.access_status,
-      }));
-
-      if (json?.next_action?.url) {
-        router.replace(json.next_action.url);
-      } else {
-        router.replace(`/ru/location-report?requestId=${encodeURIComponent(requestId)}`);
-      }
-      router.refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setConfirmingPayment(false);
-    }
-  }
-
   const statusView = (() => {
     if (!requestId) return null;
     const accessStatus = status?.access_status;
@@ -138,6 +104,7 @@ export function LocationReportStatusClient({
     const paymentUrl = status?.payment_url || null;
     const isYooKassaPayment = status?.payment_provider === 'yookassa';
     const isManualPayment = status?.payment_provider === 'manual';
+    const paymentAction = getLocationReportPaymentAction(status);
 
     return (
       <div className="min-h-screen bg-slate-950 text-white">
@@ -153,7 +120,7 @@ export function LocationReportStatusClient({
               <p className="mt-3 text-slate-400 leading-relaxed">
                 {isYooKassaPayment
                   ? 'Оплатите полный отчёт картой. После успешной оплаты YooKassa вернёт вас на страницу статуса, а доступ откроется автоматически.'
-                  : 'Оплатите полный отчёт вручную. После перевода нажмите «Я оплатил» — страница проверит заявку и сразу откроет отчёт.'}
+                  : 'YooKassa сейчас не настроена для этой заявки. Свяжитесь с ASI для оплаты: доступ откроется только после серверного или админского подтверждения.'}
               </p>
             ) : null}
 
@@ -181,7 +148,7 @@ export function LocationReportStatusClient({
                     href={paymentUrl}
                     className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-6 py-4 text-sm font-bold text-slate-950 shadow-lg shadow-indigo-950/20 transition-colors hover:bg-slate-100"
                   >
-                    Оплатить картой
+                    {paymentAction.kind === 'yookassa' ? paymentAction.label : 'Оплатить картой / СБП'}
                   </a>
                 ) : (
                   <p className="mt-5 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
@@ -222,9 +189,9 @@ export function LocationReportStatusClient({
                     <div className="mt-5 rounded-2xl border border-slate-800/70 bg-slate-950/35 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Инструкция</p>
                       <ol className="mt-3 space-y-2 text-sm text-slate-300 leading-relaxed">
-                        <li>1. Переведите сумму по СБП по QR выше или по реквизитам, которые дал менеджер ASI.</li>
-                        <li>2. В комментарии к платежу укажите номер заявки.</li>
-                        <li>3. После перевода нажмите кнопку «Я оплатил».</li>
+                        <li>1. Свяжитесь с ASI и укажите номер заявки.</li>
+                        <li>2. Менеджер даст безопасный способ оплаты или выставит ссылку на платёж.</li>
+                        <li>3. Доступ откроется после подтверждения на сервере или админом ASI.</li>
                       </ol>
                       <div className="mt-4 rounded-xl border border-slate-800/70 bg-slate-900/35 p-3">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Номер заявки</p>
@@ -232,14 +199,12 @@ export function LocationReportStatusClient({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={confirmPayment}
-                      disabled={confirmingPayment || loading}
-                      className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-6 py-4 text-sm font-bold text-slate-950 shadow-lg shadow-indigo-950/20 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
+                    <a
+                      href={paymentAction.kind === 'manual_contact' ? paymentAction.url : 'mailto:info@asi-global.ru'}
+                      className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-6 py-4 text-sm font-bold text-slate-950 shadow-lg shadow-indigo-950/20 transition-colors hover:bg-slate-100"
                     >
-                      {confirmingPayment ? 'проверяем оплату...' : 'Я оплатил'}
-                    </button>
+                      {paymentAction.kind === 'manual_contact' ? paymentAction.label : 'Связаться для оплаты'}
+                    </a>
                   </div>
                 </div>
               </div>

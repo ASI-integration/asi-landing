@@ -20,6 +20,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ requestId: st
       payment_id: entity.payment_id,
       payment_url: entity.payment_url,
       payment_confirmed_at: entity.payment_confirmed_at,
+      report_intake: entity.report_intake,
       product_type: entity.product_type,
       reportId: entity.report_id,
       error: entity.error,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildLocationDisplayModel } from '../location-display-model';
 import { buildLocationStandaloneReport } from '../standalone-report';
+import type { LocationReportIntake } from '../report-intake';
 import type {
   LocationAnalysis,
   MagnetItem,
@@ -158,6 +159,15 @@ function murinoIndustrialEdge(): LocationAnalysis {
   });
 }
 
+const intakeWithoutObjectParams: LocationReportIntake = {
+  object_type: 'apartment',
+  object_status: 'checking_address',
+  intended_strategy: 'short_term',
+  object_params: { parking: 'unknown' },
+  requested_modules: ['income_range', 'strategy_comparison', 'district_risks', 'decision'],
+  income_accuracy_acknowledged: true,
+};
+
 describe('LocationDisplayModel canonical residential interpretation', () => {
   it('caps Murino-style industrial edge and does not expose BUSINESS as public audience', () => {
     const model = buildLocationDisplayModel(murinoIndustrialEdge(), {
@@ -206,5 +216,57 @@ describe('LocationDisplayModel canonical residential interpretation', () => {
 
     expect(model.displayAudience).not.toBe('BUSINESS');
     expect(model.safeDrivers.map(d => d.labelRu).join(' ')).not.toMatch(/Стабильный поток командированных: производственная зона рядом/i);
+  });
+
+  it('shows cautious income as a range for medium/weak display scores', () => {
+    const analysis = murinoIndustrialEdge();
+    const model = buildLocationDisplayModel(analysis, {
+      locale: 'ru',
+      mode: 'residential',
+    });
+    const report = buildLocationStandaloneReport({
+      address: 'Мурино, Оборонная улица, 37',
+      analysis,
+      displayModel: model,
+      reportIntake: intakeWithoutObjectParams,
+      market: 'RU',
+    });
+    const summary = report.sections.find(s => s.id === 'summary');
+    expect(summary && summary.id === 'summary').toBe(true);
+    if (!summary || summary.id !== 'summary') return;
+
+    expect(model.displayScore).toBeLessThanOrEqual(55);
+    expect(report.report_intake).toEqual(intakeWithoutObjectParams);
+    expect(summary.income_rub_month).toBeNull();
+    expect(summary.income_range_rub).toEqual({ low: 60000, high: 95000 });
+    expect(summary.income_confidence).toBe('low');
+    expect(summary.income_note).toMatch(/Осторожная доходная вилка/);
+    expect(summary.income_note).not.toMatch(/гарантирован/i);
+  });
+
+  it('hides per-strategy point income in paid income_strategy section when confidence is low', () => {
+    const analysis = murinoIndustrialEdge();
+    const model = buildLocationDisplayModel(analysis, {
+      locale: 'ru',
+      mode: 'residential',
+    });
+    const report = buildLocationStandaloneReport({
+      address: 'Мурино, Оборонная улица, 37',
+      analysis,
+      displayModel: model,
+      reportIntake: intakeWithoutObjectParams,
+      market: 'RU',
+    });
+    const income = report.sections.find(s => s.id === 'income_strategy');
+    expect(income && income.id === 'income_strategy').toBe(true);
+    if (!income || income.id !== 'income_strategy') return;
+
+    expect(income.income_confidence).toBe('low');
+    expect(income.monthly_income_rub.short_term).toBeNull();
+    expect(income.monthly_income_rub.hybrid).toBeNull();
+    expect(income.monthly_income_rub.mid_term).toBeNull();
+    expect(income.income_range_rub).not.toBeNull();
+    expect(income.assumptions.length).toBeGreaterThan(0);
+    expect(income.positioning_hint ?? '').not.toMatch(/гарантирован/i);
   });
 });

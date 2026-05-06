@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { LocationReportIntake } from './report-intake';
 
 export type LocationReportMode = 'residential' | 'commercial';
 export type LocationReportLocale = 'ru' | 'en';
@@ -33,6 +34,7 @@ export type LocationReportRequestEntity = {
   payment_id: string | null;
   payment_url: string | null;
   payment_confirmed_at: string | null;
+  report_intake: LocationReportIntake | null;
   product_type: LocationReportProductType;
   status: LocationReportRequestStatus;
   report_id: string | null;
@@ -56,6 +58,7 @@ export async function createLocationReportRequest(args: {
   email?: string | null;
   paymentId?: string | null;
   paymentUrl?: string | null;
+  reportIntake?: LocationReportIntake | null;
   productType?: LocationReportProductType;
 }): Promise<{ requestId: string }> {
   const { data, error } = await supabase
@@ -76,6 +79,7 @@ export async function createLocationReportRequest(args: {
       payment_provider: args.paymentProvider ?? 'manual',
       payment_id: args.paymentId ?? null,
       payment_url: args.paymentUrl ?? null,
+      report_intake: args.reportIntake ?? null,
       product_type: args.productType ?? 'location_report_detail',
       status: 'queued',
     })
@@ -91,7 +95,7 @@ export async function getLocationReportRequestById(
 ): Promise<LocationReportRequestEntity | null> {
   const { data, error } = await supabase
     .from('location_report_requests')
-    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, product_type, status, report_id, error, created_at, updated_at')
+    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, report_intake, product_type, status, report_id, error, created_at, updated_at')
     .eq('id', requestId)
     .maybeSingle();
 
@@ -105,7 +109,7 @@ export async function getLocationReportRequestByReportId(
 ): Promise<LocationReportRequestEntity | null> {
   const { data, error } = await supabase
     .from('location_report_requests')
-    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, product_type, status, report_id, error, created_at, updated_at')
+    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, report_intake, product_type, status, report_id, error, created_at, updated_at')
     .eq('report_id', reportId)
     .maybeSingle();
 
@@ -119,7 +123,7 @@ export async function getLocationReportRequestByPaymentId(
 ): Promise<LocationReportRequestEntity | null> {
   const { data, error } = await supabase
     .from('location_report_requests')
-    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, product_type, status, report_id, error, created_at, updated_at')
+    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, report_intake, product_type, status, report_id, error, created_at, updated_at')
     .eq('payment_id', paymentId)
     .maybeSingle();
 
@@ -179,7 +183,7 @@ export async function confirmLocationReportPayment(
   if (args.paymentProvider) query = query.eq('payment_provider', args.paymentProvider);
 
   const { data, error } = await query
-    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, product_type, status, report_id, error, created_at, updated_at')
+    .select('id, locale, mode, user_id, account_id, email, address, lat, lon, delivery_channel, delivery_target, access_tier, access_status, payment_provider, payment_id, payment_url, payment_confirmed_at, report_intake, product_type, status, report_id, error, created_at, updated_at')
     .single();
 
   if (error) throw new Error(error.message);

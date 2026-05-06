@@ -18,6 +18,10 @@ import {
   buildLocationDisplayModel,
   type LocationDisplayModel,
 } from './location-display-model';
+import {
+  hasObjectParamsForIncome,
+  type LocationReportIntake,
+} from './report-intake';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -44,6 +48,7 @@ export type LocationStandaloneReport = {
   /** Public display score from the canonical display model, never derived in UI. */
   location_score: number | null;
   display_model?: LocationDisplayModel;
+  report_intake?: LocationReportIntake | null;
   fields_used: string[];
   data_sources: Array<{ field: string; source: string }>;
   sections: Array<
@@ -57,6 +62,9 @@ export type LocationStandaloneReport = {
         location_score: number | null;
         drivers: string[];
         income_rub_month: number | null;
+        income_range_rub: { low: number; high: number } | null;
+        income_confidence: 'high' | 'medium' | 'low' | null;
+        income_note: string | null;
         recommended_strategy: RecommendedStrategy | null;
       }
     | {
@@ -110,6 +118,9 @@ export type LocationStandaloneReport = {
           hybrid: number | null;
           mid_term: number | null;
         };
+        income_range_rub: { low: number; high: number } | null;
+        income_confidence: 'high' | 'medium' | 'low' | null;
+        income_note: string | null;
         positioning_hint: string | null;
         assumptions: LocationStandaloneReportListItem[];
       }
@@ -134,6 +145,7 @@ export type LocationCommercialReport = {
   version: 'v2-commercial';
   address: string;
   generated_at_iso: string;
+  report_intake?: LocationReportIntake | null;
   flow: {
     transitShare: number;
     localActiveShare: number;
@@ -238,6 +250,7 @@ function buildCommercialRecommendation(
 export function buildCommercialReport(args: {
   address: string;
   analysis: LocationAnalysis;
+  reportIntake?: LocationReportIntake | null;
 }): LocationCommercialReport {
   const { analysis } = args;
   const ft = analysis.footTraffic;
@@ -257,6 +270,7 @@ export function buildCommercialReport(args: {
     version: 'v2-commercial',
     address: args.address,
     generated_at_iso: new Date().toISOString(),
+    report_intake: args.reportIntake ?? null,
     spatial: {
       spatial_tier: sf.spatialTier,
       enabled: sf.enabled,
@@ -409,6 +423,7 @@ function buildStandaloneVerdict(args: {
 function buildRiskItems(args: {
   analysis: LocationAnalysis;
   primeMagnetCount: number;
+  reportIntake?: LocationReportIntake | null;
 }): LocationStandaloneReportListItem[] {
   const { analysis, primeMagnetCount } = args;
   const score = analysis.locationScore;
@@ -461,6 +476,13 @@ function buildRiskItems(args: {
     );
   }
 
+  if (args.reportIntake && !hasObjectParamsForIncome(args.reportIntake)) {
+    push(
+      'Нужны данные объекта',
+      'Для более точной доходной вилки нужны площадь, ремонт, дом/этаж, фото-упаковка и фактическая цена входа или аренды.',
+    );
+  }
+
   return items;
 }
 
@@ -484,6 +506,59 @@ function buildIncomeAssumptions(analysis: LocationAnalysis): LocationStandaloneR
       explanation: 'Расчёт не учитывает ремонт, класс объекта, фото, рейтинг, договорные ограничения и фактические ставки конкурентов из OTA.',
     },
   ];
+}
+
+function roundIncomeRub(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value / 5000) * 5000;
+}
+
+function buildIncomeRange(args: {
+  displayScore: number | null;
+  baseIncomeRub: number | null;
+  reportIntake?: LocationReportIntake | null;
+}): {
+  range: { low: number; high: number } | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  note: string | null;
+} {
+  const { displayScore, baseIncomeRub, reportIntake } = args;
+  if (baseIncomeRub == null || !Number.isFinite(baseIncomeRub) || baseIncomeRub <= 0) {
+    return {
+      range: null,
+      confidence: 'low',
+      note: 'Доходная вилка не рассчитана: не хватает базовых сигналов income-модели.',
+    };
+  }
+
+  const hasObjectData = hasObjectParamsForIncome(reportIntake);
+  const isCautiousScore = displayScore == null || displayScore <= 55;
+  const lowMultiplier = isCautiousScore ? 0.55 : hasObjectData ? 0.8 : 0.65;
+  const highMultiplier = isCautiousScore ? 0.9 : hasObjectData ? 1.2 : 1.1;
+  const low = roundIncomeRub(baseIncomeRub * lowMultiplier);
+  const high = Math.max(low + 5000, roundIncomeRub(baseIncomeRub * highMultiplier));
+
+  if (isCautiousScore) {
+    return {
+      range: { low, high },
+      confidence: 'low',
+      note: 'Осторожная доходная вилка: локационный score средний или слабый, поэтому доходность нужно подтверждать объектом и реальными ставками конкурентов.',
+    };
+  }
+
+  if (!hasObjectData) {
+    return {
+      range: { low, high },
+      confidence: 'low',
+      note: 'Нужны данные объекта для точнее расчёта: площадь, ремонт, дом, фото/упаковка и цена сильно меняют итоговую вилку.',
+    };
+  }
+
+  return {
+    range: { low, high },
+    confidence: 'medium',
+    note: 'Доход показан как вилка с уровнем уверенности, а не как гарантированная сумма.',
+  };
 }
 
 function buildRecommendations(args: {
@@ -529,6 +604,7 @@ export function buildLocationStandaloneReport(args: {
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
   market?: ResidentialMarketMode;
   displayModel?: LocationDisplayModel;
+  reportIntake?: LocationReportIntake | null;
 }): LocationStandaloneReport {
   const { analysis } = args;
   const market = args.market ?? 'RU';
@@ -550,6 +626,11 @@ export function buildLocationStandaloneReport(args: {
             ? score.estimated_monthly_income.mid_term
             : score.estimated_monthly_income.hybrid)
       : null;
+  const incomeRange = buildIncomeRange({
+    displayScore: displayModel.displayScore,
+    baseIncomeRub: incomeRecommended,
+    reportIntake: args.reportIntake ?? null,
+  });
 
   // ── Residential prime magnets (policy-filtered) ───────────────────────────
   // Apply the closed allowlist + distance + persistence + market rules.
@@ -586,7 +667,11 @@ export function buildLocationStandaloneReport(args: {
     residentialConfidence: residential?.confidence ?? null,
     competitorPressureLevel: analysis.gravityExplanation.competitorPressureLevel,
   });
-  const risks = buildRiskItems({ analysis, primeMagnetCount: primeMagnets.length });
+  const risks = buildRiskItems({
+    analysis,
+    primeMagnetCount: primeMagnets.length,
+    reportIntake: args.reportIntake ?? null,
+  });
   const recommendations = buildRecommendations({ analysis, verdict, risks });
 
   return {
@@ -595,12 +680,14 @@ export function buildLocationStandaloneReport(args: {
     generated_at_iso: new Date().toISOString(),
     location_score: locationScore,
     display_model: displayModel,
+    report_intake: args.reportIntake ?? null,
     fields_used: [
       'locationDisplayModel.displayScore',
       'locationDisplayModel.displayAudience',
       'locationDisplayModel.verdictLabelRu',
       'locationDisplayModel.safeDrivers',
       'locationDisplayModel.capReasons',
+      'location_report_requests.report_intake',
       'analysis.locationScore.location_score',
       'analysis.locationScore.top_positive_factors',
       'analysis.locationScore.top_negative_factors',
@@ -619,7 +706,7 @@ export function buildLocationStandaloneReport(args: {
       { field: 'summary.verdict / short_reason', source: 'locationDisplayModel + competition + residential confidence' },
       { field: 'risks', source: 'top_negative_factors + magnets + competition + score breakdown + data confidence' },
       { field: 'recommendations', source: 'generated from verdict, risks, residentialAnalysis and recommended strategy' },
-      { field: 'income assumptions', source: 'analysis.locationScore.income_model and model limitations' },
+      { field: 'income range', source: 'analysis.locationScore income estimate + locationDisplayModel.displayScore + report_intake object params' },
       { field: 'residential analysis', source: 'analysis.residentialAnalysis from buildResidentialAnalysis()' },
     ],
     sections: [
@@ -632,7 +719,10 @@ export function buildLocationStandaloneReport(args: {
         short_reason: shortReason,
         location_score: locationScore,
         drivers,
-        income_rub_month: incomeRecommended,
+        income_rub_month: null,
+        income_range_rub: incomeRange.range,
+        income_confidence: incomeRange.confidence,
+        income_note: incomeRange.note,
         recommended_strategy: recommended,
       },
       {
@@ -664,11 +754,16 @@ export function buildLocationStandaloneReport(args: {
         id: 'income_strategy',
         recommended_strategy: recommended,
         monthly_income_rub: {
-          short_term: score?.estimated_monthly_income.short_term ?? null,
-          hybrid: score?.estimated_monthly_income.hybrid ?? null,
-          mid_term: score?.estimated_monthly_income.mid_term ?? null,
+          short_term: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.short_term ?? null,
+          hybrid: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.hybrid ?? null,
+          mid_term: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.mid_term ?? null,
         },
-        positioning_hint: recommended ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}.` : null,
+        income_range_rub: incomeRange.range,
+        income_confidence: incomeRange.confidence,
+        income_note: incomeRange.note,
+        positioning_hint: recommended
+          ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}. Доход трактуем как диапазон и проверяем по объекту.`
+          : 'Доход трактуем как диапазон и проверяем по объекту.',
         assumptions: buildIncomeAssumptions(analysis),
       },
       {

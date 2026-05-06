@@ -38,11 +38,12 @@ export async function generateLocationStandaloneReportForRequest(
 
   const report =
     entity.mode === 'commercial'
-      ? buildCommercialReport({ address: entity.address, analysis })
+      ? buildCommercialReport({ address: entity.address, analysis, reportIntake: entity.report_intake })
       : buildLocationStandaloneReport({
         address: entity.address,
         analysis,
         displayModel,
+        reportIntake: entity.report_intake,
         market: entity.locale === 'ru' ? 'RU' : 'INTERNATIONAL',
       });
 

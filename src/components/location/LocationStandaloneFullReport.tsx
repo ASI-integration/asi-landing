@@ -9,6 +9,18 @@ function fmtRub(n: number | null): string {
   return `₽${Math.round(n).toLocaleString('ru-RU')}`;
 }
 
+function fmtRubRange(range: { low: number; high: number } | null | undefined): string {
+  if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high)) return '—';
+  return `${fmtRub(range.low)} – ${fmtRub(range.high)}`;
+}
+
+function fmtRubScenarioRange(n: number | null): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return '—';
+  const low = Math.round((n * 0.8) / 5000) * 5000;
+  const high = Math.max(low + 5000, Math.round((n * 1.2) / 5000) * 5000);
+  return `${fmtRub(low)} – ${fmtRub(high)}`;
+}
+
 function fmtMeters(m: number): string {
   if (!Number.isFinite(m)) return '—';
   if (m < 1000) return `${Math.round(m / 10) * 10} м`;
@@ -304,6 +316,11 @@ export function LocationStandaloneFullReport({
   const incomeStrategy = pickSection(report, 'income_strategy');
   const residentialAnalysis = pickSection(report, 'residential_analysis');
   const summaryDecisionTone = decisionTone(summary?.verdict);
+  const summaryIncomeLabel = summary?.income_range_rub
+    ? fmtRubRange(summary.income_range_rub)
+    : summary?.income_rub_month != null
+      ? fmtRubScenarioRange(summary.income_rub_month)
+      : '—';
 
   const tocItems = useMemo(() => ([
     { id: 'summary', label: 'Итог' },
@@ -342,7 +359,9 @@ export function LocationStandaloneFullReport({
         ].filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0)
       : [];
     const maxIncome = incomeValues.length ? Math.max(...incomeValues) : null;
-    const displayedIncome = summary?.income_rub_month ?? maxIncome;
+    const displayedIncome = summary?.income_range_rub
+      ? Math.round((summary.income_range_rub.low + summary.income_range_rub.high) / 2)
+      : summary?.income_rub_month ?? maxIncome;
     const incomePct = displayedIncome != null && maxIncome != null && maxIncome > 0
       ? clampPct((displayedIncome / maxIncome) * 100)
       : null;
@@ -355,7 +374,9 @@ export function LocationStandaloneFullReport({
       competitionPct,
       competitionLabel: competitorCount == null ? 'нет данных' : `${competitorCount} объектов рядом`,
       incomePct,
-      incomeLabel: displayedIncome == null ? 'нет данных' : `${fmtRub(displayedIncome)} / мес`,
+      incomeLabel: summary?.income_range_rub
+        ? `${fmtRubRange(summary.income_range_rub)} / мес`
+        : displayedIncome == null ? 'нет данных' : `${fmtRubScenarioRange(displayedIncome)} / мес`,
       scorePct: explicitScore,
       scoreSource: explicitScore != null
         ? 'из analysis.locationScore.location_score'
@@ -426,9 +447,11 @@ export function LocationStandaloneFullReport({
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу (оценка)</p>
                 <p className="mt-2 text-xl font-bold text-white tabular-nums">
-                  {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
+                  {summaryIncomeLabel}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary?.income_note ?? 'Вилка / прокси, не гарантированная «рыночная правда»'}
+                </p>
                 <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
               </div>
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
@@ -530,8 +553,16 @@ export function LocationStandaloneFullReport({
                 <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-5">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Доход</p>
                   <p className="mt-2 text-2xl font-bold text-white tabular-nums">
-                    {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
+                    {summaryIncomeLabel}
                   </p>
+                  {summary?.income_confidence ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Уверенность: {confidenceLabelRu(summary.income_confidence)}
+                    </p>
+                  ) : null}
+                  {summary?.income_note ? (
+                    <p className="mt-1 text-xs text-slate-500 leading-snug">{summary.income_note}</p>
+                  ) : null}
                 </div>
                 <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-5">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Стратегия</p>
@@ -730,9 +761,10 @@ export function LocationStandaloneFullReport({
                         >
                           <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">{s.label}</p>
                           <p className="mt-2 text-xl font-bold text-white tabular-nums">
-                            {fmtRub(s.val)}
+                            {fmtRubScenarioRange(s.val)}
                             <span className="text-slate-500 text-sm font-normal"> / мес</span>
                           </p>
+                          <p className="mt-1 text-[11px] text-slate-500">оценочная вилка, не гарантия</p>
                           {isRec ? (
                             <p className="mt-2 text-xs text-indigo-200">Рекомендовано</p>
                           ) : (

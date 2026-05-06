@@ -7,6 +7,7 @@ import {
 } from '@/lib/location/report-request-store';
 import { generateAndAttachLocationReportForRequest } from '@/lib/location/full-report-generation';
 import { createLocationReportYooKassaPayment } from '@/lib/location/yookassa-payment';
+import { validateLocationReportIntake } from '@/lib/location/report-intake';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { resolveAccountIdForUser } from '@/lib/accounts';
 
@@ -47,6 +48,14 @@ export async function POST(req: NextRequest) {
   const lon = typeof body?.lon === 'number' && Number.isFinite(body.lon) ? body.lon : null;
   const locale = parseLocale(body?.locale);
   const mode = parseMode(body?.mode);
+  const intakeResult = validateLocationReportIntake(body?.report_intake);
+  if (locale === 'ru' && !intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: 400 });
+  }
+  if (body?.report_intake != null && !intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: 400 });
+  }
+  const reportIntake = intakeResult.ok ? intakeResult.intake : null;
   const email = typeof body?.email === 'string' && body.email.includes('@')
     ? body.email.trim()
     : null;
@@ -102,6 +111,7 @@ export async function POST(req: NextRequest) {
       userId,
       accountId,
       email: email ?? sessionEmail,
+      reportIntake,
       productType: 'location_report_detail',
     });
     let providerPaymentId: string | null = null;
@@ -134,13 +144,21 @@ export async function POST(req: NextRequest) {
       payment_provider: entity?.payment_provider ?? paymentProvider,
       payment_id: entity?.payment_id ?? providerPaymentId,
       payment_url: entity?.payment_url ?? providerPaymentUrl,
+      report_intake: entity?.report_intake ?? reportIntake,
       product_type: 'location_report_detail',
       reportId,
       next_action: isRuPaidProduct
-        ? {
-          type: 'payment_required',
-          url: `/ru/location-report?requestId=${encodeURIComponent(requestId)}`,
-        }
+        ? (
+          paymentProvider === 'yookassa' && (entity?.payment_url ?? providerPaymentUrl)
+            ? {
+              type: 'redirect_payment',
+              url: entity?.payment_url ?? providerPaymentUrl,
+            }
+            : {
+              type: 'payment_required',
+              url: `/ru/location-report?requestId=${encodeURIComponent(requestId)}`,
+            }
+        )
         : {
           type: 'process_async',
         },

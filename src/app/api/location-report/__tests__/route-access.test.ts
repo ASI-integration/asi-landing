@@ -5,6 +5,7 @@ const mockCacheGetByAddress = vi.fn();
 const mockCacheSet = vi.fn();
 const mockFetchOsmData = vi.fn();
 const mockBuildAnalysis = vi.fn();
+const mockBuildLocationDisplayModel = vi.fn();
 const mockGetRequest = vi.fn();
 const mockCreateRequest = vi.fn();
 const mockConfirmPayment = vi.fn();
@@ -14,6 +15,8 @@ const mockMarkCompleted = vi.fn();
 const mockAttachReport = vi.fn();
 const mockMarkFailed = vi.fn();
 const mockCreateStandaloneReport = vi.fn();
+const mockBuildLocationStandaloneReport = vi.fn((_args?: unknown) => ({ kind: 'residential_report' }));
+const mockBuildCommercialReport = vi.fn((_args?: unknown) => ({ kind: 'commercial_report' }));
 
 vi.mock('@/lib/location/address-providers/geocode-pipeline', () => ({
   geocodePlainAddressForMarket: (...args: unknown[]) => mockGeocode(...args),
@@ -60,8 +63,8 @@ vi.mock('@/lib/location/standalone-report-store', () => ({
 }));
 
 vi.mock('@/lib/location/standalone-report', () => ({
-  buildLocationStandaloneReport: vi.fn(() => ({ kind: 'residential_report' })),
-  buildCommercialReport: vi.fn(() => ({ kind: 'commercial_report' })),
+  buildLocationStandaloneReport: (args: unknown) => mockBuildLocationStandaloneReport(args),
+  buildCommercialReport: (args: unknown) => mockBuildCommercialReport(args),
 }));
 
 vi.mock('@/lib/location', async () => {
@@ -70,6 +73,7 @@ vi.mock('@/lib/location', async () => {
     ...actual,
     fetchOsmData: (...args: unknown[]) => mockFetchOsmData(...args),
     buildAnalysis: (...args: unknown[]) => mockBuildAnalysis(...args),
+    buildLocationDisplayModel: (...args: unknown[]) => mockBuildLocationDisplayModel(...args),
   };
 });
 
@@ -103,6 +107,31 @@ const locationScore = {
   recommended_strategy: 'hybrid',
 };
 
+const validReportIntake = {
+  object_type: 'apartment',
+  object_status: 'checking_address',
+  intended_strategy: 'short_term',
+  object_params: {
+    rooms: 1,
+    area_m2: 38,
+    renovation_level: 'good',
+    parking: 'unknown',
+  },
+  requested_modules: [
+    'income_range',
+    'strategy_comparison',
+    'competitors',
+    'district_risks',
+    'target_audience',
+    'transport_magnets',
+    'object_improvements',
+    'packaging_recommendations',
+    'decision',
+    'manual_check_questions',
+  ],
+  income_accuracy_acknowledged: true,
+};
+
 describe('POST /api/location-report paid access', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,6 +153,18 @@ describe('POST /api/location-report paid access', () => {
     mockGeocode.mockResolvedValue({ result: { lat: 55.75, lon: 37.61 } });
     mockFetchOsmData.mockResolvedValue({ elements: [], hadProviderFailure: false, usedFallbackQuery: false });
     mockBuildAnalysis.mockReturnValue({ locationScore });
+    mockBuildLocationDisplayModel.mockReturnValue({
+      rawScore: 81,
+      displayScore: 81,
+      displayAudience: 'TOURIST',
+      audienceLabelRu: 'Туристическая',
+      verdictLabelRu: 'Сильная локация',
+      verdictTone: 'strong',
+      capReasons: [],
+      safeDrivers: [],
+      reportNarrative: 'Сильная локация по публичной модели.',
+      residentialSanityApplied: false,
+    });
     mockCacheSet.mockResolvedValue(undefined);
     mockMarkProcessing.mockResolvedValue(undefined);
     mockMarkCompleted.mockResolvedValue(undefined);
@@ -171,6 +212,7 @@ describe('POST /api/location-report paid access', () => {
         product_type: 'location_report_detail',
         status: 'queued',
         report_id: null,
+        report_intake: validReportIntake,
       })
       .mockResolvedValueOnce({
         id: 'req_new',
@@ -186,9 +228,14 @@ describe('POST /api/location-report paid access', () => {
         product_type: 'location_report_detail',
         status: 'completed',
         report_id: 'report_new',
+        report_intake: validReportIntake,
       });
 
-    const res = await createRequestPOST(makeReq({ address: 'Москва', locale: 'ru' }) as any);
+    const res = await createRequestPOST(makeReq({
+      address: 'Москва',
+      locale: 'ru',
+      report_intake: validReportIntake,
+    }) as any);
     const json = await res.json();
 
     expect(res.status).toBe(200);
@@ -197,12 +244,18 @@ describe('POST /api/location-report paid access', () => {
     expect(json.payment_provider).toBe('yookassa');
     expect(json.payment_id).toBe('yk_pay_123');
     expect(json.payment_url).toBe('https://yoomoney.ru/checkout/payments/v2/contract?orderId=yk_pay_123');
+    expect(json.next_action).toEqual({
+      type: 'redirect_payment',
+      url: 'https://yoomoney.ru/checkout/payments/v2/contract?orderId=yk_pay_123',
+    });
+    expect(json.report_intake).toEqual(validReportIntake);
     expect(json.reportId).toBe('report_new');
     expect(mockCreateRequest).toHaveBeenCalledWith(expect.objectContaining({
       accessStatus: 'pending_payment',
       accessTier: 'paid_required',
       paymentProvider: 'yookassa',
       paymentUrl: null,
+      reportIntake: validReportIntake,
       productType: 'location_report_detail',
     }));
     expect(mockAttachPayment).toHaveBeenCalledWith({
@@ -226,6 +279,7 @@ describe('POST /api/location-report paid access', () => {
       payment_provider: 'manual',
       product_type: 'location_report_detail',
       status: 'queued',
+      report_intake: validReportIntake,
     });
 
     const res = await processRequestPOST(makeReq({ requestId: 'req_unpaid' }) as any);
@@ -236,6 +290,9 @@ describe('POST /api/location-report paid access', () => {
     expect(json.access_status).toBe('pending_payment');
     expect(json.reportId).toBe('report_new');
     expect(mockMarkProcessing).toHaveBeenCalledWith('req_unpaid');
+    expect(mockBuildLocationStandaloneReport).toHaveBeenCalledWith(expect.objectContaining({
+      reportIntake: validReportIntake,
+    }));
     expect(mockAttachReport).toHaveBeenCalledWith({ requestId: 'req_unpaid', reportId: 'report_new' });
   });
 
