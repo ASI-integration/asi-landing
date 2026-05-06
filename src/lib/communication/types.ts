@@ -332,7 +332,13 @@ export interface TelegramAudio {
 export interface TelegramMessage {
   message_id: number;
   chat: { id: number };
-  from?: { language_code?: string };
+  from?: {
+    id?: number;
+    is_bot?: boolean;
+    first_name?: string;
+    username?: string;
+    language_code?: string;
+  };
   text?: string;
   /** Array of photo sizes — Telegram always sends smallest → largest. */
   photo?: TelegramPhotoSize[];

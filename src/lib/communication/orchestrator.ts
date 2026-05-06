@@ -75,6 +75,7 @@ import {
   getActiveEscalationReviewIdForSession,
   forceCloseActiveReviewForSession,
 } from './operator-review';
+import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
 import {
   SessionStatus,
   setPaymentExpiry,
@@ -399,8 +400,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   // We still allow limited deterministic-only tooling for acceptance testing.
   const allowEscalatedAutosend = process.env.COMM_ALLOW_AUTOSEND_WHEN_ESCALATED === '1';
   const hasActiveReviewItem = Boolean(getActiveEscalationReviewIdForSession(convSession.sessionId));
+  // Handoff lock is authoritative: AI may reply only when ai_active or returned_to_ai.
+  const aiReplyAllowed = canAiReply(convSession.sessionId);
   const blockNormalAutomationBecauseEscalated =
-    (convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
+    (!aiReplyAllowed || convSession.state === 'escalated' || hasActiveReviewItem) && !allowEscalatedAutosend;
+  if (!aiReplyAllowed) {
+    recordHandoffAuditEvent({
+      type: 'ai_reply_blocked',
+      sessionId: convSession.sessionId,
+      chat_id: chatId,
+      update_id,
+      detail: 'handoff_lock_active',
+    });
+  }
 
   // Acceptance/admin escape hatch: /reset_session (guarded by allowlist + non-prod by default).
   const cmdNorm = envelope.channel === 'telegram' ? normalizeTelegramSlashCommand(text) : null;
@@ -834,7 +846,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const voiceSourceBase = voiceMeta
       ? {
           source: 'voice',
-          voiceChannel: envelope.channel,
+          voiceChannel: (voiceMeta as any).voiceChannel ?? envelope.channel,
           voiceSessionId: String((voiceMeta as any).voiceSessionId ?? ''),
           voiceTurnId: String((voiceMeta as any).voiceTurnId ?? ''),
           transcript: String(envelope.messageText ?? ''),
@@ -842,6 +854,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           audioRef: (voiceMeta as any).audioRef ?? undefined,
           providerMessageId: (voiceMeta as any).providerMessageId ?? (envelope.metadata as any)?.providerMessageId ?? undefined,
           providerMediaId: (voiceMeta as any).providerMediaId ?? undefined,
+          originalMessageType: (voiceMeta as any).originalMessageType ?? undefined,
+          sttStatus: (voiceMeta as any).sttStatus ?? undefined,
+          telegramChatId: (voiceMeta as any).telegramChatId ?? undefined,
+          telegramUserId: (voiceMeta as any).telegramUserId ?? undefined,
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;

@@ -156,6 +156,11 @@ export function getActiveEscalationReviewIdForSession(sessionId: string): string
   return cache.activeReviewIdBySessionId[sessionId] ?? null;
 }
 
+export function getReviewsBySessionId(sessionId: string): EscalationReview[] {
+  loadOnce();
+  return Object.values(cache.reviewsById).filter(r => r.sessionId === sessionId);
+}
+
 /**
  * Test/admin escape hatch: force-close the active review for a session (if any).
  *
