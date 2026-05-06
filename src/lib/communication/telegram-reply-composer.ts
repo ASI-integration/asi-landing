@@ -17,6 +17,7 @@ export type ReplyComposerInput = {
   linkingState?: ReservationPropertyLinkingStateV1 | null;
   sessionCase?: TelegramOperationalSessionCaseV1 | null;
   sessionMemory?: ConversationContext | null;
+  shouldGreet?: boolean;
 };
 
 export type ReplyComposerOutput = {
@@ -166,6 +167,72 @@ function shortHoldSentence(lang: Lang, topicEn: string, topicRu: string, topicEs
   return `I’ll check ${topicEn} and confirm shortly.`;
 }
 
+function maybeGreetRu(input: ReplyComposerInput, lang: Lang, text: string): string {
+  if (lang !== 'ru' || !input.shouldGreet) return text;
+  if (/^\s*здравствуйте[!.]/i.test(text)) return text;
+  return text.replace(/^\s*Понял\.\s*/i, 'Здравствуйте! ');
+}
+
+function factString(input: ReplyComposerInput, key: string): string | null {
+  const v = (input.extractedFacts as any)?.[key];
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: string; text: string } | null {
+  const bucket = factString(input, 'checkin_time_bucket');
+  const time = factString(input, 'requestedTime') ?? factString(input, 'time_hint');
+  const displayTime = time ?? 'Это время';
+  const missing = input.missingFacts ?? [];
+  const missingObject = missing.includes('property') || missing.includes('booking') || missing.includes('reservation');
+  const objectQuestion = missingObject ? ' Подскажите, для какого это объекта или брони?' : '';
+
+  if (input.category === 'checkin_time_question' && bucket === 'normal_checkin') {
+    return {
+      template_key: 'checkin_time_question.reply.normal_window.v1',
+      text: maybeGreetRu(
+        input,
+        'ru',
+        `Понял. ${displayTime} обычно считается стандартным временем заезда, не ранним. Я всё равно уточню готовность объекта после уборки, но, скорее всего, заезд в это время будет возможен без проблем.${objectQuestion}`,
+      ),
+    };
+  }
+
+  if (input.category === 'early_checkin' && bucket === 'early_checkin') {
+    return {
+      template_key: 'early_checkin.reply.time_policy_early.v1',
+      text: maybeGreetRu(
+        input,
+        'ru',
+        `Понял. ${displayTime} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${objectQuestion}`,
+      ),
+    };
+  }
+
+  if (input.category === 'early_checkin' && bucket === 'conditional_early_checkin') {
+    return {
+      template_key: 'early_checkin.reply.time_policy_conditional.v1',
+      text: maybeGreetRu(
+        input,
+        'ru',
+        `Понял. ${displayTime} — раньше стандартного времени заезда. Тут всё зависит от уборки и предыдущего выезда, поэтому проверю готовность объекта отдельно.${objectQuestion}`,
+      ),
+    };
+  }
+
+  if (input.category === 'checkin_time_question' && bucket === 'late_checkin') {
+    return {
+      template_key: 'checkin_time_question.reply.late_checkin.v1',
+      text: maybeGreetRu(
+        input,
+        'ru',
+        `Понял. ${displayTime} — это поздний заезд. Проверю, что для объекта есть понятные инструкции по доступу и ключам, чтобы вы спокойно заселились вечером.${objectQuestion}`,
+      ),
+    };
+  }
+
+  return null;
+}
+
 function textHasExplicitRuProperty(text: string): boolean {
   const t = String(text ?? '');
   // Priority RU patterns we must treat as an explicit object mention.
@@ -311,6 +378,11 @@ function clarifyPrompt(input: ReplyComposerInput): string {
 function replyTextForCategory(input: ReplyComposerInput): { template_key: string; text: string } {
   const lang = normalizeLang(input.lang, input.text);
   const cat = input.category;
+
+  if (lang === 'ru') {
+    const checkinReply = buildRuCheckinTimeReply({ ...input, lang });
+    if (checkinReply) return checkinReply;
+  }
 
   if (input.action === 'clarify') {
     const q = clarifyPrompt(input);

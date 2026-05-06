@@ -101,6 +101,14 @@ function isTgLivePriorityScenario(s: unknown): s is TgLivePriorityScenario {
   return s === 'access_issue' || s === 'wifi_issue' || s === 'late_checkout';
 }
 
+function shouldGreetTelegramOperationalReply(session: { memory?: { lastMessages?: Array<{ direction?: unknown; content?: unknown }> } }): boolean {
+  const messages = session.memory?.lastMessages ?? [];
+  return !messages.some((message) => {
+    if (message.direction !== 'outbound') return false;
+    return String(message.content ?? '').trim().length > 0;
+  });
+}
+
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
   try {
     console.log(tag, payload);
@@ -996,6 +1004,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             linkingState: memNow.reservationPropertyLinkingV1 ?? null,
             sessionCase: opIntakeResult.case ?? null,
             sessionMemory: memNow ?? null,
+            shouldGreet: shouldGreetTelegramOperationalReply(convSession),
           });
           replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;

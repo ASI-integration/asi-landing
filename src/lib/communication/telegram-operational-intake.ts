@@ -379,7 +379,7 @@ function buildRuCheckinTimePolicyReply(params: {
   hasProperty: boolean;
 }): string {
   const time = params.time ?? 'Это время';
-  const missingObjectQuestion = params.hasProperty ? '' : ' Для какого это объекта?';
+  const missingObjectQuestion = params.hasProperty ? '' : ' Подскажите, для какого это объекта или брони?';
 
   if (params.bucket === 'early_checkin') {
     return `Понял. ${time} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${missingObjectQuestion}`;
