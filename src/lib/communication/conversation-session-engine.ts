@@ -189,6 +189,18 @@ function mergeFacts(prev: Record<string, unknown>, next: Record<string, unknown>
   return { ...prev, ...next };
 }
 
+function inferMessageType(meta?: Record<string, unknown>): MessageType {
+  const originalType =
+    typeof meta?.originalMessageType === 'string'
+      ? meta.originalMessageType
+      : typeof (meta?.voice as Record<string, unknown> | undefined)?.originalMessageType === 'string'
+        ? (meta?.voice as Record<string, unknown>).originalMessageType
+        : undefined;
+
+  if (originalType === 'voice' || originalType === 'audio') return MessageType.Voice;
+  return MessageType.Text;
+}
+
 function buildRollingSummary(params: {
   prevSummary?: string;
   facts: Record<string, unknown>;
@@ -284,7 +296,7 @@ export function appendSessionMessage(params: {
     id: randomUUID(),
     conversationId: params.session.sessionId,
     direction: params.direction === 'inbound' ? MessageDirection.Inbound : MessageDirection.Outbound,
-    type: MessageType.Text,
+    type: inferMessageType(params.meta),
     content: params.content,
     meta: params.meta,
     deliveryStatus: params.direction === 'outbound' ? DeliveryStatus.Sent : DeliveryStatus.Pending,
@@ -405,5 +417,11 @@ export function resetConversationSessionForAcceptance(params: {
 /** @internal tests only */
 export function __resetConversationSessionEngineForTests(): void {
   store.clear();
+}
+
+/** @internal tests only */
+export function __listConversationSessionsForTests(): ConversationSession[] {
+  const cache = (store as unknown as { cache?: Map<string, ConversationSession> }).cache;
+  return cache ? Array.from(cache.values()) : [];
 }
 

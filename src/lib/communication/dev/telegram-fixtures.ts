@@ -4,6 +4,7 @@ type BaseArgs = {
   update_id?: number;
   message_id?: number;
   chat_id: number;
+  user_id?: number;
   language_code?: string;
 };
 
@@ -15,7 +16,10 @@ function baseUpdate(args: BaseArgs): TelegramUpdate {
     message: {
       message_id,
       chat: { id: args.chat_id },
-      from: args.language_code ? { language_code: args.language_code } : undefined,
+      from:
+        args.language_code || args.user_id
+          ? { id: args.user_id, language_code: args.language_code }
+          : undefined,
     },
   };
 }

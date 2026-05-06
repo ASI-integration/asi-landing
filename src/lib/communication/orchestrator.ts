@@ -834,7 +834,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const voiceSourceBase = voiceMeta
       ? {
           source: 'voice',
-          voiceChannel: envelope.channel,
+          voiceChannel: (voiceMeta as any).voiceChannel ?? envelope.channel,
           voiceSessionId: String((voiceMeta as any).voiceSessionId ?? ''),
           voiceTurnId: String((voiceMeta as any).voiceTurnId ?? ''),
           transcript: String(envelope.messageText ?? ''),
@@ -842,6 +842,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           audioRef: (voiceMeta as any).audioRef ?? undefined,
           providerMessageId: (voiceMeta as any).providerMessageId ?? (envelope.metadata as any)?.providerMessageId ?? undefined,
           providerMediaId: (voiceMeta as any).providerMediaId ?? undefined,
+          originalMessageType: (voiceMeta as any).originalMessageType ?? undefined,
+          sttStatus: (voiceMeta as any).sttStatus ?? undefined,
+          telegramChatId: (voiceMeta as any).telegramChatId ?? undefined,
+          telegramUserId: (voiceMeta as any).telegramUserId ?? undefined,
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;

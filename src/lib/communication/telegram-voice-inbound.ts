@@ -1,9 +1,9 @@
-import type { TelegramUpdate } from './types';
+import type { InboundMessageEnvelope, TelegramUpdate } from './types';
 import { auditDecision, auditDuplicate, auditError } from './audit';
 import { checkAndMarkKey } from './idempotency';
+import { processMessage } from './orchestrator';
 import { sha256Base64Url } from './reliability';
 import { transcribeVoiceMessage } from './voice-transcription';
-import { handleVoiceTranscript } from './voice/orchestrator';
 import { ProcessOutcome } from './types';
 import { replyToTelegram } from '../telegram';
 
@@ -28,6 +28,7 @@ export type TelegramVoiceInboundResult =
       kind: 'voice' | 'audio';
       transcript_chars: number;
       brain_outcome: ProcessOutcome;
+      category?: string;
     }
   | {
       outcome: 'voice_fallback_sent';
@@ -99,6 +100,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   const chatId = message.chat.id;
   const messageId = message.message_id;
   const lang = message.from?.language_code;
+  const telegramUserId = message.from?.id;
 
   const inboundKey = `tg_voice:${updateId}:${messageId}:${fileId}`;
   if (checkAndMarkKey({ scope: 'inbound', key: inboundKey, meta: { update_id: updateId, chat_id: chatId, message_id: messageId } })) {
@@ -124,35 +126,102 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   )?.trim();
 
   if (!transcript) {
+    const detail = JSON.stringify({
+      event: 'telegram_voice_stt_failed',
+      original_message_type: kind,
+      stt_success: false,
+      telegram_chat_id: chatId,
+      telegram_user_id: telegramUserId ?? null,
+      telegram_message_id: messageId,
+      telegram_file_id: fileId,
+    });
     console.warn('[tg:voice] stt.failed', { update_id: updateId, chat_id: chatId, message_id: messageId, kind });
-    auditError({ chat_id: chatId, update_id: updateId, detail: `telegram_voice_stt_failed kind=${kind}` });
+    auditError({ chat_id: chatId, update_id: updateId, detail });
     return sendVoiceFallback({ updateId, chatId, messageId, lang, reason: 'stt_failed' });
   }
 
   try {
-    const handled = await handleVoiceTranscript({
-      channel: 'telegram_voice',
-      actorId: String(chatId),
-      transcript,
-      audioRef: `telegram:${kind}:${messageId}:file:${fileId}`,
-      language: lang,
-      providerUpdateId: updateId,
+    const audioRef = `telegram:${kind}:${messageId}:file:${fileId}`;
+    const metadata: InboundMessageEnvelope['metadata'] = {
+      source: kind,
+      originalMessageType: kind,
+      sttStatus: 'success',
+      sttSuccess: true,
+      transcriptText: transcript,
       providerMessageId: String(messageId),
       externalMessageId: String(messageId),
-      providerMediaId: fileId,
+      telegram_user_language_code: lang,
+      telegram_chat_id: chatId,
+      telegram_user_id: telegramUserId ?? null,
+      telegram_message_id: messageId,
+      telegram_file_id: fileId,
+      voice: {
+        source: 'voice',
+        voiceChannel: 'telegram_voice',
+        originalMessageType: kind,
+        sttStatus: 'success',
+        sttSuccess: true,
+        transcriptText: transcript,
+        audioRef,
+        providerMessageId: String(messageId),
+        providerMediaId: fileId,
+        language: lang,
+        telegramChatId: chatId,
+        telegramUserId: telegramUserId ?? null,
+      },
+    };
+
+    auditDecision({
+      type: 'reply',
+      chat_id: chatId,
+      update_id: updateId,
+      detail: JSON.stringify({
+        event: 'telegram_voice_transcript_ready',
+        original_message_type: kind,
+        stt_success: true,
+        transcript_text: transcript.slice(0, 500),
+        telegram_chat_id: chatId,
+        telegram_user_id: telegramUserId ?? null,
+        telegram_message_id: messageId,
+        telegram_file_id: fileId,
+      }),
     });
+
+    const envelope: InboundMessageEnvelope = {
+      channel: 'telegram',
+      externalUserId: String(chatId),
+      chatId: String(chatId),
+      messageText: transcript,
+      receivedAt: new Date(),
+      update_id: updateId,
+      metadata,
+    };
+
+    const handled = await processMessage(envelope);
 
     console.info('[tg:voice] brain.done', {
       update_id: updateId,
       chat_id: chatId,
       message_id: messageId,
-      outcome: handled.brain.outcome,
-      escalated: Boolean(handled.brain.escalation),
-      reply_len: String(handled.brain.reply ?? handled.output.text ?? '').length,
+      outcome: handled.outcome,
+      escalated: Boolean(handled.escalation),
+      category: handled.category ?? null,
+      reply_len: String(handled.reply ?? '').length,
     });
 
-    if (handled.brain.outcome === ProcessOutcome.Error) {
-      auditError({ chat_id: chatId, update_id: updateId, detail: 'telegram_voice_processing_failed' });
+    if (handled.outcome === ProcessOutcome.Error) {
+      auditError({
+        chat_id: chatId,
+        update_id: updateId,
+        detail: JSON.stringify({
+          event: 'telegram_voice_processing_failed',
+          original_message_type: kind,
+          stt_success: true,
+          telegram_chat_id: chatId,
+          telegram_user_id: telegramUserId ?? null,
+          telegram_message_id: messageId,
+        }),
+      });
       return sendVoiceFallback({ updateId, chatId, messageId, lang, reason: 'processing_failed' });
     }
 
@@ -163,12 +232,25 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
       message_id: messageId,
       kind,
       transcript_chars: transcript.length,
-      brain_outcome: handled.brain.outcome,
+      brain_outcome: handled.outcome,
+      category: handled.category,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error('[tg:voice] processing.threw', { update_id: updateId, chat_id: chatId, message_id: messageId, detail });
-    auditError({ chat_id: chatId, update_id: updateId, detail: `telegram_voice_processing_threw ${detail}` });
+    auditError({
+      chat_id: chatId,
+      update_id: updateId,
+      detail: JSON.stringify({
+        event: 'telegram_voice_processing_threw',
+        original_message_type: kind,
+        stt_success: true,
+        telegram_chat_id: chatId,
+        telegram_user_id: telegramUserId ?? null,
+        telegram_message_id: messageId,
+        error: detail,
+      }),
+    });
     return sendVoiceFallback({ updateId, chatId, messageId, lang, reason: 'processing_failed' });
   }
 }
