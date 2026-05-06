@@ -28,8 +28,10 @@ export type OperationChannelId =
   | 'direct_site'
   | 'airbnb'
   | 'booking_com'
+  | 'booking_ical'
   | 'ostrovok'
   | 'avito'
+  | 'sutochno'
   | 'yandex_travel';
 
 export type OperationAutomationStatus =
@@ -114,6 +116,30 @@ export type MaintenanceContact = {
   availabilityRu: string;
 };
 
+export type ListingIntakeDraftInput = {
+  id?: string;
+  ownerNameRu?: string;
+  propertyNameRu?: string;
+  cityRu?: string;
+  addressRu?: string;
+  propertyTypeRu?: string;
+  capacityRu?: string;
+  descriptionRu?: string;
+  amenitiesRu?: string[];
+  houseRulesRu?: string[];
+  checkInInstructionsRu?: string[];
+  checkOutInstructionsRu?: string[];
+  accessInfoRu?: string[];
+  cleaningRulesRu?: string[];
+  maintenanceContact?: Partial<MaintenanceContact>;
+  photoTitlesRu?: string[];
+};
+
+export type ListingIntakeValidationResult = {
+  isValid: boolean;
+  missingFieldsRu: string[];
+};
+
 export type ChannelListingMetadata = {
   channelId: OperationChannelId;
   externalListingId?: string;
@@ -139,6 +165,7 @@ export type PropertyListingIntake = {
   id: string;
   ownerNameRu: string;
   propertyNameRu: string;
+  cityRu: string;
   addressRu: string;
   propertyTypeRu: string;
   capacityRu: string;
@@ -155,6 +182,24 @@ export type PropertyListingIntake = {
   distributionTargets: ChannelManagerDistributionTarget[];
   intakeStatus: OperationSyncStatus;
   auditEvents: OperationAuditEvent[];
+};
+
+export type ChannelDistributionPackageTarget = {
+  channelId: OperationChannelId;
+  channelNameRu: string;
+  syncStatus: OperationSyncStatus;
+  canQueueSync: boolean;
+  payloadFieldsRu: string[];
+  missingFieldsRu: string[];
+};
+
+export type ChannelDistributionPackage = {
+  listingId: string;
+  propertyNameRu: string;
+  cityRu: string;
+  ready: boolean;
+  statusRu: string;
+  targets: ChannelDistributionPackageTarget[];
 };
 
 export type CleaningTask = {
@@ -227,6 +272,17 @@ export type BookingOperation = {
   communicationEventIds: string[];
   auditEventIds: string[];
   operatorEscalationId?: string;
+};
+
+export type DerivedBookingOperationTasks = {
+  scenarioId: string;
+  bookingOperationId: string | null;
+  guestCommunicationRequired: boolean;
+  cleaningTaskRequired: boolean;
+  maintenanceTaskRequired: boolean;
+  reviewRequestRequired: boolean;
+  operatorEscalationRequired: boolean;
+  taskLabelsRu: string[];
 };
 
 export type OperationScenario = {

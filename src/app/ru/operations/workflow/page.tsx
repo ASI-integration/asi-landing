@@ -8,6 +8,7 @@ import {
   bookingAuditEvents,
   bookingOperations,
   cleaningTasks,
+  deriveBookingOperationTasks,
   getBookingOperationForScenario,
   getCleaningTasksForBooking,
   getCommunicationEventsForBooking,
@@ -143,6 +144,14 @@ export default function RuOperationsWorkflowPage() {
               const scenarioCommunications = booking
                 ? getCommunicationEventsForBooking(booking, guestCommunicationEvents)
                 : [];
+              const derivedTasks = deriveBookingOperationTasks(
+                scenario,
+                bookingOperations,
+                cleaningTasks,
+                maintenanceTasks,
+                guestCommunicationEvents,
+                operatorEscalations,
+              );
               const escalation = booking ? getOperatorEscalationForBooking(booking, operatorEscalations) : null;
               const bookingAudit = booking
                 ? bookingAuditEvents.filter((event) => booking.auditEventIds.includes(event.id))
@@ -322,6 +331,16 @@ export default function RuOperationsWorkflowPage() {
                                 {escalation?.decisionNeededRu ?? 'Follow-up будет создан после выезда'}
                               </p>
                             </div>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {derivedTasks.taskLabelsRu.map((label) => (
+                              <span
+                                key={label}
+                                className="rounded-full border border-[var(--t-border)] bg-[var(--t-surface)] px-3 py-1 text-xs text-[var(--t-text-2)]"
+                              >
+                                {label}
+                              </span>
+                            ))}
                           </div>
                         </div>
                       ) : null}

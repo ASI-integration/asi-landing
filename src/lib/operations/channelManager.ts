@@ -1,8 +1,10 @@
 import type {
+  ChannelDistributionPackage,
   ChannelManagerDistributionTarget,
   OperationSyncStatus,
   PropertyListingIntake,
 } from './types';
+import { validateListingIntakeDraft } from './listingIntake';
 
 export const operationSyncStatusLabelsRu: Record<OperationSyncStatus, string> = {
   draft: 'Черновик',
@@ -29,14 +31,9 @@ export function getChannelSyncSummary(targets: ChannelManagerDistributionTarget[
 export function isListingReadyForDistribution(listing: PropertyListingIntake): boolean {
   const hasApprovedMedia = listing.media.some((asset) => asset.kind === 'photo' && asset.distributionReady);
   const hasConnectedChannel = listing.distributionTargets.some((target) => target.connected);
-  const hasRequiredText =
-    listing.descriptionRu.length > 0 &&
-    listing.amenitiesRu.length > 0 &&
-    listing.houseRulesRu.length > 0 &&
-    listing.checkInInstructionsRu.length > 0 &&
-    listing.accessInfoRu.length > 0;
+  const hasRequiredFields = validateListingIntakeDraft(listing).isValid;
 
-  return hasApprovedMedia && hasConnectedChannel && hasRequiredText && listing.intakeStatus !== 'blocked';
+  return hasApprovedMedia && hasConnectedChannel && hasRequiredFields && listing.intakeStatus !== 'blocked';
 }
 
 export function getPendingDistributionTargets(targets: ChannelManagerDistributionTarget[]) {
@@ -51,4 +48,38 @@ export function getDistributionReadinessLabel(listing: PropertyListingIntake): s
   if (summary.needsAttention > 0) return 'Готова, есть каналы с ручной проверкой';
   if (summary.synced === summary.total) return 'Синхронизирована во все каналы';
   return 'Готова к распределению по каналам';
+}
+
+export function prepareChannelDistributionPackage(listing: PropertyListingIntake): ChannelDistributionPackage {
+  const validation = validateListingIntakeDraft(listing);
+  const payloadFieldsRu = [
+    'Название',
+    'Город',
+    'Адрес',
+    'Описание',
+    'Фото',
+    'Удобства',
+    'Правила дома',
+    'Инструкции заезда',
+    'Инструкции выезда',
+    'Доступы',
+    'Клининг',
+    'Контакт мастера',
+  ];
+
+  return {
+    listingId: listing.id,
+    propertyNameRu: listing.propertyNameRu,
+    cityRu: listing.cityRu,
+    ready: validation.isValid,
+    statusRu: validation.isValid ? 'Готово к отправке на площадки' : 'Нужно заполнить обязательные поля',
+    targets: listing.distributionTargets.map((target) => ({
+      channelId: target.channelId,
+      channelNameRu: target.channelNameRu,
+      syncStatus: target.syncStatus,
+      canQueueSync: validation.isValid && target.connected && target.syncStatus !== 'blocked',
+      payloadFieldsRu,
+      missingFieldsRu: validation.isValid ? target.pendingFieldsRu : validation.missingFieldsRu,
+    })),
+  };
 }

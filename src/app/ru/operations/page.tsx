@@ -4,13 +4,10 @@ import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { ThemeProvider } from '@/theme/ThemeProvider';
+import { ListingIntakeDemo } from './ListingIntakeDemo';
 import {
-  getChannelSyncSummary,
-  getDistributionReadinessLabel,
   operationPhases,
   operationScenarios,
-  operationSyncStatusLabelsRu,
-  propertyListingIntakes,
 } from '@/lib/operations';
 
 export const metadata: Metadata = {
@@ -29,8 +26,6 @@ const scenarioLabels = [
 ];
 
 export default function RuOperationsPage() {
-  const listing = propertyListingIntakes[0];
-  const syncSummary = getChannelSyncSummary(listing.distributionTargets);
   const handoffCount = operationScenarios.filter((scenario) => scenario.nextAction.handoffRequired).length;
 
   return (
@@ -97,117 +92,7 @@ export default function RuOperationsPage() {
           </div>
         </section>
 
-        <section className="px-4 sm:px-6 py-14 sm:py-16 bg-[var(--t-bg)] border-y border-[var(--t-border)]">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[0.95fr_1.05fr] gap-8 lg:gap-12">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                Channel-manager intake
-              </p>
-              <h2 className="mt-3 text-2xl sm:text-3xl font-bold text-[var(--t-text)]">
-                Единая карточка объекта
-              </h2>
-              <p className="mt-3 text-base text-[var(--t-text-2)] leading-relaxed">
-                Собственник загружает данные один раз. ASI хранит объект, фото, правила, доступы, клининг,
-                контакты мастеров и metadata каналов в структуре, которую позже можно синхронизировать с OTA.
-              </p>
-
-              <div className="mt-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                <p className="text-sm font-semibold text-[var(--t-text)]">{listing.propertyNameRu}</p>
-                <p className="mt-1 text-sm text-[var(--t-text-2)]">{listing.addressRu}</p>
-                <dl className="mt-5 grid sm:grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <dt className="text-[var(--t-muted)]">Владелец</dt>
-                    <dd className="mt-1 font-medium text-[var(--t-text)]">{listing.ownerNameRu}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--t-muted)]">Тип</dt>
-                    <dd className="mt-1 font-medium text-[var(--t-text)]">{listing.propertyTypeRu}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--t-muted)]">Готовность</dt>
-                    <dd className="mt-1 font-medium text-[var(--t-text)]">{operationSyncStatusLabelsRu[listing.intakeStatus]}</dd>
-                  </div>
-                </dl>
-                <p className="mt-4 text-sm leading-relaxed text-[var(--t-text-2)]">
-                  {getDistributionReadinessLabel(listing)}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              <div className="rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-base font-semibold text-[var(--t-text)]">Загруженные данные</h3>
-                  <span className="text-xs font-semibold text-[var(--t-muted)]">
-                    {listing.media.length} asset
-                  </span>
-                </div>
-                <div className="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
-                  {[
-                    ['Удобства', listing.amenitiesRu.join(', ')],
-                    ['Правила дома', listing.houseRulesRu.join(', ')],
-                    ['Заезд', listing.checkInInstructionsRu.join('; ')],
-                    ['Доступы', listing.accessInfoRu.join('; ')],
-                    ['Клининг', listing.cleaningRulesRu.join('; ')],
-                    ['Мастера', listing.maintenanceContacts.map((contact) => contact.roleRu).join(', ')],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] p-3">
-                      <p className="text-xs font-semibold text-[var(--t-muted)]">{label}</p>
-                      <p className="mt-1 text-sm leading-relaxed text-[var(--t-text-2)]">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                <h3 className="text-base font-semibold text-[var(--t-text)]">Медиа и документы</h3>
-                <div className="mt-4 grid sm:grid-cols-3 gap-3">
-                  {listing.media.map((asset) => (
-                    <div key={asset.id} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] p-3">
-                      <p className="text-sm font-semibold text-[var(--t-text)]">{asset.titleRu}</p>
-                      <p className="mt-1 text-xs text-[var(--t-muted)]">
-                        {asset.kind} / {asset.status}
-                      </p>
-                      <p className="mt-2 text-xs text-[var(--t-text-2)]">
-                        {asset.distributionReady ? 'Готово к distribution' : 'Только для внутренней карточки'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                <div className="flex flex-wrap items-center gap-3 justify-between">
-                  <h3 className="text-base font-semibold text-[var(--t-text)]">Каналы распределения</h3>
-                  <p className="text-xs text-[var(--t-muted)]">
-                    {syncSummary.synced}/{syncSummary.total} synced, {syncSummary.needsAttention} требует внимания
-                  </p>
-                </div>
-                <div className="mt-4 grid gap-3">
-                  {listing.distributionTargets.map((target) => (
-                    <div
-                      key={target.id}
-                      className="grid sm:grid-cols-[1fr_auto] gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] p-3"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-[var(--t-text)]">{target.channelNameRu}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-[var(--t-muted)]">{target.nextActionRu}</p>
-                      </div>
-                      <div className="sm:text-right">
-                        <p className="text-xs font-semibold text-[var(--t-text)]">
-                          {operationSyncStatusLabelsRu[target.syncStatus]}
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--t-muted)]">
-                          {target.connected ? 'канал подключен' : 'канал не подключен'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <ListingIntakeDemo />
 
         <section className="px-4 sm:px-6 py-14 sm:py-16 bg-[var(--t-surface-2)] border-y border-[var(--t-border)]">
           <div className="max-w-6xl mx-auto">

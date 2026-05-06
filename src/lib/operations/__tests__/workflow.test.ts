@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   bookingOperations,
   cleaningTasks,
+  createListingIntakeDraft,
+  deriveBookingOperationTasks,
   getBookingOperationForScenario,
   getChannelSyncSummary,
   getCleaningTasksForBooking,
@@ -19,7 +21,9 @@ import {
   operationPhases,
   operationScenarios,
   operatorEscalations,
+  prepareChannelDistributionPackage,
   propertyListingIntakes,
+  validateListingIntakeDraft,
 } from '../index';
 import type { OperationScenarioType } from '../types';
 
@@ -78,13 +82,13 @@ describe('operations workflow', () => {
     const summary = getChannelSyncSummary(listing.distributionTargets);
 
     expect(isListingReadyForDistribution(listing)).toBe(true);
-    expect(getDistributionReadinessLabel(listing)).toBe('Готова, есть каналы с ручной проверкой');
+    expect(getDistributionReadinessLabel(listing)).toBe('Готова к распределению по каналам');
     expect(summary).toEqual({
-      total: 4,
-      connected: 3,
+      total: 5,
+      connected: 4,
       synced: 1,
-      queued: 1,
-      needsAttention: 1,
+      queued: 2,
+      needsAttention: 0,
     });
   });
 
@@ -106,5 +110,106 @@ describe('operations workflow', () => {
     );
 
     expect(missingBookings).toEqual([]);
+  });
+
+  it('validates required listing intake fields', () => {
+    const invalidDraft = createListingIntakeDraft({
+      propertyNameRu: 'Тестовый объект',
+    });
+    const validDraft = createListingIntakeDraft({
+      propertyNameRu: 'Квартира у метро',
+      cityRu: 'Москва',
+      addressRu: 'Тестовый район',
+      descriptionRu: 'Описание для демо-карточки.',
+      amenitiesRu: ['Wi-Fi'],
+      houseRulesRu: ['Не курить'],
+      checkInInstructionsRu: ['Заезд после 15:00'],
+      checkOutInstructionsRu: ['Выезд до 12:00'],
+      accessInfoRu: ['Ключ в smart-lock боксе'],
+      cleaningRulesRu: ['Фото после уборки'],
+      maintenanceContact: {
+        roleRu: 'Домашний мастер',
+        nameRu: 'Илья',
+        phoneRu: '+7 *** ***-00-00',
+      },
+      photoTitlesRu: ['Гостиная'],
+    });
+
+    expect(validateListingIntakeDraft(invalidDraft).isValid).toBe(false);
+    expect(validateListingIntakeDraft(invalidDraft).missingFieldsRu).toContain('Город');
+    expect(validateListingIntakeDraft(validDraft)).toEqual({
+      isValid: true,
+      missingFieldsRu: [],
+    });
+  });
+
+  it('creates a channel distribution package from a valid listing draft', () => {
+    const listing = createListingIntakeDraft({
+      propertyNameRu: 'Квартира для channel package',
+      cityRu: 'Санкт-Петербург',
+      addressRu: 'Центральный район',
+      descriptionRu: 'Полная карточка для демо-синхронизации.',
+      amenitiesRu: ['Wi-Fi', 'Кухня'],
+      houseRulesRu: ['Тихие часы после 22:00'],
+      checkInInstructionsRu: ['Код отправляется после брони'],
+      checkOutInstructionsRu: ['Ключ оставить в боксе'],
+      accessInfoRu: ['Smart-lock'],
+      cleaningRulesRu: ['Проверить расходники'],
+      maintenanceContact: {
+        roleRu: 'Мастер',
+        nameRu: 'Алексей',
+        phoneRu: '+7 *** ***-11-11',
+      },
+      photoTitlesRu: ['Спальня', 'Кухня'],
+    });
+    const distributionPackage = prepareChannelDistributionPackage(listing);
+
+    expect(distributionPackage.ready).toBe(true);
+    expect(distributionPackage.statusRu).toBe('Готово к отправке на площадки');
+    expect(distributionPackage.targets.map((target) => target.channelNameRu)).toEqual([
+      'Авито',
+      'Островок',
+      'Яндекс Путешествия',
+      'Суточно',
+      'Booking / iCal placeholder',
+    ]);
+    expect(distributionPackage.targets.find((target) => target.channelNameRu === 'Booking / iCal placeholder')?.canQueueSync).toBe(false);
+  });
+
+  it('derives booking operation tasks from scenarios', () => {
+    const newBookingScenario = operationScenarios.find((scenario) => scenario.type === 'new_booking');
+    const checkoutScenario = operationScenarios.find((scenario) => scenario.type === 'checkout');
+    const exceptionScenario = operationScenarios.find((scenario) => scenario.type === 'operator_escalation');
+
+    const newBookingTasks = deriveBookingOperationTasks(
+      newBookingScenario!,
+      bookingOperations,
+      cleaningTasks,
+      maintenanceTasks,
+      guestCommunicationEvents,
+      operatorEscalations,
+    );
+    const checkoutTasks = deriveBookingOperationTasks(
+      checkoutScenario!,
+      bookingOperations,
+      cleaningTasks,
+      maintenanceTasks,
+      guestCommunicationEvents,
+      operatorEscalations,
+    );
+    const exceptionTasks = deriveBookingOperationTasks(
+      exceptionScenario!,
+      bookingOperations,
+      cleaningTasks,
+      maintenanceTasks,
+      guestCommunicationEvents,
+      operatorEscalations,
+    );
+
+    expect(newBookingTasks.guestCommunicationRequired).toBe(true);
+    expect(newBookingTasks.cleaningTaskRequired).toBe(true);
+    expect(checkoutTasks.reviewRequestRequired).toBe(true);
+    expect(exceptionTasks.maintenanceTaskRequired).toBe(true);
+    expect(exceptionTasks.operatorEscalationRequired).toBe(true);
   });
 });
