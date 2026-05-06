@@ -135,6 +135,79 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.missingFacts).toContain('property');
   });
 
+  it('RU check-in at 15:00 stays in the normal check-in window, not early_checkin', () => {
+    const hit = tryTelegramOperationalIntake({
+      text: 'Я гость. Хочу заехать завтра в 15:00, можно ранний заезд?',
+      surfaceLang: 'ru',
+      ...base,
+    });
+    expect(hit?.category).not.toBe('early_checkin');
+    expect(hit?.category).toBe('checkin_time_question');
+    expect(hit?.extractedFacts.checkin_time_bucket).toBe('normal_checkin');
+    expect(hit?.reply).toMatch(/стандартным временем|стандартное время/i);
+    expect(hit?.reply).toMatch(/готовность объекта после уборки/i);
+  });
+
+  it('RU check-in at 7 утра maps to early_checkin', () => {
+    const hit = tryTelegramOperationalIntake({
+      text: 'Можно заехать в 7 утра?',
+      surfaceLang: 'ru',
+      ...base,
+    });
+    expect(hit?.category).toBe('early_checkin');
+    expect(hit?.extractedFacts.requestedTime).toBe('07:00');
+    expect(hit?.extractedFacts.checkin_time_bucket).toBe('early_checkin');
+    expect(hit?.extractedFacts.requires_cleaning_availability).toBe(true);
+    expect(hit?.reply).toMatch(/ранний заезд/i);
+    expect(hit?.reply).toMatch(/подтверд/i);
+  });
+
+  it('RU check-in at 12:00 is conditional and depends on cleaning availability', () => {
+    const hit = tryTelegramOperationalIntake({
+      text: 'Можно заехать в 12:00?',
+      surfaceLang: 'ru',
+      ...base,
+    });
+    expect(hit?.category).toBe('early_checkin');
+    expect(hit?.extractedFacts.checkin_time_bucket).toBe('conditional_early_checkin');
+    expect(hit?.extractedFacts.checkin_time_policy).toContain('cleaning');
+    expect(hit?.extractedFacts.requires_cleaning_availability).toBe(true);
+    expect(hit?.reply).toMatch(/уборк/i);
+    expect(hit?.reply).toMatch(/предыдущего выезда/i);
+  });
+
+  it('RU check-in at 22:00 explains late check-in and access instructions', () => {
+    const hit = tryTelegramOperationalIntake({
+      text: 'Хочу заехать завтра в 22:00, так можно?',
+      surfaceLang: 'ru',
+      ...base,
+    });
+    expect(hit?.category).toBe('checkin_time_question');
+    expect(hit?.extractedFacts.checkin_time_bucket).toBe('late_checkin');
+    expect(hit?.reply).toMatch(/поздний заезд/i);
+    expect(hit?.reply).toMatch(/инструкции по доступу|ключ/i);
+  });
+
+  it('RU bot reply does not include gender placeholders', () => {
+    const replies = [
+      'Ранний заезд сегодня в 11:00 по адресу Невский 24 возможен?',
+      'Я гость. Хочу заехать завтра в 15:00, можно ранний заезд?',
+      'Можно заехать в 7 утра?',
+      'Хочу заехать завтра в 22:00, так можно?',
+    ].map((text) =>
+      tryTelegramOperationalIntake({
+        text,
+        surfaceLang: 'ru',
+        ...base,
+      })?.reply,
+    );
+    for (const reply of replies) {
+      expect(reply).toBeTruthy();
+      expect(reply).not.toContain('(а)');
+      expect(reply).toMatch(/Понял|Принято/);
+    }
+  });
+
   it('no_heating EN urgent cold → escalate_urgent', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Hello. Guest says there is no heating in the apartment and it is very cold. Please help urgently.',

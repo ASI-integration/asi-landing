@@ -11,6 +11,7 @@ export type TelegramOperationalCategory =
   | 'parking_question'
   | 'late_checkout'
   | 'early_checkin'
+  | 'checkin_time_question'
   | 'no_heating'
   | 'no_hot_water'
   | 'noise_complaint'
@@ -19,6 +20,13 @@ export type TelegramOperationalCategory =
   | 'payment_confirmation';
 
 export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate_operator' | 'escalate_urgent';
+
+export type CheckinTimeBucket =
+  | 'early_checkin'
+  | 'conditional_early_checkin'
+  | 'normal_checkin'
+  | 'late_checkin'
+  | 'unknown';
 
 export type TelegramOperationalIntakeHit = {
   category: TelegramOperationalCategory;
@@ -45,6 +53,15 @@ function normalizeSpace(s: string): string {
   return String(s ?? '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function removeRuGenderPlaceholders(s: string): string {
+  return String(s ?? '')
+    .replace(/Понял\(а\)/g, 'Понял')
+    .replace(/Зафиксировал\(а\)/g, 'Зафиксировал')
+    .replace(/Передал\(а\)/g, 'Передал')
+    .replace(/уточнял\(а\)/g, 'уточнял')
+    .replace(/задавал\(а\)/g, 'задавал');
 }
 
 function stripPunctForMatch(s: string): string {
@@ -82,7 +99,11 @@ function hasLateCheckoutIntent(n: string): boolean {
   );
 }
 
-function hasEarlyCheckinIntent(n: string): boolean {
+function hasCheckinArrivalIntent(n: string): boolean {
+  return /\bcheck[-\s]?in\b|\barriv(e|al|ing)?\b|заезд|засел|заехать|заеду|заезж|приезд|приех/i.test(n);
+}
+
+function hasExplicitEarlyCheckinWording(n: string): boolean {
   return (
     /\bearly\s+check[-\s]?in\b/i.test(n) ||
     /\bearlier\s+check[-\s]?in\b/i.test(n) ||
@@ -90,6 +111,16 @@ function hasEarlyCheckinIntent(n: string): boolean {
     /ранн(ий|его|ему)?\s+(заезд|засел)/i.test(n) ||
     (/заезд|засел/i.test(n) && /(раньше|пораньше|с\s*\d{1,2}(:\d{2})?)/i.test(n))
   );
+}
+
+function hasEarlyCheckinIntent(n: string, bucket: CheckinTimeBucket): boolean {
+  const explicitEarly = hasExplicitEarlyCheckinWording(n);
+
+  if (bucket === 'normal_checkin' || bucket === 'late_checkin') return false;
+  if (bucket === 'early_checkin' || bucket === 'conditional_early_checkin') {
+    return explicitEarly || hasCheckinArrivalIntent(n);
+  }
+  return explicitEarly;
 }
 
 function hasNoHeatingIntent(n: string): boolean {
@@ -265,7 +296,104 @@ function extractTimeLike(text: string): string | null {
     const mm = (m3[2] ?? '00').padStart(2, '0');
     return `${hh}:${mm}`;
   }
+  const m4 = t.match(/(?:^|[^\p{L}\d])(?:в|к|на)\s*(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(утра|дня|вечера|ночи)?(?:$|[^\p{L}\d])/iu);
+  if (m4) {
+    let hour = Number(m4[1]);
+    const meridiem = String(m4[3] ?? '').toLowerCase();
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+    if (meridiem === 'вечера' && hour >= 1 && hour <= 11) hour += 12;
+    if (meridiem === 'дня' && hour >= 1 && hour <= 11) hour += 12;
+    if (meridiem === 'ночи' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${(m4[2] ?? '00').padStart(2, '0')}`;
+  }
   return null;
+}
+
+function parseTimeHour(time: string | null): number | null {
+  const m = String(time ?? '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour;
+}
+
+export function classifyCheckinTimeBucket(time: string | null): {
+  bucket: CheckinTimeBucket;
+  isEarlyCheckinByTime: boolean;
+  requiresCleaningAvailability: boolean;
+  policy: string;
+} {
+  const hour = parseTimeHour(time);
+  if (hour == null) {
+    return {
+      bucket: 'unknown',
+      isEarlyCheckinByTime: false,
+      requiresCleaningAvailability: false,
+      policy: 'no_explicit_checkin_time',
+    };
+  }
+  if (hour >= 6 && hour <= 10) {
+    return {
+      bucket: 'early_checkin',
+      isEarlyCheckinByTime: true,
+      requiresCleaningAvailability: true,
+      policy: '06:00-10:59_early_checkin',
+    };
+  }
+  if (hour >= 11 && hour <= 13) {
+    return {
+      bucket: 'conditional_early_checkin',
+      isEarlyCheckinByTime: true,
+      requiresCleaningAvailability: true,
+      policy: '11:00-13:59_conditional_depends_on_cleaning_and_previous_checkout',
+    };
+  }
+  if (hour >= 14 && hour <= 16) {
+    return {
+      bucket: 'normal_checkin',
+      isEarlyCheckinByTime: false,
+      requiresCleaningAvailability: false,
+      policy: '14:00-16:00_normal_checkin_window',
+    };
+  }
+  if (hour >= 21 || hour <= 5) {
+    return {
+      bucket: 'late_checkin',
+      isEarlyCheckinByTime: false,
+      requiresCleaningAvailability: false,
+      policy: '21:00-05:59_late_checkin',
+    };
+  }
+  return {
+    bucket: 'normal_checkin',
+    isEarlyCheckinByTime: false,
+    requiresCleaningAvailability: false,
+    policy: '17:00-20:59_standard_evening_checkin',
+  };
+}
+
+function buildRuCheckinTimePolicyReply(params: {
+  bucket: CheckinTimeBucket;
+  time: string | null;
+  hasProperty: boolean;
+}): string {
+  const time = params.time ?? 'Это время';
+  const missingObjectQuestion = params.hasProperty ? '' : ' Для какого это объекта?';
+
+  if (params.bucket === 'early_checkin') {
+    return `Понял. ${time} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${missingObjectQuestion}`;
+  }
+  if (params.bucket === 'conditional_early_checkin') {
+    return `Понял. ${time} — раньше стандартного времени заезда. Тут всё зависит от уборки и предыдущего выезда, поэтому проверю готовность объекта отдельно.${missingObjectQuestion}`;
+  }
+  if (params.bucket === 'normal_checkin') {
+    return `Понял. ${time} обычно считается стандартным временем заезда, не ранним. Я всё равно уточню готовность объекта после уборки, но, скорее всего, заезд в это время будет возможен без проблем.${missingObjectQuestion}`;
+  }
+  if (params.bucket === 'late_checkin') {
+    return `Понял. ${time} — это поздний заезд. Проверю, что для объекта есть понятные инструкции по доступу и ключам, чтобы вы спокойно заселились вечером.${missingObjectQuestion}`;
+  }
+  return `Понял. Уточню возможность заезда и готовность объекта.${missingObjectQuestion}`;
 }
 
 function extractDateLikeToken(n: string): 'today' | 'tomorrow' | null {
@@ -453,6 +581,7 @@ function logIntake(
   params: TelegramOperationalIntakeParams,
   hit: TelegramOperationalIntakeHit,
 ): void {
+  hit.reply = removeRuGenderPlaceholders(hit.reply);
   try {
     console.log(
       JSON.stringify({
@@ -547,15 +676,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) проблему с доступом (код/замок/дверь). Команда сейчас проверит и поможет гостю попасть внутрь.'
+          ? 'Понял. Зафиксировал проблему с доступом (код/замок/дверь). Команда сейчас проверит и поможет гостю попасть внутрь.'
           : 'Understood — access issue logged (code/lock/door). Our team will verify and help the guest get inside now.'
         : finalAction === 'escalate_urgent'
           ? ru
-            ? 'Понял(а). Похоже на срочную ситуацию с доступом. Передаю в операционную команду прямо сейчас.'
+            ? 'Понял. Похоже на срочную ситуацию с доступом. Передаю в операционную команду прямо сейчас.'
             : 'Understood. This looks urgent (access/safety). I’m escalating this now.'
           : finalAction === 'escalate_operator'
             ? ru
-              ? 'Понял(а). Передаю проблему с доступом оператору для оперативного решения.'
+              ? 'Понял. Передаю проблему с доступом оператору для оперативного решения.'
               : 'Understood. I’m escalating the access issue to an operator for quick resolution.'
           : pickSingleClarifyingQuestion('access_issue', missing, ru);
 
@@ -596,15 +725,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'escalate_urgent'
         ? ru
-          ? 'Понял(а). Это срочно. Передаю заявку по отоплению в операционную команду прямо сейчас.'
+          ? 'Понял. Это срочно. Передаю заявку по отоплению в операционную команду прямо сейчас.'
           : 'Understood. This is urgent. I’m escalating the heating issue right now.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю заявку по отоплению оператору — вернёмся с обновлением.'
+            ? 'Понял. Передаю заявку по отоплению оператору — вернёмся с обновлением.'
             : 'Understood. I’m escalating the heating issue to an operator and we’ll follow up shortly.'
         : finalAction === 'reply'
           ? ru
-            ? 'Понял(а). Зафиксировал(а) проблему с отоплением; команда проверит и вернётся с обновлением.'
+            ? 'Понял. Зафиксировал проблему с отоплением; команда проверит и вернётся с обновлением.'
             : 'Understood. Heating issue logged; the team will check and update you shortly.'
           : pickSingleClarifyingQuestion('no_heating', missing, ru);
 
@@ -655,15 +784,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'escalate_urgent'
         ? ru
-          ? 'Понял(а). Это срочно. Передаю заявку по горячей воде в операционную команду прямо сейчас.'
+          ? 'Понял. Это срочно. Передаю заявку по горячей воде в операционную команду прямо сейчас.'
           : 'Understood. This is urgent. I’m escalating the hot water issue right now.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю заявку по горячей воде оператору — вернёмся с обновлением.'
+            ? 'Понял. Передаю заявку по горячей воде оператору — вернёмся с обновлением.'
             : 'Understood. I’m escalating the hot water issue to an operator and we’ll follow up shortly.'
         : finalAction === 'reply'
           ? ru
-            ? 'Понял(а). Зафиксировал(а) проблему с горячей водой; команда проверит и вернётся с обновлением.'
+            ? 'Понял. Зафиксировал проблему с горячей водой; команда проверит и вернётся с обновлением.'
             : 'Understood. Hot water issue logged; the team will check and update you shortly.'
           : pickSingleClarifyingQuestion('no_hot_water', missing, ru);
 
@@ -715,15 +844,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) запрос на поздний выезд; проверим возможность и вернёмся с ответом.'
+          ? 'Понял. Зафиксировал запрос на поздний выезд; проверим возможность и вернёмся с ответом.'
           : 'Understood. I’ve logged the late checkout request and will confirm availability shortly.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю запрос на поздний выезд оператору для проверки и подтверждения.'
+            ? 'Понял. Передаю запрос на поздний выезд оператору для проверки и подтверждения.'
             : 'Understood. I’m escalating the late checkout request to an operator to verify and confirm.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('late_checkout', missing, ru);
 
@@ -760,13 +889,69 @@ export function tryTelegramOperationalIntake(
     return hit;
   }
 
-  // 4) Early check-in
-  if (hasEarlyCheckinIntent(loose)) {
+  // 4) Early / conditional check-in. Explicit normal check-in times override "ранний заезд" wording.
+  const earlyCheckinTime = extractTimeLike(raw);
+  const checkinTimePolicy = classifyCheckinTimeBucket(earlyCheckinTime);
+  const explicitEarlyCheckin = hasExplicitEarlyCheckinWording(loose);
+  const shouldExplainNonEarlyCheckin =
+    hasCheckinArrivalIntent(loose) &&
+    ((checkinTimePolicy.bucket === 'normal_checkin' && explicitEarlyCheckin) || checkinTimePolicy.bucket === 'late_checkin');
+
+  if (shouldExplainNonEarlyCheckin) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
     const hasProp = hasPropertyHint(raw, loose);
-    const time = extractTimeLike(raw);
+    const dateToken = extractDateLikeToken(loose);
+    const cc = extractCheckinCheckoutHints(loose);
+    const missing: string[] = [];
+    if (!hasProp) missing.push('property');
+
+    const finalAction: TelegramOperationalFinalAction = hasProp ? 'reply' : 'clarify';
+    const hit: TelegramOperationalIntakeHit = {
+      category: 'checkin_time_question',
+      reply: ru
+        ? buildRuCheckinTimePolicyReply({
+            bucket: checkinTimePolicy.bucket,
+            time: earlyCheckinTime,
+            hasProperty: hasProp,
+          })
+        : hasProp
+          ? 'Understood. I’ll verify the property readiness and access instructions for that check-in time.'
+          : 'Understood. Which property is this for? I’ll verify readiness and access instructions for that check-in time.',
+      extractedFacts: {
+        ...normalizeFactsForOps({
+          category: 'checkin_time_question',
+          rawText: raw,
+          guestName: guest ?? null,
+          propertySnippet: prop ?? (hasProp ? 'hint_present' : null),
+          addressHint: addr ?? null,
+          timeHint: earlyCheckinTime ?? null,
+          checkinHint: cc.checkin_hint,
+          checkoutHint: cc.checkout_hint,
+          urgencySignals: [],
+        }),
+        requestedDateToken: dateToken ?? null,
+        checkin_time_bucket: checkinTimePolicy.bucket,
+        checkin_time_policy: checkinTimePolicy.policy,
+        is_early_checkin_by_time: checkinTimePolicy.isEarlyCheckinByTime,
+        requires_cleaning_availability: checkinTimePolicy.requiresCleaningAvailability,
+      },
+      missingFacts: missing,
+      finalAction,
+      urgencySignals: [],
+      actionReason: hasProp ? 'checkin_time_policy:property_present' : 'checkin_time_policy:missing_property',
+    };
+    logIntake(params, hit);
+    return hit;
+  }
+
+  if (hasEarlyCheckinIntent(loose, checkinTimePolicy.bucket)) {
+    const guest = extractGuestName(raw);
+    const prop = extractPropertySnippet(raw);
+    const addr = extractAddressHint(raw);
+    const hasProp = hasPropertyHint(raw, loose);
+    const time = earlyCheckinTime;
     const dateToken = extractDateLikeToken(loose);
     const cc = extractCheckinCheckoutHints(loose);
 
@@ -778,17 +963,27 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) запрос на ранний заезд; проверим возможность и вернёмся с подтверждением.'
+          ? buildRuCheckinTimePolicyReply({
+              bucket: checkinTimePolicy.bucket,
+              time,
+              hasProperty: hasProp,
+            })
           : 'Understood. I’ve logged the early check-in request and will confirm availability shortly.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю запрос на ранний заезд оператору для проверки и подтверждения.'
+            ? 'Понял. Передаю запрос на заезд оператору для проверки и подтверждения.'
             : 'Understood. I’m escalating the early check-in request to an operator to verify and confirm.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
-        : pickSingleClarifyingQuestion('early_checkin', missing, ru);
+        : ru
+          ? buildRuCheckinTimePolicyReply({
+              bucket: checkinTimePolicy.bucket,
+              time,
+              hasProperty: hasProp,
+            })
+          : pickSingleClarifyingQuestion('early_checkin', missing, ru);
 
     const hit: TelegramOperationalIntakeHit = {
       category: 'early_checkin',
@@ -806,6 +1001,10 @@ export function tryTelegramOperationalIntake(
           urgencySignals: matrix.urgency_signals,
         }),
         requestedDateToken: dateToken ?? null,
+        checkin_time_bucket: checkinTimePolicy.bucket,
+        checkin_time_policy: checkinTimePolicy.policy,
+        is_early_checkin_by_time: checkinTimePolicy.isEarlyCheckinByTime,
+        requires_cleaning_availability: checkinTimePolicy.requiresCleaningAvailability,
       },
       missingFacts: missing,
       finalAction,
@@ -845,15 +1044,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'escalate_urgent'
         ? ru
-          ? 'Понял(а). Это срочно. Передаю шумовую жалобу в операционную команду прямо сейчас.'
+          ? 'Понял. Это срочно. Передаю шумовую жалобу в операционную команду прямо сейчас.'
           : 'Understood. This is urgent. I’m escalating the noise complaint to the ops team now.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю шумовую жалобу оператору для оперативного решения.'
+            ? 'Понял. Передаю шумовую жалобу оператору для оперативного решения.'
             : 'Understood. I’m escalating the noise complaint to an operator for quick resolution.'
         : finalAction === 'reply'
           ? ru
-            ? 'Понял(а). Зафиксировал(а) жалобу на шум; команда свяжется и постарается быстро решить.'
+            ? 'Понял. Зафиксировал жалобу на шум; команда свяжется и постарается быстро решить.'
             : 'Understood. Noise complaint logged; the team will reach out and resolve it as quickly as possible.'
           : pickSingleClarifyingQuestion('noise_complaint', missing, ru);
 
@@ -910,15 +1109,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) запрос на уборку/сервис; согласуем время и вернёмся с подтверждением.'
+          ? 'Понял. Зафиксировал запрос на уборку/сервис; согласуем время и вернёмся с подтверждением.'
           : 'Understood. Housekeeping request logged; we’ll coordinate timing and confirm shortly.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю запрос на уборку оператору для согласования.'
+            ? 'Понял. Передаю запрос на уборку оператору для согласования.'
             : 'Understood. I’m escalating the housekeeping request to an operator to coordinate.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('cleaning_request', missing, ru);
 
@@ -974,15 +1173,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) запрос на продление проживания; проверим доступность и стоимость и вернёмся с ответом.'
+          ? 'Понял. Зафиксировал запрос на продление проживания; проверим доступность и стоимость и вернёмся с ответом.'
           : 'Understood. Extension request logged; we’ll confirm availability and pricing shortly.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю запрос на продление оператору для проверки доступности и стоимости.'
+            ? 'Понял. Передаю запрос на продление оператору для проверки доступности и стоимости.'
             : 'Understood. I’m escalating the extension request to an operator to verify availability and pricing.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('extension_request', missing, ru);
 
@@ -1039,15 +1238,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Зафиксировал(а) проблему с Wi‑Fi; команда проверит сеть/пароль и вернётся с решением.'
+          ? 'Понял. Зафиксировал проблему с Wi‑Fi; команда проверит сеть/пароль и вернётся с решением.'
           : 'Understood. Wi‑Fi issue logged; the team will check the network/password and get back with a fix.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю проблему с Wi‑Fi оператору для проверки и решения.'
+            ? 'Понял. Передаю проблему с Wi‑Fi оператору для проверки и решения.'
             : 'Understood. I’m escalating the Wi‑Fi issue to an operator to check and resolve.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('wifi_issue', missing, ru);
 
@@ -1102,15 +1301,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Уточню правила парковки для этого адреса и вернусь с инструкцией (где можно/нельзя, платно/бесплатно).'
+          ? 'Понял. Уточню правила парковки для этого адреса и вернусь с инструкцией (где можно/нельзя, платно/бесплатно).'
           : 'Understood. I’ll confirm parking options for this address and return with clear instructions (where to park, paid/free).'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Передаю вопрос по парковке оператору для уточнения правил по адресу.'
+            ? 'Понял. Передаю вопрос по парковке оператору для уточнения правил по адресу.'
             : 'Understood. I’m escalating the parking question to an operator to confirm the exact rules for this address.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('parking_question', missing, ru);
 
@@ -1167,15 +1366,15 @@ export function tryTelegramOperationalIntake(
     const reply =
       finalAction === 'reply'
         ? ru
-          ? 'Понял(а). Спасибо — передаю подтверждение оплаты в операционную команду для сверки. Если есть чек/скрин, пришлите — это ускорит.'
+          ? 'Понял. Спасибо — передаю подтверждение оплаты в операционную команду для сверки. Если есть чек/скрин, пришлите — это ускорит.'
           : 'Understood, thank you — I’m forwarding the payment confirmation to ops to verify. If you have a receipt/screenshot, please share it to speed things up.'
         : finalAction === 'escalate_operator'
           ? ru
-            ? 'Понял(а). Есть признаки расхождения по оплате/брони. Передаю оператору для проверки и решения.'
+            ? 'Понял. Есть признаки расхождения по оплате/брони. Передаю оператору для проверки и решения.'
             : 'Understood. There are signs of a payment/booking mismatch. I’m escalating to an operator to verify and resolve.'
           : finalAction === 'escalate_urgent'
             ? ru
-              ? 'Понял(а). Это срочно. Передаю оператору прямо сейчас.'
+              ? 'Понял. Это срочно. Передаю оператору прямо сейчас.'
               : 'Understood. This is urgent. Escalating to an operator right now.'
         : pickSingleClarifyingQuestion('payment_confirmation', missing, ru);
 
