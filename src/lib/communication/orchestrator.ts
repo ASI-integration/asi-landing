@@ -1228,7 +1228,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       );
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Передал(а) запрос оператору — вернёмся с ответом.'
+          ? 'Передал запрос оператору — вернёмся с ответом.'
           : 'I’ve forwarded this to our team to review and will get back to you shortly.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -1253,7 +1253,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         usedPath = 'deterministic';
       } else if (decision.scenario === 'invoice_receipt_request') {
         const msg = lang === 'ru'
-          ? 'Понял(а) запрос на чек/квитанцию. Если хотите получить документ на email — пришлите email, и укажите дату заезда/имя гостя (если ещё не указано).'
+          ? 'Понял запрос на чек/квитанцию. Если хотите получить документ на email — пришлите email, и укажите дату заезда/имя гостя (если ещё не указано).'
           : 'Got it — you’re requesting an invoice/receipt. If you want it by email, please share the email and confirm the guest name / check-in date (if not already provided).';
         replyText = adapter.formatResponse(msg, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
@@ -1309,7 +1309,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (escalation && stopAutoReplyOnEscalation && !replyText) {
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Понял(а). Передал(а) запрос команде — вернёмся с ответом.'
+          ? 'Понял. Передал запрос команде — вернёмся с ответом.'
           : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -1409,7 +1409,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       );
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Понял(а). Передал(а) запрос команде — вернёмся с ответом.'
+          ? 'Понял. Передал запрос команде — вернёмся с ответом.'
           : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`

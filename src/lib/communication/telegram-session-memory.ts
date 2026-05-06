@@ -306,56 +306,56 @@ function defaultReplyForCategory(category: string, ru: boolean): string {
   // Keep copy aligned with telegram-operational-intake replies.
   if (category === 'access_issue') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) проблему с доступом (код/замок/дверь). Команда сейчас проверит и поможет гостю попасть внутрь.'
+      ? 'Понял. Зафиксировал проблему с доступом (код/замок/дверь). Команда сейчас проверит и поможет гостю попасть внутрь.'
       : 'Understood — access issue logged (code/lock/door). Our team will verify and help the guest get inside now.';
   }
   if (category === 'no_heating') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) проблему с отоплением; команда проверит и вернётся с обновлением.'
+      ? 'Понял. Зафиксировал проблему с отоплением; команда проверит и вернётся с обновлением.'
       : 'Understood. Heating issue logged; the team will check and update you shortly.';
   }
   if (category === 'late_checkout') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) запрос на поздний выезд; проверим возможность и вернёмся с ответом.'
+      ? 'Понял. Зафиксировал запрос на поздний выезд; проверим возможность и вернёмся с ответом.'
       : 'Understood. I’ve logged the late checkout request and will confirm availability shortly.';
   }
   if (category === 'early_checkin') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) запрос на ранний заезд; проверим возможность и вернёмся с подтверждением.'
+      ? 'Понял. Зафиксировал запрос на ранний заезд; проверим возможность и вернёмся с подтверждением.'
       : 'Understood. I’ve logged the early check-in request and will confirm availability shortly.';
   }
   if (category === 'noise_complaint') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) жалобу на шум; команда свяжется и постарается быстро решить.'
+      ? 'Понял. Зафиксировал жалобу на шум; команда свяжется и постарается быстро решить.'
       : 'Understood. Noise complaint logged; the team will reach out and resolve it as quickly as possible.';
   }
   if (category === 'cleaning_request') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) запрос на уборку/сервис; согласуем время и вернёмся с подтверждением.'
+      ? 'Понял. Зафиксировал запрос на уборку/сервис; согласуем время и вернёмся с подтверждением.'
       : 'Understood. Housekeeping request logged; we’ll coordinate timing and confirm shortly.';
   }
   if (category === 'extension_request') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) запрос на продление проживания; проверим доступность и стоимость и вернёмся с ответом.'
+      ? 'Понял. Зафиксировал запрос на продление проживания; проверим доступность и стоимость и вернёмся с ответом.'
       : 'Understood. Extension request logged; we’ll confirm availability and pricing shortly.';
   }
   if (category === 'wifi_issue') {
     return ru
-      ? 'Понял(а). Зафиксировал(а) проблему с Wi‑Fi; команда проверит сеть/пароль и вернётся с решением.'
+      ? 'Понял. Зафиксировал проблему с Wi‑Fi; команда проверит сеть/пароль и вернётся с решением.'
       : 'Understood. Wi‑Fi issue logged; the team will check the network/password and get back with a fix.';
   }
   if (category === 'parking_question') {
     return ru
-      ? 'Понял(а). Уточню правила парковки для этого адреса и вернусь с инструкцией (где можно/нельзя, платно/бесплатно).'
+      ? 'Понял. Уточню правила парковки для этого адреса и вернусь с инструкцией (где можно/нельзя, платно/бесплатно).'
       : 'Understood. I’ll confirm parking options for this address and return with clear instructions (where to park, paid/free).';
   }
   if (category === 'payment_confirmation') {
     return ru
-      ? 'Понял(а). Спасибо — передаю подтверждение оплаты в операционную команду для сверки. Если есть чек/скрин, пришлите — это ускорит.'
+      ? 'Понял. Спасибо — передаю подтверждение оплаты в операционную команду для сверки. Если есть чек/скрин, пришлите — это ускорит.'
       : 'Understood, thank you — I’m forwarding the payment confirmation to ops to verify. If you have a receipt/screenshot, please share it to speed things up.';
   }
   return ru
-    ? 'Понял(а). Зафиксировал(а) запрос; команда проверит и вернётся с обновлением.'
+    ? 'Понял. Зафиксировал запрос; команда проверит и вернётся с обновлением.'
     : 'Understood. I’ve logged the request; the team will check and update you shortly.';
 }
 
@@ -653,7 +653,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
 
       if (shouldForceEscalate) {
         hit.finalAction = 'escalate_operator';
-        hit.reply = ru ? 'Понял(а). Передаю оператору.' : 'Understood. I’m escalating to an operator.';
+        hit.reply = ru ? 'Понял. Передаю оператору.' : 'Understood. I’m escalating to an operator.';
         hit.actionReason = 'matching:unresolved_after_one_clarification';
       } else if (match.match_confidence === 'high_confidence_match') {
         // Grounded match → never ask generic questions.
@@ -855,7 +855,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         matchedPropertyLabel: (nextCase.extracted_facts as any)?.matched_property_label ?? null,
       });
       const reply = ru
-        ? `Понял(а). Я уже уточнял(а) детали — передаю оператору. (${buildEscalationSummaryForCase({
+        ? `Понял. Я уже уточнял детали — передаю оператору. (${buildEscalationSummaryForCase({
             category: nextCase.category,
             extractedFacts: nextCase.extracted_facts,
             missingFacts: nextCase.missing_facts,
@@ -957,7 +957,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         ? defaultReplyForCategory(String(nextCase.category ?? ''), ru)
         : nextStatus === 'escalated'
           ? (ru
-              ? `Понял(а). Нужны дополнительные детали, но я уже задавал(а) один уточняющий вопрос — передаю оператору. (${buildEscalationSummaryForCase({
+              ? `Понял. Нужны дополнительные детали, но я уже задавал один уточняющий вопрос — передаю оператору. (${buildEscalationSummaryForCase({
                   category: nextCase.category,
                   extractedFacts: nextCase.extracted_facts,
                   missingFacts: nextCase.missing_facts,
@@ -1033,7 +1033,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         ? defaultReplyForCategory(String(next.category ?? ''), ru)
         : finalAction === 'escalate_operator'
           ? (ru
-              ? `Понял(а). Нужны дополнительные детали — передаю оператору. (${buildEscalationSummaryForCase({
+              ? `Понял. Нужны дополнительные детали — передаю оператору. (${buildEscalationSummaryForCase({
                   category: next.category,
                   extractedFacts: next.extracted_facts ?? {},
                   missingFacts: next.missing_facts ?? [],

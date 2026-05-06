@@ -53,7 +53,7 @@ function oneQuestion(lang: Lang, en: string, ru: string, es: string): string {
 }
 
 function ack(lang: Lang): string {
-  if (lang === 'ru') return 'Понял(а).';
+  if (lang === 'ru') return 'Понял.';
   if (lang === 'es') return 'Entendido.';
   return 'Understood.';
 }
@@ -315,7 +315,7 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   if (input.action === 'clarify') {
     const q = clarifyPrompt(input);
     const t = lang === 'ru'
-      ? `Понял(а). ${q}`
+      ? `Понял. ${q}`
       : lang === 'es'
         ? `Entendido. ${q}`
         : `Understood. ${q}`;
@@ -532,7 +532,7 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
           ? 'Gracias — paso la confirmación de pago al equipo para verificar.'
           : 'Thanks — I’m passing the payment confirmation to the team to verify.',
       lang === 'ru'
-        ? 'Понял(а). Передаю в команду для проверки оплаты; если есть чек/скрин — пришлите.'
+        ? 'Понял. Передаю в команду для проверки оплаты; если есть чек/скрин — пришлите.'
         : lang === 'es'
           ? 'Entendido. Lo paso al equipo para verificar; si tienes recibo/captura, envíalo.'
           : 'Understood. I’m sending this to the team to verify; if you have a receipt/screenshot, please share it.',
