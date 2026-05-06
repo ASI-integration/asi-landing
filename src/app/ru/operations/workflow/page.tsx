@@ -8,6 +8,7 @@ import {
   bookingAuditEvents,
   bookingOperations,
   cleaningTasks,
+  communicationBridgeMockResults,
   deriveBookingOperationTasks,
   getBookingOperationForScenario,
   getCleaningTasksForBooking,
@@ -30,6 +31,7 @@ import {
   operatorEscalations,
 } from '@/lib/operations';
 import type {
+  OperationCommunicationEventType,
   OperationActor,
   OperationAutomationStatus,
   OperationPriority,
@@ -65,6 +67,17 @@ const taskStatusLabelsRu: Record<OperationTaskStatus, string> = {
   waiting_confirmation: 'Ждет подтверждения',
   needs_human: 'Нужен оператор',
   completed: 'Завершено',
+};
+
+const bridgeEventLabelsRu: Record<OperationCommunicationEventType, string> = {
+  guest_question: 'Вопрос гостя',
+  early_checkin_request: 'Ранний заезд',
+  late_checkout_request: 'Поздний выезд',
+  maintenance_issue: 'Maintenance issue',
+  cleaning_issue: 'Cleaning issue',
+  complaint: 'Жалоба',
+  checkout_support: 'Поддержка выезда',
+  review_follow_up: 'Review / follow-up',
 };
 
 const statusTone: Record<OperationStatus, string> = {
@@ -127,6 +140,78 @@ export default function RuOperationsWorkflowPage() {
                   <p className="text-xs font-bold text-[var(--t-muted)]">Фаза {phase.order}</p>
                   <p className="mt-1 text-sm font-semibold leading-snug text-[var(--t-text)]">{phase.titleRu}</p>
                 </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="px-4 sm:px-6 py-10 sm:py-12 bg-[var(--t-bg)] border-b border-[var(--t-border)]">
+          <div className="max-w-6xl mx-auto">
+            <div className="max-w-3xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
+                Communication bridge
+              </p>
+              <h2 className="mt-2 text-2xl font-bold text-[var(--t-text)]">
+                Сообщение гостя → операционное действие
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--t-text-2)]">
+                Внутреннее демо: входящее сообщение классифицируется и превращается в Operations event, задачу или
+                эскалацию. Реальные Telegram/WhatsApp/voice интеграции здесь не подключены.
+              </p>
+            </div>
+
+            <div className="mt-6 grid lg:grid-cols-2 gap-4">
+              {communicationBridgeMockResults.map((result) => (
+                <article
+                  key={result.inboundMessage.id}
+                  className="rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--t-muted)]">
+                        {result.inboundMessage.channelRu} / {result.inboundMessage.guestNameRu}
+                      </p>
+                      <p className="mt-2 text-sm leading-relaxed text-[var(--t-text)]">
+                        {result.inboundMessage.textRu}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                        result.operatorNeeded
+                          ? 'border-rose-300 bg-rose-500/10 text-rose-700'
+                          : 'border-emerald-300 bg-emerald-500/10 text-emerald-700'
+                      }`}
+                    >
+                      {result.operatorNeeded ? 'Нужен оператор' : 'Автоматически'}
+                    </span>
+                  </div>
+
+                  <dl className="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-[var(--t-muted)]">Классификация</dt>
+                      <dd className="mt-1 font-medium text-[var(--t-text)]">
+                        {bridgeEventLabelsRu[result.classification.eventType]}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--t-muted)]">Фаза</dt>
+                      <dd className="mt-1 font-medium text-[var(--t-text)]">
+                        {getOperationPhase(result.classification.phaseId).titleRu}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {result.createdActionLabelsRu.map((label) => (
+                      <span
+                        key={label}
+                        className="rounded-full border border-[var(--t-border)] bg-[var(--t-bg)] px-3 py-1 text-xs text-[var(--t-text-2)]"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </article>
               ))}
             </div>
           </div>

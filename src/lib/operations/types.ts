@@ -66,6 +66,24 @@ export type GuestCommunicationDirection = 'inbound' | 'outbound';
 
 export type OperatorEscalationStatus = 'open' | 'resolved' | 'not_required';
 
+export type OperationCommunicationEventType =
+  | 'guest_question'
+  | 'early_checkin_request'
+  | 'late_checkout_request'
+  | 'maintenance_issue'
+  | 'cleaning_issue'
+  | 'complaint'
+  | 'checkout_support'
+  | 'review_follow_up';
+
+export type OperationEscalationReason =
+  | 'urgent_maintenance'
+  | 'guest_complaint'
+  | 'cleaning_gap'
+  | 'policy_exception'
+  | 'low_confidence'
+  | 'not_required';
+
 export type OperationPhase = {
   id: OperationPhaseId;
   order: number;
@@ -138,6 +156,30 @@ export type ListingIntakeDraftInput = {
 export type ListingIntakeValidationResult = {
   isValid: boolean;
   missingFieldsRu: string[];
+};
+
+export type InboundGuestMessage = {
+  id: string;
+  channelRu: string;
+  channel?: string;
+  conversationId?: string;
+  guestNameRu: string;
+  propertyListingId?: string;
+  bookingOperationId?: string;
+  reservationId?: string;
+  textRu: string;
+  receivedAtRu: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type OperationsMessageClassification = {
+  eventType: OperationCommunicationEventType;
+  confidence: number;
+  priority: OperationPriority;
+  phaseId: OperationPhaseId;
+  automationStatus: OperationAutomationStatus;
+  escalationReason: OperationEscalationReason;
+  reasonRu: string;
 };
 
 export type ChannelListingMetadata = {
@@ -283,6 +325,19 @@ export type DerivedBookingOperationTasks = {
   reviewRequestRequired: boolean;
   operatorEscalationRequired: boolean;
   taskLabelsRu: string[];
+};
+
+export type OperationsBridgeResult = {
+  inboundMessage: InboundGuestMessage;
+  classification: OperationsMessageClassification;
+  guestCommunicationEvent: GuestCommunicationEvent;
+  auditEvent: OperationAuditEvent;
+  cleaningTask?: CleaningTask;
+  maintenanceTask?: MaintenanceTask;
+  operatorEscalation?: OperatorEscalation;
+  reviewFollowUpActionRu?: string;
+  createdActionLabelsRu: string[];
+  operatorNeeded: boolean;
 };
 
 export type OperationScenario = {

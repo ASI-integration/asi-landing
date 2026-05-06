@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   bookingOperations,
+  bridgeCommunicationToOperations,
   cleaningTasks,
+  communicationBridgeMockMessages,
   createListingIntakeDraft,
   deriveBookingOperationTasks,
   getBookingOperationForScenario,
@@ -211,5 +213,73 @@ describe('operations workflow', () => {
     expect(checkoutTasks.reviewRequestRequired).toBe(true);
     expect(exceptionTasks.maintenanceTaskRequired).toBe(true);
     expect(exceptionTasks.operatorEscalationRequired).toBe(true);
+  });
+
+  it('maps early check-in communication to guest communication and pre-arrival action', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'early-checkin')!,
+    );
+
+    expect(result.classification.eventType).toBe('early_checkin_request');
+    expect(result.classification.phaseId).toBe('pre_arrival');
+    expect(result.createdActionLabelsRu).toContain('guest communication event');
+    expect(result.createdActionLabelsRu).toContain('pre-arrival action');
+    expect(result.operatorNeeded).toBe(false);
+  });
+
+  it('maps leak or breakage communication to urgent maintenance and escalation', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'leak')!,
+    );
+
+    expect(result.classification.eventType).toBe('maintenance_issue');
+    expect(result.maintenanceTask?.titleRu).toBe('Home master task из сообщения гостя');
+    expect(result.maintenanceTask?.priority).toBe('urgent');
+    expect(result.operatorEscalation?.reasonRu).toContain('срочный maintenance issue');
+    expect(result.operatorNeeded).toBe(true);
+  });
+
+  it('keeps Wi-Fi and access questions automatic', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'wifi-access')!,
+    );
+
+    expect(result.classification.eventType).toBe('guest_question');
+    expect(result.guestCommunicationEvent.automated).toBe(true);
+    expect(result.cleaningTask).toBeUndefined();
+    expect(result.maintenanceTask).toBeUndefined();
+    expect(result.operatorEscalation).toBeUndefined();
+  });
+
+  it('maps complaints to operator escalation', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'complaint')!,
+    );
+
+    expect(result.classification.eventType).toBe('complaint');
+    expect(result.operatorEscalation?.decisionNeededRu).toContain('Разобрать жалобу');
+    expect(result.operatorNeeded).toBe(true);
+  });
+
+  it('maps checkout questions to checkout support', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'checkout-question')!,
+    );
+
+    expect(result.classification.eventType).toBe('checkout_support');
+    expect(result.classification.phaseId).toBe('checkout');
+    expect(result.createdActionLabelsRu).toContain('checkout support action');
+    expect(result.operatorNeeded).toBe(false);
+  });
+
+  it('maps review replies to follow-up and review action', () => {
+    const result = bridgeCommunicationToOperations(
+      communicationBridgeMockMessages.find((message) => message.id === 'review-follow-up')!,
+    );
+
+    expect(result.classification.eventType).toBe('review_follow_up');
+    expect(result.classification.phaseId).toBe('review_follow_up');
+    expect(result.reviewFollowUpActionRu).toContain('повторного контакта');
+    expect(result.createdActionLabelsRu).toContain('review/follow-up action');
   });
 });
