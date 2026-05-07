@@ -183,7 +183,21 @@ function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: str
   const time = factString(input, 'requestedTime') ?? factString(input, 'time_hint');
   const displayTime = time ?? 'Это время';
   const missing = input.missingFacts ?? [];
-  const missingObject = missing.includes('property') || missing.includes('booking') || missing.includes('reservation');
+  const knownObjectOrBooking = Boolean(
+    input.sessionCase?.property ||
+      factString(input, 'property') ||
+      factString(input, 'property_hint') ||
+      factString(input, 'matched_property_label') ||
+      factString(input, 'booking_reference') ||
+      factString(input, 'reservation_reference') ||
+      factString(input, 'matched_reservation_id'),
+  );
+  const missingObject =
+    !knownObjectOrBooking &&
+    (missing.includes('property') ||
+      missing.includes('booking') ||
+      missing.includes('reservation') ||
+      missing.includes('reservation_or_property'));
   const objectQuestion = missingObject ? ' Подскажите, для какого это объекта или брони?' : '';
 
   if (input.category === 'checkin_time_question' && bucket === 'normal_checkin') {

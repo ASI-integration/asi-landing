@@ -149,6 +149,63 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.status).toBe('resolved');
   });
 
+  it('continues RU check-in flow after time and object follow-ups without operator fallback', async () => {
+    const chatId = 5005;
+    const r1 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId,
+      channel: 'telegram',
+      update_id: 21,
+      surfaceLang: 'ru',
+      text: 'Здравствуйте, я гость. Хочу заехать завтра в 15:00, можно?',
+      db: makeEmptyDb(),
+    });
+    expect(r1.handled).toBe(true);
+    if (!r1.handled) throw new Error('expected handled');
+    expect(r1.hit.category).toBe('checkin_time_question');
+    expect(r1.hit.finalAction).toBe('clarify');
+    expect(r1.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(r1.hit.reply).toMatch(/для какого это объекта или брони/i);
+
+    const r2 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId,
+      channel: 'telegram',
+      update_id: 22,
+      surfaceLang: 'ru',
+      text: 'А если в 7 утра?',
+      db: makeEmptyDb(),
+    });
+    expect(r2.handled).toBe(true);
+    if (!r2.handled) throw new Error('expected handled');
+    expect(r2.mode).toBe('followup_fragment');
+    expect(r2.hit.category).toBe('early_checkin');
+    expect(r2.hit.finalAction).toBe('clarify');
+    expect(r2.hit.reply).toMatch(/07:00 — это ранний заезд/i);
+    expect(r2.hit.reply).toMatch(/для какого это объекта или брони/i);
+    expect(r2.hit.reply).not.toMatch(/переда[юн].*оператор|Запрос уже передан/i);
+    expect(r2.hit.reply).not.toContain('(а)');
+
+    const r3 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId,
+      channel: 'telegram',
+      update_id: 23,
+      surfaceLang: 'ru',
+      text: 'Это та же бронь, объект на Тверской.',
+      db: makeEmptyDb(),
+    });
+    expect(r3.handled).toBe(true);
+    if (!r3.handled) throw new Error('expected handled');
+    expect(r3.hit.category).toBe('early_checkin');
+    expect(r3.hit.finalAction).toBe('reply');
+    expect(r3.hit.reply).toMatch(/07:00 — это ранний заезд/i);
+    expect(r3.hit.reply).not.toMatch(/для какого это объекта или брони/i);
+    expect(r3.hit.reply).not.toMatch(/переда[юн].*оператор|Запрос уже передан/i);
+
+    const mem = getAutonomousSessionOperationalCaseV1(chatId);
+    expect(mem?.status).toBe('resolved');
+    expect(mem?.property).toMatch(/Тверск/i);
+    expect((mem?.extracted_facts as any)?.requestedTime).toBe('07:00');
+  });
+
   it('emits deterministic session_memory_update logs with required keys', async () => {
     const chatId = 4004;
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
