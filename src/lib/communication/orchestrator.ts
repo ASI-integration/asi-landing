@@ -94,6 +94,7 @@ import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-t
 import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
+import { executeTelegramOperationalPolicy } from './telegram-operational-policy-executor';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -1010,6 +1011,31 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
         if (!replyText) {
           const memNow = getContext(chatId);
+          const policyResult = executeTelegramOperationalPolicy({
+            messageText: text,
+            update_id,
+            sessionMemory: {
+              knownContext: {
+                objectLabel:
+                  (opIntakeResult.case?.property ?? null) ||
+                  ((opIntake.extractedFacts as any)?.matched_property_label ?? null),
+                bookingReference:
+                  ((opIntake.extractedFacts as any)?.booking_reference ?? null) ||
+                  ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
+                cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
+              },
+              lastSlowAckUpdateId: null,
+            },
+            knownContext: {
+              objectLabel:
+                (opIntakeResult.case?.property ?? null) ||
+                ((opIntake.extractedFacts as any)?.matched_property_label ?? null),
+              bookingReference:
+                ((opIntake.extractedFacts as any)?.booking_reference ?? null) ||
+                ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
+              cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
+            },
+          });
           const composed = composeTelegramOperationalReply({
             update_id,
             category: opIntake.category,
@@ -1023,6 +1049,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             sessionCase: opIntakeResult.case ?? null,
             sessionMemory: memNow ?? null,
             shouldGreet: shouldGreetTelegramOperationalReply(convSession),
+            policyResult: classification.lang === 'ru' ? policyResult : null,
           });
           replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { composeTelegramOperationalReply } from '../telegram-reply-composer';
+import { executeTelegramOperationalPolicy } from '../telegram-operational-policy-executor';
 
 const categories = [
   'access_issue',
@@ -173,6 +174,27 @@ describe('composeTelegramOperationalReply', () => {
     });
     expect(es.language).toBe('es');
     expect(es.text).toMatch(/Entendido|¿/);
+  });
+
+  it('builds Russian reply from policy result without placeholders', () => {
+    const policy = executeTelegramOperationalPolicy({
+      messageText: 'Здравствуйте, я гость. Хочу заехать завтра в 15:00',
+      update_id: 77,
+    });
+    const out = composeTelegramOperationalReply({
+      update_id: 77,
+      category: 'checkin_time_question',
+      action: 'clarify',
+      lang: 'ru',
+      text: 'Здравствуйте, я гость. Хочу заехать завтра в 15:00',
+      extractedFacts: {},
+      missingFacts: ['property'],
+      urgency: 'normal',
+      policyResult: policy,
+    });
+    expect(out.text).toMatch(/15:00 обычно стандартное время заезда/i);
+    expect(out.text).toMatch(/объекта или брони/i);
+    expect(out.text).not.toMatch(/Понял\(а\)/);
   });
 });
 

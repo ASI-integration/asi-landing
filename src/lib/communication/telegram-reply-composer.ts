@@ -1,6 +1,7 @@
 import type { ConversationContext, Lang, ReservationPropertyLinkingStateV1 } from './types';
 import type { TelegramOperationalCategory, TelegramOperationalFinalAction } from './telegram-operational-intake';
 import type { TelegramOperationalSessionCaseV1 } from './types';
+import type { TelegramOperationalPolicyResult } from './telegram-operational-policy-executor';
 
 export type ReplyComposerAction = TelegramOperationalFinalAction;
 
@@ -18,6 +19,7 @@ export type ReplyComposerInput = {
   sessionCase?: TelegramOperationalSessionCaseV1 | null;
   sessionMemory?: ConversationContext | null;
   shouldGreet?: boolean;
+  policyResult?: TelegramOperationalPolicyResult | null;
 };
 
 export type ReplyComposerOutput = {
@@ -179,6 +181,47 @@ function factString(input: ReplyComposerInput, key: string): string | null {
 }
 
 function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: string; text: string } | null {
+  const policy = input.policyResult;
+  if (policy) {
+    const knownObject = Boolean(
+      input.sessionCase?.property ||
+        factString(input, 'property') ||
+        factString(input, 'property_hint') ||
+        factString(input, 'booking_reference') ||
+        factString(input, 'matched_reservation_id'),
+    );
+    if (policy.scenarioFamily === 'CHECK_IN_STANDARD') {
+      return {
+        template_key: 'policy.checkin_standard.v1',
+        text: `15:00 обычно стандартное время заезда.${knownObject ? '' : ' Уточните, пожалуйста, для какого объекта или брони?'}`,
+      };
+    }
+    if (policy.scenarioFamily === 'CHECK_IN_EARLY') {
+      return {
+        template_key: 'policy.checkin_early.v1',
+        text: `12:00 — это ранний заезд, который подтверждается отдельно при наличии возможности.${knownObject ? '' : ' Уточните, пожалуйста, объект или бронь.'}`,
+      };
+    }
+    if (policy.scenarioFamily === 'CHECK_IN_VERY_EARLY') {
+      return {
+        template_key: 'policy.checkin_very_early.v1',
+        text: `07:00 — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи и это отдельно подтверждено.${knownObject ? '' : ' Уточните, пожалуйста, объект или бронь.'}`,
+      };
+    }
+    if (policy.scenarioFamily === 'BOOKING_CONTEXT') {
+      return {
+        template_key: 'policy.booking_context.v1',
+        text: 'Принял, контекст по брони и объекту сохранил. Сейчас передам запрос в проверку оператору и вернусь с подтверждением.',
+      };
+    }
+    if (policy.scenarioFamily === 'SLOW_ACK') {
+      return {
+        template_key: 'policy.slow_ack.v1',
+        text: 'Принял запрос, проверяю детали и скоро вернусь с обновлением.',
+      };
+    }
+  }
+
   const bucket = factString(input, 'checkin_time_bucket');
   const time = factString(input, 'requestedTime') ?? factString(input, 'time_hint');
   const displayTime = time ?? 'Это время';
