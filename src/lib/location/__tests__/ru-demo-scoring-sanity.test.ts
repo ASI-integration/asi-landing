@@ -307,6 +307,88 @@ describe('applyResidentialDemoSanity — real strong location', () => {
   });
 });
 
+describe('applyResidentialDemoSanity — corporate/industrial museum must not drive TOURIST strong', () => {
+  it('does not count factory museum as tier-1 attraction and caps public headline', () => {
+    // Production issue: улица Васи Алексеева, 4, Санкт-Петербург
+    // Magnet: "Музей истории и техники ОАО «Кировский завод»" must be weak/local per taxonomy.
+    const magnets: MagnetItem[] = [
+      magnet({
+        categoryId: 'attraction',
+        name: 'Музей истории и техники ОАО «Кировский завод»',
+        distance: 260,
+        strengthClass: 'medium',
+        attractionScore: 4.6, // even if upstream scores it high, taxonomy must gate it
+        weight: 6,
+      }),
+      // Realistic moderate context signal: nearby metro.
+      magnet({
+        categoryId: 'metro',
+        name: 'Кировский завод',
+        distance: 650,
+        strengthClass: 'strong',
+        weight: 9,
+      }),
+    ];
+    const analysis = fixture({
+      evergreenIndex: 100,
+      magnets,
+      primaryAudience: 'TOURIST',
+      audienceFitScore: 80,
+      audienceSharePct: 30,
+    });
+
+    const sanity = applyResidentialDemoSanity(analysis);
+
+    // Must not surface as Tier-1 attraction anchor
+    expect(sanity.tier1Magnets.some(m => m.categoryId === 'attraction')).toBe(false);
+    expect(sanity.tier1Magnets.some(m => m.categoryId === 'metro')).toBe(true);
+    expect(sanity.tier1Count).toBe(1);
+
+    // Public output must be capped and cautious
+    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(sanity.displayAudience).not.toBe('TOURIST');
+    expect(sanity.verdictLabelRu).not.toContain('Сильная туристическая локация');
+    expect(sanity.verdictLabelRu).not.toContain('Сильная');
+    expect(sanity.capReasonsRu.join(' ')).toContain('культурный объект рядом');
+    expect(sanity.capReasonsRu.join(' ')).toContain('туристический поток не подтверждён');
+  });
+});
+
+describe('applyResidentialDemoSanity — major tourist landmark remains strong', () => {
+  it('keeps TOURIST when credible landmark + metro tier-1 anchors exist', () => {
+    const magnets: MagnetItem[] = [
+      magnet({
+        categoryId: 'attraction',
+        name: 'Государственный Эрмитаж',
+        distance: 700,
+        strengthClass: 'strong',
+        attractionScore: 5,
+        weight: 6,
+      }),
+      magnet({
+        categoryId: 'metro',
+        name: 'Адмиралтейская',
+        distance: 450,
+        strengthClass: 'strong',
+        weight: 9,
+      }),
+    ];
+    const analysis = fixture({
+      evergreenIndex: 88,
+      magnets,
+      primaryAudience: 'TOURIST',
+      audienceFitScore: 55,
+      audienceSharePct: 25,
+    });
+
+    const sanity = applyResidentialDemoSanity(analysis);
+    expect(sanity.displayScore).toBe(88);
+    expect(sanity.tier1Count).toBeGreaterThanOrEqual(2);
+    expect(sanity.displayAudience).toBe('TOURIST');
+    expect(sanity.verdictLabelRu).toContain('Сильная туристическая локация');
+  });
+});
+
 describe('applyResidentialDemoSanity — single tier-1 hospital', () => {
   it('caps strong band > 80 to 80 with one tier-1 magnet', () => {
     const magnets: MagnetItem[] = [
