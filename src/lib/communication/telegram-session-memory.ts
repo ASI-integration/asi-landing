@@ -1,5 +1,6 @@
 import { getAutonomousSessionOperationalCaseV1, setAutonomousSessionOperationalCaseV1 } from './conversation-session-store';
 import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, TelegramOperationalSessionCaseV1 } from './types';
+import { supabase } from '@/lib/supabase';
 import {
   classifyCheckinTimeBucket,
   tryTelegramOperationalIntake,
@@ -28,6 +29,115 @@ function nowIso(): string {
 
 function safeJsonClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
+}
+
+type SupabaseLike = { from: (table: string) => any };
+
+type TelegramConversationContextV1 = {
+  current_object?: { property_id?: string | null; property_label?: string | null; source?: string | null } | null;
+  current_booking?: { reservation_id?: string | null; booking_reference?: string | null; source?: string | null } | null;
+  pending_clarification?: { question?: string | null; missing_facts?: string[] | null } | null;
+  last_checkin_question?: string | null;
+  operational_case?: TelegramOperationalSessionCaseV1 | null;
+  updated_at?: string;
+};
+
+function normalizeOperationalCaseFromContext(context: unknown): TelegramOperationalSessionCaseV1 | null {
+  const c = context as TelegramConversationContextV1 | null;
+  if (!c || typeof c !== 'object' || !c.operational_case || typeof c.operational_case !== 'object') return null;
+  const candidate = c.operational_case as TelegramOperationalSessionCaseV1;
+  if (!candidate.version || !candidate.status || !candidate.extracted_facts || !Array.isArray(candidate.missing_facts)) return null;
+  return safeJsonClone(candidate);
+}
+
+async function loadDurableOperationalCase(params: {
+  chatId: number;
+  db?: SupabaseLike;
+}): Promise<TelegramOperationalSessionCaseV1 | null> {
+  const db = (params.db ?? (supabase as unknown as SupabaseLike)) as SupabaseLike;
+  try {
+    const q = db.from('tg_conversation_sessions').select('conversation_context_v1').eq('chat_id', params.chatId).limit(1);
+    const response =
+      typeof q?.maybeSingle === 'function'
+        ? await q.maybeSingle()
+        : typeof q?.single === 'function'
+          ? await q.single()
+          : await q;
+    const data = (response as any)?.data;
+    const row = Array.isArray(data) ? data[0] : data;
+    return normalizeOperationalCaseFromContext((row as any)?.conversation_context_v1 ?? null);
+  } catch {
+    return null;
+  }
+}
+
+function buildConversationContextV1(operationalCase: TelegramOperationalSessionCaseV1): TelegramConversationContextV1 {
+  const facts = (operationalCase.extracted_facts ?? {}) as Record<string, unknown>;
+  const propertyLabel = concreteFact(facts, ['matched_property_label', 'property', 'property_hint', 'address_hint']);
+  const propertyId = concreteFact(facts, ['matched_property_id']);
+  const reservationId = concreteFact(facts, ['matched_reservation_id', 'reservation_id']);
+  const bookingRef = concreteFact(facts, ['booking_reference', 'reservation_reference']);
+  const pendingClarification =
+    operationalCase.status === 'clarifying' || (operationalCase.missing_facts ?? []).length > 0
+      ? {
+          question: operationalCase.last_question_asked ?? null,
+          missing_facts: [...(operationalCase.missing_facts ?? [])],
+        }
+      : null;
+  const isCheckinCategory = isCheckinOperationalCategory(operationalCase.category);
+  return {
+    current_object:
+      propertyId || propertyLabel
+        ? {
+            property_id: propertyId ?? null,
+            property_label: propertyLabel ?? null,
+            source: propertyId ? 'matched_property' : 'message_or_session_hint',
+          }
+        : null,
+    current_booking:
+      reservationId || bookingRef
+        ? {
+            reservation_id: reservationId ?? null,
+            booking_reference: bookingRef ?? null,
+            source: reservationId ? 'matched_reservation' : 'message_or_session_hint',
+          }
+        : null,
+    pending_clarification: pendingClarification,
+    last_checkin_question: isCheckinCategory ? (operationalCase.last_question_asked ?? null) : null,
+    operational_case: safeJsonClone(operationalCase),
+    updated_at: nowIso(),
+  };
+}
+
+async function persistOperationalCase(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  operationalCase: TelegramOperationalSessionCaseV1;
+  db?: SupabaseLike;
+}): Promise<void> {
+  setAutonomousSessionOperationalCaseV1({
+    chatId: params.chatId,
+    channel: params.channel,
+    operationalCase: params.operationalCase,
+  });
+  const db = (params.db ?? (supabase as unknown as SupabaseLike)) as SupabaseLike;
+  const context = buildConversationContextV1(params.operationalCase);
+  try {
+    const now = nowIso();
+    const table = db.from('tg_conversation_sessions');
+    if (typeof table?.upsert === 'function') {
+      await table.upsert(
+        { chat_id: params.chatId, updated_at: now, conversation_context_v1: context },
+        { onConflict: 'chat_id', ignoreDuplicates: false },
+      );
+      return;
+    }
+    if (typeof table?.update === 'function') {
+      await table.update({ updated_at: now, conversation_context_v1: context }).eq('chat_id', params.chatId);
+    }
+  } catch {
+    // best-effort durable persistence; never break operational reply
+  }
 }
 
 function logSessionMemoryUpdate(params: {
@@ -723,7 +833,8 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
   /** Override db for deterministic matching tests */
   db?: any;
 }): Promise<TelegramSessionMemoryResult> {
-  const prevCase = getAutonomousSessionOperationalCaseV1(params.chatId);
+  const durableCase = await loadDurableOperationalCase({ chatId: params.chatId, db: params.db });
+  const prevCase = durableCase ?? getAutonomousSessionOperationalCaseV1(params.chatId);
   const ru = params.surfaceLang === 'ru';
   const explicitProp = params.surfaceLang === 'ru' ? extractExplicitRuPropertyLabel(params.text) : null;
   const explicit_property_detected = Boolean(explicitProp);
@@ -1047,7 +1158,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         urgencySignals: hit.urgencySignals ?? [],
         actionReason: `missing_facts_policy:clarification_already_used; operator_summary=${opSummary}`,
       };
-      setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
+      await persistOperationalCase({
+        chatId: params.chatId,
+        channel: params.channel,
+        operationalCase: nextCase,
+        db: params.db,
+      });
       logSessionMemoryUpdate({
         session_id: params.chatId,
         update_id: params.update_id,
@@ -1068,7 +1184,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
 
     if (startNew) {
       const nextCase = buildCaseFromHit({ hit, update_id: params.update_id });
-      setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
+      await persistOperationalCase({
+        chatId: params.chatId,
+        channel: params.channel,
+        operationalCase: nextCase,
+        db: params.db,
+      });
       logSessionMemoryUpdate({
         session_id: params.chatId,
         update_id: params.update_id,
@@ -1158,7 +1279,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
           : (hit.actionReason ?? 'merged_case'),
       };
 
-      setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
+      await persistOperationalCase({
+        chatId: params.chatId,
+        channel: params.channel,
+        operationalCase: nextCase,
+        db: params.db,
+      });
       logSessionMemoryUpdate({
         session_id: params.chatId,
         update_id: params.update_id,
@@ -1172,7 +1298,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
 
     // Fall back to starting a new case when state is ambiguous.
     const nextCase = buildCaseFromHit({ hit, update_id: params.update_id });
-    setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
+    await persistOperationalCase({
+      chatId: params.chatId,
+      channel: params.channel,
+      operationalCase: nextCase,
+      db: params.db,
+    });
     logSessionMemoryUpdate({
       session_id: params.chatId,
       update_id: params.update_id,
@@ -1238,7 +1369,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       last_update_id: params.update_id,
     };
 
-    setAutonomousSessionOperationalCaseV1({ chatId: params.chatId, channel: params.channel, operationalCase: nextCase });
+    await persistOperationalCase({
+      chatId: params.chatId,
+      channel: params.channel,
+      operationalCase: nextCase,
+      db: params.db,
+    });
     logSessionMemoryUpdate({
       session_id: params.chatId,
       update_id: params.update_id,
