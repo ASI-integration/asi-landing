@@ -22,6 +22,7 @@ export type TelegramOperationalCategory =
 export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate_operator' | 'escalate_urgent';
 
 export type CheckinTimeBucket =
+  | 'very_early_checkin'
   | 'early_checkin'
   | 'conditional_early_checkin'
   | 'normal_checkin'
@@ -117,7 +118,7 @@ function hasEarlyCheckinIntent(n: string, bucket: CheckinTimeBucket): boolean {
   const explicitEarly = hasExplicitEarlyCheckinWording(n);
 
   if (bucket === 'normal_checkin' || bucket === 'late_checkin') return false;
-  if (bucket === 'early_checkin' || bucket === 'conditional_early_checkin') {
+  if (bucket === 'very_early_checkin' || bucket === 'early_checkin' || bucket === 'conditional_early_checkin') {
     return explicitEarly || hasCheckinArrivalIntent(n);
   }
   return explicitEarly;
@@ -309,13 +310,17 @@ function extractTimeLike(text: string): string | null {
   return null;
 }
 
-function parseTimeHour(time: string | null): number | null {
+function parseTimeParts(time: string | null): { hour: number; minute: number } | null {
   const m = String(time ?? '').match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
   const hour = Number(m[1]);
   const minute = Number(m[2]);
   if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return hour;
+  return { hour, minute };
+}
+
+function parseTimeHour(time: string | null): number | null {
+  return parseTimeParts(time)?.hour ?? null;
 }
 
 export function classifyCheckinTimeBucket(time: string | null): {
@@ -324,8 +329,8 @@ export function classifyCheckinTimeBucket(time: string | null): {
   requiresCleaningAvailability: boolean;
   policy: string;
 } {
-  const hour = parseTimeHour(time);
-  if (hour == null) {
+  const parsed = parseTimeParts(time);
+  if (!parsed) {
     return {
       bucket: 'unknown',
       isEarlyCheckinByTime: false,
@@ -333,7 +338,16 @@ export function classifyCheckinTimeBucket(time: string | null): {
       policy: 'no_explicit_checkin_time',
     };
   }
-  if (hour >= 6 && hour <= 10) {
+  const { hour, minute } = parsed;
+  if (hour >= 6 && (hour < 8 || (hour === 8 && minute === 0))) {
+    return {
+      bucket: 'very_early_checkin',
+      isEarlyCheckinByTime: true,
+      requiresCleaningAvailability: false,
+      policy: '06:00-08:00_very_early_requires_previous_night_availability',
+    };
+  }
+  if ((hour === 8 && minute > 0) || (hour >= 9 && hour <= 10)) {
     return {
       bucket: 'early_checkin',
       isEarlyCheckinByTime: true,
@@ -383,6 +397,9 @@ function buildRuCheckinTimePolicyReply(params: {
 
   if (params.bucket === 'early_checkin') {
     return `Понял. ${time} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${missingObjectQuestion}`;
+  }
+  if (params.bucket === 'very_early_checkin') {
+    return `Понял. ${time} — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи: нет гостя накануне и нет конфликта с предыдущим выездом. Проверю это отдельно.${missingObjectQuestion}`;
   }
   if (params.bucket === 'conditional_early_checkin') {
     return `Понял. ${time} — раньше стандартного времени заезда. Тут всё зависит от уборки и предыдущего выезда, поэтому проверю готовность объекта отдельно.${missingObjectQuestion}`;

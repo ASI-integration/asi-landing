@@ -148,7 +148,7 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.reply).toMatch(/готовность объекта после уборки/i);
   });
 
-  it('RU check-in at 7 утра maps to early_checkin', () => {
+  it('RU check-in at 7 утра maps to very early check-in', () => {
     const hit = tryTelegramOperationalIntake({
       text: 'Можно заехать в 7 утра?',
       surfaceLang: 'ru',
@@ -156,10 +156,11 @@ describe('tryTelegramOperationalIntake', () => {
     });
     expect(hit?.category).toBe('early_checkin');
     expect(hit?.extractedFacts.requestedTime).toBe('07:00');
-    expect(hit?.extractedFacts.checkin_time_bucket).toBe('early_checkin');
-    expect(hit?.extractedFacts.requires_cleaning_availability).toBe(true);
-    expect(hit?.reply).toMatch(/ранний заезд/i);
-    expect(hit?.reply).toMatch(/подтверд/i);
+    expect(hit?.extractedFacts.checkin_time_bucket).toBe('very_early_checkin');
+    expect(hit?.extractedFacts.requires_cleaning_availability).toBe(false);
+    expect(hit?.reply).toMatch(/очень ранний заезд/i);
+    expect(hit?.reply).toMatch(/свободен с предыдущей ночи|нет гостя накануне/i);
+    expect(hit?.reply).not.toMatch(/после уборки/i);
   });
 
   it('RU check-in at 12:00 is conditional and depends on cleaning availability', () => {
