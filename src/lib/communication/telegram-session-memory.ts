@@ -3,6 +3,7 @@ import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, Tele
 import { tryTelegramOperationalIntake, type TelegramOperationalFinalAction, type TelegramOperationalIntakeHit } from './telegram-operational-intake';
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
+import { composeTelegramOperationalReply } from './telegram-reply-composer';
 
 type SurfaceLang = 'en' | 'ru';
 
@@ -280,6 +281,74 @@ function hasPaymentReference(normalized: string, raw: string): boolean {
   );
 }
 
+function extractBookingReference(text: string): string | null {
+  const t = String(text ?? '').trim();
+  const m =
+    t.match(/(?:брон[ьиь]?|бронировани[ея]|booking|reservation|ref(?:erence)?|номер\s+брони|№)\s*[:#№-]?\s*([A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9-]{3,})/iu) ??
+    t.match(/^(?=[A-ZА-ЯЁ0-9-]{5,}$)(?=.*\d)[A-ZА-ЯЁ0-9][A-ZА-ЯЁ0-9-]+$/iu);
+  if (!m) return null;
+  const value = String(m[1] ?? m[0] ?? '').replace(/[.,;:]+$/g, '').trim();
+  return value ? value.toUpperCase() : null;
+}
+
+function concreteFact(facts: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = (facts as any)?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function hasKnownObjectOrBooking(
+  operationalCase: TelegramOperationalSessionCaseV1 | null | undefined,
+  facts: Record<string, unknown>,
+): boolean {
+  if (operationalCase?.property) return true;
+  return Boolean(
+    concreteFact(facts, [
+      'property',
+      'property_hint',
+      'address_hint',
+      'matched_property_label',
+      'matched_property_id',
+      'booking_reference',
+      'bookingReference',
+      'reservation_reference',
+      'reservation_id',
+      'matched_reservation_id',
+    ]),
+  );
+}
+
+function hasKnownRequestedTime(facts: Record<string, unknown>): boolean {
+  return Boolean(concreteFact(facts, ['requestedTime', 'time_hint', 'requested_time']));
+}
+
+function filterMissingFactsForKnownContext(
+  missingFacts: string[],
+  operationalCase: TelegramOperationalSessionCaseV1 | null | undefined,
+  facts: Record<string, unknown>,
+): string[] {
+  let next = [...(missingFacts ?? [])].map(String);
+  if (hasKnownObjectOrBooking(operationalCase, facts)) {
+    next = next.filter(k => k !== 'property' && k !== 'booking' && k !== 'reservation' && k !== 'reservation_or_property');
+  }
+  if (hasKnownRequestedTime(facts)) next = next.filter(k => k !== 'requested_time');
+  if (Boolean((facts as any)?.hasDetails)) next = next.filter(k => k !== 'wifi_details');
+  if (Boolean((facts as any)?.failureModeHint)) next = next.filter(k => k !== 'failure_mode');
+  if (Boolean((facts as any)?.hasVehicleDetails)) next = next.filter(k => k !== 'vehicle_details');
+  if (Boolean((facts as any)?.paymentReference)) next = next.filter(k => k !== 'payment_reference');
+  return Array.from(new Set(next));
+}
+
+function removeObjectBookingMissingFacts(missing: Set<string>): void {
+  missing.delete('property');
+  missing.delete('booking');
+  missing.delete('reservation');
+  missing.delete('reservation_or_property');
+}
+
 function pickClarifyingQuestion(missingFacts: string[], ru: boolean): string {
   const key = missingFacts[0] ?? '';
   if (key === 'property') return ru ? 'Уточните, пожалуйста, для какого объекта/адреса это?' : 'Which property/address is this for?';
@@ -359,6 +428,32 @@ function defaultReplyForCategory(category: string, ru: boolean): string {
     : 'Understood. I’ve logged the request; the team will check and update you shortly.';
 }
 
+function resolvedReplyForCase(
+  operationalCase: TelegramOperationalSessionCaseV1,
+  ru: boolean,
+  update_id: number,
+): string {
+  const category = String(operationalCase.category ?? '');
+  const facts = (operationalCase.extracted_facts ?? {}) as Record<string, unknown>;
+  if (ru && (category === 'early_checkin' || category === 'checkin_time_question')) {
+    return composeTelegramOperationalReply({
+      update_id,
+      category: category as any,
+      action: 'reply',
+      lang: 'ru',
+      text: '',
+      extractedFacts: facts,
+      missingFacts: filterMissingFactsForKnownContext(operationalCase.missing_facts ?? [], operationalCase, facts),
+      urgency: operationalCase.urgency === 'urgent' ? 'urgent' : 'normal',
+      linkingState: null,
+      sessionCase: operationalCase,
+      sessionMemory: null,
+      shouldGreet: false,
+    }).text;
+  }
+  return defaultReplyForCategory(category, ru);
+}
+
 function determineUrgency(hit: TelegramOperationalIntakeHit): 'normal' | 'urgent' {
   if (hit.finalAction === 'escalate_urgent') return 'urgent';
   return 'normal';
@@ -368,6 +463,10 @@ function buildCaseFromHit(params: { hit: TelegramOperationalIntakeHit; update_id
   const ts = nowIso();
   const extractedFacts = safeJsonClone(params.hit.extractedFacts ?? {});
   const clarification_count = params.hit.finalAction === 'clarify' ? 1 : 0;
+  const property = concreteFact(extractedFacts, ['property_hint', 'property', 'matched_property_label', 'address_hint']);
+  const dateToken = concreteFact(extractedFacts, ['requestedDateToken', 'date_hint', 'requested_date']);
+  const time = concreteFact(extractedFacts, ['requestedTime', 'time_hint', 'requested_time']);
+  const dateTime = [dateToken, time].filter(Boolean).join(' ');
   return {
     version: 1,
     category: params.hit.category,
@@ -376,16 +475,11 @@ function buildCaseFromHit(params: { hit: TelegramOperationalIntakeHit; update_id
       : (extractedFacts as any)?.guestName
         ? String((extractedFacts as any).guestName)
         : null,
-    property:
-      (extractedFacts as any)?.property_hint && (extractedFacts as any).property_hint !== 'hint_present'
-        ? String((extractedFacts as any).property_hint)
-        : (extractedFacts as any)?.property && (extractedFacts as any).property !== 'hint_present'
-          ? String((extractedFacts as any).property)
-          : null,
-    date_time: null,
+    property: property && property !== 'hint_present' ? property : null,
+    date_time: dateTime || null,
     urgency: determineUrgency(params.hit),
     extracted_facts: extractedFacts,
-    missing_facts: [...(params.hit.missingFacts ?? [])],
+    missing_facts: filterMissingFactsForKnownContext(params.hit.missingFacts ?? [], null, extractedFacts),
     last_question_asked: params.hit.finalAction === 'clarify' ? params.hit.reply : null,
     clarification_count,
     status:
@@ -433,8 +527,8 @@ function applyFragmentToCase(params: {
   const prev = params.prev;
 
   const mergedFacts: Record<string, unknown> = {};
-  const missing = new Set<string>(prev.missing_facts ?? []);
   const extracted = { ...(prev.extracted_facts ?? {}) };
+  const missing = new Set<string>(filterMissingFactsForKnownContext(prev.missing_facts ?? [], prev, extracted));
 
   const guest = extractGuestName(raw);
   if (guest && !prev.guest_name) {
@@ -452,6 +546,14 @@ function applyFragmentToCase(params: {
     mergedFacts.property = mergedFacts.property ?? 'hint_present';
     extracted.property = extracted.property ?? 'hint_present';
     missing.delete('property');
+  }
+
+  const bookingRef = extractBookingReference(raw);
+  if (bookingRef) {
+    mergedFacts.booking_reference = bookingRef;
+    extracted.booking_reference = extracted.booking_reference ?? bookingRef;
+    extracted.reservation_reference = extracted.reservation_reference ?? bookingRef;
+    removeObjectBookingMissingFacts(missing);
   }
 
   const time = extractTimeLike(raw);
@@ -499,7 +601,7 @@ function applyFragmentToCase(params: {
     missing.delete('payment_reference');
   }
 
-  const nextMissing = Array.from(missing);
+  const nextMissing = filterMissingFactsForKnownContext(Array.from(missing), prev, extracted);
   const wantsSecondClarification = (prev.clarification_count ?? 0) >= 1 && nextMissing.length > 0;
   const nextStatus: TelegramOperationalSessionCaseStatusV1 =
     prev.status === 'resolved'
@@ -594,6 +696,13 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       }
     }
 
+    const bookingRef = extractBookingReference(params.text);
+    if (bookingRef) {
+      (hit.extractedFacts as any).booking_reference = bookingRef;
+      (hit.extractedFacts as any).reservation_reference = bookingRef;
+    }
+    hit.missingFacts = filterMissingFactsForKnownContext(hit.missingFacts ?? [], prevCase ?? null, hit.extractedFacts ?? {});
+
     (hit.extractedFacts as any).explicit_property_detected = explicit_property_detected;
 
     // Matching layer: try to ground to guest/reservation/property before deciding clarify/escalate.
@@ -644,7 +753,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       (hit.extractedFacts as any).clarification_required = match.clarification_required;
 
       const alreadyUsedClarification = Boolean(prevCase && isCaseOpen(prevCase) && (prevCase.clarification_count ?? 0) >= 1);
-      const prevHasProperty = Boolean(prevCase?.property);
+      const prevHasProperty = hasKnownObjectOrBooking(prevCase ?? null, prevCase?.extracted_facts ?? {});
       const shouldForceEscalate =
         alreadyUsedClarification &&
         hit.finalAction === 'clarify' &&
@@ -672,8 +781,8 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         }
       } else if (match.match_confidence === 'low_confidence_match' || match.match_confidence === 'no_match') {
         // One best missing question (never generic); otherwise escalate if already used.
-        const alreadyHasProperty = Boolean((hit.extractedFacts as any)?.property_hint) || Boolean((hit.extractedFacts as any)?.property);
-        if (alreadyHasProperty) {
+        const alreadyHasObjectOrBooking = hasKnownObjectOrBooking(prevCase ?? null, hit.extractedFacts ?? {});
+        if (alreadyHasObjectOrBooking) {
           // Don't downgrade to "which property" when property is already present.
         } else if (match.suggested_clarification_question && hit.finalAction !== 'escalate_urgent') {
           hit.finalAction = 'clarify';
