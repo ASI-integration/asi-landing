@@ -10,7 +10,7 @@ export const TELEGRAM_MULTI_INTENT_ACCEPTANCE_FIXTURES: TelegramMultiIntentAccep
     name: 'standard_checkin_and_operational_bundle',
     text:
       'Здравствуйте! Можно заезд в 15:00 и ранний заезд в 12:00, поздний выезд до 13:00, как получить ключи, где wi-fi, можно с собакой, есть парковка, какие нужны документы/паспорт и как работает отмена брони?',
-    expectsOperator: false,
+    expectsOperator: true,
     expectedSections: ['15:00', 'раньше стандартного', 'поздний выезд', 'Wi-Fi', 'парковк'],
   },
   {

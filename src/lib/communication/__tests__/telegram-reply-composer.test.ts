@@ -219,5 +219,43 @@ describe('composeTelegramOperationalReply', () => {
     expect(out.text).toMatch(/передам оператору/i);
     expect(out.text).not.toMatch(/передаю команде/i);
   });
+
+  it('omits slow_ack from finalized multi-intent reply and keeps numbered newline format', () => {
+    const out = composeTelegramOperationalMultiIntentReply({
+      lang: 'ru',
+      intents: [
+        {
+          action: 'slow_ack',
+          scenarioFamily: 'SLOW_ACK',
+          confidence: 0.61,
+          requiredContext: [],
+          safeReplyFacts: [],
+          forbiddenClaims: [],
+          nextSessionMemory: {},
+        },
+        {
+          action: 'auto_reply',
+          scenarioFamily: 'WIFI',
+          confidence: 0.9,
+          requiredContext: [],
+          safeReplyFacts: [],
+          forbiddenClaims: [],
+          nextSessionMemory: {},
+        },
+        {
+          action: 'auto_reply',
+          scenarioFamily: 'PARKING',
+          confidence: 0.9,
+          requiredContext: [],
+          safeReplyFacts: [],
+          forbiddenClaims: [],
+          nextSessionMemory: {},
+        },
+      ],
+    });
+
+    expect(out.text).toMatch(/^По пунктам:\n1\.\s.+\n2\.\s.+\n$/);
+    expect(out.text).not.toMatch(/разбираюсь с запросом|вернусь с ответом через пару секунд|slow[_\s-]?ack/i);
+  });
 });
 

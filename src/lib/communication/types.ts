@@ -206,6 +206,13 @@ export interface ConversationContext {
   identityReason?: string;
   /** Telegram operational intake: deterministic reservation/property linking layer. */
   reservationPropertyLinkingV1?: ReservationPropertyLinkingStateV1;
+  /** Telegram operational policy memory used to suppress duplicate slow_ack responses. */
+  telegramOperationalPolicyMemory?: {
+    lastSlowAckUpdateId?: number | null;
+    unknownOperationalAttemptCount?: number;
+  };
+  /** Last Telegram update id that already received a final multi-intent operational reply. */
+  telegramFinalOperationalReplyUpdateId?: number;
 }
 
 // Role and identity resolution types

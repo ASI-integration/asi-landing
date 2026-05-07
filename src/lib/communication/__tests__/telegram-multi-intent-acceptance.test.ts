@@ -220,7 +220,7 @@ describe('Telegram multi-intent operational acceptance runner', () => {
     for (const keyword of fixture.expectedSections) {
       expect(reply.toLowerCase()).toContain(keyword.toLowerCase());
     }
-    expect(operatorWordingCount(reply)).toBe(0);
+    expect(operatorWordingCount(reply) > 0).toBe(fixture.expectsOperator);
   });
 
   it('preserves known object/booking context across turns for the same message', async () => {
@@ -236,7 +236,7 @@ describe('Telegram multi-intent operational acceptance runner', () => {
     for (const keyword of fixture.expectedSections) {
       expect(reply.toLowerCase()).toContain(keyword.toLowerCase());
     }
-    expect(operatorWordingCount(reply)).toBeGreaterThan(0);
+    expect(operatorWordingCount(reply) > 0).toBe(fixture.expectsOperator);
   });
 
   it('asks once for object/booking when unknown, not once per intent', async () => {
@@ -249,5 +249,14 @@ describe('Telegram multi-intent operational acceptance runner', () => {
     const singleClarifyMatches =
       reply.match(/уточните один раз объект или номер брони|уточните, пожалуйста, объект или номер брони/gi) ?? [];
     expect(singleClarifyMatches.length).toBe(1);
+  });
+
+  it('does not emit a slow_ack after final multi-intent operational reply', async () => {
+    const fixture = TELEGRAM_MULTI_INTENT_ACCEPTANCE_FIXTURES[0];
+    await runFixture(fixture, { updateId: 5401, chatId: 9040 });
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    const reply = lastReplyText();
+    expect(reply).toContain('По пунктам:\n1.');
+    expect(reply).not.toMatch(/Понял, уже разбираюсь с запросом|через пару секунд|slow[_\s-]?ack/i);
   });
 });

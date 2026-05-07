@@ -699,6 +699,17 @@ function enforceTelegramStyle(text: string, maxLen = 240): string {
   return t;
 }
 
+function enforceTelegramMultilineStyle(text: string, maxLen = 1200): string {
+  let t = String(text ?? '').trim();
+  t = t
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+  if (t.length > maxLen) t = `${t.slice(0, Math.max(1, maxLen - 3)).trim()}…`;
+  return t;
+}
+
 export function composeTelegramOperationalReply(input: ReplyComposerInput): ReplyComposerOutput {
   const language = normalizeLang(input.lang, input.text);
   const { template_key, text } = replyTextForCategory({ ...input, lang: language });
@@ -764,16 +775,32 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
   const dedup = new Set<string>();
   const safe: TelegramOperationalPolicyResult[] = [];
   const escalations: TelegramOperationalPolicyResult[] = [];
+  let sawSlowAck = false;
   const operatorEscalationFamilies = new Set<TelegramOperationalPolicyResult['scenarioFamily']>([
     'ACCESS_KEY_ISSUE',
     'COMPLAINTS_PROBLEMS',
-    'EMERGENCY_URGENT_ISSUE',
-    'OPERATOR_HANDOFF',
+    'CANCELLATION_REFUND',
+    'UNKNOWN_OPERATIONAL_REQUEST',
+    'ESCALATE_TO_OPERATOR',
   ]);
   for (const intent of input.intents) {
+    if (intent.scenarioFamily === 'SLOW_ACK') {
+      sawSlowAck = true;
+      continue;
+    }
     const key = `${intent.scenarioFamily}:${intent.action}`;
     if (dedup.has(key)) continue;
     dedup.add(key);
+    const shouldUseOperatorText =
+      operatorEscalationFamilies.has(intent.scenarioFamily) &&
+      (intent.action === 'escalate' ||
+        intent.scenarioFamily === 'ACCESS_KEY_ISSUE' ||
+        intent.scenarioFamily === 'COMPLAINTS_PROBLEMS' ||
+        intent.scenarioFamily === 'CANCELLATION_REFUND');
+    if (shouldUseOperatorText) {
+      escalations.push(intent);
+      continue;
+    }
     if (intent.action === 'escalate') {
       if (operatorEscalationFamilies.has(intent.scenarioFamily)) escalations.push(intent);
       else safe.push(intent);
@@ -818,11 +845,11 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
   }
 
   if (lines.length === 0) {
-    lines.push('Принял запрос. Проверяю детали по брони и объекту.');
+    lines.push(sawSlowAck ? 'Принял запрос. Проверяю детали по брони и объекту.' : 'По пунктам:\n1. Принял запрос. Проверяю детали по брони и объекту.');
   }
 
   return {
-    text: enforceTelegramStyle(lines.join('\n'), 1200),
+    text: `${enforceTelegramMultilineStyle(lines.join('\n'), 1200)}\n`,
     template_key: 'policy.multi_intent.ru.v1',
     language: 'ru',
   };

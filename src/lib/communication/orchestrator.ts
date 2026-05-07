@@ -1017,6 +1017,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
         if (!replyText) {
           const memNow = getContext(chatId);
+          const policyMemory = ((memNow as any).telegramOperationalPolicyMemory ?? null) as
+            | {
+                lastSlowAckUpdateId?: number | null;
+                unknownOperationalAttemptCount?: number;
+              }
+            | null;
           const policyInput = {
             messageText: text,
             update_id,
@@ -1030,7 +1036,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                   ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
                 cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
               },
-              lastSlowAckUpdateId: null,
+              lastSlowAckUpdateId: policyMemory?.lastSlowAckUpdateId ?? null,
+              unknownOperationalAttemptCount: policyMemory?.unknownOperationalAttemptCount ?? 0,
             },
             knownContext: {
               objectLabel:
@@ -1070,6 +1077,27 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;
           usedPath = 'reply_composer';
+          const wasFinalOperationalReply =
+            opIntake.finalAction === 'reply' &&
+            multiPolicy !== null &&
+            multiPolicy.intents.length > 1;
+          if (wasFinalOperationalReply) {
+            // Finalized multi-intent reply: mark this update as replied to block any extra slow_ack fallback.
+            updateContext(chatId, {
+              telegramOperationalPolicyMemory: {
+                lastSlowAckUpdateId: update_id,
+                unknownOperationalAttemptCount: multiPolicy.nextSessionMemory?.unknownOperationalAttemptCount ?? 0,
+              },
+              telegramFinalOperationalReplyUpdateId: update_id,
+            });
+          } else if (multiPolicy) {
+            updateContext(chatId, {
+              telegramOperationalPolicyMemory: {
+                lastSlowAckUpdateId: multiPolicy.nextSessionMemory?.lastSlowAckUpdateId ?? null,
+                unknownOperationalAttemptCount: multiPolicy.nextSessionMemory?.unknownOperationalAttemptCount ?? 0,
+              },
+            });
+          }
           if (tgPriority) {
             const ef = (opIntake.extractedFacts ?? {}) as any;
             const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
