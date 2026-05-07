@@ -374,7 +374,11 @@ function isSameOperationalFlow(prevCategory: unknown, nextCategory: unknown): bo
 
 function categoryForCheckinTime(time: string, fallback: unknown): string {
   const policy = classifyCheckinTimeBucket(time);
-  if (policy.bucket === 'early_checkin' || policy.bucket === 'conditional_early_checkin') return 'early_checkin';
+  if (
+    policy.bucket === 'very_early_checkin' ||
+    policy.bucket === 'early_checkin' ||
+    policy.bucket === 'conditional_early_checkin'
+  ) return 'early_checkin';
   if (policy.bucket === 'normal_checkin' || policy.bucket === 'late_checkin') return 'checkin_time_question';
   return String(fallback ?? 'checkin_time_question');
 }

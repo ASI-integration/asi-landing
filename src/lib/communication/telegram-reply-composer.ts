@@ -222,6 +222,17 @@ function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: str
     };
   }
 
+  if (input.category === 'early_checkin' && bucket === 'very_early_checkin') {
+    return {
+      template_key: 'early_checkin.reply.time_policy_very_early.v1',
+      text: maybeGreetRu(
+        input,
+        'ru',
+        `Понял. ${displayTime} — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи: нет гостя накануне и нет конфликта с предыдущим выездом. Проверю это отдельно.${objectQuestion}`,
+      ),
+    };
+  }
+
   if (input.category === 'early_checkin' && bucket === 'conditional_early_checkin') {
     return {
       template_key: 'early_checkin.reply.time_policy_conditional.v1',

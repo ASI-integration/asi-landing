@@ -149,6 +149,52 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(mem?.status).toBe('resolved');
   });
 
+  it('distinguishes RU 15:00, 12:00, and 07:00 check-in timing policy', async () => {
+    const r15 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId: 5101,
+      channel: 'telegram',
+      update_id: 31,
+      surfaceLang: 'ru',
+      text: 'Хочу заехать завтра в 15:00, можно ранний заезд?',
+      db: makeEmptyDb(),
+    });
+    expect(r15.handled).toBe(true);
+    if (!r15.handled) throw new Error('expected handled');
+    expect(r15.hit.category).toBe('checkin_time_question');
+    expect(r15.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+
+    const r12 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId: 5102,
+      channel: 'telegram',
+      update_id: 32,
+      surfaceLang: 'ru',
+      text: 'Можно заехать в 12:00?',
+      db: makeEmptyDb(),
+    });
+    expect(r12.handled).toBe(true);
+    if (!r12.handled) throw new Error('expected handled');
+    expect(r12.hit.category).toBe('early_checkin');
+    expect(r12.hit.reply).toMatch(/раньше стандартного времени заезда/i);
+    expect(r12.hit.reply).toMatch(/уборк/i);
+    expect(r12.hit.reply).toMatch(/предыдущего выезда/i);
+
+    const r07 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId: 5103,
+      channel: 'telegram',
+      update_id: 33,
+      surfaceLang: 'ru',
+      text: 'Можно заехать в 7 утра?',
+      db: makeEmptyDb(),
+    });
+    expect(r07.handled).toBe(true);
+    if (!r07.handled) throw new Error('expected handled');
+    expect(r07.hit.category).toBe('early_checkin');
+    expect(r07.hit.reply).toMatch(/07:00 — это очень ранний заезд/i);
+    expect(r07.hit.reply).toMatch(/свободен с предыдущей ночи|нет гостя накануне/i);
+    expect(r07.hit.reply).not.toMatch(/после уборки/i);
+    expect(r07.hit.reply).not.toContain('(а)');
+  });
+
   it('continues RU check-in flow after time and object follow-ups without operator fallback', async () => {
     const chatId = 5005;
     const r1 = await processTelegramOperationalIntakeWithSessionMemory({
@@ -179,7 +225,9 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r2.mode).toBe('followup_fragment');
     expect(r2.hit.category).toBe('early_checkin');
     expect(r2.hit.finalAction).toBe('clarify');
-    expect(r2.hit.reply).toMatch(/07:00 — это ранний заезд/i);
+    expect(r2.hit.reply).toMatch(/07:00 — это очень ранний заезд/i);
+    expect(r2.hit.reply).toMatch(/свободен с предыдущей ночи|нет гостя накануне/i);
+    expect(r2.hit.reply).not.toMatch(/после уборки/i);
     expect(r2.hit.reply).toMatch(/для какого это объекта или брони/i);
     expect(r2.hit.reply).not.toMatch(/переда[юн].*оператор|Запрос уже передан/i);
     expect(r2.hit.reply).not.toContain('(а)');
@@ -196,9 +244,12 @@ describe('telegram session memory v1 (operational cases)', () => {
     if (!r3.handled) throw new Error('expected handled');
     expect(r3.hit.category).toBe('early_checkin');
     expect(r3.hit.finalAction).toBe('reply');
-    expect(r3.hit.reply).toMatch(/07:00 — это ранний заезд/i);
+    expect(r3.hit.reply).toMatch(/07:00 — это очень ранний заезд/i);
+    expect(r3.hit.reply).toMatch(/свободен с предыдущей ночи|нет гостя накануне/i);
+    expect(r3.hit.reply).not.toMatch(/после уборки/i);
     expect(r3.hit.reply).not.toMatch(/для какого это объекта или брони/i);
     expect(r3.hit.reply).not.toMatch(/переда[юн].*оператор|Запрос уже передан/i);
+    expect(r3.hit.reply).not.toBe(r2.hit.reply);
 
     const mem = getAutonomousSessionOperationalCaseV1(chatId);
     expect(mem?.status).toBe('resolved');
