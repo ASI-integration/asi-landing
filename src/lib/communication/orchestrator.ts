@@ -283,6 +283,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const update_id = envelope.update_id ?? Date.now();
   const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
+  const latencyLoggingEnabled = envelope.channel === 'telegram';
   const ruDebug = process.env.RU_TELEGRAM_DEBUG === '1' && envelope.channel === 'telegram';
   const pipeDebug = pipelineDebugEnabled(envelope);
 
@@ -666,8 +667,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     });
 
     cp('intent.start', { chat_id: chatId });
+    const intentStartedAt = Date.now();
     const intentResult = await withAwaitCheckpoint('intent.await', () => detectIntent(text), { chat_id: chatId }, 30_000);
     cp('intent.done', { chat_id: chatId, intent: intentResult.intent, confidence: intentResult.confidence });
+    if (latencyLoggingEnabled) {
+      console.info('[tg:latency] intent.detection', {
+        update_id,
+        chat_id: chatId,
+        stage_ms: Date.now() - intentStartedAt,
+      });
+    }
     if (pipeDebug) {
       console.log('[comm:pipeline] intent.done', {
         corr_id: corrId,
@@ -678,8 +687,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
     cp('memory/context.load.start', { chat_id: chatId });
+    const memoryLoadStartedAt = Date.now();
     const ctx = getContext(chatId);
     cp('memory/context.load.done', { chat_id: chatId });
+    if (latencyLoggingEnabled) {
+      console.info('[tg:latency] memory.load', {
+        update_id,
+        chat_id: chatId,
+        stage_ms: Date.now() - memoryLoadStartedAt,
+      });
+    }
     if (pipeDebug) {
       console.log('[comm:pipeline] memory.loaded', {
         corr_id: corrId,
@@ -808,6 +825,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     let replyText = '';
     let llmSucceeded = false;
+    const replyComposeStartedAt = Date.now();
     let usedPath:
       | 'deterministic'
       | 'llm'
@@ -1682,6 +1700,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         matched: true,
         intercepted_before_escalation: false,
         final_reply: replyText ?? null,
+      });
+    }
+
+    if (latencyLoggingEnabled) {
+      console.info('[tg:latency] reply.compose', {
+        update_id,
+        chat_id: chatId,
+        stage_ms: Date.now() - replyComposeStartedAt,
+        used_path: usedPath,
+        reply_len: replyText.length,
       });
     }
 

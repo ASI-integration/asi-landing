@@ -164,6 +164,7 @@ export async function replyToTelegram(
   text: string,
   logCtx?: TelegramReplyLogContext,
 ): Promise<boolean> {
+  const sendStartedAt = Date.now();
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
@@ -195,10 +196,18 @@ export async function replyToTelegram(
       text_preview: safePreview(String(text ?? ''), 160),
     });
   }
-  return sendOnce(url, {
+  const sent = await sendOnce(url, {
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
     reply_markup: { remove_keyboard: true },
   });
+  console.info('[tg:latency] telegram.send', {
+    chat_id: String(chatId),
+    update_id: logCtx?.update_id ?? null,
+    handler: logCtx?.handler ?? null,
+    stage_ms: Date.now() - sendStartedAt,
+    sent,
+  });
+  return sent;
 }
