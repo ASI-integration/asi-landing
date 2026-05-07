@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
 import { isLocationStandaloneReportV1 } from '@/lib/location/standalone-report';
+import {
+  getLocationReportRequestByReportId,
+  hasPaidLocationReportAccess,
+} from '@/lib/location/report-request-store';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -14,6 +18,14 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ reportId: 
   try {
     const entity = await getStandaloneReportById(reportId);
     if (!entity) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    const order = await getLocationReportRequestByReportId(reportId);
+    if (order && !hasPaidLocationReportAccess(order)) {
+      return NextResponse.json({
+        error: 'payment_required',
+        requestId: order.id,
+        access_status: order.access_status,
+      }, { status: 402 });
+    }
     if (!isLocationStandaloneReportV1(entity.report)) {
       return NextResponse.json({ error: 'invalid_persisted_report' }, { status: 502 });
     }

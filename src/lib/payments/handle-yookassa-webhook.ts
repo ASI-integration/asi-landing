@@ -6,6 +6,11 @@ import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/ev
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
+import {
+  confirmLocationReportPayment,
+  getLocationReportRequestById,
+  getLocationReportRequestByPaymentId,
+} from '@/lib/location/report-request-store';
 
 /**
  * Общая обработка уведомлений ЮKassa.
@@ -40,7 +45,42 @@ export async function handleYookassaWebhook(req: Request): Promise<NextResponse>
     const paymentObj = raw?.object ?? {};
     const meta = paymentObj.metadata as Record<string, string> | undefined;
     const userId = meta?.user_id || meta?.userId;
+    const locationReportRequestId = meta?.location_report_request_id || meta?.locationReportRequestId;
+    const productType = meta?.product_type || meta?.productType;
     const paymentMethodId = (paymentObj.payment_method as Record<string, string> | undefined)?.id;
+
+    const locationRequestFromMetadata = locationReportRequestId
+      ? await getLocationReportRequestById(locationReportRequestId)
+      : null;
+    const existingLocationRequest = locationRequestFromMetadata
+      ?? await getLocationReportRequestByPaymentId(transactionId);
+    const isLocationReportPaymentMatch =
+      existingLocationRequest?.payment_provider === 'yookassa'
+      && existingLocationRequest.payment_id === transactionId;
+
+    if (
+      raw?.event === 'payment.succeeded'
+      && existingLocationRequest
+      && (productType === 'location_report_detail' || existingLocationRequest?.product_type === 'location_report_detail')
+      && status === 'paid'
+    ) {
+      if (!isLocationReportPaymentMatch) {
+        console.warn(
+          `[YooKassa Webhook] Location report payment mismatch request_id=${existingLocationRequest.id} tx=${transactionId} stored_tx=${existingLocationRequest.payment_id ?? 'null'}`
+        );
+        if (eventId) markWebhookProcessed('yookassa', eventId);
+        return NextResponse.json({ received: true });
+      }
+
+      const entity = await confirmLocationReportPayment(existingLocationRequest.id, {
+        paymentId: transactionId,
+        paymentProvider: 'yookassa',
+      });
+
+      console.log(`[YooKassa Webhook] location report access granted request_id=${entity.id}`);
+      if (eventId) markWebhookProcessed('yookassa', eventId);
+      return NextResponse.json({ received: true });
+    }
 
     const isSubscriptionSuccess =
       raw?.event === 'payment.succeeded' && userId && status === 'paid';

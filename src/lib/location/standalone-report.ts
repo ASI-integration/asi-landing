@@ -1,4 +1,11 @@
-import type { LocationAnalysis, RecommendedStrategy, SpatialTier } from './types';
+import type {
+  LocationAnalysis,
+  RecommendedStrategy,
+  ResidentialAnalysisConfidence,
+  ResidentialAudienceType,
+  ResidentialStrategy,
+  SpatialTier,
+} from './types';
 import type { CommercialFormatFitEntry, CommercialOverallVerdict } from './commercial-format-fit';
 import { buildCommercialFormatFit } from './commercial-format-fit';
 import { createDisabledSpatialFoundation } from './spatial-foundation';
@@ -7,25 +14,57 @@ import {
   type PrimeMagnetAnchorType,
   type ResidentialMarketMode,
 } from './residential-prime-magnets';
+import {
+  buildLocationDisplayModel,
+  type LocationDisplayModel,
+} from './location-display-model';
+import {
+  hasObjectParamsForIncome,
+  type LocationReportIntake,
+} from './report-intake';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
   | 'business_fit'
   | 'magnets'
   | 'competition'
+  | 'risks'
+  | 'recommendations'
   | 'income_strategy'
+  | 'residential_analysis'
   | 'next_step';
+
+export type LocationStandaloneVerdict = 'стоит' | 'осторожно' | 'не стоит';
+
+export type LocationStandaloneReportListItem = {
+  title: string;
+  explanation: string;
+};
 
 export type LocationStandaloneReport = {
   version: 'v1';
   address: string;
   generated_at_iso: string;
+  /** Public display score from the canonical display model, never derived in UI. */
+  location_score: number | null;
+  display_model?: LocationDisplayModel;
+  report_intake?: LocationReportIntake | null;
+  fields_used: string[];
+  data_sources: Array<{ field: string; source: string }>;
   sections: Array<
     | {
         id: 'summary';
-        verdict: string;
+        verdict: LocationStandaloneVerdict;
+        display_audience?: LocationDisplayModel['displayAudience'];
+        verdict_label_ru?: string;
+        cap_reasons?: string[];
+        short_reason: string;
+        location_score: number | null;
         drivers: string[];
         income_rub_month: number | null;
+        income_range_rub: { low: number; high: number } | null;
+        income_confidence: 'high' | 'medium' | 'low' | null;
+        income_note: string | null;
         recommended_strategy: RecommendedStrategy | null;
       }
     | {
@@ -61,6 +100,17 @@ export type LocationStandaloneReport = {
         pressure_level: LocationAnalysis['gravityExplanation']['competitorPressureLevel'];
       }
     | {
+        id: 'risks';
+        items: LocationStandaloneReportListItem[];
+      }
+    | {
+        id: 'recommendations';
+        location_action: string;
+        best_rental_strategy: string;
+        target_audience: string;
+        avoid: string;
+      }
+    | {
         id: 'income_strategy';
         recommended_strategy: RecommendedStrategy | null;
         monthly_income_rub: {
@@ -68,11 +118,23 @@ export type LocationStandaloneReport = {
           hybrid: number | null;
           mid_term: number | null;
         };
+        income_range_rub: { low: number; high: number } | null;
+        income_confidence: 'high' | 'medium' | 'low' | null;
+        income_note: string | null;
         positioning_hint: string | null;
+        assumptions: LocationStandaloneReportListItem[];
+      }
+    | {
+        id: 'residential_analysis';
+        residentialAudienceType: ResidentialAudienceType | null;
+        residentialStrategy: ResidentialStrategy | null;
+        confidence: ResidentialAnalysisConfidence | null;
+        strategyRationaleRu: string | null;
+        operationalNoteRu: string | null;
       }
     | {
         id: 'next_step';
-        cta: 'get_full_breakdown';
+        cta: 'save_or_discuss';
       }
   >;
 };
@@ -83,6 +145,7 @@ export type LocationCommercialReport = {
   version: 'v2-commercial';
   address: string;
   generated_at_iso: string;
+  report_intake?: LocationReportIntake | null;
   flow: {
     transitShare: number;
     localActiveShare: number;
@@ -187,6 +250,7 @@ function buildCommercialRecommendation(
 export function buildCommercialReport(args: {
   address: string;
   analysis: LocationAnalysis;
+  reportIntake?: LocationReportIntake | null;
 }): LocationCommercialReport {
   const { analysis } = args;
   const ft = analysis.footTraffic;
@@ -206,6 +270,7 @@ export function buildCommercialReport(args: {
     version: 'v2-commercial',
     address: args.address,
     generated_at_iso: new Date().toISOString(),
+    report_intake: args.reportIntake ?? null,
     spatial: {
       spatial_tier: sf.spatialTier,
       enabled: sf.enabled,
@@ -259,12 +324,20 @@ function strategyTitleRu(s: RecommendedStrategy): string {
 function pickBusinessFitVerdict(
   analysis: LocationAnalysis,
   primeMagnets: ReturnType<typeof filterResidentialPrimeMagnets>,
+  displayModel: LocationDisplayModel,
 ): {
   business_fit_verdict: 'fit' | 'not_fit' | 'unknown';
   note: string | null;
 } {
   const aa = analysis.audienceAnalysis;
   if (!aa) return { business_fit_verdict: 'unknown', note: null };
+
+  if (displayModel.displayAudience !== 'BUSINESS') {
+    return {
+      business_fit_verdict: 'not_fit',
+      note: 'Публичная модель не подтверждает деловой сценарий: сильный деловой якорь спроса отсутствует.',
+    };
+  }
 
   // Use policy-filtered prime magnets (within 1.5 km) for business-fit determination
   const hasPrimaryAccess = primeMagnets.some(m => m.distance <= 1500);
@@ -283,18 +356,266 @@ function pickBusinessFitVerdict(
   return { business_fit_verdict: 'not_fit', note: 'По сигналам окружения деловой сценарий не доминирует.' };
 }
 
+function residentialStrategyTitleRu(s: ResidentialStrategy | RecommendedStrategy | null): string {
+  if (s === 'selective_premium_short_term') return 'Избирательная посуточная аренда под premium-комфорт';
+  if (s === 'cautious_manual_only') return 'Осторожный ручной режим';
+  if (s === 'short_term') return 'Посуточная аренда';
+  if (s === 'hybrid') return 'Гибрид: посуточно + среднесрок';
+  if (s === 'mid_term') return 'Среднесрочная аренда';
+  return 'Недостаточно данных для стратегии';
+}
+
+function residentialAudienceTitleRu(type: ResidentialAudienceType | null, analysis: LocationAnalysis): string {
+  if (type === 'premium_comfort') return 'Гости, чувствительные к комфорту и тихой жилой среде';
+  if (type === 'mixed_use_adjacent') return 'Гости, которым подходит смешанная среда рядом с коммерческой активностью';
+  if (type === 'standard_residential') return 'Стандартная жилая аудитория краткосрочной/среднесрочной аренды';
+
+  const primary = analysis.audienceAnalysis?.primaryAudience;
+  if (primary === 'BUSINESS') return 'Деловая аудитория и командированные';
+  if (primary === 'TOURIST') return 'Туристическая и leisure-аудитория';
+  return 'Аудитория не подтверждена моделью';
+}
+
+function buildStandaloneVerdict(args: {
+  displayModel: LocationDisplayModel;
+  residentialConfidence: ResidentialAnalysisConfidence | null;
+  competitorPressureLevel: LocationAnalysis['gravityExplanation']['competitorPressureLevel'];
+}): { verdict: LocationStandaloneVerdict; shortReason: string } {
+  const { displayModel, residentialConfidence, competitorPressureLevel } = args;
+  const locationScore = displayModel.displayScore;
+
+  if (typeof locationScore !== 'number' || !Number.isFinite(locationScore)) {
+    return {
+      verdict: 'осторожно',
+      shortReason: 'Итоговый публичный score отсутствует в анализе, поэтому решение нужно подтверждать вручную.',
+    };
+  }
+
+  const demand = args.displayModel.residentialSanityApplied ? locationScore : 100;
+  const supply = args.displayModel.residentialSanityApplied ? locationScore : 100;
+  const hasHardRisk =
+    competitorPressureLevel === 'high' ||
+    supply <= 45 ||
+    demand <= 45 ||
+    residentialConfidence === 'low' ||
+    displayModel.verdictTone === 'weak';
+
+  if (locationScore >= 72 && !hasHardRisk && displayModel.displayAudience !== 'RESIDENTIAL') {
+    return {
+      verdict: 'стоит',
+      shortReason: displayModel.reportNarrative,
+    };
+  }
+
+  if (locationScore < 48 || (locationScore < 55 && hasHardRisk)) {
+    return {
+      verdict: 'не стоит',
+      shortReason: displayModel.reportNarrative,
+    };
+  }
+
+  return {
+    verdict: 'осторожно',
+    shortReason: displayModel.reportNarrative,
+  };
+}
+
+function buildRiskItems(args: {
+  analysis: LocationAnalysis;
+  primeMagnetCount: number;
+  reportIntake?: LocationReportIntake | null;
+}): LocationStandaloneReportListItem[] {
+  const { analysis, primeMagnetCount } = args;
+  const score = analysis.locationScore;
+  const items: LocationStandaloneReportListItem[] = [];
+
+  const push = (title: string, explanation: string) => {
+    if (items.some(i => i.title === title && i.explanation === explanation)) return;
+    items.push({ title, explanation });
+  };
+
+  for (const factor of (score?.top_negative_factors ?? []).slice(0, 4)) {
+    push(factor, 'Негативный фактор из scoring-модели; учитывайте его в цене, упаковке и выборе стратегии.');
+  }
+
+  if (primeMagnetCount === 0 || (score?.breakdown.magnet_score ?? 100) <= 40 || analysis.magnets.length <= 2) {
+    push(
+      'Слабые магниты спроса',
+      `Prime-магнитов в отчёте: ${primeMagnetCount}; общий счётчик магнитов анализа: ${analysis.magnets.length}. Спрос может быть менее устойчивым.`,
+    );
+  }
+
+  if (analysis.gravityExplanation.competitorPressureLevel === 'high' || (score?.breakdown.supply_score ?? 100) <= 45) {
+    push(
+      'Высокая конкуренция',
+      `Давление конкуренции: ${analysis.gravityExplanation.competitorPressureLevel}; supply_score: ${score?.breakdown.supply_score ?? 'нет данных'}/100.`,
+    );
+  }
+
+  if ((score?.breakdown.demand_score ?? 100) <= 45) {
+    push(
+      'Низкий спрос',
+      `Demand_score: ${score?.breakdown.demand_score ?? 'нет данных'}/100. Краткосрочная модель может не набрать стабильную загрузку.`,
+    );
+  }
+
+  if ((score?.breakdown.audience_fit_score ?? 100) < 35 || analysis.audienceAnalysis?.fallbackMode) {
+    push(
+      'Аудитория не подтверждена',
+      `Audience_fit_score: ${score?.breakdown.audience_fit_score ?? 'нет данных'}/100${analysis.audienceAnalysis?.fallbackMode ? '; включён fallback аудитории' : ''}.`,
+    );
+  }
+
+  if (
+    analysis.residentialAnalysis?.confidence !== 'high' ||
+    analysis.neighborhoodEnvironment?.confidence === 'low'
+  ) {
+    push(
+      'Ограничения данных',
+      'Вывод основан на OSM-сигналах и модельных прокси спроса/дохода; ставки, состояние объекта и реальные бронирования нужно проверять отдельно.',
+    );
+  }
+
+  if (args.reportIntake && !hasObjectParamsForIncome(args.reportIntake)) {
+    push(
+      'Нужны данные объекта',
+      'Для более точной доходной вилки нужны площадь, ремонт, дом/этаж, фото-упаковка и фактическая цена входа или аренды.',
+    );
+  }
+
+  return items;
+}
+
+function buildIncomeAssumptions(analysis: LocationAnalysis): LocationStandaloneReportListItem[] {
+  const score = analysis.locationScore;
+  return [
+    {
+      title: 'До расходов',
+      explanation: 'Доход показан до расходов на управление, комиссии площадок, уборку, налоги, коммунальные платежи и простой.',
+    },
+    {
+      title: 'Occupancy proxy',
+      explanation: `Базовая загрузка берётся из income_model.base_occupancy_pct: ${score?.income_model.base_occupancy_pct ?? 'нет данных'}%. Это модельный прокси, а не фактическая статистика бронирований.`,
+    },
+    {
+      title: 'ADR assumptions',
+      explanation: `Базовый ADR берётся из income_model.base_adr_rub: ${score?.income_model.base_adr_rub ?? 'нет данных'} руб.; сценарии short_term/hybrid/mid_term применяют внутренние мультипликаторы модели.`,
+    },
+    {
+      title: 'Ограничения данных',
+      explanation: 'Расчёт не учитывает ремонт, класс объекта, фото, рейтинг, договорные ограничения и фактические ставки конкурентов из OTA.',
+    },
+  ];
+}
+
+function roundIncomeRub(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value / 5000) * 5000;
+}
+
+function buildIncomeRange(args: {
+  displayScore: number | null;
+  baseIncomeRub: number | null;
+  reportIntake?: LocationReportIntake | null;
+}): {
+  range: { low: number; high: number } | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  note: string | null;
+} {
+  const { displayScore, baseIncomeRub, reportIntake } = args;
+  if (baseIncomeRub == null || !Number.isFinite(baseIncomeRub) || baseIncomeRub <= 0) {
+    return {
+      range: null,
+      confidence: 'low',
+      note: 'Доходная вилка не рассчитана: не хватает базовых сигналов income-модели.',
+    };
+  }
+
+  const hasObjectData = hasObjectParamsForIncome(reportIntake);
+  const isCautiousScore = displayScore == null || displayScore <= 55;
+  const lowMultiplier = isCautiousScore ? 0.55 : hasObjectData ? 0.8 : 0.65;
+  const highMultiplier = isCautiousScore ? 0.9 : hasObjectData ? 1.2 : 1.1;
+  const low = roundIncomeRub(baseIncomeRub * lowMultiplier);
+  const high = Math.max(low + 5000, roundIncomeRub(baseIncomeRub * highMultiplier));
+
+  if (isCautiousScore) {
+    return {
+      range: { low, high },
+      confidence: 'low',
+      note: 'Осторожная доходная вилка: локационный score средний или слабый, поэтому доходность нужно подтверждать объектом и реальными ставками конкурентов.',
+    };
+  }
+
+  if (!hasObjectData) {
+    return {
+      range: { low, high },
+      confidence: 'low',
+      note: 'Нужны данные объекта для точнее расчёта: площадь, ремонт, дом, фото/упаковка и цена сильно меняют итоговую вилку.',
+    };
+  }
+
+  return {
+    range: { low, high },
+    confidence: 'medium',
+    note: 'Доход показан как вилка с уровнем уверенности, а не как гарантированная сумма.',
+  };
+}
+
+function buildRecommendations(args: {
+  analysis: LocationAnalysis;
+  verdict: LocationStandaloneVerdict;
+  risks: LocationStandaloneReportListItem[];
+}): Extract<LocationStandaloneReport['sections'][number], { id: 'recommendations' }> {
+  const { analysis, verdict, risks } = args;
+  const score = analysis.locationScore;
+  const residential = analysis.residentialAnalysis;
+  const strategy = residential?.residentialStrategy ?? score?.recommended_strategy ?? null;
+  const hasHighCompetition = risks.some(r => r.title === 'Высокая конкуренция');
+  const hasLowDemand = risks.some(r => r.title === 'Низкий спрос' || r.title === 'Слабые магниты спроса');
+  const hasAudienceRisk = risks.some(r => r.title === 'Аудитория не подтверждена');
+
+  const location_action =
+    verdict === 'стоит'
+      ? 'Рассматривать локацию к запуску, но подтвердить объектные параметры: состояние, договор, ограничения дома и реальные ставки.'
+      : verdict === 'не стоит'
+        ? 'Не заходить без сильного дисконта или отдельного подтверждения спроса реальными бронированиями/конкурентными ставками.'
+        : 'Переходить только через ручную валидацию: проверить конкурентов, целевую аудиторию, состояние объекта и минимальную доходность.';
+
+  const avoidParts: string[] = [];
+  if (hasHighCompetition) avoidParts.push('ценовой войны без отличимой упаковки');
+  if (hasLowDemand) avoidParts.push('ставки только на чистую посуточку без запасного среднесрочного сценария');
+  if (hasAudienceRisk) avoidParts.push('широкого позиционирования “для всех”');
+  if (residential?.confidence === 'low') avoidParts.push('автоматического запуска без ручного контроля');
+
+  return {
+    id: 'recommendations',
+    location_action,
+    best_rental_strategy: residentialStrategyTitleRu(strategy),
+    target_audience: residentialAudienceTitleRu(residential?.residentialAudienceType ?? null, analysis),
+    avoid: avoidParts.length ? `Избегать: ${avoidParts.join('; ')}.` : 'Избегать запуска без проверки договора, состояния объекта, фото-упаковки и фактического конкурентного сета.',
+  };
+}
 
 export function buildLocationStandaloneReport(args: {
   address: string;
   analysis: LocationAnalysis;
-  verdict: string;
+  /** Deprecated: public verdict is generated from LocationDisplayModel. */
+  verdict?: string;
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
   market?: ResidentialMarketMode;
+  displayModel?: LocationDisplayModel;
+  reportIntake?: LocationReportIntake | null;
 }): LocationStandaloneReport {
   const { analysis } = args;
   const market = args.market ?? 'RU';
+  const displayModel = args.displayModel ?? buildLocationDisplayModel(analysis, {
+    locale: market === 'RU' ? 'ru' : 'en',
+    mode: 'residential',
+  });
   const score = analysis.locationScore;
-  const drivers = (score?.top_positive_factors ?? []).slice(0, 3);
+  const drivers = displayModel.safeDrivers.length > 0
+    ? displayModel.safeDrivers.map(d => d.labelRu).slice(0, 3)
+    : (score?.top_positive_factors ?? []).slice(0, 3);
 
   const recommended = score?.recommended_strategy ?? null;
   const incomeRecommended =
@@ -305,6 +626,11 @@ export function buildLocationStandaloneReport(args: {
             ? score.estimated_monthly_income.mid_term
             : score.estimated_monthly_income.hybrid)
       : null;
+  const incomeRange = buildIncomeRange({
+    displayScore: displayModel.displayScore,
+    baseIncomeRub: incomeRecommended,
+    reportIntake: args.reportIntake ?? null,
+  });
 
   // ── Residential prime magnets (policy-filtered) ───────────────────────────
   // Apply the closed allowlist + distance + persistence + market rules.
@@ -318,7 +644,7 @@ export function buildLocationStandaloneReport(args: {
   const secondaryPrime = primeMagnets.slice(3, 5);
 
   // Business-fit section: use prime-filtered magnets within 1.5 km
-  const businessFit = pickBusinessFitVerdict(analysis, primeMagnets);
+  const businessFit = pickBusinessFitVerdict(analysis, primeMagnets, displayModel);
   const primaryMagnetRows = primaryPrime.map(m => ({
     title: `${m.categoryLabelRu}: ${m.name}`,
     distance_m: Math.round(m.distance),
@@ -334,16 +660,69 @@ export function buildLocationStandaloneReport(args: {
     category_label_ru: m.categoryLabelRu,
   });
 
+  const locationScore = displayModel.displayScore;
+  const residential = analysis.residentialAnalysis;
+  const { verdict, shortReason } = buildStandaloneVerdict({
+    displayModel,
+    residentialConfidence: residential?.confidence ?? null,
+    competitorPressureLevel: analysis.gravityExplanation.competitorPressureLevel,
+  });
+  const risks = buildRiskItems({
+    analysis,
+    primeMagnetCount: primeMagnets.length,
+    reportIntake: args.reportIntake ?? null,
+  });
+  const recommendations = buildRecommendations({ analysis, verdict, risks });
+
   return {
     version: 'v1',
     address: args.address,
     generated_at_iso: new Date().toISOString(),
+    location_score: locationScore,
+    display_model: displayModel,
+    report_intake: args.reportIntake ?? null,
+    fields_used: [
+      'locationDisplayModel.displayScore',
+      'locationDisplayModel.displayAudience',
+      'locationDisplayModel.verdictLabelRu',
+      'locationDisplayModel.safeDrivers',
+      'locationDisplayModel.capReasons',
+      'location_report_requests.report_intake',
+      'analysis.locationScore.location_score',
+      'analysis.locationScore.top_positive_factors',
+      'analysis.locationScore.top_negative_factors',
+      'analysis.locationScore.breakdown',
+      'analysis.locationScore.income_model',
+      'analysis.locationScore.estimated_monthly_income',
+      'analysis.gravityExplanation.competitorPressureLevel',
+      'analysis.competitors',
+      'analysis.magnets',
+      'analysis.audienceAnalysis',
+      'analysis.neighborhoodEnvironment',
+      'analysis.residentialAnalysis',
+    ],
+    data_sources: [
+      { field: 'location_score', source: 'locationDisplayModel.displayScore from buildLocationDisplayModel()' },
+      { field: 'summary.verdict / short_reason', source: 'locationDisplayModel + competition + residential confidence' },
+      { field: 'risks', source: 'top_negative_factors + magnets + competition + score breakdown + data confidence' },
+      { field: 'recommendations', source: 'generated from verdict, risks, residentialAnalysis and recommended strategy' },
+      { field: 'income range', source: 'analysis.locationScore income estimate + locationDisplayModel.displayScore + report_intake object params' },
+      { field: 'residential analysis', source: 'analysis.residentialAnalysis from buildResidentialAnalysis()' },
+    ],
     sections: [
       {
         id: 'summary',
-        verdict: args.verdict,
+        verdict,
+        display_audience: displayModel.displayAudience,
+        verdict_label_ru: displayModel.verdictLabelRu,
+        cap_reasons: displayModel.capReasons,
+        short_reason: shortReason,
+        location_score: locationScore,
         drivers,
-        income_rub_month: incomeRecommended,
+        income_rub_month: null,
+        income_range_rub: incomeRange.range,
+        income_confidence: incomeRange.confidence,
+        income_note: incomeRange.note,
         recommended_strategy: recommended,
       },
       {
@@ -367,16 +746,35 @@ export function buildLocationStandaloneReport(args: {
         pressure_level: analysis.gravityExplanation.competitorPressureLevel,
       },
       {
+        id: 'risks',
+        items: risks,
+      },
+      recommendations,
+      {
         id: 'income_strategy',
         recommended_strategy: recommended,
         monthly_income_rub: {
-          short_term: score?.estimated_monthly_income.short_term ?? null,
-          hybrid: score?.estimated_monthly_income.hybrid ?? null,
-          mid_term: score?.estimated_monthly_income.mid_term ?? null,
+          short_term: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.short_term ?? null,
+          hybrid: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.hybrid ?? null,
+          mid_term: incomeRange.confidence === 'low' ? null : score?.estimated_monthly_income.mid_term ?? null,
         },
-        positioning_hint: recommended ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}.` : null,
+        income_range_rub: incomeRange.range,
+        income_confidence: incomeRange.confidence,
+        income_note: incomeRange.note,
+        positioning_hint: recommended
+          ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}. Доход трактуем как диапазон и проверяем по объекту.`
+          : 'Доход трактуем как диапазон и проверяем по объекту.',
+        assumptions: buildIncomeAssumptions(analysis),
       },
-      { id: 'next_step', cta: 'get_full_breakdown' },
+      {
+        id: 'residential_analysis',
+        residentialAudienceType: residential?.residentialAudienceType ?? null,
+        residentialStrategy: residential?.residentialStrategy ?? null,
+        confidence: residential?.confidence ?? null,
+        strategyRationaleRu: residential?.strategyRationaleRu ?? null,
+        operationalNoteRu: residential?.operationalNoteRu ?? null,
+      },
+      { id: 'next_step', cta: 'save_or_discuss' },
     ],
   };
 }

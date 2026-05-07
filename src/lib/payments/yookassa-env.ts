@@ -11,6 +11,10 @@ export function getYooKassaCredentials(): { shopId: string; secretKey: string } 
 export function getYooKassaReturnUrl(): string {
   const explicit = process.env.YOO_KASSA_RETURN_URL?.trim();
   if (explicit) return explicit;
-  const app = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const app = (
+    process.env.NEXT_PUBLIC_SITE_URL
+    || process.env.NEXT_PUBLIC_APP_URL
+    || 'http://localhost:3000'
+  ).replace(/\/$/, '');
   return `${app}/dashboard?payment=success`;
 }

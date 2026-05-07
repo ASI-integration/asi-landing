@@ -6,7 +6,7 @@
  * trim fields for preview mode.
  *
  * Request body:
- *   { address: string; is_paid: boolean; locale?: "ru" | "en" }
+ *   { address: string; request_id?: string; locale?: "ru" | "en" }
  *
  * Response:
  *   {
@@ -21,7 +21,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
 import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress, cacheSet } from '@/lib/location/cache';
-import { fetchOsmData, buildAnalysis, wrapLocationReport } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, buildLocationDisplayModel, wrapLocationReport } from '@/lib/location';
+import {
+  getLocationReportRequestById,
+  hasPaidLocationReportAccess,
+} from '@/lib/location/report-request-store';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -36,22 +40,40 @@ function sourceLabel(usedFallback: boolean | undefined): string {
 
 export async function POST(req: NextRequest) {
   let rawAddress: string;
-  let isPaid: boolean;
+  let isPaid = false;
+  let requestId: string | null = null;
   let market: AddressMarket = 'en';
 
   try {
-    const body = await req.json() as { address?: unknown; is_paid?: unknown; locale?: unknown };
+    const body = await req.json() as {
+      address?: unknown;
+      is_paid?: unknown;
+      request_id?: unknown;
+      report_request_id?: unknown;
+      locale?: unknown;
+    };
     if (typeof body.address !== 'string' || !body.address.trim()) {
       return NextResponse.json({ error: 'address required' }, { status: 400 });
     }
-    if (typeof body.is_paid !== 'boolean') {
-      return NextResponse.json({ error: 'is_paid required' }, { status: 400 });
-    }
     rawAddress = body.address.trim();
-    isPaid = body.is_paid;
+    requestId =
+      typeof body.request_id === 'string' && body.request_id.trim()
+        ? body.request_id.trim()
+        : typeof body.report_request_id === 'string' && body.report_request_id.trim()
+          ? body.report_request_id.trim()
+          : null;
     if (body.locale !== undefined) market = parseMarket(body.locale);
   } catch {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
+  }
+
+  if (requestId) {
+    try {
+      const requestEntity = await getLocationReportRequestById(requestId);
+      isPaid = !!requestEntity && hasPaidLocationReportAccess(requestEntity);
+    } catch {
+      isPaid = false;
+    }
   }
 
   // ── Resolve coords ─────────────────────────────────────────────────────────
@@ -98,7 +120,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const report = wrapLocationReport(locationScore, isPaid);
+    const displayModel = buildLocationDisplayModel(analysis, {
+      locale: market === 'ru' ? 'ru' : 'en',
+      mode: 'residential',
+    });
+    const report = wrapLocationReport(locationScore, isPaid, displayModel);
 
     return NextResponse.json({
       address: normalizeAddress(rawAddress),

@@ -58,7 +58,7 @@ export function RuComplianceFooter({ tone = 'theme' }: { tone?: Tone }) {
           <h2 className={heading}>Документы и контакты</h2>
           <nav className="mt-3 flex flex-col sm:flex-row sm:flex-wrap gap-x-6 gap-y-2" aria-label="Правовая информация">
             <Link href={ruComplianceRoutes.contacts} className={link}>
-              Правовые документы
+              Контакты
             </Link>
             <Link href={ruComplianceRoutes.payment} className={link}>
               Оплата

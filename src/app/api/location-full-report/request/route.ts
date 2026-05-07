@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLocationReportRequest } from '@/lib/location/report-request-store';
+import {
+  attachLocationReportRequestPayment,
+  createLocationReportRequest,
+  getLocationReportRequestById,
+  type LocationReportPaymentProvider,
+} from '@/lib/location/report-request-store';
+import { generateAndAttachLocationReportForRequest } from '@/lib/location/full-report-generation';
+import { createLocationReportYooKassaPayment } from '@/lib/location/yookassa-payment';
+import { validateLocationReportIntake } from '@/lib/location/report-intake';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { resolveAccountIdForUser } from '@/lib/accounts';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 function parseLocale(v: unknown): 'ru' | 'en' {
   return v === 'en' ? 'en' : 'ru';
@@ -9,6 +20,17 @@ function parseLocale(v: unknown): 'ru' | 'en' {
 
 function parseMode(v: unknown): 'residential' | 'commercial' {
   return v === 'commercial' ? 'commercial' : 'residential';
+}
+
+function resolveRuPaymentProvider(): LocationReportPaymentProvider {
+  return process.env.LOCATION_REPORT_PAYMENT_PROVIDER === 'yookassa'
+    ? 'yookassa'
+    : 'manual';
+}
+
+function resolveRuPaymentUrl(provider: LocationReportPaymentProvider): string | null {
+  if (provider === 'yookassa') return null;
+  return process.env.LOCATION_REPORT_PAYMENT_URL || null;
 }
 
 export async function POST(req: NextRequest) {
@@ -26,6 +48,17 @@ export async function POST(req: NextRequest) {
   const lon = typeof body?.lon === 'number' && Number.isFinite(body.lon) ? body.lon : null;
   const locale = parseLocale(body?.locale);
   const mode = parseMode(body?.mode);
+  const intakeResult = validateLocationReportIntake(body?.report_intake);
+  if (locale === 'ru' && !intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: 400 });
+  }
+  if (body?.report_intake != null && !intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: 400 });
+  }
+  const reportIntake = intakeResult.ok ? intakeResult.intake : null;
+  const email = typeof body?.email === 'string' && body.email.includes('@')
+    ? body.email.trim()
+    : null;
 
   // Delivery is optional in this MVP: we persist intent, but actual sending is handled later.
   const deliveryChannel = body?.delivery?.channel;
@@ -37,11 +70,31 @@ export async function POST(req: NextRequest) {
       ? { channel: deliveryChannel as any, target: deliveryTarget.trim() }
       : null;
 
-  // Monetization hook: for now we don’t enforce here; callers can show paywall based on their auth/subscription.
-  const accessTier =
-    body?.access_tier === 'included' || body?.access_tier === 'paid_required'
+  let userId: string | null = null;
+  let accountId: string | null = null;
+  let sessionEmail: string | null = null;
+
+  if (isSessionSecretConfigured()) {
+    try {
+      const session = await getSession();
+      userId = session.userId ?? null;
+      sessionEmail = session.email ?? null;
+      const resolvedAccountId = userId ? await resolveAccountIdForUser(userId) : null;
+      accountId = resolvedAccountId === 'legacy' ? null : resolvedAccountId;
+    } catch {
+      // Public RU order can be created without auth; account binding is best-effort.
+    }
+  }
+
+  const isRuPaidProduct = locale === 'ru';
+  const paymentProvider = isRuPaidProduct ? resolveRuPaymentProvider() : 'manual';
+  const paymentUrl = isRuPaidProduct ? resolveRuPaymentUrl(paymentProvider) : null;
+  const accessTier = isRuPaidProduct
+    ? 'paid_required'
+    : body?.access_tier === 'included' || body?.access_tier === 'paid_required'
       ? body.access_tier
       : 'unknown';
+  const accessStatus = isRuPaidProduct ? 'pending_payment' : 'draft';
 
   try {
     const { requestId } = await createLocationReportRequest({
@@ -52,13 +105,65 @@ export async function POST(req: NextRequest) {
       lon,
       delivery,
       accessTier,
+      accessStatus,
+      paymentProvider,
+      paymentUrl,
+      userId,
+      accountId,
+      email: email ?? sessionEmail,
+      reportIntake,
+      productType: 'location_report_detail',
     });
+    let providerPaymentId: string | null = null;
+    let providerPaymentUrl = paymentUrl;
+
+    if (isRuPaidProduct && paymentProvider === 'yookassa') {
+      const payment = await createLocationReportYooKassaPayment({
+        requestId,
+        email: email ?? sessionEmail,
+        description: `ASI: полный отчет по локации (${address})`,
+      });
+      providerPaymentId = payment.paymentId;
+      providerPaymentUrl = payment.paymentUrl;
+      await attachLocationReportRequestPayment({
+        requestId,
+        paymentId: providerPaymentId,
+        paymentUrl: providerPaymentUrl,
+        paymentProvider: 'yookassa',
+      });
+    }
+
+    const { reportId } = await generateAndAttachLocationReportForRequest(requestId);
+    const entity = await getLocationReportRequestById(requestId);
 
     return NextResponse.json({
       requestId,
-      status: 'queued',
+      report_request_id: requestId,
+      status: entity?.status ?? 'completed',
+      access_status: entity?.access_status ?? accessStatus,
+      payment_provider: entity?.payment_provider ?? paymentProvider,
+      payment_id: entity?.payment_id ?? providerPaymentId,
+      payment_url: entity?.payment_url ?? providerPaymentUrl,
+      report_intake: entity?.report_intake ?? reportIntake,
+      product_type: 'location_report_detail',
+      reportId,
+      next_action: isRuPaidProduct
+        ? (
+          paymentProvider === 'yookassa' && (entity?.payment_url ?? providerPaymentUrl)
+            ? {
+              type: 'redirect_payment',
+              url: entity?.payment_url ?? providerPaymentUrl,
+            }
+            : {
+              type: 'payment_required',
+              url: `/ru/location-report?requestId=${encodeURIComponent(requestId)}`,
+            }
+        )
+        : {
+          type: 'process_async',
+        },
       note: locale === 'ru'
-        ? 'Полный отчёт рассчитывается асинхронно. В плотных городских локациях расчёт может занять до ~1 минуты.'
+        ? 'Заявка на полный отчёт создана. Доступ к полному отчёту откроется после подтверждения оплаты.'
         : 'The full report runs asynchronously. Dense urban areas may take up to ~1 minute.',
     });
   } catch (err) {

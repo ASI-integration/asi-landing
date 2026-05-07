@@ -213,7 +213,7 @@ export default function HomeRu() {
                 className="p-6 rounded-xl border border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 aria-label="Выбрать тариф Для оператора"
               >
-                <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
+                <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-700 text-xs font-medium rounded-full border border-amber-500/20">
                   До 15 объектов
                 </span>
                 <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
@@ -236,7 +236,7 @@ export default function HomeRu() {
                 className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 aria-label="Выбрать тариф Для управляющей компании"
               >
-                <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
+                <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-700 text-xs font-medium rounded-full border border-blue-500/20">
                   Индивидуально
                 </span>
                 <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">

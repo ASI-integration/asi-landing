@@ -6,6 +6,7 @@ import { photonSuggest } from './suggest-photon';
 import {
   buildProviderQueryWithContextCity,
   canonicalizeRuSuggestionValue,
+  hasExplicitRuCity,
   normalizeRuAddressQuery,
   rerankRuSuggestionsByLocality,
 } from './ru-normalize';
@@ -21,6 +22,25 @@ function googleMapsKey(): string | null {
 function twogisCatalogKey(): string | null {
   const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
+}
+
+const RU_NORTHWEST_DISAMBIGUATION_HINTS: readonly string[] = [
+  'Санкт-Петербург',
+  'Мурино, Ленинградская область',
+];
+
+function uniqueStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 export interface RunSuggestPipelineOptions {
@@ -82,14 +102,59 @@ export async function runSuggestPipeline(
       ? suggestions.map(s => ({ ...s, value: canonicalizeRuSuggestionValue(s.value) }))
       : suggestions;
 
+  // For RU street+house queries that have no explicit city, one provider query
+  // is not enough: a city-biased query collapses to one locality, while a raw
+  // nationwide query can return unrelated same-street matches. Fetch a tiny set
+  // of northwest locality hints as well, then merge and rerank so the UI can
+  // show both Санкт-Петербург and nearby Мурино / Ленобласть variants.
+  const shouldExpandRuDisambiguation =
+    market === 'ru' &&
+    !hasExplicitRuCity(normalized) &&
+    /\d/u.test(normalized);
+
   try {
     const gKey = googleMapsKey();
     if (gKey) {
-      let primary = await googlePlacesAutocomplete(providerQuery, gKey, {
-        language: googleLang,
-        components: googleComponents,
-        bias: googleBias,
-      });
+      const expandedRuQueries = shouldExpandRuDisambiguation
+        ? [
+            ...RU_NORTHWEST_DISAMBIGUATION_HINTS.map(hint => `${providerQueryRaw}, ${hint}, Россия`),
+            providerQueryRaw,
+          ]
+        : [];
+      const googleQueries = uniqueStrings([
+        ...(providerQuery !== providerQueryRaw ? [providerQuery] : []),
+        ...expandedRuQueries,
+        ...(providerQuery === providerQueryRaw && !shouldExpandRuDisambiguation ? [providerQuery] : []),
+      ]);
+
+      let [primary, ...secondaryResults] = await Promise.all(
+        googleQueries.map((q, idx) =>
+          googlePlacesAutocomplete(q, gKey, {
+            language: googleLang,
+            components: googleComponents,
+            bias: googleBias,
+          }).catch(() => {
+            // Preserve the primary failure behavior from googlePlacesAutocomplete
+            // (it logs and returns []); this guard is only for network throws.
+            if (idx === 0) throw new Error('google_primary_failed');
+            return [] as AddressSuggestionRow[];
+          }),
+        ),
+      );
+
+      if (secondaryResults.length > 0) {
+        const seen = new Set<string>(primary.map(s => s.value.trim().toLowerCase()));
+        for (const secondary of secondaryResults) {
+          for (const s of secondary) {
+            const key = s.value.trim().toLowerCase();
+            if (!seen.has(key)) {
+              primary.push(s);
+              seen.add(key);
+            }
+          }
+        }
+      }
+
       if (market === 'ru') {
         primary = rerankRuSuggestionsByLocality(normalized, primary, { contextCity });
       }

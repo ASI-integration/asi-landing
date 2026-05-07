@@ -15,6 +15,8 @@ import {
   buildCommercialFormatFit,
   FIT_LEVEL_LABEL_RU,
   FIT_LEVEL_COLOR,
+  LOCATION_REPORT_MODULES,
+  LOCATION_REPORT_INCOME_DISCLAIMER_RU,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -24,6 +26,9 @@ import type {
   DemandType,
   NeighborhoodEnvironmentConcernLevel,
   ResidentialDemoSanity,
+  LocationDisplayModel,
+  LocationReportIntake,
+  LocationReportModule,
 } from '@/lib/location/client';
 import {
   useLocationTelemetryOptional,
@@ -40,7 +45,6 @@ import {
 import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
-import { applyResidentialDemoSanity } from '@/lib/location/client';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -75,7 +79,10 @@ interface SelectedAddress {
 }
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
-type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
+type AnalysisMetaWithDisplayModel = AnalysisMeta & {
+  demoSanity?: ResidentialDemoSanity;
+  displayModel?: LocationDisplayModel;
+};
 
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
@@ -228,7 +235,7 @@ async function fetchLocationAnalysis(
   lon: number,
   signal?: AbortSignal,
   opts?: { spatialFoundation?: boolean },
-): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
+): Promise<{ analysis: LocationAnalysis; meta: AnalysisMetaWithDisplayModel } | null> {
   try {
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
@@ -245,23 +252,26 @@ async function fetchLocationAnalysis(
     if (!res.ok) return null;
     const data = await res.json() as {
       analysis?: LocationAnalysis;
-      meta?: AnalysisMetaWithDemoSanity;
+      meta?: AnalysisMetaWithDisplayModel;
       demoSanity?: ResidentialDemoSanity;
+      displayModel?: LocationDisplayModel;
     };
     if (!data.analysis) return null;
     const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
       ...data.analysis,
       accessibilityStops: data.analysis.accessibilityStops ?? [],
     });
-    const metaBase: AnalysisMetaWithDemoSanity = data.meta ?? {
+    const metaBase: AnalysisMetaWithDisplayModel = data.meta ?? {
       freshness: 'fresh',
       updatedAt: new Date().toISOString(),
       source: 'osm-overpass',
       cached: false,
     };
-    const meta: AnalysisMetaWithDemoSanity = data.demoSanity
-      ? { ...metaBase, demoSanity: data.demoSanity }
-      : metaBase;
+    const meta: AnalysisMetaWithDisplayModel = {
+      ...metaBase,
+      ...(data.demoSanity ? { demoSanity: data.demoSanity } : {}),
+      ...(data.displayModel ? { displayModel: data.displayModel } : {}),
+    };
     return { analysis, meta };
   } catch {
     return null;
@@ -1258,7 +1268,49 @@ function AddressInput({
     onClear();
   }
 
+  function unlockForEdit(initialText: string) {
+    setLocked(false);
+    setLockedValue('');
+    setText(initialText);
+    onDraftChange?.(initialText);
+    setSuggestions([]);
+    setOpen(false);
+    setActiveIdx(-1);
+    setSuggestStatus('idle');
+    setResolveFailed(false);
+    onClear();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // When an address is locked, Backspace / Delete / printable keys must
+    // unlock the input so the user can edit without having to click ✕.
+    if (locked) {
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        unlockForEdit(lockedValue.slice(0, -1));
+        return;
+      }
+      if (e.key === 'Delete') {
+        e.preventDefault();
+        unlockForEdit('');
+        return;
+      }
+      // Printable single-character keys (no modifier other than shift): replace
+      // the locked value with the typed character so editing starts cleanly.
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        unlockForEdit(e.key);
+        return;
+      }
+      // Other keys (Tab, Arrow, Escape, Ctrl+combos) fall through unchanged.
+      return;
+    }
+
     if (!open || suggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1298,11 +1350,10 @@ function AddressInput({
         <input
           type="text"
           value={locked ? lockedValue : text}
-          onChange={locked ? () => undefined : handleChange}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={c.addressPlaceholder}
           disabled={disabled || resolvingPick}
-          readOnly={locked}
           autoComplete="off"
           role="combobox"
           aria-autocomplete="list"
@@ -1603,6 +1654,10 @@ function sanitizeRuPublicFactor(line: string): string | null {
       'Деловые сигналы есть, но без крупного якоря спроса уровня БЦ или вокзала.',
     ],
     [
+      /Рядом промышленные объекты, но деловых магнитов нет — оценка ограничена для жилого сценария\.?/u,
+      'Рядом есть промышленные объекты, но нет крупного делового якоря для устойчивого потока командированных.',
+    ],
+    [
       /Есть несколько локальных магнитов спроса \(вторичный кластер\);\s*оценка не должна схлопываться в «почти ноль»\.?/u,
       'Поблизости есть несколько локальных точек спроса.',
     ],
@@ -1869,6 +1924,300 @@ function NeighborhoodEnvironmentPanel({
 
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
+type ReportIntakeObjectParamsDraft = {
+  rooms: string;
+  area_m2: string;
+  renovation_level: '' | 'none' | 'standard' | 'good' | 'designer';
+  floor: string;
+  building_year: string;
+  building_type: string;
+  parking: 'yes' | 'no' | 'unknown';
+  purchase_price_rub: string;
+  monthly_rent_rub: string;
+};
+
+const REPORT_OBJECT_TYPE_OPTIONS = [
+  { value: 'apartment', label: 'квартира' },
+  { value: 'apart_hotel', label: 'апартаменты' },
+  { value: 'house', label: 'дом / коттедж' },
+  { value: 'commercial_space', label: 'коммерческое помещение' },
+  { value: 'land_other', label: 'участок / другое' },
+] as const;
+
+const REPORT_OBJECT_STATUS_OPTIONS = [
+  { value: 'owned', label: 'объект уже есть' },
+  { value: 'considering_purchase', label: 'рассматриваю покупку' },
+  { value: 'considering_rent_sublease', label: 'рассматриваю аренду под субаренду' },
+  { value: 'checking_address', label: 'просто проверяю адрес' },
+] as const;
+
+const REPORT_STRATEGY_OPTIONS = [
+  { value: 'short_term', label: 'посуточная аренда' },
+  { value: 'mid_term', label: 'среднесрок' },
+  { value: 'long_term', label: 'долгосрок' },
+  { value: 'hybrid', label: 'гибрид' },
+  { value: 'commercial_use', label: 'коммерческое использование' },
+  { value: 'unknown', label: 'пока не знаю' },
+] as const;
+
+const REPORT_MODULE_LABELS: Record<LocationReportModule, string> = {
+  income_range: 'доходная вилка',
+  strategy_comparison: 'сравнение стратегий: посуточно / среднесрок / долгосрок',
+  competitors: 'конкуренты и аналоги',
+  district_risks: 'риски района',
+  target_audience: 'целевая аудитория',
+  transport_magnets: 'транспорт и магниты',
+  object_improvements: 'что улучшить в объекте',
+  packaging_recommendations: 'рекомендации по упаковке/фото/описанию',
+  decision: 'решение: брать / не брать / осторожно',
+  manual_check_questions: 'список вопросов для ручной проверки',
+};
+
+function parseOptionalPositiveNumber(value: string): number | undefined {
+  const normalized = value.replace(',', '.').trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function buildReportIntakeFromState(args: {
+  objectType: LocationReportIntake['object_type'];
+  objectStatus: LocationReportIntake['object_status'];
+  intendedStrategy: LocationReportIntake['intended_strategy'];
+  params: ReportIntakeObjectParamsDraft;
+  modules: LocationReportModule[];
+  acknowledged: boolean;
+}): LocationReportIntake | null {
+  if (!args.acknowledged || args.modules.length === 0) return null;
+  const p = args.params;
+  return {
+    object_type: args.objectType,
+    object_status: args.objectStatus,
+    intended_strategy: args.intendedStrategy,
+    object_params: {
+      ...(parseOptionalPositiveNumber(p.rooms) !== undefined ? { rooms: parseOptionalPositiveNumber(p.rooms) } : {}),
+      ...(parseOptionalPositiveNumber(p.area_m2) !== undefined ? { area_m2: parseOptionalPositiveNumber(p.area_m2) } : {}),
+      ...(p.renovation_level ? { renovation_level: p.renovation_level } : {}),
+      ...(parseOptionalPositiveNumber(p.floor) !== undefined ? { floor: parseOptionalPositiveNumber(p.floor) } : {}),
+      ...(parseOptionalPositiveNumber(p.building_year) !== undefined ? { building_year: parseOptionalPositiveNumber(p.building_year) } : {}),
+      ...(p.building_type.trim() ? { building_type: p.building_type.trim() } : {}),
+      parking: p.parking,
+      ...(parseOptionalPositiveNumber(p.purchase_price_rub) !== undefined ? { purchase_price_rub: parseOptionalPositiveNumber(p.purchase_price_rub) } : {}),
+      ...(parseOptionalPositiveNumber(p.monthly_rent_rub) !== undefined ? { monthly_rent_rub: parseOptionalPositiveNumber(p.monthly_rent_rub) } : {}),
+    },
+    requested_modules: args.modules,
+    income_accuracy_acknowledged: true,
+  };
+}
+
+function ReportIntakeModal({
+  busy,
+  mode,
+  onClose,
+  onSubmit,
+}: {
+  busy: boolean;
+  mode: LocationAnalysisMode;
+  onClose: () => void;
+  onSubmit: (intake: LocationReportIntake) => void;
+}) {
+  const [objectType, setObjectType] = useState<LocationReportIntake['object_type']>(
+    mode === 'commercial' ? 'commercial_space' : 'apartment',
+  );
+  const [objectStatus, setObjectStatus] = useState<LocationReportIntake['object_status']>('checking_address');
+  const [intendedStrategy, setIntendedStrategy] = useState<LocationReportIntake['intended_strategy']>(
+    mode === 'commercial' ? 'commercial_use' : 'short_term',
+  );
+  const [params, setParams] = useState<ReportIntakeObjectParamsDraft>({
+    rooms: '',
+    area_m2: '',
+    renovation_level: '',
+    floor: '',
+    building_year: '',
+    building_type: '',
+    parking: 'unknown',
+    purchase_price_rub: '',
+    monthly_rent_rub: '',
+  });
+  const [modules, setModules] = useState<LocationReportModule[]>([...LOCATION_REPORT_MODULES]);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const intake = buildReportIntakeFromState({
+    objectType,
+    objectStatus,
+    intendedStrategy,
+    params,
+    modules,
+    acknowledged,
+  });
+
+  const toggleModule = (module: LocationReportModule) => {
+    setModules(current =>
+      current.includes(module)
+        ? current.filter(x => x !== module)
+        : [...current, module],
+    );
+  };
+
+  const setParam = (key: keyof ReportIntakeObjectParamsDraft, value: string) => {
+    setParams(current => ({ ...current, [key]: value }));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 px-3 py-4">
+      <div className="w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-5 py-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Полный отчёт</p>
+            <h3 className="mt-1 text-xl font-bold">Параметры объекта и отчёта</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-lg border border-slate-800 px-3 py-2 text-sm text-slate-300 hover:text-white disabled:opacity-60"
+          >
+            Закрыть
+          </button>
+        </div>
+
+        <div className="space-y-6 px-5 py-5">
+          <div className="grid md:grid-cols-3 gap-4">
+            <label className="space-y-2">
+              <span className="text-sm font-semibold text-slate-200">Тип объекта</span>
+              <select
+                value={objectType}
+                onChange={e => setObjectType(e.target.value as LocationReportIntake['object_type'])}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm text-white"
+              >
+                {REPORT_OBJECT_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-semibold text-slate-200">Статус</span>
+              <select
+                value={objectStatus}
+                onChange={e => setObjectStatus(e.target.value as LocationReportIntake['object_status'])}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm text-white"
+              >
+                {REPORT_OBJECT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-semibold text-slate-200">Стратегия</span>
+              <select
+                value={intendedStrategy}
+                onChange={e => setIntendedStrategy(e.target.value as LocationReportIntake['intended_strategy'])}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm text-white"
+              >
+                {REPORT_STRATEGY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-slate-200">Параметры объекта</p>
+            <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {([
+                ['rooms', 'Комнаты'],
+                ['area_m2', 'Площадь, м²'],
+                ['floor', 'Этаж'],
+                ['building_year', 'Год дома'],
+                ['building_type', 'Тип дома'],
+                ['purchase_price_rub', 'Цена покупки, ₽'],
+                ['monthly_rent_rub', 'Аренда/мес, ₽'],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="space-y-1.5">
+                  <span className="text-xs text-slate-500">{label}</span>
+                  <input
+                    value={params[key]}
+                    onChange={e => setParam(key, e.target.value)}
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm text-white"
+                  />
+                </label>
+              ))}
+              <label className="space-y-1.5">
+                <span className="text-xs text-slate-500">Ремонт</span>
+                <select
+                  value={params.renovation_level}
+                  onChange={e => setParam('renovation_level', e.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm text-white"
+                >
+                  <option value="">не указано</option>
+                  <option value="none">без ремонта</option>
+                  <option value="standard">обычный</option>
+                  <option value="good">хороший</option>
+                  <option value="designer">дизайнерский</option>
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-xs text-slate-500">Парковка</span>
+                <select
+                  value={params.parking}
+                  onChange={e => setParam('parking', e.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm text-white"
+                >
+                  <option value="unknown">не знаю</option>
+                  <option value="yes">да</option>
+                  <option value="no">нет</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-slate-200">Что включить в отчёт</p>
+            <div className="mt-3 grid sm:grid-cols-2 gap-2">
+              {LOCATION_REPORT_MODULES.map(module => (
+                <label
+                  key={module}
+                  className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-3 text-sm text-slate-200"
+                >
+                  <input
+                    type="checkbox"
+                    checked={modules.includes(module)}
+                    onChange={() => toggleModule(module)}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span>{REPORT_MODULE_LABELS[module]}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-4 text-sm text-amber-100">
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={e => setAcknowledged(e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>{LOCATION_REPORT_INCOME_DISCLAIMER_RU}</span>
+          </label>
+        </div>
+
+        <div className="sticky bottom-0 flex flex-col sm:flex-row gap-3 border-t border-slate-800 bg-slate-950/95 px-5 py-4">
+          <button
+            type="button"
+            onClick={() => intake && onSubmit(intake)}
+            disabled={busy || !intake}
+            className="inline-flex flex-1 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? 'Создаём заказ...' : 'Перейти к оплате / Получить отчёт'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-800 px-5 py-3 text-sm font-semibold text-slate-300 hover:text-white disabled:opacity-60"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ASIPanel({
   analysis,
   address,
@@ -1888,12 +2237,22 @@ function ASIPanel({
 }) {
   const router = useRouter();
   const {
-    magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
+    magnets, evergreenIndex: rawEvergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
+  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const displayModel = isRuResidentialDemo
+    ? (meta as AnalysisMetaWithDisplayModel | null)?.displayModel
+    : null;
+  const sanity = displayModel?.demoSanity ?? (meta as AnalysisMetaWithDisplayModel | null)?.demoSanity ?? null;
+  const evergreenIndex = displayModel?.displayScore ?? rawEvergreenIndex;
+  const bandAudience =
+    displayModel?.displayAudience === 'BUSINESS' || displayModel?.displayAudience === 'TOURIST'
+      ? displayModel.displayAudience
+      : analysis.audienceAnalysis?.primaryAudience;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
   const conclusion =
     locale === 'ru'
-      ? generateConclusion(
+      ? displayModel?.reportNarrative ?? generateConclusion(
           evergreenIndex,
           magnets,
           competitors,
@@ -1903,7 +2262,7 @@ function ASIPanel({
           analysis.audienceAnalysis,
         )
       : analysis.conclusion;
-  const band = getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+  const band = getBand(evergreenIndex, bandAudience);
   // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
   const strategy: 'mid_term' | 'hybrid' | 'short_term' =
     analysis.locationScore?.recommended_strategy ??
@@ -1916,6 +2275,7 @@ function ASIPanel({
   const [magnetExpanded, setMagnetExpanded] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
+  const [reportIntakeOpen, setReportIntakeOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
@@ -1924,7 +2284,9 @@ function ASIPanel({
 
   const hasMagnets = magnets.length > 0;
   const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
-  const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
+  const audienceLabelRu =
+    displayModel?.audienceLabelRu
+    ?? (primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—');
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
   const incomeRange = (() => {
     const income = analysis.locationScore?.estimated_monthly_income;
@@ -1950,9 +2312,6 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
-  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
   const aboveFoldReasons = (() => {
     const ls = analysis.locationScore;
     const specificFactors = [
@@ -1960,7 +2319,8 @@ function ASIPanel({
       ...(ls?.top_negative_factors ?? []),
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
-    const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
+    const canonical = displayModel?.safeDrivers.map(d => d.labelRu) ?? [];
+    const merged = canonical.length > 0 ? canonical : (sanity ? [...sanity.capReasonsRu, ...factors] : factors);
     const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(merged) : merged;
 
     return cleaned.slice(0, 2).map((factor) => {
@@ -1969,7 +2329,7 @@ function ASIPanel({
     });
   })();
 
-  async function requestFullReportAsync() {
+  async function requestFullReportAsync(reportIntake?: LocationReportIntake) {
     if (fullReportBusy) return;
     setFullReportErr(null);
     setFullReportBusy(true);
@@ -1982,14 +2342,24 @@ function ASIPanel({
           locale,
           mode,
           delivery: { channel: 'dashboard', target: 'public' },
-          // Monetization hook (MVP): UI can upgrade this to 'included' or 'paid_required' later.
-          access_tier: 'unknown',
+          ...(reportIntake ? { report_intake: reportIntake } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
 
       const requestId = String(json.requestId);
+      if (locale === 'ru') {
+        const nextUrl = typeof json?.next_action?.url === 'string'
+          ? json.next_action.url
+          : `/ru/location-report?requestId=${encodeURIComponent(requestId)}`;
+        if (json?.next_action?.type === 'redirect_payment' && /^https?:\/\//.test(nextUrl)) {
+          window.location.assign(nextUrl);
+          return;
+        }
+        router.push(nextUrl);
+        return;
+      }
 
       // Kick off processing (do not block the UI on the long request).
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -2015,7 +2385,7 @@ function ASIPanel({
         const st = await poll();
         if (st.status === 'completed' && st.reportId) {
           const reportId = String(st.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(`/location-report/${reportId}`);
           return;
         }
         if (st.status === 'failed') {
@@ -2031,6 +2401,7 @@ function ASIPanel({
       setFullReportErr(msg);
     } finally {
       setFullReportBusy(false);
+      setReportIntakeOpen(false);
     }
   }
 
@@ -2040,6 +2411,7 @@ function ASIPanel({
         address,
         analysis,
         verdict: conclusion || 'Итог: данных недостаточно для уверенного вывода.',
+        displayModel: displayModel ?? undefined,
       });
 
       try {
@@ -2070,7 +2442,8 @@ function ASIPanel({
       if (merged.length >= 4) break;
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
-    const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
+    const canonical = displayModel?.safeDrivers.map(d => d.labelRu) ?? [];
+    const base = canonical.length > 0 ? canonical : (merged.length > 0 ? merged : generateScoreFactors(analysis, locale));
     const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(base) : base;
     return cleaned.slice(0, 2);
   })();
@@ -2145,17 +2518,17 @@ function ASIPanel({
               {locale === 'ru' ? 'Вердикт' : 'Verdict'}
             </p>
             <p className={`mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
-              {band.label}
+              {displayModel?.verdictLabelRu ?? band.label}
             </p>
             <div className="mt-4 space-y-2">
               <button
                 type="button"
-                onClick={requestFullReportAsync}
+                onClick={() => (locale === 'ru' ? setReportIntakeOpen(true) : void requestFullReportAsync())}
                 disabled={fullReportBusy}
                 className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 {locale === 'ru'
-                  ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                  ? (fullReportBusy ? 'Создаём заказ…' : 'Заказать полный отчёт')
                   : (fullReportBusy ? 'Generating…' : 'Request report')}
               </button>
               {locale === 'ru' ? (
@@ -2206,7 +2579,7 @@ function ASIPanel({
             Открыть демо-permalink (предпросмотр)
           </button>
           <p className="mt-2 text-[11px] text-slate-600 text-center">
-            Предпросмотр быстрый и приблизительный; полный отчёт глубже.
+            Демо‑оценка быстрая и приблизительная; полный отчёт включает магниты, расстояния, доход, риски и рекомендации.
           </p>
         </div>
       ) : null}
@@ -2750,6 +3123,15 @@ function ASIPanel({
       })()}
 
     </div>
+
+    {reportIntakeOpen ? (
+      <ReportIntakeModal
+        busy={fullReportBusy}
+        mode={mode}
+        onClose={() => setReportIntakeOpen(false)}
+        onSubmit={requestFullReportAsync}
+      />
+    ) : null}
     </>
   );
 }
@@ -2848,6 +3230,7 @@ function CommercialASIPanel({
   const [visible, setVisible] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
+  const [reportIntakeOpen, setReportIntakeOpen] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
@@ -2861,7 +3244,7 @@ function CommercialASIPanel({
     fit.overallVerdict === 'weak' ? 'text-orange-400' :
     'text-slate-500';
 
-  async function requestFullReportAsync() {
+  async function requestFullReportAsync(reportIntake?: LocationReportIntake) {
     if (fullReportBusy) return;
     setFullReportErr(null);
     setFullReportBusy(true);
@@ -2874,12 +3257,23 @@ function CommercialASIPanel({
           locale,
           mode: 'commercial',
           delivery: { channel: 'dashboard', target: 'public' },
-          access_tier: 'unknown',
+          ...(reportIntake ? { report_intake: reportIntake } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
       const requestId = String(json.requestId);
+      if (locale === 'ru') {
+        const nextUrl = typeof json?.next_action?.url === 'string'
+          ? json.next_action.url
+          : `/ru/location-report?requestId=${encodeURIComponent(requestId)}`;
+        if (json?.next_action?.type === 'redirect_payment' && /^https?:\/\//.test(nextUrl)) {
+          window.location.assign(nextUrl);
+          return;
+        }
+        router.push(nextUrl);
+        return;
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       fetch('/api/location-full-report/process', {
@@ -2896,7 +3290,7 @@ function CommercialASIPanel({
         if (!s.ok) throw new Error(sj?.error ?? 'status_failed');
         if (sj?.status === 'completed' && sj?.reportId) {
           const reportId = String(sj.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(`/location-report/${reportId}`);
           return;
         }
         if (sj?.status === 'failed') throw new Error(sj?.error ?? 'processing_failed');
@@ -2908,6 +3302,7 @@ function CommercialASIPanel({
       setFullReportErr(msg);
     } finally {
       setFullReportBusy(false);
+      setReportIntakeOpen(false);
     }
   }
 
@@ -2930,6 +3325,7 @@ function CommercialASIPanel({
   }
 
   return (
+    <>
     <div
       className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
       style={{
@@ -2974,14 +3370,14 @@ function CommercialASIPanel({
         </button>
         <button
           type="button"
-          onClick={requestFullReportAsync}
+          onClick={() => (locale === 'ru' ? setReportIntakeOpen(true) : void requestFullReportAsync())}
           disabled={fullReportBusy}
           className="mt-2 w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
-          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
+          {fullReportBusy ? 'Создаём заказ…' : 'Заказать полный отчёт'}
         </button>
         <p className="mt-2 text-[11px] text-slate-600 text-center">
-          Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.
+          Демо‑оценка — быстрый ориентир. Полный отчёт включает магниты, расстояния, сценарии дохода, риски и рекомендации.
         </p>
         {fullReportErr ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
@@ -2990,6 +3386,15 @@ function CommercialASIPanel({
         ) : null}
       </div>
     </div>
+    {reportIntakeOpen ? (
+      <ReportIntakeModal
+        busy={fullReportBusy}
+        mode="commercial"
+        onClose={() => setReportIntakeOpen(false)}
+        onSubmit={requestFullReportAsync}
+      />
+    ) : null}
+    </>
   );
 }
 

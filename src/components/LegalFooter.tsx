@@ -13,10 +13,13 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
         <div className="flex flex-col md:flex-row justify-between gap-6">
           <div>
             <p className="font-semibold text-slate-300">ASI Integrations</p>
-            <p className="mt-1">Individual service provider</p>
+            <p className="mt-1">{ruSite ? 'Самозанятый исполнитель' : 'Individual service provider'}</p>
           </div>
           <div className="space-y-1">
-            <p>© {new Date().getFullYear()} ASI Integrations. All rights reserved.</p>
+            <p>
+              © {new Date().getFullYear()} ASI Integrations.{' '}
+              {ruSite ? 'Все права защищены.' : 'All rights reserved.'}
+            </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <Link href={privacyHref} className="hover:text-slate-200 transition-colors">
                 {ruSite ? 'Конфиденциальность' : 'Privacy Policy'}
@@ -25,7 +28,7 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
                 {ruSite ? 'Условия' : 'Terms of Service'}
               </Link>
               <Link href={contactsHref} className="hover:text-slate-200 transition-colors">
-                {ruSite ? 'Правовые документы' : 'Contact'}
+                {ruSite ? 'Контакты' : 'Contact'}
               </Link>
             </div>
           </div>

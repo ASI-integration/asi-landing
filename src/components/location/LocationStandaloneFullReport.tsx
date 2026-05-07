@@ -9,10 +9,32 @@ function fmtRub(n: number | null): string {
   return `₽${Math.round(n).toLocaleString('ru-RU')}`;
 }
 
+function fmtRubRange(range: { low: number; high: number } | null | undefined): string {
+  if (!range || !Number.isFinite(range.low) || !Number.isFinite(range.high)) return '—';
+  return `${fmtRub(range.low)} – ${fmtRub(range.high)}`;
+}
+
+function fmtRubScenarioRange(n: number | null): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return '—';
+  const low = Math.round((n * 0.8) / 5000) * 5000;
+  const high = Math.max(low + 5000, Math.round((n * 1.2) / 5000) * 5000);
+  return `${fmtRub(low)} – ${fmtRub(high)}`;
+}
+
 function fmtMeters(m: number): string {
   if (!Number.isFinite(m)) return '—';
   if (m < 1000) return `${Math.round(m / 10) * 10} м`;
   return `${(m / 1000).toFixed(1)} км`;
+}
+
+function clampPct(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function fmtPct(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return `${Math.round(n)}%`;
 }
 
 type AnchorType = 'POSITIVE_DEMAND_ANCHOR' | 'MIXED_CONTEXT_ANCHOR' | 'RESTRICTIVE_OR_FRICTION_ANCHOR';
@@ -39,6 +61,29 @@ function strategyTitleRu(s: NonNullable<LocationStandaloneReport['sections'][num
   return 'Среднесрочная аренда';
 }
 
+function residentialStrategyTitleRu(s: string | null): string {
+  if (s === 'selective_premium_short_term') return 'Избирательная посуточная аренда под premium-комфорт';
+  if (s === 'cautious_manual_only') return 'Осторожный ручной режим';
+  if (s === 'short_term') return 'Посуточная аренда';
+  if (s === 'hybrid') return 'Гибрид: посуточно + среднесрок';
+  if (s === 'mid_term') return 'Среднесрочная аренда';
+  return '—';
+}
+
+function residentialAudienceTitleRu(s: string | null): string {
+  if (s === 'premium_comfort') return 'Premium-комфорт';
+  if (s === 'mixed_use_adjacent') return 'Смешанная жилая среда рядом с коммерцией';
+  if (s === 'standard_residential') return 'Стандартная жилая аудитория';
+  return '—';
+}
+
+function confidenceLabelRu(s: string | null): string {
+  if (s === 'high') return 'высокая';
+  if (s === 'medium') return 'средняя';
+  if (s === 'low') return 'низкая';
+  return '—';
+}
+
 function pressureLabelRu(p: 'low' | 'medium' | 'high'): { label: string; className: string } {
   if (p === 'low') return { label: 'низкое', className: 'text-emerald-300' };
   if (p === 'medium') return { label: 'среднее', className: 'text-amber-300' };
@@ -49,6 +94,160 @@ function fitLabelRu(v: 'fit' | 'not_fit' | 'unknown'): { title: string; classNam
   if (v === 'fit') return { title: 'Подходит', className: 'text-emerald-300' };
   if (v === 'not_fit') return { title: 'Скорее не подходит', className: 'text-slate-200' };
   return { title: 'Недостаточно данных', className: 'text-slate-400' };
+}
+
+function decisionTone(verdict: string | null | undefined): { card: string; text: string; dot: string } {
+  if (verdict === 'стоит') {
+    return {
+      card: 'border-emerald-500/45 bg-emerald-950/20',
+      text: 'text-emerald-200',
+      dot: 'bg-emerald-400',
+    };
+  }
+  if (verdict === 'не стоит') {
+    return {
+      card: 'border-rose-500/45 bg-rose-950/20',
+      text: 'text-rose-200',
+      dot: 'bg-rose-400',
+    };
+  }
+  return {
+    card: 'border-amber-500/45 bg-amber-950/20',
+    text: 'text-amber-200',
+    dot: 'bg-amber-400',
+  };
+}
+
+type MetricTone = {
+  label: 'высокий' | 'средний' | 'низкий';
+  dotClassName: string;
+  textClassName: string;
+  barClassName: string;
+  pillClassName: string;
+};
+
+function metricTone(value: number, mode: 'positive' | 'risk' = 'positive'): MetricTone {
+  const high = value >= 67;
+  const medium = value >= 34;
+
+  if (mode === 'risk') {
+    if (high) {
+      return {
+        label: 'высокий',
+        dotClassName: 'bg-rose-400',
+        textClassName: 'text-rose-300',
+        barClassName: 'bg-rose-400',
+        pillClassName: 'border-rose-900/60 bg-rose-950/35 text-rose-200',
+      };
+    }
+    if (medium) {
+      return {
+        label: 'средний',
+        dotClassName: 'bg-amber-400',
+        textClassName: 'text-amber-300',
+        barClassName: 'bg-amber-400',
+        pillClassName: 'border-amber-900/60 bg-amber-950/35 text-amber-200',
+      };
+    }
+    return {
+      label: 'низкий',
+      dotClassName: 'bg-emerald-400',
+      textClassName: 'text-emerald-300',
+      barClassName: 'bg-emerald-400',
+      pillClassName: 'border-emerald-900/60 bg-emerald-950/35 text-emerald-200',
+    };
+  }
+
+  if (high) {
+    return {
+      label: 'высокий',
+      dotClassName: 'bg-emerald-400',
+      textClassName: 'text-emerald-300',
+      barClassName: 'bg-emerald-400',
+      pillClassName: 'border-emerald-900/60 bg-emerald-950/35 text-emerald-200',
+    };
+  }
+  if (medium) {
+    return {
+      label: 'средний',
+      dotClassName: 'bg-amber-400',
+      textClassName: 'text-amber-300',
+      barClassName: 'bg-amber-400',
+      pillClassName: 'border-amber-900/60 bg-amber-950/35 text-amber-200',
+    };
+  }
+  return {
+    label: 'низкий',
+    dotClassName: 'bg-rose-400',
+    textClassName: 'text-rose-300',
+    barClassName: 'bg-rose-400',
+    pillClassName: 'border-rose-900/60 bg-rose-950/35 text-rose-200',
+  };
+}
+
+function pickExistingOverallScore(report: LocationStandaloneReport): number | null {
+  const candidate = report as LocationStandaloneReport & {
+    overall_score?: unknown;
+    score?: unknown;
+    location_score?: unknown;
+    analytics?: { location_score?: unknown; overall_score?: unknown };
+  };
+
+  const values = [
+    candidate.overall_score,
+    candidate.score,
+    candidate.location_score,
+    candidate.analytics?.location_score,
+    candidate.analytics?.overall_score,
+  ];
+
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return clampPct(value);
+  }
+  return null;
+}
+
+function MetricBar({
+  title,
+  value,
+  valueLabel,
+  sourceLabel,
+  tone,
+}: {
+  title: string;
+  value: number | null;
+  valueLabel: string;
+  sourceLabel: string;
+  tone: MetricTone;
+}) {
+  const pct = value == null ? 0 : clampPct(value);
+  return (
+    <div className="w-full min-w-0 rounded-2xl border border-slate-800/70 bg-slate-950/35 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">{title}</p>
+          <p className="mt-0.5 text-[12px] text-slate-500 leading-snug">{sourceLabel}</p>
+        </div>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone.pillClassName}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${tone.dotClassName}`} />
+          {tone.label}
+        </span>
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-end justify-between gap-3">
+          <span className={`text-xl font-bold tabular-nums ${tone.textClassName}`}>{value == null ? '—' : fmtPct(pct)}</span>
+          <span className="text-xs text-slate-400 text-right leading-snug">{valueLabel}</span>
+        </div>
+        <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+          <div
+            className={`h-full rounded-full ${tone.barClassName}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function pickSection<T extends LocationStandaloneReportSectionId>(
@@ -112,14 +311,25 @@ export function LocationStandaloneFullReport({
   const businessFit = pickSection(report, 'business_fit');
   const magnets = pickSection(report, 'magnets');
   const competition = pickSection(report, 'competition');
+  const risks = pickSection(report, 'risks');
+  const recommendations = pickSection(report, 'recommendations');
   const incomeStrategy = pickSection(report, 'income_strategy');
+  const residentialAnalysis = pickSection(report, 'residential_analysis');
+  const summaryDecisionTone = decisionTone(summary?.verdict);
+  const summaryIncomeLabel = summary?.income_range_rub
+    ? fmtRubRange(summary.income_range_rub)
+    : summary?.income_rub_month != null
+      ? fmtRubScenarioRange(summary.income_rub_month)
+      : '—';
 
   const tocItems = useMemo(() => ([
     { id: 'summary', label: 'Итог' },
     { id: 'business-fit', label: 'Business-fit' },
     { id: 'magnets', label: 'Магниты' },
     { id: 'competition', label: 'Конкуренция' },
+    { id: 'risks', label: 'Риски' },
     { id: 'income-strategy', label: 'Доход / стратегия' },
+    { id: 'residential-analysis', label: 'Жилая модель' },
     { id: 'next-step', label: 'Следующий шаг' },
   ]), []);
 
@@ -128,6 +338,51 @@ export function LocationStandaloneFullReport({
     if (!Number.isFinite(d.getTime())) return null;
     return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }, [report.generated_at_iso]);
+
+  const visualMetrics = useMemo(() => {
+    const primaryDemandCount = magnets?.primary.length ?? 0;
+    const secondaryDemandCount = magnets?.secondary.length ?? 0;
+    const demandPct = magnets
+      ? clampPct((primaryDemandCount / 3) * 70 + (secondaryDemandCount / 2) * 30)
+      : null;
+
+    const competitorCount = competition?.competitor_count;
+    const competitionPct = competitorCount == null
+      ? null
+      : clampPct((competitorCount / 20) * 100);
+
+    const incomeValues = incomeStrategy
+      ? [
+          incomeStrategy.monthly_income_rub.short_term,
+          incomeStrategy.monthly_income_rub.hybrid,
+          incomeStrategy.monthly_income_rub.mid_term,
+        ].filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0)
+      : [];
+    const maxIncome = incomeValues.length ? Math.max(...incomeValues) : null;
+    const displayedIncome = summary?.income_range_rub
+      ? Math.round((summary.income_range_rub.low + summary.income_range_rub.high) / 2)
+      : summary?.income_rub_month ?? maxIncome;
+    const incomePct = displayedIncome != null && maxIncome != null && maxIncome > 0
+      ? clampPct((displayedIncome / maxIncome) * 100)
+      : null;
+
+    const explicitScore = pickExistingOverallScore(report);
+
+    return {
+      demandPct,
+      demandLabel: `${primaryDemandCount + secondaryDemandCount} магнитов спроса`,
+      competitionPct,
+      competitionLabel: competitorCount == null ? 'нет данных' : `${competitorCount} объектов рядом`,
+      incomePct,
+      incomeLabel: summary?.income_range_rub
+        ? `${fmtRubRange(summary.income_range_rub)} / мес`
+        : displayedIncome == null ? 'нет данных' : `${fmtRubScenarioRange(displayedIncome)} / мес`,
+      scorePct: explicitScore,
+      scoreSource: explicitScore != null
+        ? 'из analysis.locationScore.location_score'
+        : 'location_score отсутствует в отчёте',
+    };
+  }, [competition, incomeStrategy, magnets, report, summary]);
 
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const canShare = typeof window !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.clipboard;
@@ -156,7 +411,7 @@ export function LocationStandaloneFullReport({
               href="#next-step"
               className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
             >
-              Получить полный разбор
+              Сохранить / обсудить
             </a>
             <Link
               href="/ru"
@@ -192,9 +447,11 @@ export function LocationStandaloneFullReport({
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу (оценка)</p>
                 <p className="mt-2 text-xl font-bold text-white tabular-nums">
-                  {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
+                  {summaryIncomeLabel}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {summary?.income_note ?? 'Вилка / прокси, не гарантированная «рыночная правда»'}
+                </p>
                 <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
               </div>
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
@@ -203,6 +460,53 @@ export function LocationStandaloneFullReport({
                   {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Вывод из окружения + конкуренции</p>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-800/70 bg-slate-950/35 p-5 sm:p-6">
+              <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-4 sm:gap-5">
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-900/25 p-5">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Общий score</p>
+                  <div className="mt-3 flex items-end gap-2">
+                    <span className={`text-5xl font-black tracking-tight tabular-nums ${metricTone(visualMetrics.scorePct ?? 0).textClassName}`}>
+                      {visualMetrics.scorePct == null ? '—' : Math.round(visualMetrics.scorePct)}
+                    </span>
+                    {visualMetrics.scorePct == null ? null : (
+                      <span className="pb-1 text-xl font-bold text-slate-500">%</span>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${metricTone(visualMetrics.scorePct ?? 0).dotClassName}`} />
+                    <span className={`text-sm font-semibold ${metricTone(visualMetrics.scorePct ?? 0).textClassName}`}>
+                      {visualMetrics.scorePct == null ? 'нет данных' : metricTone(visualMetrics.scorePct).label}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500 leading-relaxed">{visualMetrics.scoreSource}</p>
+                </div>
+
+                <div className="grid gap-3">
+                  <MetricBar
+                    title="Спрос"
+                    value={visualMetrics.demandPct}
+                    valueLabel={visualMetrics.demandLabel}
+                    sourceLabel="по primary/secondary магнитам"
+                    tone={metricTone(visualMetrics.demandPct ?? 0)}
+                  />
+                  <MetricBar
+                    title="Конкуренция"
+                    value={visualMetrics.competitionPct}
+                    valueLabel={visualMetrics.competitionLabel}
+                    sourceLabel="по счётчику конкурентов рядом"
+                    tone={metricTone(visualMetrics.competitionPct ?? 0, 'risk')}
+                  />
+                  <MetricBar
+                    title="Доходный потенциал"
+                    value={visualMetrics.incomePct}
+                    valueLabel={visualMetrics.incomeLabel}
+                    sourceLabel="по сценариям income_strategy"
+                    tone={metricTone(visualMetrics.incomePct ?? 0)}
+                  />
+                </div>
               </div>
             </div>
 
@@ -215,51 +519,56 @@ export function LocationStandaloneFullReport({
           <SectionShell
             id="summary"
             title="Итог"
-            lead="Первое, что важно: вердикт и 3 драйвера, которые дают основной вклад в спрос и стратегию."
+            lead="Первое, что важно для решения: score, вердикт, короткая причина, доход и стратегия."
           >
-            <div className="grid lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2">
-                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Вердикт</p>
-                  <p className="mt-2 text-lg sm:text-xl font-semibold text-white leading-snug">
-                    {summary?.verdict ?? '—'}
-                  </p>
+            <div className={`rounded-3xl border p-6 sm:p-8 ${summaryDecisionTone.card}`}>
+              <div className="grid lg:grid-cols-[220px_minmax(0,1fr)] gap-6 items-start">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Location score</p>
+                  <div className="mt-3 flex items-end gap-2">
+                    <span className="text-6xl sm:text-7xl font-black tracking-tight tabular-nums text-white">
+                      {summary?.location_score == null ? '—' : Math.round(summary.location_score)}
+                    </span>
+                    {summary?.location_score == null ? null : (
+                      <span className="pb-2 text-2xl font-bold text-slate-400">/100</span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Главные драйверы</p>
-                  {summary?.drivers?.length ? (
-                    <ul className="mt-3 space-y-2">
-                      {summary.drivers.slice(0, 3).map((d, i) => (
-                        <li key={i} className="flex gap-3">
-                          <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                          <span className="text-slate-200 leading-relaxed">{d}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-slate-400">Нет данных по драйверам.</p>
-                  )}
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    <span className={`h-2 w-2 rounded-full ${summaryDecisionTone.dot}`} />
+                    <span className="text-[11px] uppercase tracking-[0.18em] text-slate-300">Вердикт</span>
+                  </div>
+                  <p className={`mt-3 text-3xl sm:text-4xl font-black leading-tight ${summaryDecisionTone.text}`}>
+                    {summary?.verdict_label_ru ?? summary?.verdict ?? '—'}
+                  </p>
+                  <p className="mt-3 text-base sm:text-lg text-slate-100 leading-relaxed max-w-2xl">
+                    {summary?.short_reason ?? 'Нет короткого объяснения.'}
+                  </p>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Что делаем с этим</p>
-                <div className="mt-3 space-y-3">
-                  <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Стратегия</p>
-                    <p className="mt-1 text-sm font-semibold text-white">
-                      {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
+              <div className="mt-6 grid sm:grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-5">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Доход</p>
+                  <p className="mt-2 text-2xl font-bold text-white tabular-nums">
+                    {summaryIncomeLabel}
+                  </p>
+                  {summary?.income_confidence ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Уверенность: {confidenceLabelRu(summary.income_confidence)}
                     </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Доход (ориентир)</p>
-                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
-                      {summary?.income_rub_month != null ? fmtRub(summary.income_rub_month) : '—'}
-                      <span className="text-slate-500 text-sm font-normal"> / мес</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">Потенциал реализуется при корректной упаковке и каналах</p>
-                  </div>
+                  ) : null}
+                  {summary?.income_note ? (
+                    <p className="mt-1 text-xs text-slate-500 leading-snug">{summary.income_note}</p>
+                  ) : null}
+                </div>
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-5">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Стратегия</p>
+                  <p className="mt-2 text-base font-bold text-white leading-snug">
+                    {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -408,6 +717,26 @@ export function LocationStandaloneFullReport({
             )}
           </SectionShell>
 
+          {/* 5) Риски */}
+          <SectionShell
+            id="risks"
+            title="Риски"
+            lead="Факторы, которые могут снизить доходность или сделать стратегию менее устойчивой."
+          >
+            {risks?.items.length ? (
+              <ul className="grid sm:grid-cols-2 gap-2">
+                {risks.items.slice(0, 6).map((risk, i) => (
+                  <li key={i} className="flex items-center gap-3 rounded-xl border border-slate-800/70 bg-slate-950/30 px-4 py-3">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                    <span className="text-sm font-semibold text-slate-100 leading-snug">{risk.title}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-slate-400">Явные риски в отчёте не выделены.</p>
+            )}
+          </SectionShell>
+
           {/* 5) Доход / стратегия */}
           <SectionShell
             id="income-strategy"
@@ -432,9 +761,10 @@ export function LocationStandaloneFullReport({
                         >
                           <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">{s.label}</p>
                           <p className="mt-2 text-xl font-bold text-white tabular-nums">
-                            {fmtRub(s.val)}
+                            {fmtRubScenarioRange(s.val)}
                             <span className="text-slate-500 text-sm font-normal"> / мес</span>
                           </p>
+                          <p className="mt-1 text-[11px] text-slate-500">оценочная вилка, не гарантия</p>
                           {isRec ? (
                             <p className="mt-2 text-xs text-indigo-200">Рекомендовано</p>
                           ) : (
@@ -446,6 +776,20 @@ export function LocationStandaloneFullReport({
                   </div>
                   {incomeStrategy.positioning_hint ? (
                     <p className="mt-5 text-sm text-slate-300 leading-relaxed">{incomeStrategy.positioning_hint}</p>
+                  ) : null}
+
+                  {incomeStrategy.assumptions?.length ? (
+                    <div className="mt-5 rounded-2xl border border-slate-800/70 bg-slate-900/20 p-5">
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Допущения расчёта</p>
+                      <div className="mt-3 space-y-3">
+                        {incomeStrategy.assumptions.map((a, i) => (
+                          <div key={i}>
+                            <p className="text-sm font-semibold text-white">{a.title}</p>
+                            <p className="mt-1 text-sm text-slate-300 leading-relaxed">{a.explanation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ) : null}
                 </div>
 
@@ -466,6 +810,25 @@ export function LocationStandaloneFullReport({
                         <li className="flex gap-3"><span className="mt-2 w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0" />Каналы продаж: где брать стабильный поток</li>
                       </ul>
                     </div>
+                    {recommendations ? (
+                      <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
+                        <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Рекомендации</p>
+                        <ul className="mt-3 space-y-2 text-sm text-slate-300 leading-relaxed">
+                          <li className="flex gap-3">
+                            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                            <span>Начать с ручной проверки: {recommendations.location_action}</span>
+                          </li>
+                          <li className="flex gap-3">
+                            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                            <span>Ориентироваться на аудиторию: {recommendations.target_audience}</span>
+                          </li>
+                          <li className="flex gap-3">
+                            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                            <span>{recommendations.avoid}</span>
+                          </li>
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -474,11 +837,43 @@ export function LocationStandaloneFullReport({
             )}
           </SectionShell>
 
+          {/* 6) Жилая модель */}
+          <SectionShell
+            id="residential-analysis"
+            title="Жилая модель"
+            lead="Отдельный residential-слой: аудитория, стратегия, уверенность и операционный режим."
+          >
+            {residentialAnalysis ? (
+              <div className="grid lg:grid-cols-3 gap-5">
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Аудитория</p>
+                  <p className="mt-2 text-lg font-bold text-white">{residentialAudienceTitleRu(residentialAnalysis.residentialAudienceType)}</p>
+                  <p className="mt-4 text-[11px] uppercase tracking-[0.22em] text-slate-500">Стратегия</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-100">{residentialStrategyTitleRu(residentialAnalysis.residentialStrategy)}</p>
+                  <p className="mt-4 text-[11px] uppercase tracking-[0.22em] text-slate-500">Уверенность</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-100">{confidenceLabelRu(residentialAnalysis.confidence)}</p>
+                </div>
+                <div className="lg:col-span-2 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Обоснование стратегии</p>
+                  <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+                    {residentialAnalysis.strategyRationaleRu ?? 'Нет residential-обоснования.'}
+                  </p>
+                  <p className="mt-5 text-[11px] uppercase tracking-[0.22em] text-slate-500">Операционно</p>
+                  <p className="mt-3 text-sm text-slate-300 leading-relaxed">
+                    {residentialAnalysis.operationalNoteRu ?? 'Нет операционной заметки.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-slate-400">Residential-анализ отсутствует в данных отчёта.</p>
+            )}
+          </SectionShell>
+
           {/* 6) Next step + single CTA */}
           <SectionShell
             id="next-step"
             title="Следующий шаг"
-            lead="Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как заходить, как упаковать, какой ценой и на каких каналах забрать спрос."
+            lead="Сохраните отчёт или обсудите выводы с партнёром перед решением по объекту."
           >
             <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
               <div className="grid lg:grid-cols-5 gap-6 items-start">
@@ -488,7 +883,7 @@ export function LocationStandaloneFullReport({
                     Перевести отчёт в план действий по объекту
                   </h3>
                   <p className="mt-3 text-slate-300 leading-relaxed max-w-2xl">
-                    Мы уже посчитали базовый потенциал локации: спросовые магниты, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель (owner/operator/investor) и запуск.
+                    В отчёте зафиксированы потенциал локации, риски, доходные допущения и residential-стратегия. Следующий шаг — сохранить выводы и сверить их с фактическими условиями объекта.
                   </p>
 
                   <div className="mt-5">
@@ -496,15 +891,15 @@ export function LocationStandaloneFullReport({
                     <ul className="mt-3 space-y-2 text-sm text-slate-200">
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Какая стратегия подходит именно под этот объект — и где она «ломается» без доработок
+                        Какая стратегия подходит именно под этот объект — и где она требует ручной проверки
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Где реальный потенциал выше/ниже ожиданий: аудитория, каналы, ограничения, конкуренты
+                        Где потенциал выше/ниже ожиданий: аудитория, ограничения, конкуренты
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Как снизить ошибки перед запуском: упаковка, прайс, операционные «узкие места»
+                        Что проверить до решения: договор, состояние, цена, операционные ограничения
                       </li>
                     </ul>
                   </div>
@@ -514,7 +909,7 @@ export function LocationStandaloneFullReport({
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-6">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Один следующий шаг</p>
                     <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-                      Если объект рассматривается к запуску/покупке — лучше зафиксировать решение сейчас, пока выводы свежие и можно быстро докрутить модель.
+                      Если объект рассматривается к запуску/покупке — сохраните ссылку или обсудите выводы с партнёром.
                     </p>
 
                     <div className="mt-5">
@@ -522,10 +917,10 @@ export function LocationStandaloneFullReport({
                         href="/connect"
                         className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
                       >
-                        Получить полный отчет локации
+                        Обсудить отчёт
                       </Link>
                       <p className="mt-3 text-xs text-slate-500 leading-relaxed">
-                        Коротко опишите объект — вернёмся с полным отчётом и рекомендациями по модели запуска.
+                        Коротко опишите объект и вопрос, который нужно разобрать.
                       </p>
                     </div>
 
