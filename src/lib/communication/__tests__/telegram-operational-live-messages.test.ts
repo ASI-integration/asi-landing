@@ -63,6 +63,16 @@ describe('telegram operational intelligence (live-style messages)', () => {
     expect(out.reply).not.toContain('(а)');
   });
 
+  it('RU 15:00 check-in without early wording still gets standard check-in reply', () => {
+    const out = replyFor('Здравствуйте, я гость. Хочу заехать завтра в 15:00, можно?', 205, 'ru', true);
+    expect(out.category).toBe('checkin_time_question');
+    expect(out.reply).toContain('Здравствуйте!');
+    expect(out.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(out.reply).toMatch(/для какого это объекта или брони/i);
+    expect(out.reply).not.toMatch(/Пришлите запрос гостя|Передаю это команде сейчас/i);
+    expect(out.reply).not.toContain('(а)');
+  });
+
   it('RU 15:00 does not repeat greeting after greeting was already sent', () => {
     const out = replyFor('Я гость. Хочу заехать завтра в 15:00, можно ранний заезд?', 202, 'ru', false);
     expect(out.reply).not.toContain('Здравствуйте!');

@@ -264,6 +264,28 @@ describe('processUpdate', () => {
     expect(String(sentText)).not.toMatch(/already escalated to a human operator/i);
   });
 
+  it('continues live RU check-in conversation after object context instead of escalated ack', async () => {
+    await processUpdate(makeUpdate('Здравствуйте, я гость. Хочу заехать завтра в 15:00, можно?', 'ru'));
+    let sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
+    expect(mockReplyToTelegram).not.toHaveBeenCalled();
+    expect(sentText).toContain('Здравствуйте!');
+    expect(sentText).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(sentText).toMatch(/для какого это объекта или брони/i);
+
+    await processUpdate(makeUpdate('А если в 7 утра?', 'ru'));
+    sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
+    expect(sentText).toMatch(/07:00 — это ранний заезд/i);
+    expect(sentText).toMatch(/для какого это объекта или брони/i);
+    expect(sentText).not.toMatch(/Запрос уже передан|переда[юн].*оператор/i);
+
+    await processUpdate(makeUpdate('Это та же бронь, объект на Тверской.', 'ru'));
+    sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
+    expect(sentText).toMatch(/07:00 — это ранний заезд/i);
+    expect(sentText).not.toMatch(/для какого это объекта или брони/i);
+    expect(sentText).not.toMatch(/Запрос уже передан|переда[юн].*оператор/i);
+    expect(mockLLM).not.toHaveBeenCalled();
+  });
+
   it('allows /reset_session for allowlisted chat ids and unblocks further testing', async () => {
     process.env.COMM_TELEGRAM_RESET_ALLOWLIST = '42';
 

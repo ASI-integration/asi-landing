@@ -107,6 +107,17 @@ function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
   return 'Hi! Send a guest message, issue, or check-in details.';
 }
 
+function hasSubstantiveOperationalContent(rawText: string): boolean {
+  const raw = String(rawText ?? '');
+  const normalized = normalizeForMetaMatch(raw);
+  return (
+    /\b\d{1,2}:\d{2}\b/.test(raw) ||
+    /(?:^|[^\p{L}\d])(?:в|к|на)\s*\d{1,2}\s*(утра|дня|вечера|ночи)?(?:$|[^\p{L}\d])/iu.test(raw) ||
+    /\bcheck[-\s]?in\b|\bcheck[-\s]?out\b|\bearly\b|\blate\b|\bbooking\b|\breservation\b|\bguest\b|\baddress\b|\bproperty\b/i.test(raw) ||
+    /заезд|засел|заехать|заеду|выезд|гость|брон|объект|адрес|код|доступ|замок|дверь|парков|оплат|уборк|отоп|горяч|шум|продл|wifi|wi\s*fi/i.test(normalized)
+  );
+}
+
 function applyRuTelegramForceRu(c: ClassifyResult): ClassifyResult {
   if (process.env.RU_TELEGRAM_FORCE_RU === '1') {
     return { ...c, lang: 'ru' };
@@ -177,6 +188,9 @@ export function resolveTelegramTextMeta(params: {
     classification.category === MessageCategory.Greeting ||
     classification.category === MessageCategory.LanguageCheck
   ) {
+    if (classification.category === MessageCategory.Greeting && hasSubstantiveOperationalContent(raw)) {
+      return null;
+    }
     const kind: TelegramTextMetaKind =
       classification.category === MessageCategory.Start
         ? 'start'

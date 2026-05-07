@@ -1,6 +1,11 @@
 import { getAutonomousSessionOperationalCaseV1, setAutonomousSessionOperationalCaseV1 } from './conversation-session-store';
 import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, TelegramOperationalSessionCaseV1 } from './types';
-import { tryTelegramOperationalIntake, type TelegramOperationalFinalAction, type TelegramOperationalIntakeHit } from './telegram-operational-intake';
+import {
+  classifyCheckinTimeBucket,
+  tryTelegramOperationalIntake,
+  type TelegramOperationalFinalAction,
+  type TelegramOperationalIntakeHit,
+} from './telegram-operational-intake';
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
@@ -189,6 +194,15 @@ function extractTimeLike(text: string): string | null {
     const mm = (m3[2] ?? '00').padStart(2, '0');
     return `${hh}:${mm}`;
   }
+  const m4 = t.match(/(?:^|[^\p{L}\d])(?:в|к|на)\s*(\d{1,2})(?:\s*[:.]\s*(\d{2}))?\s*(утра|дня|вечера|ночи)?(?:$|[^\p{L}\d])/iu);
+  if (m4) {
+    let hour = Number(m4[1]);
+    const meridiem = String(m4[3] ?? '').toLowerCase();
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+    if ((meridiem === 'вечера' || meridiem === 'дня') && hour >= 1 && hour <= 11) hour += 12;
+    if (meridiem === 'ночи' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${(m4[2] ?? '00').padStart(2, '0')}`;
+  }
   return null;
 }
 
@@ -349,6 +363,32 @@ function removeObjectBookingMissingFacts(missing: Set<string>): void {
   missing.delete('reservation_or_property');
 }
 
+function isCheckinOperationalCategory(category: unknown): boolean {
+  return category === 'early_checkin' || category === 'checkin_time_question';
+}
+
+function isSameOperationalFlow(prevCategory: unknown, nextCategory: unknown): boolean {
+  if (prevCategory === nextCategory) return true;
+  return isCheckinOperationalCategory(prevCategory) && isCheckinOperationalCategory(nextCategory);
+}
+
+function categoryForCheckinTime(time: string, fallback: unknown): string {
+  const policy = classifyCheckinTimeBucket(time);
+  if (policy.bucket === 'early_checkin' || policy.bucket === 'conditional_early_checkin') return 'early_checkin';
+  if (policy.bucket === 'normal_checkin' || policy.bucket === 'late_checkin') return 'checkin_time_question';
+  return String(fallback ?? 'checkin_time_question');
+}
+
+function applyCheckinTimeFacts(extracted: Record<string, unknown>, time: string): void {
+  const policy = classifyCheckinTimeBucket(time);
+  extracted.requestedTime = time;
+  extracted.time_hint = time;
+  extracted.checkin_time_bucket = policy.bucket;
+  extracted.checkin_time_policy = policy.policy;
+  extracted.is_early_checkin_by_time = policy.isEarlyCheckinByTime;
+  extracted.requires_cleaning_availability = policy.requiresCleaningAvailability;
+}
+
 function pickClarifyingQuestion(missingFacts: string[], ru: boolean): string {
   const key = missingFacts[0] ?? '';
   if (key === 'property') return ru ? 'Уточните, пожалуйста, для какого объекта/адреса это?' : 'Which property/address is this for?';
@@ -433,25 +473,34 @@ function resolvedReplyForCase(
   ru: boolean,
   update_id: number,
 ): string {
+  const checkinReply = checkinReplyForCase(operationalCase, 'reply', ru, update_id);
+  if (checkinReply) return checkinReply;
+  return defaultReplyForCategory(String(operationalCase.category ?? ''), ru);
+}
+
+function checkinReplyForCase(
+  operationalCase: TelegramOperationalSessionCaseV1,
+  action: TelegramOperationalFinalAction,
+  ru: boolean,
+  update_id: number,
+): string | null {
   const category = String(operationalCase.category ?? '');
   const facts = (operationalCase.extracted_facts ?? {}) as Record<string, unknown>;
-  if (ru && (category === 'early_checkin' || category === 'checkin_time_question')) {
-    return composeTelegramOperationalReply({
-      update_id,
-      category: category as any,
-      action: 'reply',
-      lang: 'ru',
-      text: '',
-      extractedFacts: facts,
-      missingFacts: filterMissingFactsForKnownContext(operationalCase.missing_facts ?? [], operationalCase, facts),
-      urgency: operationalCase.urgency === 'urgent' ? 'urgent' : 'normal',
-      linkingState: null,
-      sessionCase: operationalCase,
-      sessionMemory: null,
-      shouldGreet: false,
-    }).text;
-  }
-  return defaultReplyForCategory(category, ru);
+  if (!ru || !isCheckinOperationalCategory(category)) return null;
+  return composeTelegramOperationalReply({
+    update_id,
+    category: category as any,
+    action,
+    lang: 'ru',
+    text: '',
+    extractedFacts: facts,
+    missingFacts: filterMissingFactsForKnownContext(operationalCase.missing_facts ?? [], operationalCase, facts),
+    urgency: operationalCase.urgency === 'urgent' ? 'urgent' : 'normal',
+    linkingState: null,
+    sessionCase: operationalCase,
+    sessionMemory: null,
+    shouldGreet: false,
+  }).text;
 }
 
 function determineUrgency(hit: TelegramOperationalIntakeHit): 'normal' | 'urgent' {
@@ -525,6 +574,7 @@ function applyFragmentToCase(params: {
   const raw = String(params.text ?? '');
   const normalized = normalizeText(raw);
   const prev = params.prev;
+  const checkinFlow = isCheckinOperationalCategory(prev.category);
 
   const mergedFacts: Record<string, unknown> = {};
   const extracted = { ...(prev.extracted_facts ?? {}) };
@@ -540,12 +590,13 @@ function applyFragmentToCase(params: {
   if (prop && !prev.property) {
     mergedFacts.property = prop;
     extracted.property = prop;
-    missing.delete('property');
+    extracted.property_hint = extracted.property_hint ?? prop;
+    removeObjectBookingMissingFacts(missing);
   } else if (!prev.property && looksLikePropertyHint(raw, normalized)) {
     // Even if we can't extract a clean snippet, a hint should satisfy "property" for routing.
     mergedFacts.property = mergedFacts.property ?? 'hint_present';
     extracted.property = extracted.property ?? 'hint_present';
-    missing.delete('property');
+    removeObjectBookingMissingFacts(missing);
   }
 
   const bookingRef = extractBookingReference(raw);
@@ -559,10 +610,16 @@ function applyFragmentToCase(params: {
   const time = extractTimeLike(raw);
   const dateToken = extractDateToken(normalized);
   if (time) {
-    extracted.requestedTime = extracted.requestedTime ?? time;
-    if (missing.has('requested_time')) {
+    if (checkinFlow) {
+      applyCheckinTimeFacts(extracted, time);
       mergedFacts.requested_time = time;
       missing.delete('requested_time');
+    } else {
+      extracted.requestedTime = extracted.requestedTime ?? time;
+      if (missing.has('requested_time')) {
+        mergedFacts.requested_time = time;
+        missing.delete('requested_time');
+      }
     }
   }
   if (dateToken) {
@@ -602,7 +659,8 @@ function applyFragmentToCase(params: {
   }
 
   const nextMissing = filterMissingFactsForKnownContext(Array.from(missing), prev, extracted);
-  const wantsSecondClarification = (prev.clarification_count ?? 0) >= 1 && nextMissing.length > 0;
+  const checkinTimeUpdated = checkinFlow && Boolean(time);
+  const wantsSecondClarification = !checkinTimeUpdated && (prev.clarification_count ?? 0) >= 1 && nextMissing.length > 0;
   const nextStatus: TelegramOperationalSessionCaseStatusV1 =
     prev.status === 'resolved'
       ? 'resolved'
@@ -624,6 +682,7 @@ function applyFragmentToCase(params: {
 
   const next: TelegramOperationalSessionCaseV1 = {
     ...prev,
+    category: checkinFlow && time ? (categoryForCheckinTime(time, prev.category) as any) : prev.category,
     guest_name: prev.guest_name ?? (guest ? guest : prev.guest_name ?? null),
     property: prev.property ?? (prop ? prop : prev.property ?? null),
     date_time: (prev.date_time ?? null) ?? (typeof mergedFacts.date_time === 'string' ? (mergedFacts.date_time as string) : null),
@@ -786,8 +845,12 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
           // Don't downgrade to "which property" when property is already present.
         } else if (match.suggested_clarification_question && hit.finalAction !== 'escalate_urgent') {
           hit.finalAction = 'clarify';
-          hit.reply = match.suggested_clarification_question;
-          hit.actionReason = `matching:${match.match_confidence}:clarify:${match.reason}`;
+          if (ru && isCheckinOperationalCategory(hit.category)) {
+            hit.actionReason = `matching:${match.match_confidence}:clarify_keep_checkin_policy:${match.reason}`;
+          } else {
+            hit.reply = match.suggested_clarification_question;
+            hit.actionReason = `matching:${match.match_confidence}:clarify:${match.reason}`;
+          }
         }
       }
 
@@ -917,7 +980,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
     if (
       prevCase &&
       isCaseOpen(prevCase) &&
-      prevCase.category === hit.category &&
+      isSameOperationalFlow(prevCase.category, hit.category) &&
       hit.finalAction === 'clarify' &&
       (prevCase.clarification_count ?? 0) >= 1
     ) {
@@ -925,23 +988,20 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         prevCase.extracted_facts ?? {},
         (hit.extractedFacts ?? {}) as Record<string, unknown>,
       );
-      let mergedMissing = mergeMissingFacts(prevCase.missing_facts ?? [], hit.missingFacts ?? []);
+      const mergedMissing = filterMissingFactsForKnownContext(
+        mergeMissingFacts(prevCase.missing_facts ?? [], hit.missingFacts ?? []),
+        prevCase,
+        mergedExtracted,
+      );
 
-      // If we already know a fact, do not re-add it to missing.
-      const knownProperty =
-        Boolean(prevCase.property) || Boolean((mergedExtracted as any)?.property && (mergedExtracted as any).property !== 'hint_present');
-      if (knownProperty) mergedMissing = mergedMissing.filter(k => k !== 'property');
-      const hasWifiDetailFlag = Boolean((mergedExtracted as any)?.hasDetails);
-      if (hasWifiDetailFlag) mergedMissing = mergedMissing.filter(k => k !== 'wifi_details');
-      const hasFailureModeFlag = Boolean((mergedExtracted as any)?.failureModeHint);
-      if (hasFailureModeFlag) mergedMissing = mergedMissing.filter(k => k !== 'failure_mode');
-      const hasVehicleDetailFlag = Boolean((mergedExtracted as any)?.hasVehicleDetails);
-      if (hasVehicleDetailFlag) mergedMissing = mergedMissing.filter(k => k !== 'vehicle_details');
-      const hasPaymentRefFlag = Boolean((mergedExtracted as any)?.paymentReference);
-      if (hasPaymentRefFlag) mergedMissing = mergedMissing.filter(k => k !== 'payment_reference');
+      const checkinTimeUpdated =
+        isCheckinOperationalCategory(prevCase.category) &&
+        isCheckinOperationalCategory(hit.category) &&
+        hasKnownRequestedTime((hit.extractedFacts ?? {}) as Record<string, unknown>);
 
-      // If merging the new fragment would fully resolve missing facts, do NOT force escalation.
-      if (mergedMissing.length === 0) {
+      // If merging resolves the case, or the guest is still negotiating check-in time,
+      // do NOT force an operator handoff just because we already asked for object context.
+      if (mergedMissing.length === 0 || checkinTimeUpdated) {
         // Fall through to normal merge_case handling below.
       } else {
       const nextCase: TelegramOperationalSessionCaseV1 = {
@@ -1000,7 +1060,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       !prevCase ||
       prevCase.status === 'resolved' ||
       // A new category while awaiting clarification is treated as a new/unrelated case.
-      (isCaseOpen(prevCase) && prevCase.category && prevCase.category !== hit.category);
+      (isCaseOpen(prevCase) && prevCase.category && !isSameOperationalFlow(prevCase.category, hit.category));
 
     if (startNew) {
       const nextCase = buildCaseFromHit({ hit, update_id: params.update_id });
@@ -1016,27 +1076,24 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
       return { handled: true, hit, case: nextCase, mode: 'new_case' };
     }
 
-    // Merge same-category hit into existing open case.
-    if (prevCase && isCaseOpen(prevCase) && prevCase.category === hit.category) {
-      let mergedMissing = mergeMissingFacts(prevCase.missing_facts ?? [], hit.missingFacts ?? []);
+    // Merge same-flow hit into existing open case. Check-in time questions and
+    // early check-in confirmations are one conversation, even if the category changes.
+    if (prevCase && isCaseOpen(prevCase) && isSameOperationalFlow(prevCase.category, hit.category)) {
       const mergedExtracted = mergeExtractedFactsPreferExisting(
         prevCase.extracted_facts ?? {},
         (hit.extractedFacts ?? {}) as Record<string, unknown>,
       );
-
-      // If we already know a fact, do not re-add it to missing.
-      const knownProperty = Boolean(prevCase.property) || Boolean((mergedExtracted as any)?.property && (mergedExtracted as any).property !== 'hint_present');
-      if (knownProperty) mergedMissing = mergedMissing.filter(k => k !== 'property');
-      const hasWifiDetailFlag = Boolean((mergedExtracted as any)?.hasDetails);
-      if (hasWifiDetailFlag) mergedMissing = mergedMissing.filter(k => k !== 'wifi_details');
-      const hasFailureModeFlag = Boolean((mergedExtracted as any)?.failureModeHint);
-      if (hasFailureModeFlag) mergedMissing = mergedMissing.filter(k => k !== 'failure_mode');
-      const hasVehicleDetailFlag = Boolean((mergedExtracted as any)?.hasVehicleDetails);
-      if (hasVehicleDetailFlag) mergedMissing = mergedMissing.filter(k => k !== 'vehicle_details');
-      const hasPaymentRefFlag = Boolean((mergedExtracted as any)?.paymentReference);
-      if (hasPaymentRefFlag) mergedMissing = mergedMissing.filter(k => k !== 'payment_reference');
-
-      const wouldClarifyAgain = mergedMissing.length > 0 && (prevCase.clarification_count ?? 0) >= 1;
+      const mergedMissing = filterMissingFactsForKnownContext(
+        mergeMissingFacts(prevCase.missing_facts ?? [], hit.missingFacts ?? []),
+        prevCase,
+        mergedExtracted,
+      );
+      const checkinTimeUpdated =
+        isCheckinOperationalCategory(prevCase.category) &&
+        isCheckinOperationalCategory(hit.category) &&
+        hasKnownRequestedTime((hit.extractedFacts ?? {}) as Record<string, unknown>);
+      const wouldClarifyAgain = mergedMissing.length > 0 && (prevCase.clarification_count ?? 0) >= 1 && !checkinTimeUpdated;
+      const mergedProperty = concreteFact(mergedExtracted, ['property_hint', 'property', 'matched_property_label', 'address_hint']);
       const nextStatus: TelegramOperationalSessionCaseStatusV1 =
         hit.finalAction === 'escalate_operator' || hit.finalAction === 'escalate_urgent'
           ? 'escalated'
@@ -1050,6 +1107,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         version: 1,
         category: hit.category,
         urgency: determineUrgency(hit),
+        property: prevCase.property ?? (mergedProperty && mergedProperty !== 'hint_present' ? mergedProperty : null),
         extracted_facts: safeJsonClone(mergedExtracted),
         missing_facts: mergedMissing,
         last_question_asked: nextStatus === 'clarifying' ? pickClarifyingQuestion(mergedMissing, ru) : null,
@@ -1062,8 +1120,15 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
         last_update_id: params.update_id,
       };
 
-      const replyForMerged: string = nextStatus === 'resolved'
-        ? defaultReplyForCategory(String(nextCase.category ?? ''), ru)
+      const finalActionForMerged: TelegramOperationalFinalAction =
+        nextStatus === 'resolved'
+          ? 'reply'
+          : nextStatus === 'escalated'
+            ? 'escalate_operator'
+            : 'clarify';
+      const checkinReply = checkinReplyForCase(nextCase, finalActionForMerged, ru, params.update_id);
+      const replyForMerged: string = checkinReply ?? (nextStatus === 'resolved'
+        ? resolvedReplyForCase(nextCase, ru, params.update_id)
         : nextStatus === 'escalated'
           ? (ru
               ? `Понял. Нужны дополнительные детали, но я уже задавал один уточняющий вопрос — передаю оператору. (${buildEscalationSummaryForCase({
@@ -1076,13 +1141,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
                   extractedFacts: nextCase.extracted_facts,
                   missingFacts: nextCase.missing_facts,
                 })})`)
-          : (nextCase.last_question_asked ?? pickClarifyingQuestion(nextCase.missing_facts ?? [], ru));
-      const finalActionForMerged: TelegramOperationalFinalAction =
-        nextStatus === 'resolved'
-          ? 'reply'
-          : nextStatus === 'escalated'
-            ? 'escalate_operator'
-            : 'clarify';
+          : (nextCase.last_question_asked ?? pickClarifyingQuestion(nextCase.missing_facts ?? [], ru)));
       const mergedHit: TelegramOperationalIntakeHit = {
         category: hit.category,
         reply: replyForMerged,
@@ -1137,9 +1196,10 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
     // If case is now resolved, reply with the category-specific deterministic acknowledgement.
     const finalAction: TelegramOperationalFinalAction =
       next.status === 'resolved' ? 'reply' : next.status === 'escalated' ? 'escalate_operator' : 'clarify';
+    const checkinReply = checkinReplyForCase(next, finalAction, ru, params.update_id);
     const reply =
-      finalAction === 'reply'
-        ? defaultReplyForCategory(String(next.category ?? ''), ru)
+      checkinReply ?? (finalAction === 'reply'
+        ? resolvedReplyForCase(next, ru, params.update_id)
         : finalAction === 'escalate_operator'
           ? (ru
               ? `Понял. Нужны дополнительные детали — передаю оператору. (${buildEscalationSummaryForCase({
@@ -1152,7 +1212,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
                   extractedFacts: next.extracted_facts ?? {},
                   missingFacts: next.missing_facts ?? [],
                 })})`)
-          : (next.last_question_asked ?? pickClarifyingQuestion(next.missing_facts ?? [], ru));
+          : (next.last_question_asked ?? pickClarifyingQuestion(next.missing_facts ?? [], ru)));
 
     const bridgedHit: TelegramOperationalIntakeHit = {
       category: (next.category as any) ?? 'access_issue',

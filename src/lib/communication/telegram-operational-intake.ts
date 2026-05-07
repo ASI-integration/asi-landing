@@ -889,15 +889,16 @@ export function tryTelegramOperationalIntake(
     return hit;
   }
 
-  // 4) Early / conditional check-in. Explicit normal check-in times override "ранний заезд" wording.
+  // 4) Check-in time policy. A concrete normal-time check-in question still deserves
+  // a deterministic answer, even when the guest did not call it "early".
   const earlyCheckinTime = extractTimeLike(raw);
   const checkinTimePolicy = classifyCheckinTimeBucket(earlyCheckinTime);
-  const explicitEarlyCheckin = hasExplicitEarlyCheckinWording(loose);
-  const shouldExplainNonEarlyCheckin =
+  const shouldExplainCheckinTime =
     hasCheckinArrivalIntent(loose) &&
-    ((checkinTimePolicy.bucket === 'normal_checkin' && explicitEarlyCheckin) || checkinTimePolicy.bucket === 'late_checkin');
+    Boolean(earlyCheckinTime) &&
+    (checkinTimePolicy.bucket === 'normal_checkin' || checkinTimePolicy.bucket === 'late_checkin');
 
-  if (shouldExplainNonEarlyCheckin) {
+  if (shouldExplainCheckinTime) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
