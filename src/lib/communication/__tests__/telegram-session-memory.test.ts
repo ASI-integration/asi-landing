@@ -23,6 +23,54 @@ describe('telegram session memory v1 (operational cases)', () => {
     };
   }
 
+  function makeDurableContextDb() {
+    const rows = new Map<number, { conversation_context_v1: any }>();
+    return {
+      db: {
+        from: (table: string) => {
+          const q: any = {
+            _chatId: null as number | null,
+            select: () => q,
+            ilike: () => q,
+            eq: (_col: string, val: any) => {
+              q._chatId = Number(val);
+              return q;
+            },
+            in: () => q,
+            gte: () => q,
+            lte: () => q,
+            order: () => q,
+            limit: () => q,
+            upsert: async (payload: any) => {
+              if (table === 'tg_conversation_sessions' && Number.isFinite(Number(payload?.chat_id))) {
+                rows.set(Number(payload.chat_id), {
+                  conversation_context_v1: payload?.conversation_context_v1 ?? {},
+                });
+              }
+              return { data: null, error: null };
+            },
+            maybeSingle: async () => {
+              if (table !== 'tg_conversation_sessions' || !Number.isFinite(q._chatId)) {
+                return { data: null, error: null };
+              }
+              const row = rows.get(q._chatId as number);
+              return { data: row ? { conversation_context_v1: row.conversation_context_v1 } : null, error: null };
+            },
+            then: (resolve: any, reject: any) => {
+              if (table === 'tg_conversation_sessions' && Number.isFinite(q._chatId)) {
+                const row = rows.get(q._chatId as number);
+                return Promise.resolve({ data: row ? [{ conversation_context_v1: row.conversation_context_v1 }] : [], error: null }).then(resolve, reject);
+              }
+              return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+            },
+          };
+          return q;
+        },
+      },
+      getRow: (chatId: number) => rows.get(chatId),
+    };
+  }
+
   beforeEach(() => {
     __resetAutonomousSessionStoreForTests();
   });
@@ -193,6 +241,45 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r07.hit.reply).toMatch(/свободен с предыдущей ночи|нет гостя накануне/i);
     expect(r07.hit.reply).not.toMatch(/после уборки/i);
     expect(r07.hit.reply).not.toContain('(а)');
+  });
+
+  it('restores operational object/booking context from durable tg_conversation_sessions after restart', async () => {
+    const chatId = 6101;
+    const durable = makeDurableContextDb();
+
+    const r1 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId,
+      channel: 'telegram',
+      update_id: 41,
+      surfaceLang: 'ru',
+      text: 'Можно заехать в 7 утра?',
+      db: durable.db as any,
+    });
+    expect(r1.handled).toBe(true);
+    if (!r1.handled) throw new Error('expected handled');
+    expect(r1.hit.finalAction).toBe('clarify');
+    expect(r1.hit.reply).toMatch(/для какого это объекта или брони/i);
+    expect(durable.getRow(chatId)?.conversation_context_v1?.operational_case).toBeTruthy();
+
+    // Simulate process restart: clear file/in-memory session store only.
+    __resetAutonomousSessionStoreForTests();
+
+    const r2 = await processTelegramOperationalIntakeWithSessionMemory({
+      chatId,
+      channel: 'telegram',
+      update_id: 42,
+      surfaceLang: 'ru',
+      text: 'Это та же бронь, объект на Тверской.',
+      db: durable.db as any,
+    });
+    expect(r2.handled).toBe(true);
+    if (!r2.handled) throw new Error('expected handled');
+    expect(r2.mode).toBe('followup_fragment');
+    expect(r2.hit.finalAction).toBe('reply');
+    expect(r2.hit.reply).toMatch(/07:00 — это очень ранний заезд/i);
+    expect(r2.hit.reply).not.toMatch(/для какого это объекта или брони/i);
+    expect((r2.hit.extractedFacts as any).property).toMatch(/Тверск/i);
+    expect(durable.getRow(chatId)?.conversation_context_v1?.current_object?.property_label).toMatch(/Тверск/i);
   });
 
   it('continues RU check-in flow after time and object follow-ups without operator fallback', async () => {
