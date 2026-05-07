@@ -93,8 +93,14 @@ import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
 import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
-import { composeTelegramOperationalReply } from './telegram-reply-composer';
-import { executeTelegramOperationalPolicy } from './telegram-operational-policy-executor';
+import {
+  composeTelegramOperationalReply,
+  composeTelegramOperationalMultiIntentReply,
+} from './telegram-reply-composer';
+import {
+  executeTelegramOperationalPolicy,
+  executeTelegramOperationalPolicyMultiIntent,
+} from './telegram-operational-policy-executor';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -1011,7 +1017,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
         if (!replyText) {
           const memNow = getContext(chatId);
-          const policyResult = executeTelegramOperationalPolicy({
+          const policyInput = {
             messageText: text,
             update_id,
             sessionMemory: {
@@ -1035,22 +1041,32 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                 ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
               cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
             },
-          });
-          const composed = composeTelegramOperationalReply({
-            update_id,
-            category: opIntake.category,
-            action: opIntake.finalAction,
-            lang: classification.lang,
-            text,
-            extractedFacts: opIntake.extractedFacts ?? {},
-            missingFacts: opIntake.missingFacts ?? [],
-            urgency: opIntake.finalAction === 'escalate_urgent' ? 'urgent' : 'normal',
-            linkingState: memNow.reservationPropertyLinkingV1 ?? null,
-            sessionCase: opIntakeResult.case ?? null,
-            sessionMemory: memNow ?? null,
-            shouldGreet: shouldGreetTelegramOperationalReply(convSession),
-            policyResult: classification.lang === 'ru' ? policyResult : null,
-          });
+          };
+          const policyResult = executeTelegramOperationalPolicy(policyInput);
+          const multiPolicy = classification.lang === 'ru'
+            ? executeTelegramOperationalPolicyMultiIntent(policyInput)
+            : null;
+          const composed =
+            multiPolicy && multiPolicy.intents.length > 1
+              ? composeTelegramOperationalMultiIntentReply({
+                  intents: multiPolicy.intents,
+                  lang: classification.lang,
+                })
+              : composeTelegramOperationalReply({
+                  update_id,
+                  category: opIntake.category,
+                  action: opIntake.finalAction,
+                  lang: classification.lang,
+                  text,
+                  extractedFacts: opIntake.extractedFacts ?? {},
+                  missingFacts: opIntake.missingFacts ?? [],
+                  urgency: opIntake.finalAction === 'escalate_urgent' ? 'urgent' : 'normal',
+                  linkingState: memNow.reservationPropertyLinkingV1 ?? null,
+                  sessionCase: opIntakeResult.case ?? null,
+                  sessionMemory: memNow ?? null,
+                  shouldGreet: shouldGreetTelegramOperationalReply(convSession),
+                  policyResult: classification.lang === 'ru' ? policyResult : null,
+                });
           replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;
           usedPath = 'reply_composer';

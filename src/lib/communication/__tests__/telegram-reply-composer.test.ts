@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { composeTelegramOperationalReply } from '../telegram-reply-composer';
-import { executeTelegramOperationalPolicy } from '../telegram-operational-policy-executor';
+import {
+  composeTelegramOperationalReply,
+  composeTelegramOperationalMultiIntentReply,
+} from '../telegram-reply-composer';
+import {
+  executeTelegramOperationalPolicy,
+  executeTelegramOperationalPolicyMultiIntent,
+} from '../telegram-operational-policy-executor';
 
 const categories = [
   'access_issue',
@@ -195,6 +201,23 @@ describe('composeTelegramOperationalReply', () => {
     expect(out.text).toMatch(/15:00 обычно стандартное время заезда/i);
     expect(out.text).toMatch(/объекта или брони/i);
     expect(out.text).not.toMatch(/Понял\(а\)/);
+  });
+
+  it('builds structured RU reply for 8+ intents and groups escalations at the end', () => {
+    const multi = executeTelegramOperationalPolicyMultiIntent({
+      update_id: 2026,
+      knownContext: { objectLabel: 'Невский 24', bookingReference: 'BK-88' },
+      messageText:
+        'По брони BK-88: можно заезд в 15:00 и в 07:00, поздний выезд до 13:00, не открывается дверь, где wi-fi, можно с котом, парковка есть, какие документы нужны, и что по отмене и возврату?',
+    });
+    const out = composeTelegramOperationalMultiIntentReply({ intents: multi.intents, lang: 'ru' });
+    expect(out.text).toMatch(/По пунктам:/);
+    expect(out.text).toMatch(/1\./);
+    expect(out.text).toMatch(/2\./);
+    expect(out.text).toMatch(/3\./);
+    expect(out.text).toMatch(/требуют проверки объекта\/брони/i);
+    expect(out.text).toMatch(/передам оператору/i);
+    expect(out.text).not.toMatch(/передаю команде/i);
   });
 });
 

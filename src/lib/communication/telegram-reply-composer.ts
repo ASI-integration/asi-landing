@@ -28,6 +28,11 @@ export type ReplyComposerOutput = {
   language: Lang;
 };
 
+export type MultiIntentComposerInput = {
+  intents: TelegramOperationalPolicyResult[];
+  lang: Lang;
+};
+
 function pickVariant(update_id: number, options: [string, string]): string {
   // Stable deterministic alternation to avoid repetitive templates.
   return update_id % 2 === 0 ? options[0] : options[1];
@@ -686,11 +691,11 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   return { template_key: `${cat}.reply.v1`, text: `${ack(lang)} ${shortHoldSentence(lang, 'this', 'это', 'esto')}` };
 }
 
-function enforceTelegramStyle(text: string): string {
+function enforceTelegramStyle(text: string, maxLen = 240): string {
   let t = String(text ?? '').trim();
   t = t.replace(/\s+/g, ' ');
   // Hard cap: keep it short (Telegram). Avoid multi-paragraph dumps.
-  if (t.length > 240) t = `${t.slice(0, 237).trim()}…`;
+  if (t.length > maxLen) t = `${t.slice(0, Math.max(1, maxLen - 3)).trim()}…`;
   return t;
 }
 
@@ -715,5 +720,95 @@ export function composeTelegramOperationalReply(input: ReplyComposerInput): Repl
   }
 
   return out;
+}
+
+function scenarioLineRu(s: TelegramOperationalPolicyResult): string {
+  switch (s.scenarioFamily) {
+    case 'CHECK_IN_STANDARD':
+      return 'Заезд в 15:00 обычно стандартный и чаще всего возможен без отдельного согласования.';
+    case 'CHECK_IN_EARLY':
+      return 'Заезд раньше стандартного времени возможен при подтверждении готовности объекта.';
+    case 'CHECK_IN_VERY_EARLY':
+      return 'Заезд в очень раннее время возможен только если объект свободен с предыдущей ночи.';
+    case 'LATE_CHECKOUT':
+      return 'Поздний выезд возможен только после проверки доступности по конкретной брони/объекту.';
+    case 'ADDRESS_FIND_OBJECT':
+      return 'По адресу и входу могу дать только проверенные инструкции по конкретному объекту.';
+    case 'WIFI':
+      return 'По Wi-Fi подскажу сеть/пароль и шаги проверки для вашего объекта.';
+    case 'PARKING':
+      return 'По парковке уточню правила и варианты рядом с вашим адресом.';
+    case 'PETS':
+      return 'Размещение с питомцами зависит от правил конкретного объекта и требует проверки.';
+    case 'DOCUMENTS_PASSPORT':
+      return 'По документам подскажу, какие данные нужны по вашему сценарию заселения.';
+    case 'COMPLAINTS_PROBLEMS':
+      return 'Проблему зафиксировал; по объекту можно дать конкретные шаги после уточнения деталей.';
+    case 'BOOKING_CONTEXT':
+      return 'Контекст по брони/объекту зафиксирован.';
+    default:
+      return 'Запрос принят, детали сверяю по контексту брони и объекта.';
+  }
+}
+
+export function composeTelegramOperationalMultiIntentReply(input: MultiIntentComposerInput): ReplyComposerOutput {
+  const language = normalizeLang(input.lang, '');
+  if (language !== 'ru') {
+    return {
+      text: enforceTelegramStyle('I got your points. I will answer each item separately in the next message.'),
+      template_key: 'policy.multi_intent.fallback_non_ru.v1',
+      language,
+    };
+  }
+
+  const dedup = new Set<string>();
+  const safe: TelegramOperationalPolicyResult[] = [];
+  const escalations: TelegramOperationalPolicyResult[] = [];
+  for (const intent of input.intents) {
+    const key = `${intent.scenarioFamily}:${intent.action}`;
+    if (dedup.has(key)) continue;
+    dedup.add(key);
+    if (intent.action === 'escalate') escalations.push(intent);
+    else safe.push(intent);
+  }
+
+  const lines: string[] = [];
+  if (safe.length > 0) {
+    lines.push('По пунктам:');
+    for (let i = 0; i < safe.length; i++) {
+      lines.push(`${i + 1}. ${scenarioLineRu(safe[i])}`);
+    }
+  }
+
+  if (escalations.length > 0) {
+    const topics = Array.from(new Set(escalations.map((e) => e.scenarioFamily))).map((scenario) => {
+      switch (scenario) {
+        case 'ACCESS_KEY_ISSUE':
+          return 'доступ/ключи';
+        case 'CANCELLATION_REFUND':
+          return 'отмена/возврат';
+        case 'EMERGENCY_URGENT_ISSUE':
+          return 'срочная ситуация';
+        case 'OPERATOR_HANDOFF':
+          return 'запрос на оператора';
+        default:
+          return 'вопросы по брони/объекту';
+      }
+    });
+    const prefix = safe.length > 0 ? '\n' : '';
+    lines.push(
+      `${prefix}По вопросам, которые требуют проверки объекта/брони (${topics.join(', ')}), передам оператору.`,
+    );
+  }
+
+  if (lines.length === 0) {
+    lines.push('Принял запрос. Проверяю детали по брони и объекту.');
+  }
+
+  return {
+    text: enforceTelegramStyle(lines.join('\n'), 1200),
+    template_key: 'policy.multi_intent.ru.v1',
+    language: 'ru',
+  };
 }
 

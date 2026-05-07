@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { executeTelegramOperationalPolicy } from '../telegram-operational-policy-executor';
+import {
+  executeTelegramOperationalPolicy,
+  executeTelegramOperationalPolicyMultiIntent,
+} from '../telegram-operational-policy-executor';
 
 describe('executeTelegramOperationalPolicy', () => {
   it('15:00 check-in asks for object/booking when missing', () => {
@@ -90,6 +93,34 @@ describe('executeTelegramOperationalPolicy', () => {
     });
     expect(secondSameUpdate.action).toBe('escalate');
     expect(secondSameUpdate.scenarioFamily).toBe('ESCALATE_TO_OPERATOR');
+  });
+
+  it('splits one RU message into multiple operational intents', () => {
+    const multi = executeTelegramOperationalPolicyMultiIntent({
+      update_id: 1300,
+      knownContext: { objectLabel: 'Невский 24', bookingReference: 'BK-77' },
+      messageText:
+        'Можно заезд в 15:00 и в 07:00? Нужен поздний выезд до 13:00. Не работает код двери, где Wi‑Fi, можно с собакой, есть парковка, какие документы нужны, и как с отменой/возвратом?',
+    });
+    const families = multi.intents.map((i) => i.scenarioFamily);
+    expect(families).toContain('CHECK_IN_STANDARD');
+    expect(families).toContain('CHECK_IN_VERY_EARLY');
+    expect(families).toContain('LATE_CHECKOUT');
+    expect(families).toContain('ACCESS_KEY_ISSUE');
+    expect(families).toContain('WIFI');
+    expect(families).toContain('PETS');
+    expect(families).toContain('PARKING');
+    expect(families).toContain('DOCUMENTS_PASSPORT');
+    expect(families).toContain('CANCELLATION_REFUND');
+  });
+
+  it('does not produce repeated slow_ack in one multi-intent message', () => {
+    const multi = executeTelegramOperationalPolicyMultiIntent({
+      update_id: 1301,
+      messageText: 'непонятно 1; непонятно 2; непонятно 3',
+    });
+    const slowAcks = multi.intents.filter((i) => i.action === 'slow_ack');
+    expect(slowAcks.length).toBeLessThanOrEqual(1);
   });
 });
 

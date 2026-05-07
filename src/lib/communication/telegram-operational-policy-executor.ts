@@ -41,6 +41,11 @@ export type TelegramOperationalPolicyResult = {
   nextSessionMemory: TelegramOperationalPolicySessionMemory;
 };
 
+export type TelegramOperationalMultiIntentResult = {
+  intents: TelegramOperationalPolicyResult[];
+  nextSessionMemory: TelegramOperationalPolicySessionMemory;
+};
+
 function hasKnownObjectOrBooking(ctx: KnownContext | null | undefined): boolean {
   return Boolean((ctx?.objectLabel && ctx.objectLabel.trim()) || (ctx?.bookingReference && ctx.bookingReference.trim()));
 }
@@ -52,6 +57,24 @@ function parseTime(text: string): string | null {
   const mm = Number(m[2]);
   if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function parseTimes(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\b(\d{1,2}):(\d{2})\b/g;
+  let m: RegExpExecArray | null = null;
+  while ((m = re.exec(String(text ?? ''))) !== null) {
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) continue;
+    const t = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    if (!seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  }
+  return out;
 }
 
 function scenarioByCheckinTime(time: string): TelegramOperationalScenarioFamily {
@@ -81,7 +104,7 @@ function hasLateCheckoutIntent(t: string): boolean {
 }
 
 function hasAccessKeyIssueIntent(t: string): boolean {
-  return /не\s+могу\s+войти|не\s+открыва|код\s+не\s+работает|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
+  return /не\s+могу\s+войти|не\s+открыва|код\s+не\s+работает|не\s+работает\s+код|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
 }
 
 function hasAddressFindObjectIntent(t: string): boolean {
@@ -89,7 +112,7 @@ function hasAddressFindObjectIntent(t: string): boolean {
 }
 
 function hasWifiIntent(t: string): boolean {
-  return /\bwi[\- ]?fi\b|вайфай|интернет|пароль\s+от\s+wi|router/i.test(t);
+  return /\bwi(?:[\-\u2010-\u2015 ]?)fi\b|вайфай|интернет|пароль\s+от\s+wi|router/i.test(t);
 }
 
 function hasParkingIntent(t: string): boolean {
@@ -124,6 +147,10 @@ function hasEmergencyUrgentIntent(t: string): boolean {
   return /пожар|дым|газ|затоп|скор|полици|человеку\s+плохо|fire|smoke|gas\s+leak|flood|ambulance|police/i.test(t);
 }
 
+function hasUrgentAccessIntent(t: string): boolean {
+  return hasAccessKeyIssueIntent(t) && /срочн|urgent|немедл|прямо\s+сейчас|cannot\s+enter\s+now|locked\s+out\s+now/i.test(t);
+}
+
 function hasOperatorHandoffIntent(t: string): boolean {
   return /соедините.*(оператор|менеджер)|позовите.*(оператор|менеджер|живого\s+человека)|нужен.*(оператор|менеджер)|human\s+agent|live\s+agent|connect\s+me/i.test(t);
 }
@@ -140,6 +167,114 @@ function mergeKnownContext(input: TelegramOperationalPolicyInput): KnownContext 
       input.knownContext?.cleaningStatusKnown ?? input.sessionMemory?.knownContext?.cleaningStatusKnown ?? false,
     ),
   };
+}
+
+function splitOperationalMessage(messageText: string): string[] {
+  const text = String(messageText ?? '').trim();
+  if (!text) return [];
+  const parts = text
+    .split(/[,\.\n\r;!?]+|(?:\s+(?:и\s+)?(?:ещ[её]|также)\s+)/gi)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const uniq: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    const key = part.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniq.push(part);
+    }
+  }
+  return uniq.length > 0 ? uniq : [text];
+}
+
+export function executeTelegramOperationalPolicyMultiIntent(
+  input: TelegramOperationalPolicyInput,
+): TelegramOperationalMultiIntentResult {
+  const text = String(input.messageText ?? '').trim();
+  if (!text) {
+    const single = executeTelegramOperationalPolicy(input);
+    return { intents: [single], nextSessionMemory: single.nextSessionMemory };
+  }
+
+  const times = parseTimes(text);
+  const clauses = splitOperationalMessage(text);
+  const intents: TelegramOperationalPolicyResult[] = [];
+  let memory: TelegramOperationalPolicySessionMemory =
+    input.sessionMemory ?? {
+      knownContext: input.knownContext ?? undefined,
+      lastScenarioFamily: null,
+      lastSlowAckUpdateId: null,
+      unknownOperationalAttemptCount: 0,
+    };
+  let hasSlowAckForUpdate = false;
+
+  const pushIntent = (res: TelegramOperationalPolicyResult) => {
+    if (res.action === 'slow_ack') {
+      if (hasSlowAckForUpdate) return;
+      hasSlowAckForUpdate = true;
+    }
+    intents.push(res);
+    memory = res.nextSessionMemory;
+  };
+
+  for (const t of times) {
+    const res = executeTelegramOperationalPolicy({
+      ...input,
+      messageText: `заезд в ${t}`,
+      sessionMemory: memory,
+    });
+    if (isCheckinFamily(res.scenarioFamily)) {
+      pushIntent(res);
+    }
+  }
+
+  for (const clause of clauses) {
+    const normalized = clause.toLowerCase();
+    if (hasCheckinIntent(normalized) && parseTime(clause)) continue;
+    if (hasUrgentAccessIntent(normalized)) {
+      pushIntent({
+        ...executeTelegramOperationalPolicy({
+          ...input,
+          messageText: clause,
+          sessionMemory: memory,
+        }),
+        action: 'escalate',
+        scenarioFamily: 'ACCESS_KEY_ISSUE',
+      });
+      continue;
+    }
+    if (
+      !hasLateCheckoutIntent(normalized) &&
+      !hasAccessKeyIssueIntent(normalized) &&
+      !hasAddressFindObjectIntent(normalized) &&
+      !hasWifiIntent(normalized) &&
+      !hasParkingIntent(normalized) &&
+      !hasPetsIntent(normalized) &&
+      !hasDocumentsPassportIntent(normalized) &&
+      !hasCancellationRefundIntent(normalized) &&
+      !hasComplaintsProblemsIntent(normalized) &&
+      !hasEmergencyUrgentIntent(normalized) &&
+      !hasOperatorHandoffIntent(normalized) &&
+      !hasCheckinIntent(normalized)
+    ) {
+      continue;
+    }
+
+    const res = executeTelegramOperationalPolicy({
+      ...input,
+      messageText: clause,
+      sessionMemory: memory,
+    });
+    pushIntent(res);
+  }
+
+  if (intents.length === 0) {
+    const single = executeTelegramOperationalPolicy({ ...input, sessionMemory: memory });
+    pushIntent(single);
+  }
+
+  return { intents, nextSessionMemory: memory };
 }
 
 export function executeTelegramOperationalPolicy(input: TelegramOperationalPolicyInput): TelegramOperationalPolicyResult {
