@@ -11,6 +11,11 @@ vi.mock('@/lib/communication/telegram-voice-inbound', () => ({
   processTelegramVoiceUpdate: (...args: unknown[]) => mockProcessTelegramVoiceUpdate(...args),
 }));
 
+const mockReplyToTelegram = vi.fn();
+vi.mock('@/lib/telegram', () => ({
+  replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
+}));
+
 import { POST } from '../webhook/route';
 
 function telegramRequest(body: unknown): Request {
@@ -25,7 +30,9 @@ describe('Telegram webhook route', () => {
   beforeEach(() => {
     mockProcessUpdate.mockReset();
     mockProcessTelegramVoiceUpdate.mockReset();
+    mockReplyToTelegram.mockReset();
     delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    vi.useRealTimers();
   });
 
   it('detects Telegram voice messages and uses the voice inbound path', async () => {
@@ -75,5 +82,43 @@ describe('Telegram webhook route', () => {
     expect(body).toMatchObject({ ok: true });
     expect(mockProcessUpdate).toHaveBeenCalledWith(update);
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
+  });
+
+  it('sends slow-processing acknowledgement after threshold while waiting for final processing', async () => {
+    vi.useFakeTimers();
+    const update = tgTextUpdate({ chat_id: 444, update_id: 9004, message_id: 45, text: 'Need check-in details' });
+    let resolveProcess!: (value: { outcome: string; update_id: number; chat_id: number }) => void;
+    mockProcessUpdate.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProcess = resolve;
+      }),
+    );
+    mockReplyToTelegram.mockResolvedValue(true);
+
+    const responsePromise = POST(telegramRequest(update));
+    await vi.advanceTimersByTimeAsync(3600);
+
+    expect(mockReplyToTelegram).toHaveBeenCalledTimes(1);
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      444,
+      'Понял, уже разбираюсь с запросом. Вернусь с ответом через пару секунд.',
+      { handler: 'telegram_webhook:slow_ack', update_id: 9004 },
+    );
+
+    resolveProcess({ outcome: 'replied', update_id: 9004, chat_id: 444 });
+    const res = await responsePromise;
+    expect(res.status).toBe(200);
+  });
+
+  it('does not send slow acknowledgement when processing finishes quickly', async () => {
+    vi.useFakeTimers();
+    const update = tgTextUpdate({ chat_id: 555, update_id: 9005, message_id: 46, text: 'Hi there' });
+    mockProcessUpdate.mockResolvedValue({ outcome: 'replied', update_id: 9005, chat_id: 555 });
+    mockReplyToTelegram.mockResolvedValue(true);
+
+    const res = await POST(telegramRequest(update));
+    expect(res.status).toBe(200);
+    await vi.advanceTimersByTimeAsync(3600);
+    expect(mockReplyToTelegram).toHaveBeenCalledTimes(0);
   });
 });
