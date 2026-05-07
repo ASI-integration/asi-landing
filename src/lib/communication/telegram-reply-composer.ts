@@ -764,12 +764,22 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
   const dedup = new Set<string>();
   const safe: TelegramOperationalPolicyResult[] = [];
   const escalations: TelegramOperationalPolicyResult[] = [];
+  const operatorEscalationFamilies = new Set<TelegramOperationalPolicyResult['scenarioFamily']>([
+    'ACCESS_KEY_ISSUE',
+    'COMPLAINTS_PROBLEMS',
+    'EMERGENCY_URGENT_ISSUE',
+    'OPERATOR_HANDOFF',
+  ]);
   for (const intent of input.intents) {
     const key = `${intent.scenarioFamily}:${intent.action}`;
     if (dedup.has(key)) continue;
     dedup.add(key);
-    if (intent.action === 'escalate') escalations.push(intent);
-    else safe.push(intent);
+    if (intent.action === 'escalate') {
+      if (operatorEscalationFamilies.has(intent.scenarioFamily)) escalations.push(intent);
+      else safe.push(intent);
+    } else {
+      safe.push(intent);
+    }
   }
 
   const lines: string[] = [];
@@ -799,6 +809,12 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
     lines.push(
       `${prefix}По вопросам, которые требуют проверки объекта/брони (${topics.join(', ')}), передам оператору.`,
     );
+  }
+
+  const needsSingleContextClarification = safe.some((intent) => intent.action === 'clarify');
+  if (needsSingleContextClarification) {
+    const prefix = lines.length > 0 ? '\n' : '';
+    lines.push(`${prefix}Чтобы дать точные детали по этим пунктам, уточните один раз объект или номер брони.`);
   }
 
   if (lines.length === 0) {
