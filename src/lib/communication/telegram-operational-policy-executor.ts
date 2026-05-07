@@ -72,7 +72,64 @@ function isCheckinFamily(s: TelegramOperationalScenarioFamily | null | undefined
 }
 
 function hasObjectClarificationIntent(t: string): boolean {
-  return /объект|адрес|на\s+тверск|брон[ьи]|booking|reservation|та\s+же\s+брон/i.test(t);
+  if (hasAddressFindObjectIntent(t)) return false;
+  return /на\s+тверск|booking\s+ref|reservation\s+id|та\s+же\s+брон/i.test(t);
+}
+
+function hasLateCheckoutIntent(t: string): boolean {
+  return /\blate\s*check[-\s]?out\b|поздн(ий|его|ему)?\s+(выезд|checkout)|выезд\s+до\s*\d{1,2}|выезд\s+попозже/i.test(t);
+}
+
+function hasAccessKeyIssueIntent(t: string): boolean {
+  return /не\s+могу\s+войти|не\s+открыва|код\s+не\s+работает|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
+}
+
+function hasAddressFindObjectIntent(t: string): boolean {
+  return /как\s+найти|как\s+доехать|как\s+пройти|где.*вход|как\s+вас\s+найти|какой\s+адрес|how\s+to\s+find|where\s+is\s+entrance|address/i.test(t);
+}
+
+function hasWifiIntent(t: string): boolean {
+  return /\bwi[\- ]?fi\b|вайфай|интернет|пароль\s+от\s+wi|router/i.test(t);
+}
+
+function hasParkingIntent(t: string): boolean {
+  return /парков|машин|авто|garage|parking|park\s+car/i.test(t);
+}
+
+function hasPetsIntent(t: string): boolean {
+  return /питом|собак|кошк|кот|pet|dog|cat/i.test(t);
+}
+
+function hasExtraGuestsIntent(t: string): boolean {
+  return /доп(олнительн)?\s+гост|extra\s+guest|нас\s+будет\s+\d|plus\s+one|еще\s+один\s+человек/i.test(t);
+}
+
+function hasDocumentsPassportIntent(t: string): boolean {
+  return /паспорт|документ|регистрац|passport|document|id\s+upload/i.test(t);
+}
+
+function hasPaymentDepositIntent(t: string): boolean {
+  return /оплат|платеж|плат[её]ж|залог|депозит|payment|deposit|refund\s+status/i.test(t);
+}
+
+function hasCancellationRefundIntent(t: string): boolean {
+  return /отмен|refund|cancell|вернуть\s+деньги|возврат/i.test(t);
+}
+
+function hasCleaningLinenTowelsIntent(t: string): boolean {
+  return /уборк|полотен|постел|бель[её]|cleaning|housekeeping|linen|towel/i.test(t);
+}
+
+function hasEmergencyUrgentIntent(t: string): boolean {
+  return /пожар|дым|газ|затоп|скор|полици|человеку\s+плохо|fire|smoke|gas\s+leak|flood|ambulance|police/i.test(t);
+}
+
+function hasOperatorHandoffIntent(t: string): boolean {
+  return /соедините.*(оператор|менеджер)|позовите.*(оператор|менеджер|живого\s+человека)|нужен.*(оператор|менеджер)|human\s+agent|live\s+agent|connect\s+me/i.test(t);
+}
+
+function hasComplaintsProblemsIntent(t: string): boolean {
+  return /жалоб|проблем|не\s+работает|сломал|complaint|problem|issue|broken/i.test(t);
 }
 
 function mergeKnownContext(input: TelegramOperationalPolicyInput): KnownContext {
@@ -134,6 +191,62 @@ export function executeTelegramOperationalPolicy(input: TelegramOperationalPolic
         bookingReference: booking ?? m.knownContext?.bookingReference ?? null,
       };
     });
+  }
+
+  if (hasEmergencyUrgentIntent(normalized)) {
+    return withResult('escalate', 'EMERGENCY_URGENT_ISSUE', 0.98);
+  }
+
+  if (hasOperatorHandoffIntent(normalized)) {
+    return withResult('escalate', 'OPERATOR_HANDOFF', 0.95);
+  }
+
+  if (hasAccessKeyIssueIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'escalate' : 'clarify', 'ACCESS_KEY_ISSUE', 0.95);
+  }
+
+  if (hasCancellationRefundIntent(normalized)) {
+    return withResult('escalate', 'CANCELLATION_REFUND', 0.92);
+  }
+
+  if (hasLateCheckoutIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'LATE_CHECKOUT', 0.92);
+  }
+
+  if (hasAddressFindObjectIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'ADDRESS_FIND_OBJECT', 0.9);
+  }
+
+  if (hasWifiIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'WIFI', 0.9);
+  }
+
+  if (hasParkingIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'PARKING', 0.89);
+  }
+
+  if (hasPetsIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'PETS', 0.88);
+  }
+
+  if (hasExtraGuestsIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'EXTRA_GUESTS', 0.88);
+  }
+
+  if (hasDocumentsPassportIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'DOCUMENTS_PASSPORT', 0.87);
+  }
+
+  if (hasPaymentDepositIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'PAYMENT_DEPOSIT', 0.88);
+  }
+
+  if (hasCleaningLinenTowelsIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'CLEANING_LINEN_TOWELS', 0.9);
+  }
+
+  if (hasComplaintsProblemsIntent(normalized)) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'COMPLAINTS_PROBLEMS', 0.84);
   }
 
   const time = parseTime(text);
