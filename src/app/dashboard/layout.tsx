@@ -38,7 +38,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         <Link href="/dashboard" className="px-6 py-5 text-xl font-bold text-white tracking-tight">
           ASI
         </Link>
-        <nav className="flex-1 px-4 py-4 space-y-1">
+        <nav className="flex-1 px-4 py-4 space-y-1.5">
           {navItems.map(({ href, key }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
@@ -46,7 +46,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                 key={key}
                 href={href}
                 onClick={onClose}
-                className={`block px-4 py-3 text-base font-medium rounded-md transition-colors ${
+                className={`block rounded-md px-4 py-3.5 text-[15px] font-medium leading-6 transition-colors ${
                   isActive
                     ? 'bg-slate-800 text-white'
                     : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'

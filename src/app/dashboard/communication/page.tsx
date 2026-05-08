@@ -318,6 +318,13 @@ export default function CommunicationPage() {
     { key: 'closed', label: 'Closed / resolved', count: summaryCounts.closed },
   ];
 
+  const filterChipClass =
+    'inline-flex min-h-9 items-center rounded-full border px-3.5 py-2 text-sm font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1';
+  const secondaryActionClass =
+    'inline-flex min-h-11 items-center justify-center rounded-md border px-4 py-2.5 text-sm font-medium leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:text-slate-500 disabled:border-slate-200 disabled:bg-slate-100';
+  const primaryActionClass =
+    'inline-flex min-h-12 items-center justify-center rounded-md px-5 py-3 text-sm font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:text-slate-500 disabled:border-slate-200 disabled:bg-slate-100';
+
   return (
     <div className="space-y-5">
       <header className="space-y-2">
@@ -367,7 +374,7 @@ export default function CommunicationPage() {
           </label>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {quickFilterButtons.map((f) => {
             const active = quickFilter === f.key;
             return (
@@ -375,13 +382,16 @@ export default function CommunicationPage() {
                 key={f.key}
                 type="button"
                 onClick={() => setQuickFilter(f.key)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                className={`${filterChipClass} ${
                   active
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
+                    ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                    : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'
                 }`}
               >
-                {f.label} ({f.count})
+                <span>{f.label}</span>
+                <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  {f.count}
+                </span>
               </button>
             );
           })}
@@ -518,11 +528,11 @@ export default function CommunicationPage() {
                   <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">AI Draft</div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-indigo-900">{selected.suggestedReply}</p>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-2.5">
                       <button
                         type="button"
                         onClick={() => setReplyDraft(selected.suggestedReply ?? '')}
-                        className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-100"
+                        className={`${secondaryActionClass} border-indigo-300 bg-white text-indigo-700 hover:bg-indigo-100`}
                       >
                         Use draft in editor
                       </button>
@@ -530,7 +540,7 @@ export default function CommunicationPage() {
                         type="button"
                         onClick={() => void runAction('approve')}
                         disabled={busyAction !== null}
-                        className="rounded-md border border-indigo-200 bg-indigo-100 px-3 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-200 disabled:opacity-50"
+                        className={`${primaryActionClass} border border-indigo-200 bg-indigo-100 text-indigo-800 hover:bg-indigo-200 disabled:text-slate-500 disabled:bg-slate-100`}
                       >
                         Approve AI Draft
                       </button>
@@ -563,12 +573,12 @@ export default function CommunicationPage() {
                         : 'Ready to send.'}
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => void runAction('acknowledge')}
                     disabled={!selected || busyAction !== null}
-                    className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className={`${secondaryActionClass} border-slate-300 text-slate-700 hover:bg-slate-50`}
                   >
                     Acknowledge
                   </button>
@@ -576,7 +586,7 @@ export default function CommunicationPage() {
                     type="button"
                     onClick={() => void runAction('take_over_manual')}
                     disabled={!selected || busyAction !== null}
-                    className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    className={`${secondaryActionClass} border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
                     Take over manually
                   </button>
@@ -584,7 +594,7 @@ export default function CommunicationPage() {
                     type="button"
                     onClick={() => void runAction('send_reply')}
                     disabled={!selected || busyAction !== null || !replyDraft.trim()}
-                    className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50"
+                    className={`${primaryActionClass} border border-slate-900 bg-slate-900 text-white shadow-sm hover:bg-slate-800 disabled:shadow-none`}
                   >
                     Send manual reply
                   </button>
@@ -592,7 +602,7 @@ export default function CommunicationPage() {
                     type="button"
                     onClick={() => void runAction('return_to_ai')}
                     disabled={!selected || busyAction !== null}
-                    className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                    className={`${primaryActionClass} border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
                     Return to AI autopilot
                   </button>
@@ -600,7 +610,7 @@ export default function CommunicationPage() {
                     type="button"
                     onClick={() => void runAction('close')}
                     disabled={!selected || busyAction !== null}
-                    className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    className={`${primaryActionClass} border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
                     Close / resolved
                   </button>
