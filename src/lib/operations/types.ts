@@ -139,7 +139,6 @@ export type OperationItem = OperationsItem;
 export interface OperationsState {
   items: OperationsItem[];
   issues: OperationsIssue[];
-  storageMode: 'seed' | 'local_storage';
+  storageMode: 'seed' | 'local_storage' | 'backend';
   updatedAt: string;
 }
-

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createDemoOperationsState, operationsStageLabels, operationsStageOrder } from '@/lib/operations/demo-data';
 import {
   activeChecklistStage as getActiveChecklistStage,
@@ -10,6 +10,7 @@ import {
   loadOperationsState,
   nextWorkflowStage,
   saveOperationsState,
+  type OperationsAction,
 } from '@/lib/operations/service';
 import type {
   OperationsAuditEvent,
@@ -301,6 +302,9 @@ export default function OperationsPage() {
   const [state, setState] = useState<OperationsState>(() => createDemoOperationsState());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [backendNotice, setBackendNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionBusy, setActionBusy] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [issueTitle, setIssueTitle] = useState('Операционный вопрос');
   const [issueType, setIssueType] = useState<OperationsIssueType>('guest_support');
@@ -308,11 +312,62 @@ export default function OperationsPage() {
   const [issueNote, setIssueNote] = useState('');
   const [checklistStage, setChecklistStage] = useState<OperationsChecklistStage>('pre_checkin');
 
-  useEffect(() => {
-    const loaded = loadOperationsState();
-    setState(loaded);
-    setSelectedId(loaded.items[3]?.id ?? loaded.items[0]?.id ?? null);
+  const loadOperations = useCallback(async (preferredSelectedId?: string | null) => {
+    setLoading(true);
+    setBackendNotice(null);
+    try {
+      const res = await fetch('/api/operations/items', { cache: 'no-store' });
+      const payload = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        state?: OperationsState;
+        error?: string;
+        detail?: string;
+      };
+
+      if (res.ok && payload.ok && payload.state) {
+        setState(payload.state);
+        setSelectedId((prev) => {
+          const preferred = preferredSelectedId ?? prev;
+          if (preferred && payload.state?.items.some((item) => item.id === preferred)) return preferred;
+          return payload.state?.items[0]?.id ?? null;
+        });
+        return;
+      }
+
+      if (res.status === 401) {
+        setBackendNotice('Требуется авторизация. Dashboard guard перенаправит на вход.');
+        return;
+      }
+
+      const fallback = loadOperationsState();
+      setState(fallback);
+      setSelectedId((prev) => {
+        const preferred = preferredSelectedId ?? prev;
+        if (preferred && fallback.items.some((item) => item.id === preferred)) return preferred;
+        return fallback.items[3]?.id ?? fallback.items[0]?.id ?? null;
+      });
+      setBackendNotice(
+        `Backend operations недоступен (${payload.error ?? res.status}). Показан явный demo/dev fallback; данные не смешиваются с backend.`,
+      );
+    } catch (err) {
+      const fallback = loadOperationsState();
+      setState(fallback);
+      setSelectedId((prev) => {
+        const preferred = preferredSelectedId ?? prev;
+        if (preferred && fallback.items.some((item) => item.id === preferred)) return preferred;
+        return fallback.items[3]?.id ?? fallback.items[0]?.id ?? null;
+      });
+      setBackendNotice(
+        `Backend operations недоступен (${err instanceof Error ? err.message : 'network error'}). Показан явный demo/dev fallback.`,
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadOperations();
+  }, [loadOperations]);
 
   const selected = state.items.find((item) => item.id === selectedId) ?? state.items[0] ?? null;
   const today = useMemo(() => todayKey(), []);
@@ -343,19 +398,94 @@ export default function OperationsPage() {
   const selectedTimeline = selected ? buildTimeline(selected, state.issues) : [];
   const selectedChecklist = selected ? getChecklistForStage(selected, checklistStage) : [];
   const nextStage = selected ? nextWorkflowStage(selected.stage) : null;
+  const storageLabel =
+    state.storageMode === 'backend'
+      ? 'backend Supabase'
+      : state.storageMode === 'local_storage'
+        ? 'demo localStorage fallback'
+        : 'demo seed fallback';
 
-  function commit(action: Parameters<typeof applyOperationsAction>[1], successMessage: string): void {
-    setState((prev) => {
-      const next = applyOperationsAction(prev, action);
-      saveOperationsState(next);
-      return next;
+  async function runBackendAction(action: OperationsAction): Promise<void> {
+    if (action.type === 'add_note') {
+      const res = await fetch(`/api/operations/items/${action.itemId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: action.body }),
+      });
+      if (!res.ok) throw new Error('note_add_failed');
+      return;
+    }
+
+    if (action.type === 'create_issue') {
+      const res = await fetch(`/api/operations/items/${action.itemId}/issues`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: action.title,
+          issueType: action.issueType,
+          urgency: action.urgency,
+          note: action.note,
+        }),
+      });
+      if (!res.ok) throw new Error('issue_create_failed');
+      return;
+    }
+
+    if (action.type === 'close_issue') {
+      const issueId = action.issueId ?? selectedActiveIssues[0]?.id;
+      if (!issueId) throw new Error('active_issue_not_found');
+      const res = await fetch(`/api/operations/issues/${issueId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'close' }),
+      });
+      if (!res.ok) throw new Error('issue_close_failed');
+      return;
+    }
+
+    const body =
+      action.type === 'set_checklist_item_status'
+        ? {
+            action: 'update_checklist_item',
+            checklistStage: action.checklistStage,
+            checklistItemId: action.checklistItemId,
+            status: action.status,
+          }
+        : { action: action.type };
+
+    const res = await fetch(`/api/operations/items/${action.itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
-    setMessage(successMessage);
+    if (!res.ok) throw new Error('operation_action_failed');
+  }
+
+  async function commit(action: Parameters<typeof applyOperationsAction>[1], successMessage: string): Promise<void> {
+    setActionBusy(true);
+    setMessage(null);
+    try {
+      if (state.storageMode === 'backend') {
+        await runBackendAction(action);
+        await loadOperations(action.itemId);
+      } else {
+        setState((prev) => {
+          const next = applyOperationsAction(prev, action);
+          saveOperationsState(next);
+          return next;
+        });
+      }
+      setMessage(successMessage);
+    } catch (err) {
+      setMessage(err instanceof Error ? `Действие не выполнено: ${err.message}` : 'Действие не выполнено.');
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   function createIssue(): void {
     if (!selected) return;
-    commit(
+    void commit(
       {
         type: 'create_issue',
         itemId: selected.id,
@@ -373,14 +503,19 @@ export default function OperationsPage() {
 
   function addNote(): void {
     if (!selected || !noteDraft.trim()) return;
-    commit({ type: 'add_note', itemId: selected.id, body: noteDraft }, 'Заметка добавлена.');
+    void commit({ type: 'add_note', itemId: selected.id, body: noteDraft }, 'Заметка добавлена.');
     setNoteDraft('');
   }
 
   if (!selected) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
-        Операционные элементы не найдены.
+      <div className="space-y-3">
+        {backendNotice ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{backendNotice}</div>
+        ) : null}
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+          {loading ? 'Загрузка операций...' : 'Операционные элементы не найдены.'}
+        </div>
       </div>
     );
   }
@@ -397,10 +532,22 @@ export default function OperationsPage() {
             </p>
           </div>
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
-            Хранилище: {state.storageMode === 'local_storage' ? 'локальный сервис' : 'seed fallback'}
+            Хранилище: {storageLabel}
           </div>
         </div>
       </header>
+
+      {loading ? (
+        <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Загрузка операций...</div>
+      ) : null}
+
+      {backendNotice ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{backendNotice}</div>
+      ) : null}
+
+      {actionBusy ? (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Сохранение действия...</div>
+      ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <OverviewCard label="Активные операции" value={metrics.activeOperations} hint="В работе или с открытым контекстом" />
