@@ -35,7 +35,11 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
-        <Link href="/dashboard" className="px-6 py-5 text-xl font-bold text-white tracking-tight">
+        <Link
+          href="/ru"
+          className="mx-3 mt-3 mb-1 rounded-lg px-3 py-3 inline-flex items-center text-3xl font-bold text-white tracking-tight cursor-pointer transition-colors hover:bg-slate-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+          onClick={onClose}
+        >
           ASI
         </Link>
         <nav className="flex-1 px-4 py-4 space-y-1.5">
