@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type ReviewStatus = 'pending' | 'acknowledged' | 'approved' | 'replied' | 'closed';
-type Channel = 'telegram' | 'vk' | 'email' | 'max' | string;
+type Channel = 'telegram' | 'vk' | 'email' | 'max' | 'phone' | string;
 type QuickFilter =
   | 'all'
   | 'requires_operator'
@@ -15,6 +15,7 @@ type QuickFilter =
   | 'vk'
   | 'email'
   | 'max'
+  | 'phone'
   | 'closed';
 type ReplyState = 'idle' | 'sending' | 'saved' | 'error';
 
@@ -37,6 +38,24 @@ type EscalationReview = {
     content: string;
     createdAt: string;
   }>;
+  source?: Record<string, unknown>;
+};
+
+type PhoneReviewSource = {
+  source?: string;
+  provider?: string;
+  providerCallId?: string;
+  callerPhoneNumber?: string | null;
+  calledNumber?: string | null;
+  eventType?: string;
+  callStatus?: string;
+  timestamp?: string;
+  durationSeconds?: number | null;
+  recordingUrl?: string | null;
+  transcriptText?: string | null;
+  transcriptProcessed?: boolean;
+  orchestratorOutcome?: string | null;
+  orchestratorEscalationReason?: string | null;
 };
 
 type ListResponse = {
@@ -49,7 +68,11 @@ type FilterUrgency = 'all' | 'urgent' | 'normal';
 
 function isUrgentReview(review: EscalationReview): boolean {
   const reason = review.escalationReason.toLowerCase();
-  return reason.includes('urgent') || reason.includes('access') || reason.includes('emergency');
+  const phone = phoneSource(review);
+  const phoneUrgent =
+    phone?.eventType === 'call_escalated_to_operator' ||
+    String(phone?.orchestratorEscalationReason ?? '').toLowerCase().includes('urgent');
+  return reason.includes('urgent') || reason.includes('access') || reason.includes('emergency') || phoneUrgent;
 }
 
 function isClosedReview(review: EscalationReview): boolean {
@@ -82,7 +105,33 @@ function channelLabel(channel: Channel): string {
   if (channel === 'vk') return 'VK';
   if (channel === 'email') return 'Email';
   if (channel === 'max') return 'MAX';
+  if (channel === 'phone') return 'Phone';
   return channel;
+}
+
+function phoneSource(review: EscalationReview): PhoneReviewSource | null {
+  if (review.channel !== 'phone') return null;
+  const source = review.source as PhoneReviewSource | undefined;
+  if (!source || source.source !== 'phone_call') return null;
+  return source;
+}
+
+function phoneStatusLabel(source: PhoneReviewSource | null): string {
+  const status = String(source?.callStatus ?? source?.eventType ?? '').replace(/^call_/, '').replace(/_/g, ' ');
+  return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Phone call';
+}
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return 'n/a';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+function transcriptSnippet(source: PhoneReviewSource | null): string | null {
+  const text = String(source?.transcriptText ?? '').trim();
+  if (!text) return null;
+  return text.length > 220 ? `${text.slice(0, 217)}...` : text;
 }
 
 function statusBadgeClass(status: ReviewStatus): string {
@@ -112,6 +161,7 @@ function matchQuickFilter(review: EscalationReview, quickFilter: QuickFilter): b
   if (quickFilter === 'vk') return review.channel === 'vk';
   if (quickFilter === 'email') return review.channel === 'email';
   if (quickFilter === 'max') return review.channel === 'max';
+  if (quickFilter === 'phone') return review.channel === 'phone';
   return isClosedReview(review);
 }
 
@@ -125,6 +175,11 @@ function searchableText(review: EscalationReview): string {
     review.leadId,
     review.channel,
     review.escalationReason,
+    phoneSource(review)?.callerPhoneNumber,
+    phoneSource(review)?.calledNumber,
+    phoneSource(review)?.providerCallId,
+    phoneSource(review)?.callStatus,
+    phoneSource(review)?.transcriptText,
     review.latestMessages.map((m) => m.content).join(' '),
   ]
     .filter(Boolean)
@@ -133,6 +188,7 @@ function searchableText(review: EscalationReview): string {
 }
 
 function timelineEvents(review: EscalationReview): Array<{ label: string; detail?: string; ts: string; tone: 'normal' | 'warn' }> {
+  const phone = phoneSource(review);
   const events: Array<{ label: string; detail?: string; ts: string; tone: 'normal' | 'warn' }> = [
     {
       label: 'Escalated to operator',
@@ -141,6 +197,27 @@ function timelineEvents(review: EscalationReview): Array<{ label: string; detail
       tone: isUrgentReview(review) ? 'warn' : 'normal',
     },
   ];
+  if (phone) {
+    events.push({
+      label: `Phone ${phoneStatusLabel(phone)}`,
+      detail: [
+        phone.callerPhoneNumber ? `Caller: ${phone.callerPhoneNumber}` : null,
+        phone.calledNumber ? `Called: ${phone.calledNumber}` : null,
+        phone.durationSeconds !== null && phone.durationSeconds !== undefined ? `Duration: ${formatDuration(phone.durationSeconds)}` : null,
+        phone.recordingUrl ? 'Recording attached' : null,
+      ].filter(Boolean).join(' | '),
+      ts: phone.timestamp ?? review.createdAt,
+      tone: isUrgentReview(review) ? 'warn' : 'normal',
+    });
+    if (phone.transcriptText) {
+      events.push({
+        label: phone.transcriptProcessed ? 'Transcript routed through shared canon' : 'Transcript received',
+        detail: transcriptSnippet(phone) ?? undefined,
+        ts: review.updatedAt,
+        tone: 'normal',
+      });
+    }
+  }
   for (const msg of review.latestMessages) {
     if (msg.direction === 'inbound') {
       events.push({ label: 'Message received', detail: msg.content, ts: msg.createdAt, tone: 'normal' });
@@ -234,6 +311,7 @@ export default function CommunicationPage() {
       vk: reviews.filter((r) => r.channel === 'vk').length,
       email: reviews.filter((r) => r.channel === 'email').length,
       max: reviews.filter((r) => r.channel === 'max').length,
+      phone: reviews.filter((r) => r.channel === 'phone').length,
     }),
     [reviews],
   );
@@ -242,6 +320,7 @@ export default function CommunicationPage() {
   const selectedVisible = filtered.find((r) => r.reviewId === selectedId) ?? null;
   const selectedTimeline = selected ? timelineEvents(selected) : [];
   const lastMessage = selected?.latestMessages.at(-1) ?? null;
+  const selectedPhone = selected ? phoneSource(selected) : null;
 
   async function runAction(action: 'acknowledge' | 'approve' | 'send_reply' | 'return_to_ai' | 'close' | 'take_over_manual') {
     if (!selected) return;
@@ -320,6 +399,7 @@ export default function CommunicationPage() {
     { key: 'vk', label: 'VK', count: summaryCounts.vk },
     { key: 'email', label: 'Email', count: summaryCounts.email },
     { key: 'max', label: 'MAX', count: summaryCounts.max },
+    { key: 'phone', label: 'Phone', count: summaryCounts.phone },
     { key: 'closed', label: 'Closed / resolved', count: summaryCounts.closed },
   ];
 
@@ -335,7 +415,7 @@ export default function CommunicationPage() {
       <header className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Communications Dashboard</h1>
         <p className="text-sm text-slate-600">
-          Unified operator console for Telegram, VK, Email, and MAX with shared orchestration, escalation, and audit control.
+          Unified operator console for Telegram, VK, Email, MAX, and Phone with shared orchestration, escalation, and audit control.
         </p>
       </header>
 
@@ -439,6 +519,12 @@ export default function CommunicationPage() {
                 const lastInbound = [...review.latestMessages].reverse().find((m) => m.direction === 'inbound');
                 const urgent = isUrgentReview(review);
                 const closed = isClosedReview(review);
+                const phone = phoneSource(review);
+                const preview = phone
+                  ? `${phoneStatusLabel(phone)}${phone.callerPhoneNumber ? ` from ${phone.callerPhoneNumber}` : ''}${
+                      transcriptSnippet(phone) ? `: ${transcriptSnippet(phone)}` : ''
+                    }`
+                  : lastInbound?.content ?? 'No inbound message in snapshot';
                 return (
                   <button
                     key={review.reviewId}
@@ -455,7 +541,7 @@ export default function CommunicationPage() {
                       </span>
                     </div>
                     <p className={`mt-1 line-clamp-2 text-sm ${closed ? 'text-slate-500' : 'text-slate-800'}`}>
-                      {lastInbound?.content ?? 'No inbound message in snapshot'}
+                      {preview}
                     </p>
                     <div className="mt-1 flex items-center justify-between text-xs">
                       <span className={urgent ? 'font-semibold text-rose-600' : 'text-slate-500'}>
@@ -490,6 +576,28 @@ export default function CommunicationPage() {
                   <div>
                     <span className="text-slate-500">Guest identifier:</span> {selected.targetId}
                   </div>
+                  {selectedPhone ? (
+                    <>
+                      <div>
+                        <span className="text-slate-500">Caller phone:</span> {selectedPhone.callerPhoneNumber ?? selected.targetId}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Called number:</span> {selectedPhone.calledNumber ?? 'n/a'}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Call status:</span> {phoneStatusLabel(selectedPhone)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Duration:</span> {formatDuration(selectedPhone.durationSeconds)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Provider call ID:</span> {selectedPhone.providerCallId ?? 'n/a'}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Provider:</span> {selectedPhone.provider ?? 'generic'}
+                      </div>
+                    </>
+                  ) : null}
                   <div>
                     <span className="text-slate-500">Session ID:</span> {selected.sessionId}
                   </div>
@@ -514,6 +622,23 @@ export default function CommunicationPage() {
                   <div className="md:col-span-2">
                     <span className="text-slate-500">Last message:</span> {lastMessage?.content ?? 'No recent message'}
                   </div>
+                  {selectedPhone ? (
+                    <>
+                      <div className="md:col-span-2">
+                        <span className="text-slate-500">Transcript:</span> {transcriptSnippet(selectedPhone) ?? 'n/a'}
+                      </div>
+                      <div className="md:col-span-2">
+                        <span className="text-slate-500">Recording:</span>{' '}
+                        {selectedPhone.recordingUrl ? (
+                          <a className="text-indigo-700 underline" href={selectedPhone.recordingUrl} target="_blank" rel="noreferrer">
+                            Open recording
+                          </a>
+                        ) : (
+                          'n/a'
+                        )}
+                      </div>
+                    </>
+                  ) : null}
                   <div>
                     <span className="text-slate-500">Created:</span> {shortTs(selected.createdAt)}
                   </div>

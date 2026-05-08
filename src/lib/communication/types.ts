@@ -738,6 +738,10 @@ export interface InboundMessageEnvelope {
 
 export type PhoneCallRecord = {
   id: string;
+  provider?: string;
+  providerCallId?: string;
+  callerPhoneNumber?: string;
+  calledNumber?: string;
   phoneNumber: string;
   reservationId?: string;
   propertyId?: string;
@@ -745,8 +749,19 @@ export type PhoneCallRecord = {
   startedAt: Date;
   endedAt?: Date;
   direction: 'inbound' | 'outbound';
-  status: 'missed' | 'answered' | 'voicemail' | 'escalated';
+  eventType?:
+    | 'call_started'
+    | 'call_missed'
+    | 'call_answered'
+    | 'call_ended'
+    | 'call_transcribed'
+    | 'call_escalated_to_operator';
+  status: 'started' | 'missed' | 'answered' | 'ended' | 'voicemail' | 'transcribed' | 'escalated';
+  durationSeconds?: number;
+  recordingUrl?: string;
+  transcriptText?: string;
   summary?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type LanguageCode = 'zh' | 'en' | 'es' | 'ar' | 'fr' | 'de' | 'ru';

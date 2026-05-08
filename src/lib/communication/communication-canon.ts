@@ -6,12 +6,12 @@ import {
 
 export * from './telegram-communication-canon';
 
-export type CanonicalGuestCommunicationChannel = Extract<CommunicationChannel, 'telegram' | 'email' | 'vk' | 'max'>;
+export type CanonicalGuestCommunicationChannel = Extract<CommunicationChannel, 'telegram' | 'email' | 'vk' | 'max' | 'phone'>;
 
 export function isCanonicalGuestCommunicationChannel(
   channel: CommunicationChannel,
 ): channel is CanonicalGuestCommunicationChannel {
-  return channel === 'telegram' || channel === 'email' || channel === 'vk' || channel === 'max';
+  return channel === 'telegram' || channel === 'email' || channel === 'vk' || channel === 'max' || channel === 'phone';
 }
 
 export function getCommunicationCanon(): ReturnType<typeof getTelegramCommunicationCanon> {

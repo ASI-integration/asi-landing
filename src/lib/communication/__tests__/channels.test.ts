@@ -15,8 +15,9 @@ describe('Channel Adapters', () => {
   it('formats email responses with professional signatures', () => {
     const adapter = getChannelAdapter('email');
     const result = adapter.formatResponse('Hello! We have received your request.', {});
+    const expectedFrom = process.env.EMAIL_FROM_ADDRESS ?? process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'support@asi-global.ru';
     expect(result).toContain('Best regards');
-    expect(result).toContain('support@automationasi.com');
+    expect(result).toContain(expectedFrom);
   });
 
   it('formats phone responses as operator summaries', () => {
