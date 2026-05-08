@@ -305,6 +305,18 @@ function buildOutboundTransportMetadata(params: {
     };
   }
 
+  if (params.envelope.channel === 'max') {
+    const metadata = params.envelope.metadata;
+    return {
+      reply_handler: replyHandler,
+      update_id: params.update_id,
+      chat_id: metadata?.chat_id ?? params.envelope.chatId ?? null,
+      user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,
+      max_chat_id: metadata?.chat_id ?? params.envelope.chatId ?? null,
+      max_user_id: metadata?.user_id ?? params.envelope.externalUserId ?? null,
+    };
+  }
+
   return undefined;
 }
 

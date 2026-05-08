@@ -6,12 +6,12 @@ import {
 
 export * from './telegram-communication-canon';
 
-export type CanonicalGuestCommunicationChannel = Extract<CommunicationChannel, 'telegram' | 'email' | 'vk'>;
+export type CanonicalGuestCommunicationChannel = Extract<CommunicationChannel, 'telegram' | 'email' | 'vk' | 'max'>;
 
 export function isCanonicalGuestCommunicationChannel(
   channel: CommunicationChannel,
 ): channel is CanonicalGuestCommunicationChannel {
-  return channel === 'telegram' || channel === 'email' || channel === 'vk';
+  return channel === 'telegram' || channel === 'email' || channel === 'vk' || channel === 'max';
 }
 
 export function getCommunicationCanon(): ReturnType<typeof getTelegramCommunicationCanon> {
@@ -30,7 +30,7 @@ export function canonicalUrgentAccessEscalationText(params: {
     params.category === 'access_issue';
   const isEscalation = params.action === 'escalate' || params.action === 'escalate_urgent';
   if (!isAccess || !isEscalation) return null;
-  if (params.lang === 'ru') {
+  if (params.lang === 'ru' && params.channel !== 'telegram') {
     return 'Срочно передаю оператору, чтобы помочь с доступом.';
   }
   if (params.lang === 'en') {

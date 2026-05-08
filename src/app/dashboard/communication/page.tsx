@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 type ReviewStatus = 'pending' | 'acknowledged' | 'approved' | 'replied' | 'closed';
-type Channel = 'telegram' | 'vk' | 'email' | string;
+type Channel = 'telegram' | 'vk' | 'email' | 'max' | string;
 type QuickFilter =
   | 'all'
   | 'requires_operator'
@@ -14,6 +14,7 @@ type QuickFilter =
   | 'telegram'
   | 'vk'
   | 'email'
+  | 'max'
   | 'closed';
 type ReplyState = 'idle' | 'sending' | 'saved' | 'error';
 
@@ -80,6 +81,7 @@ function channelLabel(channel: Channel): string {
   if (channel === 'telegram') return 'Telegram';
   if (channel === 'vk') return 'VK';
   if (channel === 'email') return 'Email';
+  if (channel === 'max') return 'MAX';
   return channel;
 }
 
@@ -109,6 +111,7 @@ function matchQuickFilter(review: EscalationReview, quickFilter: QuickFilter): b
   if (quickFilter === 'telegram') return review.channel === 'telegram';
   if (quickFilter === 'vk') return review.channel === 'vk';
   if (quickFilter === 'email') return review.channel === 'email';
+  if (quickFilter === 'max') return review.channel === 'max';
   return isClosedReview(review);
 }
 
@@ -230,6 +233,7 @@ export default function CommunicationPage() {
       telegram: reviews.filter((r) => r.channel === 'telegram').length,
       vk: reviews.filter((r) => r.channel === 'vk').length,
       email: reviews.filter((r) => r.channel === 'email').length,
+      max: reviews.filter((r) => r.channel === 'max').length,
     }),
     [reviews],
   );
@@ -315,6 +319,7 @@ export default function CommunicationPage() {
     { key: 'telegram', label: 'Telegram', count: summaryCounts.telegram },
     { key: 'vk', label: 'VK', count: summaryCounts.vk },
     { key: 'email', label: 'Email', count: summaryCounts.email },
+    { key: 'max', label: 'MAX', count: summaryCounts.max },
     { key: 'closed', label: 'Closed / resolved', count: summaryCounts.closed },
   ];
 
@@ -330,7 +335,7 @@ export default function CommunicationPage() {
       <header className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Communications Dashboard</h1>
         <p className="text-sm text-slate-600">
-          Unified operator console for Telegram, VK, and Email with shared orchestration, escalation, and audit control.
+          Unified operator console for Telegram, VK, Email, and MAX with shared orchestration, escalation, and audit control.
         </p>
       </header>
 
