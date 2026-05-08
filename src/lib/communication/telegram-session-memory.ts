@@ -10,6 +10,7 @@ import {
 import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-matching';
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
+import type { CommunicationCanonNormalization } from './communication-normalizer';
 
 type SurfaceLang = 'en' | 'ru';
 
@@ -830,6 +831,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
   text: string;
   surfaceLang: SurfaceLang;
   update_id: number;
+  normalization?: CommunicationCanonNormalization;
   /** Override db for deterministic matching tests */
   db?: any;
 }): Promise<TelegramSessionMemoryResult> {
@@ -844,6 +846,7 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
     surfaceLang: params.surfaceLang,
     update_id: params.update_id,
     chat_id: params.chatId,
+    normalization: params.normalization,
   });
 
   // If we got a fresh deterministic hit, decide whether to start new case or merge.

@@ -213,6 +213,18 @@ export interface ConversationContext {
   };
   /** Last Telegram update id that already received a final multi-intent operational reply. */
   telegramFinalOperationalReplyUpdateId?: number;
+  /** Shared communication brain memory: language continuity, semantic hints, and anti-loop markers. */
+  communicationSemanticMemory?: {
+    preferredLang?: Lang;
+    lastLanguageHint?: unknown;
+    lastToneHint?: unknown;
+    lastSemanticReferences?: unknown;
+    lastNormalizationConfidence?: number;
+    lastReplySignature?: string;
+    lastReplyPreview?: string;
+    repeatedReplyCount?: number;
+    lastAntiLoopMarker?: string;
+  };
 }
 
 // Role and identity resolution types
@@ -506,9 +518,9 @@ export interface AutonomousConversationSession {
   /** Last 10 turns used for context-aware decision and escalation logic. */
   timeline: SessionTimelineEntry[];
   /**
-   * Telegram-only: short-term memory of the current operational hospitality case
-   * within a single Telegram chat. Used to merge follow-up messages that provide
-   * missing facts (e.g., address/time) without restarting intake.
+   * Canonical channel memory for the current operational hospitality case.
+   * Used to merge follow-up messages that provide missing facts (e.g.,
+   * address/time) without restarting intake.
    */
   operational_case?: TelegramOperationalSessionCaseV1;
 }

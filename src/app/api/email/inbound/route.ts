@@ -1,49 +1,27 @@
 /**
- * Email inbound webhook
+ * Email inbound webhook.
  *
- * Accepts inbound email payloads from Resend's inbound routing feature.
- * Parses the email, builds an InboundMessageEnvelope, and feeds it into
- * the shared processMessage() orchestrator — same pipeline as Telegram/VK.
- *
- * Resend inbound setup:
- *   1. Add and verify your domain in Resend → Domains.
- *   2. Create an Inbound Route pointing to: https://yourdomain.com/api/email/inbound
- *   3. Resend will POST a JSON payload matching ResendInboundPayload on every received email.
- *
- * Security:
- *   Verify requests using RESEND_WEBHOOK_SECRET (Resend signs inbound webhook POSTs
- *   with a Svix signature header). If the env var is unset, the check is skipped
- *   (suitable for local dev only).
- *
- * Required env vars:
- *   RESEND_WEBHOOK_SECRET  — signing secret from Resend webhook settings (optional but recommended)
+ * Accepts normalized inbound email payloads from a mail provider bridge and
+ * feeds them into the shared communication orchestrator. Email stays a
+ * transport layer; business decisions happen in the canonical core.
  */
 
 import { NextResponse } from 'next/server';
 import { processMessage } from '@/lib/communication/orchestrator';
-import { EmailAdapter, ResendInboundPayload } from '@/lib/communication/channels/email';
+import {
+  EmailAdapter,
+  EmailInboundPayload,
+  getPrimaryEmailAddress,
+} from '@/lib/communication/channels/email';
 
 export const runtime = 'nodejs';
 
 const adapter = new EmailAdapter();
 
 export async function POST(req: Request): Promise<Response> {
-  // Optional signature verification (Resend uses Svix-style HMAC headers)
-  const secret = process.env.RESEND_WEBHOOK_SECRET;
-  if (secret) {
-    const signature = req.headers.get('svix-signature') ?? req.headers.get('Svix-Signature');
-    if (!signature) {
-      console.warn('[email:inbound] missing signature header');
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
-    // Full HMAC verification would require the svix SDK or manual HMAC-SHA256.
-    // For now we gate on header presence when the secret is configured.
-    // TODO: implement full Svix HMAC-SHA256 verification.
-  }
-
-  let payload: ResendInboundPayload;
+  let payload: EmailInboundPayload;
   try {
-    payload = (await req.json()) as ResendInboundPayload;
+    payload = (await req.json()) as EmailInboundPayload;
   } catch {
     return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
   }
@@ -60,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
     if (process.env.COMM_PIPELINE_DEBUG === '1') {
       console.log('[email:inbound] processed', {
         outcome: result.outcome,
-        from:    payload.from,
+        from:    getPrimaryEmailAddress(payload.from),
         subject: payload.subject,
       });
     }
@@ -76,8 +54,8 @@ export async function POST(req: Request): Promise<Response> {
 
 const AUTO_REPLY_RE = /^(no-?reply|mailer-daemon|postmaster|bounce|auto[-_]?reply|noreply)/i;
 
-function isAutoReply(from: string): boolean {
-  const addr = from.includes('<') ? (from.match(/<([^>]+)>/)?.[1] ?? from) : from;
+function isAutoReply(from: EmailInboundPayload['from']): boolean {
+  const addr = getPrimaryEmailAddress(from);
   const local = addr.split('@')[0] ?? '';
   return AUTO_REPLY_RE.test(local);
 }

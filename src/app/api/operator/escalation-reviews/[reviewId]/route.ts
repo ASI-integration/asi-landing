@@ -5,8 +5,10 @@ import {
   approveEscalationReview,
   closeEscalationReview,
   getEscalationReview,
+  getReviewsBySessionId,
   sendOperatorReply,
 } from '@/lib/communication/operator-review';
+import { releaseSessionToAi } from '@/lib/communication/handoff-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +69,25 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
         return NextResponse.json({ ok: false, error: result.error ?? 'send_failed' }, { status: 400 });
       }
       return NextResponse.json({ ok: true, review: result.review, duplicatePrevented: result.duplicatePrevented ?? false });
+    }
+    if (action === 'return_to_ai') {
+      const review = getEscalationReview(reviewId);
+      if (!review) {
+        return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+      }
+      const chatId = Number(review.targetId);
+      const release = releaseSessionToAi({
+        sessionId: review.sessionId,
+        operatorId,
+        reason: 'manual_return_to_ai',
+        chatId: Number.isFinite(chatId) ? chatId : undefined,
+      });
+      const reviews = getReviewsBySessionId(review.sessionId).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      return NextResponse.json({
+        ok: true,
+        release,
+        review: reviews[0] ?? null,
+      });
     }
 
     return NextResponse.json({ ok: false, error: 'unknown_action' }, { status: 400 });

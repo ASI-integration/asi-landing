@@ -36,6 +36,7 @@ import {
   EscalationReason,
   InboundMessageEnvelope,
   IntentCategory,
+  Lang,
   MessageCategory,
 } from './types';
 
@@ -100,7 +101,16 @@ import {
 import {
   executeTelegramOperationalPolicy,
   executeTelegramOperationalPolicyMultiIntent,
+  type TelegramOperationalPolicyResult,
 } from './telegram-operational-policy-executor';
+import {
+  canonicalUrgentAccessEscalationText,
+  isCanonicalGuestCommunicationChannel,
+} from './communication-canon';
+import {
+  normalizeGuestMessageForCanon,
+  type CommunicationCanonNormalization,
+} from './communication-normalizer';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -114,6 +124,188 @@ function shouldGreetTelegramOperationalReply(session: { memory?: { lastMessages?
     if (message.direction !== 'outbound') return false;
     return String(message.content ?? '').trim().length > 0;
   });
+}
+
+function actionableCanonicalOperationalIntents(
+  intents: TelegramOperationalPolicyResult[],
+): TelegramOperationalPolicyResult[] {
+  return intents.filter((intent) => intent.action !== 'slow_ack' && intent.scenarioFamily !== 'SLOW_ACK');
+}
+
+function composeCanonicalOperationalPolicyFallback(params: {
+  intents: TelegramOperationalPolicyResult[];
+  lang: Lang;
+  channel: InboundMessageEnvelope['channel'];
+}): string {
+  const urgentAccess = params.intents.find(
+    (intent) => intent.scenarioFamily === 'ACCESS_KEY_ISSUE' && intent.action === 'escalate',
+  );
+  if (urgentAccess) {
+    const urgentText = canonicalUrgentAccessEscalationText({
+      channel: params.channel,
+      lang: params.lang,
+      scenarioFamily: urgentAccess.scenarioFamily,
+      action: urgentAccess.action,
+    });
+    if (urgentText) return urgentText;
+  }
+
+  if (params.lang === 'ru') {
+    if (
+      params.intents.every(
+        (intent) =>
+          intent.action === 'clarify' &&
+          (intent.scenarioFamily === 'OBJECT_CLARIFICATION' || intent.scenarioFamily === 'BOOKING_CONTEXT'),
+      )
+    ) {
+      return 'Уточните, пожалуйста: это про какой объект или номер брони?';
+    }
+    return composeTelegramOperationalMultiIntentReply({ intents: params.intents, lang: params.lang }).text;
+  }
+
+  if (params.intents.some((intent) => intent.action === 'escalate')) {
+    return 'I’m passing this to an operator so we can check the booking/property policy before answering.';
+  }
+  if (params.intents.some((intent) => intent.action === 'clarify')) {
+    return 'Please send the property or booking number so I can check the exact details.';
+  }
+  return 'I’ll check this against the booking/property details and get back with an update.';
+}
+
+function resolveCanonicalCommunicationLang(params: {
+  normalization: CommunicationCanonNormalization;
+  previousLang?: Lang | null;
+  classifiedLang: Lang;
+}): Lang {
+  const hinted = params.normalization.language;
+  const previous = params.previousLang === 'ru' || params.previousLang === 'en' ? params.previousLang : null;
+  const classified = params.classifiedLang === 'ru' || params.classifiedLang === 'en' ? params.classifiedLang : 'en';
+
+  if (hinted.current === 'ru' || hinted.current === 'en') return hinted.current;
+  if (hinted.current === 'mixed') {
+    if (previous) return previous;
+    if (hinted.dominant === 'ru' || hinted.dominant === 'en') return hinted.dominant;
+    return classified;
+  }
+  if (hinted.dominant === 'ru' || hinted.dominant === 'en') return hinted.dominant;
+  return previous ?? classified;
+}
+
+function replySignature(text: string): string {
+  return String(text ?? '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 2)
+    .slice(0, 32)
+    .join(' ');
+}
+
+function signatureSimilarity(a: string, b: string): number {
+  const left = new Set(a.split(/\s+/).filter(Boolean));
+  const right = new Set(b.split(/\s+/).filter(Boolean));
+  if (left.size === 0 || right.size === 0) return 0;
+  let shared = 0;
+  for (const token of left) {
+    if (right.has(token)) shared += 1;
+  }
+  return shared / Math.max(left.size, right.size);
+}
+
+function antiLoopClarification(lang: Lang): string {
+  if (lang === 'ru') {
+    return 'Чтобы не повторяться: пришлите, пожалуйста, объект или номер брони одним сообщением, и я проверю точные детали.';
+  }
+  return 'To avoid repeating myself: please send the property or booking number in one message, and I’ll check the exact details.';
+}
+
+function antiLoopEscalation(lang: Lang): string {
+  if (lang === 'ru') return 'Вижу, что мы застряли на уточнении. Передаю оператору, чтобы помочь дальше.';
+  return 'I can see we’re stuck on the same clarification. I’m passing this to an operator so they can help.';
+}
+
+function preventRepeatedCommunicationReply(params: {
+  replyText: string;
+  lang: Lang;
+  memory: any;
+}): { replyText: string; signature: string; repeatedCount: number; prevented: boolean; escalated: boolean } {
+  const currentSignature = replySignature(params.replyText);
+  const previousSignature = String(params.memory?.communicationSemanticMemory?.lastReplySignature ?? '');
+  const previousCount = Number(params.memory?.communicationSemanticMemory?.repeatedReplyCount ?? 0);
+  const repeated =
+    currentSignature.length > 0 &&
+    previousSignature.length > 0 &&
+    (currentSignature === previousSignature || signatureSimilarity(currentSignature, previousSignature) >= 0.86);
+
+  if (!repeated) {
+    return {
+      replyText: params.replyText,
+      signature: currentSignature,
+      repeatedCount: 0,
+      prevented: false,
+      escalated: false,
+    };
+  }
+
+  const repeatedCount = previousCount + 1;
+  const escalated = repeatedCount >= 2;
+  const replyText = escalated ? antiLoopEscalation(params.lang) : antiLoopClarification(params.lang);
+  return {
+    replyText,
+    signature: replySignature(replyText),
+    repeatedCount,
+    prevented: true,
+    escalated,
+  };
+}
+
+function replySubject(subject: unknown): string {
+  const raw = String(subject ?? '').trim();
+  if (!raw) return 'Re: Your request';
+  if (/^re:/i.test(raw)) return raw;
+  return `Re: ${raw}`;
+}
+
+function metadataString(metadata: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = metadata?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function buildOutboundTransportMetadata(params: {
+  envelope: InboundMessageEnvelope;
+  usedPath: string;
+  update_id: number;
+  category: MessageCategory;
+  telegramMetaRouteKind?: TelegramTextMetaKind | null;
+}): Record<string, unknown> | undefined {
+  const replyHandler = `orchestrator:${params.usedPath}${
+    params.telegramMetaRouteKind ? `:telegram_meta=${params.telegramMetaRouteKind}` : ''
+  }:category=${params.category}`;
+
+  if (params.envelope.channel === 'telegram') {
+    return {
+      reply_handler: replyHandler,
+      update_id: params.update_id,
+    };
+  }
+
+  if (params.envelope.channel === 'email') {
+    const metadata = params.envelope.metadata;
+    const sourceMessageId = metadataString(metadata, ['message_id', 'messageId', 'providerMessageId', 'externalMessageId']);
+    const inReplyTo = metadataString(metadata, ['in_reply_to', 'inReplyTo']) ?? sourceMessageId;
+    return {
+      reply_handler: replyHandler,
+      update_id: params.update_id,
+      subject: replySubject(params.envelope.subject ?? metadata?.subject),
+      in_reply_to: inReplyTo,
+      references: metadata?.references ?? inReplyTo,
+    };
+  }
+
+  return undefined;
 }
 
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
@@ -290,6 +482,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const update_id = envelope.update_id ?? Date.now();
   const corrId    = String(update_id);
   const text = envelope.messageText ?? '';
+  const canonNormalization = normalizeGuestMessageForCanon(text);
   const latencyLoggingEnabled = envelope.channel === 'telegram';
   const ruDebug = process.env.RU_TELEGRAM_DEBUG === '1' && envelope.channel === 'telegram';
   const pipeDebug = pipelineDebugEnabled(envelope);
@@ -696,6 +889,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     cp('memory/context.load.start', { chat_id: chatId });
     const memoryLoadStartedAt = Date.now();
     const ctx = getContext(chatId);
+    const resolvedCommunicationLang = resolveCanonicalCommunicationLang({
+      normalization: canonNormalization,
+      previousLang: (ctx as any).communicationSemanticMemory?.preferredLang ?? null,
+      classifiedLang: classification.lang,
+    });
+    classification.lang = resolvedCommunicationLang;
+    updateContext(chatId, {
+      communicationSemanticMemory: {
+        ...((ctx as any).communicationSemanticMemory ?? {}),
+        preferredLang: resolvedCommunicationLang,
+        lastLanguageHint: canonNormalization.language,
+        lastToneHint: canonNormalization.tone,
+        lastSemanticReferences: canonNormalization.semanticReferences,
+        lastNormalizationConfidence: canonNormalization.confidence,
+      },
+    } as any);
     cp('memory/context.load.done', { chat_id: chatId });
     if (latencyLoggingEnabled) {
       console.info('[tg:latency] memory.load', {
@@ -895,19 +1104,20 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
       : null;
 
-    // Deterministic Telegram operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
-    if (!replyText && envelope.channel === 'telegram' && text.trim()) {
+    // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
+    if (!replyText && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {
       const opIntakeResult = await processTelegramOperationalIntakeWithSessionMemory({
         chatId,
         channel: envelope.channel,
         text,
         surfaceLang: classification.lang === 'ru' ? 'ru' : 'en',
         update_id,
+        normalization: canonNormalization,
       });
       if (opIntakeResult.handled) {
         const opIntake = opIntakeResult.hit;
         telegramOperationalIntakeConsumed = true;
-        const tgPriority = isTgLivePriorityScenario(opIntake.category);
+        const tgPriority = envelope.channel === 'telegram' && isTgLivePriorityScenario(opIntake.category);
         if (tgPriority) {
           const ef = (opIntake.extractedFacts ?? {}) as any;
           const knStatus = ef?.property_knowledge_status ? String(ef.property_knowledge_status) : null;
@@ -1030,10 +1240,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               knownContext: {
                 objectLabel:
                   (opIntakeResult.case?.property ?? null) ||
-                  ((opIntake.extractedFacts as any)?.matched_property_label ?? null),
+                  ((opIntake.extractedFacts as any)?.matched_property_label ?? null) ||
+                  memNow.propertyLocation ||
+                  memNow.propertyId ||
+                  null,
                 bookingReference:
                   ((opIntake.extractedFacts as any)?.booking_reference ?? null) ||
-                  ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
+                  ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null) ||
+                  memNow.bookingReference ||
+                  memNow.reservationId ||
+                  null,
                 cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
               },
               lastSlowAckUpdateId: policyMemory?.lastSlowAckUpdateId ?? null,
@@ -1042,12 +1258,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             knownContext: {
               objectLabel:
                 (opIntakeResult.case?.property ?? null) ||
-                ((opIntake.extractedFacts as any)?.matched_property_label ?? null),
+                ((opIntake.extractedFacts as any)?.matched_property_label ?? null) ||
+                memNow.propertyLocation ||
+                memNow.propertyId ||
+                null,
               bookingReference:
                 ((opIntake.extractedFacts as any)?.booking_reference ?? null) ||
-                ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null),
+                ((opIntake.extractedFacts as any)?.matched_reservation_id ?? null) ||
+                memNow.bookingReference ||
+                memNow.reservationId ||
+                null,
               cleaningStatusKnown: Boolean((opIntake.extractedFacts as any)?.cleaning_status),
             },
+            normalization: canonNormalization,
           };
           const policyResult = executeTelegramOperationalPolicy(policyInput);
           const multiPolicy = classification.lang === 'ru'
@@ -1073,8 +1296,16 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                   sessionMemory: memNow ?? null,
                   shouldGreet: shouldGreetTelegramOperationalReply(convSession),
                   policyResult: classification.lang === 'ru' ? policyResult : null,
+                  normalization: canonNormalization,
                 });
-          replyText = adapter.formatResponse(composed.text, commContext as unknown as Record<string, unknown>);
+          const channelText =
+            canonicalUrgentAccessEscalationText({
+              channel: envelope.channel,
+              lang: classification.lang,
+              category: opIntake.category,
+              action: opIntake.finalAction,
+            }) ?? composed.text;
+          replyText = adapter.formatResponse(channelText, commContext as unknown as Record<string, unknown>);
           llmSucceeded = true;
           usedPath = 'reply_composer';
           const wasFinalOperationalReply =
@@ -1267,6 +1498,157 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             'awaiting_input',
             `telegram_operational:${opIntake.category}_reply`,
           );
+        }
+      }
+    }
+
+    // Canonical policy fallback for operational intents that do not have a narrow intake category
+    // (for example cancellation/refund, pets, or explicit operator handoff).
+    if (!replyText && !escalationSafetyGate && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {
+      const memNow = getContext(chatId);
+      const knownContext = {
+        objectLabel:
+          memNow.propertyLocation ??
+          memNow.propertyId ??
+          commContext?.reservation?.propertyId ??
+          identity.propertyId ??
+          null,
+        bookingReference:
+          memNow.bookingReference ??
+          memNow.reservationId ??
+          commContext?.reservation?.reservationId ??
+          identity.reservationId ??
+          null,
+        cleaningStatusKnown: Boolean((memNow as any)?.cleaningStatusKnown),
+      };
+      const policyMemory = ((memNow as any).telegramOperationalPolicyMemory ?? null) as
+        | {
+            lastSlowAckUpdateId?: number | null;
+            unknownOperationalAttemptCount?: number;
+          }
+        | null;
+      const policyInput = {
+        messageText: text,
+        update_id,
+        sessionMemory: {
+          knownContext,
+          lastSlowAckUpdateId: policyMemory?.lastSlowAckUpdateId ?? null,
+          unknownOperationalAttemptCount: policyMemory?.unknownOperationalAttemptCount ?? 0,
+        },
+        knownContext,
+        normalization: canonNormalization,
+      };
+      const multiPolicy = executeTelegramOperationalPolicyMultiIntent(policyInput);
+      const actionableIntents = actionableCanonicalOperationalIntents(multiPolicy.intents);
+      const shouldUseCanonicalFallback =
+        actionableIntents.length > 0 &&
+        actionableIntents.some((intent) => intent.scenarioFamily !== 'UNKNOWN_OPERATIONAL_REQUEST');
+
+      if (shouldUseCanonicalFallback) {
+        replyText = adapter.formatResponse(
+          composeCanonicalOperationalPolicyFallback({
+            intents: actionableIntents,
+            lang: classification.lang,
+            channel: envelope.channel,
+          }),
+          commContext as unknown as Record<string, unknown>,
+        );
+        llmSucceeded = true;
+        usedPath = 'reply_composer';
+        telegramOperationalIntakeConsumed = true;
+        updateContext(chatId, {
+          telegramOperationalPolicyMemory: {
+            lastSlowAckUpdateId: multiPolicy.nextSessionMemory?.lastSlowAckUpdateId ?? null,
+            unknownOperationalAttemptCount: multiPolicy.nextSessionMemory?.unknownOperationalAttemptCount ?? 0,
+          },
+          telegramFinalOperationalReplyUpdateId: update_id,
+        });
+
+        const escalationIntents = actionableIntents.filter((intent) => intent.action === 'escalate');
+        if (escalationIntents.length > 0) {
+          const families = Array.from(new Set(escalationIntents.map((intent) => intent.scenarioFamily)));
+          const urgent = families.some((family) => family === 'ACCESS_KEY_ISSUE' || family === 'EMERGENCY_URGENT_ISSUE');
+          const paymentRelated = families.some((family) => family === 'CANCELLATION_REFUND');
+          escalation = createEscalationEvent({
+            reason: urgent
+              ? EscalationReason.UrgentIssue
+              : paymentRelated
+                ? EscalationReason.PaymentComplaint
+                : EscalationReason.RequiresOperator,
+            chat_id: chatId,
+            update_id,
+            classification,
+            summary: `canonical_operational_policy:${families.join(',')}`,
+          });
+          persistEscalationReview({
+            reason: String(escalation.reason),
+            escalationSummary: `canonical_operational_policy:${families.join(',')}`,
+            confidence: Math.max(...escalationIntents.map((intent) => intent.confidence)),
+            source: {
+              route: 'canonical_operational_policy',
+              channel: envelope.channel,
+              scenario_families: families,
+              intents: escalationIntents.map((intent) => ({
+                scenarioFamily: intent.scenarioFamily,
+                action: intent.action,
+                confidence: intent.confidence,
+                requiredContext: intent.requiredContext,
+              })),
+              ...(voiceSourceBase ?? {}),
+            },
+            detail: JSON.stringify({
+              scenarioFamilies: families,
+              actions: escalationIntents.map((intent) => intent.action),
+            }),
+            suggestedReply: replyText,
+          });
+          auditEscalation({ chat_id: chatId, update_id, detail: `canonical_operational_policy:${families.join(',')}` });
+          auditDecision({
+            type: 'escalate',
+            chat_id: chatId,
+            update_id,
+            detail: `canonical_operational_policy:${families.join(',')}`,
+          });
+          await withAwaitCheckpoint(
+            'session.transition.operator_review_required_canonical_policy',
+            () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+            { chat_id: chatId },
+            15_000,
+          );
+          runInBackground(
+            {
+              correlationId: corrId,
+              module: 'orchestrator',
+              taskName: 'createOpsTask_CanonicalOperationalPolicy',
+              triggerId: String(chatId),
+            },
+            async () => {
+              const { task_id } = await createOpsTask({
+                property_id: commContext.reservation.propertyId ?? 'unknown',
+                reservation_id: commContext.reservation.reservationId ?? null,
+                chat_id: chatId,
+                task_type: OpsTaskType.GuestIssue,
+                title: `Canonical operational policy: ${families.join(', ')}`,
+                description: `Automated canonical policy handoff.\nFamilies: ${families.join(', ')}`,
+                priority: urgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+                source_event: 'canonical_operational_policy',
+                trigger_reason: families.join(','),
+              });
+              if (task_id) {
+                await appendTimelineEvent(identity.guestId ?? String(chatId), {
+                  type: 'ops_task_created',
+                  task_type: OpsTaskType.GuestIssue,
+                  task_id,
+                  ts: new Date(),
+                });
+              }
+            },
+          );
+          convSession = transitionConversationSessionState(convSession, 'escalated', 'canonical_operational_policy');
+        } else if (actionableIntents.some((intent) => intent.action === 'clarify')) {
+          convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'canonical_operational_policy:clarify');
+        } else {
+          convSession = transitionConversationSessionState(convSession, 'awaiting_input', 'canonical_operational_policy:reply');
         }
       }
     }
@@ -1924,6 +2306,44 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       );
     }
 
+    const antiLoopMemory = getContext(chatId);
+    const antiLoop = preventRepeatedCommunicationReply({
+      replyText,
+      lang: classification.lang,
+      memory: antiLoopMemory,
+    });
+    if (antiLoop.prevented) {
+      const rawAntiLoopReply = antiLoop.replyText;
+      replyText = adapter.formatResponse(rawAntiLoopReply, commContext as unknown as Record<string, unknown>);
+      auditDecision({
+        type: antiLoop.escalated ? 'escalate' : 'reply',
+        chat_id: chatId,
+        update_id,
+        detail: `anti_loop_repeated_response_prevented strategy=${antiLoop.escalated ? 'operator_escalation' : 'clearer_clarification'} repeat_count=${antiLoop.repeatedCount}`,
+      });
+      if (antiLoop.escalated) {
+        escalation = createEscalationEvent({
+          reason: EscalationReason.RequiresOperator,
+          chat_id: chatId,
+          update_id,
+          classification,
+          summary: 'anti_loop_repeated_response_prevented',
+        });
+        auditEscalation({ chat_id: chatId, update_id, detail: 'anti_loop_repeated_response_prevented' });
+        convSession = transitionConversationSessionState(convSession, 'escalated', 'anti_loop_repeated_response_prevented');
+      }
+    }
+    updateContext(chatId, {
+      communicationSemanticMemory: {
+        ...((getContext(chatId) as any).communicationSemanticMemory ?? {}),
+        preferredLang: classification.lang,
+        lastReplySignature: replySignature(replyText),
+        lastReplyPreview: replyText.slice(0, 160),
+        repeatedReplyCount: antiLoop.repeatedCount,
+        lastAntiLoopMarker: antiLoop.prevented ? 'anti_loop_repeated_response_prevented' : undefined,
+      },
+    } as any);
+
     // Send the response abstractly
     const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
     if (!targetIdRaw) throw new Error('No outbound target id');
@@ -2001,14 +2421,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                   adapter.sendMessage(
                     targetId,
                     replyText,
-                    envelope.channel === 'telegram'
-                      ? {
-                          reply_handler: `orchestrator:${usedPath}${
-                            telegramMetaRouteKind ? `:telegram_meta=${telegramMetaRouteKind}` : ''
-                          }:category=${classification.category}`,
-                          update_id,
-                        }
-                      : undefined,
+                    buildOutboundTransportMetadata({
+                      envelope,
+                      usedPath,
+                      update_id,
+                      category: classification.category,
+                      telegramMetaRouteKind,
+                    }),
                   ),
               });
               if (!res.ok) {

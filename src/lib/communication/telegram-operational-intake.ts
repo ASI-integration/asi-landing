@@ -9,6 +9,7 @@ import {
   classifyCanonicalCheckinTime,
   type CheckinTimeBucket,
 } from './telegram-communication-canon';
+import type { CommunicationCanonNormalization } from './communication-normalizer';
 
 export type { CheckinTimeBucket } from './telegram-communication-canon';
 
@@ -43,6 +44,7 @@ export type TelegramOperationalIntakeParams = {
   surfaceLang: 'en' | 'ru';
   update_id: number;
   chat_id: number;
+  normalization?: CommunicationCanonNormalization;
 };
 
 function norm(s: string): string {
@@ -566,6 +568,11 @@ export function tryTelegramOperationalIntake(
   const n = norm(raw);
   const loose = stripPunctForMatch(raw);
   const ru = params.surfaceLang === 'ru';
+  const normalizedScenarios = new Set(params.normalization?.scenarioFamilies ?? []);
+
+  if (params.normalization?.lowConfidence && !params.normalization.urgency.accessBlocked) {
+    return null;
+  }
 
   const getMatrix = (category: TelegramOperationalCategory, missingFacts: string[]) =>
     decideEscalationMatrixV1({
@@ -577,7 +584,7 @@ export function tryTelegramOperationalIntake(
     });
 
   // 1) Access / door code / lock / check-in access
-  if (hasAccessIssueIntent(loose)) {
+  if (normalizedScenarios.has('ACCESS_KEY_ISSUE') || hasAccessIssueIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
@@ -610,6 +617,12 @@ export function tryTelegramOperationalIntake(
     const matrix = getMatrix('access_issue', missing);
     let finalAction: TelegramOperationalFinalAction = matrix.action;
     (facts as any).urgency_signals = matrix.urgency_signals;
+    if (params.normalization?.urgency.accessBlocked) {
+      finalAction = 'escalate_urgent';
+      (facts as any).urgency_signals = Array.isArray((facts as any).urgency_signals)
+        ? Array.from(new Set([...(facts as any).urgency_signals, 'normalized_access_blocked']))
+        : ['normalized_access_blocked'];
+    }
 
     // RU live rule: if guest is "right now at the entrance/door" and we have a property clue,
     // treat it as urgent access escalation.
@@ -643,8 +656,8 @@ export function tryTelegramOperationalIntake(
       extractedFacts: facts,
       missingFacts: missing,
       finalAction,
-      urgencySignals: matrix.urgency_signals,
-      actionReason: matrix.reason,
+      urgencySignals: Array.isArray((facts as any).urgency_signals) ? ((facts as any).urgency_signals as string[]) : matrix.urgency_signals,
+      actionReason: params.normalization?.urgency.accessBlocked ? 'normalization:access_blocked' : matrix.reason,
     };
     logEscalationMatrixDecision({
       update_id: params.update_id,
@@ -776,7 +789,7 @@ export function tryTelegramOperationalIntake(
   }
 
   // 3) Late checkout
-  if (hasLateCheckoutIntent(loose)) {
+  if (normalizedScenarios.has('LATE_CHECKOUT') || hasLateCheckoutIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
@@ -1169,7 +1182,7 @@ export function tryTelegramOperationalIntake(
   }
 
   // 8) Wi‑Fi issue
-  if (hasWifiIssueIntent(loose) && !hasPaymentConfirmationIntent(loose)) {
+  if ((normalizedScenarios.has('WIFI') || hasWifiIssueIntent(loose)) && !hasPaymentConfirmationIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);
@@ -1234,7 +1247,7 @@ export function tryTelegramOperationalIntake(
   }
 
   // 9) Parking question
-  if (hasParkingQuestionIntent(loose)) {
+  if (normalizedScenarios.has('PARKING') || hasParkingQuestionIntent(loose)) {
     const guest = extractGuestName(raw);
     const prop = extractPropertySnippet(raw);
     const addr = extractAddressHint(raw);

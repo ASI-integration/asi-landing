@@ -1,22 +1,11 @@
 /**
- * VK Channel Adapter
+ * VK channel adapter.
  *
- * Handles inbound messages from VK via the Callback API and outbound replies
- * via the VK Community Messages API (messages.send).
- *
- * Required env vars:
- *   VK_COMMUNITY_TOKEN   — community access token (messages, offline, groups)
- *   VK_GROUP_ID          — community/group ID (numeric string)
- *   VK_WEBHOOK_SECRET    — secret string configured in the VK app Callback API settings
- *
- * VK Callback API webhook payload for message_new:
- *   { type: "message_new", object: { message: { id, from_id, peer_id, text, date } }, group_id, secret }
- *
- * DB migration note:
- *   Run supabase/migrations/20260410000001_tg_contacts_vk_id.sql to add the
- *   vk_id column to tg_contacts before deploying this adapter.
+ * VK is transport-only. Inbound callbacks are normalized into the shared
+ * envelope and then processed by the canonical communication core.
  */
 
+import { createHash, randomUUID } from 'node:crypto';
 import { ChannelAdapter } from './base';
 import { CommunicationChannel, InboundMessageEnvelope } from '../types';
 
@@ -26,16 +15,18 @@ export interface VkCallbackPayload {
   type: string;
   object?: {
     message?: {
-      id:      number;
+      id: number;
+      conversation_message_id?: number;
       from_id: number;
       peer_id: number;
-      text:    string;
-      date:    number;
+      text: string;
+      date: number;
       attachments?: unknown[];
     };
   };
   group_id: number;
-  secret?:  string;
+  event_id?: string;
+  secret?: string;
 }
 
 // ─── Adapter ──────────────────────────────────────────────────────────────────
@@ -43,46 +34,50 @@ export interface VkCallbackPayload {
 export class VkAdapter implements ChannelAdapter {
   channel: CommunicationChannel = 'vk';
 
-  /**
-   * Normalise a VK message_new payload into a standard envelope.
-   * Caller is responsible for verifying the secret before calling this.
-   */
   async normalizeInbound(rawPayload: VkCallbackPayload): Promise<InboundMessageEnvelope> {
     const msg = rawPayload.object?.message;
     if (!msg) throw new Error('[VkAdapter] normalizeInbound: no message in payload');
+    const providerMessageId = stableVkProviderMessageId(rawPayload);
+    const updateId = stablePositiveInt(providerMessageId);
 
     return {
-      channel:        'vk',
+      channel: 'vk',
       externalUserId: String(msg.from_id),
-      chatId:         String(msg.peer_id),
-      messageText:    msg.text,
-      receivedAt:     new Date(msg.date * 1000),
-      update_id:      msg.id,
+      chatId: String(msg.peer_id),
+      messageText: msg.text,
+      receivedAt: parseVkDate(msg.date),
+      update_id: updateId,
       metadata: {
+        provider: 'vk',
+        providerMessageId,
+        externalMessageId: providerMessageId,
+        message_id: providerMessageId,
+        vk_message_id: msg.id,
+        vk_conversation_message_id: msg.conversation_message_id ?? null,
+        vk_event_id: rawPayload.event_id ?? null,
         group_id: rawPayload.group_id,
-        peer_id:  msg.peer_id,
-        from_id:  msg.from_id,
+        peer_id: msg.peer_id,
+        from_id: msg.from_id,
       },
     };
   }
 
-  /**
-   * Send a message to a VK peer via messages.send.
-   * `to` is the peer_id (user or chat room) as a string.
-   */
   async sendMessage(to: string, content: string): Promise<boolean> {
-    const token = process.env.VK_COMMUNITY_TOKEN;
-    if (!token) {
-      console.error('[VkAdapter] VK_COMMUNITY_TOKEN not configured');
+    const token = process.env.VK_API_TOKEN;
+    const groupId = String(process.env.VK_GROUP_ID ?? '').trim();
+    const version = String(process.env.VK_API_VERSION ?? '5.199').trim() || '5.199';
+    if (!token || !groupId) {
+      console.error('[VkAdapter] VK_API_TOKEN / VK_GROUP_ID not configured');
       return false;
     }
 
     const url = new URL('https://api.vk.com/method/messages.send');
     url.searchParams.set('peer_id',   to);
     url.searchParams.set('message',   content);
-    url.searchParams.set('random_id', String(Math.floor(Math.random() * 2_147_483_647)));
+    url.searchParams.set('group_id', groupId);
+    url.searchParams.set('random_id', stableVkRandomId(to, content));
     url.searchParams.set('access_token', token);
-    url.searchParams.set('v',         '5.131');
+    url.searchParams.set('v', version);
 
     try {
       const res  = await fetch(url.toString(), { method: 'POST' });
@@ -113,7 +108,37 @@ export class VkAdapter implements ChannelAdapter {
  * If the env var is not set, all payloads are accepted (useful for local dev).
  */
 export function verifyVkWebhookSecret(payload: VkCallbackPayload): boolean {
-  const expected = process.env.VK_WEBHOOK_SECRET;
+  const expected = process.env.VK_CALLBACK_SECRET;
   if (!expected) return true;
   return payload.secret === expected;
+}
+
+function stableVkProviderMessageId(payload: VkCallbackPayload): string {
+  const msg = payload.object?.message;
+  const peer = msg?.peer_id ?? 0;
+  const from = msg?.from_id ?? 0;
+  const id = msg?.id ?? 0;
+  const convoId = msg?.conversation_message_id ?? 0;
+  const eventId = payload.event_id ?? '';
+  if (eventId) return `vk:${payload.group_id}:${eventId}`;
+  if (id > 0) return `vk:${payload.group_id}:${peer}:${id}`;
+  return `vk:${payload.group_id}:${peer}:${from}:${convoId}:${msg?.date ?? 0}`;
+}
+
+function stablePositiveInt(value: string): number {
+  const hash = createHash('sha256').update(value).digest();
+  const n = hash.readUInt32BE(0);
+  return n === 0 ? 1 : n;
+}
+
+function stableVkRandomId(peerId: string, content: string): string {
+  const seed = `${peerId}:${content}:${randomUUID()}`;
+  const hash = createHash('sha256').update(seed).digest();
+  return String(hash.readUInt32BE(0));
+}
+
+function parseVkDate(unixSeconds: number): Date {
+  const ms = Number(unixSeconds) * 1000;
+  const parsed = new Date(ms);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }

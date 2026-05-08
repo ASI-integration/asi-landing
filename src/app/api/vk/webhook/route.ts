@@ -6,15 +6,15 @@
  * Confirmation flow:
  *   When you first register this URL in the VK community settings, VK sends
  *   a one-time {"type":"confirmation","group_id":...} request and expects the
- *   server to respond with a confirmation string (VK_WEBHOOK_CONFIRMATION).
+ *   server to respond with a confirmation string (VK_CONFIRMATION_CODE).
  *
  * Security:
  *   Every payload from VK includes a `secret` field (if configured in VK app
- *   settings). We verify it against VK_WEBHOOK_SECRET.
+ *   settings). We verify it against VK_CALLBACK_SECRET.
  *
  * Required env vars:
- *   VK_WEBHOOK_CONFIRMATION  — confirmation string from VK Callback API settings
- *   VK_WEBHOOK_SECRET        — optional shared secret for payload verification
+ *   VK_CONFIRMATION_CODE  — confirmation string from VK Callback API settings
+ *   VK_CALLBACK_SECRET    — optional shared secret for payload verification
  */
 
 import { NextResponse } from 'next/server';
@@ -35,9 +35,9 @@ export async function POST(req: Request): Promise<Response> {
 
   // VK confirmation handshake — must respond with the confirmation string as plain text
   if (payload.type === 'confirmation') {
-    const confirmation = process.env.VK_WEBHOOK_CONFIRMATION;
+    const confirmation = process.env.VK_CONFIRMATION_CODE;
     if (!confirmation) {
-      console.error('[vk:webhook] VK_WEBHOOK_CONFIRMATION not set');
+      console.error('[vk:webhook] VK_CONFIRMATION_CODE not set');
       return new Response('ok', { status: 200 });
     }
     return new Response(confirmation, { status: 200, headers: { 'Content-Type': 'text/plain' } });

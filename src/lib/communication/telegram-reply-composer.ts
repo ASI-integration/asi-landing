@@ -2,6 +2,7 @@ import type { ConversationContext, Lang, ReservationPropertyLinkingStateV1 } fro
 import type { TelegramOperationalCategory, TelegramOperationalFinalAction } from './telegram-operational-intake';
 import type { TelegramOperationalSessionCaseV1 } from './types';
 import type { TelegramOperationalPolicyResult } from './telegram-operational-policy-executor';
+import type { CommunicationCanonNormalization } from './communication-normalizer';
 import {
   buildCanonicalRuCheckinTimeReply,
   buildCanonicalRuScenarioLine,
@@ -27,6 +28,7 @@ export type ReplyComposerInput = {
   sessionMemory?: ConversationContext | null;
   shouldGreet?: boolean;
   policyResult?: TelegramOperationalPolicyResult | null;
+  normalization?: CommunicationCanonNormalization | null;
 };
 
 export type ReplyComposerOutput = {
@@ -48,7 +50,7 @@ function pickVariant(update_id: number, options: [string, string]): string {
 function inferDominantLang(text: string, fallback: Lang): Lang {
   const raw = String(text ?? '');
   if (/[а-яё]/i.test(raw)) return 'ru';
-  if (/(español|espanol|hola\b|buenos\s+dias|buenas\s+tardes|gracias|por\s+favor|hablas\b|wifi|contraseña)/i.test(raw)) {
+  if (/(español|espanol|hola\b|buenos\s+dias|buenas\s+tardes|gracias|por\s+favor|hablas\b|contraseña)/i.test(raw)) {
     return 'es';
   }
   if (fallback === 'ru' || fallback === 'es' || fallback === 'en') return fallback;
@@ -59,6 +61,31 @@ function normalizeLang(lang: Lang, text: string): Lang {
   const dominant = inferDominantLang(text, lang);
   if (dominant === 'ru' || dominant === 'es' || dominant === 'en') return dominant;
   return 'en';
+}
+
+function replyLang(input: Pick<ReplyComposerInput, 'lang' | 'text' | 'normalization'>): Lang {
+  const hinted = input.normalization?.language;
+  if (hinted?.current === 'mixed') {
+    if (input.lang === 'ru' || input.lang === 'en') return input.lang;
+    if (hinted.dominant === 'ru' || hinted.dominant === 'en') return hinted.dominant;
+  }
+  if (hinted?.dominant === 'ru' || hinted?.dominant === 'en') return hinted.dominant;
+  return normalizeLang(input.lang, input.text);
+}
+
+function applyToneStyle(text: string, lang: Lang, normalization: CommunicationCanonNormalization | null | undefined): string {
+  const tone = normalization?.tone;
+  if (!tone || tone.level === 'neutral') return text;
+  if (/^(Понимаю|I understand|Entiendo)[,.]/i.test(text)) return text;
+  if (lang === 'ru') {
+    if (tone.angry || tone.stressed) return `Понимаю, ситуация неприятная. ${text}`;
+    if (tone.confused) return `Понимаю. ${text}`;
+  }
+  if (lang === 'en') {
+    if (tone.angry || tone.stressed) return `I understand this is frustrating. ${text}`;
+    if (tone.confused) return `I understand. ${text}`;
+  }
+  return text;
 }
 
 function oneQuestion(lang: Lang, en: string, ru: string, es: string): string {
@@ -353,7 +380,7 @@ function textHasExplicitRuProperty(text: string): boolean {
 }
 
 function clarifyPrompt(input: ReplyComposerInput): string {
-  const lang = normalizeLang(input.lang, input.text);
+  const lang = replyLang(input);
   const cat = input.category;
   const missing = input.missingFacts ?? [];
 
@@ -488,7 +515,7 @@ function clarifyPrompt(input: ReplyComposerInput): string {
 }
 
 function replyTextForCategory(input: ReplyComposerInput): { template_key: string; text: string } {
-  const lang = normalizeLang(input.lang, input.text);
+  const lang = replyLang(input);
   const cat = input.category;
 
   if (lang === 'ru') {
@@ -750,9 +777,9 @@ function enforceTelegramMultilineStyle(text: string, maxLen = 1200): string {
 }
 
 export function composeTelegramOperationalReply(input: ReplyComposerInput): ReplyComposerOutput {
-  const language = normalizeLang(input.lang, input.text);
+  const language = replyLang(input);
   const { template_key, text } = replyTextForCategory({ ...input, lang: language });
-  const out: ReplyComposerOutput = { text: enforceTelegramStyle(text), template_key, language };
+  const out: ReplyComposerOutput = { text: enforceTelegramStyle(applyToneStyle(text, language, input.normalization)), template_key, language };
 
   try {
     console.log(
@@ -794,6 +821,8 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
     'ACCESS_KEY_ISSUE',
     'COMPLAINTS_PROBLEMS',
     'CANCELLATION_REFUND',
+    'EMERGENCY_URGENT_ISSUE',
+    'OPERATOR_HANDOFF',
     'UNKNOWN_OPERATIONAL_REQUEST',
     'ESCALATE_TO_OPERATOR',
   ]);
@@ -828,6 +857,11 @@ export function composeTelegramOperationalMultiIntentReply(input: MultiIntentCom
     lines.push('По пунктам:');
     for (let i = 0; i < safe.length; i++) {
       lines.push(`${i + 1}. ${scenarioLineRu(safe[i])}`);
+    }
+  } else if (escalations.length > 1) {
+    lines.push('По пунктам:');
+    for (let i = 0; i < escalations.length; i++) {
+      lines.push(`${i + 1}. ${scenarioLineRu(escalations[i])}`);
     }
   }
 

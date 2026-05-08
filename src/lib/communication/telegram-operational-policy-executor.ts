@@ -5,6 +5,7 @@ import {
   type TelegramOperationalAction,
   type TelegramOperationalScenarioFamily,
 } from './telegram-communication-canon';
+import type { CommunicationCanonNormalization } from './communication-normalizer';
 
 type KnownContext = {
   objectLabel?: string | null;
@@ -31,6 +32,7 @@ export type TelegramOperationalPolicyInput = {
   sessionMemory?: TelegramOperationalPolicySessionMemory | null;
   knownContext?: KnownContext | null;
   history?: TelegramOperationalPolicyMessage[] | null;
+  normalization?: CommunicationCanonNormalization | null;
 };
 
 export type TelegramOperationalPolicyResult = {
@@ -50,6 +52,47 @@ export type TelegramOperationalMultiIntentResult = {
 
 function hasKnownObjectOrBooking(ctx: KnownContext | null | undefined): boolean {
   return Boolean((ctx?.objectLabel && ctx.objectLabel.trim()) || (ctx?.bookingReference && ctx.bookingReference.trim()));
+}
+
+function normalizedScenarioHints(input: TelegramOperationalPolicyInput): TelegramOperationalScenarioFamily[] {
+  return input.normalization?.scenarioFamilies ?? [];
+}
+
+function normalizedScenarioConfidence(
+  input: TelegramOperationalPolicyInput,
+  scenarioFamily: TelegramOperationalScenarioFamily,
+  fallback: number,
+): number {
+  const detail = input.normalization?.intentDetails.find((hint) => hint.scenarioFamily === scenarioFamily);
+  return detail?.confidence ?? input.normalization?.confidence ?? fallback;
+}
+
+function hintMessageForScenarioFamily(
+  scenarioFamily: TelegramOperationalScenarioFamily,
+  normalization: CommunicationCanonNormalization | null | undefined,
+): string {
+  switch (scenarioFamily) {
+    case 'ACCESS_KEY_ISSUE':
+      return normalization?.urgency.accessBlocked ? 'urgent locked out door code not working' : 'access issue code not working';
+    case 'ADDRESS_FIND_OBJECT':
+      return 'how to find entrance check-in instructions';
+    case 'WIFI':
+      return 'wifi password';
+    case 'PARKING':
+      return 'parking';
+    case 'PETS':
+      return 'pets allowed';
+    case 'LATE_CHECKOUT':
+      return 'late checkout';
+    case 'CANCELLATION_REFUND':
+      return 'refund cancellation';
+    case 'COMPLAINTS_PROBLEMS':
+      return 'complaint problem';
+    case 'OPERATOR_HANDOFF':
+      return 'human agent operator';
+    default:
+      return scenarioFamily.toLowerCase().replace(/_/g, ' ');
+  }
 }
 
 function parseTime(text: string): string | null {
@@ -215,11 +258,26 @@ export function executeTelegramOperationalPolicyMultiIntent(
     memory = res.nextSessionMemory;
   };
 
+  for (const scenarioFamily of normalizedScenarioHints(input)) {
+    const res = executeTelegramOperationalPolicy({
+      ...input,
+      messageText: hintMessageForScenarioFamily(scenarioFamily, input.normalization),
+      sessionMemory: memory,
+      normalization: null,
+    });
+    pushIntent(
+      scenarioFamily === 'ACCESS_KEY_ISSUE' && input.normalization?.urgency.accessBlocked
+        ? { ...res, action: 'escalate', scenarioFamily }
+        : { ...res, scenarioFamily },
+    );
+  }
+
   for (const t of times) {
     const res = executeTelegramOperationalPolicy({
       ...input,
       messageText: `заезд в ${t}`,
       sessionMemory: memory,
+      normalization: null,
     });
     if (isCheckinFamily(res.scenarioFamily)) {
       pushIntent(res);
@@ -235,6 +293,7 @@ export function executeTelegramOperationalPolicyMultiIntent(
           ...input,
           messageText: clause,
           sessionMemory: memory,
+          normalization: null,
         }),
         action: 'escalate',
         scenarioFamily: 'ACCESS_KEY_ISSUE',
@@ -262,6 +321,7 @@ export function executeTelegramOperationalPolicyMultiIntent(
       ...input,
       messageText: clause,
       sessionMemory: memory,
+      normalization: null,
     });
     pushIntent(res);
   }
@@ -317,6 +377,15 @@ export function executeTelegramOperationalPolicy(input: TelegramOperationalPolic
       nextSessionMemory: next,
     };
   };
+  const scenarioHints = new Set(normalizedScenarioHints(input));
+
+  if (input.normalization?.semanticReferences.needsStoredContext && !knownObjectOrBooking) {
+    return withResult('clarify', 'OBJECT_CLARIFICATION', Math.max(0.66, input.normalization.confidence));
+  }
+
+  if (input.normalization?.lowConfidence && !input.normalization.urgency.accessBlocked) {
+    return withResult('clarify', 'OBJECT_CLARIFICATION', input.normalization.confidence);
+  }
 
   if (hasObjectClarificationIntent(normalized)) {
     const object = /тверск/i.test(text) ? 'на Тверской' : null;
@@ -336,6 +405,47 @@ export function executeTelegramOperationalPolicy(input: TelegramOperationalPolic
 
   if (hasOperatorHandoffIntent(normalized)) {
     return withResult('escalate', 'OPERATOR_HANDOFF', 0.95);
+  }
+
+  if (scenarioHints.has('OPERATOR_HANDOFF')) {
+    return withResult('escalate', 'OPERATOR_HANDOFF', normalizedScenarioConfidence(input, 'OPERATOR_HANDOFF', 0.91));
+  }
+
+  if (scenarioHints.has('ACCESS_KEY_ISSUE')) {
+    const result = withResult(
+      input.normalization?.urgency.accessBlocked ? 'escalate' : knownObjectOrBooking ? 'escalate' : 'clarify',
+      'ACCESS_KEY_ISSUE',
+      normalizedScenarioConfidence(input, 'ACCESS_KEY_ISSUE', 0.9),
+    );
+    return input.normalization?.urgency.accessBlocked ? { ...result, action: 'escalate' } : result;
+  }
+
+  if (scenarioHints.has('CANCELLATION_REFUND')) {
+    return withResult('escalate', 'CANCELLATION_REFUND', normalizedScenarioConfidence(input, 'CANCELLATION_REFUND', 0.9));
+  }
+
+  if (scenarioHints.has('COMPLAINTS_PROBLEMS')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'COMPLAINTS_PROBLEMS', normalizedScenarioConfidence(input, 'COMPLAINTS_PROBLEMS', 0.86));
+  }
+
+  if (scenarioHints.has('LATE_CHECKOUT')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'LATE_CHECKOUT', normalizedScenarioConfidence(input, 'LATE_CHECKOUT', 0.88));
+  }
+
+  if (scenarioHints.has('ADDRESS_FIND_OBJECT')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'ADDRESS_FIND_OBJECT', normalizedScenarioConfidence(input, 'ADDRESS_FIND_OBJECT', 0.88));
+  }
+
+  if (scenarioHints.has('WIFI')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'WIFI', normalizedScenarioConfidence(input, 'WIFI', 0.88));
+  }
+
+  if (scenarioHints.has('PARKING')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'PARKING', normalizedScenarioConfidence(input, 'PARKING', 0.88));
+  }
+
+  if (scenarioHints.has('PETS')) {
+    return withResult(knownObjectOrBooking ? 'auto_reply' : 'clarify', 'PETS', normalizedScenarioConfidence(input, 'PETS', 0.88));
   }
 
   if (hasAccessKeyIssueIntent(normalized)) {
