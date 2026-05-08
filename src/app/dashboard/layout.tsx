@@ -12,6 +12,7 @@ const navItems = [
   { href: '/dashboard/data-source', key: 'dataSource' },
   { href: '/dashboard/properties', key: 'properties' },
   { href: '/dashboard/communication', key: 'communication' },
+  { href: '/dashboard/operations', key: 'operations' },
   { href: '/dashboard/bookings', key: 'bookings' },
   { href: '/dashboard/automations', key: 'automations' },
   { href: '/dashboard/settings', key: 'settings' },

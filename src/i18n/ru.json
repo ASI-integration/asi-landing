@@ -582,6 +582,7 @@
       "dataSource": "Источник данных",
       "properties": "Объекты",
       "communication": "Коммуникация",
+      "operations": "Операции",
       "bookings": "Бронирования",
       "automations": "Автоматизация",
       "settings": "Настройки"

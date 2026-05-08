@@ -579,7 +579,11 @@
   "dashboard": {
     "sidebar": {
       "overview": "Overview",
+      "dataSource": "Data Source",
       "properties": "Properties",
+      "communication": "Communication",
+      "operations": "Operations",
+      "bookings": "Bookings",
       "automations": "Automations",
       "settings": "Settings"
     },
