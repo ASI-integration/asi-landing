@@ -1,8 +1,10 @@
 import {
-  TELEGRAM_OPERATIONAL_KNOWLEDGE_V1,
+  classifyCanonicalCheckinTime,
+  decideCanonicalTelegramAction,
+  getTelegramOperationalRule,
   type TelegramOperationalAction,
   type TelegramOperationalScenarioFamily,
-} from './telegram-operational-knowledge';
+} from './telegram-communication-canon';
 
 type KnownContext = {
   objectLabel?: string | null;
@@ -78,12 +80,7 @@ function parseTimes(text: string): string[] {
 }
 
 function scenarioByCheckinTime(time: string): TelegramOperationalScenarioFamily {
-  const hh = Number(time.slice(0, 2));
-  if (hh >= 6 && hh <= 8) return 'CHECK_IN_VERY_EARLY';
-  if (hh === 12) return 'CHECK_IN_EARLY';
-  if (hh === 15) return 'CHECK_IN_STANDARD';
-  if (hh >= 9 && hh <= 14) return 'CHECK_IN_EARLY';
-  return 'UNKNOWN_OPERATIONAL_REQUEST';
+  return classifyCanonicalCheckinTime(time).scenarioFamily ?? 'UNKNOWN_OPERATIONAL_REQUEST';
 }
 
 function hasCheckinIntent(t: string): boolean {
@@ -104,7 +101,7 @@ function hasLateCheckoutIntent(t: string): boolean {
 }
 
 function hasAccessKeyIssueIntent(t: string): boolean {
-  return /не\s+могу\s+войти|не\s+открыва|код\s+не\s+работает|не\s+работает\s+код|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
+  return /не\s+могу\s+войти|не\s+открыва|код.{0,30}(не\s+работает|не\s+подходит|не\s+открыва)|не\s+работает.{0,20}код|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
 }
 
 function hasAddressFindObjectIntent(t: string): boolean {
@@ -300,13 +297,18 @@ export function executeTelegramOperationalPolicy(input: TelegramOperationalPolic
     const next = { ...baseMemory };
     next.lastScenarioFamily = scenarioFamily;
     if (mutate) mutate(next);
-    const rule = TELEGRAM_OPERATIONAL_KNOWLEDGE_V1[scenarioFamily];
+    const rule = getTelegramOperationalRule(scenarioFamily);
+    const canonicalAction = decideCanonicalTelegramAction({
+      scenarioFamily,
+      hasKnownObjectOrBooking: knownObjectOrBooking,
+      requestedAction: action,
+    });
     const forbiddenClaims = rule.forbiddenClaims.filter((claim) => {
       if (claim === 'do_not_mention_cleaning_without_explicit_cleaning_context') return !knownContext.cleaningStatusKnown;
       return true;
     });
     return {
-      action,
+      action: canonicalAction,
       scenarioFamily,
       confidence,
       requiredContext: [...rule.requiredContext],

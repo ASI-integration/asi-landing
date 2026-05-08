@@ -4,6 +4,13 @@
  */
 
 import { decideEscalationMatrixV1 } from './escalation-matrix';
+import {
+  buildCanonicalRuCheckinTimeReply,
+  classifyCanonicalCheckinTime,
+  type CheckinTimeBucket,
+} from './telegram-communication-canon';
+
+export type { CheckinTimeBucket } from './telegram-communication-canon';
 
 export type TelegramOperationalCategory =
   | 'access_issue'
@@ -20,14 +27,6 @@ export type TelegramOperationalCategory =
   | 'payment_confirmation';
 
 export type TelegramOperationalFinalAction = 'reply' | 'clarify' | 'escalate_operator' | 'escalate_urgent';
-
-export type CheckinTimeBucket =
-  | 'very_early_checkin'
-  | 'early_checkin'
-  | 'conditional_early_checkin'
-  | 'normal_checkin'
-  | 'late_checkin'
-  | 'unknown';
 
 export type TelegramOperationalIntakeHit = {
   category: TelegramOperationalCategory;
@@ -329,61 +328,12 @@ export function classifyCheckinTimeBucket(time: string | null): {
   requiresCleaningAvailability: boolean;
   policy: string;
 } {
-  const parsed = parseTimeParts(time);
-  if (!parsed) {
-    return {
-      bucket: 'unknown',
-      isEarlyCheckinByTime: false,
-      requiresCleaningAvailability: false,
-      policy: 'no_explicit_checkin_time',
-    };
-  }
-  const { hour, minute } = parsed;
-  if (hour >= 6 && (hour < 8 || (hour === 8 && minute === 0))) {
-    return {
-      bucket: 'very_early_checkin',
-      isEarlyCheckinByTime: true,
-      requiresCleaningAvailability: false,
-      policy: '06:00-08:00_very_early_requires_previous_night_availability',
-    };
-  }
-  if ((hour === 8 && minute > 0) || (hour >= 9 && hour <= 10)) {
-    return {
-      bucket: 'early_checkin',
-      isEarlyCheckinByTime: true,
-      requiresCleaningAvailability: true,
-      policy: '06:00-10:59_early_checkin',
-    };
-  }
-  if (hour >= 11 && hour <= 13) {
-    return {
-      bucket: 'conditional_early_checkin',
-      isEarlyCheckinByTime: true,
-      requiresCleaningAvailability: true,
-      policy: '11:00-13:59_conditional_depends_on_cleaning_and_previous_checkout',
-    };
-  }
-  if (hour >= 14 && hour <= 16) {
-    return {
-      bucket: 'normal_checkin',
-      isEarlyCheckinByTime: false,
-      requiresCleaningAvailability: false,
-      policy: '14:00-16:00_normal_checkin_window',
-    };
-  }
-  if (hour >= 21 || hour <= 5) {
-    return {
-      bucket: 'late_checkin',
-      isEarlyCheckinByTime: false,
-      requiresCleaningAvailability: false,
-      policy: '21:00-05:59_late_checkin',
-    };
-  }
+  const policy = classifyCanonicalCheckinTime(time);
   return {
-    bucket: 'normal_checkin',
-    isEarlyCheckinByTime: false,
-    requiresCleaningAvailability: false,
-    policy: '17:00-20:59_standard_evening_checkin',
+    bucket: policy.bucket,
+    isEarlyCheckinByTime: policy.isEarlyCheckinByTime,
+    requiresCleaningAvailability: policy.requiresCleaningAvailability,
+    policy: policy.policy,
   };
 }
 
@@ -392,25 +342,7 @@ function buildRuCheckinTimePolicyReply(params: {
   time: string | null;
   hasProperty: boolean;
 }): string {
-  const time = params.time ?? 'Это время';
-  const missingObjectQuestion = params.hasProperty ? '' : ' Подскажите, для какого это объекта или брони?';
-
-  if (params.bucket === 'early_checkin') {
-    return `Понял. ${time} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${missingObjectQuestion}`;
-  }
-  if (params.bucket === 'very_early_checkin') {
-    return `Понял. ${time} — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи: нет гостя накануне и нет конфликта с предыдущим выездом. Проверю это отдельно.${missingObjectQuestion}`;
-  }
-  if (params.bucket === 'conditional_early_checkin') {
-    return `Понял. ${time} — раньше стандартного времени заезда. Тут всё зависит от уборки и предыдущего выезда, поэтому проверю готовность объекта отдельно.${missingObjectQuestion}`;
-  }
-  if (params.bucket === 'normal_checkin') {
-    return `Понял. ${time} обычно считается стандартным временем заезда, не ранним. Я всё равно уточню готовность объекта после уборки, но, скорее всего, заезд в это время будет возможен без проблем.${missingObjectQuestion}`;
-  }
-  if (params.bucket === 'late_checkin') {
-    return `Понял. ${time} — это поздний заезд. Проверю, что для объекта есть понятные инструкции по доступу и ключам, чтобы вы спокойно заселились вечером.${missingObjectQuestion}`;
-  }
-  return `Понял. Уточню возможность заезда и готовность объекта.${missingObjectQuestion}`;
+  return buildCanonicalRuCheckinTimeReply(params);
 }
 
 function extractDateLikeToken(n: string): 'today' | 'tomorrow' | null {

@@ -2,6 +2,13 @@ import type { ConversationContext, Lang, ReservationPropertyLinkingStateV1 } fro
 import type { TelegramOperationalCategory, TelegramOperationalFinalAction } from './telegram-operational-intake';
 import type { TelegramOperationalSessionCaseV1 } from './types';
 import type { TelegramOperationalPolicyResult } from './telegram-operational-policy-executor';
+import {
+  buildCanonicalRuCheckinTimeReply,
+  buildCanonicalRuScenarioLine,
+  classifyCanonicalCheckinTime,
+  type CheckinTimeBucket,
+  type TelegramOperationalScenarioFamily,
+} from './telegram-communication-canon';
 
 export type ReplyComposerAction = TelegramOperationalFinalAction;
 
@@ -185,32 +192,68 @@ function factString(input: ReplyComposerInput, key: string): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+function extractTimeHintFromText(text: string): string | null {
+  const m = String(text ?? '').match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function knownObjectOrBookingForCheckin(input: ReplyComposerInput): boolean {
+  return Boolean(
+    input.sessionCase?.property ||
+      factString(input, 'property') ||
+      factString(input, 'property_hint') ||
+      factString(input, 'matched_property_label') ||
+      factString(input, 'booking_reference') ||
+      factString(input, 'reservation_reference') ||
+      factString(input, 'matched_reservation_id'),
+  );
+}
+
+function checkinBucketFromPolicy(
+  policy: TelegramOperationalPolicyResult,
+  explicitTime: string | null,
+  existingBucket: string | null,
+): CheckinTimeBucket {
+  const byTime = classifyCanonicalCheckinTime(explicitTime);
+  if (byTime.bucket !== 'unknown') return byTime.bucket;
+  if (
+    existingBucket === 'very_early_checkin' ||
+    existingBucket === 'early_checkin' ||
+    existingBucket === 'conditional_early_checkin' ||
+    existingBucket === 'normal_checkin' ||
+    existingBucket === 'late_checkin'
+  ) {
+    return existingBucket;
+  }
+  if (policy.scenarioFamily === 'CHECK_IN_STANDARD') return 'normal_checkin';
+  if (policy.scenarioFamily === 'CHECK_IN_VERY_EARLY') return 'very_early_checkin';
+  return 'conditional_early_checkin';
+}
+
 function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: string; text: string } | null {
   const policy = input.policyResult;
   if (policy) {
-    const knownObject = Boolean(
-      input.sessionCase?.property ||
-        factString(input, 'property') ||
-        factString(input, 'property_hint') ||
-        factString(input, 'booking_reference') ||
-        factString(input, 'matched_reservation_id'),
-    );
-    if (policy.scenarioFamily === 'CHECK_IN_STANDARD') {
+    if (
+      policy.scenarioFamily === 'CHECK_IN_STANDARD' ||
+      policy.scenarioFamily === 'CHECK_IN_EARLY' ||
+      policy.scenarioFamily === 'CHECK_IN_VERY_EARLY'
+    ) {
+      const explicitTime = factString(input, 'requestedTime') ?? factString(input, 'time_hint') ?? extractTimeHintFromText(input.text);
+      const bucket = checkinBucketFromPolicy(policy, explicitTime, factString(input, 'checkin_time_bucket'));
       return {
-        template_key: 'policy.checkin_standard.v1',
-        text: `15:00 обычно стандартное время заезда.${knownObject ? '' : ' Уточните, пожалуйста, для какого объекта или брони?'}`,
-      };
-    }
-    if (policy.scenarioFamily === 'CHECK_IN_EARLY') {
-      return {
-        template_key: 'policy.checkin_early.v1',
-        text: `12:00 — это ранний заезд, который подтверждается отдельно при наличии возможности.${knownObject ? '' : ' Уточните, пожалуйста, объект или бронь.'}`,
-      };
-    }
-    if (policy.scenarioFamily === 'CHECK_IN_VERY_EARLY') {
-      return {
-        template_key: 'policy.checkin_very_early.v1',
-        text: `07:00 — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи и это отдельно подтверждено.${knownObject ? '' : ' Уточните, пожалуйста, объект или бронь.'}`,
+        template_key: `policy.${policy.scenarioFamily.toLowerCase()}.v1`,
+        text: buildCanonicalRuCheckinTimeReply({
+          bucket,
+          time: explicitTime ?? (policy.scenarioFamily === 'CHECK_IN_STANDARD' ? '15:00' : null),
+          hasProperty: knownObjectOrBookingForCheckin(input),
+          greet: Boolean(input.shouldGreet),
+        }),
       };
     }
     if (policy.scenarioFamily === 'BOOKING_CONTEXT') {
@@ -231,75 +274,71 @@ function buildRuCheckinTimeReply(input: ReplyComposerInput): { template_key: str
   const time = factString(input, 'requestedTime') ?? factString(input, 'time_hint');
   const displayTime = time ?? 'Это время';
   const missing = input.missingFacts ?? [];
-  const knownObjectOrBooking = Boolean(
-    input.sessionCase?.property ||
-      factString(input, 'property') ||
-      factString(input, 'property_hint') ||
-      factString(input, 'matched_property_label') ||
-      factString(input, 'booking_reference') ||
-      factString(input, 'reservation_reference') ||
-      factString(input, 'matched_reservation_id'),
-  );
+  const knownObjectOrBooking = knownObjectOrBookingForCheckin(input);
   const missingObject =
     !knownObjectOrBooking &&
     (missing.includes('property') ||
       missing.includes('booking') ||
       missing.includes('reservation') ||
       missing.includes('reservation_or_property'));
-  const objectQuestion = missingObject ? ' Подскажите, для какого это объекта или брони?' : '';
 
   if (input.category === 'checkin_time_question' && bucket === 'normal_checkin') {
     return {
       template_key: 'checkin_time_question.reply.normal_window.v1',
-      text: maybeGreetRu(
-        input,
-        'ru',
-        `Понял. ${displayTime} обычно считается стандартным временем заезда, не ранним. Я всё равно уточню готовность объекта после уборки, но, скорее всего, заезд в это время будет возможен без проблем.${objectQuestion}`,
-      ),
+      text: buildCanonicalRuCheckinTimeReply({
+        bucket,
+        time: displayTime,
+        hasProperty: !missingObject,
+        greet: Boolean(input.shouldGreet),
+      }),
     };
   }
 
   if (input.category === 'early_checkin' && bucket === 'early_checkin') {
     return {
       template_key: 'early_checkin.reply.time_policy_early.v1',
-      text: maybeGreetRu(
-        input,
-        'ru',
-        `Понял. ${displayTime} — это ранний заезд, его нужно отдельно подтвердить. Проверю готовность объекта после уборки и отсутствие конфликта с предыдущим выездом.${objectQuestion}`,
-      ),
+      text: buildCanonicalRuCheckinTimeReply({
+        bucket,
+        time: displayTime,
+        hasProperty: !missingObject,
+        greet: Boolean(input.shouldGreet),
+      }),
     };
   }
 
   if (input.category === 'early_checkin' && bucket === 'very_early_checkin') {
     return {
       template_key: 'early_checkin.reply.time_policy_very_early.v1',
-      text: maybeGreetRu(
-        input,
-        'ru',
-        `Понял. ${displayTime} — это очень ранний заезд. Такое время возможно только если объект свободен с предыдущей ночи: нет гостя накануне и нет конфликта с предыдущим выездом. Проверю это отдельно.${objectQuestion}`,
-      ),
+      text: buildCanonicalRuCheckinTimeReply({
+        bucket,
+        time: displayTime,
+        hasProperty: !missingObject,
+        greet: Boolean(input.shouldGreet),
+      }),
     };
   }
 
   if (input.category === 'early_checkin' && bucket === 'conditional_early_checkin') {
     return {
       template_key: 'early_checkin.reply.time_policy_conditional.v1',
-      text: maybeGreetRu(
-        input,
-        'ru',
-        `Понял. ${displayTime} — раньше стандартного времени заезда. Тут всё зависит от уборки и предыдущего выезда, поэтому проверю готовность объекта отдельно.${objectQuestion}`,
-      ),
+      text: buildCanonicalRuCheckinTimeReply({
+        bucket,
+        time: displayTime,
+        hasProperty: !missingObject,
+        greet: Boolean(input.shouldGreet),
+      }),
     };
   }
 
   if (input.category === 'checkin_time_question' && bucket === 'late_checkin') {
     return {
       template_key: 'checkin_time_question.reply.late_checkin.v1',
-      text: maybeGreetRu(
-        input,
-        'ru',
-        `Понял. ${displayTime} — это поздний заезд. Проверю, что для объекта есть понятные инструкции по доступу и ключам, чтобы вы спокойно заселились вечером.${objectQuestion}`,
-      ),
+      text: buildCanonicalRuCheckinTimeReply({
+        bucket,
+        time: displayTime,
+        hasProperty: !missingObject,
+        greet: Boolean(input.shouldGreet),
+      }),
     };
   }
 
@@ -734,32 +773,7 @@ export function composeTelegramOperationalReply(input: ReplyComposerInput): Repl
 }
 
 function scenarioLineRu(s: TelegramOperationalPolicyResult): string {
-  switch (s.scenarioFamily) {
-    case 'CHECK_IN_STANDARD':
-      return 'Заезд в 15:00 обычно стандартный и чаще всего возможен без отдельного согласования.';
-    case 'CHECK_IN_EARLY':
-      return 'Заезд раньше стандартного времени возможен при подтверждении готовности объекта.';
-    case 'CHECK_IN_VERY_EARLY':
-      return 'Заезд в очень раннее время возможен только если объект свободен с предыдущей ночи.';
-    case 'LATE_CHECKOUT':
-      return 'Поздний выезд возможен только после проверки доступности по конкретной брони/объекту.';
-    case 'ADDRESS_FIND_OBJECT':
-      return 'По адресу и входу могу дать только проверенные инструкции по конкретному объекту.';
-    case 'WIFI':
-      return 'По Wi-Fi подскажу сеть/пароль и шаги проверки для вашего объекта.';
-    case 'PARKING':
-      return 'По парковке уточню правила и варианты рядом с вашим адресом.';
-    case 'PETS':
-      return 'Размещение с питомцами зависит от правил конкретного объекта и требует проверки.';
-    case 'DOCUMENTS_PASSPORT':
-      return 'По документам подскажу, какие данные нужны по вашему сценарию заселения.';
-    case 'COMPLAINTS_PROBLEMS':
-      return 'Проблему зафиксировал; по объекту можно дать конкретные шаги после уточнения деталей.';
-    case 'BOOKING_CONTEXT':
-      return 'Контекст по брони/объекту зафиксирован.';
-    default:
-      return 'Запрос принят, детали сверяю по контексту брони и объекта.';
-  }
+  return buildCanonicalRuScenarioLine(s.scenarioFamily as TelegramOperationalScenarioFamily);
 }
 
 export function composeTelegramOperationalMultiIntentReply(input: MultiIntentComposerInput): ReplyComposerOutput {

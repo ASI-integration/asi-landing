@@ -56,8 +56,8 @@ describe('telegram operational intelligence (live-style messages)', () => {
     expect(out.category).toBe('checkin_time_question');
     expect(out.category).not.toBe('early_checkin');
     expect(out.reply).toContain('Здравствуйте!');
-    expect(out.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
-    expect(out.reply).toMatch(/готовность объекта после уборки/i);
+    expect(out.reply).toMatch(/15:00 обычно считается стандартным временем заезда/i);
+    expect(out.reply).not.toMatch(/готовность объекта после уборки/i);
     expect(out.reply).toMatch(/для какого это объекта или брони/i);
     expect(out.reply).not.toMatch(/Передаю это команде сейчас/i);
     expect(out.reply).not.toContain('(а)');
@@ -67,7 +67,7 @@ describe('telegram operational intelligence (live-style messages)', () => {
     const out = replyFor('Здравствуйте, я гость. Хочу заехать завтра в 15:00, можно?', 205, 'ru', true);
     expect(out.category).toBe('checkin_time_question');
     expect(out.reply).toContain('Здравствуйте!');
-    expect(out.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(out.reply).toMatch(/15:00 обычно считается стандартным временем заезда/i);
     expect(out.reply).toMatch(/для какого это объекта или брони/i);
     expect(out.reply).not.toMatch(/Пришлите запрос гостя|Передаю это команде сейчас/i);
     expect(out.reply).not.toContain('(а)');
@@ -82,8 +82,8 @@ describe('telegram operational intelligence (live-style messages)', () => {
   it('RU 07:00 explains early check-in needs confirmation', () => {
     const out = replyFor('Можно заехать в 7 утра?', 203, 'ru', true);
     expect(out.category).toBe('early_checkin');
-    expect(out.reply).toMatch(/ранний заезд/i);
-    expect(out.reply).toMatch(/нужно отдельно подтвердить/i);
+    expect(out.reply).toMatch(/очень ранний заезд/i);
+    expect(out.reply).toMatch(/свободен с предыдущей ночи|отдельно подтверждено/i);
     expect(out.reply).not.toContain('(а)');
   });
 

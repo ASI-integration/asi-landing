@@ -269,18 +269,18 @@ describe('processUpdate', () => {
     let sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
     expect(mockReplyToTelegram).not.toHaveBeenCalled();
     expect(sentText).toContain('Здравствуйте!');
-    expect(sentText).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(sentText).toMatch(/15:00 обычно считается стандартным временем заезда/i);
     expect(sentText).toMatch(/для какого это объекта или брони/i);
 
     await processUpdate(makeUpdate('А если в 7 утра?', 'ru'));
     sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
-    expect(sentText).toMatch(/07:00 — это ранний заезд/i);
+    expect(sentText).toMatch(/07:00 — это очень ранний заезд/i);
     expect(sentText).toMatch(/для какого это объекта или брони/i);
     expect(sentText).not.toMatch(/Запрос уже передан|переда[юн].*оператор/i);
 
     await processUpdate(makeUpdate('Это та же бронь, объект на Тверской.', 'ru'));
     sentText = String(mockSendMessage.mock.calls.at(-1)?.[1] ?? '');
-    expect(sentText).toMatch(/07:00 — это ранний заезд/i);
+    expect(sentText).toMatch(/07:00 — это очень ранний заезд/i);
     expect(sentText).not.toMatch(/для какого это объекта или брони/i);
     expect(sentText).not.toMatch(/Запрос уже передан|переда[юн].*оператор/i);
     expect(mockLLM).not.toHaveBeenCalled();

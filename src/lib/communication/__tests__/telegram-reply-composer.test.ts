@@ -198,7 +198,7 @@ describe('composeTelegramOperationalReply', () => {
       urgency: 'normal',
       policyResult: policy,
     });
-    expect(out.text).toMatch(/15:00 обычно стандартное время заезда/i);
+    expect(out.text).toMatch(/15:00 обычно.*стандартн/i);
     expect(out.text).toMatch(/объекта или брони/i);
     expect(out.text).not.toMatch(/Понял\(а\)/);
   });

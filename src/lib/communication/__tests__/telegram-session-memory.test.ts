@@ -209,7 +209,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r15.handled).toBe(true);
     if (!r15.handled) throw new Error('expected handled');
     expect(r15.hit.category).toBe('checkin_time_question');
-    expect(r15.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(r15.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда/i);
 
     const r12 = await processTelegramOperationalIntakeWithSessionMemory({
       chatId: 5102,
@@ -222,7 +222,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     expect(r12.handled).toBe(true);
     if (!r12.handled) throw new Error('expected handled');
     expect(r12.hit.category).toBe('early_checkin');
-    expect(r12.hit.reply).toMatch(/раньше стандартного времени заезда/i);
+    expect(r12.hit.reply).toMatch(/условным подтверждением|ранний заезд/i);
     expect(r12.hit.reply).toMatch(/уборк/i);
     expect(r12.hit.reply).toMatch(/предыдущего выезда/i);
 
@@ -296,7 +296,7 @@ describe('telegram session memory v1 (operational cases)', () => {
     if (!r1.handled) throw new Error('expected handled');
     expect(r1.hit.category).toBe('checkin_time_question');
     expect(r1.hit.finalAction).toBe('clarify');
-    expect(r1.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда, не ранним/i);
+    expect(r1.hit.reply).toMatch(/15:00 обычно считается стандартным временем заезда/i);
     expect(r1.hit.reply).toMatch(/для какого это объекта или брони/i);
 
     const r2 = await processTelegramOperationalIntakeWithSessionMemory({

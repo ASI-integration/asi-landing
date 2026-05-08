@@ -145,7 +145,7 @@ describe('tryTelegramOperationalIntake', () => {
     expect(hit?.category).toBe('checkin_time_question');
     expect(hit?.extractedFacts.checkin_time_bucket).toBe('normal_checkin');
     expect(hit?.reply).toMatch(/стандартным временем|стандартное время/i);
-    expect(hit?.reply).toMatch(/готовность объекта после уборки/i);
+    expect(hit?.reply).not.toMatch(/ранний заезд|ранним/i);
   });
 
   it('RU check-in at 7 утра maps to very early check-in', () => {

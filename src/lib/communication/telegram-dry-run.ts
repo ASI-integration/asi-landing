@@ -85,13 +85,14 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   const result: ProcessResult = await withTemporaryDryRun(() => processMessage(envelope));
   const replyText = result.reply ?? '';
   const escalatedByPolicy = actions.includes('escalate_operator') || actions.includes('escalate_urgent');
+  const hasFinalPolicyAction = actions.some((action) => action === 'reply' || action === 'clarify' || action.startsWith('escalate'));
 
   return {
     detectedIntents,
     replyText,
     actions,
     escalated: Boolean(result.escalation) || escalatedByPolicy,
-    slowAckSent: false,
-    finalReplied: result.outcome === 'replied' && replyText.length > 0,
+    slowAckSent: actions.includes('slow_ack') && !hasFinalPolicyAction,
+    finalReplied: result.outcome === 'replied' && replyText.length > 0 && hasFinalPolicyAction,
   };
 }

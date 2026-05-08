@@ -226,7 +226,7 @@ describe('Telegram multi-intent operational acceptance runner', () => {
   it('preserves known object/booking context across turns for the same message', async () => {
     const reply = await runFixture(TELEGRAM_MULTI_INTENT_ACCEPTANCE_FIXTURES[1], { updateId: 5103, chatId: 9010 });
     expect(reply).not.toMatch(/уточните.*объект|номер брони/i);
-    expect(reply).toMatch(/15:00|раньше стандартного/i);
+    expect(reply).toMatch(/15:00|ранний заезд/i);
   });
 
   it('shows operator/escalation wording for complaint + urgent access case only', async () => {
