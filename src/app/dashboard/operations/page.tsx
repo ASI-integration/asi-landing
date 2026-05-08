@@ -1,166 +1,181 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createDemoOperationsState, operationsStageLabels, operationsStageOrder } from '@/lib/operations/demo-data';
 import {
-  demoOperationsBookings,
-  operationsStageLabels,
-  operationsStageOrder,
-} from '@/lib/operations/demo-data';
+  activeChecklistStage as getActiveChecklistStage,
+  applyOperationsAction,
+  getChecklistForStage,
+  loadOperationsState,
+  nextWorkflowStage,
+  saveOperationsState,
+} from '@/lib/operations/service';
 import type {
+  OperationsAuditEvent,
   OperationsAutomationMode,
-  OperationsBookingIntake,
-  OperationsCheckoutStatus,
-  OperationsCheckInStatus,
+  OperationsChecklistStage,
+  OperationsChecklistStatus,
+  OperationsIssue,
   OperationsIssueStatus,
+  OperationsIssueType,
+  OperationsIssueUrgency,
+  OperationsItem,
+  OperationsSourceChannel,
+  OperationsState,
   OperationsWorkflowStage,
 } from '@/lib/operations/types';
 
-type ActionKind =
-  | 'checkin_ready'
-  | 'guest_checked_in'
-  | 'checked_out'
-  | 'create_issue'
-  | 'escalate_operator'
-  | 'close_issue';
-
 const automationLabels: Record<OperationsAutomationMode, string> = {
-  manual: 'Manual',
-  semi_automated: 'Semi-automated',
-  fully_automated: 'Fully automated',
+  manual: 'Ручной',
+  semi_auto: 'Полуавто',
+  full_auto: 'Авто',
 };
 
-function formatDate(value: string): string {
+const issueTypeLabels: Record<OperationsIssueType, string> = {
+  booking_context: 'Контекст бронирования',
+  guest_support: 'Поддержка гостя',
+  property_context: 'Контекст объекта',
+  payment_review: 'Проверка оплаты',
+  maintenance_review: 'Операционная проверка',
+  communication: 'Коммуникация',
+  other: 'Другое',
+};
+
+const issueStatusLabels: Record<OperationsIssueStatus, string> = {
+  open: 'Открыт',
+  in_progress: 'В работе',
+  resolved: 'Закрыт',
+};
+
+const issueUrgencyLabels: Record<OperationsIssueUrgency, string> = {
+  normal: 'Обычная',
+  urgent: 'Срочная',
+};
+
+const checklistStageLabels: Record<OperationsChecklistStage, string> = {
+  pre_checkin: 'До заезда',
+  checkin: 'Заезд',
+  in_stay: 'Проживание',
+  checkout: 'Выезд',
+  review_followup: 'Follow-up',
+};
+
+const checklistStageOrder: OperationsChecklistStage[] = ['pre_checkin', 'checkin', 'in_stay', 'checkout', 'review_followup'];
+
+function todayKey(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDate(value?: string): string {
+  if (!value) return 'не задано';
   const d = new Date(`${value}T00:00:00`);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 }
 
 function formatDateTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString('en-GB', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function sourceLabel(source: OperationsBookingIntake['source']): string {
+function sourceLabel(source: OperationsSourceChannel): string {
   if (source === 'telegram') return 'Telegram';
+  if (source === 'telegram_voice') return 'Telegram Voice';
+  if (source === 'whatsapp_voice') return 'WhatsApp Voice';
   if (source === 'email') return 'Email';
-  if (source === 'phone') return 'Phone';
-  if (source === 'direct') return 'Direct';
-  if (source === 'demo') return 'Demo';
+  if (source === 'phone') return 'Телефон';
+  if (source === 'vk') return 'VK';
+  if (source === 'max') return 'MAX';
+  if (source === 'direct') return 'Прямой контакт';
+  if (source === 'manual') return 'Ручной ввод';
+  if (source === 'demo') return 'Демо';
   return source;
 }
 
 function stageTone(stage: OperationsWorkflowStage): string {
   if (stage === 'needs_operator') return 'border-rose-200 bg-rose-50 text-rose-700';
-  if (stage === 'checkin_today') return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  if (stage === 'checkin') return 'border-indigo-200 bg-indigo-50 text-indigo-700';
   if (stage === 'in_stay') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   if (stage === 'checkout') return 'border-amber-200 bg-amber-50 text-amber-700';
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
 function automationTone(mode: OperationsAutomationMode): string {
-  if (mode === 'fully_automated') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (mode === 'semi_automated') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (mode === 'full_auto') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (mode === 'semi_auto') return 'border-blue-200 bg-blue-50 text-blue-700';
   return 'border-slate-200 bg-slate-50 text-slate-600';
 }
 
-function issueTone(status: OperationsIssueStatus): string {
-  if (status === 'urgent' || status === 'escalated') return 'text-rose-700';
-  if (status === 'open') return 'text-amber-700';
-  if (status === 'closed') return 'text-emerald-700';
-  return 'text-slate-500';
+function issueStatusTone(status: OperationsIssueStatus | 'none'): string {
+  if (status === 'open') return 'border-amber-200 bg-amber-50 text-amber-800';
+  if (status === 'in_progress') return 'border-blue-200 bg-blue-50 text-blue-800';
+  if (status === 'resolved') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  return 'border-slate-200 bg-slate-50 text-slate-500';
 }
 
-function checklistClass(status: OperationsBookingIntake['checklist'][number]['status']): string {
+function checklistClass(status: OperationsChecklistStatus): string {
   if (status === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (status === 'blocked') return 'border-rose-200 bg-rose-50 text-rose-800';
   if (status === 'not_applicable') return 'border-slate-200 bg-slate-50 text-slate-500';
   return 'border-amber-200 bg-amber-50 text-amber-800';
 }
 
-function applyDemoAction(item: OperationsBookingIntake, action: ActionKind): OperationsBookingIntake {
-  const now = new Date().toISOString();
-  let stage = item.stage;
-  let status = item.status;
-  let checkInStatus: OperationsCheckInStatus = item.checkInStatus;
-  let checkoutStatus: OperationsCheckoutStatus = item.checkoutStatus;
-  let issueStatus: OperationsIssueStatus = item.issueStatus;
-  let timelineLabel = '';
+function itemDateMarker(item: OperationsItem, today: string): { label: string; tone: 'warn' | 'urgent' | 'normal' } | null {
+  const checkIn = item.bookingDates.checkIn;
+  const checkOut = item.bookingDates.checkOut;
+  const beforeStay = item.stage === 'new_inquiry' || item.stage === 'booking_intake' || item.stage === 'pre_checkin' || item.stage === 'checkin';
+  const beforeCheckout = item.stage !== 'review_followup' && item.stage !== 'needs_operator';
 
-  if (action === 'checkin_ready') {
-    stage = 'pre_checkin';
-    status = 'pre_checkin';
-    checkInStatus = 'ready';
-    timelineLabel = 'Marked check-in ready';
-  }
-  if (action === 'guest_checked_in') {
-    stage = 'in_stay';
-    status = 'in_stay';
-    checkInStatus = 'guest_checked_in';
-    checkoutStatus = item.checkoutStatus === 'not_started' ? 'scheduled' : item.checkoutStatus;
-    timelineLabel = 'Marked guest checked in';
-  }
-  if (action === 'checked_out') {
-    stage = 'review_followup';
-    status = 'followup';
-    checkoutStatus = 'guest_checked_out';
-    timelineLabel = 'Marked guest checked out';
-  }
-  if (action === 'create_issue') {
-    issueStatus = 'open';
-    timelineLabel = 'Issue created';
-  }
-  if (action === 'escalate_operator') {
-    stage = 'needs_operator';
-    status = 'needs_operator';
-    issueStatus = 'escalated';
-    checkInStatus = item.checkInStatus === 'ready' ? item.checkInStatus : 'operator_review';
-    timelineLabel = 'Escalated to operator';
-  }
-  if (action === 'close_issue') {
-    issueStatus = 'closed';
-    timelineLabel = 'Issue closed';
-  }
+  if (checkIn === today && beforeStay) return { label: 'заезд сегодня', tone: 'normal' };
+  if (checkOut === today && beforeCheckout) return { label: 'выезд сегодня', tone: 'warn' };
+  if (checkIn && checkIn < today && beforeStay) return { label: 'заезд просрочен', tone: 'urgent' };
+  if (checkOut && checkOut < today && beforeCheckout) return { label: 'выезд просрочен', tone: 'urgent' };
+  return null;
+}
 
-  return {
-    ...item,
-    stage,
-    status,
-    checkInStatus,
-    checkoutStatus,
-    issueStatus,
-    notes: Array.from(new Set([...item.notes, 'Demo-only action applied locally. No backend record was changed.'])),
-    updatedAt: now,
-    timeline: [
-      ...item.timeline,
-      {
-        id: `${item.id}-${action}-${now}`,
-        label: timelineLabel,
-        detail: 'Phase 1 dashboard demo action. Connect backend workflow later.',
-        createdAt: now,
-        tone: action === 'escalate_operator' ? 'warn' : action === 'close_issue' ? 'success' : 'normal',
-      },
-    ],
-  };
+function activeIssuesForItem(issues: OperationsIssue[], itemId: string): OperationsIssue[] {
+  return issues.filter((issue) => issue.operationItemId === itemId && issue.status !== 'resolved');
+}
+
+function overviewAutomationDistribution(items: OperationsItem[]): string {
+  const manual = items.filter((item) => item.automationMode === 'manual').length;
+  const semi = items.filter((item) => item.automationMode === 'semi_auto').length;
+  const full = items.filter((item) => item.automationMode === 'full_auto').length;
+  return `${manual}/${semi}/${full}`;
 }
 
 function ActionButton({
   children,
   onClick,
   disabled,
+  tone = 'secondary',
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  tone?: 'primary' | 'secondary' | 'danger' | 'success';
 }) {
+  const toneClass =
+    tone === 'primary'
+      ? 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
+      : tone === 'danger'
+        ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+        : tone === 'success'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50';
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-      title={disabled ? 'Not applicable for this demo item' : 'Demo-only action'}
+      className={`inline-flex min-h-10 items-center justify-center rounded-md border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${toneClass}`}
     >
       {children}
     </button>
@@ -179,78 +194,195 @@ function OverviewCard({ label, value, hint }: { label: string; value: number | s
 
 function BookingCard({
   item,
+  issues,
   selected,
+  today,
   onSelect,
+  onMoveNext,
 }: {
-  item: OperationsBookingIntake;
+  item: OperationsItem;
+  issues: OperationsIssue[];
   selected: boolean;
+  today: string;
   onSelect: () => void;
+  onMoveNext: () => void;
 }) {
+  const marker = itemDateMarker(item, today);
+  const activeIssues = activeIssuesForItem(issues, item.id);
+  const urgent = activeIssues.some((issue) => issue.urgency === 'urgent') || item.escalationStatus === 'pending_operator';
+  const nextStage = nextWorkflowStage(item.stage);
+
   return (
     <article
       className={`rounded-lg border bg-white p-3 shadow-sm transition ${
         selected ? 'border-slate-900 ring-2 ring-slate-200' : 'border-slate-200'
-      }`}
+      } ${urgent ? 'border-l-4 border-l-rose-500' : ''}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">{item.guest.guestName}</h3>
+          <h3 className="text-sm font-semibold text-slate-900">{item.guest.name}</h3>
           <p className="mt-0.5 text-xs text-slate-500">{item.objectLabel}</p>
         </div>
         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${automationTone(item.automationMode)}`}>
           {automationLabels[item.automationMode]}
         </span>
       </div>
+
       <div className="mt-3 space-y-1 text-xs text-slate-600">
-        <p>{formatDate(item.dates.checkIn)} - {formatDate(item.dates.checkOut)} · {item.dates.nights} nights</p>
-        <p>Source: {sourceLabel(item.source)}</p>
-        <p className={issueTone(item.issueStatus)}>Issue: {item.issueStatus.replace(/_/g, ' ')}</p>
+        <p>
+          {formatDate(item.bookingDates.checkIn)} - {formatDate(item.bookingDates.checkOut)}
+          {item.bookingDates.nights ? ` · ${item.bookingDates.nights} ноч.` : null}
+        </p>
+        <p>Источник: {sourceLabel(item.sourceChannel)}</p>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2">
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {marker ? (
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+              marker.tone === 'urgent'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : marker.tone === 'warn'
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+            }`}
+          >
+            {marker.label}
+          </span>
+        ) : null}
+        {activeIssues.length > 0 ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            {activeIssues.length} вопрос
+          </span>
+        ) : null}
+        {urgent ? (
+          <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+            срочно
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onSelect}
           className="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
         >
-          Open details
+          Детали
         </button>
-        {item.communicationReviewId ? (
-          <Link href="/dashboard/communication" className="text-xs font-medium text-indigo-700 hover:underline">
-            Communication
-          </Link>
-        ) : (
-          <span className="text-xs text-slate-400">No comm link</span>
-        )}
+        <button
+          type="button"
+          onClick={onMoveNext}
+          disabled={!nextStage}
+          className="rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+        >
+          След. стадия
+        </button>
       </div>
     </article>
   );
 }
 
-export default function OperationsPage() {
-  const [items, setItems] = useState<OperationsBookingIntake[]>(demoOperationsBookings);
-  const [selectedId, setSelectedId] = useState(demoOperationsBookings[3]?.id ?? demoOperationsBookings[0].id);
-  const [message, setMessage] = useState<string | null>(null);
+function buildTimeline(item: OperationsItem, issues: OperationsIssue[]): OperationsAuditEvent[] {
+  const issueEvents = issues
+    .filter((issue) => issue.operationItemId === item.id)
+    .flatMap((issue) =>
+      issue.auditEvents.map((event) => ({
+        ...event,
+        id: `${issue.id}-${event.id}`,
+        detail: event.detail ? `${issue.title}: ${event.detail}` : issue.title,
+      })),
+    );
 
-  const selected = items.find((item) => item.id === selectedId) ?? items[0];
+  return [...item.auditEvents, ...issueEvents].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+export default function OperationsPage() {
+  const [state, setState] = useState<OperationsState>(() => createDemoOperationsState());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [issueTitle, setIssueTitle] = useState('Операционный вопрос');
+  const [issueType, setIssueType] = useState<OperationsIssueType>('guest_support');
+  const [issueUrgency, setIssueUrgency] = useState<OperationsIssueUrgency>('normal');
+  const [issueNote, setIssueNote] = useState('');
+  const [checklistStage, setChecklistStage] = useState<OperationsChecklistStage>('pre_checkin');
+
+  useEffect(() => {
+    const loaded = loadOperationsState();
+    setState(loaded);
+    setSelectedId(loaded.items[3]?.id ?? loaded.items[0]?.id ?? null);
+  }, []);
+
+  const selected = state.items.find((item) => item.id === selectedId) ?? state.items[0] ?? null;
+  const today = useMemo(() => todayKey(), []);
+
+  useEffect(() => {
+    if (!selected) return;
+    setChecklistStage(getActiveChecklistStage(selected.stage));
+  }, [selected]);
 
   const metrics = useMemo(() => {
-    const today = '2026-05-08';
-    return {
-      activeBookings: items.filter((item) => !['lead', 'closed'].includes(item.status)).length,
-      upcomingCheckins: items.filter((item) => item.dates.checkIn > today && item.status !== 'closed').length,
-      currentStays: items.filter((item) => item.stage === 'in_stay').length,
-      checkoutsToday: items.filter((item) => item.dates.checkOut === today).length,
-      openIssues: items.filter((item) => item.issueStatus === 'open' || item.issueStatus === 'urgent').length,
-      operatorEscalations: items.filter((item) => item.stage === 'needs_operator' || item.issueStatus === 'escalated').length,
-      automationStatus: `${items.filter((item) => item.automationMode !== 'manual').length}/${items.length}`,
-    };
-  }, [items]);
+    const openIssues = state.issues.filter((issue) => issue.status !== 'resolved');
+    const urgentEscalations = state.items.filter((item) => item.escalationStatus === 'pending_operator' || item.escalationStatus === 'in_review')
+      .length;
+    const urgentIssues = openIssues.filter((issue) => issue.urgency === 'urgent').length;
 
-  function runAction(action: ActionKind) {
-    setItems((prev) =>
-      prev.map((item) => (item.id === selected.id ? applyDemoAction(item, action) : item)),
+    return {
+      activeOperations: state.items.filter((item) => item.stage !== 'review_followup' || item.issueStatus !== 'resolved').length,
+      checkinsToday: state.items.filter((item) => item.bookingDates.checkIn === today).length,
+      checkoutsToday: state.items.filter((item) => item.bookingDates.checkOut === today).length,
+      openIssues: openIssues.length,
+      urgentEscalations: urgentEscalations + urgentIssues,
+      automationDistribution: overviewAutomationDistribution(state.items),
+    };
+  }, [state, today]);
+
+  const selectedIssues = selected ? state.issues.filter((issue) => issue.operationItemId === selected.id) : [];
+  const selectedActiveIssues = selected ? activeIssuesForItem(state.issues, selected.id) : [];
+  const selectedTimeline = selected ? buildTimeline(selected, state.issues) : [];
+  const selectedChecklist = selected ? getChecklistForStage(selected, checklistStage) : [];
+  const nextStage = selected ? nextWorkflowStage(selected.stage) : null;
+
+  function commit(action: Parameters<typeof applyOperationsAction>[1], successMessage: string): void {
+    setState((prev) => {
+      const next = applyOperationsAction(prev, action);
+      saveOperationsState(next);
+      return next;
+    });
+    setMessage(successMessage);
+  }
+
+  function createIssue(): void {
+    if (!selected) return;
+    commit(
+      {
+        type: 'create_issue',
+        itemId: selected.id,
+        title: issueTitle,
+        issueType,
+        urgency: issueUrgency,
+        note: issueNote,
+      },
+      'Вопрос создан и добавлен в журнал операции.',
     );
-    setMessage('Demo action applied locally. Backend workflow actions are intentionally not connected in Phase 1.');
+    setIssueTitle('Операционный вопрос');
+    setIssueUrgency('normal');
+    setIssueNote('');
+  }
+
+  function addNote(): void {
+    if (!selected || !noteDraft.trim()) return;
+    commit({ type: 'add_note', itemId: selected.id, body: noteDraft }, 'Заметка добавлена.');
+    setNoteDraft('');
+  }
+
+  if (!selected) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+        Операционные элементы не найдены.
+      </div>
+    );
   }
 
   return (
@@ -258,35 +390,37 @@ export default function OperationsPage() {
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Operations</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Операции</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Phase 1 workflow layer for short-term rental operations. Demo data only; no PMS, OTA, or separate AI brain is connected.
+              Ручной и полуавтоматический слой жизненного цикла гостя: запрос, прием бронирования, заезд, проживание,
+              выезд, follow-up и эскалации.
             </p>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-            Mock operational workspace
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+            Хранилище: {state.storageMode === 'local_storage' ? 'локальный сервис' : 'seed fallback'}
           </div>
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
-        <OverviewCard label="Active bookings" value={metrics.activeBookings} hint="Non-closed demo items" />
-        <OverviewCard label="Upcoming check-ins" value={metrics.upcomingCheckins} hint="Future arrivals" />
-        <OverviewCard label="Current stays" value={metrics.currentStays} hint="In-stay column" />
-        <OverviewCard label="Checkouts today" value={metrics.checkoutsToday} hint="Demo date: May 8" />
-        <OverviewCard label="Open issues" value={metrics.openIssues} hint="Operator-visible items" />
-        <OverviewCard label="Operator escalations" value={metrics.operatorEscalations} hint="Needs operator" />
-        <OverviewCard label="Automation status" value={metrics.automationStatus} hint="Semi/full demo modes" />
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <OverviewCard label="Активные операции" value={metrics.activeOperations} hint="В работе или с открытым контекстом" />
+        <OverviewCard label="Заезды сегодня" value={metrics.checkinsToday} hint={`Дата: ${formatDate(today)}`} />
+        <OverviewCard label="Выезды сегодня" value={metrics.checkoutsToday} hint="По датам бронирования" />
+        <OverviewCard label="Открытые вопросы" value={metrics.openIssues} hint="Open / in progress" />
+        <OverviewCard label="Срочные эскалации" value={metrics.urgentEscalations} hint="Оператор или срочный вопрос" />
+        <OverviewCard label="Режимы" value={metrics.automationDistribution} hint="Ручной / полуавто / авто" />
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Automation Tiers</h2>
-            <p className="mt-1 text-sm text-slate-500">UI-only indicators for tariff/product mode behavior.</p>
+            <h2 className="text-lg font-semibold text-slate-900">Режим автоматизации</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Режим хранится на уровне операции. Интеграции PMS, OTA и channel manager здесь не подключаются.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(['manual', 'semi_automated', 'fully_automated'] as OperationsAutomationMode[]).map((mode) => (
+            {(['manual', 'semi_auto', 'full_auto'] as OperationsAutomationMode[]).map((mode) => (
               <span key={mode} className={`rounded-full border px-3 py-1.5 text-sm font-medium ${automationTone(mode)}`}>
                 {automationLabels[mode]}
               </span>
@@ -296,21 +430,21 @@ export default function OperationsPage() {
       </section>
 
       {message ? (
-        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{message}</div>
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]">
         <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
           <div className="mb-3 flex items-center justify-between gap-3 px-1">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Workflow Board</h2>
-              <p className="text-sm text-slate-500">Lead to follow-up, with operator handoff when needed.</p>
+              <h2 className="text-lg font-semibold text-slate-900">Workflow board</h2>
+              <p className="text-sm text-slate-500">Стадии от лида до follow-up с отдельной колонкой эскалаций.</p>
             </div>
           </div>
           <div className="overflow-x-auto pb-2">
             <div className="grid min-w-[1280px] grid-cols-8 gap-3">
               {operationsStageOrder.map((stage) => {
-                const columnItems = items.filter((item) => item.stage === stage);
+                const columnItems = state.items.filter((item) => item.stage === stage);
                 return (
                   <section key={stage} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
                     <div className={`mb-2 rounded-md border px-2 py-2 text-xs font-semibold ${stageTone(stage)}`}>
@@ -323,13 +457,18 @@ export default function OperationsPage() {
                           <BookingCard
                             key={item.id}
                             item={item}
+                            issues={state.issues}
                             selected={selected.id === item.id}
+                            today={today}
                             onSelect={() => setSelectedId(item.id)}
+                            onMoveNext={() =>
+                              commit({ type: 'move_next_stage', itemId: item.id }, 'Операция переведена на следующую стадию.')
+                            }
                           />
                         ))
                       ) : (
                         <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-400">
-                          No demo items
+                          Нет операций
                         </div>
                       )}
                     </div>
@@ -343,8 +482,8 @@ export default function OperationsPage() {
         <aside className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Selected item</p>
-              <h2 className="mt-1 text-xl font-semibold text-slate-900">{selected.guest.guestName}</h2>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Выбрана операция</p>
+              <h2 className="mt-1 text-xl font-semibold text-slate-900">{selected.guest.name}</h2>
               <p className="mt-1 text-sm text-slate-500">{selected.id}</p>
             </div>
             <span className={`rounded-full border px-3 py-1 text-xs font-medium ${stageTone(selected.stage)}`}>
@@ -354,110 +493,278 @@ export default function OperationsPage() {
 
           <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
             <div>
-              <span className="text-slate-500">Object:</span> {selected.objectLabel}
+              <span className="text-slate-500">Объект:</span> {selected.objectLabel}
             </div>
             <div>
-              <span className="text-slate-500">Source:</span> {sourceLabel(selected.source)}
+              <span className="text-slate-500">Источник:</span> {sourceLabel(selected.sourceChannel)}
             </div>
             <div>
-              <span className="text-slate-500">Dates:</span> {formatDate(selected.dates.checkIn)} - {formatDate(selected.dates.checkOut)}
+              <span className="text-slate-500">Даты:</span> {formatDate(selected.bookingDates.checkIn)} -{' '}
+              {formatDate(selected.bookingDates.checkOut)}
             </div>
             <div>
-              <span className="text-slate-500">Payment:</span> {selected.paymentStatus.replace(/_/g, ' ')}
+              <span className="text-slate-500">Режим:</span> {automationLabels[selected.automationMode]}
             </div>
             <div>
-              <span className="text-slate-500">Check-in:</span> {selected.checkInStatus.replace(/_/g, ' ')}
+              <span className="text-slate-500">Вопросы:</span>{' '}
+              <span className={`rounded border px-1.5 py-0.5 text-xs ${issueStatusTone(selected.issueStatus)}`}>
+                {selected.issueStatus === 'none' ? 'нет' : issueStatusLabels[selected.issueStatus]}
+              </span>
             </div>
             <div>
-              <span className="text-slate-500">Checkout:</span> {selected.checkoutStatus.replace(/_/g, ' ')}
-            </div>
-            <div>
-              <span className="text-slate-500">Issue:</span>{' '}
-              <span className={issueTone(selected.issueStatus)}>{selected.issueStatus.replace(/_/g, ' ')}</span>
-            </div>
-            <div>
-              <span className="text-slate-500">Mode:</span> {automationLabels[selected.automationMode]}
+              <span className="text-slate-500">Эскалация:</span> {selected.escalationStatus.replace(/_/g, ' ')}
             </div>
           </div>
 
           <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-            <h3 className="text-sm font-semibold text-slate-900">Canon-Safe Context</h3>
-            <div className="mt-2 grid gap-2 text-xs text-slate-600">
-              <p>Access instructions: Configured per object policy</p>
-              <p>Wi-Fi / parking / pets / refunds: Requires property context</p>
-              <p>Guest-facing answers: Use communication canon and escalation rules</p>
+            <h3 className="text-sm font-semibold text-slate-900">Коммуникационный контекст</h3>
+            <div className="mt-2 space-y-1 text-xs text-slate-600">
+              <p>Review ID: {selected.communicationReviewId ?? 'не привязан'}</p>
+              <p>Session ID: {selected.communicationSessionId ?? 'не привязана'}</p>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={
+                  selected.communicationReviewId
+                    ? `/dashboard/communication?reviewId=${encodeURIComponent(selected.communicationReviewId)}`
+                    : '/dashboard/communication'
+                }
+                className="inline-flex min-h-10 items-center justify-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100"
+              >
+                Открыть коммуникации
+              </Link>
+              <ActionButton
+                onClick={() => commit({ type: 'escalate_operator', itemId: selected.id }, 'Операция передана оператору.')}
+                tone="danger"
+              >
+                Эскалировать оператору
+              </ActionButton>
             </div>
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Operational Checklist</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Основные действия</h3>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <ActionButton
+                onClick={() => commit({ type: 'move_next_stage', itemId: selected.id }, 'Операция переведена на следующую стадию.')}
+                disabled={!nextStage}
+                tone="primary"
+              >
+                Следующая стадия{nextStage ? `: ${operationsStageLabels[nextStage]}` : ''}
+              </ActionButton>
+              <ActionButton
+                onClick={() => commit({ type: 'mark_checkin_ready', itemId: selected.id }, 'Готовность к заезду отмечена.')}
+                disabled={selected.stage === 'in_stay' || selected.stage === 'checkout' || selected.stage === 'review_followup'}
+                tone="success"
+              >
+                Заезд готов
+              </ActionButton>
+              <ActionButton
+                onClick={() => commit({ type: 'mark_guest_checked_in', itemId: selected.id }, 'Гость отмечен как заехавший.')}
+                disabled={selected.stage === 'review_followup'}
+                tone="success"
+              >
+                Гость заехал
+              </ActionButton>
+              <ActionButton
+                onClick={() => commit({ type: 'mark_checked_out', itemId: selected.id }, 'Выезд отмечен завершенным.')}
+                disabled={selected.stage === 'new_inquiry' || selected.stage === 'booking_intake'}
+                tone="success"
+              >
+                Выезд завершен
+              </ActionButton>
+              <ActionButton onClick={createIssue} tone="danger">
+                Создать вопрос
+              </ActionButton>
+              <ActionButton
+                onClick={() => commit({ type: 'close_issue', itemId: selected.id }, 'Активный вопрос закрыт.')}
+                disabled={selectedActiveIssues.length === 0}
+              >
+                Закрыть вопрос
+              </ActionButton>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-200 p-3">
+            <h3 className="text-sm font-semibold text-slate-900">Новый вопрос</h3>
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs font-medium text-slate-600">
+                Название
+                <input
+                  value={issueTitle}
+                  onChange={(event) => setIssueTitle(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-slate-600">
+                  Тип
+                  <select
+                    value={issueType}
+                    onChange={(event) => setIssueType(event.target.value as OperationsIssueType)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  >
+                    {(Object.keys(issueTypeLabels) as OperationsIssueType[]).map((type) => (
+                      <option key={type} value={type}>
+                        {issueTypeLabels[type]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-slate-600">
+                  Срочность
+                  <select
+                    value={issueUrgency}
+                    onChange={(event) => setIssueUrgency(event.target.value as OperationsIssueUrgency)}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  >
+                    {(Object.keys(issueUrgencyLabels) as OperationsIssueUrgency[]).map((urgency) => (
+                      <option key={urgency} value={urgency}>
+                        {issueUrgencyLabels[urgency]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="block text-xs font-medium text-slate-600">
+                Заметка к вопросу
+                <textarea
+                  value={issueNote}
+                  onChange={(event) => setIssueNote(event.target.value)}
+                  className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Коротко опишите, что должен проверить менеджер"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">Чек-листы по стадиям</h3>
+              <span className="text-xs text-slate-500">Активно: {checklistStageLabels[getActiveChecklistStage(selected.stage)]}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {checklistStageOrder.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => setChecklistStage(stage)}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                    checklistStage === stage
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {checklistStageLabels[stage]}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 space-y-2">
+              {selectedChecklist.map((item) => {
+                const done = item.status === 'done';
+                return (
+                  <div key={item.id} className={`rounded-md border px-3 py-2 text-sm ${checklistClass(item.status)}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{item.label}</div>
+                        {item.note ? <div className="mt-0.5 text-xs opacity-80">{item.note}</div> : null}
+                        <div className="mt-1 text-xs opacity-80">
+                          {done && item.completedAt ? `Выполнено: ${formatDateTime(item.completedAt)}` : item.status.replace(/_/g, ' ')}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          commit(
+                            {
+                              type: 'set_checklist_item_status',
+                              itemId: selected.id,
+                              checklistStage,
+                              checklistItemId: item.id,
+                              status: done ? 'pending' : 'done',
+                            },
+                            done ? 'Пункт чек-листа возвращен в ожидание.' : 'Пункт чек-листа выполнен.',
+                          )
+                        }
+                        className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        {done ? 'Вернуть' : 'Готово'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Вопросы</h3>
             <div className="mt-2 space-y-2">
-              {selected.checklist.map((item) => (
-                <div key={item.id} className={`rounded-md border px-3 py-2 text-sm ${checklistClass(item.status)}`}>
-                  <div className="font-medium">{item.label}</div>
-                  {item.note ? <div className="mt-0.5 text-xs opacity-80">{item.note}</div> : null}
+              {selectedIssues.length > 0 ? (
+                selectedIssues.map((issue) => (
+                  <div key={issue.id} className={`rounded-md border px-3 py-2 text-sm ${issueStatusTone(issue.status)}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{issue.title}</div>
+                        <div className="mt-1 text-xs">
+                          {issueTypeLabels[issue.type]} · {issueUrgencyLabels[issue.urgency]} · {issueStatusLabels[issue.status]}
+                        </div>
+                        {issue.communicationReviewId ? (
+                          <div className="mt-1 text-xs">Review ID: {issue.communicationReviewId}</div>
+                        ) : null}
+                      </div>
+                      {issue.status !== 'resolved' ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            commit({ type: 'close_issue', itemId: selected.id, issueId: issue.id }, 'Вопрос закрыт.')
+                          }
+                          className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Закрыть
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                  Вопросов по операции нет.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Заметки</h3>
+            <div className="mt-2 space-y-2">
+              {selected.notes.map((entry) => (
+                <div key={entry.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <div>{entry.body}</div>
+                  <div className="mt-1 text-xs text-slate-500">{formatDateTime(entry.createdAt)}</div>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">Actions</h3>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <ActionButton onClick={() => setMessage('Details are open in the right panel. This is the Phase 1 detail view.')}>
-                Open details
+            <label className="mt-3 block text-xs font-medium text-slate-600">
+              Новая заметка
+              <textarea
+                value={noteDraft}
+                onChange={(event) => setNoteDraft(event.target.value)}
+                className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Добавьте внутреннюю заметку"
+              />
+            </label>
+            <div className="mt-2">
+              <ActionButton onClick={addNote} disabled={!noteDraft.trim()}>
+                Добавить заметку
               </ActionButton>
-              <ActionButton onClick={() => runAction('checkin_ready')} disabled={selected.checkInStatus === 'guest_checked_in'}>
-                Mark check-in ready
-              </ActionButton>
-              <ActionButton onClick={() => runAction('guest_checked_in')} disabled={selected.checkoutStatus === 'completed'}>
-                Mark guest checked in
-              </ActionButton>
-              <ActionButton onClick={() => runAction('checked_out')} disabled={selected.stage === 'new_inquiry' || selected.stage === 'booking_intake'}>
-                Mark checked out
-              </ActionButton>
-              <ActionButton onClick={() => runAction('create_issue')} disabled={selected.issueStatus === 'open' || selected.issueStatus === 'escalated'}>
-                Create issue
-              </ActionButton>
-              <ActionButton onClick={() => runAction('escalate_operator')}>
-                Escalate to operator
-              </ActionButton>
-              <ActionButton onClick={() => runAction('close_issue')} disabled={selected.issueStatus === 'none' || selected.issueStatus === 'closed'}>
-                Close issue
-              </ActionButton>
-              {selected.communicationReviewId ? (
-                <Link
-                  href="/dashboard/communication"
-                  className="inline-flex min-h-10 items-center justify-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100"
-                >
-                  Send to communication dashboard
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-400"
-                >
-                  No communication link
-                </button>
-              )}
             </div>
-            <p className="mt-2 text-xs text-slate-500">Action buttons are local demo controls until backend workflow actions are connected.</p>
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Notes</h3>
-            <ul className="mt-2 space-y-1 text-sm text-slate-600">
-              {selected.notes.map((note) => (
-                <li key={note}>- {note}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">Audit Timeline</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Audit timeline</h3>
             <ol className="mt-2 space-y-2">
-              {selected.timeline.map((event) => (
+              {selectedTimeline.map((event) => (
                 <li
                   key={event.id}
                   className={`rounded-md border px-3 py-2 text-sm ${

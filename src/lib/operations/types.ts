@@ -1,107 +1,145 @@
 import type { CommunicationChannel } from '@/lib/communication/types';
 
+export type OperationsSourceChannel = CommunicationChannel | 'direct' | 'manual' | 'demo';
+
 export type OperationsWorkflowStage =
   | 'new_inquiry'
   | 'booking_intake'
   | 'pre_checkin'
-  | 'checkin_today'
+  | 'checkin'
   | 'in_stay'
   | 'checkout'
   | 'review_followup'
   | 'needs_operator';
 
-export type OperationsBookingStatus =
-  | 'lead'
-  | 'intake'
-  | 'confirmed'
+export type OperationsChecklistStage =
   | 'pre_checkin'
-  | 'checked_in'
+  | 'checkin'
   | 'in_stay'
-  | 'checked_out'
-  | 'followup'
-  | 'needs_operator'
-  | 'closed';
+  | 'checkout'
+  | 'review_followup';
 
-export type OperationsPaymentStatus =
-  | 'not_required'
-  | 'pending'
-  | 'authorized'
-  | 'paid'
-  | 'needs_review';
+export type OperationsAutomationMode = 'manual' | 'semi_auto' | 'full_auto';
 
-export type OperationsCheckInStatus =
-  | 'not_started'
-  | 'requires_property_context'
-  | 'ready'
-  | 'guest_checked_in'
-  | 'blocked'
-  | 'operator_review';
+export type OperationsChecklistStatus = 'pending' | 'done' | 'blocked' | 'not_applicable';
 
-export type OperationsCheckoutStatus =
-  | 'not_started'
-  | 'scheduled'
-  | 'guest_checked_out'
-  | 'turnover_pending'
-  | 'completed'
-  | 'issue_found';
+export type OperationsIssueType =
+  | 'booking_context'
+  | 'guest_support'
+  | 'property_context'
+  | 'payment_review'
+  | 'maintenance_review'
+  | 'communication'
+  | 'other';
 
-export type OperationsIssueStatus =
-  | 'none'
-  | 'open'
-  | 'urgent'
+export type OperationsIssueUrgency = 'normal' | 'urgent';
+
+export type OperationsIssueStatus = 'open' | 'in_progress' | 'resolved';
+
+export type OperationsItemIssueStatus = 'none' | OperationsIssueStatus;
+
+export type OperationsEscalationStatus = 'none' | 'pending_operator' | 'in_review' | 'resolved';
+
+export type OperationsAuditEventType =
+  | 'item_created'
+  | 'stage_changed'
+  | 'checklist_item_completed'
+  | 'issue_created'
   | 'escalated'
-  | 'closed';
-
-export type OperationsAutomationMode = 'manual' | 'semi_automated' | 'fully_automated';
+  | 'note_added'
+  | 'checked_in'
+  | 'checked_out'
+  | 'issue_resolved'
+  | 'checkin_ready';
 
 export interface OperationsGuestContact {
-  guestName: string;
+  name: string;
   email?: string;
   phone?: string;
-  channel: CommunicationChannel | 'direct' | 'demo';
+  channel: OperationsSourceChannel;
   externalContactId?: string;
 }
 
 export interface OperationsBookingDates {
-  checkIn: string;
-  checkOut: string;
-  nights: number;
+  checkIn?: string;
+  checkOut?: string;
+  nights?: number;
 }
 
 export interface OperationsChecklistItem {
   id: string;
   label: string;
-  status: 'done' | 'pending' | 'blocked' | 'not_applicable';
+  status: OperationsChecklistStatus;
   note?: string;
+  completedAt?: string;
 }
 
-export interface OperationsTimelineEvent {
+export interface OperationsChecklistSet {
+  preCheckIn: OperationsChecklistItem[];
+  checkIn: OperationsChecklistItem[];
+  inStay: OperationsChecklistItem[];
+  checkout: OperationsChecklistItem[];
+  reviewFollowup: OperationsChecklistItem[];
+}
+
+export interface OperationsNote {
   id: string;
+  body: string;
+  createdAt: string;
+  author?: string;
+}
+
+export interface OperationsAuditEvent {
+  id: string;
+  type: OperationsAuditEventType;
   label: string;
   detail?: string;
   createdAt: string;
   tone?: 'normal' | 'warn' | 'success';
 }
 
-export interface OperationsBookingIntake {
+export interface OperationsIssue {
+  id: string;
+  operationItemId: string;
+  title: string;
+  type: OperationsIssueType;
+  urgency: OperationsIssueUrgency;
+  status: OperationsIssueStatus;
+  communicationReviewId?: string;
+  notes: OperationsNote[];
+  auditEvents: OperationsAuditEvent[];
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}
+
+export interface OperationsItem {
   id: string;
   guest: OperationsGuestContact;
-  source: CommunicationChannel | 'direct' | 'demo';
+  sourceChannel: OperationsSourceChannel;
   propertyId?: string;
+  objectId?: string;
   objectLabel: string;
-  dates: OperationsBookingDates;
+  bookingDates: OperationsBookingDates;
   stage: OperationsWorkflowStage;
-  status: OperationsBookingStatus;
-  paymentStatus: OperationsPaymentStatus;
-  checkInStatus: OperationsCheckInStatus;
-  checkoutStatus: OperationsCheckoutStatus;
-  issueStatus: OperationsIssueStatus;
   automationMode: OperationsAutomationMode;
-  notes: string[];
-  checklist: OperationsChecklistItem[];
+  checklists: OperationsChecklistSet;
+  issueStatus: OperationsItemIssueStatus;
+  escalationStatus: OperationsEscalationStatus;
+  notes: OperationsNote[];
+  auditEvents: OperationsAuditEvent[];
   communicationReviewId?: string;
   communicationSessionId?: string;
   createdAt: string;
   updatedAt: string;
-  timeline: OperationsTimelineEvent[];
 }
+
+export type OperationItem = OperationsItem;
+
+export interface OperationsState {
+  items: OperationsItem[];
+  issues: OperationsIssue[];
+  storageMode: 'seed' | 'local_storage';
+  updatedAt: string;
+}
+
