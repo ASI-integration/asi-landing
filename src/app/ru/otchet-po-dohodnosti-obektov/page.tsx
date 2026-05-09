@@ -107,17 +107,18 @@ export default function OtchetPoDohodnostiPage() {
           <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1.22fr_0.78fr] lg:items-center">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)]">
-                Проверьте потенциал дохода объекта до покупки, аренды или запуска
+                ОТЧЁТ ПО ЛОКАЦИИ
               </p>
               <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl lg:text-6xl">
-                Проверить объект до покупки, аренды или запуска
+                Оцените реальную доходность недвижимости по одному адресу
               </h1>
               <p className="mt-5 max-w-3xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
-                Экспресс-оценка показывает, есть ли у адреса потенциал дохода: спрос рядом, конкуренция, сильные и слабые
-                стороны локации. Полный отчёт помогает решить, стоит ли брать объект в работу или проверять глубже.
+                Для собственников, инвесторов и управляющих компаний. Узнайте заранее, стоит ли вкладывать время и
+                деньги в конкретную локацию. Экспресс-анализ покажет уровень спроса и плотность конкурентов, а подробный
+                отчёт поможет избежать финансовых ошибок перед покупкой, арендой или запуском объекта.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить адрес</PublicPrimaryCta>
+                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
                 <PublicSecondaryCta
                   href={LOCATION_REPORT_SAMPLE_PATH}
                   className="sm:min-w-[min(100%,320px)] lg:min-w-[340px]"
@@ -125,38 +126,43 @@ export default function OtchetPoDohodnostiPage() {
                   Посмотреть пример отчёта
                 </PublicSecondaryCta>
               </div>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--t-muted)]">
+                Введите адрес и получите предварительный вывод по локации. Полный отчёт помогает оценить коммерческий
+                потенциал объекта до того, как рисковать бюджетом.
+              </p>
               <div className="mt-4">
                 <PublicTextLink href={METHODOLOGY_HREF}>Как мы считаем</PublicTextLink>
               </div>
-              <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--t-muted)]">
-                Без обещаний гарантированного дохода. Расчёт показывает риски и потенциал по доступным данным.
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--t-muted)]">
+                Всё просто: введите адрес и моментально получите срез по локации. Оцените коммерческий потенциал объекта
+                до того, как рисковать бюджетом.
               </p>
             </div>
 
             <aside className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                Что выясняете до траты денег
+                ЧТО ВНУТРИ ОТЧЁТА
               </p>
               <h2 className="mt-3 text-2xl font-bold leading-tight text-[var(--t-text)]">
-                Стоит ли вообще рассматривать этот объект
+                Твёрдые данные для принятия решения до сделки
               </h2>
               <ul className="mt-5 space-y-4">
                 {[
-                  'Есть ли рядом реальные драйверы спроса.',
-                  'Насколько сильная конкуренция.',
-                  'Какая аудитория вероятнее всего будет бронировать.',
-                  'Какие риски видны заранее и что проверить перед решением.',
-                  'Когда достаточно экспресс-оценки, а когда нужен полный отчёт.',
+                  'Оценка ликвидности: понятный вывод, есть ли у объекта потенциал или риск потери денег.',
+                  'Карта спроса и конкуренции: кто рядом уже борется за клиента и откуда может прийти спрос.',
+                  'Скрытые угрозы: неочевидные риски локации, ограничения и слабые места объекта.',
+                  'План проверки: что уточнить перед покупкой, арендой или подписанием договора.',
                 ].map((label) => (
                   <li key={label} className="flex gap-3">
                     <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[var(--t-accent)]" />
-                    <span className="pt-1 text-base font-semibold leading-snug text-[var(--t-text)]">{label}</span>
+                    <span className="pt-1 text-base leading-relaxed text-[var(--t-text)]">{label}</span>
                   </li>
                 ))}
               </ul>
               <PublicInfoCard className="mt-6 border-[var(--t-border)] bg-[var(--t-bg)] p-4">
                 <p className="text-sm leading-relaxed text-[var(--t-muted)]">
-                  Это поддержка решения, а не прогноз прибыли: видно, куда смотреть внимательнее и что уточнить по объекту.
+                  Объективный анализ на основе реальных рыночных данных. Мы не обещаем золотые горы. Мы даём сухие цифры
+                  и статистику, чтобы вы избежали убытков и увидели настоящий потенциал объекта.
                 </p>
               </PublicInfoCard>
             </aside>
