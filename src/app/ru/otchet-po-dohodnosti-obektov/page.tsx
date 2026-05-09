@@ -27,7 +27,7 @@ const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
 const REPORT_BLOCKS = [
   {
     title: 'Потенциал дохода',
-    text: 'Насколько адрес в целом выглядит перспективным для аренды с точки зрения доступных сигналов по локации.',
+    text: 'Реалистичный прогноз выручки и понимание ценового потолка для этой локации.',
   },
   {
     title: 'Спрос рядом',
@@ -39,54 +39,42 @@ const REPORT_BLOCKS = [
   },
   {
     title: 'Магниты и инфраструктура',
-    text: 'Точки рядом, которые усиливают или ослабляют интерес к адресу.',
+    text: 'Точки притяжения вокруг, которые будут генерировать вам стабильный поток гостей.',
   },
   {
     title: 'Риски и рекомендации',
-    text: 'Что может сорвать ожидания по доходу и какие вопросы закрыть до договора или запуска.',
+    text: 'Факторы, способные убить доходность, и пошаговый план проверок до сделки.',
   },
 ] as const;
 
 const WHY_CARDS = [
   {
     title: 'Не купить слабый объект',
-    text: 'Увидеть до сделки, есть ли у адреса опора на спрос или это ставка вслепую.',
+    text: 'Узнать до сделки, есть ли здесь реальный спрос, или это инвестиция вслепую.',
   },
   {
     title: 'Не переплатить за аренду',
-    text: 'Сопоставить условия локации с тем, какую аренду реально «держит» рынок рядом.',
+    text: 'Понять, соответствует ли запрашиваемая цена реальным арендным ставкам в этом районе.',
   },
   {
     title: 'Понять спрос до запуска',
-    text: 'Решить, есть ли смысл вкладываться в посуточную или среднесрок именно здесь.',
+    text: 'Определить, какая модель принесет больше денег именно здесь: посуточная или среднесрочная аренда.',
   },
   {
     title: 'Увидеть риски заранее',
-    text: 'Не удивиться сезонностью, давлением конкурентов или «дырами» в понимании объекта.',
+    text: 'Заранее выявить скрытую сезонность, жесткую конкуренцию и другие подводные камни локации.',
   },
 ] as const;
 
-const DECISION_ITEMS = [
-  'Брать объект в работу или отказаться.',
-  'Запускать посуточную аренду здесь или искать другую локацию.',
-  'Какой аудитории логичнее продавать объект.',
-  'Достаточно ли экспресс-оценки или нужен полный разбор.',
-  'Какие данные запросить у собственника или управляющего до подписания.',
-] as const;
-
-const EXPRESS_POINTS = [
-  'Быстрый предварительный вывод.',
-  'Видно, есть ли смысл копать глубже.',
-  'Подходит для первичного отбора.',
-] as const;
-
-const FULL_REPORT_POINTS = [
-  'Подробный разбор локации.',
-  'Драйверы спроса.',
-  'Конкуренция.',
-  'Аудитория.',
-  'Риски.',
-  'Рекомендации по стратегии.',
+const COMPARISON_CARDS = [
+  {
+    title: 'Экспресс-оценка',
+    text: 'Быстрый срез данных для первичного фильтра: сразу показывает базовый потенциал локации и уровень конкуренции, чтобы отсеять заведомо слабые варианты.',
+  },
+  {
+    title: 'Полный отчёт',
+    text: 'Глубокая аналитика для финализации сделки. Детальный расчёт спроса, портрет вашей будущей аудитории, скрытые магниты инфраструктуры и конкретные рекомендации по стратегии запуска.',
+  },
 ] as const;
 
 const OBJECT_TYPES = [
@@ -114,8 +102,9 @@ export default function OtchetPoDohodnostiPage() {
               </h1>
               <p className="mt-5 max-w-3xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
                 Для собственников, инвесторов и управляющих компаний. Узнайте заранее, стоит ли вкладывать время и
-                деньги в конкретную локацию. Экспресс-анализ покажет уровень спроса и плотность конкурентов, а подробный
-                отчёт поможет избежать финансовых ошибок перед покупкой, арендой или запуском объекта.
+                деньги в конкретную локацию. Наш экспресс-анализ моментально покажет уровень спроса и плотность
+                конкурентов, а подробный отчёт убережёт от финансовых ошибок перед покупкой, арендой или запуском
+                объекта.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
@@ -133,10 +122,6 @@ export default function OtchetPoDohodnostiPage() {
               <div className="mt-4">
                 <PublicTextLink href={METHODOLOGY_HREF}>Как мы считаем</PublicTextLink>
               </div>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--t-muted)]">
-                Всё просто: введите адрес и моментально получите срез по локации. Оцените коммерческий потенциал объекта
-                до того, как рисковать бюджетом.
-              </p>
             </div>
 
             <aside className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 shadow-sm">
@@ -148,10 +133,10 @@ export default function OtchetPoDohodnostiPage() {
               </h2>
               <ul className="mt-5 space-y-4">
                 {[
-                  'Оценка ликвидности: понятный вывод, есть ли у объекта потенциал или риск потери денег.',
-                  'Карта спроса и конкуренции: кто рядом уже борется за клиента и откуда может прийти спрос.',
-                  'Скрытые угрозы: неочевидные риски локации, ограничения и слабые места объекта.',
-                  'План проверки: что уточнить перед покупкой, арендой или подписанием договора.',
+                  'Оценка ликвидности: чёткий вердикт — высокий потенциал или пустая трата денег.',
+                  'Карта спроса: кто ваши соседи по бизнесу и откуда придут клиенты.',
+                  'Скрытые угрозы: неочевидные риски локации и ограничения.',
+                  'Пошаговый план: что нужно проверить до подписания договора.',
                 ].map((label) => (
                   <li key={label} className="flex gap-3">
                     <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[var(--t-accent)]" />
@@ -186,25 +171,6 @@ export default function OtchetPoDohodnostiPage() {
           </div>
         </PublicSection>
 
-        <PublicSection variant="default">
-          <div className="mx-auto max-w-6xl">
-            <PublicSectionHeader
-              title="Какие решения помогает принять"
-              description="Ответы привязаны к адресу и рынку рядом, без лишней аналитики ради отчёта."
-            />
-            <PublicInfoCard className="mt-8 p-6">
-              <ul className="space-y-4">
-                {DECISION_ITEMS.map((item) => (
-                  <li key={item} className="flex gap-3 text-base leading-relaxed text-[var(--t-text-2)]">
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" aria-hidden />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </PublicInfoCard>
-          </div>
-        </PublicSection>
-
         <PublicSection variant="muted">
           <div className="mx-auto max-w-6xl">
             <PublicSectionHeader
@@ -226,28 +192,14 @@ export default function OtchetPoDohodnostiPage() {
           <div className="mx-auto max-w-6xl">
             <PublicSectionHeader title="Экспресс-оценка и полный отчёт" />
             <div className="mt-8 grid gap-5 lg:grid-cols-2">
-              <PublicInfoCard className="p-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Экспресс-оценка</p>
-                <ul className="mt-5 space-y-3 text-base leading-relaxed text-[var(--t-text-2)]">
-                  {EXPRESS_POINTS.map((point) => (
-                    <li key={point} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" aria-hidden />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </PublicInfoCard>
-              <PublicInfoCard className="p-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Полный отчёт</p>
-                <ul className="mt-5 space-y-3 text-base leading-relaxed text-[var(--t-text-2)]">
-                  {FULL_REPORT_POINTS.map((point) => (
-                    <li key={point} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" aria-hidden />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              </PublicInfoCard>
+              {COMPARISON_CARDS.map((card) => (
+                <PublicInfoCard key={card.title} className="p-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
+                    {card.title}
+                  </p>
+                  <p className="mt-5 text-base leading-relaxed text-[var(--t-text-2)]">{card.text}</p>
+                </PublicInfoCard>
+              ))}
             </div>
           </div>
         </PublicSection>
@@ -257,7 +209,7 @@ export default function OtchetPoDohodnostiPage() {
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <PublicSectionHeader
                 title="Для каких объектов подходит"
-                description="Перед покупкой, арендой, запуском нового объекта или пересмотром стратегии уже работающей локации."
+                description="Помогает оценить рентабельность перед покупкой, арендой или запуском нового объекта, а также найти точки роста для уже работающей локации."
               />
               <div className="flex flex-wrap gap-2 sm:gap-3">
                 {OBJECT_TYPES.map((label) => (
@@ -273,15 +225,16 @@ export default function OtchetPoDohodnostiPage() {
             <PublicSectionHeader
               align="center"
               titleClassName="text-3xl font-bold tracking-tight text-[var(--t-text)] sm:text-4xl"
-              title="Проверьте адрес перед решением"
+              title="Сделайте первый шаг к безопасной сделке"
               description={
                 <p className="text-lg leading-relaxed text-[var(--t-text-2)]">
-                  Начните с проверки адреса — затем откройте пример полного отчёта, если объект проходит первый отбор.
+                  Запустите экспресс-оценку потенциала локации. Если базовые показатели вас устроят — откройте пример
+                  полного отчёта, чтобы увидеть всю глубину аналитики.
                 </p>
               }
             />
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить адрес</PublicPrimaryCta>
+              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
               <PublicSecondaryCta href={LOCATION_REPORT_SAMPLE_PATH} className="sm:min-w-[240px]">
                 Посмотреть пример отчёта
               </PublicSecondaryCta>
