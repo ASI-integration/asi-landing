@@ -4,6 +4,15 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import {
+  PublicBadge,
+  PublicInfoCard,
+  PublicPrimaryCta,
+  PublicSecondaryCta,
+  PublicSection,
+  PublicSectionHeader,
+  PublicTextLink,
+} from '@/components/public';
 import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const metadata: Metadata = {
@@ -52,169 +61,152 @@ export default function OtchetPoDohodnostiPage() {
       <RuPublicNavHeader surface="theme" density="landing" />
 
       <main>
-        <section className="bg-[var(--t-bg)] px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
+        <PublicSection variant="hero">
           <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1.22fr_0.78fr] lg:items-center">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)]">
-                Отчёт по локации
+                Коммерческий отчёт по доходности
               </p>
               <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl lg:text-6xl">
                 Оцените потенциал дохода объекта по адресу
               </h1>
-              <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
-                Экспресс-оценка показывает спрос, конкуренцию, сильные и слабые стороны локации. Полный отчёт помогает
-                принять решение перед покупкой, арендой или запуском объекта.
+              <p className="mt-5 max-w-3xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
+                Для собственников, операторов и инвесторов, которым нужно быстро понять, стоит ли идти глубже в объект.
+                Экспресс-оценка показывает спрос, конкуренцию, сильные и слабые стороны локации, а полный отчёт помогает
+                принять решение перед покупкой, арендой или запуском.
               </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Link
-                  href={EXPRESS_ASSESSMENT_HREF}
-                  className="inline-flex min-h-[68px] w-full shrink-0 items-center justify-center rounded-2xl bg-[var(--t-accent)] px-10 py-5 text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:min-w-[330px] sm:whitespace-nowrap"
-                >
-                  Запустить экспресс-оценку
-                </Link>
-                <Link
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
+                <PublicSecondaryCta
                   href={LOCATION_REPORT_SAMPLE_PATH}
-                  className="inline-flex min-h-[60px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[330px] sm:whitespace-nowrap sm:text-[17px]"
+                  className="sm:min-w-[min(100%,320px)] lg:min-w-[340px]"
                 >
                   Посмотреть пример полного отчёта
-                </Link>
+                </PublicSecondaryCta>
+              </div>
+              <div className="mt-4">
+                <PublicTextLink href={METHODOLOGY_HREF}>Как мы считаем</PublicTextLink>
               </div>
               <p className="mt-4 max-w-xl text-sm leading-relaxed text-[var(--t-muted)]">
-                Следующий шаг простой: введите адрес, получите предварительный вывод и откройте пример структуры полного отчёта.
+                Следующий шаг простой: введите адрес и получите предварительный вывод без обещаний гарантированного дохода.
               </p>
             </div>
 
             <aside className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                Что происходит дальше
+                Что получает клиент
               </p>
-              <ol className="mt-5 space-y-4">
+              <h2 className="mt-3 text-2xl font-bold leading-tight text-[var(--t-text)]">
+                Понятный вывод до сделки или запуска
+              </h2>
+              <ul className="mt-5 space-y-4">
                 {[
-                  'Введите адрес объекта',
-                  'Получите экспресс-оценку локации',
-                  'Сравните структуру полного отчёта',
-                  'Решите, стоит ли проверять объект глубже',
-                ].map((label, index) => (
-                  <li key={label} className="flex gap-4">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--t-accent)] text-sm font-bold text-white">
-                      {index + 1}
-                    </span>
+                  'Краткий вывод по потенциалу адреса',
+                  'Факторы спроса и конкурентного давления',
+                  'Риски, ограничения и качество данных',
+                  'Следующие шаги для проверки объекта',
+                ].map((label) => (
+                  <li key={label} className="flex gap-3">
+                    <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[var(--t-accent)]" />
                     <span className="pt-1 text-base font-semibold leading-snug text-[var(--t-text)]">{label}</span>
                   </li>
                 ))}
-              </ol>
+              </ul>
+              <PublicInfoCard className="mt-6 border-[var(--t-border)] bg-[var(--t-bg)] p-4">
+                <p className="text-sm leading-relaxed text-[var(--t-muted)]">
+                  Это не обещание дохода, а проверка адреса и факторов, которые стоит уточнить перед решением.
+                </p>
+              </PublicInfoCard>
             </aside>
           </div>
-        </section>
+        </PublicSection>
 
-        <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-16 sm:px-6 sm:py-20">
+        <PublicSection variant="muted">
           <div className="mx-auto max-w-6xl">
-            <div className="max-w-3xl">
-              <h2 className="text-2xl font-bold tracking-tight text-[var(--t-text)] sm:text-3xl">
-                Что покажет отчёт
-              </h2>
-              <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
-                Без сложной карты и условных схем: только блоки, которые помогают понять потенциал адреса.
-              </p>
-            </div>
+            <PublicSectionHeader
+              title="Что покажет отчёт"
+              description="Без сложной карты и условных схем: только блоки, которые помогают понять потенциал адреса."
+            />
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              {REPORT_SECTIONS.map(item => (
-                <div key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
+              {REPORT_SECTIONS.map((item) => (
+                <PublicInfoCard key={item.title} className="p-5">
                   <h3 className="text-base font-bold text-[var(--t-text)]">{item.title}</h3>
                   <p className="mt-3 text-sm leading-relaxed text-[var(--t-muted)]">{item.text}</p>
-                </div>
+                </PublicInfoCard>
               ))}
             </div>
           </div>
-        </section>
+        </PublicSection>
 
-        <section className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-16 sm:px-6 sm:py-20">
+        <PublicSection variant="default">
           <div className="mx-auto max-w-6xl">
-            <h2 className="max-w-3xl text-2xl font-bold tracking-tight text-[var(--t-text)] sm:text-3xl">
-              Экспресс-оценка и полный отчёт решают разные задачи
-            </h2>
+            <PublicSectionHeader title="Экспресс-оценка и полный отчёт решают разные задачи" />
             <div className="mt-8 grid gap-5 lg:grid-cols-2">
-              <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
+              <PublicInfoCard className="p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Быстрый старт</p>
                 <h3 className="mt-3 text-xl font-bold text-[var(--t-text)]">Экспресс-оценка</h3>
                 <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
                   Нужна, чтобы быстро увидеть первичный потенциал адреса: общий индекс, ближайшие факторы спроса,
                   конкуренцию и понятный предварительный вывод.
                 </p>
-              </div>
-              <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
+              </PublicInfoCard>
+              <PublicInfoCard className="p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Для решения</p>
                 <h3 className="mt-3 text-xl font-bold text-[var(--t-text)]">Полный отчёт</h3>
                 <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
                   Нужен, когда объект рассматривается всерьёз: краткий вывод, структура оценки, доходный диапазон,
                   ограничения, качество данных и следующие шаги для проверки.
                 </p>
-              </div>
+              </PublicInfoCard>
             </div>
           </div>
-        </section>
+        </PublicSection>
 
-        <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-16 sm:px-6 sm:py-20">
+        <PublicSection variant="muted">
           <div className="mx-auto max-w-6xl">
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight text-[var(--t-text)] sm:text-3xl">
-                  Для каких объектов подходит
-                </h2>
-                <p className="mt-3 text-base leading-relaxed text-[var(--t-text-2)]">
-                  Отчёт полезен перед покупкой, арендой, запуском нового объекта или пересмотром стратегии уже работающей локации.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                {OBJECT_TYPES.map(label => (
-                  <span
-                    key={label}
-                    className="inline-flex items-center rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm font-semibold text-[var(--t-text-2)]"
-                  >
-                    {label}
-                  </span>
+              <PublicSectionHeader
+                title="Для каких объектов подходит"
+                description="Отчёт полезен перед покупкой, арендой, запуском нового объекта или пересмотром стратегии уже работающей локации."
+              />
+              <div className="flex flex-wrap gap-2 sm:gap-3">
+                {OBJECT_TYPES.map((label) => (
+                  <PublicBadge key={label}>{label}</PublicBadge>
                 ))}
               </div>
             </div>
           </div>
-        </section>
+        </PublicSection>
 
-        <section className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-16 sm:px-6 sm:py-20">
+        <PublicSection variant="default">
           <div className="mx-auto max-w-3xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-[var(--t-text)] sm:text-4xl">
-              Проверьте адрес до того, как принимать решение
-            </h2>
-            <p className="mt-4 text-lg leading-relaxed text-[var(--t-text-2)]">
-              Начните с экспресс-оценки, а затем посмотрите, как выглядит полный отчёт для более глубокого разбора.
-            </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
-                href={EXPRESS_ASSESSMENT_HREF}
-                className="inline-flex min-h-[64px] w-full shrink-0 items-center justify-center rounded-2xl bg-[var(--t-accent)] px-10 py-5 text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:min-w-[320px] sm:whitespace-nowrap"
-              >
-                Запустить экспресс-оценку
-              </Link>
-              <Link
-                href={LOCATION_REPORT_SAMPLE_PATH}
-                className="inline-flex min-h-[58px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[210px] sm:whitespace-nowrap"
-              >
+            <PublicSectionHeader
+              align="center"
+              titleClassName="text-3xl font-bold tracking-tight text-[var(--t-text)] sm:text-4xl"
+              title="Проверьте адрес до того, как принимать решение"
+              description={
+                <p className="text-lg leading-relaxed text-[var(--t-text-2)]">
+                  Начните с экспресс-оценки, а затем посмотрите, как выглядит полный отчёт для более глубокого разбора.
+                </p>
+              }
+            />
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
+              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
+              <PublicSecondaryCta href={LOCATION_REPORT_SAMPLE_PATH} className="sm:min-w-[240px]">
                 Пример отчёта
-              </Link>
-              <Link
-                href={METHODOLOGY_HREF}
-                className="inline-flex min-h-[58px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[180px] sm:whitespace-nowrap"
-              >
-                Методология
-              </Link>
+              </PublicSecondaryCta>
             </div>
-            <div className="mt-8 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-left">
+            <div className="mt-5 flex justify-center">
+              <PublicTextLink href={METHODOLOGY_HREF}>Методология</PublicTextLink>
+            </div>
+            <PublicInfoCard className="mt-8 border-[var(--t-border)] bg-[var(--t-surface-2)] text-left">
               <p className="text-sm leading-relaxed text-[var(--t-text-2)]">
                 Расчёт не обещает гарантированный доход. Итог зависит от качества данных, состояния объекта, сезона,
                 цены, каналов продаж и управления.
               </p>
-            </div>
+            </PublicInfoCard>
           </div>
-        </section>
+        </PublicSection>
       </main>
 
       <footer>

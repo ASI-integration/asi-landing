@@ -145,7 +145,7 @@ export function RuPublicNavHeader({
         <div className={`h-px ${surfaceDivider[surface]} opacity-60`} />
 
         {/* Bottom row: logo + main nav */}
-        <div className="py-2.5 sm:py-3 flex items-center gap-4">
+        <div className="py-2 sm:py-2.5 flex items-center gap-3 sm:gap-4">
           <Link href="/ru" className={surfaceLogo[surface]}>
             ASI
           </Link>
