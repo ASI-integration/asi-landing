@@ -8,6 +8,7 @@ import {
   buildAnalysis,
   buildLocationStandaloneReport,
   buildCommercialReport,
+  buildLocationReportPermalink,
   getBand,
   formatDist,
   projectToSVG,
@@ -2015,7 +2016,7 @@ function ASIPanel({
         const st = await poll();
         if (st.status === 'completed' && st.reportId) {
           const reportId = String(st.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(buildLocationReportPermalink({ reportId, locale }));
           return;
         }
         if (st.status === 'failed') {
@@ -2050,7 +2051,7 @@ function ASIPanel({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
-        router.push(`/ru/location-report/${json.reportId}`);
+        router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
       } catch {
         router.push('/ru/location-report');
       }
@@ -2896,7 +2897,7 @@ function CommercialASIPanel({
         if (!s.ok) throw new Error(sj?.error ?? 'status_failed');
         if (sj?.status === 'completed' && sj?.reportId) {
           const reportId = String(sj.reportId);
-          router.push(locale === 'ru' ? `/ru/location-report/${reportId}` : `/location-report/${reportId}`);
+          router.push(buildLocationReportPermalink({ reportId, locale }));
           return;
         }
         if (sj?.status === 'failed') throw new Error(sj?.error ?? 'processing_failed');
@@ -2922,7 +2923,7 @@ function CommercialASIPanel({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
-        router.push(`/ru/location-report/${json.reportId}`);
+        router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
       } catch {
         router.push('/ru/location-report');
       }

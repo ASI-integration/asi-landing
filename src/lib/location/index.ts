@@ -45,8 +45,33 @@ export type {
 } from './location-report-paywall';
 
 export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
-export type { LocationCommercialReport } from './standalone-report';
+export type { LocationCommercialReport, PersistableLocationReport } from './standalone-report';
 export { isLocationCommercialReport, buildCommercialReport } from './standalone-report';
+export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
+export {
+  buildLocationReportPermalink,
+  createPreviewReportInput,
+  createReportStateRecord,
+} from './report-state';
+export type {
+  AudienceFit,
+  CompetitionSummary,
+  Confidence,
+  DataQualityLevel,
+  FastReportPreview,
+  FullLocationReport,
+  IncomePotential,
+  MagnetImpact,
+  RecommendationItem,
+  ReportInput,
+  ReportLifecycleStatus,
+  ReportMode,
+  ReportSection,
+  ReportSource,
+  ReportStateRecord,
+  RiskItem,
+} from './report-contract';
+export type { ReportPermalinkSurface } from './report-state';
 
 export type {
   CommercialFormatType,

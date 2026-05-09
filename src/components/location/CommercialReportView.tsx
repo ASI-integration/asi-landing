@@ -43,7 +43,7 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24">
+    <section id={id} className="report-section scroll-mt-24">
       <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 overflow-hidden">
         <div className="px-6 sm:px-8 pt-6 sm:pt-7 pb-5 border-b border-slate-800/60">
           <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Раздел</p>
@@ -115,12 +115,12 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="location-report-print min-h-screen bg-slate-950 text-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12 sm:py-16 space-y-10">
 
         {/* ── Header ── */}
         <div>
-          <div className="flex items-center gap-2 mb-4 text-xs text-slate-500">
+          <div className="print-hide flex items-center gap-2 mb-4 text-xs text-slate-500">
             <Link href="/ru/location-analysis?mode=commercial" className="hover:text-slate-300 transition-colors">
               ← Новый анализ
             </Link>
@@ -131,6 +131,13 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
             Детальная пространственная карта локации
           </h1>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="print-hide mt-4 inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-sm font-semibold text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
+          >
+            Печать / PDF
+          </button>
           <p className="mt-3 text-slate-400 leading-relaxed max-w-2xl">
             {report.address}
           </p>
@@ -355,7 +362,7 @@ export function CommercialReportView({ report }: { report: LocationCommercialRep
         </SectionShell>
 
         {/* ── Footer CTA ── */}
-        <div className="flex flex-col sm:flex-row gap-3 pt-2">
+        <div className="print-hide flex flex-col sm:flex-row gap-3 pt-2">
           <Link
             href="/ru/location-analysis?mode=commercial"
             className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-white text-slate-900 font-bold text-sm hover:bg-slate-100 transition-colors"

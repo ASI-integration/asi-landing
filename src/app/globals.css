@@ -78,3 +78,69 @@
 .animate-fade-in {
   animation: fadeIn 0.8s ease-out forwards;
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .location-report-print {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .location-report-print header,
+  .location-report-print nav,
+  .location-report-print .sticky {
+    position: static !important;
+  }
+
+  .location-report-print section,
+  .location-report-print .report-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    scroll-margin-top: 0 !important;
+  }
+
+  .location-report-print [class*="shadow"] {
+    box-shadow: none !important;
+  }
+
+  .location-report-print [class*="bg-slate"],
+  .location-report-print [class*="bg-indigo"],
+  .location-report-print [class*="bg-emerald"],
+  .location-report-print [class*="bg-amber"],
+  .location-report-print [class*="bg-rose"] {
+    background-color: #ffffff !important;
+  }
+
+  .location-report-print [class*="text-white"],
+  .location-report-print [class*="text-slate-100"],
+  .location-report-print [class*="text-slate-200"],
+  .location-report-print [class*="text-slate-300"],
+  .location-report-print [class*="text-slate-400"],
+  .location-report-print [class*="text-slate-500"],
+  .location-report-print [class*="text-indigo"],
+  .location-report-print [class*="text-emerald"],
+  .location-report-print [class*="text-amber"],
+  .location-report-print [class*="text-rose"] {
+    color: #0f172a !important;
+  }
+
+  .location-report-print [class*="border-slate"],
+  .location-report-print [class*="border-indigo"],
+  .location-report-print [class*="border-emerald"],
+  .location-report-print [class*="border-amber"],
+  .location-report-print [class*="border-rose"] {
+    border-color: #cbd5e1 !important;
+  }
+}

@@ -1,18 +1,18 @@
 import { supabase } from '@/lib/supabase';
-import type { LocationStandaloneReport } from './standalone-report';
+import type { PersistableLocationReport } from './standalone-report';
 
 export type PersistedStandaloneReportEntity = {
   id: string;
   locale: 'ru' | 'en';
   address: string;
   report_version: string;
-  report: LocationStandaloneReport;
+  report: PersistableLocationReport;
   created_at: string;
 };
 
 export async function createStandaloneReport(args: {
   locale: 'ru' | 'en';
-  report: LocationStandaloneReport;
+  report: PersistableLocationReport;
 }): Promise<{ reportId: string }> {
   const { data, error } = await supabase
     .from('location_standalone_reports')

@@ -16,6 +16,12 @@ export {
 export { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from './commercial-format-fit';
 export { buildCommercialReport, isLocationCommercialReport } from './standalone-report';
 export { buildLocationStandaloneReport } from './standalone-report';
+export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
+export {
+  buildLocationReportPermalink,
+  createPreviewReportInput,
+  createReportStateRecord,
+} from './report-state';
 
 export {
   haversineMeters,
@@ -79,4 +85,22 @@ export type {
 } from './types';
 
 export type { LocationStandaloneReport, LocationStandaloneReportSectionId, LocationCommercialReport } from './standalone-report';
-
+export type {
+  AudienceFit,
+  CompetitionSummary,
+  Confidence,
+  DataQualityLevel,
+  FastReportPreview,
+  FullLocationReport,
+  IncomePotential,
+  MagnetImpact,
+  RecommendationItem,
+  ReportInput,
+  ReportLifecycleStatus,
+  ReportMode,
+  ReportSection,
+  ReportSource,
+  ReportStateRecord,
+  RiskItem,
+} from './report-contract';
+export type { ReportPermalinkSurface } from './report-state';

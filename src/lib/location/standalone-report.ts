@@ -122,6 +122,8 @@ export type LocationCommercialReport = {
   recommendation: string;
 };
 
+export type PersistableLocationReport = LocationStandaloneReport | LocationCommercialReport;
+
 export function isLocationCommercialReport(x: any): x is LocationCommercialReport {
   return Boolean(
     x &&

@@ -71,7 +71,7 @@ function SectionShell({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24">
+    <section id={id} className="report-section scroll-mt-24">
       <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 overflow-hidden">
         <div className="px-6 sm:px-8 pt-6 sm:pt-7 pb-5 border-b border-slate-800/60">
           <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Раздел</p>
@@ -144,14 +144,21 @@ export function LocationStandaloneFullReport({
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/70">
+    <div className="location-report-print min-h-screen bg-slate-950 text-white">
+      <header className="print-hide sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/70">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт по локации</p>
             <p className="mt-1 text-sm text-slate-200 truncate" title={report.address}>{report.address}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors text-sm"
+            >
+              Печать / PDF
+            </button>
             <a
               href="#next-step"
               className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
@@ -517,7 +524,7 @@ export function LocationStandaloneFullReport({
                       Если объект рассматривается к запуску/покупке — лучше зафиксировать решение сейчас, пока выводы свежие и можно быстро докрутить модель.
                     </p>
 
-                    <div className="mt-5">
+                    <div className="print-hide mt-5">
                       <Link
                         href="/connect"
                         className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
@@ -529,7 +536,7 @@ export function LocationStandaloneFullReport({
                       </p>
                     </div>
 
-                    <div className="mt-5 pt-5 border-t border-slate-800/70">
+                    <div className="print-hide mt-5 pt-5 border-t border-slate-800/70">
                       <button
                         type="button"
                         onClick={shareLink}

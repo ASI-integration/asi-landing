@@ -9,38 +9,55 @@ import { TgIcon } from '@/components/TgIcon';
 export const metadata: Metadata = {
   title: 'Отчёт по доходности объектов — ASI',
   description:
-    'Показываем ожидаемый доход, уровень спроса, конкуренцию и ключевые факторы по конкретному адресу. Для квартир, апартаментов, мини-отелей и апарт-отелей.',
+    'Оценка потенциала локации: спрос, конкуренция, ключевые факторы и ориентир по доходу по конкретному адресу.',
 };
 
 const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
+const FAST_PREVIEW_HREF = '/ru/location-analysis?mode=residential';
+const SAMPLE_REPORT_HREF = '/ru/location-report/sample';
 const REPORT_CTA_HREF  = 'https://t.me/ASI_core_bot';
 
 /* ─── Report features ─────────────────────────────────────────────────────── */
 const REPORT_FEATURES = [
   {
     icon: '📈',
-    title: 'Потенциал дохода',
-    desc: 'Ожидаемая выручка по адресу с учётом сезонности, спроса и ценового уровня зоны.',
+    title: 'Ориентир по доходу',
+    desc: 'Диапазон потенциала по сценариям, если данных достаточно. Не гарантия и не финальная финмодель.',
   },
   {
     icon: '📍',
     title: 'Спрос по локации',
-    desc: 'Как часто бронируют объекты в вашей зоне, в какие периоды — и кто ваша аудитория.',
+    desc: 'Какие сигналы спроса видны рядом с адресом и какая аудитория вероятнее всего релевантна.',
   },
   {
     icon: '🏘️',
     title: 'Конкурентное окружение',
-    desc: 'Сколько объектов рядом, их уровень, ценовой диапазон и загрузка.',
+    desc: 'Давление конкуренции по доступным данным и что оно значит для упаковки, цены и каналов.',
   },
   {
     icon: '⚡',
     title: 'Факторы, влияющие на загрузку',
-    desc: 'Транспорт, точки притяжения, инфраструктура — что из этого работает на вашу доходность.',
+    desc: 'Транспорт, точки притяжения и инфраструктура: что поддерживает спрос, а что требует проверки.',
   },
   {
     icon: '🎯',
     title: 'Сильные и слабые стороны',
-    desc: 'Что объективно помогает объекту зарабатывать — и где есть точка роста.',
+    desc: 'Главные драйверы, риски, ограничения и следующие шаги перед решением по объекту.',
+  },
+];
+
+const REPORT_FLOW = [
+  {
+    title: 'Быстрый preview',
+    desc: 'Адрес, общий score, короткое объяснение спроса, top-драйверы, риски и CTA к полному отчёту.',
+  },
+  {
+    title: 'Полный отчёт',
+    desc: 'Executive summary, breakdown, магниты, audience fit, конкуренция, income potential, риски, стратегия и confidence.',
+  },
+  {
+    title: 'Доставка результата',
+    desc: 'Permalink в dashboard/public view сейчас; PDF/печать доступна через браузер. Email/Telegram — следующий слой доставки.',
   },
 ];
 
@@ -68,9 +85,9 @@ function ReportMapVisual() {
       {/* Stat chips top-right */}
       <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">
         {[
-          { label: 'Потенциал выручки', value: '128 000 ₽/мес' },
-          { label: 'ADR зоны', value: '4 200 ₽' },
-          { label: 'Загрузка зоны', value: '72%' },
+          { label: 'Доход', value: 'диапазон при наличии данных' },
+          { label: 'Драйверы', value: 'top 3 сигнала' },
+          { label: 'Confidence', value: 'low / medium / high' },
         ].map(({ label, value }) => (
           <span
             key={label}
@@ -172,27 +189,37 @@ export default function OtchetPoDohodnostiPage() {
         <section className="py-20 sm:py-28 px-4 sm:px-6 bg-[var(--t-bg)]">
           <div className="max-w-3xl mx-auto text-center">
             <h1 className="text-4xl sm:text-5xl font-bold text-[var(--t-text)] leading-tight tracking-tight">
-              Сколько реально могут приносить ваши объекты
+              Отчёт по потенциалу локации для аренды
             </h1>
             <p className="mt-5 text-lg sm:text-xl text-[var(--t-text-2)] leading-relaxed max-w-2xl mx-auto">
-              Показываем ожидаемый доход, уровень спроса, конкуренцию и ключевые факторы по конкретному адресу.
+              Быстрый preview показывает первые сигналы по адресу. Полный отчёт собирает demand, конкуренцию,
+              магниты, стратегию и ограничения в deliverable, который можно сохранить и отправить партнёрам.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                href={FAST_PREVIEW_HREF}
+                className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
+              >
+                Запустить быстрый preview
+              </Link>
               <a
                 href={REPORT_CTA_HREF}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
-              >
-                Получить отчёт
-              </a>
-              <Link
-                href={METHODOLOGY_HREF}
                 className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-surface-2)] transition-all text-base w-full sm:w-auto"
               >
-                Как мы оцениваем доходность
+                Заказать полный отчёт
+              </a>
+              <Link
+                href={SAMPLE_REPORT_HREF}
+                className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-surface-2)] transition-all text-base w-full sm:w-auto"
+              >
+                Пример отчёта
               </Link>
             </div>
+            <p className="mt-4 text-xs text-[var(--t-muted)]">
+              Оценки зависят от качества данных, параметров объекта, сезона, каналов продаж и управления.
+            </p>
           </div>
         </section>
 
@@ -211,8 +238,49 @@ export default function OtchetPoDohodnostiPage() {
           </div>
         </section>
 
-        {/* ── What the report shows ── */}
+        {/* ── Product flow ── */}
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
+              Preview отдельно, полный отчёт отдельно
+            </h2>
+            <p className="text-[var(--t-muted)] text-base mb-10">
+              Preview нужен, чтобы быстро увидеть ценность и ограничения. Полный отчёт — это уже документ для решения по объекту.
+            </p>
+            <div className="grid md:grid-cols-3 gap-4">
+              {REPORT_FLOW.map((item, index) => (
+                <div key={item.title} className="p-5 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Шаг {index + 1}</p>
+                  <h3 className="mt-3 font-semibold text-[var(--t-text)] text-base leading-snug">{item.title}</h3>
+                  <p className="mt-2 text-sm text-[var(--t-muted)] leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              <Link
+                href={FAST_PREVIEW_HREF}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-[var(--t-accent)] text-white font-bold hover:bg-[var(--t-accent-hover)] transition-colors"
+              >
+                Запустить preview
+              </Link>
+              <Link
+                href={SAMPLE_REPORT_HREF}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text-2)] font-semibold hover:bg-[var(--t-surface-2)] transition-colors"
+              >
+                Посмотреть sample-отчёт
+              </Link>
+              <Link
+                href={METHODOLOGY_HREF}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text-2)] font-semibold hover:bg-[var(--t-surface-2)] transition-colors"
+              >
+                Методология
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* ── What the report shows ── */}
+        <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
               Что показывает отчёт
@@ -242,7 +310,7 @@ export default function OtchetPoDohodnostiPage() {
               Для каких объектов
             </h2>
             <p className="text-[var(--t-muted)] text-base mb-8">
-              Отчёт работает для любых объектов посуточной аренды — от одной квартиры до портфеля.
+              Отчёт подходит для предварительной оценки разных типов объектов, если по адресу достаточно данных.
             </p>
             <div className="flex flex-wrap gap-3">
               {FOR_WHOM.map(({ icon, label }) => (
@@ -270,8 +338,8 @@ export default function OtchetPoDohodnostiPage() {
             <p className="text-[var(--t-text-2)] text-base leading-relaxed mb-6">
               Расчёт основан на открытых данных, отраслевых метриках и собственной модели анализа
               локации, спроса и конкурентной среды. Мы используем стандартные гостиничные показатели
-              и дополняем их более глубокой оценкой конкретного адреса — так результат точнее,
-              чем усреднённые рыночные данные.
+              и дополняем их адресной оценкой конкретной локации — так видно, какие выводы опираются
+              на доступные сигналы, а где нужна дополнительная проверка.
             </p>
             <Link
               href={METHODOLOGY_HREF}
@@ -289,30 +357,36 @@ export default function OtchetPoDohodnostiPage() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)]">
-              Проверьте доходность ваших объектов
+              Проверьте потенциал объекта по адресу
             </h2>
             <p className="mt-4 text-[var(--t-text-2)] text-lg leading-relaxed">
-              Отправьте адрес — подготовим отчёт по локации, спросу и конкурентной среде.
+              Начните с быстрого preview или отправьте объект на полный разбор с учётом контекста и качества данных.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                href={FAST_PREVIEW_HREF}
+                className="inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
+              >
+                Быстрый preview
+              </Link>
               <a
                 href={REPORT_CTA_HREF}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
+                className="inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-bg)] transition-all text-base w-full sm:w-auto"
               >
                 <TgIcon className="w-5 h-5 shrink-0" />
-                Получить отчёт
+                Полный отчёт
               </a>
               <Link
-                href={METHODOLOGY_HREF}
+                href={SAMPLE_REPORT_HREF}
                 className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-bg)] transition-all text-base w-full sm:w-auto"
               >
-                Как мы считаем
+                Sample
               </Link>
             </div>
             <p className="mt-4 text-xs text-[var(--t-muted)]">
-              Без обязательств. Ответ — в течение одного рабочего дня.
+              Полный отчёт не обещает точный доход: он показывает вероятный диапазон, условия и ограничения.
             </p>
           </div>
         </section>

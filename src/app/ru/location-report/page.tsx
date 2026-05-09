@@ -27,6 +27,12 @@ export default function RuLocationFullReportPage() {
               >
                 Запустить анализ заново
               </Link>
+              <Link
+                href="/ru/location-report/sample"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
+              >
+                Открыть пример отчёта
+              </Link>
             </div>
             <p className="mt-4 text-xs text-slate-600">
               Подсказка: нажмите «Открыть полный отчёт» в мини-анализе — вы получите новую ссылку вида <span className="font-mono">/ru/location-report/&lt;reportId&gt;</span>.
