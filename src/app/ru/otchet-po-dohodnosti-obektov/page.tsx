@@ -11,7 +11,6 @@ import {
   PublicSecondaryCta,
   PublicSection,
   PublicSectionHeader,
-  PublicTextLink,
 } from '@/components/public';
 import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
@@ -23,6 +22,9 @@ export const metadata: Metadata = {
 
 const EXPRESS_ASSESSMENT_HREF = '/ru/location-analysis?mode=residential';
 const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
+
+const methodologyLinkClassName =
+  'text-base font-normal text-[var(--t-text-2)] underline-offset-4 transition-colors hover:text-[var(--t-text)] hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--t-accent)]';
 
 const REPORT_BLOCKS = [
   {
@@ -115,13 +117,15 @@ export default function OtchetPoDohodnostiPage() {
                   Посмотреть пример отчёта
                 </PublicSecondaryCta>
               </div>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--t-muted)]">
+              <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--t-muted)]">
                 Введите адрес и получите предварительный вывод по локации. Полный отчёт помогает оценить коммерческий
                 потенциал объекта до того, как рисковать бюджетом.
               </p>
-              <div className="mt-4">
-                <PublicTextLink href={METHODOLOGY_HREF}>Как мы считаем</PublicTextLink>
-              </div>
+              <p className="mt-4">
+                <Link href={METHODOLOGY_HREF} className={methodologyLinkClassName}>
+                  Как считается оценка →
+                </Link>
+              </p>
             </div>
 
             <aside className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 shadow-sm">
@@ -239,15 +243,17 @@ export default function OtchetPoDohodnostiPage() {
                 Посмотреть пример отчёта
               </PublicSecondaryCta>
             </div>
-            <div className="mt-5 flex justify-center">
-              <PublicTextLink href={METHODOLOGY_HREF}>Как мы считаем</PublicTextLink>
-            </div>
-            <PublicInfoCard className="mt-8 border-[var(--t-border)] bg-[var(--t-surface-2)] text-left">
-              <p className="text-sm leading-relaxed text-[var(--t-text-2)]">
+            <PublicInfoCard className="mx-auto mt-10 max-w-2xl border-[var(--t-border)] bg-[var(--t-surface-2)] text-left">
+              <p className="text-base leading-relaxed text-[var(--t-muted)]">
                 Расчёт не обещает гарантированный доход. Итог зависит от качества данных, состояния объекта, сезона,
                 цены, каналов продаж и управления.
               </p>
             </PublicInfoCard>
+            <p className="mt-5 text-center">
+              <Link href={METHODOLOGY_HREF} className={methodologyLinkClassName}>
+                Как считается оценка →
+              </Link>
+            </p>
           </div>
         </PublicSection>
       </main>
