@@ -8,11 +8,9 @@ import {
   PublicBadge,
   PublicInfoCard,
   PublicPrimaryCta,
-  PublicSecondaryCta,
   PublicSection,
   PublicSectionHeader,
 } from '@/components/public';
-import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const metadata: Metadata = {
   title: 'Отчёт по доходности объекта по адресу — ASI',
@@ -20,7 +18,7 @@ export const metadata: Metadata = {
     'Проверка потенциала дохода по адресу до покупки, аренды или запуска: спрос рядом, конкуренция, сильные стороны, риски и что уточнить перед решением.',
 };
 
-const EXPRESS_ASSESSMENT_HREF = '/ru/location-analysis?mode=residential';
+const EXPRESS_ASSESSMENT_HREF = '/ru/location-analysis?mode=residential#location-check';
 const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
 
 const methodologyLinkClassName =
@@ -109,22 +107,11 @@ export default function OtchetPoDohodnostiPage() {
                 объекта.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
-                <PublicSecondaryCta
-                  href={LOCATION_REPORT_SAMPLE_PATH}
-                  className="sm:min-w-[min(100%,320px)] lg:min-w-[340px]"
-                >
-                  Посмотреть пример отчёта
-                </PublicSecondaryCta>
+                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить объект по адресу</PublicPrimaryCta>
               </div>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--t-muted)]">
                 Введите адрес и получите предварительный вывод по локации. Полный отчёт помогает оценить коммерческий
                 потенциал объекта до того, как рисковать бюджетом.
-              </p>
-              <p className="mt-4">
-                <Link href={METHODOLOGY_HREF} className={methodologyLinkClassName}>
-                  Как считается оценка →
-                </Link>
               </p>
             </div>
 
@@ -232,16 +219,13 @@ export default function OtchetPoDohodnostiPage() {
               title="Сделайте первый шаг к безопасной сделке"
               description={
                 <p className="text-lg leading-relaxed text-[var(--t-text-2)]">
-                  Запустите экспресс-оценку потенциала локации. Если базовые показатели вас устроят — откройте пример
-                  полного отчёта, чтобы увидеть всю глубину аналитики.
+                  Проверьте адрес и посмотрите вывод по локации. Если объект подходит, следующий шаг — обсудить запуск
+                  и подключение управления.
                 </p>
               }
             />
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Запустить экспресс-оценку</PublicPrimaryCta>
-              <PublicSecondaryCta href={LOCATION_REPORT_SAMPLE_PATH} className="sm:min-w-[240px]">
-                Посмотреть пример отчёта
-              </PublicSecondaryCta>
+              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить объект по адресу</PublicPrimaryCta>
             </div>
             <PublicInfoCard className="mx-auto mt-10 max-w-2xl border-[var(--t-border)] bg-[var(--t-surface-2)] text-left">
               <p className="text-base leading-relaxed text-[var(--t-muted)]">
@@ -249,13 +233,35 @@ export default function OtchetPoDohodnostiPage() {
                 цены, каналов продаж и управления.
               </p>
             </PublicInfoCard>
-            <p className="mt-5 text-center">
-              <Link href={METHODOLOGY_HREF} className={methodologyLinkClassName}>
-                Как считается оценка →
-              </Link>
+          </div>
+        </PublicSection>
+
+        <PublicSection variant="muted">
+          <div className="mx-auto max-w-3xl text-center px-2">
+            <h2 className="text-2xl font-bold tracking-tight text-[var(--t-text)] sm:text-3xl">
+              Объект выглядит перспективным? Следующий шаг - подключить управление
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)] sm:text-lg">
+              ASI помогает перейти от оценки локации к запуску: коммуникация, сценарии, контроль задач и операционная
+              автоматизация.
+            </p>
+            <div className="mt-8 flex flex-col items-center justify-center">
+              <PublicPrimaryCta href="/connect">Запросить подключение</PublicPrimaryCta>
+            </div>
+            <p className="mt-6 text-center text-sm leading-relaxed text-[var(--t-muted)] max-w-xl mx-auto">
+              В одной форме можно запросить полный разбор объектов, подключение или обсуждение запуска — кратко опишите
+              задачу, мы предложим следующий шаг.
             </p>
           </div>
         </PublicSection>
+
+        <div className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-8 sm:px-6">
+          <p className="mx-auto max-w-3xl text-center text-sm text-[var(--t-muted)]">
+            <Link href={METHODOLOGY_HREF} className={methodologyLinkClassName}>
+              Как считается оценка →
+            </Link>
+          </p>
+        </div>
       </main>
 
       <footer>

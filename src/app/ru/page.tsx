@@ -7,7 +7,9 @@ import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
-const DEMO_LINK = '/connect';
+const CONNECT_HREF = '/connect';
+/** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
+const RU_LOCATION_CHECK_HREF = '/ru/location-analysis?mode=residential#location-check';
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
@@ -34,139 +36,96 @@ export default function HomeRu() {
           offerHeadline: 'Цифровая управляющая компания для арендного бизнеса',
           offerSub:
             'ASI берёт на себя коммуникацию, операционные сценарии и анализ объектов: меньше ручной работы, меньше расходов на персонал и до 99% автоматизации управленческих процессов.',
-          ctaLabel: 'Запросить разбор объектов',
-          ctaHref: DEMO_LINK,
+          ctaLabel: 'Проверить объект по адресу',
+          ctaHref: RU_LOCATION_CHECK_HREF,
           ctaExternal: false,
-          ctaSecondaryLabel: 'Оценить объект по адресу',
-          ctaSecondaryHref: '/ru/otchet-po-dohodnosti-obektov',
+          ctaSecondaryLabel: 'Запросить разбор объектов',
+          ctaSecondaryHref: CONNECT_HREF,
           ctaSecondaryExternal: false,
           ctaSub:
-            'Начните с оценки локации: отчёт покажет, стоит ли запускать объект, брать его в аренду или искать другой вариант.',
-          heroBenefits: [
-            {
-              title: 'Меньше ручной работы',
-              body: 'Система помогает закрывать повторяющиеся задачи без постоянного участия оператора.',
-            },
-            {
-              title: 'Экономия на операционке',
-              body: 'Снижает зависимость от персонала и ручного контроля.',
-            },
-            {
-              title: 'Автоматизация коммуникаций',
-              body: 'Telegram, email и телефонный канал можно развивать как единый контур общения с гостями.',
-            },
-            {
-              title: 'Проверка объектов до запуска',
-              body: 'Отчёт по локации помогает не вкладываться в слабые адреса.',
-            },
-          ],
+            'Сначала проверьте адрес — затем решите, подключать ли управление ASI.',
         }} telegramVariant="icon" showTopRow={false} />
 
-        {/* ── Первый шаг: отчёт по локации ── */}
-        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
-              Первый шаг — проверить объект
-            </h2>
-            <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed max-w-3xl mb-6">
-              Прежде чем запускать рекламу, нанимать людей или брать объект в работу, проверьте его локацию. Отчёт покажет спрос, конкуренцию, риски и потенциал дохода по адресу.
-            </p>
-            <Link
-              href="/ru/otchet-po-dohodnosti-obektov"
-              className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
-            >
-              Оценить объект по адресу →
-            </Link>
-          </div>
-        </section>
-
-        {/* ── Отличие от классической УК ── */}
-        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
-              Чем ASI отличается от обычной управляющей компании
-            </h2>
-            <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed max-w-3xl mb-5">
-              Обычная управляющая компания держится на людях и ручных процессах. ASI строит цифровой операционный контур: коммуникация, сценарии, контроль задач и аналитика объекта работают в одной системе.
-            </p>
-            <Link
-              href="/ru/how-it-works"
-              className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-colors text-sm font-semibold text-[var(--t-text)]"
-            >
-              Подробнее о платформе и сценариях →
-            </Link>
-          </div>
-        </section>
-
-        {/* ── Ключевые модули ── */}
-        <section className="py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t-2 border-[color:var(--t-accent)]">
-          <div className="max-w-4xl mx-auto">
+        {/* ── Воронка: проверка → вывод → подключение ── */}
+        <section
+          className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t-2 border-[color:var(--t-accent)]"
+        >
+          <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Ключевые модули ASI
+              Как ASI ведёт объект от проверки до управления
             </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
-              ASI объединяет ключевые операционные модули в одной системе: коммуникацию, оценку локации и доходности, а также операционные сценарии управления объектами.
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-10 max-w-2xl">
+              Три шага: проверить локацию, понять вывод и при необходимости подключить управление.
             </p>
-            <div className="grid sm:grid-cols-3 gap-5">
+            <div className="grid sm:grid-cols-3 gap-6">
 
-              {/* Card 1 — Коммуникационный модуль */}
-              <Link
-                href="/connect"
-                aria-label="Открыть подключение: коммуникационный модуль"
-                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
-              >
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
-                    Коммуникационный модуль
-                  </h3>
-                </div>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Обрабатывает сообщения гостей, помогает вести переписку, поддерживает голосовой сервис и готовится к работе со звонками.
-                </p>
-                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
-                  Запросить подключение →
+              <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--t-accent)] text-white text-2xl font-bold mb-5" aria-hidden>
+                  1
                 </span>
-              </Link>
+                <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
+                  Проверьте объект
+                </h3>
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
+                  Введите адрес и узнайте, есть ли у локации спрос, конкуренция и риски.
+                </p>
+                <Link
+                  href={RU_LOCATION_CHECK_HREF}
+                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                >
+                  Проверить адрес
+                </Link>
+              </div>
 
-              {/* Card 2 — Модуль оценки локации и доходности */}
-              <Link
-                href="/ru/location-analysis"
-                aria-label="Открыть анализ локации"
-                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
-              >
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
-                    Модуль оценки локации и доходности
-                  </h3>
-                </div>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Показывает спрос, конкуренцию и уровень цен рядом с объектом, чтобы помочь оценить его потенциал доходности.
-                </p>
-                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
-                  Открыть анализ локации →
+              <div className="flex flex-col p-7 sm:p-8 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] min-h-[300px]">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--t-surface-2)] border-2 border-[var(--t-accent)] text-[var(--t-accent)] text-2xl font-bold mb-5" aria-hidden>
+                  2
                 </span>
-              </Link>
+                <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
+                  Получите вывод по локации
+                </h3>
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Отчёт помогает понять, стоит ли запускать объект, брать его в аренду или искать другой вариант.
+                </p>
+              </div>
 
-              {/* Card 3 — Операционный модуль */}
-              <Link
-                href="/connect"
-                aria-label="Открыть подключение: операционный модуль"
-                className="group flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] hover:bg-[color-mix(in_srgb,var(--t-accent)_12%,var(--t-surface))] transition-colors min-h-[260px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
-              >
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug">
-                    Операционный модуль
-                  </h3>
-                </div>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
-                  Берёт на себя рутинные процессы по объекту: доступы, check-in, задачи, инциденты, оплаты и контроль выполнения.
-                </p>
-                <span className="mt-5 inline-flex items-center justify-center px-5 py-3 rounded-xl bg-[color:var(--t-accent)] text-white font-semibold text-sm group-hover:bg-[color:var(--t-accent-hover)] transition-colors">
-                  Запросить подключение →
+              <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--t-accent)] text-white text-2xl font-bold mb-5" aria-hidden>
+                  3
                 </span>
-              </Link>
+                <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
+                  Подключите управление
+                </h3>
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
+                  Если объект подходит, ASI помогает автоматизировать коммуникацию, сценарии и операционные процессы.
+                </p>
+                <Link
+                  href={CONNECT_HREF}
+                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                >
+                  Запросить подключение
+                </Link>
+              </div>
 
             </div>
+          </div>
+        </section>
+
+        {/* ── После проверки локации ── */}
+        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
+              Объект выглядит перспективным? Следующий шаг - подключить управление
+            </h2>
+            <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed mb-6">
+              ASI помогает перейти от оценки локации к запуску: коммуникация, сценарии, контроль задач и операционная автоматизация.
+            </p>
+            <Link
+              href={CONNECT_HREF}
+              className="inline-flex items-center justify-center px-8 py-4 rounded-xl bg-[var(--t-accent)] text-white font-bold text-base hover:bg-[var(--t-accent-hover)] transition-colors shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface-2)]"
+            >
+              Запросить подключение
+            </Link>
           </div>
         </section>
 
@@ -304,15 +263,15 @@ export default function HomeRu() {
               {[
                 {
                   q: 'Что уже доступно прямо сейчас?',
-                  a: 'Два модуля: коммуникационный и оценки локации. Первый принимает входящие обращения и ведёт переписку с гостями. Второй оценивает потенциал объекта по спросу, окружению и конкурентам.',
+                  a: 'Проверка локации по адресу и операционный контур: входящие обращения, переписка с гостями и повторяющиеся задачи по объектам.',
                 },
                 {
-                  q: 'Как работает коммуникационный модуль?',
-                  a: 'Принимает входящие обращения, ведёт переписку с гостями и автоматизирует типовые диалоговые сценарии. Оператор видит историю и подключается только в нестандартных ситуациях.',
+                  q: 'Как работает коммуникация с гостями?',
+                  a: 'Принимает обращения, ведёт переписку и закрывает типовые сценарии. Человек подключается, когда нужно суждение в нестандартной ситуации.',
                 },
                 {
-                  q: 'Что показывает модуль оценки локации?',
-                  a: 'Спрос в зоне, ближайшие магниты трафика, конкурентную плотность и расчётный потенциал доходности. Удобно перед запуском объекта или при пересмотре позиционирования.',
+                  q: 'Что показывает проверка локации?',
+                  a: 'Спрос в зоне, магниты трафика рядом, конкуренцию и расчётный потенциал доходности — до запуска или при смене стратегии объекта.',
                 },
                 {
                   q: 'Кому это уже подходит?',

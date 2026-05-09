@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import type { LocationAnalysisMode } from '@/components/LocationIntelligenceDemo';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
@@ -26,7 +27,36 @@ export default async function RuLocationAnalysisPage(
         <RuPublicNavHeader surface="dark" density="landing" />
 
         <main>
-          <LocationIntelligenceDemo locale="ru" initialMode={mode} edgeToHeader />
+          <section id="location-check" className="scroll-mt-20">
+            <LocationIntelligenceDemo locale="ru" initialMode={mode} edgeToHeader />
+          </section>
+
+          <section
+            aria-labelledby="location-analysis-connect-heading"
+            className="border-t border-slate-800/60 bg-slate-950 px-4 py-14 sm:px-6 sm:py-20"
+          >
+            <div className="mx-auto max-w-3xl text-center">
+              <h2
+                id="location-analysis-connect-heading"
+                className="text-2xl font-bold tracking-tight text-white sm:text-3xl"
+              >
+                Объект выглядит перспективным? Следующий шаг - подключить управление
+              </h2>
+              <p className="mt-4 text-base leading-relaxed text-slate-300 sm:text-lg">
+                ASI помогает перейти от оценки локации к запуску: коммуникация, сценарии, контроль задач и операционная
+                автоматизация.
+              </p>
+              <Link
+                href="/connect"
+                className="mt-8 inline-flex min-w-[min(100%,280px)] items-center justify-center rounded-xl bg-white px-8 py-4 text-base font-bold text-slate-900 shadow-lg transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              >
+                Запросить подключение
+              </Link>
+              <p className="mt-6 text-sm leading-relaxed text-slate-500">
+                Полный разбор объектов или обсуждение запуска — через ту же форму: опишите задачу кратко.
+              </p>
+            </div>
+          </section>
         </main>
 
         <RuComplianceFooter />
