@@ -2,6 +2,11 @@ import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
 import { TgIcon } from '@/components/TgIcon';
 
+export interface HeroBenefitCard {
+  title: string;
+  body: string;
+}
+
 export interface HeroContent {
   /* top-left */
   aboutLabel: string;
@@ -19,6 +24,12 @@ export interface HeroContent {
   ctaHref: string;
   ctaExternal?: boolean;
   ctaSub?: string;
+  /** Optional second button (e.g. internal link); renders below primary CTA */
+  ctaSecondaryLabel?: string;
+  ctaSecondaryHref?: string;
+  ctaSecondaryExternal?: boolean;
+  /** Short cards below CTAs (e.g. value props) */
+  heroBenefits?: HeroBenefitCard[];
 }
 
 export function HeroSection({
@@ -34,7 +45,13 @@ export function HeroSection({
     aboutLabel, aboutHeadline, aboutBody, aboutPoints,
     detailsLabel, loginLabel, loginHref,
     offerHeadline, offerSub, ctaLabel, ctaHref, ctaExternal = true, ctaSub,
+    ctaSecondaryLabel, ctaSecondaryHref, ctaSecondaryExternal = false,
+    heroBenefits,
   } = content;
+
+  const secondaryIsInternal =
+    typeof ctaSecondaryHref === 'string' && ctaSecondaryHref.startsWith('/');
+  const hasSecondaryCta = Boolean(ctaSecondaryLabel && ctaSecondaryHref);
 
   return (
     <section
@@ -136,18 +153,65 @@ export function HeroSection({
           <p className="mt-6 text-xl sm:text-2xl text-[var(--t-text-2)] leading-snug">
             {offerSub}
           </p>
-          <div className="mt-10 flex flex-col items-center gap-3">
+          <div
+            className={[
+              'mt-10 flex flex-col items-center gap-3',
+              hasSecondaryCta ? 'max-w-xl mx-auto' : '',
+            ].join(' ')}
+          >
             <a
               href={ctaHref}
               {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-              className="inline-flex items-center justify-center px-10 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] active:scale-[0.98] transition-all shadow-lg hover:scale-[1.02] text-base sm:text-lg"
+              className={[
+                'inline-flex items-center justify-center px-10 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] active:scale-[0.98] transition-all shadow-lg hover:scale-[1.02] text-base sm:text-lg',
+                hasSecondaryCta ? 'w-full sm:w-auto min-w-[min(100%,280px)]' : '',
+              ].join(' ')}
             >
               {ctaLabel}
             </a>
+            {ctaSecondaryLabel && ctaSecondaryHref && (
+              secondaryIsInternal ? (
+                <Link
+                  href={ctaSecondaryHref}
+                  className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
+                >
+                  {ctaSecondaryLabel}
+                </Link>
+              ) : (
+                <a
+                  href={ctaSecondaryHref}
+                  {...(ctaSecondaryExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
+                >
+                  {ctaSecondaryLabel}
+                </a>
+              )
+            )}
             {ctaSub && (
-              <p className="text-xs text-[var(--t-muted)]">{ctaSub}</p>
+              <p
+                className={[
+                  'leading-snug text-center px-1',
+                  hasSecondaryCta ? 'text-sm text-[var(--t-text-2)]' : 'text-xs text-[var(--t-muted)]',
+                ].join(' ')}
+              >
+                {ctaSub}
+              </p>
             )}
           </div>
+
+          {heroBenefits && heroBenefits.length > 0 && (
+            <div className="mt-12 sm:mt-14 grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">
+              {heroBenefits.map(({ title, body }) => (
+                <div
+                  key={title}
+                  className="flex flex-col p-5 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)]"
+                >
+                  <h3 className="font-bold text-[var(--t-text)] text-sm leading-snug mb-2">{title}</h3>
+                  <p className="text-xs sm:text-sm text-[var(--t-text-2)] leading-relaxed">{body}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>

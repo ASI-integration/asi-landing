@@ -31,36 +31,70 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: 'Автопилот для вашего арендного бизнеса',
-          offerSub: 'ASI автоматизирует коммуникацию и операционные сценарии. До 99% автоматизации процессов и снижение затрат на персонал.',
+          offerHeadline: 'Цифровая управляющая компания для арендного бизнеса',
+          offerSub:
+            'ASI берёт на себя коммуникацию, операционные сценарии и анализ объектов: меньше ручной работы, меньше расходов на персонал и до 99% автоматизации управленческих процессов.',
           ctaLabel: 'Запросить разбор объектов',
           ctaHref: DEMO_LINK,
           ctaExternal: false,
+          ctaSecondaryLabel: 'Оценить объект по адресу',
+          ctaSecondaryHref: '/ru/otchet-po-dohodnosti-obektov',
+          ctaSecondaryExternal: false,
+          ctaSub:
+            'Начните с оценки локации: отчёт покажет, стоит ли запускать объект, брать его в аренду или искать другой вариант.',
+          heroBenefits: [
+            {
+              title: 'Меньше ручной работы',
+              body: 'Система помогает закрывать повторяющиеся задачи без постоянного участия оператора.',
+            },
+            {
+              title: 'Экономия на операционке',
+              body: 'Снижает зависимость от персонала и ручного контроля.',
+            },
+            {
+              title: 'Автоматизация коммуникаций',
+              body: 'Telegram, email и телефонный канал можно развивать как единый контур общения с гостями.',
+            },
+            {
+              title: 'Проверка объектов до запуска',
+              body: 'Отчёт по локации помогает не вкладываться в слабые адреса.',
+            },
+          ],
         }} telegramVariant="icon" showTopRow={false} />
 
-        {/* ── Что такое ASI (коротко) ── */}
-        <section className="py-14 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
+        {/* ── Первый шаг: отчёт по локации ── */}
+        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Что такое ASI
+            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
+              Первый шаг — проверить объект
             </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg leading-relaxed max-w-3xl">
-              ASI — это операционный слой, который исполняет процессы вместо команды: принимает обращения, ведёт гостей, запускает сценарии, контролирует выполнение и собирает операционную аналитику.
+            <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed max-w-3xl mb-6">
+              Прежде чем запускать рекламу, нанимать людей или брать объект в работу, проверьте его локацию. Отчёт покажет спрос, конкуренцию, риски и потенциал дохода по адресу.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/ru/how-it-works"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-colors text-sm font-semibold"
-              >
-                Подробнее о платформе и сценариях →
-              </Link>
-              <Link
-                href={DEMO_LINK}
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
-              >
-                Запросить разбор объектов →
-              </Link>
-            </div>
+            <Link
+              href="/ru/otchet-po-dohodnosti-obektov"
+              className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-[var(--t-accent)] text-white font-semibold text-sm hover:bg-[var(--t-accent-hover)] transition-colors"
+            >
+              Оценить объект по адресу →
+            </Link>
+          </div>
+        </section>
+
+        {/* ── Отличие от классической УК ── */}
+        <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
+          <div className="max-w-4xl mx-auto">
+            <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
+              Чем ASI отличается от обычной управляющей компании
+            </h2>
+            <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed max-w-3xl mb-5">
+              Обычная управляющая компания держится на людях и ручных процессах. ASI строит цифровой операционный контур: коммуникация, сценарии, контроль задач и аналитика объекта работают в одной системе.
+            </p>
+            <Link
+              href="/ru/how-it-works"
+              className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-colors text-sm font-semibold text-[var(--t-text)]"
+            >
+              Подробнее о платформе и сценариях →
+            </Link>
           </div>
         </section>
 
