@@ -1,4 +1,4 @@
-## vexp — Context-Aware AI Coding <!-- vexp v1.2.30 -->
+## vexp — Context-Aware AI Coding <!-- vexp v2.0.12 -->
 
 ### MANDATORY: use vexp pipeline — do NOT grep or glob the codebase
 For every task — bug fixes, features, refactors, debugging:
@@ -22,14 +22,9 @@ Only use Read when you need exact raw content to edit a specific line.
   - `run_pipeline({ "task": "add auth", "observation": "using JWT" })` — save insight in same call
 
 ### Other MCP tools (use only when run_pipeline is insufficient)
-- `get_context_capsule` — lightweight alternative for simple questions only
-- `get_impact_graph` — standalone deep impact analysis of a specific symbol
-- `search_logic_flow` — trace execution paths between two specific symbols
 - `get_skeleton` — **preferred over Read** for inspecting files (minimal/standard/detailed detail levels, 70-90% token savings)
 - `index_status` — indexing status and health check
-- `get_session_context` — recall observations from current/previous sessions
-- `search_memory` — cross-session search for past decisions
-- `save_observation` — persist insights (prefer using run_pipeline's observation param instead)
+- `expand_vexp_ref` — expand V-REF hash placeholders in v2 compact output
 
 ### Workflow
 1. `run_pipeline("your task")` — ALWAYS FIRST. Returns pivots + impact + memories in 1 call

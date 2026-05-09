@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createStandaloneReport } from '@/lib/location/standalone-report-store';
-import { isLocationStandaloneReportV1, isLocationCommercialReport } from '@/lib/location/standalone-report';
+import { isCanonicalLocationReportPayload } from '@/lib/location/standalone-report';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const locale = parseLocale(body?.locale);
   const report = body?.report;
 
-  if (!isLocationStandaloneReportV1(report) && !isLocationCommercialReport(report)) {
+  if (!isCanonicalLocationReportPayload(report)) {
     return NextResponse.json({ error: 'invalid_report' }, { status: 400 });
   }
 

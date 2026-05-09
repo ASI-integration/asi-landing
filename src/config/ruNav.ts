@@ -8,7 +8,7 @@ export const ruNavMainLinks = [
   { href: '/ru/otchet-po-dohodnosti-obektov', label: 'Доходность объектов' },
   { href: '/ru/how-it-works', label: 'Как это работает' },
   { href: '/#pricing', label: 'Тарифы' },
-  { href: '/#faq', label: 'FAQ' },
+  { href: '/#faq', label: 'Вопросы' },
   { href: '/connect', label: 'Подключение' },
 ] as const;
 

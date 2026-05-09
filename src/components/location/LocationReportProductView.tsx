@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 import type {
   FullLocationReport,
   IncomeEstimate,
@@ -96,10 +97,10 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
               Печать / PDF
             </button>
             <Link
-              href="/ru/location-analysis?mode=residential"
+              href={LOCATION_REPORT_PRODUCT_PATH}
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
             >
-              Новый preview
+              О продукте
             </Link>
           </div>
         </div>

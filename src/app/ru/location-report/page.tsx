@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
+import { LOCATION_REPORT_PRODUCT_PATH, LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export default function RuLocationFullReportPage() {
   const emptyState = useMemo(() => {
@@ -16,19 +17,13 @@ export default function RuLocationFullReportPage() {
             </p>
             <div className="mt-7 flex flex-col sm:flex-row gap-3">
               <Link
-                href="/ru"
+                href={LOCATION_REPORT_PRODUCT_PATH}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors"
               >
-                Вернуться на главную
+                О продукте отчёта
               </Link>
               <Link
-                href="/ru/location-analysis"
-                className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
-              >
-                Запустить анализ заново
-              </Link>
-              <Link
-                href="/ru/location-report/sample"
+                href={LOCATION_REPORT_SAMPLE_PATH}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
               >
                 Открыть пример отчёта

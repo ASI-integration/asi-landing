@@ -3,7 +3,12 @@ import { notFound } from 'next/navigation';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 import { CommercialReportView } from '@/components/location/CommercialReportView';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
-import { isLocationStandaloneReportV1, isLocationCommercialReport } from '@/lib/location/standalone-report';
+import {
+  isCanonicalLocationReportPayload,
+  isLocationCommercialReport,
+  isLocationStandaloneReportV1,
+} from '@/lib/location/standalone-report';
+import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,10 +30,10 @@ function MissingReport() {
               Back to home
             </Link>
             <Link
-              href="/features/location-analysis"
+              href={LOCATION_REPORT_SAMPLE_PATH}
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
             >
-              Run the demo preview
+              Open sample report
             </Link>
           </div>
         </div>
@@ -43,6 +48,8 @@ export default async function LocationReportByIdPage(props: { params: Promise<{ 
 
   const entity = await getStandaloneReportById(reportId);
   if (!entity) return <MissingReport />;
+
+  if (!isCanonicalLocationReportPayload(entity.report)) return <MissingReport />;
 
   if (isLocationCommercialReport(entity.report)) {
     return <CommercialReportView report={entity.report} />;

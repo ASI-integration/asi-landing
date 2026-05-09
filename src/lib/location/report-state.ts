@@ -9,6 +9,10 @@ import type {
 
 export type ReportPermalinkSurface = 'public' | 'ru-public' | 'dashboard';
 
+export const LOCATION_REPORT_PRODUCT_PATH = '/ru/otchet-po-dohodnosti-obektov' as const;
+export const LOCATION_REPORT_SAMPLE_PATH = '/ru/location-report/sample' as const;
+export const LEGACY_REPORT_REDIRECT_PATH = LOCATION_REPORT_SAMPLE_PATH;
+
 export function buildLocationReportPermalink(args: {
   reportId: string;
   locale?: ReportLocale;

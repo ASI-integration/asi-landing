@@ -46,12 +46,14 @@ export type {
 
 export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
 export type { LocationCommercialReport, PersistableLocationReport } from './standalone-report';
-export { isLocationCommercialReport, buildCommercialReport } from './standalone-report';
+export { isCanonicalLocationReportPayload, isLocationCommercialReport, buildCommercialReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
 export {
   buildLocationReportPermalink,
   createPreviewReportInput,
   createReportStateRecord,
+  LOCATION_REPORT_PRODUCT_PATH,
+  LOCATION_REPORT_SAMPLE_PATH,
 } from './report-state';
 export type {
   AudienceFit,

@@ -14,13 +14,15 @@ export {
 } from './config';
 
 export { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from './commercial-format-fit';
-export { buildCommercialReport, isLocationCommercialReport } from './standalone-report';
+export { buildCommercialReport, isCanonicalLocationReportPayload, isLocationCommercialReport } from './standalone-report';
 export { buildLocationStandaloneReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
 export {
   buildLocationReportPermalink,
   createPreviewReportInput,
   createReportStateRecord,
+  LOCATION_REPORT_PRODUCT_PATH,
+  LOCATION_REPORT_SAMPLE_PATH,
 } from './report-state';
 
 export {

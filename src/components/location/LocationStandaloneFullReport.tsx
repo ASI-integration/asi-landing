@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { LocationStandaloneReport, LocationStandaloneReportSectionId } from '@/lib/location';
+import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 
 function fmtRub(n: number | null): string {
   if (n == null || !Number.isFinite(n)) return '—';
@@ -526,7 +527,7 @@ export function LocationStandaloneFullReport({
 
                     <div className="print-hide mt-5">
                       <Link
-                        href="/connect"
+                        href={LOCATION_REPORT_PRODUCT_PATH}
                         className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
                       >
                         Получить полный отчет локации

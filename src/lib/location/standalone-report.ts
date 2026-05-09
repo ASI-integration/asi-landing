@@ -124,6 +124,15 @@ export type LocationCommercialReport = {
 
 export type PersistableLocationReport = LocationStandaloneReport | LocationCommercialReport;
 
+/**
+ * Canonical sellable report payloads must be versioned persisted reports.
+ * Legacy /report/[id] generator output has no version field and must never
+ * pass this guard as a commercial/location report.
+ */
+export function isCanonicalLocationReportPayload(x: any): x is PersistableLocationReport {
+  return isLocationStandaloneReportV1(x) || isLocationCommercialReport(x);
+}
+
 export function isLocationCommercialReport(x: any): x is LocationCommercialReport {
   return Boolean(
     x &&

@@ -9,6 +9,8 @@ import {
   buildLocationStandaloneReport,
   buildCommercialReport,
   buildLocationReportPermalink,
+  LOCATION_REPORT_PRODUCT_PATH,
+  LOCATION_REPORT_SAMPLE_PATH,
   getBand,
   formatDist,
   projectToSVG,
@@ -2053,7 +2055,7 @@ function ASIPanel({
         if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
         router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
       } catch {
-        router.push('/ru/location-report');
+        router.push(LOCATION_REPORT_SAMPLE_PATH);
       }
     })();
   }
@@ -2595,7 +2597,7 @@ function ASIPanel({
         </p>
         <button
           onClick={() =>
-            router.push(locale === 'ru' ? '/connect' : '/report')}
+            router.push(LOCATION_REPORT_PRODUCT_PATH)}
           className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.99]"
         >
           {c.ctaBlock.button}
@@ -2925,7 +2927,7 @@ function CommercialASIPanel({
         if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
         router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
       } catch {
-        router.push('/ru/location-report');
+        router.push(LOCATION_REPORT_SAMPLE_PATH);
       }
     })();
   }

@@ -4,7 +4,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
-import { TgIcon } from '@/components/TgIcon';
+import { LOCATION_REPORT_PRODUCT_PATH, LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const metadata: Metadata = {
   title: 'Как мы оцениваем доходность объектов — ASI',
@@ -12,8 +12,8 @@ export const metadata: Metadata = {
     'Методология оценки доходности объектов посуточной аренды: данные, отраслевые метрики и подход к анализу локации, спроса и конкурентной среды.',
 };
 
-const PRODUCT_HREF  = '/ru/otchet-po-dohodnosti-obektov';
-const REPORT_CTA_HREF = 'https://t.me/ASI_core_bot';
+const PRODUCT_HREF = LOCATION_REPORT_PRODUCT_PATH;
+const SAMPLE_REPORT_HREF = LOCATION_REPORT_SAMPLE_PATH;
 
 /* ─── Data factors ────────────────────────────────────────────────────────── */
 const DATA_FACTORS = [
@@ -252,15 +252,12 @@ export default function KakMyOcenivaemPage() {
               Отправьте адрес — подготовим оценку потенциала с явными допущениями и ограничениями.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <a
-                href={REPORT_CTA_HREF}
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href={SAMPLE_REPORT_HREF}
                 className="inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
               >
-                <TgIcon className="w-5 h-5 shrink-0" />
-                Получить расчёт по адресу
-              </a>
+                Открыть sample-отчёт
+              </Link>
               <Link
                 href={PRODUCT_HREF}
                 className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-bg)] transition-all text-base w-full sm:w-auto"
