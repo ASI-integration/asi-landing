@@ -52,29 +52,29 @@ export default function OtchetPoDohodnostiPage() {
       <RuPublicNavHeader surface="theme" density="landing" />
 
       <main>
-        <section className="px-4 py-16 sm:px-6 sm:py-20 lg:py-24 bg-[var(--t-bg)]">
-          <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+        <section className="bg-[var(--t-bg)] px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
+          <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1.22fr_0.78fr] lg:items-center">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--t-muted)]">
                 Отчёт по локации
               </p>
-              <h1 className="mt-4 max-w-3xl text-4xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl">
+              <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl lg:text-6xl">
                 Оцените потенциал дохода объекта по адресу
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
                 Экспресс-оценка показывает спрос, конкуренцию, сильные и слабые стороны локации. Полный отчёт помогает
                 принять решение перед покупкой, арендой или запуском объекта.
               </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                 <Link
                   href={EXPRESS_ASSESSMENT_HREF}
-                  className="inline-flex w-full shrink-0 items-center justify-center rounded-xl bg-[var(--t-accent)] px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:whitespace-nowrap"
+                  className="inline-flex min-h-[68px] w-full shrink-0 items-center justify-center rounded-2xl bg-[var(--t-accent)] px-10 py-5 text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:min-w-[330px] sm:whitespace-nowrap"
                 >
                   Запустить экспресс-оценку
                 </Link>
                 <Link
                   href={LOCATION_REPORT_SAMPLE_PATH}
-                  className="inline-flex w-full shrink-0 items-center justify-center rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:whitespace-nowrap"
+                  className="inline-flex min-h-[60px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[330px] sm:whitespace-nowrap sm:text-[17px]"
                 >
                   Посмотреть пример полного отчёта
                 </Link>
@@ -84,19 +84,26 @@ export default function OtchetPoDohodnostiPage() {
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                ['1', 'Адрес объекта'],
-                ['2', 'Экспресс-оценка'],
-                ['3', 'Пример полного отчёта'],
-                ['4', 'Решение по объекту'],
-              ].map(([step, label]) => (
-                <div key={step} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">Шаг {step}</p>
-                  <p className="mt-3 text-lg font-semibold leading-snug text-[var(--t-text)]">{label}</p>
-                </div>
-              ))}
-            </div>
+            <aside className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
+                Что происходит дальше
+              </p>
+              <ol className="mt-5 space-y-4">
+                {[
+                  'Введите адрес объекта',
+                  'Получите экспресс-оценку локации',
+                  'Сравните структуру полного отчёта',
+                  'Решите, стоит ли проверять объект глубже',
+                ].map((label, index) => (
+                  <li key={label} className="flex gap-4">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--t-accent)] text-sm font-bold text-white">
+                      {index + 1}
+                    </span>
+                    <span className="pt-1 text-base font-semibold leading-snug text-[var(--t-text)]">{label}</span>
+                  </li>
+                ))}
+              </ol>
+            </aside>
           </div>
         </section>
 
@@ -183,19 +190,19 @@ export default function OtchetPoDohodnostiPage() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href={EXPRESS_ASSESSMENT_HREF}
-                className="inline-flex w-full shrink-0 items-center justify-center rounded-xl bg-[var(--t-accent)] px-8 py-4 text-base font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:whitespace-nowrap"
+                className="inline-flex min-h-[64px] w-full shrink-0 items-center justify-center rounded-2xl bg-[var(--t-accent)] px-10 py-5 text-lg font-bold text-white shadow-lg transition-all hover:scale-[1.02] hover:bg-[var(--t-accent-hover)] sm:w-auto sm:min-w-[320px] sm:whitespace-nowrap"
               >
                 Запустить экспресс-оценку
               </Link>
               <Link
                 href={LOCATION_REPORT_SAMPLE_PATH}
-                className="inline-flex w-full shrink-0 items-center justify-center rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:whitespace-nowrap"
+                className="inline-flex min-h-[58px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[210px] sm:whitespace-nowrap"
               >
                 Пример отчёта
               </Link>
               <Link
                 href={METHODOLOGY_HREF}
-                className="inline-flex w-full shrink-0 items-center justify-center rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:whitespace-nowrap"
+                className="inline-flex min-h-[58px] w-full shrink-0 items-center justify-center rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] px-8 py-4 text-base font-semibold text-[var(--t-text-2)] transition-all hover:bg-[var(--t-surface-2)] sm:w-auto sm:min-w-[180px] sm:whitespace-nowrap"
               >
                 Методология
               </Link>

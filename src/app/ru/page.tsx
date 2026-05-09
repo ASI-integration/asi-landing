@@ -14,7 +14,7 @@ export default function HomeRu() {
   return (
     <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
 
-      <RuPublicNavHeader surface="theme" density="landing" showContacts={false} />
+      <RuPublicNavHeader surface="theme" density="landing" />
 
       <main>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
@@ -18,15 +19,21 @@ const surfaceHeader: Record<RuPublicNavSurface, string> = {
 };
 
 const surfaceLogo: Record<RuPublicNavSurface, string> = {
-  theme: 'text-2xl font-bold text-[var(--t-text)] tracking-tight shrink-0',
-  light: 'text-2xl font-bold text-slate-900 tracking-tight shrink-0',
-  dark: 'text-2xl font-bold text-white tracking-tight shrink-0',
+  theme: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-[var(--t-text)] tracking-tight shrink-0',
+  light: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-slate-900 tracking-tight shrink-0',
+  dark: 'text-[2rem] sm:text-[2.4rem] font-bold leading-none text-white tracking-tight shrink-0',
 };
 
 const surfaceNav: Record<RuPublicNavSurface, string> = {
   theme: 'text-[var(--t-muted)] hover:text-[var(--t-text)]',
   light: 'text-slate-600 hover:text-slate-900',
   dark: 'text-slate-400 hover:text-white',
+};
+
+const surfaceNavActive: Record<RuPublicNavSurface, string> = {
+  theme: 'text-[var(--t-text)] bg-[var(--t-surface-2)] border-[var(--t-border)]',
+  light: 'text-slate-950 bg-slate-100 border-slate-200',
+  dark: 'text-white bg-slate-800 border-slate-700',
 };
 
 const surfaceMuted: Record<RuPublicNavSurface, string> = {
@@ -59,11 +66,11 @@ const surfaceLogin: Record<RuPublicNavSurface, string> = {
 
 const surfaceTg: Record<RuPublicNavSurface, string> = {
   theme:
-    'hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all',
+    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#2CA5E0]/30 bg-[#2CA5E0]/10 px-3 py-2 text-sm font-semibold text-[#229ED9] transition-all hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50',
   light:
-    'hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-[#229ED9] hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all',
+    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#2CA5E0]/30 bg-[#2CA5E0]/10 px-3 py-2 text-sm font-semibold text-[#229ED9] transition-all hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50',
   dark:
-    'hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-slate-800 border border-slate-600 text-sky-300 hover:bg-slate-700 transition-all',
+    'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-semibold text-sky-300 transition-all hover:bg-slate-700',
 };
 
 export function RuPublicNavHeader({
@@ -75,16 +82,23 @@ export function RuPublicNavHeader({
   density: RuPublicNavDensity;
   showContacts?: boolean;
 }) {
-  const navCls = `text-[13px] sm:text-sm lg:text-[15px] font-medium whitespace-nowrap transition-colors ${surfaceNav[surface]}`;
+  const pathname = usePathname();
+  const navCls =
+    'rounded-lg border px-2.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors sm:text-sm lg:text-[15px]';
 
   const showTheme = surface === 'theme';
+  const isCurrentHref = (href: string) => {
+    if (href.includes('#')) return false;
+    if (href === '/ru') return pathname === '/' || pathname === '/ru';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   return (
     <header className={surfaceHeader[surface]}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         {/* Top row: contacts + email + Telegram + lang + theme + login */}
         {density === 'landing' ? (
-          <div className="py-2 sm:py-2.5 flex items-center justify-between gap-x-4 min-w-0">
+          <div className="py-1.5 sm:py-2 flex items-center justify-between gap-x-3 min-w-0">
             {showContacts ? (
               <div className="flex items-center gap-x-3 min-w-0 overflow-hidden">
                 <Link
@@ -112,12 +126,12 @@ export function RuPublicNavHeader({
                   href="https://t.me/ASI_core_bot"
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="Telegram"
-                  title="Telegram"
+                  aria-label="Написать в Telegram"
+                  title="Написать в Telegram"
                   className={surfaceTg[surface]}
                 >
-                  <TgIcon className="w-4 h-4 shrink-0" />
-                  <span className="sr-only">Telegram</span>
+                  <TgIcon className="h-5 w-5 shrink-0" />
+                  <span>Telegram</span>
                 </a>
               ) : null}
               {showTheme ? <ThemeSwitcher /> : null}
@@ -131,7 +145,7 @@ export function RuPublicNavHeader({
         <div className={`h-px ${surfaceDivider[surface]} opacity-60`} />
 
         {/* Bottom row: logo + main nav */}
-        <div className="py-3 sm:py-3.5 flex items-center gap-4">
+        <div className="py-2.5 sm:py-3 flex items-center gap-4">
           <Link href="/ru" className={surfaceLogo[surface]}>
             ASI
           </Link>
@@ -139,11 +153,19 @@ export function RuPublicNavHeader({
             className="flex items-center gap-x-3 sm:gap-x-3.5 lg:gap-x-4 xl:gap-x-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden min-w-0"
             aria-label="Основная навигация"
           >
-            {ruNavMainLinks.map(({ href, label }) => (
-              <Link key={href} href={href} className={navCls}>
-                {label}
-              </Link>
-            ))}
+            {ruNavMainLinks.map(({ href, label }) => {
+              const isCurrent = isCurrentHref(href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  className={`${navCls} ${isCurrent ? surfaceNavActive[surface] : `border-transparent ${surfaceNav[surface]}`}`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       </div>
