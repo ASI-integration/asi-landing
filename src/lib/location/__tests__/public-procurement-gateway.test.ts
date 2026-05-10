@@ -33,7 +33,7 @@ describe('public procurement gateway', () => {
       hasMore = page.hasMore;
     }
 
-    expect(total).toBe(11);
+    expect(total).toBe(12);
     expect(pages).toBeGreaterThan(1);
   });
 
@@ -45,7 +45,7 @@ describe('public procurement gateway', () => {
     const msk = await listAllProcurementGatewayPages(gateway, { regionOrCity: 'Москва' });
     const spb = await listAllProcurementGatewayPages(gateway, { regionOrCity: 'Санкт-Петербург' });
 
-    expect(msk).toHaveLength(11);
+    expect(msk).toHaveLength(12);
     expect(spb).toHaveLength(1);
     expect(spb[0]?.validated.id).toBe('FX-SPB-012');
   });

@@ -1,6 +1,8 @@
 import type { UrbanDevelopmentCollectInput, UrbanDevelopmentSignal } from '../urban-development';
 import type { ClassifiedPublicProcurementUrbanSignal, PublicProcurementNoticeInput } from './classify-notice';
 import { classifyPublicProcurementNotice } from './classify-notice';
+import type { ProcurementGeoExtracted, ProcurementGeoExtractionResult } from './extract-public-procurement-geo';
+import { composeProcurementLocationReference, extractPublicProcurementGeo } from './extract-public-procurement-geo';
 import { parsePublicProcurementNoticeRecord } from './fixture-types';
 
 /** Work unit after structural validation — `rawPayload` is audit-only and stays off signals. */
@@ -14,8 +16,14 @@ export interface PublicProcurementIngestionContext {
   readonly sourceName: string;
 }
 
+/** Audit-only слой пайплайна: сырые цитаты и промежуточные извлечения не попадают на {@link UrbanDevelopmentSignal}. */
+export interface PublicProcurementIngestionAudit {
+  readonly geoExtraction: ProcurementGeoExtractionResult;
+}
+
 export interface PublicProcurementIngestionPipelineResult {
   readonly signal: UrbanDevelopmentSignal;
+  readonly audit: PublicProcurementIngestionAudit;
 }
 
 /**
@@ -27,14 +35,18 @@ export function validatePublicProcurementRawNoticePayload(payload: unknown): Pro
   return { validated: parsed.validated, rawPayload: parsed.rawPayload };
 }
 
-function provenanceFromValidated(validated: PublicProcurementNoticeInput, sourceName: string): UrbanDevelopmentSignal['sourceProvenance'] {
+function provenanceFromValidated(
+  validated: PublicProcurementNoticeInput,
+  sourceName: string,
+  geo: ProcurementGeoExtracted,
+): UrbanDevelopmentSignal['sourceProvenance'] {
   return {
     sourceName,
     sourceUrl: validated.url,
     externalId: validated.id,
     publishedAt: validated.publishedAt,
     updatedAt: validated.updatedAt,
-    region: validated.regionHint,
+    region: geo.region ?? validated.regionHint ?? geo.city,
   };
 }
 
@@ -42,6 +54,7 @@ function signalFromClassified(
   validated: PublicProcurementNoticeInput,
   classified: ClassifiedPublicProcurementUrbanSignal,
   ctx: PublicProcurementIngestionContext,
+  geoExtracted: ProcurementGeoExtracted,
 ): UrbanDevelopmentSignal {
   const summaryParts = [
     ctx.locale === 'en'
@@ -63,13 +76,13 @@ function signalFromClassified(
     signalType: classified.signalType,
     title: validated.title,
     summary: summaryParts.join(' '),
-    locationReference: validated.regionHint,
+    locationReference: composeProcurementLocationReference(geoExtracted) ?? validated.regionHint,
     status: classified.status,
     confidence: classified.confidence,
     lifecycleStage: classified.lifecycleStage,
     sourceUrl: validated.url,
     sourceDate: validated.publishedAt,
-    sourceProvenance: provenanceFromValidated(validated, ctx.sourceName),
+    sourceProvenance: provenanceFromValidated(validated, ctx.sourceName, geoExtracted),
     evidence: [
       {
         label: ctx.locale === 'en' ? 'Procurement id' : 'Идентификатор закупки',
@@ -92,6 +105,13 @@ function signalFromClassified(
   };
 }
 
+/** Извлечение географии после валидации структуры и до классификации тематики. */
+export function extractGeoFromValidatedProcurementNotice(
+  validated: PublicProcurementNoticeInput,
+): ProcurementGeoExtractionResult {
+  return extractPublicProcurementGeo(validated);
+}
+
 /** Classification stage: dictionary-backed urban signal typing (unchanged rules). */
 export function classifyValidatedProcurementNotice(
   validated: PublicProcurementNoticeInput,
@@ -104,15 +124,17 @@ export function normalizedUrbanSignalFromProcurementPipeline(
   validated: PublicProcurementNoticeInput,
   classified: ClassifiedPublicProcurementUrbanSignal,
   ctx: PublicProcurementIngestionContext,
+  geoExtracted: ProcurementGeoExtracted,
 ): UrbanDevelopmentSignal {
-  return signalFromClassified(validated, classified, ctx);
+  return signalFromClassified(validated, classified, ctx, geoExtracted);
 }
 
 export function runPublicProcurementIngestionPipeline(
   unit: ProcurementNoticeWorkUnit,
   ctx: PublicProcurementIngestionContext,
 ): PublicProcurementIngestionPipelineResult {
+  const geoExtraction = extractGeoFromValidatedProcurementNotice(unit.validated);
   const classified = classifyValidatedProcurementNotice(unit.validated);
-  const signal = normalizedUrbanSignalFromProcurementPipeline(unit.validated, classified, ctx);
-  return { signal };
+  const signal = normalizedUrbanSignalFromProcurementPipeline(unit.validated, classified, ctx, geoExtraction.extracted);
+  return { signal, audit: { geoExtraction } };
 }

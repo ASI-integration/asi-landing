@@ -19,11 +19,11 @@ describe('public procurement fixture adapter', () => {
     });
 
     const raw = await adapter.collect({ regionOrCity: 'Москва', locale: 'ru' });
-    expect(raw).toHaveLength(11);
+    expect(raw).toHaveLength(12);
 
     const result = await collectUrbanDevelopmentSignals({ regionOrCity: 'Москва', locale: 'ru' }, [adapter]);
     expect(result.status).toBe('collected');
-    expect(result.signals).toHaveLength(11);
+    expect(result.signals).toHaveLength(12);
   });
 
   it('classifies thematic notices into expected signal types and lifecycle stages', async () => {
