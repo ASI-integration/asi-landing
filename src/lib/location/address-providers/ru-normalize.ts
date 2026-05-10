@@ -1,3 +1,6 @@
+import type { AddressSearchProfile } from './address-search-profile';
+import { profileRegionalAdjustment } from './address-search-profile';
+
 export interface RuNormalizedQuery {
   raw: string;
   normalized: string;
@@ -10,9 +13,12 @@ export interface RuNormalizedQuery {
 const RU_ABBREV_RULES: Array<{ re: RegExp; replace: string }> = [
   // street
   { re: /(^|[\s,.-])ул\.?(?=$|[\s,.-])/giu, replace: '$1улица' },
+  { re: /(^|[\s,.-])пр-т(?=$|[\s,.-])/giu, replace: '$1проспект' },
   { re: /(^|[\s,.-])пр\.?(?=$|[\s,.-])/giu, replace: '$1проспект' },
-  // house
+  // house / structure (before corpus compaction)
   { re: /(^|[\s,.-])д\.?(?=$|[\s,.-])/giu, replace: '$1дом' },
+  { re: /(^|[\s,.-])стр\.?(?=$|[\s,.-])/giu, replace: '$1строение' },
+  { re: /(^|[\s,.-])лит\.?(?=$|[\s,.-])/giu, replace: '$1литера' },
   // locality
   { re: /(^|[\s,.-])пос\.?(?=$|[\s,.-])/giu, replace: '$1поселок' },
   { re: /(^|[\s,.-])пгт\.?(?=$|[\s,.-])/giu, replace: '$1поселок городского типа' },
@@ -23,11 +29,20 @@ const RU_ABBREV_RULES: Array<{ re: RegExp; replace: string }> = [
 // House + corpus → canonical "<house>к<corpus>". Long forms first so the short
 // "к N" rule does not eat the prefix of "корпус". Applied after RU_ABBREV_RULES.
 const RU_CORPUS_RULES: Array<{ re: RegExp; replace: string }> = [
+  // tight "37к1" / "37к 1" → canonical "37к1"
+  { re: /(\b\d{1,4})к\s*(\d{1,3})\b/giu, replace: '$1к$2' },
   { re: /(\b\d{1,4})\s*,?\s*корпус\s*(\d{1,3})\b/giu, replace: '$1к$2' },
   { re: /(\b\d{1,4})\s*,?\s*корп\.?\s*(\d{1,3})\b/giu, replace: '$1к$2' },
   { re: /(\b\d{1,4})к\.\s*(\d{1,3})\b/giu, replace: '$1к$2' },
   { re: /(\b\d{1,4})\s*,\s*к\s*(\d{1,3})\b/giu, replace: '$1к$2' },
   { re: /(\b\d{1,4})\s+к\s*(\d{1,3})\b/giu, replace: '$1к$2' },
+];
+
+// House ↔ строение / литера (expanded abbreviations above).
+const RU_STRUCTURE_RULES: Array<{ re: RegExp; replace: string }> = [
+  // Avoid `\b` — Cyrillic letters are not ECMAScript “word” chars for `\b`.
+  { re: /(\d{1,4})\s*,?\s*строение\s*(\d{1,3})(?=\s|$|,)/giu, replace: '$1с$2' },
+  { re: /(\d{1,4})\s*,?\s*литера\s*([а-яёa-z\d]{1,4})(?=\s|$|,)/giu, replace: '$1л$2' },
 ];
 
 // Matches a leading settlement-type qualifier in a single address segment.
@@ -60,6 +75,17 @@ export function buildRuProviderQuery(normalized: string): string {
   return (localityBlock + rest).trim() || normalized;
 }
 
+/** Strip flat/unit fragments — geocoders rarely need them and they hurt recall. */
+function stripRuFlatSuffix(query: string): string {
+  let s = query.trim();
+  if (!s) return query;
+  s = s.replace(/\s*,\s*кв\.?\s*\d{1,5}[а-яёa-z]?\b/giu, '');
+  s = s.replace(/\s*,\s*квартира\s*\d{1,5}[а-яёa-z]?\b/giu, '');
+  s = s.replace(/\s+кв\.?\s*\d{1,5}[а-яёa-z]?\b/giu, '');
+  s = s.replace(/\s+квартира\s*\d{1,5}[а-яёa-z]?\b/giu, '');
+  return s.replace(/\s+/g, ' ').replace(/\s*,\s*,/g, ',').replace(/^,\s*/, '').trim();
+}
+
 export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
   const q0 = raw;
   let q = raw.trim();
@@ -76,11 +102,16 @@ export function normalizeRuAddressQuery(raw: string): RuNormalizedQuery {
     q = q.replace(r.re, r.replace);
   }
 
+  for (const r of RU_STRUCTURE_RULES) {
+    q = q.replace(r.re, r.replace);
+  }
+
   // Normalize spaces around commas.
   q = q.replace(/\s*,\s*/g, ', ');
   q = q.replace(/\s+/g, ' ').trim();
 
-  return { raw: q0, normalized: q, providerQuery: buildRuProviderQuery(q) };
+  const providerCore = stripRuFlatSuffix(buildRuProviderQuery(q));
+  return { raw: q0, normalized: q, providerQuery: providerCore };
 }
 
 /**
@@ -92,6 +123,9 @@ export function canonicalizeRuSuggestionValue(value: string): string {
   let v = value.trim();
   if (!v) return value;
   for (const r of RU_CORPUS_RULES) {
+    v = v.replace(r.re, r.replace);
+  }
+  for (const r of RU_STRUCTURE_RULES) {
     v = v.replace(r.re, r.replace);
   }
   // Keep whitespace/punctuation stable for UI.
@@ -179,6 +213,10 @@ const EXPLICIT_RU_CITY_TOKENS: readonly string[] = [
   'абакан',
   'майкоп',
   'нижний тагил',
+  // Leningrad Oblast settlements commonly searched from SPb context
+  'мурино',
+  'девяткино',
+  'всеволожск',
 ];
 
 /**
@@ -268,8 +306,24 @@ export function cityBiasTokensFor(contextCity?: string | null): string[] {
   if (n.includes('петербург') || n === 'спб' || n === 'питер' || n === 'ленинград') {
     return ['санкт петербург', 'петербург'];
   }
+  if (n.includes('мурино')) {
+    return ['мурино', 'ленинградская область', 'всеволожск', 'всеволожский'];
+  }
+  if (n.includes('девяткино')) {
+    return ['девяткино', 'ленинградская область', 'всеволожск', 'всеволожский'];
+  }
+  if (n.includes('всеволожск')) {
+    return ['всеволожск', 'всеволожский', 'ленинградская область'];
+  }
+  if (n.includes('ленинградская')) {
+    return ['ленинградская область', 'ленинградская', 'мурино', 'девяткино', 'санкт петербург'];
+  }
   if (n === 'москва' || n === 'мск') {
-    return ['москва'];
+    return ['москва', 'московская область', 'московская'];
+  }
+  const moSat = ['химки', 'подольск', 'мытищи', 'люберцы', 'балашиха', 'одинцово', 'королев', 'долгопрудный'];
+  if (moSat.some(s => n.includes(s))) {
+    return [...moSat.filter(s => n.includes(s)), 'москва', 'московская область'];
   }
   return [n];
 }
@@ -341,7 +395,7 @@ function extractStreetStems(q: string): string[] {
   const stop = new Set([
     'улица', 'ул', 'проспект', 'пр', 'переулок', 'пер', 'проезд', 'шоссе', 'набережная', 'наб',
     'бульвар', 'бул', 'площадь', 'пл', 'аллея',
-    'дом', 'д',
+    'дом', 'д', 'строение', 'стр', 'литера', 'лит',
     'россия', 'рф',
   ]);
   const out: string[] = [];
@@ -426,6 +480,18 @@ function settlementDemoteScore(suggestionValue: string): number {
   for (const city of EXPLICIT_RU_CITY_TOKENS) {
     if (` ${segNorm} `.includes(` ${city} `)) return 0;
   }
+  // Regional prefix + область/край — common vendor layout; do not demote.
+  const regionalLeading =
+    (segNorm.includes('ленинградская') ||
+      segNorm.includes('московская') ||
+      segNorm.includes('свердловская') ||
+      segNorm.includes('новосибирская') ||
+      segNorm.includes('нижегородская') ||
+      segNorm.includes('самарская') ||
+      segNorm.includes('ростовская') ||
+      segNorm.includes('краснодарский')) &&
+    segTokens.some(t => SETTLEMENT_TYPE_WORDS.has(t));
+  if (regionalLeading) return 0;
   // Settlement-type word, or any unrecognized non-city / non-street first segment.
   if (segTokens.some(t => SETTLEMENT_TYPE_WORDS.has(t))) return -50;
   return -50;
@@ -442,7 +508,7 @@ function cityTieBreakScore(v: string, opts: { cityBiasTokens: string[] }): numbe
   return matches ? 80 : 0;
 }
 
-function scoreRuSuggestionByStreetHouse(
+function scoreRuSuggestionByStreetHouseCore(
   normalizedQuery: string,
   suggestionValue: string,
   idx: number,
@@ -461,7 +527,6 @@ function scoreRuSuggestionByStreetHouse(
 
   const houseHit = house && new RegExp(`\\b${house}\\b`, 'u').test(v) ? 1 : 0;
 
-  // Plausibility-first: exact-ish street stem coverage and house match dominate.
   const streetScore = allStems ? 140 : stemHits * 35;
   const houseScore = houseHit ? 120 : 0;
   const typeScore = streetTypeMatchScore(type, v);
@@ -471,10 +536,38 @@ function scoreRuSuggestionByStreetHouse(
   return streetScore + houseScore + typeScore + cityScore + settlementScore - idx * 0.01;
 }
 
+function scoreRuSuggestionByStreetHouse(
+  normalizedQuery: string,
+  suggestionValue: string,
+  idx: number,
+  opts: {
+    cityBiasTokens: string[];
+    addressSearchProfiles?: AddressSearchProfile[];
+    addressSearchContextLocked?: boolean;
+    addressSearchExpansionActive?: boolean;
+  },
+): number {
+  const v = normalizeForMatch(suggestionValue);
+  const core = scoreRuSuggestionByStreetHouseCore(normalizedQuery, suggestionValue, idx, opts);
+  const regionalScore = profileRegionalAdjustment(v, {
+    profiles: opts.addressSearchProfiles ?? [],
+    expansionActive: Boolean(opts.addressSearchExpansionActive),
+    contextLocked: Boolean(opts.addressSearchContextLocked),
+  });
+  return core + regionalScore;
+}
+
 export function rerankRuSuggestionsByLocality<T extends { value: string }>(
   normalizedQuery: string,
   suggestions: T[],
-  opts?: { contextCity?: string | null },
+  opts?: {
+    contextCity?: string | null;
+    biasLat?: number | null;
+    biasLon?: number | null;
+    addressSearchProfiles?: AddressSearchProfile[];
+    addressSearchContextLocked?: boolean;
+    addressSearchExpansionActive?: boolean;
+  },
 ): T[] {
   const localityTokens = extractRuLocalityTokens(normalizedQuery);
   if (suggestions.length < 2) return suggestions;
@@ -485,12 +578,19 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
     ? []
     : cityBiasTokensFor(opts?.contextCity);
 
+  const streetHouseOpts = {
+    cityBiasTokens,
+    addressSearchProfiles: opts?.addressSearchProfiles,
+    addressSearchContextLocked: opts?.addressSearchContextLocked,
+    addressSearchExpansionActive: opts?.addressSearchExpansionActive,
+  };
+
   // If there is no locality information in the query, fall back to a
   // street+house plausibility rerank (prevents provider population bias).
   if (localityTokens.length === 0) {
     const scored = suggestions.map((s, idx) => ({
       s,
-      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { cityBiasTokens }),
+      score: scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, streetHouseOpts),
     }));
     scored.sort((a, b) => b.score - a.score);
     return scored.map(x => x.s);
@@ -505,8 +605,13 @@ export function rerankRuSuggestionsByLocality<T extends { value: string }>(
     // break ties for partial/locality-ambiguous queries.
     const localityScore = all * 120 + hits * 14;
     const plausibilityScore =
-      scoreRuSuggestionByStreetHouse(normalizedQuery, s.value, idx, { cityBiasTokens }) * 0.12;
-    const score = localityScore + plausibilityScore - idx * 0.01;
+      scoreRuSuggestionByStreetHouseCore(normalizedQuery, s.value, idx, streetHouseOpts) * 0.12;
+    const regionalExtra = profileRegionalAdjustment(v, {
+      profiles: opts?.addressSearchProfiles ?? [],
+      expansionActive: Boolean(opts?.addressSearchExpansionActive),
+      contextLocked: Boolean(opts?.addressSearchContextLocked),
+    });
+    const score = localityScore + plausibilityScore + regionalExtra - idx * 0.01;
     return { s, score };
   });
 
