@@ -98,6 +98,7 @@ export type {
   UrbanDevelopmentSignal,
   UrbanDevelopmentSignalInput,
   UrbanDevelopmentSignalsSnapshot,
+  UrbanDevelopmentSignalSourceProvenance,
   UrbanDevelopmentSignalStatus,
   UrbanDevelopmentSignalType,
   UrbanDevelopmentSourceKind,

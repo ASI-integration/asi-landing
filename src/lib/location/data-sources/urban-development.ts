@@ -139,6 +139,16 @@ export interface UrbanDevelopmentBoundingBox {
   maxLon: number;
 }
 
+/** Traceability for procurement-derived signals; excludes raw upstream payloads. */
+export interface UrbanDevelopmentSignalSourceProvenance {
+  sourceName: string;
+  sourceUrl?: string;
+  externalId?: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  region?: string;
+}
+
 export interface UrbanDevelopmentSignal {
   kind: UrbanDevelopmentSourceKind;
   signalType: UrbanDevelopmentSignalType;
@@ -153,6 +163,8 @@ export interface UrbanDevelopmentSignal {
   lifecycleStage?: UrbanDevelopmentLifecycleStage;
   sourceUrl?: string;
   sourceDate?: string;
+  /** Procurement/source catalog identity — normalized signal stays free of raw upstream blobs. */
+  sourceProvenance?: UrbanDevelopmentSignalSourceProvenance;
   evidence: UrbanDevelopmentEvidence[];
   limitations: string[];
   manualVerificationNeeded: boolean;
@@ -246,6 +258,7 @@ export function normalizeUrbanDevelopmentSignals(rawSignals: UrbanDevelopmentSig
       lifecycleStage: raw.lifecycleStage,
       sourceUrl: raw.sourceUrl?.trim() || undefined,
       sourceDate: raw.sourceDate,
+      sourceProvenance: raw.sourceProvenance,
       evidence,
       limitations,
       manualVerificationNeeded,

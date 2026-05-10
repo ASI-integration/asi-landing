@@ -18,6 +18,7 @@ export interface PublicProcurementNoticeInput {
   readonly subjectDetail?: string;
   readonly procedureStage?: string;
   readonly publishedAt?: string;
+  readonly updatedAt?: string;
   readonly url?: string;
 }
 
