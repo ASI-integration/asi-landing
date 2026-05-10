@@ -14,7 +14,21 @@ import type {
 import { buildCommercialFormatFit } from './commercial-format-fit';
 import { filterResidentialPrimeMagnets, type ResidentialMarketMode } from './residential-prime-magnets';
 import { classifyMagnetSignal } from './signals/location-signal-taxonomy';
-import type { UrbanDevelopmentSignalsSnapshot } from './data-sources/urban-development';
+import type {
+  UrbanDevelopmentSignal,
+  UrbanDevelopmentSignalsSnapshot,
+} from './data-sources/urban-development';
+import {
+  computeUrbanDevelopmentForecastScore,
+  type UrbanDevelopmentForecastScore,
+} from './data-sources/urban-development-forecast-score';
+
+export type {
+  UrbanDevelopmentForecastConfidence,
+  UrbanDevelopmentForecastContributingSignalRef,
+  UrbanDevelopmentForecastLevel,
+  UrbanDevelopmentForecastScore,
+} from './data-sources/urban-development-forecast-score';
 
 export type ReportLevel = 'express' | 'full';
 export type LocationReportGoal = 'buy' | 'rent' | 'launch' | 'evaluate';
@@ -189,6 +203,8 @@ export interface LocationReportContext {
   generatedAtIso?: string;
   market?: ResidentialMarketMode;
   urbanDevelopment?: UrbanDevelopmentSignalsSnapshot;
+  /** Нормализованные сигналы для слоя `urbanDevelopmentForecastScore` (не влияет на основной score). */
+  urbanDevelopmentSignals?: UrbanDevelopmentSignal[];
   sourceAvailability?: Partial<Record<keyof UnifiedLocationReport['signals'], SourceAvailability>>;
 }
 
@@ -200,6 +216,10 @@ export interface UnifiedLocationReport {
   overallScore: number | null;
   scoreBreakdown: Partial<LocationScoreBreakdown> | null;
   summary: string;
+  /** Основной текущий показатель локации (магниты / gravity); без изменений при добавлении прогноза градоразвития. */
+  currentLocationScore: number | null;
+  /** Отдельный прогнозный слой по сигналам градоразвития; не смешивается с `currentLocationScore`. */
+  urbanDevelopmentForecastScore: UrbanDevelopmentForecastScore;
   signals: {
     demand: DemandSignals;
     competition: CompetitionSignals;
@@ -755,6 +775,7 @@ function buildUnifiedReport(input: LocationReportInput, context: LocationReportC
   const magnets = buildMagnets(analysis, context.market);
   const transportInfrastructure = buildTransportInfrastructure(analysis);
   const urbanDevelopment = buildUrbanDevelopment(context.urbanDevelopment);
+  const urbanDevelopmentForecastScore = computeUrbanDevelopmentForecastScore(context.urbanDevelopmentSignals ?? []);
   const environmentalTrafficRisk = buildEnvironmentalTrafficRisk(analysis);
   const heatMap = buildHeatMap(analysis);
   const audienceFit = buildAudienceFit(input, analysis);
@@ -788,8 +809,10 @@ function buildUnifiedReport(input: LocationReportInput, context: LocationReportC
     input: { ...input, level },
     createdAtIso: context.generatedAtIso ?? new Date().toISOString(),
     overallScore: analysis?.locationScore?.location_score ?? analysis?.evergreenIndex ?? null,
+    currentLocationScore: analysis?.locationScore?.location_score ?? analysis?.evergreenIndex ?? null,
     scoreBreakdown: analysis?.locationScore?.breakdown ?? null,
     summary: analysis?.conclusion ?? 'Location potential report requires connected analysis data.',
+    urbanDevelopmentForecastScore,
     signals: {
       demand,
       competition,
