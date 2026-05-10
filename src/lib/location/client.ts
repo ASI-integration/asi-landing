@@ -18,6 +18,11 @@ export { buildCommercialReport, isCanonicalLocationReportPayload, isLocationComm
 export { buildLocationStandaloneReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
 export {
+  buildExpressLocationReport,
+  buildFullLocationReport,
+  locationReportInputFromLegacy,
+} from './unified-report';
+export {
   buildLocationReportPermalink,
   createPreviewReportInput,
   createReportStateRecord,
@@ -87,6 +92,36 @@ export type {
 } from './types';
 
 export type { LocationStandaloneReport, LocationStandaloneReportSectionId, LocationCommercialReport } from './standalone-report';
+export type {
+  AudienceFitSignals,
+  CompetitionSignals,
+  DataQuality,
+  DecisionRecommendation,
+  DemandSignals,
+  EnvironmentalTrafficRiskSignals,
+  EvidenceItem,
+  HeatMapSignals,
+  LocationReportContext,
+  LocationReportInput,
+  LocationReportSection,
+  MagnetSignals,
+  PricingSignals,
+  ReportLevel,
+  RiskSignals,
+  SeasonalitySignals,
+  SourceAvailability,
+  TransportInfrastructureSignals,
+  UnifiedLocationReport,
+  UrbanDevelopmentSignals,
+} from './unified-report';
+export type {
+  PlannedConstructionProject,
+  PlannedInfrastructureChange,
+  UrbanDevelopmentSignalsSnapshot,
+  UrbanDevelopmentSourceReference,
+  UrbanDevelopmentSourceType,
+  ZoningPlanningNote,
+} from './data-sources/urban-development';
 export type {
   AudienceFit,
   CompetitionSummary,

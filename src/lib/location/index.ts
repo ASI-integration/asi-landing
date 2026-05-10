@@ -49,6 +49,41 @@ export type { LocationCommercialReport, PersistableLocationReport } from './stan
 export { isCanonicalLocationReportPayload, isLocationCommercialReport, buildCommercialReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
 export {
+  buildExpressLocationReport,
+  buildFullLocationReport,
+  locationReportInputFromLegacy,
+} from './unified-report';
+export type {
+  AudienceFitSignals,
+  CompetitionSignals,
+  DataQuality,
+  DecisionRecommendation,
+  DemandSignals,
+  EnvironmentalTrafficRiskSignals,
+  EvidenceItem,
+  HeatMapSignals,
+  LocationReportContext,
+  LocationReportInput,
+  LocationReportSection,
+  MagnetSignals,
+  PricingSignals,
+  ReportLevel,
+  RiskSignals,
+  SeasonalitySignals,
+  SourceAvailability,
+  TransportInfrastructureSignals,
+  UnifiedLocationReport,
+  UrbanDevelopmentSignals,
+} from './unified-report';
+export type {
+  PlannedConstructionProject,
+  PlannedInfrastructureChange,
+  UrbanDevelopmentSignalsSnapshot,
+  UrbanDevelopmentSourceReference,
+  UrbanDevelopmentSourceType,
+  ZoningPlanningNote,
+} from './data-sources/urban-development';
+export {
   buildLocationReportPermalink,
   createPreviewReportInput,
   createReportStateRecord,

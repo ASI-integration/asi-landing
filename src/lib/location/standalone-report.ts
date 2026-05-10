@@ -7,6 +7,11 @@ import {
   type PrimeMagnetAnchorType,
   type ResidentialMarketMode,
 } from './residential-prime-magnets';
+import {
+  buildFullLocationReport,
+  locationReportInputFromLegacy,
+  type UnifiedLocationReport,
+} from './unified-report';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -20,6 +25,7 @@ export type LocationStandaloneReport = {
   version: 'v1';
   address: string;
   generated_at_iso: string;
+  unifiedReport?: UnifiedLocationReport;
   sections: Array<
     | {
         id: 'summary';
@@ -83,6 +89,7 @@ export type LocationCommercialReport = {
   version: 'v2-commercial';
   address: string;
   generated_at_iso: string;
+  unifiedReport?: UnifiedLocationReport;
   flow: {
     transitShare: number;
     localActiveShare: number;
@@ -200,6 +207,16 @@ export function buildCommercialReport(args: {
   analysis: LocationAnalysis;
 }): LocationCommercialReport {
   const { analysis } = args;
+  const generatedAtIso = new Date().toISOString();
+  const unifiedReport = buildFullLocationReport(
+    locationReportInputFromLegacy({
+      address: args.address,
+      locale: 'ru',
+      mode: 'commercial',
+      requestedAtIso: generatedAtIso,
+    }),
+    { analysis, generatedAtIso },
+  );
   const ft = analysis.footTraffic;
   const { transitShare, localActiveShare, destinationShare } = ft.transitVsTarget;
   const formatFit = buildCommercialFormatFit(analysis);
@@ -216,7 +233,8 @@ export function buildCommercialReport(args: {
   return {
     version: 'v2-commercial',
     address: args.address,
-    generated_at_iso: new Date().toISOString(),
+    generated_at_iso: generatedAtIso,
+    unifiedReport,
     spatial: {
       spatial_tier: sf.spatialTier,
       enabled: sf.enabled,
@@ -303,7 +321,17 @@ export function buildLocationStandaloneReport(args: {
   market?: ResidentialMarketMode;
 }): LocationStandaloneReport {
   const { analysis } = args;
+  const generatedAtIso = new Date().toISOString();
   const market = args.market ?? 'RU';
+  const unifiedReport = buildFullLocationReport(
+    locationReportInputFromLegacy({
+      address: args.address,
+      locale: market === 'RU' ? 'ru' : 'en',
+      mode: 'residential',
+      requestedAtIso: generatedAtIso,
+    }),
+    { analysis, generatedAtIso, market },
+  );
   const score = analysis.locationScore;
   const drivers = (score?.top_positive_factors ?? []).slice(0, 3);
 
@@ -348,7 +376,8 @@ export function buildLocationStandaloneReport(args: {
   return {
     version: 'v1',
     address: args.address,
-    generated_at_iso: new Date().toISOString(),
+    generated_at_iso: generatedAtIso,
+    unifiedReport,
     sections: [
       {
         id: 'summary',
