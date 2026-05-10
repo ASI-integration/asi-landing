@@ -17,8 +17,7 @@ import {
   normalizeReportAddress,
   type LocationReportResultMetadata,
 } from './report-result-metadata';
-import { strategicHubFreeBriefRu } from './strategic-transport-hub';
-import { specializedMedicalFreeBriefRu } from './specialized-medical-anchor';
+import { normalizeRuDemoExplanationLines } from './demo-public-copy';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -329,12 +328,8 @@ function pickBusinessFitVerdict(
   return { business_fit_verdict: 'not_fit', note: 'По сигналам окружения деловой сценарий не доминирует.' };
 }
 
-function buildFreeBriefRu(args: { verdict: string; topDriver: string | null }): string {
-  const driverBit = args.topDriver ? `Ключевой фактор: ${args.topDriver}. ` : '';
-  return `${args.verdict} ${driverBit}В полном отчёте — магниты спроса, конкуренция, сравнение моделей дохода и рекомендации. Прогноз развития района доступен в полном отчёте.`.replace(
-    /\s+/g,
-    ' ',
-  ).trim();
+function buildFreeBriefRu(args: { verdict: string }): string {
+  return `${args.verdict} Краткая оценка локации. Подробный расчёт доступен в полном отчёте.`.replace(/\s+/g, ' ').trim();
 }
 
 
@@ -365,13 +360,12 @@ export function buildLocationStandaloneReport(args: {
   });
 
   if (reportMode === 'free') {
-    const drivers = (score?.top_positive_factors ?? []).slice(0, 1);
-    const topDriver = drivers.length ? drivers[0]! : null;
-    let free_brief = buildFreeBriefRu({ verdict: args.verdict, topDriver });
-    const hubBrief = strategicHubFreeBriefRu(analysis.strategicTransportHubMagnets ?? []);
-    if (hubBrief) free_brief = `${free_brief} ${hubBrief}`.replace(/\s+/g, ' ').trim();
-    const medBrief = specializedMedicalFreeBriefRu(analysis.magnets ?? []);
-    if (medBrief) free_brief = `${free_brief} ${medBrief}`.replace(/\s+/g, ' ').trim();
+    const driverLines = normalizeRuDemoExplanationLines(
+      [...(score?.top_positive_factors ?? []), ...(score?.top_negative_factors ?? [])],
+      5,
+    );
+    const drivers = driverLines;
+    const free_brief = buildFreeBriefRu({ verdict: args.verdict });
     return {
       version: 'v1',
       reportMode: 'free',

@@ -40,12 +40,15 @@ import {
   magnetWhy,
   type LocDemoLocale,
 } from '@/components/location-intelligence-locale';
-import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 import { applyResidentialDemoSanity } from '@/lib/location/client';
 import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
 import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
+import {
+  normalizeRuDemoExplanationLines,
+  sanitizeRuFactorList,
+} from '@/lib/location/demo-public-copy';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -1569,79 +1572,16 @@ function generateScoreFactors(analysis: LocationAnalysis, locale: LocDemoLocale)
 // Maps internal cap/sanity/scoring vocabulary to business-friendly wording at
 // the render layer. The canonical source strings live in
 // `src/lib/location/rules/**` and `location-score.ts` and stay untouched.
-function sanitizeRuPublicFactor(line: string): string | null {
-  const trimmed = (line ?? '').trim();
-  if (!trimmed) return null;
-
-  const dropPatterns = [
-    /модель\s+ограничила/i,
-    /sanity/i,
-    /weak[- ]office/i,
-    /\bcap\b/i,
-    /\braw\b/i,
-  ];
-  if (dropPatterns.some(rx => rx.test(trimmed))) return null;
-
-  const replacements: Array<[RegExp, string]> = [
-    [
-      /Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён\.?/u,
-      'Рядом есть отдельные деловые точки, но нет крупного якоря спроса уровня БЦ, вокзала или делового кластера.',
-    ],
-    [
-      /Рядом только локальные офисные сигналы[^.]*?деловой профиль не подтверждён\.?/u,
-      'Рядом есть отдельные офисы, но крупного якоря спроса (БЦ, вокзал, деловой кластер) поблизости нет.',
-    ],
-    [
-      /Рядом только локальные офисные сигналы[^.]*?устойчивый деловой поток не подтверждается\.?/u,
-      'Рядом есть отдельные офисы, но устойчивого делового потока поблизости нет.',
-    ],
-    [
-      /Нет сильных магнитов спроса в радиусе 1 км;\s*оценка ограничена\.?/u,
-      'В радиусе 1 км нет крупных якорей спроса (БЦ, вокзала, делового кластера).',
-    ],
-    [
-      /«Сильный» диапазон требует не менее двух независимых магнитов — один сигнал недостаточен\.?/u,
-      'Поблизости только один крупный якорь спроса.',
-    ],
-    [
-      /Деловой профиль не подтверждён сильными магнитами \(вторичный кластер\);\s*оценка ограничена для публичного вывода\.?/u,
-      'Деловые сигналы есть, но без крупного якоря спроса уровня БЦ или вокзала.',
-    ],
-    [
-      /Есть несколько локальных магнитов спроса \(вторичный кластер\);\s*оценка не должна схлопываться в «почти ноль»\.?/u,
-      'Поблизости есть несколько локальных точек спроса.',
-    ],
-    [/;?\s*оценка ограничена(?:[^.]*)\.?/giu, '.'],
-    [/\s*\(вторичный кластер\)/giu, ''],
-  ];
-
-  let out = trimmed;
-  for (const [rx, repl] of replacements) out = out.replace(rx, repl);
-  out = out.replace(/\s+/g, ' ').replace(/\s+\./g, '.').trim();
-  return out || null;
-}
-
-function sanitizeRuFactorList(lines: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of lines) {
-    const cleaned = sanitizeRuPublicFactor(line);
-    if (!cleaned) continue;
-    if (seen.has(cleaned)) continue;
-    seen.add(cleaned);
-    out.push(cleaned);
-  }
-  return out;
-}
-
 // ── Competitor Breakdown Block ────────────────────────────────────────────────
 
 function CompetitorBreakdownBlock({
   analysis,
   locale,
+  suppressIncomeHints,
 }: {
   analysis: LocationAnalysis;
   locale: LocDemoLocale;
+  suppressIncomeHints?: boolean;
 }) {
   const { competitors, gravityExplanation, locationScore } = analysis;
   const isRu = locale === 'ru';
@@ -1713,12 +1653,18 @@ function CompetitorBreakdownBlock({
   const verdictNote: string | null =
     level === 'high'
       ? (isRu
-          ? (supplyScore !== undefined && supplyScore < 45
-              ? 'Конкуренция ограничивает доходный потенциал объекта.'
-              : 'Конкуренты снижают прогнозируемую загрузку.')
+          ? (suppressIncomeHints
+              ? (supplyScore !== undefined && supplyScore < 45
+                  ? 'Сильное давление конкурентов — нужна заметная упаковка и позиционирование.'
+                  : 'Конкурентов много — сложнее удерживать загрузку без упаковки.')
+              : (supplyScore !== undefined && supplyScore < 45
+                  ? 'Конкуренция ограничивает доходный потенциал объекта.'
+                  : 'Конкуренты снижают прогнозируемую загрузку.'))
           : 'Competition limits income potential.')
       : level === 'low'
-        ? (isRu ? 'Конкурентная среда поддерживает доходный потенциал.' : 'Low competition supports income potential.')
+        ? (isRu
+            ? (suppressIncomeHints ? 'Конкурентов немного — проще занять нишу.' : 'Конкурентная среда поддерживает доходный потенциал.')
+            : 'Low competition supports income potential.')
         : null;
 
   return (
@@ -1799,10 +1745,12 @@ function NeighborhoodEnvironmentPanel({
   analysis,
   locale,
   c,
+  hideAmbientFinePrint,
 }: {
   analysis: LocationAnalysis;
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
+  hideAmbientFinePrint?: boolean;
 }) {
   const ne = analysis.neighborhoodEnvironment;
   if (!ne) return null;
@@ -1830,12 +1778,24 @@ function NeighborhoodEnvironmentPanel({
       <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 mb-2">
         {title}
       </h3>
-      <p className="text-[14px] text-slate-500 leading-snug mb-3">
-        {locale === 'ru' ? 'Короткая оценка окружения по карте и сигналам района.' : c.envLayerLead}
-      </p>
+      {!hideAmbientFinePrint ? (
+        <p className="text-[14px] text-slate-500 leading-snug mb-3">
+          {locale === 'ru' ? 'Короткая оценка окружения по карте и сигналам района.' : c.envLayerLead}
+        </p>
+      ) : (
+        <p className="text-[15px] text-slate-400 leading-snug mb-3 font-medium">
+          {locale === 'ru'
+            ? 'Окружение по карте и сигналам района.'
+            : c.envLayerLead}
+        </p>
+      )}
       <div className="flex flex-wrap items-end gap-3 mb-2">
         <div>
-          <p className="text-[13px] text-slate-500 mb-0.5">{c.envLayerScoreLabel}</p>
+          {!hideAmbientFinePrint ? (
+            <p className="text-[13px] text-slate-500 mb-0.5">{c.envLayerScoreLabel}</p>
+          ) : (
+            <p className="text-[14px] text-slate-400 mb-0.5 font-medium">{c.envLayerScoreLabel}</p>
+          )}
           <p className="text-[24px] font-bold tabular-nums text-slate-100 leading-none">{score}</p>
         </div>
         <span
@@ -1843,9 +1803,11 @@ function NeighborhoodEnvironmentPanel({
         >
           {label}
         </span>
-        <span className="text-[12px] text-slate-600 ml-auto max-w-[min(100%,220px)] text-right leading-snug">
-          {c.envConfidence(ne.confidence)}
-        </span>
+        {!hideAmbientFinePrint ? (
+          <span className="text-[12px] text-slate-600 ml-auto max-w-[min(100%,220px)] text-right leading-snug">
+            {c.envConfidence(ne.confidence)}
+          </span>
+        ) : null}
       </div>
       <div className="h-1.5 w-full rounded-full bg-slate-800/80 overflow-hidden mb-3">
         <div className={`h-full rounded-full transition-all ${styles.bar}`} style={{ width: `${score}%` }} />
@@ -1860,7 +1822,7 @@ function NeighborhoodEnvironmentPanel({
           ))}
         </ul>
       ) : null}
-      {coverageLine ? (
+      {!hideAmbientFinePrint && coverageLine ? (
         <p className="text-[12px] text-slate-600 leading-snug mb-3">{coverageLine}</p>
       ) : null}
       {narrative ? (
@@ -1928,7 +1890,7 @@ function ASIPanel({
   }, []);
 
   const hasMagnets = magnets.length > 0;
-  const { primaryAudience, demandFlowLabel, audienceSharePct } = analysis.audienceAnalysis ?? {};
+  const { primaryAudience } = analysis.audienceAnalysis ?? {};
   const audienceLabelRu = primaryAudience === 'BUSINESS' ? 'Деловой' : primaryAudience === 'TOURIST' ? 'Туристический' : '—';
   const audienceLabelEn = primaryAudience === 'BUSINESS' ? 'Business' : primaryAudience === 'TOURIST' ? 'Tourist' : '—';
   const incomeRange = (() => {
@@ -1956,6 +1918,18 @@ function ASIPanel({
       :                              '$1 800 – $3 300';
   })();
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const ruResidentialDemandHeadlineRu = (dt: DemandType): string => {
+    switch (dt) {
+      case 'tourism-led':
+        return 'Туристический спрос в зоне';
+      case 'business-led':
+        return 'Спрос от делового и офисного трафика';
+      case 'transport-led':
+        return 'Транзитный и транспортно-связанный спрос';
+      default:
+        return 'Смешанный профиль спроса';
+    }
+  };
   const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
   const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
   const aboveFoldReasons = (() => {
@@ -1966,7 +1940,7 @@ function ASIPanel({
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
     const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
-    const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(merged) : merged;
+    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(merged, 5) : merged;
 
     return cleaned.slice(0, 2).map((factor) => {
       const normalized = factor.replace(/\s+/g, ' ').trim();
@@ -2078,7 +2052,7 @@ function ASIPanel({
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
     const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
-    const cleaned = isRuResidentialDemo ? sanitizeRuFactorList(base) : base;
+    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(base, 5) : base;
     return cleaned.slice(0, 2);
   })();
 
@@ -2093,17 +2067,19 @@ function ASIPanel({
       }}
     >
       {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
-      {meta ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
+      {meta && !isRuResidentialDemo ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
       {/* Main result dashboard — 3 columns on desktop */}
       <div className="p-5 md:p-6">
         <div className="grid md:grid-cols-3 gap-4 md:gap-5 items-stretch">
 
           {/* Left: Score / index */}
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
-            <p className="text-[13px] text-slate-400 font-medium">
-              {locale === 'ru' ? 'Индекс' : 'Index'}
-            </p>
-            <div className="mt-2 flex items-end gap-3">
+            {!isRuResidentialDemo ? (
+              <p className="text-[13px] text-slate-400 font-medium">
+                {locale === 'ru' ? 'Индекс' : 'Index'}
+              </p>
+            ) : null}
+            <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
               <div className="leading-none">
                 <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
                   {evergreenIndex}
@@ -2117,7 +2093,7 @@ function ASIPanel({
             {dashboardBullets.length > 0 && (
               <ul className="mt-3 space-y-1.5">
                 {dashboardBullets.map((line, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[14px] text-slate-300 leading-snug">
+                  <li key={i} className={`flex items-start gap-2 leading-snug ${isRuResidentialDemo ? 'text-[15px] text-slate-200' : 'text-[14px] text-slate-300'}`}>
                     <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
                     {line}
                   </li>
@@ -2126,32 +2102,44 @@ function ASIPanel({
             )}
           </div>
 
-          {/* Middle: Audience + income */}
+          {/* Middle: demand profile (+ income outside RU residential demo) */}
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
-            <p className="text-[13px] text-slate-400 font-medium">
-              {locale === 'ru' ? 'Профиль спроса' : 'Demand profile'}
-            </p>
-            <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
-              {locale === 'ru'
-                ? (mode === 'commercial' ? 'Коммерческая' : 'Жилая')
-                : (mode === 'commercial' ? 'Commercial' : 'Residential')}
-              <span className="text-slate-700 font-semibold"> | </span>
-              <span className="text-slate-200">{locale === 'ru' ? audienceLabelRu : audienceLabelEn}</span>
-            </p>
-            <p className="mt-2 text-[22px] md:text-[24px] font-bold text-slate-100 leading-tight">
-              {incomeRange}
-            </p>
-            <p className="mt-1 text-[14px] text-slate-500 leading-snug">
-              {locale === 'ru' ? 'Доход — ориентир для сравнения локаций.' : c.incomeSuffix}
-            </p>
+            {!isRuResidentialDemo ? (
+              <p className="text-[13px] text-slate-400 font-medium">
+                {locale === 'ru' ? 'Профиль спроса' : 'Demand profile'}
+              </p>
+            ) : null}
+            {isRuResidentialDemo ? (
+              <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
+                {ruResidentialDemandHeadlineRu(analysis.demandType)}
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
+                  {locale === 'ru'
+                    ? (mode === 'commercial' ? 'Коммерческая' : 'Жилая')
+                    : (mode === 'commercial' ? 'Commercial' : 'Residential')}
+                  <span className="text-slate-700 font-semibold"> | </span>
+                  <span className="text-slate-200">{locale === 'ru' ? audienceLabelRu : audienceLabelEn}</span>
+                </p>
+                <p className="mt-2 text-[22px] md:text-[24px] font-bold text-slate-100 leading-tight">
+                  {incomeRange}
+                </p>
+                <p className="mt-1 text-[14px] text-slate-500 leading-snug">
+                  {locale === 'ru' ? 'Доход — ориентир для сравнения локаций.' : c.incomeSuffix}
+                </p>
+              </>
+            )}
           </div>
 
           {/* Right: Verdict + CTA */}
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5 flex flex-col">
-            <p className="text-[13px] text-slate-400 font-medium">
-              {locale === 'ru' ? 'Вердикт' : 'Verdict'}
-            </p>
-            <p className={`mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
+            {!isRuResidentialDemo ? (
+              <p className="text-[13px] text-slate-400 font-medium">
+                {locale === 'ru' ? 'Вердикт' : 'Verdict'}
+              </p>
+            ) : null}
+            <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
               {band.label}
             </p>
             <div className="mt-4 space-y-2">
@@ -2196,38 +2184,24 @@ function ASIPanel({
       }}
     >
       <div className="px-5 py-4 border-b border-slate-800/40">
-        <p className="text-[14px] text-slate-500 leading-snug">
-          {locale === 'ru'
-            ? 'Демо‑результат — быстрый ориентир. Детали ниже объясняют факторы, конкуренцию и окружение.'
-            : 'Demo result is a fast preview. Details below explain factors, competition, and environment.'}
-        </p>
-      </div>
-
-      {isRuResidentialDemo ? (
-        <div className="px-5 py-4 border-b border-slate-800/40">
-          <button
-            type="button"
-            onClick={openStandaloneFullReportRu}
-            className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            Открыть демо-permalink (предпросмотр)
-          </button>
-          <p className="mt-2 text-[11px] text-slate-600 text-center">
-            Предпросмотр быстрый и приблизительный; полный отчёт глубже.
+        {isRuResidentialDemo ? (
+          <p className="text-[17px] md:text-[18px] font-medium text-slate-300 leading-snug">
+            Краткая оценка локации. Подробный расчёт доступен в полном отчёте.
           </p>
-        </div>
-      ) : null}
+        ) : (
+          <p className="text-[14px] text-slate-500 leading-snug">
+            {locale === 'ru'
+              ? 'Демо‑результат — быстрый ориентир. Детали ниже объясняют факторы, конкуренцию и окружение.'
+              : 'Demo result is a fast preview. Details below explain factors, competition, and environment.'}
+          </p>
+        )}
+      </div>
 
       {/* Why this score? — uses locationScore factors when available, falls back to generic */}
       {(() => {
         const ls = analysis.locationScore;
         const rawPos = ls?.top_positive_factors ?? [];
         const rawNeg = ls?.top_negative_factors ?? [];
-        const posFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawPos) : [...rawPos];
-        const negFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawNeg) : [...rawNeg];
-        const hasDetailed = posFactors.length > 0 || negFactors.length > 0;
-        const rawGeneric = hasDetailed ? [] : generateScoreFactors(analysis, locale);
-        const genericFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawGeneric) : rawGeneric;
 
         const regionalRuExtras =
           locale === 'ru'
@@ -2236,6 +2210,37 @@ function ASIPanel({
               specializedMedicalFreeBriefRu(analysis.magnets ?? []),
             ].filter((x): x is string => Boolean(x))
             : [];
+
+        if (isRuResidentialDemo) {
+          const rawGeneric =
+            rawPos.length + rawNeg.length === 0 ? generateScoreFactors(analysis, locale) : [];
+          const mergedRu = normalizeRuDemoExplanationLines(
+            [...rawPos, ...rawNeg, ...rawGeneric, ...regionalRuExtras],
+            5,
+          );
+          if (mergedRu.length === 0) return null;
+          return (
+            <div className="px-5 py-4 border-b border-slate-800/40">
+              <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
+                Почему такой балл?
+              </h3>
+              <ul className="space-y-2">
+                {mergedRu.map((line, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[16px] text-slate-300 leading-snug">
+                    <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        }
+
+        const posFactors = [...rawPos];
+        const negFactors = [...rawNeg];
+        const hasDetailed = posFactors.length > 0 || negFactors.length > 0;
+        const rawGeneric = hasDetailed ? [] : generateScoreFactors(analysis, locale);
+        const genericFactors = rawGeneric;
 
         if (!hasDetailed && genericFactors.length === 0 && regionalRuExtras.length === 0) return null;
 
@@ -2285,7 +2290,12 @@ function ASIPanel({
         );
       })()}
 
-      <NeighborhoodEnvironmentPanel analysis={analysis} locale={locale} c={c} />
+      <NeighborhoodEnvironmentPanel
+        analysis={analysis}
+        locale={locale}
+        c={c}
+        hideAmbientFinePrint={isRuResidentialDemo}
+      />
 
       {/* Audience reasoning — why this audience was determined (EN only; RU hides raw internal magnets) */}
       {(() => {
@@ -2456,7 +2466,11 @@ function ASIPanel({
       })()}
 
       {/* Competitor breakdown — what drives competition score */}
-      <CompetitorBreakdownBlock analysis={analysis} locale={locale} />
+      <CompetitorBreakdownBlock
+        analysis={analysis}
+        locale={locale}
+        suppressIncomeHints={isRuResidentialDemo}
+      />
 
       {/* Recommended Strategy */}
       <div className="px-5 py-5 border-b border-slate-800/40">
@@ -2473,133 +2487,6 @@ function ASIPanel({
         </ul>
       </div>
 
-      {/* Income scenarios — RU shows 3 scenarios without internal formula; EN shows full formula */}
-      {analysis.locationScore?.income_model && (() => {
-        const { base_adr_rub, base_occupancy_pct } = analysis.locationScore!.income_model;
-        const stratMul = {
-          short_term: { adr: 1.12, occ: 0.93 },
-          hybrid:     { adr: 1.00, occ: 1.00 },
-          mid_term:   { adr: 0.88, occ: 1.06 },
-        }[strategy];
-        const adjAdr = Math.round(base_adr_rub * stratMul.adr / 100) * 100;
-        const adjOcc = Math.min(90, Math.max(20, Math.round(base_occupancy_pct * stratMul.occ)));
-        const formulaResult = Math.round(adjAdr * (adjOcc / 100) * 30 / 1000) * 1000;
-
-        const stratLabel = locale === 'ru'
-          ? (strategy === 'short_term' ? 'посуточная аренда' : strategy === 'hybrid' ? 'гибридная модель' : 'среднесрочная аренда')
-          : (strategy === 'short_term' ? 'short-term' : strategy === 'hybrid' ? 'hybrid model' : 'mid-term');
-
-        const isRu = locale === 'ru';
-        const level = analysis.gravityExplanation.competitorPressureLevel;
-        const cautAdr = Math.round(adjAdr * 0.88 / 100) * 100;
-        const cautOcc = Math.max(20, adjOcc - 15);
-        const cautious = Math.round(cautAdr * (cautOcc / 100) * 30 / 1000) * 1000;
-        const strongAdr = Math.round(adjAdr * 1.12 / 100) * 100;
-        const strongOcc = Math.min(90, adjOcc + 10);
-        const strong = Math.round(strongAdr * (strongOcc / 100) * 30 / 1000) * 1000;
-
-        const competitionNote = isRu
-          ? (level === 'high' ? 'давление конкурентов' : level === 'medium' ? 'умеренная конкуренция' : 'свободная ниша')
-          : (level === 'high' ? 'high competition' : level === 'medium' ? 'moderate competition' : 'open niche');
-
-        const scenarios: Array<{ labelRu: string; labelEn: string; value: number; reasonRu: string; reasonEn: string; dim: boolean }> = [
-          {
-            labelRu: 'Осторожный',
-            labelEn: 'Conservative',
-            value: cautious,
-            reasonRu: `слабая загрузка · ${competitionNote}`,
-            reasonEn: `lower occupancy · ${competitionNote}`,
-            dim: true,
-          },
-          {
-            labelRu: 'Базовый',
-            labelEn: 'Base',
-            value: formulaResult,
-            reasonRu: 'расчётная модель',
-            reasonEn: 'model estimate',
-            dim: false,
-          },
-          {
-            labelRu: 'Сильный',
-            labelEn: 'Upside',
-            value: strong,
-            reasonRu: 'высокий рейтинг · пиковый спрос',
-            reasonEn: 'high ratings · peak demand',
-            dim: false,
-          },
-        ];
-
-        return (
-          <div className="px-5 py-4 border-b border-slate-800/30">
-            <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
-              {isRu ? RU_DEMO_COPY.revenueTitle : 'How income is estimated'}
-            </h3>
-
-            {/* Internal formula — EN only; RU skips to keep scoring model private */}
-            {!isRu && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 text-[14px]">
-                <span className="text-slate-200 font-medium">{adjAdr.toLocaleString('ru-RU')} ₽</span>
-                <span className="text-slate-600">ставка/ночь</span>
-                <span className="text-slate-700">×</span>
-                <span className="text-slate-200 font-medium">{adjOcc}%</span>
-                <span className="text-slate-600">загрузка</span>
-                <span className="text-slate-700">×</span>
-                <span className="text-slate-200 font-medium">30</span>
-                <span className="text-slate-600">дней</span>
-                <span className="text-slate-700">=</span>
-                <span className="text-slate-100 font-semibold">≈ {formulaResult.toLocaleString('ru-RU')} ₽</span>
-              </div>
-            )}
-
-            {/* Scenarios: Осторожный / Базовый / Сильный */}
-            <div className={isRu ? '' : 'mt-3 pt-3 border-t border-slate-800/30'}>
-              <p className="text-[11px] text-slate-600 uppercase tracking-[0.14em] mb-2">
-                {isRu ? 'Сценарии' : 'Scenarios'}
-              </p>
-              <div className="space-y-1.5">
-                {scenarios.map((s) => {
-                  const isBase = s.labelRu === 'Базовый';
-                  return (
-                    <div key={s.labelRu} className="flex items-baseline justify-between gap-3">
-                      <div className="flex items-baseline gap-1.5 min-w-0">
-                        <span className={`text-[13px] shrink-0 ${isBase ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
-                          {isRu ? s.labelRu : s.labelEn}
-                        </span>
-                        <span className="text-[11px] text-slate-700 truncate">
-                          {isRu ? s.reasonRu : s.reasonEn}
-                        </span>
-                      </div>
-                      <span className={`text-[13px] tabular-nums shrink-0 ${
-                        isBase ? 'text-slate-100 font-semibold'
-                        : s.dim ? 'text-slate-500'
-                        : 'text-emerald-400'
-                      }`}>
-                        {s.value.toLocaleString('ru-RU')} ₽
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-0.5 mt-3">
-              {isRu ? (
-                <p className="text-[12px] text-slate-500 leading-relaxed">
-                  {RU_DEMO_COPY.revenueDisclaimer}
-                </p>
-              ) : (
-                <>
-                  <p className="text-[12px] text-slate-600">{`Model: ${stratLabel}`}</p>
-                  <p className="text-[12px] text-slate-600">{c.incomeDisclaimer1}</p>
-                  <p className="text-[12px] text-slate-700">{c.incomeDisclaimer2}</p>
-                  <p className="text-[12px] text-slate-700">{c.incomeDisclaimer3}</p>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Market snapshot — EN only; RU keeps the result page focused on the five core sections. */}
       {locale !== 'ru' && (
         <MarketSnapshotTable
@@ -2614,10 +2501,14 @@ function ASIPanel({
 
       {/* CTA — lead capture */}
       <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
-        <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
-        <p className="text-[14px] text-slate-400 leading-snug mb-4">
-          {c.ctaBlock.body}
-        </p>
+        {!isRuResidentialDemo ? (
+          <>
+            <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
+            <p className="text-[14px] text-slate-400 leading-snug mb-4">
+              {c.ctaBlock.body}
+            </p>
+          </>
+        ) : null}
         <button
           onClick={() =>
             router.push(LOCATION_REPORT_PRODUCT_PATH)}
@@ -2625,7 +2516,9 @@ function ASIPanel({
         >
           {c.ctaBlock.button}
         </button>
-        <p className="mt-2 text-[13px] text-slate-500 text-center">{c.ctaBlock.note}</p>
+        {!isRuResidentialDemo ? (
+          <p className="mt-2 text-[13px] text-slate-500 text-center">{c.ctaBlock.note}</p>
+        ) : null}
       </div>
 
       {/* Analytics: gravity signals + foot traffic — EN only; RU hides internal zone/magnet labels */}
@@ -2969,16 +2862,22 @@ function CommercialASIPanel({
       {/* Header KPIs */}
       <div className="grid grid-cols-2 border-b border-slate-800/60">
         <div className="flex flex-col items-center justify-center gap-1 p-5 border-r border-slate-800/40">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em]">Индекс</p>
           <EvergreenRing index={analysis.evergreenIndex} band={band} animated={animated} copy={c} />
         </div>
         <div className="flex flex-col justify-center gap-0.5 p-5">
-          <p className="text-[12px] font-medium text-slate-500 uppercase tracking-[0.18em] mb-1">Потенциал</p>
+          <p className="text-[14px] font-semibold text-slate-400 mb-1">Потенциал формата</p>
           <p className={`text-[20px] font-bold leading-tight ${verdictColorClass}`}>
             {fit.overallVerdictLabelRu}
           </p>
-          <p className="text-[12px] text-slate-500 mt-0.5">
-            {analysis.magnets.length} объектов · {analysis.demandType === 'business-led' ? 'деловой' : analysis.demandType === 'tourism-led' ? 'туристический' : analysis.demandType === 'transport-led' ? 'транзитный' : 'смешанный'} спрос
+          <p className="text-[14px] text-slate-400 mt-1 leading-snug font-medium">
+            {analysis.magnets.length} объектов притяжения рядом ·{' '}
+            {analysis.demandType === 'business-led'
+              ? 'спрос завязан на офисный и деловой трафик'
+              : analysis.demandType === 'tourism-led'
+                ? 'спрос завязан на туристический и досуговой трафик'
+                : analysis.demandType === 'transport-led'
+                  ? 'спрос завязан на транзит и транспортную связность'
+                  : 'смешанный профиль спроса'}
           </p>
         </div>
       </div>
@@ -3004,11 +2903,8 @@ function CommercialASIPanel({
           disabled={fullReportBusy}
           className="mt-2 w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
-          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать полный отчёт (асинхронно)'}
+          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать отчёт'}
         </button>
-        <p className="mt-2 text-[11px] text-slate-600 text-center">
-          Предпросмотр — быстрый и приблизительный. Полный отчёт глубже и в плотных районах может занять до ~1 минуты.
-        </p>
         {fullReportErr ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
             Не удалось запустить полный отчёт: {fullReportErr}
@@ -3469,11 +3365,19 @@ export function LocationIntelligenceDemo({
 
               {/* Wide dashboard (full-width; no narrow right column) */}
               <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[18px] font-semibold tracking-tight text-indigo-300">
-                    {mode === 'commercial' && locale === 'ru' ? 'ASI · Коммерческий анализ' : c.asiPanelTitle}
-                  </span>
-                </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span
+                  className={
+                    locale === 'ru' && mode === 'residential'
+                      ? 'text-3xl sm:text-[40px] font-bold tracking-tight text-indigo-200 leading-tight'
+                      : mode === 'commercial' && locale === 'ru'
+                        ? 'text-3xl sm:text-[34px] font-bold tracking-tight text-indigo-200 leading-tight'
+                        : 'text-[18px] font-semibold tracking-tight text-indigo-300'
+                  }
+                >
+                  {mode === 'commercial' && locale === 'ru' ? 'Коммерческий анализ локации' : c.asiPanelTitle}
+                </span>
+              </div>
                 {mode === 'commercial' && locale === 'ru' ? (
                   <CommercialASIPanel
                     analysis={analysis}
