@@ -95,6 +95,7 @@ export function patchLegacyLocationAnalysis(a: LocationAnalysis): LocationAnalys
   const sb = ge?.scoreBreakdown ?? { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 };
   return {
     ...a,
+    strategicTransportHubMagnets: a.strategicTransportHubMagnets ?? [],
     spatialFoundation: a.spatialFoundation ?? createDisabledSpatialFoundation(),
     neighborhoodEnvironment: mergeNeighborhoodEnvironmentLayer(a.neighborhoodEnvironment),
     footTraffic: normalizeFootTrafficFields(a.footTraffic),
@@ -135,6 +136,10 @@ function magnetFlowWeights(m: MagnetItem): { transit: number; local: number; des
       return { transit: 0.65, local: 0.05, destination: 0.30 };
     case 'railway_station':
       return { transit: 0.4,  local: 0.05, destination: 0.55 };
+    case 'strategicTransportHub':
+      return { transit: 0.58, local: 0.04, destination: 0.38 };
+    case 'specializedMedicalAnchor':
+      return { transit: 0.08, local: 0.18, destination: 0.74 };
     case 'hospital':
       // Stable destination flow: staff, patients, visitors — minimal transit share
       return { transit: 0.08, local: 0.22, destination: 0.70 };

@@ -2,6 +2,8 @@
 // Map/OSM data types live here alongside ASI interpretation types.
 // Keep them clearly separated in comments: real-world vs ASI layer.
 
+import type { MagnetDiagnosticsLayer } from './magnet-diagnostics';
+
 // ── Real-world / map layer ────────────────────────────────────────────────────
 
 export type PermanenceType = 'permanent' | 'semi' | 'temporary';
@@ -53,6 +55,14 @@ export interface MagnetItem {
    * Undefined for non-business categories.
    */
   subType?: string;
+  /**
+   * Only on `strategicTransportHub`: narrative/scoring band for hubs detected beyond the primary radius.
+   */
+  strategicReachBand?: 'secondary' | 'strategic';
+  /**
+   * Only on `specializedMedicalAnchor`: distance band for large healthcare POIs beyond ordinary hospital radius.
+   */
+  specializedMedicalReachBand?: 'primary' | 'secondary';
 }
 
 /** A nearby short-term rental competitor detected in OSM */
@@ -473,6 +483,18 @@ export interface LocationAnalysis {
 
   // Computed visualization data
   heatmapPoints: HeatmapPoint[];
+
+  /**
+   * Major transport hubs beyond the ordinary magnet radius (airport/rail/port/bus/interchange),
+   * scored and labeled separately from pedestrian-local magnets.
+   * Older cached analyses omit this — treat as `[]`.
+   */
+  strategicTransportHubMagnets?: MagnetItem[];
+
+  /**
+   * Magnet pipeline diagnostics — internal/tests only; omit from user-facing API surfaces.
+   */
+  magnetDiagnostics?: MagnetDiagnosticsLayer;
 
   // Human-readable output
   conclusion: string;

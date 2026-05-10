@@ -17,6 +17,8 @@ import {
   normalizeReportAddress,
   type LocationReportResultMetadata,
 } from './report-result-metadata';
+import { strategicHubFreeBriefRu } from './strategic-transport-hub';
+import { specializedMedicalFreeBriefRu } from './specialized-medical-anchor';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -365,7 +367,11 @@ export function buildLocationStandaloneReport(args: {
   if (reportMode === 'free') {
     const drivers = (score?.top_positive_factors ?? []).slice(0, 1);
     const topDriver = drivers.length ? drivers[0]! : null;
-    const free_brief = buildFreeBriefRu({ verdict: args.verdict, topDriver });
+    let free_brief = buildFreeBriefRu({ verdict: args.verdict, topDriver });
+    const hubBrief = strategicHubFreeBriefRu(analysis.strategicTransportHubMagnets ?? []);
+    if (hubBrief) free_brief = `${free_brief} ${hubBrief}`.replace(/\s+/g, ' ').trim();
+    const medBrief = specializedMedicalFreeBriefRu(analysis.magnets ?? []);
+    if (medBrief) free_brief = `${free_brief} ${medBrief}`.replace(/\s+/g, ' ').trim();
     return {
       version: 'v1',
       reportMode: 'free',

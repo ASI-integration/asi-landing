@@ -1,4 +1,8 @@
 import type { OSMElement } from './types';
+import {
+  qualifiesSpecializedMedicalAnchor,
+  inferSpecializedMedicalSubType,
+} from './specialized-medical-anchor';
 
 /**
  * Luxury hotel chains: their presence is a quality signal independent of star rating.
@@ -39,8 +43,10 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   // ── Tier 1: Regional / city-scale anchors ──────────────────────────────────
 
   // Metro: only actual subway systems (underground rapid transit).
-  if (t.railway === 'subway_entrance' || t.station === 'subway')
-    return { categoryId: 'metro', name: t.name || 'Метро' };
+  if (t.railway === 'subway_entrance' || t.station === 'subway') {
+    const subType = t.interchange === 'yes' ? 'metro_hub' : undefined;
+    return { categoryId: 'metro', name: t.name || 'Метро', subType };
+  }
 
   // Airports: scheduled / general aviation hubs — exclude helipads (noise + false transport-led).
   if (t.aeroway === 'helipad') return null;
@@ -57,6 +63,30 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   // Hospitals / major medical clusters — evergreen demand from staff and visitors
   if (t.amenity === 'hospital' || t.healthcare === 'hospital')
     return { categoryId: 'hospital', name: t.name || 'Больница' };
+
+  // Specialized healthcare — tiered scoring only via `specializedMedicalAnchor` in buildAnalysis
+  if (t.amenity === 'dentist' && qualifiesSpecializedMedicalAnchor(t)) {
+    return {
+      categoryId: 'specializedMedicalAnchor',
+      name: t.name || 'Стоматология',
+      subType: inferSpecializedMedicalSubType(t),
+    };
+  }
+  if (t.amenity === 'clinic' && qualifiesSpecializedMedicalAnchor(t)) {
+    return {
+      categoryId: 'specializedMedicalAnchor',
+      name: t.name || 'Клиника',
+      subType: inferSpecializedMedicalSubType(t),
+    };
+  }
+  if (t.healthcare === 'surgery' && t.amenity !== 'hospital') {
+    if (!qualifiesSpecializedMedicalAnchor(t)) return null;
+    return {
+      categoryId: 'specializedMedicalAnchor',
+      name: t.name || 'Хирургия',
+      subType: inferSpecializedMedicalSubType(t),
+    };
+  }
 
   // ── Tier 2: District anchors ────────────────────────────────────────────────
 
@@ -98,11 +128,27 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.amenity === 'college')
     return { categoryId: 'education_local', name: t.name || 'Колледж' };
 
+  // Ports / ferries — same magnet lineage as rail hubs for baseline scoring within primary radius
+  if (t.amenity === 'ferry_terminal')
+    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
+  if (t.landuse === 'harbour')
+    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
+  if (t.waterway === 'dock')
+    return { categoryId: 'railway_station', name: t.name || 'Речной порт', subType: 'river_port' };
+  if (t.industrial === 'port' || t.industrial === 'logistics')
+    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
+  if (t.harbour === 'yes' && t.name?.trim())
+    return { categoryId: 'railway_station', name: t.name, subType: 'port' };
+
   // Railway stations + major bus hubs (classified AFTER metro)
   if (t.amenity === 'bus_station')
     return { categoryId: 'railway_station', name: t.name || 'Транспортный узел' };
-  if (t.railway === 'station' || t.railway === 'halt')
-    return { categoryId: 'railway_station', name: t.name || 'Станция' };
+  if (t.railway === 'station' || t.railway === 'halt') {
+    let subType: string | undefined;
+    if (t.interchange === 'yes') subType = 'transport_interchange';
+    else if (t.railway === 'halt') subType = 'halt';
+    return { categoryId: 'railway_station', name: t.name || 'Станция', subType };
+  }
 
   // City-scale entertainment (sports centres excluded — local only)
   if (t.amenity === 'cinema' || t.amenity === 'theatre' || t.amenity === 'arts_centre' || t.amenity === 'nightclub')

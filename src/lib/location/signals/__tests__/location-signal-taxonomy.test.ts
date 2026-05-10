@@ -221,11 +221,23 @@ describe('anchor recall — must-surface helpers', () => {
   it('getMustSurfaceAnchors returns nearest-first credible anchors only', () => {
     const list = getMustSurfaceAnchors([
       magnet({ categoryId: 'railway_station', name: 'Московский вокзал', distance: 900 }),
-      magnet({ categoryId: 'airport', name: 'Шереметьево', distance: 6000 }),
+      magnet({
+        categoryId: 'strategicTransportHub',
+        name: 'Шереметьево',
+        distance: 6000,
+        subType: 'airport',
+        strategicReachBand: 'strategic',
+      }),
       magnet({ categoryId: 'business', name: 'Иванов И.И.', distance: 100, subType: 'office' }),
       magnet({ categoryId: 'attraction', name: 'Музей истории завода', distance: 120 }),
     ]);
     expect(list.map(m => m.name)).toEqual(['Московский вокзал', 'Шереметьево']);
+  });
+
+  it('distant airport category POI is not must-surface (handled via strategicTransportHub)', () => {
+    expect(isMustSurfaceAnchor(magnet({
+      categoryId: 'airport', name: 'Пулково', distance: 6000,
+    }))).toBe(false);
   });
 
   it('getCredibleAnchorsByDomain groups credible magnets and excludes weak/hidden', () => {

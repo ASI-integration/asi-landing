@@ -1,6 +1,8 @@
 import type { OSMElement } from './types';
 import { CATEGORY_RADIUS, COMPETITOR_RADIUS } from './config';
 import { classifyElement } from './overpass-classify';
+import { STRATEGIC_TRANSPORT_FETCH_RADIUS_M } from './strategic-transport-hub';
+import { SPECIALIZED_MEDICAL_FETCH_RADIUS_M } from './specialized-medical-anchor';
 
 // ── Overpass API — fetch real nearby objects ──────────────────────────────────
 
@@ -50,6 +52,8 @@ function buildClauses(
     // Airport: major air traffic hubs — very strong demand generator
     { filter: '"aeroway"="aerodrome"',       radius: CATEGORY_RADIUS.airport,  includeInStrict: true  },
     { filter: '"aeroway"="terminal"',        radius: CATEGORY_RADIUS.airport,  includeInStrict: false },
+    // Extended fetch — hubs scored via strategicTransportHub beyond ordinary magnet radius (≤ same hubs).
+    { filter: '"aeroway"="aerodrome"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
 
     // Attractions (major tourism, monuments)
     { filter: '"tourism"="attraction"', radius: CATEGORY_RADIUS.attraction, includeInStrict: true },
@@ -60,6 +64,12 @@ function buildClauses(
     // Hospital / medical cluster — evergreen demand from staff & visitors
     { filter: '"amenity"="hospital"',      radius: CATEGORY_RADIUS.hospital, includeInStrict: true  },
     { filter: '"healthcare"="hospital"',   radius: CATEGORY_RADIUS.hospital, includeInStrict: false },
+    // Extended fetch for large/specialized healthcare — gated in buildAnalysis (does not widen ordinary hospital scoring)
+    { filter: '"amenity"="hospital"',      radius: SPECIALIZED_MEDICAL_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"healthcare"="hospital"',   radius: SPECIALIZED_MEDICAL_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"healthcare"="surgery"',   radius: SPECIALIZED_MEDICAL_FETCH_RADIUS_M - 500, includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="dentist"',      radius: 2200, includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="clinic"',       radius: 2200, includeInStrict: false, allGeometries: true, priority: 'extras' },
 
     // ── Tier 2: District anchors ──────────────────────────────────────────────
 
@@ -90,6 +100,14 @@ function buildClauses(
     { filter: '"railway"="halt"',          radius: CATEGORY_RADIUS.railway_station, includeInStrict: false, allGeometries: true },
     // Major surface transit hubs
     { filter: '"amenity"="bus_station"',   radius: CATEGORY_RADIUS.railway_station, includeInStrict: true,  allGeometries: true  },
+    { filter: '"railway"="station"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="bus_station"',   radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"amenity"="ferry_terminal"', radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"landuse"="harbour"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"waterway"="dock"',         radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"industrial"="port"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"industrial"="logistics"',  radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
+    { filter: '"harbour"="yes"',           radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
 
     // Entertainment (city-scale venues)
     { filter: '"amenity"="cinema"',     radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
@@ -193,6 +211,13 @@ function buildQuery(clauses: string[], requestTimeoutMs?: number): string {
 function buildBackfillClauses(lat: number, lon: number): string[] {
   const r = (meters: number, filter: string) => makeAround(filter, meters, lat, lon, true);
   return [
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"aeroway"="aerodrome"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"railway"="station"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"amenity"="bus_station"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"amenity"="ferry_terminal"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"landuse"="harbour"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"waterway"="dock"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"industrial"="port"'),
     // Rail / bus hubs
     ...r(CATEGORY_RADIUS.railway_station, '"railway"="station"'),
     ...r(CATEGORY_RADIUS.railway_station, '"amenity"="bus_station"'),
