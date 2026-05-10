@@ -51,7 +51,11 @@ export type {
 } from './standalone-report';
 export type { LocationCommercialReport, PersistableLocationReport } from './standalone-report';
 export { isCanonicalLocationReportPayload, isLocationCommercialReport, buildCommercialReport } from './standalone-report';
-export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
+export {
+  buildFastReportPreview,
+  sampleFullLocationReportRu,
+  URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU,
+} from './report-contract';
 export {
   buildExpressLocationReport,
   buildFullLocationReport,

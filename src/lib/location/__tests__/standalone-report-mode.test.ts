@@ -55,6 +55,8 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.reportMode).toBe('paid');
     expect(report.free_brief).toBeUndefined();
     expect(report.unifiedReport?.version).toBe('unified-location-potential-report-v1');
+    expect(report.unifiedReport?.urbanDevelopmentForecastScore.score).toBe(0);
+    expect(report.unifiedReport?.urbanDevelopmentForecastScore.level).toBe('low');
 
     const ids = report.sections.map(s => s.id);
     expect(ids).toContain('magnets');

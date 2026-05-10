@@ -116,6 +116,18 @@ export interface RecommendationItem {
   confidence: ConfidenceLevel;
 }
 
+/** Подпись в платном отчёте: слой градоразвития пока без живых источников (сигналы пустые). */
+export const URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU =
+  'Сигналы градостроительного развития пока не подключены к живым источникам. В будущем блок будет учитывать закупки, проекты планировки и инфраструктурные изменения.';
+
+export interface UrbanDevelopmentForecastDigest {
+  score: number;
+  level: 'low' | 'moderate' | 'high' | 'very_high';
+  confidence: 'low' | 'medium' | 'high';
+  reasonsRu: string[];
+  contributingSignalCount: number;
+}
+
 export interface FastReportPreview {
   version: 'fast-report-preview-v1';
   reportId?: string;
@@ -166,6 +178,8 @@ export interface FullLocationReport {
   nextSteps: string[];
   confidence: Confidence;
   sections: ReportSection[];
+  /** Ранний слой «прогноз развития района» (не входит в основной score). Опционально для обратной совместимости. */
+  urbanDevelopmentForecast?: UrbanDevelopmentForecastDigest;
 }
 
 export interface ReportStateRecord<TReport = FastReportPreview | FullLocationReport> {
@@ -536,8 +550,19 @@ export const sampleFullLocationReportRu: FullLocationReport = {
     { id: 'audience_fit', title: 'Target audience fit' },
     { id: 'competition', title: 'Competition overview' },
     { id: 'income_potential', title: 'Income potential' },
+    { id: 'urban_development_forecast', title: 'Urban development forecast' },
     { id: 'risks', title: 'Risks and limitations' },
     { id: 'recommended_strategy', title: 'Recommended strategy' },
     { id: 'next_steps', title: 'Next steps' },
   ],
+  urbanDevelopmentForecast: {
+    score: 78,
+    level: 'high',
+    confidence: 'medium',
+    contributingSignalCount: 1,
+    reasonsRu: [
+      'Демо-сигнал инфраструктуры: подготовка к строительству и высокая географическая привязка усиливают ожидание изменений в окружении.',
+      'Это иллюстрация слоя прогноза на fixture/sample данных, а не вывод по живым госисточникам.',
+    ],
+  },
 };
