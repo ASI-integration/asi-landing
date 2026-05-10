@@ -219,7 +219,19 @@ export function classifyMagnetSignal(m: MagnetItem): MagnetSignalTaxonomy {
     };
   }
 
-  // Transport anchors
+  // Strategic hubs beyond ordinary magnet radii — never framed as pedestrian anchors.
+  if (m.categoryId === 'strategicTransportHub') {
+    const band = m.strategicReachBand ?? 'secondary';
+    return {
+      level: 'tier2_anchor',
+      domain: 'transport',
+      publicClaimStrength: band === 'strategic' ? 'weak_context_only' : 'moderate_driver_allowed',
+      allowsBusinessAudience: band !== 'strategic',
+      isWeakLocalBusinessPoi: false,
+    };
+  }
+
+  // Transport anchors (pedestrian-relevant fetch radii only — airports beyond ~2 km remap to strategicTransportHub)
   if (m.categoryId === 'airport' || m.categoryId === 'railway_station') {
     return {
       level: 'tier1_anchor',
@@ -244,6 +256,18 @@ export function classifyMagnetSignal(m: MagnetItem): MagnetSignalTaxonomy {
       level: 'weak_local_signal',
       domain: 'transport',
       publicClaimStrength: 'weak_context_only',
+      allowsBusinessAudience: false,
+      isWeakLocalBusinessPoi: false,
+    };
+  }
+
+  // Large / specialized healthcare beyond ordinary hospital radius
+  if (m.categoryId === 'specializedMedicalAnchor') {
+    const band = m.specializedMedicalReachBand ?? 'secondary';
+    return {
+      level: 'tier2_anchor',
+      domain: 'medical',
+      publicClaimStrength: band === 'primary' ? 'moderate_driver_allowed' : 'weak_context_only',
       allowsBusinessAudience: false,
       isWeakLocalBusinessPoi: false,
     };
@@ -514,7 +538,7 @@ export function hasCredibleHospitalityCluster(magnets: MagnetItem[]): boolean {
  * further than business centers, transport hubs further than hotels, etc.
  */
 const MUST_SURFACE_RADIUS_M: Readonly<Record<string, number>> = {
-  airport:         8000,
+  airport:         2000,
   railway_station: 1500,
   metro:           1200,
   hospital:        1500,
@@ -525,6 +549,7 @@ const MUST_SURFACE_RADIUS_M: Readonly<Record<string, number>> = {
   shopping_major:  1500,
   major_hotel:      800,
   stadium:         1500,
+  strategicTransportHub: 8000,
 };
 
 /**

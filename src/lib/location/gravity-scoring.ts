@@ -31,6 +31,22 @@ import { buildAudienceAnalysis } from './audience-scoring';
 import { buildNeighborhoodEnvironmentLayer } from './neighborhood-environment';
 import { applySpatialFoundationLayer } from './spatial-foundation';
 import { buildResidentialAnalysis } from './residential-analysis';
+import {
+  STRATEGIC_TRANSPORT_FETCH_RADIUS_M,
+  STRATEGIC_TRANSPORT_PRIMARY_RADIUS_M,
+  resolveStrategicHubSubtype,
+  strategicHubWeightTierMultiplier,
+  strategicReachBandFromDistance,
+} from './strategic-transport-hub';
+import {
+  SPECIALIZED_MEDICAL_FETCH_RADIUS_M,
+  ORDINARY_HOSPITAL_SCORING_RADIUS_M,
+  qualifiesSpecializedMedicalAnchor,
+  inferSpecializedMedicalSubType,
+  specializedMedicalReachBandFromDistance,
+  specializedMedicalWeightTierMultiplier,
+} from './specialized-medical-anchor';
+import { emptyMagnetDiagnostics, type MagnetDiagnosticCandidate } from './magnet-diagnostics';
 
 export type BuildAnalysisOptions = {
   /**
@@ -175,13 +191,16 @@ function inferDemandType(magnets: MagnetItem[]): GravityExplanation['demandType'
   const ap = byCat.airport ?? 0;
   if (ap > 0 && (ap / total >= 0.11 || ap >= 9)) return 'transport-led';
 
+  const stratHubPull = (byCat.strategicTransportHub ?? 0) * 0.52;
   const transport =
     (byCat.metro ?? 0) +
-    (byCat.railway_station ?? 0);
+    (byCat.railway_station ?? 0) +
+    stratHubPull;
   // Hospital, convention, major_hotel contribute to business demand
   const business =
     (byCat.business ?? 0) +
     (byCat.hospital ?? 0) * 0.6 +
+    (byCat.specializedMedicalAnchor ?? 0) * 0.28 +
     (byCat.convention ?? 0) * 0.8 +
     (byCat.major_hotel ?? 0) * 0.4;
   const tourism =
@@ -413,6 +432,22 @@ export function calcEvergreenIndex(
 
 // ── Main analysis builder ─────────────────────────────────────────────────────
 
+function magnetDiagCandidate(
+  el: OSMElement,
+  dist: number,
+  classified?: { categoryId: string; subType?: string; name: string },
+): MagnetDiagnosticCandidate {
+  return {
+    osmType: el.type,
+    osmId: el.id,
+    name: classified?.name ?? el.tags?.name ?? '—',
+    distanceM: Math.round(dist),
+    tags: el.tags,
+    classifiedCategoryId: classified?.categoryId,
+    classifiedSubType: classified?.subType,
+  };
+}
+
 function dedupeAccessibilityStops(stops: AccessibilityStopItem[]): AccessibilityStopItem[] {
   const seen = new Set<string>();
   const out: AccessibilityStopItem[] = [];
@@ -436,16 +471,69 @@ export function buildAnalysis(
   const byCategory: Record<string, MagnetItem[]> = {};
   const competitors: CompetitorItem[] = [];
   const accessibilityStops: AccessibilityStopItem[] = [];
+  const diag = emptyMagnetDiagnostics();
+
+  const pushSpecializedMedicalMagnet = (
+    el: OSMElement,
+    elLat: number,
+    elLon: number,
+    dist: number,
+    name: string,
+    tags: Record<string, string>,
+    classifiedSnapshot: { categoryId: string; subType?: string },
+    explicitSubType?: string,
+  ): void => {
+    const specCat = MAGNET_CATEGORIES.find(c => c.id === 'specializedMedicalAnchor');
+    const band = specializedMedicalReachBandFromDistance(dist);
+    if (!specCat || !band) {
+      diag.suppressedMagnets.push({
+        ...magnetDiagCandidate(el, dist, { ...classifiedSnapshot, name }),
+        reason: 'outside_radius',
+        detail: 'specialized_medical_radius',
+      });
+      return;
+    }
+    const tierMul = specializedMedicalWeightTierMultiplier(band);
+    const effectiveWeight = specCat.weight * tierMul;
+    const subType = explicitSubType ?? inferSpecializedMedicalSubType(tags);
+    if (!byCategory.specializedMedicalAnchor) byCategory.specializedMedicalAnchor = [];
+    byCategory.specializedMedicalAnchor.push({
+      categoryId: specCat.id,
+      categoryLabel: specCat.label,
+      icon: specCat.icon,
+      name,
+      subType,
+      lat: elLat,
+      lon: elLon,
+      distance: dist,
+      weight: effectiveWeight,
+      permanenceType: specCat.permanenceType,
+      scopeLevel: specCat.scopeLevel,
+      strengthClass: specCat.strengthClass,
+      specializedMedicalReachBand: band,
+      attractionScore: calcMagnetAttraction(effectiveWeight, specCat.permanenceType, dist),
+    });
+  };
 
   for (const el of elements) {
     const elLat = el.lat ?? el.center?.lat;
     const elLon = el.lon ?? el.center?.lon;
     if (!elLat || !elLon) continue;
 
-    const classified = classifyElement(el);
-    if (!classified) continue;
-
     const dist = haversineMeters(lat, lon, elLat, elLon);
+    diag.queriedCandidates.push(magnetDiagCandidate(el, dist));
+
+    const classified = classifyElement(el);
+    if (!classified) {
+      diag.suppressedMagnets.push({
+        ...magnetDiagCandidate(el, dist),
+        reason: 'unknown_category',
+        detail: 'classifyElement_null',
+      });
+      continue;
+    }
+
+    diag.classifiedCandidates.push(magnetDiagCandidate(el, dist, classified));
 
     if (classified.categoryId === 'competitor') {
       competitors.push({ name: classified.name, lat: elLat, lon: elLon, distance: dist });
@@ -454,6 +542,84 @@ export function buildAnalysis(
 
     if (classified.categoryId === 'accessibility_stop') {
       accessibilityStops.push({ name: classified.name, distance: dist });
+      continue;
+    }
+
+    const tags = el.tags ?? {};
+
+    if (classified.categoryId === 'specializedMedicalAnchor') {
+      pushSpecializedMedicalMagnet(
+        el,
+        elLat,
+        elLon,
+        dist,
+        classified.name,
+        tags,
+        classified,
+        classified.subType,
+      );
+      continue;
+    }
+
+    if (classified.categoryId === 'hospital') {
+      if (dist > ORDINARY_HOSPITAL_SCORING_RADIUS_M) {
+        if (dist <= SPECIALIZED_MEDICAL_FETCH_RADIUS_M && qualifiesSpecializedMedicalAnchor(tags)) {
+          pushSpecializedMedicalMagnet(el, elLat, elLon, dist, classified.name, tags, classified);
+        } else {
+          diag.suppressedMagnets.push({
+            ...magnetDiagCandidate(el, dist, classified),
+            reason: 'outside_radius',
+            detail: 'ordinary_hospital_beyond_local_radius',
+          });
+        }
+        continue;
+      }
+    }
+
+    const hubKind = resolveStrategicHubSubtype(classified, tags);
+    if (
+      hubKind &&
+      dist > STRATEGIC_TRANSPORT_PRIMARY_RADIUS_M &&
+      dist <= STRATEGIC_TRANSPORT_FETCH_RADIUS_M
+    ) {
+      const stratCat = MAGNET_CATEGORIES.find(c => c.id === 'strategicTransportHub');
+      const band = strategicReachBandFromDistance(dist);
+      if (stratCat && band) {
+        const tierMul = strategicHubWeightTierMultiplier(band);
+        const effectiveWeight = stratCat.weight * tierMul;
+        if (!byCategory.strategicTransportHub) byCategory.strategicTransportHub = [];
+        byCategory.strategicTransportHub.push({
+          categoryId: stratCat.id,
+          categoryLabel: stratCat.label,
+          icon: stratCat.icon,
+          name: classified.name,
+          subType: hubKind,
+          lat: elLat,
+          lon: elLon,
+          distance: dist,
+          weight: effectiveWeight,
+          permanenceType: stratCat.permanenceType,
+          scopeLevel: stratCat.scopeLevel,
+          strengthClass: stratCat.strengthClass,
+          strategicReachBand: band,
+          attractionScore: calcMagnetAttraction(effectiveWeight, stratCat.permanenceType, dist),
+        });
+        continue;
+      }
+      diag.suppressedMagnets.push({
+        ...magnetDiagCandidate(el, dist, classified),
+        reason: 'low_priority',
+        detail: 'strategic_hub_missing_band',
+      });
+      continue;
+    }
+
+    if (classified.categoryId === 'airport' && dist > STRATEGIC_TRANSPORT_FETCH_RADIUS_M) {
+      diag.suppressedMagnets.push({
+        ...magnetDiagCandidate(el, dist, classified),
+        reason: 'outside_radius',
+        detail: 'airport_beyond_strategic_fetch',
+      });
       continue;
     }
 
@@ -466,7 +632,14 @@ export function buildAnalysis(
     }
 
     const cat = MAGNET_CATEGORIES.find(c => c.id === classified.categoryId);
-    if (!cat) continue;
+    if (!cat) {
+      diag.suppressedMagnets.push({
+        ...magnetDiagCandidate(el, dist, classified),
+        reason: 'unknown_category',
+        detail: 'no_magnet_category_config',
+      });
+      continue;
+    }
 
     if (!byCategory[classified.categoryId]) byCategory[classified.categoryId] = [];
     const effectiveWeight =
@@ -516,6 +689,29 @@ export function buildAnalysis(
     magnetCountByCategory[cat.id] = items.length;
     magnets.push(...items.slice(0, CATEGORY_MAX_SHOW[cat.id] ?? 3));
   }
+
+  for (const cat of MAGNET_CATEGORIES) {
+    const items = (byCategory[cat.id] ?? []).sort((a, b) => a.distance - b.distance);
+    const maxShow = CATEGORY_MAX_SHOW[cat.id] ?? 3;
+    if (items.length <= maxShow) continue;
+    for (const m of items.slice(maxShow)) {
+      diag.suppressedMagnets.push({
+        name: m.name,
+        distanceM: Math.round(m.distance),
+        classifiedCategoryId: m.categoryId,
+        classifiedSubType: m.subType,
+        reason: 'low_priority',
+        detail: `category_max_show_${maxShow}`,
+      });
+    }
+  }
+
+  diag.surfacedMagnets = magnets.map(m => ({
+    name: m.name,
+    distanceM: Math.round(m.distance),
+    classifiedCategoryId: m.categoryId,
+    classifiedSubType: m.subType,
+  }));
 
   competitors.sort((a, b) => a.distance - b.distance);
 
@@ -624,11 +820,14 @@ export function buildAnalysis(
     console.info('[location-debug]', JSON.stringify(debugInfo, null, 2));
   }
 
+  const strategicTransportHubMagnets = magnets.filter(m => m.categoryId === 'strategicTransportHub');
+
   const baseAnalysis = {
     evergreenIndex,
     scoreBand,
     locationScore: locationScoreAdjusted,
     magnets,
+    strategicTransportHubMagnets,
     magnetCountByCategory,
     accessibilityStops: accessibilityDeduped.slice(0, 12),
     competitors,
@@ -645,6 +844,7 @@ export function buildAnalysis(
     spatialFoundation,
     heatmapPoints,
     conclusion,
+    magnetDiagnostics: diag,
   };
 
   return {

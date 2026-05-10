@@ -9,6 +9,7 @@ import {
   looksLikeWeakLocalAttractionPoi,
   getMustSurfaceAnchors,
 } from './signals/location-signal-taxonomy';
+import { strategicHubSubtypeLabelRu } from './strategic-transport-hub';
 
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ const MAGNET_REASON_RU: Record<string, string> = {
  * Categories that directly drive occupancy and ADR come first.
  */
 const CONCLUSION_PRIORITY = [
-  'airport', 'metro', 'hospital', 'major_hotel', 'railway_station',
+  'airport', 'metro', 'hospital', 'major_hotel', 'railway_station', 'strategicTransportHub',
   'convention', 'attraction', 'university', 'business', 'stadium',
   'entertainment', 'shopping_major',
 ] as const;
@@ -187,8 +188,12 @@ function pickTopDrivers(magnets: MagnetItem[]): MagnetItem[] {
         const tax = classifyMagnetSignal(m);
         if (tax.level === 'weak_local_signal' || tax.publicClaimStrength === 'hidden_from_public_copy') return false;
         if (cat === 'airport') {
+          if (m.distance > 2000) return false;
           if (m.attractionScore >= 3.8) return true;
           return m.distance <= 2200 && m.attractionScore >= 2;
+        }
+        if (cat === 'strategicTransportHub') {
+          return Number.isFinite(m.distance) && m.distance <= 8000;
         }
         // Skip hospital when a significantly stronger tourist anchor exists.
         // Prevents "medical cluster 960m away" from overshadowing museums at 12m.
@@ -215,6 +220,17 @@ function fmDist(m: number, locale: 'en' | 'ru'): string {
 
 /** Resolve a per-magnet reason line, with subType overrides for business magnets */
 function getMagnetReason(m: MagnetItem, locale: 'en' | 'ru'): string | undefined {
+  if (m.categoryId === 'strategicTransportHub') {
+    const kind = strategicHubSubtypeLabelRu(m.subType);
+    return locale === 'ru'
+      ? `${kind} — крупный узел в зоне транспортной доступности (не пеший якорь)`
+      : `${kind} — major hub in transit reach (not a walking-distance anchor)`;
+  }
+  if (m.categoryId === 'specializedMedicalAnchor') {
+    return locale === 'ru'
+      ? 'крупная медицина — побочный спрос от пациентов и сопровождающих (не пеший якорь на дистанции)'
+      : 'major healthcare — ancillary guest demand from patients and companions (not a walking anchor at distance)';
+  }
   if (m.categoryId === 'business' && m.subType) {
     if (m.subType === 'industrial' || m.subType === 'factory') {
       return locale === 'ru'

@@ -22,6 +22,8 @@ import {
   computeUrbanDevelopmentForecastScore,
   type UrbanDevelopmentForecastScore,
 } from './data-sources/urban-development-forecast-score';
+import { strategicHubPaidDetailLinesRu } from './strategic-transport-hub';
+import { specializedMedicalPaidDetailLinesRu } from './specialized-medical-anchor';
 
 export type {
   UrbanDevelopmentForecastConfidence,
@@ -347,8 +349,10 @@ function buildDemand(input: LocationReportInput, analysis?: LocationAnalysis): D
     demandScore: score?.breakdown.demand_score ?? analysis.evergreenIndex,
     guestDemandDrivers: [
       ...(score?.top_positive_factors ?? []),
+      ...strategicHubPaidDetailLinesRu(analysis.strategicTransportHubMagnets ?? []),
+      ...specializedMedicalPaidDetailLinesRu(analysis.magnets ?? []),
       ...(residential?.premiumComfortSignals ?? []),
-    ].slice(0, 5),
+    ].slice(0, 8),
     shortTermRentalPotential: score?.recommended_strategy ?? null,
     stayTypeStrategy: residential?.strategyRationaleRu ?? null,
   };

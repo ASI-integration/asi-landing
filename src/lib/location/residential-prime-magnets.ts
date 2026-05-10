@@ -38,6 +38,8 @@ export interface ResidentialPrimeMagnet {
 // that are absent from sections A/B/C of the canonical allowlist.
 
 const EXCLUDED_CATEGORIES = new Set([
+  'strategicTransportHub', // regional hubs beyond walking prime radius — separate narrative track
+  'specializedMedicalAnchor', // large healthcare beyond prime radius — separate narrative / demand lines
   'food',           // cafes, restaurants, fast_food, bars, bakeries
   'education_local', // schools, colleges, kindergartens
   'shopping_local',  // supermarkets, convenience stores
