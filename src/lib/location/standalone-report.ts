@@ -21,8 +21,16 @@ export type LocationStandaloneReportSectionId =
   | 'income_strategy'
   | 'next_step';
 
+export type LocationStandaloneReportMode = 'free' | 'paid';
+
 export type LocationStandaloneReport = {
   version: 'v1';
+  /**
+   * Persisted tier for permalink payloads. Omitted on older rows — treat as paid/full.
+   */
+  reportMode?: LocationStandaloneReportMode;
+  /** Short teaser for `reportMode: 'free'` permalinks (RU copy). */
+  free_brief?: string;
   address: string;
   generated_at_iso: string;
   unifiedReport?: UnifiedLocationReport;
@@ -312,6 +320,14 @@ function pickBusinessFitVerdict(
   return { business_fit_verdict: 'not_fit', note: 'По сигналам окружения деловой сценарий не доминирует.' };
 }
 
+function buildFreeBriefRu(args: { verdict: string; topDriver: string | null }): string {
+  const driverBit = args.topDriver ? `Ключевой фактор: ${args.topDriver}. ` : '';
+  return `${args.verdict} ${driverBit}В полном отчёте — магниты спроса, конкуренция, сравнение моделей дохода, рекомендации и аналитика развития района.`.replace(
+    /\s+/g,
+    ' ',
+  ).trim();
+}
+
 
 export function buildLocationStandaloneReport(args: {
   address: string;
@@ -319,10 +335,38 @@ export function buildLocationStandaloneReport(args: {
   verdict: string;
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
   market?: ResidentialMarketMode;
+  /** Defaults to paid (full permalink payload including unifiedReport). */
+  reportMode?: LocationStandaloneReportMode;
 }): LocationStandaloneReport {
   const { analysis } = args;
+  const reportMode = args.reportMode ?? 'paid';
   const generatedAtIso = new Date().toISOString();
   const market = args.market ?? 'RU';
+  const score = analysis.locationScore;
+
+  if (reportMode === 'free') {
+    const drivers = (score?.top_positive_factors ?? []).slice(0, 1);
+    const topDriver = drivers.length ? drivers[0]! : null;
+    const free_brief = buildFreeBriefRu({ verdict: args.verdict, topDriver });
+    return {
+      version: 'v1',
+      reportMode: 'free',
+      free_brief,
+      address: args.address,
+      generated_at_iso: generatedAtIso,
+      sections: [
+        {
+          id: 'summary',
+          verdict: args.verdict,
+          drivers,
+          income_rub_month: null,
+          recommended_strategy: null,
+        },
+        { id: 'next_step', cta: 'get_full_breakdown' },
+      ],
+    };
+  }
+
   const unifiedReport = buildFullLocationReport(
     locationReportInputFromLegacy({
       address: args.address,
@@ -332,7 +376,6 @@ export function buildLocationStandaloneReport(args: {
     }),
     { analysis, generatedAtIso, market },
   );
-  const score = analysis.locationScore;
   const drivers = (score?.top_positive_factors ?? []).slice(0, 3);
 
   const recommended = score?.recommended_strategy ?? null;
@@ -375,6 +418,7 @@ export function buildLocationStandaloneReport(args: {
 
   return {
     version: 'v1',
+    reportMode: 'paid',
     address: args.address,
     generated_at_iso: generatedAtIso,
     unifiedReport,

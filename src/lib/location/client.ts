@@ -91,7 +91,12 @@ export type {
   ResidentialAnalysisOutput,
 } from './types';
 
-export type { LocationStandaloneReport, LocationStandaloneReportSectionId, LocationCommercialReport } from './standalone-report';
+export type {
+  LocationStandaloneReport,
+  LocationStandaloneReportMode,
+  LocationStandaloneReportSectionId,
+  LocationCommercialReport,
+} from './standalone-report';
 export type {
   AudienceFitSignals,
   CompetitionSignals,

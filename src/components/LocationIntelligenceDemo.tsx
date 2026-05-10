@@ -2043,6 +2043,7 @@ function ASIPanel({
         address,
         analysis,
         verdict: conclusion || 'Итог: данных недостаточно для уверенного вывода.',
+        reportMode: 'free',
       });
 
       try {

@@ -44,7 +44,11 @@ export type {
   LockedField,
 } from './location-report-paywall';
 
-export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
+export type {
+  LocationStandaloneReport,
+  LocationStandaloneReportMode,
+  LocationStandaloneReportSectionId,
+} from './standalone-report';
 export type { LocationCommercialReport, PersistableLocationReport } from './standalone-report';
 export { isCanonicalLocationReportPayload, isLocationCommercialReport, buildCommercialReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
