@@ -13,9 +13,14 @@ export interface ProcurementNoticeWorkUnit {
   readonly rawPayload: unknown;
 }
 
+/** Where validated procurement rows originate (controls disclosure text on normalized signals). */
+export type PublicProcurementIngestionDataMode = 'fixture_sample' | 'live_probe_sample_cache';
+
 export interface PublicProcurementIngestionContext {
   readonly locale?: UrbanDevelopmentCollectInput['locale'];
   readonly sourceName: string;
+  /** Defaults to fixture/demo disclosure copy used by bundled procurement fixtures. */
+  readonly dataMode?: PublicProcurementIngestionDataMode;
 }
 
 /** Audit-only слой пайплайна: сырые цитаты и промежуточные извлечения не попадают на {@link UrbanDevelopmentSignal}. */
@@ -60,10 +65,18 @@ function signalFromClassified(
   geoExtracted: ProcurementGeoExtracted,
   geoQuality: ProcurementGeoSignalQualityAssessment,
 ): UrbanDevelopmentSignal {
+  const dataMode = ctx.dataMode ?? 'fixture_sample';
+  const summaryLead =
+    dataMode === 'live_probe_sample_cache'
+      ? ctx.locale === 'en'
+        ? 'Sample-cache procurement notice mapped to an urban-development signal.'
+        : 'Закупка из offline sample-cache, преобразованная в сигнал городского развития.'
+      : ctx.locale === 'en'
+        ? 'Fixture procurement notice mapped to an urban-development signal.'
+        : 'Тестовая закупочная позиция, преобразованная в сигнал городского развития.';
+
   const summaryParts = [
-    ctx.locale === 'en'
-      ? 'Fixture procurement notice mapped to an urban-development signal.'
-      : 'Тестовая закупочная позиция, преобразованная в сигнал городского развития.',
+    summaryLead,
     validated.customer ? `${ctx.locale === 'en' ? 'Customer' : 'Заказчик'}: ${validated.customer}` : undefined,
     validated.procedureStage
       ? `${ctx.locale === 'en' ? 'Procedure stage' : 'Этап процедуры'}: ${validated.procedureStage}`
@@ -71,9 +84,17 @@ function signalFromClassified(
   ].filter(Boolean);
 
   const limitations =
-    ctx.locale === 'en'
-      ? ['Fixture-only ingestion; no live госзакупки source was queried.']
-      : ['Загрузка только из фикстуры; живой источник госзакупок не запрашивался.'];
+    dataMode === 'live_probe_sample_cache'
+      ? ctx.locale === 'en'
+        ? [
+            'Sample-cache mode: PUBLIC_PROCUREMENT_LIVE_PROBE_ENABLED is off (default); no outbound procurement HTTP requests were made.',
+          ]
+        : [
+            'Режим sample-cache: PUBLIC_PROCUREMENT_LIVE_PROBE_ENABLED выключен (по умолчанию); исходящие HTTP-запросы к ЕИС не выполнялись.',
+          ]
+      : ctx.locale === 'en'
+        ? ['Fixture-only ingestion; no live госзакупки source was queried.']
+        : ['Загрузка только из фикстуры; живой источник госзакупок не запрашивался.'];
 
   return {
     kind: 'publicProcurement',

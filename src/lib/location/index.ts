@@ -123,6 +123,12 @@ export {
   normalizeUrbanDevelopmentSignals,
   urbanDevelopmentSnapshotFromSignals,
 } from './data-sources/urban-development';
+export {
+  PUBLIC_PROCUREMENT_LIVE_PROBE_ENV_KEY,
+  PublicProcurementLiveClient,
+  createPublicProcurementLiveProbeAdapter,
+  isPublicProcurementLiveProbeEnabled,
+} from './data-sources/public-procurement/public-procurement-live-probe-adapter';
 export type {
   UrbanDevelopmentForecastConfidence,
   UrbanDevelopmentForecastContributingSignalRef,
