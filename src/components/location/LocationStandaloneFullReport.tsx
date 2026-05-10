@@ -109,20 +109,30 @@ export function LocationStandaloneFullReport({
 }: {
   report: LocationStandaloneReport;
 }) {
+  const isFreePreview = report.reportMode === 'free';
   const summary = pickSection(report, 'summary');
   const businessFit = pickSection(report, 'business_fit');
   const magnets = pickSection(report, 'magnets');
   const competition = pickSection(report, 'competition');
   const incomeStrategy = pickSection(report, 'income_strategy');
+  const freeBrief = report.free_brief ?? (isFreePreview ? summary?.verdict ?? null : null);
 
-  const tocItems = useMemo(() => ([
-    { id: 'summary', label: 'Итог' },
-    { id: 'business-fit', label: 'Business-fit' },
-    { id: 'magnets', label: 'Магниты' },
-    { id: 'competition', label: 'Конкуренция' },
-    { id: 'income-strategy', label: 'Доход / стратегия' },
-    { id: 'next-step', label: 'Следующий шаг' },
-  ]), []);
+  const tocItems = useMemo(() => {
+    if (isFreePreview) {
+      return [
+        { id: 'summary', label: 'Краткий итог' },
+        { id: 'next-step', label: 'Полный отчёт' },
+      ];
+    }
+    return [
+      { id: 'summary', label: 'Итог' },
+      { id: 'business-fit', label: 'Business-fit' },
+      { id: 'magnets', label: 'Магниты' },
+      { id: 'competition', label: 'Конкуренция' },
+      { id: 'income-strategy', label: 'Доход / стратегия' },
+      { id: 'next-step', label: 'Следующий шаг' },
+    ];
+  }, [isFreePreview]);
 
   const generatedAt = useMemo(() => {
     const d = new Date(report.generated_at_iso);
@@ -149,7 +159,9 @@ export function LocationStandaloneFullReport({
       <header className="print-hide sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/70">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт по локации</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+              {isFreePreview ? 'Бесплатный фрагмент по локации' : 'Полный отчёт по локации'}
+            </p>
             <p className="mt-1 text-sm text-slate-200 truncate" title={report.address}>{report.address}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -185,33 +197,54 @@ export function LocationStandaloneFullReport({
                 ASI · Location Intelligence · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
               </p>
               <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-white">
-                Отчёт по потенциалу локации
+                {isFreePreview ? 'Краткий обзор локации' : 'Отчёт по потенциалу локации'}
               </h1>
               <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
-                Документ, чтобы решить, стоит ли заходить в объект и какой моделью дохода идти: посуточно, среднесрок или гибрид.
+                {isFreePreview
+                  ? freeBrief
+                  : 'Документ, чтобы решить, стоит ли заходить в объект и какой моделью дохода идти: посуточно, среднесрок или гибрид.'}
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-3">
+            <div className={`grid gap-3 ${isFreePreview ? 'sm:grid-cols-1' : 'sm:grid-cols-3'}`}>
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Адрес</p>
                 <p className="mt-2 text-sm text-slate-200 leading-snug">{report.address}</p>
               </div>
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу (оценка)</p>
-                <p className="mt-2 text-xl font-bold text-white tabular-nums">
-                  {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
-                <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
-              </div>
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Рекомендуемая стратегия</p>
-                <p className="mt-2 text-sm font-semibold text-slate-100">
-                  {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">Вывод из окружения + конкуренции</p>
-              </div>
+              {!isFreePreview ? (
+                <>
+                  <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Ориентир по доходу (оценка)</p>
+                    <p className="mt-2 text-xl font-bold text-white tabular-nums">
+                      {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
+                    <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Рекомендуемая стратегия</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">
+                      {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Вывод из окружения + конкуренции</p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-indigo-500/25 bg-indigo-950/15 p-5">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-200/80">Что в полном отчёте</p>
+                  <p className="mt-2 text-sm text-slate-200 leading-relaxed">
+                    Магниты и дистанции, давление конкурентов, сравнение моделей дохода, рекомендации и блок развития района — в платной версии.
+                  </p>
+                  <div className="print-hide mt-4">
+                    <Link
+                      href={LOCATION_REPORT_PRODUCT_PATH}
+                      className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
+                    >
+                      Заказать полный отчёт
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Toc items={tocItems} />
@@ -222,8 +255,12 @@ export function LocationStandaloneFullReport({
           {/* 1) Summary */}
           <SectionShell
             id="summary"
-            title="Итог"
-            lead="Первое, что важно: вердикт и 3 драйвера, которые дают основной вклад в спрос и стратегию."
+            title={isFreePreview ? 'Краткий итог' : 'Итог'}
+            lead={
+              isFreePreview
+                ? 'Бесплатный фрагмент: общий вывод и один ключевой фактор. Детали и числа — в полном отчёте.'
+                : 'Первое, что важно: вердикт и 3 драйвера, которые дают основной вклад в спрос и стратегию.'
+            }
           >
             <div className="grid lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2">
@@ -235,10 +272,12 @@ export function LocationStandaloneFullReport({
                 </div>
 
                 <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Главные драйверы</p>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    {isFreePreview ? 'Ключевой фактор' : 'Главные драйверы'}
+                  </p>
                   {summary?.drivers?.length ? (
                     <ul className="mt-3 space-y-2">
-                      {summary.drivers.slice(0, 3).map((d, i) => (
+                      {summary.drivers.slice(0, isFreePreview ? 1 : 3).map((d, i) => (
                         <li key={i} className="flex gap-3">
                           <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
                           <span className="text-slate-200 leading-relaxed">{d}</span>
@@ -257,23 +296,38 @@ export function LocationStandaloneFullReport({
                   <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
                     <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Стратегия</p>
                     <p className="mt-1 text-sm font-semibold text-white">
-                      {summary?.recommended_strategy ? strategyTitleRu(summary.recommended_strategy) : '—'}
+                      {summary?.recommended_strategy
+                        ? strategyTitleRu(summary.recommended_strategy)
+                        : isFreePreview
+                          ? 'Сравнение стратегий — в полном отчёте'
+                          : '—'}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Доход (ориентир)</p>
-                    <p className="mt-1 text-lg font-bold text-white tabular-nums">
-                      {summary?.income_rub_month != null ? fmtRub(summary.income_rub_month) : '—'}
-                      <span className="text-slate-500 text-sm font-normal"> / мес</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-600">Потенциал реализуется при корректной упаковке и каналах</p>
-                  </div>
+                  {!isFreePreview ? (
+                    <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Доход (ориентир)</p>
+                      <p className="mt-1 text-lg font-bold text-white tabular-nums">
+                        {summary?.income_rub_month != null ? fmtRub(summary.income_rub_month) : '—'}
+                        <span className="text-slate-500 text-sm font-normal"> / мес</span>
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">Потенциал реализуется при корректной упаковке и каналах</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-800/70 bg-slate-900/20 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-[0.18em]">Доход и модели</p>
+                      <p className="mt-1 text-sm text-slate-300 leading-relaxed">
+                        Ориентиры по посуточно / гибриду / среднесроку и сравнение стратегий доступны в полном отчёте.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </SectionShell>
 
           {/* 2) Business-fit */}
+          {!isFreePreview ? (
+          <>
           <SectionShell
             id="business-fit"
             title="Business-fit"
@@ -481,38 +535,58 @@ export function LocationStandaloneFullReport({
               <p className="text-slate-400">Секция дохода/стратегии отсутствует в данных отчёта.</p>
             )}
           </SectionShell>
+          </>
+          ) : null}
 
           {/* 6) Next step + single CTA */}
           <SectionShell
             id="next-step"
             title="Следующий шаг"
-            lead="Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как заходить, как упаковать, какой ценой и на каких каналах забрать спрос."
+            lead={
+              isFreePreview
+                ? 'Это бесплатный фрагмент. Полный отчёт добавляет карту магнитов, конкуренцию, доход по моделям, рекомендации и разбор развития района.'
+                : 'Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как заходить, как упаковать, какой ценой и на каких каналах забрать спрос.'
+            }
           >
             <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
               <div className="grid lg:grid-cols-5 gap-6 items-start">
                 <div className="lg:col-span-3">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-200/80">Commercial bridge</p>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-200/80">
+                    {isFreePreview ? 'Полный отчёт' : 'Commercial bridge'}
+                  </p>
                   <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-white">
-                    Перевести отчёт в план действий по объекту
+                    {isFreePreview
+                      ? 'Получить полную аналитику по этой локации'
+                      : 'Перевести отчёт в план действий по объекту'}
                   </h3>
                   <p className="mt-3 text-slate-300 leading-relaxed max-w-2xl">
-                    Мы уже посчитали базовый потенциал локации: спросовые магниты, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель (owner/operator/investor) и запуск.
+                    {isFreePreview
+                      ? 'Вы смотрите укороченную версию. Полный отчёт сохраняет те же расчёты по объекту, но раскрывает магниты, конкуренцию, доход по моделям, рекомендации и блок развития района.'
+                      : 'Мы уже посчитали базовый потенциал локации: спросовые магниты, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель (owner/operator/investor) и запуск.'}
                   </p>
 
                   <div className="mt-5">
-                    <p className="text-xs font-semibold text-slate-200 uppercase tracking-[0.18em]">Что вы получите дальше</p>
+                    <p className="text-xs font-semibold text-slate-200 uppercase tracking-[0.18em]">
+                      {isFreePreview ? 'Что добавляет полная версия' : 'Что вы получите дальше'}
+                    </p>
                     <ul className="mt-3 space-y-2 text-sm text-slate-200">
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Какая стратегия подходит именно под этот объект — и где она «ломается» без доработок
+                        {isFreePreview
+                          ? 'Подробные магниты спроса и дистанции, business-fit и окружение'
+                          : 'Какая стратегия подходит именно под этот объект — и где она «ломается» без доработок'}
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Где реальный потенциал выше/ниже ожиданий: аудитория, каналы, ограничения, конкуренты
+                        {isFreePreview
+                          ? 'Конкуренция, сравнение трёх моделей дохода и позиционирование'
+                          : 'Где реальный потенциал выше/ниже ожиданий: аудитория, каналы, ограничения, конкуренты'}
                       </li>
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                        Как снизить ошибки перед запуском: упаковка, прайс, операционные «узкие места»
+                        {isFreePreview
+                          ? 'Рекомендации, полная аналитическая сводка и прогноз развития района'
+                          : 'Как снизить ошибки перед запуском: упаковка, прайс, операционные «узкие места»'}
                       </li>
                     </ul>
                   </div>

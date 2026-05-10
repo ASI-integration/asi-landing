@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
             ? 'Полный отчёт: расчёт выполнен.'
             : 'Full report: calculation completed.',
           market: locale === 'ru' ? 'RU' : 'INTERNATIONAL',
+          reportMode: 'paid',
         });
 
     const { reportId } = await createStandaloneReport({ locale, report: report as any });

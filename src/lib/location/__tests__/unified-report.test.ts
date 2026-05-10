@@ -145,6 +145,7 @@ describe('unified location potential report', () => {
 
     expect(isCanonicalLocationReportPayload(residential)).toBe(true);
     expect(isCanonicalLocationReportPayload(commercial)).toBe(true);
+    expect(residential.reportMode).toBe('paid');
     expect(residential.unifiedReport?.version).toBe('unified-location-potential-report-v1');
     expect(commercial.unifiedReport?.signals.audienceFit.formatFit).toBeDefined();
   });
