@@ -124,10 +124,16 @@ export {
   urbanDevelopmentSnapshotFromSignals,
 } from './data-sources/urban-development';
 export {
+  PUBLIC_PROCUREMENT_LIVE_PROBE_ADAPTER_OPTION_KEYS,
   PUBLIC_PROCUREMENT_LIVE_PROBE_ENV_KEY,
   PublicProcurementLiveClient,
   createPublicProcurementLiveProbeAdapter,
   isPublicProcurementLiveProbeEnabled,
+  resolvePublicProcurementLiveProbeSourceAccessMode,
+} from './data-sources/public-procurement/public-procurement-live-probe-adapter';
+export type {
+  PublicProcurementLiveProbeUrbanAdapter,
+  PublicProcurementSourceAccessMode,
 } from './data-sources/public-procurement/public-procurement-live-probe-adapter';
 export type {
   UrbanDevelopmentForecastConfidence,

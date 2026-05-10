@@ -8,6 +8,27 @@ import liveProbeSampleCache from './fixtures/public-procurement-live-probe-sampl
 export type PublicProcurementLiveProbeEnv = Record<string, string | undefined>;
 
 /**
+ * Declares how procurement signals are sourced for disclosures / audits.
+ * Not a runtime permission check — paired with architecture guardrails in docs.
+ */
+export type PublicProcurementSourceAccessMode =
+  | 'open_data'
+  | 'official_api'
+  | 'commercial_api'
+  | 'verified_cache'
+  | 'disabled';
+
+export function resolvePublicProcurementLiveProbeSourceAccessMode(init: {
+  readonly explicit?: PublicProcurementSourceAccessMode;
+  readonly liveProbeEnabled: boolean;
+}): PublicProcurementSourceAccessMode {
+  if (init.explicit) return init.explicit;
+  /** Live flag on without wired upstream → intentional zero-results path (`disabled`), not client ЭЦП flows. */
+  if (init.liveProbeEnabled) return 'disabled';
+  return 'verified_cache';
+}
+
+/**
  * Reads {@link PUBLIC_PROCUREMENT_LIVE_PROBE_ENV_KEY}.
  * Default is off; no outbound HTTP is implied by returning false.
  */
