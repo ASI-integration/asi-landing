@@ -12,6 +12,11 @@ import {
   locationReportInputFromLegacy,
   type UnifiedLocationReport,
 } from './unified-report';
+import {
+  buildLocationReportResultMetadata,
+  normalizeReportAddress,
+  type LocationReportResultMetadata,
+} from './report-result-metadata';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -29,6 +34,8 @@ export type LocationStandaloneReport = {
    * Persisted tier for permalink payloads. Omitted on older rows — treat as paid/full.
    */
   reportMode?: LocationStandaloneReportMode;
+  /** Прозрачность расчёта: время, адрес, режим, свежесть слоёв (без изменения scoring). */
+  metadata?: LocationReportResultMetadata;
   /** Short teaser for `reportMode: 'free'` permalinks (RU copy). */
   free_brief?: string;
   address: string;
@@ -331,6 +338,10 @@ function buildFreeBriefRu(args: { verdict: string; topDriver: string | null }): 
 
 export function buildLocationStandaloneReport(args: {
   address: string;
+  /** Исходный текст адреса пользователя; по умолчанию совпадает с `address`. */
+  inputAddress?: string;
+  /** Для тестов окружения (ЕИС / procurement probe); в проде не передаётся. */
+  metadataEnv?: Record<string, string | undefined>;
   analysis: LocationAnalysis;
   verdict: string;
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
@@ -343,6 +354,13 @@ export function buildLocationStandaloneReport(args: {
   const generatedAtIso = new Date().toISOString();
   const market = args.market ?? 'RU';
   const score = analysis.locationScore;
+  const metadata = buildLocationReportResultMetadata({
+    inputAddress: args.inputAddress?.trim() || args.address,
+    normalizedAddress: normalizeReportAddress(args.address),
+    reportMode,
+    calculatedAtIso: generatedAtIso,
+    env: args.metadataEnv,
+  });
 
   if (reportMode === 'free') {
     const drivers = (score?.top_positive_factors ?? []).slice(0, 1);
@@ -351,6 +369,7 @@ export function buildLocationStandaloneReport(args: {
     return {
       version: 'v1',
       reportMode: 'free',
+      metadata,
       free_brief,
       address: args.address,
       generated_at_iso: generatedAtIso,
@@ -419,6 +438,7 @@ export function buildLocationStandaloneReport(args: {
   return {
     version: 'v1',
     reportMode: 'paid',
+    metadata,
     address: args.address,
     generated_at_iso: generatedAtIso,
     unifiedReport,
