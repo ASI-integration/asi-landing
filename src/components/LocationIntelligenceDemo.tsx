@@ -49,6 +49,10 @@ import {
   normalizeRuDemoExplanationLines,
   sanitizeRuFactorList,
 } from '@/lib/location/demo-public-copy';
+import {
+  readRecentAddressesFromStorage,
+  rememberRecentAddress,
+} from '@/lib/location/recent-addresses';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -1088,6 +1092,7 @@ function AddressInput({
   c: (typeof LOC_COPY)['en'];
 }) {
   const listboxId = useId();
+  const recentListboxId = useId();
   const [text, setText] = useState('');
   const [locked, setLocked] = useState(false);
   const [lockedValue, setLockedValue] = useState('');
@@ -1097,6 +1102,9 @@ function AddressInput({
   const [resolveFailed, setResolveFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
+  const [recentOpen, setRecentOpen] = useState(false);
+  const [recentItems, setRecentItems] = useState<string[]>([]);
+  const [recentActiveIdx, setRecentActiveIdx] = useState(-1);
   const [suggestStatus, setSuggestStatus] = useState<SuggestStatus>('idle');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
@@ -1136,7 +1144,9 @@ function AddressInput({
     setText(val);
     onDraftChange?.(val);
     setActiveIdx(-1);
+    setRecentActiveIdx(-1);
     setResolveFailed(false);
+    if (val.trim().length >= 2) setRecentOpen(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (val.trim().length >= 2) {
@@ -1175,6 +1185,22 @@ function AddressInput({
     }
   }
 
+  function openRecentPanel() {
+    const items = readRecentAddressesFromStorage(typeof window !== 'undefined' ? window.localStorage : undefined);
+    setRecentItems(items);
+    setRecentActiveIdx(-1);
+    setRecentOpen(items.length > 0);
+  }
+
+  function pickRecent(addr: string) {
+    setText(addr);
+    onDraftChange?.(addr);
+    setRecentOpen(false);
+    setRecentActiveIdx(-1);
+    setOpen(false);
+    setActiveIdx(-1);
+  }
+
   async function pick(s: Suggestion) {
     if (resolvingPick) return;
 
@@ -1185,6 +1211,7 @@ function AddressInput({
       onDraftChange?.('');
       setSuggestions([]);
       setOpen(false);
+      setRecentOpen(false);
       setSuggestStatus('idle');
       setResolveFailed(false);
       console.info('[location-demo] addressPick', {
@@ -1192,6 +1219,7 @@ function AddressInput({
         source: s.lat != null && s.lon != null ? 'inline_coords' : 'resolved',
       });
       if (locale === 'ru') rememberSelectedCity(s.value);
+      rememberRecentAddress(s.value);
       onSelect({ value: s.value, lat, lon });
     };
 
@@ -1260,25 +1288,51 @@ function AddressInput({
     onDraftChange?.('');
     setSuggestions([]);
     setOpen(false);
+    setRecentOpen(false);
     setActiveIdx(-1);
+    setRecentActiveIdx(-1);
     setSuggestStatus('idle');
     setResolveFailed(false);
     onClear();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open || suggestions.length === 0) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIdx(i => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIdx(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && activeIdx >= 0) {
-      e.preventDefault();
-      void pick(suggestions[activeIdx]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
+    const showRecentPanel =
+      !locked &&
+      recentOpen &&
+      !open &&
+      recentItems.length > 0 &&
+      text.trim().length < 2;
+
+    if (open && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx(i => Math.min(i + 1, suggestions.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter' && activeIdx >= 0) {
+        e.preventDefault();
+        void pick(suggestions[activeIdx]);
+      } else if (e.key === 'Escape') {
+        setOpen(false);
+      }
+      return;
+    }
+
+    if (showRecentPanel) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setRecentActiveIdx(i => Math.min(i + 1, recentItems.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setRecentActiveIdx(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter' && recentActiveIdx >= 0) {
+        e.preventDefault();
+        pickRecent(recentItems[recentActiveIdx]);
+      } else if (e.key === 'Escape') {
+        setRecentOpen(false);
+      }
     }
   }
 
@@ -1286,6 +1340,7 @@ function AddressInput({
     function handler(e: MouseEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setRecentOpen(false);
       }
     }
     document.addEventListener('mousedown', handler);
@@ -1308,16 +1363,27 @@ function AddressInput({
           value={locked ? lockedValue : text}
           onChange={locked ? () => undefined : handleChange}
           onKeyDown={handleKeyDown}
+          onFocus={() => {
+            if (!locked) openRecentPanel();
+          }}
           placeholder={c.addressPlaceholder}
           disabled={disabled || resolvingPick}
           readOnly={locked}
           autoComplete="off"
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded={open}
+          aria-expanded={open || (!locked && recentOpen && recentItems.length > 0 && text.trim().length < 2)}
           aria-haspopup="listbox"
-          aria-controls={open ? listboxId : undefined}
-          aria-activedescendant={activeIdx >= 0 ? `${listboxId}-opt-${activeIdx}` : undefined}
+          aria-controls={
+            open
+              ? listboxId
+              : (!locked && recentOpen && recentItems.length > 0 && text.trim().length < 2 ? recentListboxId : undefined)
+          }
+          aria-activedescendant={
+            open && activeIdx >= 0
+              ? `${listboxId}-opt-${activeIdx}`
+              : (!open && recentOpen && recentActiveIdx >= 0 ? `${recentListboxId}-opt-${recentActiveIdx}` : undefined)
+          }
           className={`w-full py-4 rounded-xl bg-slate-800/80 border text-base focus:outline-none focus:ring-2 transition-all disabled:opacity-50 ${
             locked
               ? 'border-emerald-700/60 focus:ring-emerald-500/20 pl-10 pr-12 text-emerald-300 cursor-default'
@@ -1370,6 +1436,35 @@ function AddressInput({
               }`}
             >
               {s.value}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!locked && recentOpen && !open && recentItems.length > 0 && text.trim().length < 2 && (
+        <ul
+          role="listbox"
+          id={recentListboxId}
+          aria-label={locale === 'ru' ? 'Недавние адреса' : 'Recent addresses'}
+          className="absolute z-50 w-full mt-1 rounded-xl border border-slate-700 bg-slate-900/95 backdrop-blur shadow-2xl overflow-y-auto"
+          style={{ maxHeight: 260 }}
+        >
+          {recentItems.map((addr, i) => (
+            <li
+              key={`${addr}-${i}`}
+              role="option"
+              id={`${recentListboxId}-opt-${i}`}
+              aria-selected={recentActiveIdx === i}
+              onMouseEnter={() => setRecentActiveIdx(i)}
+              onMouseDown={e => {
+                e.preventDefault();
+                pickRecent(addr);
+              }}
+              className={`px-4 py-3 cursor-pointer text-sm leading-snug transition-colors ${
+                recentActiveIdx === i ? 'bg-slate-700/80 text-white' : 'text-slate-300 hover:bg-slate-800/80'
+              }`}
+            >
+              {addr}
             </li>
           ))}
         </ul>
@@ -2117,7 +2212,7 @@ function ASIPanel({
               <>
                 <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
                   {locale === 'ru'
-                    ? (mode === 'commercial' ? 'Коммерческая' : 'Жилая')
+                    ? 'Сегмент спроса'
                     : (mode === 'commercial' ? 'Commercial' : 'Residential')}
                   <span className="text-slate-700 font-semibold"> | </span>
                   <span className="text-slate-200">{locale === 'ru' ? audienceLabelRu : audienceLabelEn}</span>
@@ -2465,12 +2560,14 @@ function ASIPanel({
         );
       })()}
 
-      {/* Competitor breakdown — what drives competition score */}
-      <CompetitorBreakdownBlock
-        analysis={analysis}
-        locale={locale}
-        suppressIncomeHints={isRuResidentialDemo}
-      />
+      {/* Competitor breakdown — hidden on RU residential free/demo preview */}
+      {!isRuResidentialDemo ? (
+        <CompetitorBreakdownBlock
+          analysis={analysis}
+          locale={locale}
+          suppressIncomeHints={false}
+        />
+      ) : null}
 
       {/* Recommended Strategy */}
       <div className="px-5 py-5 border-b border-slate-800/40">
@@ -2930,11 +3027,11 @@ export function LocationIntelligenceDemo({
   edgeToHeader?: boolean;
 }) {
   const c = LOC_COPY[locale];
-  const router = useRouter();
   const locTel = useLocationTelemetryOptional();
   const locTelRef = useRef(locTel);
   locTelRef.current = locTel;
-  const [mode, setMode] = useState<LocationAnalysisMode>(initialMode);
+  const mode: LocationAnalysisMode = initialMode;
+  const prevInitialModeRef = useRef(initialMode);
   const [selected, setSelected] = useState<SelectedAddress | null>(null);
   const [phase, setPhase] = useState<'idle' | 'loading' | 'result'>('idle');
   const [step, setStep] = useState(0);
@@ -2960,6 +3057,24 @@ export function LocationIntelligenceDemo({
   }
 
   const GEOCODE_FALLBACK_MS = 18_000;
+
+  useEffect(() => {
+    if (prevInitialModeRef.current === initialMode) return;
+    prevInitialModeRef.current = initialMode;
+    setPhase('idle');
+    setAnalysis(null);
+    setAnalysisMeta(null);
+    setAnimated(false);
+    setValidationErr(false);
+    setSelected(null);
+    setAddressDraft('');
+    setFallbackGeocodeErr(null);
+    setGeocodeFallbackBusy(false);
+    setUsedFallbackGeocode(false);
+    setInputKey(k => k + 1);
+    setActiveTag(null);
+    locTelRef.current?.resetTelemetry();
+  }, [initialMode]);
 
   function startAnalysisRun() {
     setValidationErr(false);
@@ -3025,6 +3140,7 @@ export function LocationIntelligenceDemo({
         lat: raw.lat,
         lon: raw.lon,
       });
+      rememberRecentAddress(label);
       setSelected({ value: label, lat: raw.lat, lon: raw.lon });
       setUsedFallbackGeocode(true);
       locTel?.pushLine({
@@ -3132,38 +3248,6 @@ export function LocationIntelligenceDemo({
 
         {/* Section header — mode-aware */}
         <div className={`max-w-2xl space-y-5 ${edgeToHeader ? 'mb-6 sm:mb-8' : 'mb-10'}`}>
-          {/* Mode toggle — RU locale only (commercial mode is RU-first) */}
-          {locale === 'ru' && (
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-slate-800 w-fit">
-              {(['residential', 'commercial'] as LocationAnalysisMode[]).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setMode(m);
-                    setPhase('idle');
-                    setAnalysis(null);
-                    setAnalysisMeta(null);
-                    setAnimated(false);
-                    setValidationErr(false);
-                    setInputKey(k => k + 1);
-                    router.replace(
-                      m === 'commercial' ? '?mode=commercial' : '?',
-                      { scroll: false },
-                    );
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    mode === m
-                      ? 'bg-white text-slate-900 shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {m === 'residential' ? 'Жилая' : 'Коммерческая'}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="space-y-4">
             {locale === 'ru' && mode === 'commercial' ? (
               <>
