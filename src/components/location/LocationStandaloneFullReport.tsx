@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { LocationStandaloneReport, LocationStandaloneReportSectionId } from '@/lib/location';
+import { isFreeLocationStandaloneReport } from '@/lib/location';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 
 function fmtRub(n: number | null): string {
@@ -104,11 +105,202 @@ function Toc({ items }: { items: Array<{ id: string; label: string }> }) {
   );
 }
 
+function potentialBandShortRu(band: 'low' | 'medium' | 'high'): string {
+  if (band === 'high') return 'Высокий';
+  if (band === 'medium') return 'Средний';
+  return 'Низкий';
+}
+
+function bandBadgeClass(band: 'low' | 'medium' | 'high'): string {
+  if (band === 'high') return 'bg-emerald-500/15 text-emerald-200 border-emerald-500/35';
+  if (band === 'medium') return 'bg-amber-500/15 text-amber-200 border-amber-500/35';
+  return 'bg-slate-500/15 text-slate-200 border-slate-600/45';
+}
+
+/** Короткий бесплатный отчёт: без магнитов, весов и внутренних слоёв движка. */
+function LocationStandaloneFreeReportView({ report }: { report: LocationStandaloneReport }) {
+  const brief = report.sections.find((s): s is Extract<LocationStandaloneReport['sections'][number], { id: 'free_brief' }> => s.id === 'free_brief');
+  const generatedAt = (() => {
+    const d = new Date(report.generated_at_iso);
+    if (!Number.isFinite(d.getTime())) return null;
+    return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  })();
+
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const canShare = typeof window !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.clipboard;
+  const shareLink = async () => {
+    try {
+      if (!canShare) throw new Error('clipboard not available');
+      await navigator.clipboard.writeText(window.location.href);
+      setShareStatus('copied');
+      window.setTimeout(() => setShareStatus('idle'), 2200);
+    } catch {
+      setShareStatus('failed');
+      window.setTimeout(() => setShareStatus('idle'), 2200);
+    }
+  };
+
+  const tocItemsFree = useMemo(
+    () => [
+      { id: 'free-overview', label: 'Сводка' },
+      { id: 'free-next', label: 'Полный отчёт' },
+    ],
+    [],
+  );
+
+  return (
+    <div className="location-report-print min-h-screen bg-slate-950 text-white">
+      <header className="print-hide sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/70">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Краткий отчёт по локации</p>
+            <p className="mt-1 text-sm text-slate-200 truncate" title={report.address}>{report.address}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href="#free-next"
+              className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
+            >
+              Полный отчёт
+            </a>
+            <Link
+              href="/ru"
+              className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-slate-800/70 text-slate-300 hover:text-white hover:border-slate-700 transition-colors text-sm"
+            >
+              На главную
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+        <div className="rounded-3xl border border-slate-800/70 bg-gradient-to-br from-slate-900/40 to-slate-950/20 p-7 sm:p-10">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+            ASI · Location Intelligence · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
+          </p>
+          <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-white">
+            Краткая оценка потенциала локации
+          </h1>
+          <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
+            Обзор без детальных расчётов и списков объектов. Полный отчёт включает магниты, конкуренцию, прогноз развития района и пошаговые рекомендации.
+          </p>
+
+          <div className="mt-6 grid sm:grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Адрес</p>
+              <p className="mt-2 text-sm text-slate-200 leading-snug">{report.address}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Общая оценка (0–100)</p>
+              <p className="mt-2 text-3xl font-bold text-white tabular-nums">
+                {brief?.location_score != null ? brief.location_score : '—'}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">Итоговый балл локации без разбивки по факторам</p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3 items-center">
+            <span className={`inline-flex items-center px-3 py-1.5 rounded-full border text-sm font-semibold ${bandBadgeClass(brief?.potential_band ?? 'low')}`}>
+              Уровень: {potentialBandShortRu(brief?.potential_band ?? 'low')}
+            </span>
+            {brief ? (
+              <span className="text-sm text-slate-300">{brief.rating_label_ru}</span>
+            ) : null}
+          </div>
+
+          <div className="mt-6">
+            <Toc items={tocItemsFree} />
+          </div>
+        </div>
+
+        <div className="mt-10 space-y-6">
+          <SectionShell
+            id="free-overview"
+            title="Сводка"
+            lead="Главные выводы простым языком — без технических деталей и полных списков объектов вокруг точки."
+          >
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Что работает за локацией</p>
+                {brief?.main_factors_ru?.length ? (
+                  <ul className="mt-3 space-y-2">
+                    {brief.main_factors_ru.map((d, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                        <span className="text-slate-200 leading-relaxed">{d}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-slate-400">Недостаточно данных для списка факторов.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-rose-900/35 bg-rose-950/15 p-6">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-rose-200/80">Ключевые риски</p>
+                {brief?.risk_takeaways_ru?.length ? (
+                  <ul className="mt-3 space-y-2">
+                    {brief.risk_takeaways_ru.map((d, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="mt-2 w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                        <span className="text-slate-200 leading-relaxed">{d}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-slate-400">Явных негативных сигналов в кратком режиме не выделено.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Общий вывод</p>
+                <p className="mt-2 text-lg text-slate-100 leading-relaxed">{brief?.conclusion_ru ?? '—'}</p>
+              </div>
+            </div>
+          </SectionShell>
+
+          <SectionShell
+            id="free-next"
+            title="Получить полный отчёт"
+            lead="Нужны магниты и расстояния, аудитории спроса, госзакупки и развитие района, сценарии дохода и чеклист действий — откройте полную версию."
+          >
+            <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
+              <p className="text-slate-300 leading-relaxed max-w-2xl">
+                Краткий отчёт не содержит полных списков объектов, весов модели и внутренних полей уверенности. Полный отчёт сохраняет всю глубину анализа для решения о запуске или покупке.
+              </p>
+              <div className="print-hide mt-6 flex flex-col sm:flex-row gap-3">
+                <Link
+                  href={LOCATION_REPORT_PRODUCT_PATH}
+                  className="inline-flex items-center justify-center px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
+                >
+                  Запросить полный отчёт локации
+                </Link>
+                <button
+                  type="button"
+                  onClick={shareLink}
+                  disabled={!canShare}
+                  className="inline-flex items-center justify-center px-5 py-4 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {shareStatus === 'copied' ? 'Ссылка скопирована' : shareStatus === 'failed' ? 'Не удалось скопировать' : 'Скопировать ссылку'}
+                </button>
+              </div>
+            </div>
+          </SectionShell>
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export function LocationStandaloneFullReport({
   report,
 }: {
   report: LocationStandaloneReport;
 }) {
+  if (isFreeLocationStandaloneReport(report)) {
+    return <LocationStandaloneFreeReportView report={report} />;
+  }
+
   const summary = pickSection(report, 'summary');
   const businessFit = pickSection(report, 'business_fit');
   const magnets = pickSection(report, 'magnets');

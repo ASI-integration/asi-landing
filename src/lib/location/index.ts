@@ -44,7 +44,11 @@ export type {
   LockedField,
 } from './location-report-paywall';
 
-export type { LocationStandaloneReport, LocationStandaloneReportSectionId } from './standalone-report';
+export type {
+  LocationStandaloneReport,
+  LocationStandaloneReportMode,
+  LocationStandaloneReportSectionId,
+} from './standalone-report';
 export type { LocationCommercialReport, PersistableLocationReport } from './standalone-report';
 export { isCanonicalLocationReportPayload, isLocationCommercialReport, buildCommercialReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
@@ -237,7 +241,11 @@ export {
   toLocationReportFull,
 } from './location-report-paywall';
 
-export { buildLocationStandaloneReport, isLocationStandaloneReportV1 } from './standalone-report';
+export {
+  buildLocationStandaloneReport,
+  isFreeLocationStandaloneReport,
+  isLocationStandaloneReportV1,
+} from './standalone-report';
 export type { PrimeMagnetAnchorType } from './residential-prime-magnets';
 
 export { buildResidentialAnalysis } from './residential-analysis';
