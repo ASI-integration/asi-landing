@@ -15,7 +15,7 @@ export {
 
 export { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from './commercial-format-fit';
 export { buildCommercialReport, isCanonicalLocationReportPayload, isLocationCommercialReport } from './standalone-report';
-export { buildLocationStandaloneReport } from './standalone-report';
+export { buildLocationStandaloneReport, isFreeLocationStandaloneReport } from './standalone-report';
 export { buildFastReportPreview, sampleFullLocationReportRu } from './report-contract';
 export {
   buildExpressLocationReport,

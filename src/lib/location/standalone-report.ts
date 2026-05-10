@@ -1,4 +1,4 @@
-import type { LocationAnalysis, RecommendedStrategy, SpatialTier } from './types';
+import type { LocationAnalysis, LocationScoreRating, RecommendedStrategy, SpatialTier } from './types';
 import type { CommercialFormatFitEntry, CommercialOverallVerdict } from './commercial-format-fit';
 import { buildCommercialFormatFit } from './commercial-format-fit';
 import { createDisabledSpatialFoundation } from './spatial-foundation';
@@ -19,12 +19,21 @@ export type LocationStandaloneReportSectionId =
   | 'magnets'
   | 'competition'
   | 'income_strategy'
+  | 'free_brief'
   | 'next_step';
+
+/** Product scope for persisted standalone residential reports (display assembly only). */
+export type LocationStandaloneReportMode = 'free' | 'paid';
 
 export type LocationStandaloneReport = {
   version: 'v1';
   address: string;
   generated_at_iso: string;
+  /**
+   * When `'free'`, the payload is a short public summary only (no unified engine snapshot).
+   * Omitted or `'paid'` means the full standalone sections + optional `unifiedReport`.
+   */
+  reportMode?: LocationStandaloneReportMode;
   unifiedReport?: UnifiedLocationReport;
   sections: Array<
     | {
@@ -75,6 +84,17 @@ export type LocationStandaloneReport = {
           mid_term: number | null;
         };
         positioning_hint: string | null;
+      }
+    | {
+        id: 'free_brief';
+        /** Overall location score 0–100 when the engine produced one. */
+        location_score: number | null;
+        rating: LocationScoreRating;
+        rating_label_ru: string;
+        potential_band: 'low' | 'medium' | 'high';
+        main_factors_ru: string[];
+        risk_takeaways_ru: string[];
+        conclusion_ru: string;
       }
     | {
         id: 'next_step';
@@ -312,6 +332,71 @@ function pickBusinessFitVerdict(
   return { business_fit_verdict: 'not_fit', note: 'По сигналам окружения деловой сценарий не доминирует.' };
 }
 
+/** Same bands as `ratingFromLocationScore` in the scoring module (display-only). */
+function ratingFromNumericLocationScore(locationScore: number): LocationScoreRating {
+  if (locationScore >= 85) return 'exceptional';
+  if (locationScore >= 70) return 'strong';
+  if (locationScore >= 55) return 'viable';
+  if (locationScore >= 40) return 'weak';
+  return 'risky';
+}
+
+function ratingLabelRu(rating: LocationScoreRating): string {
+  switch (rating) {
+    case 'exceptional':
+      return 'Исключительный потенциал';
+    case 'strong':
+      return 'Сильный потенциал';
+    case 'viable':
+      return 'Умеренный потенциал';
+    case 'weak':
+      return 'Ограниченный потенциал';
+    case 'risky':
+    default:
+      return 'Повышенный риск';
+  }
+}
+
+function potentialBandFromRating(rating: LocationScoreRating): 'low' | 'medium' | 'high' {
+  if (rating === 'exceptional' || rating === 'strong') return 'high';
+  if (rating === 'viable') return 'medium';
+  return 'low';
+}
+
+export function isFreeLocationStandaloneReport(report: LocationStandaloneReport): boolean {
+  return report.reportMode === 'free';
+}
+
+function buildFreeStandaloneSections(args: {
+  analysis: LocationAnalysis;
+  verdict: string;
+}): LocationStandaloneReport['sections'] {
+  const { analysis } = args;
+  const score = analysis.locationScore;
+  const numeric =
+    score?.location_score ?? (typeof analysis.evergreenIndex === 'number' ? analysis.evergreenIndex : null);
+  const rounded = numeric != null && Number.isFinite(numeric) ? Math.round(numeric) : null;
+  const rating =
+    score?.rating ??
+    (rounded != null ? ratingFromNumericLocationScore(rounded) : 'weak');
+
+  const positives = (score?.top_positive_factors ?? []).filter(x => typeof x === 'string' && x.trim());
+  const negatives = (score?.top_negative_factors ?? []).filter(x => typeof x === 'string' && x.trim());
+
+  return [
+    {
+      id: 'free_brief',
+      location_score: rounded,
+      rating,
+      rating_label_ru: ratingLabelRu(rating),
+      potential_band: potentialBandFromRating(rating),
+      main_factors_ru: positives.slice(0, 5),
+      risk_takeaways_ru: negatives.slice(0, 2),
+      conclusion_ru: args.verdict,
+    },
+    { id: 'next_step', cta: 'get_full_breakdown' },
+  ];
+}
 
 export function buildLocationStandaloneReport(args: {
   address: string;
@@ -319,9 +404,23 @@ export function buildLocationStandaloneReport(args: {
   verdict: string;
   /** Market mode for prime magnet selection. Defaults to 'RU'. */
   market?: ResidentialMarketMode;
+  /** `'free'` emits a short public summary only; default matches legacy full reports. */
+  reportMode?: LocationStandaloneReportMode;
 }): LocationStandaloneReport {
   const { analysis } = args;
   const generatedAtIso = new Date().toISOString();
+  const mode = args.reportMode ?? 'paid';
+
+  if (mode === 'free') {
+    return {
+      version: 'v1',
+      address: args.address,
+      generated_at_iso: generatedAtIso,
+      reportMode: 'free',
+      sections: buildFreeStandaloneSections({ analysis, verdict: args.verdict }),
+    };
+  }
+
   const market = args.market ?? 'RU';
   const unifiedReport = buildFullLocationReport(
     locationReportInputFromLegacy({
