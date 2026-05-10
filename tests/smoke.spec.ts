@@ -65,15 +65,15 @@ test.describe('B. Header — structure and correctness', () => {
         await expect(logo).toBeVisible();
       });
 
-      test('nav link "Доходность объектов" is present and clickable', async ({ page }) => {
+      test('nav link "Оценка доходности" is present and clickable', async ({ page }) => {
         await page.goto(path, { waitUntil: 'domcontentloaded' });
         const link = page
           .locator('header nav')
-          .getByRole('link', { name: /Доходность объектов/i });
+          .getByRole('link', { name: /Оценка доходности/i });
         await expect(link).toBeVisible();
         // Must have a non-empty, non-hash href
         const href = await link.getAttribute('href');
-        expect(href, 'Доходность объектов href must not be "#" or empty').toBeTruthy();
+        expect(href, 'Оценка доходности href must not be "#" or empty').toBeTruthy();
         expect(href).not.toBe('#');
       });
 
@@ -137,7 +137,7 @@ test.describe('C. Navigation flows', () => {
     await page.goto('/ru', { waitUntil: 'domcontentloaded' });
     await page
       .locator('header nav')
-      .getByRole('link', { name: /Доходность объектов/i })
+      .getByRole('link', { name: /Оценка доходности/i })
       .click();
     await page.waitForLoadState('domcontentloaded');
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
@@ -148,9 +148,7 @@ test.describe('C. Navigation flows', () => {
     await page.goto('/ru/otchet-po-dohodnosti-obektov', { waitUntil: 'domcontentloaded' });
     // The link text is "Как мы оцениваем доходность объектов" (not "Методология")
     // "Методология" is the section heading above it
-    const methodLink = page
-      .getByRole('link', { name: /Как мы оцениваем доходность/i })
-      .first();
+    const methodLink = page.locator('a[href="/ru/kak-my-ocenivaem-dohodnost-obektov"]').first();
     await expect(methodLink).toBeVisible();
     await methodLink.click();
     await page.waitForLoadState('domcontentloaded');
@@ -163,7 +161,7 @@ test.describe('C. Navigation flows', () => {
     });
     await page
       .locator('header nav')
-      .getByRole('link', { name: /Доходность объектов/i })
+      .getByRole('link', { name: /Оценка доходности/i })
       .click();
     await page.waitForLoadState('domcontentloaded');
     expect(page.url()).toContain('otchet-po-dohodnosti-obektov');
