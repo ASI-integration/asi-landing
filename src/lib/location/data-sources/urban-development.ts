@@ -109,6 +109,15 @@ export interface UrbanDevelopmentTimeHorizon {
 
 export type UrbanDevelopmentConfidence = ConfidenceLevel;
 
+/** Уровень детализации географии источника (напр. закупки), без геокодирования и без сырых текстов. */
+export type UrbanDevelopmentGeoSignalPrecision =
+  | 'exact_address'
+  | 'district_level'
+  | 'city_level'
+  | 'region_level'
+  | 'text_hint_only'
+  | 'unknown';
+
 /** Procurement/planning maturity hint derived from notice text and procedure metadata (not calendar dates). */
 export type UrbanDevelopmentLifecycleStage =
   | 'planning'
@@ -155,6 +164,10 @@ export interface UrbanDevelopmentSignal {
   title: string;
   summary: string;
   locationReference?: string;
+  /** Качество географического сигнала (напр. для госзакупок); пояснения только в audit. */
+  geoPrecision?: UrbanDevelopmentGeoSignalPrecision;
+  /** Уверенность именно в географии; тематическая уверенность — в поле `confidence`. */
+  geoSignalConfidence?: UrbanDevelopmentConfidence;
   coordinates?: UrbanDevelopmentGeoPoint;
   boundingBox?: UrbanDevelopmentBoundingBox;
   timeHorizon?: UrbanDevelopmentTimeHorizon;
@@ -250,6 +263,8 @@ export function normalizeUrbanDevelopmentSignals(rawSignals: UrbanDevelopmentSig
       title: raw.title,
       summary: raw.summary,
       locationReference: raw.locationReference,
+      geoPrecision: raw.geoPrecision,
+      geoSignalConfidence: raw.geoSignalConfidence,
       coordinates: raw.coordinates,
       boundingBox: raw.boundingBox,
       timeHorizon: raw.timeHorizon,

@@ -119,6 +119,16 @@
       "procedureStage": "Запрос предложений",
       "publishedAt": "2026-03-18",
       "url": "https://example.gov/fixtures/FX-SPB-012"
+    },
+    {
+      "id": "FX-GEO-013",
+      "title": "Капитальный ремонт фасада в Южном административном округе",
+      "customer": "ГБУ «Жилищник ЮАО»",
+      "regionHint": "Москва",
+      "subjectDetail": "Адрес объекта: ул. Варшавское шоссе, д. 150. Контрольный ориентир — ЮАО.",
+      "procedureStage": "Электронный аукцион",
+      "publishedAt": "2026-03-19",
+      "url": "https://example.gov/fixtures/FX-GEO-013"
     }
   ]
 }
