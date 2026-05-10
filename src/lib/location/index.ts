@@ -93,6 +93,7 @@ export type {
   UrbanDevelopmentConfidence,
   UrbanDevelopmentEvidence,
   UrbanDevelopmentGeoPoint,
+  UrbanDevelopmentLifecycleStage,
   UrbanDevelopmentManualCheck,
   UrbanDevelopmentSignal,
   UrbanDevelopmentSignalInput,

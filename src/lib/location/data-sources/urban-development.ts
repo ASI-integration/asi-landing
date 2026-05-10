@@ -109,6 +109,13 @@ export interface UrbanDevelopmentTimeHorizon {
 
 export type UrbanDevelopmentConfidence = ConfidenceLevel;
 
+/** Procurement/planning maturity hint derived from notice text and procedure metadata (not calendar dates). */
+export type UrbanDevelopmentLifecycleStage =
+  | 'planning'
+  | 'design'
+  | 'procurement'
+  | 'construction_preparation';
+
 export interface UrbanDevelopmentEvidence {
   label: string;
   detail?: string;
@@ -143,6 +150,7 @@ export interface UrbanDevelopmentSignal {
   timeHorizon?: UrbanDevelopmentTimeHorizon;
   status: UrbanDevelopmentSignalStatus;
   confidence: UrbanDevelopmentConfidence;
+  lifecycleStage?: UrbanDevelopmentLifecycleStage;
   sourceUrl?: string;
   sourceDate?: string;
   evidence: UrbanDevelopmentEvidence[];
@@ -235,6 +243,7 @@ export function normalizeUrbanDevelopmentSignals(rawSignals: UrbanDevelopmentSig
       timeHorizon: raw.timeHorizon,
       status,
       confidence,
+      lifecycleStage: raw.lifecycleStage,
       sourceUrl: raw.sourceUrl?.trim() || undefined,
       sourceDate: raw.sourceDate,
       evidence,
@@ -317,7 +326,8 @@ function evidenceLines(s: UrbanDevelopmentSignal): string[] {
   const fromEvidence = s.evidence.map(e =>
     e.detail ? `${e.label}: ${e.detail}` : e.label,
   );
-  return [...fromEvidence, ...s.limitations];
+  const stageLine = s.lifecycleStage ? [`Lifecycle stage: ${s.lifecycleStage}`] : [];
+  return [...stageLine, ...fromEvidence, ...s.limitations];
 }
 
 function pushUniqueSource(acc: UrbanDevelopmentSourceReference[], ref: UrbanDevelopmentSourceReference): void {
