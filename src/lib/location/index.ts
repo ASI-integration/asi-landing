@@ -45,6 +45,17 @@ export type {
 } from './location-report-paywall';
 
 export type {
+  LocationReportDataFreshness,
+  LocationReportResultMetadata,
+  LocationReportSourceStatus,
+} from './report-result-metadata';
+export {
+  buildLocationReportResultMetadata,
+  clientFreshnessPlainTextRu,
+  normalizeReportAddress,
+  resolveProcurementSourceDisclosureStatus,
+} from './report-result-metadata';
+export type {
   LocationStandaloneReport,
   LocationStandaloneReportMode,
   LocationStandaloneReportSectionId,

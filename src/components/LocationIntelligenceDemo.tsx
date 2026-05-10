@@ -2041,6 +2041,7 @@ function ASIPanel({
     (async () => {
       const standalone = buildLocationStandaloneReport({
         address,
+        inputAddress: address,
         analysis,
         verdict: conclusion || 'Итог: данных недостаточно для уверенного вывода.',
         reportMode: 'free',
@@ -2309,8 +2310,8 @@ function ASIPanel({
             {aa.audienceSharePct >= 50 && aa.primaryAudience === 'BUSINESS' && (
               <p className="text-[13px] text-slate-500">
                 {locale === 'ru'
-                  ? `${aa.audienceSharePct}% взвешенного спроса — деловой сегмент${aa.businessClusterDetected ? ' · кластер ≥2 деловых объектов в 1 км' : ''}`
-                  : `${aa.audienceSharePct}% weighted demand — business segment${aa.businessClusterDetected ? ' · cluster ≥2 business within 1 km' : ''}`}
+                  ? `${aa.audienceSharePct}% расчётной доли спроса — деловой сегмент${aa.businessClusterDetected ? ' · кластер ≥2 деловых объектов в 1 км' : ''}`
+                  : `${aa.audienceSharePct}% of modeled demand — business segment${aa.businessClusterDetected ? ' · cluster ≥2 business within 1 km' : ''}`}
               </p>
             )}
             {aa.fallbackMode && (
@@ -2332,12 +2333,12 @@ function ASIPanel({
 
         const components: Array<{
           labelRu: string; labelEn: string;
-          score: number; weight: number;
+          score: number;
         }> = [
-          { labelRu: 'Соответствие аудитории', labelEn: 'Audience fit',   score: bd.audience_fit_score,  weight: 40 },
-          { labelRu: 'Спрос в зоне',           labelEn: 'Demand',         score: bd.demand_score,        weight: 25 },
-          { labelRu: 'Свободная ниша',          labelEn: 'Market gap',     score: bd.supply_score,        weight: 20 },
-          { labelRu: 'Доступность',             labelEn: 'Accessibility',  score: bd.accessibility_score, weight: 15 },
+          { labelRu: 'Соответствие аудитории', labelEn: 'Audience fit', score: bd.audience_fit_score },
+          { labelRu: 'Спрос в зоне', labelEn: 'Demand', score: bd.demand_score },
+          { labelRu: 'Свободная ниша', labelEn: 'Market gap', score: bd.supply_score },
+          { labelRu: 'Доступность', labelEn: 'Accessibility', score: bd.accessibility_score },
         ];
 
         const supporting: Array<{ labelRu: string; labelEn: string; score: number }> = [
@@ -2377,7 +2378,6 @@ function ASIPanel({
                       {locale === 'ru' ? comp.labelRu : comp.labelEn}
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-600">{comp.weight}%</span>
                       <span className={`text-[13px] font-medium tabular-nums ${
                         comp.score >= 70 ? 'text-emerald-400'
                         : comp.score >= 45 ? 'text-amber-400'
@@ -3150,8 +3150,9 @@ export function LocationIntelligenceDemo({
     const controller = new AbortController();
     const abortTimeout = setTimeout(() => controller.abort(), LOCATION_ANALYSIS_FETCH_MS);
 
+    const STEP_MS = 680;
     const tickers = c.loadingSteps.map((_, i) =>
-      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * 1000),
+      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * STEP_MS),
     ).filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
@@ -3190,7 +3191,7 @@ export function LocationIntelligenceDemo({
           emitAnalysisTelemetry(tel.pushLine, tel.updateSnapshot, resolvedAnalysis, resolvedMeta, locale, c);
         }
         setTimeout(() => { if (!cancelled) setAnimated(true); }, 80);
-      }, Math.max(0, 3000 - elapsed));
+      }, Math.max(0, 3600 - elapsed));
     });
 
     return () => {

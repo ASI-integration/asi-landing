@@ -143,6 +143,7 @@ export function LocationStandaloneFullReport({
     }
     return [
       { id: 'summary', label: 'Итог' },
+      { id: 'data-freshness', label: 'Свежесть данных' },
       { id: 'business-fit', label: 'Business-fit' },
       { id: 'magnets', label: 'Магниты' },
       { id: 'competition', label: 'Конкуренция' },
@@ -152,11 +153,20 @@ export function LocationStandaloneFullReport({
     ];
   }, [isFreePreview]);
 
+  const meta = report.metadata;
+
   const generatedAt = useMemo(() => {
     const d = new Date(report.generated_at_iso);
     if (!Number.isFinite(d.getTime())) return null;
     return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }, [report.generated_at_iso]);
+
+  const calculatedAtDisplay = useMemo(() => {
+    const iso = meta?.calculatedAt ?? report.generated_at_iso;
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return null;
+    return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }, [meta?.calculatedAt, report.generated_at_iso]);
 
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const canShare = typeof window !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.clipboard;
@@ -265,6 +275,23 @@ export function LocationStandaloneFullReport({
               )}
             </div>
 
+            {isFreePreview && meta ? (
+              <div className="mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/45 p-5 sm:p-6 space-y-2.5 text-sm text-slate-300 leading-relaxed">
+                <p>
+                  Отчёт рассчитан для этого адреса:{' '}
+                  <span className="text-white font-medium">{meta.inputAddress}</span>
+                </p>
+                <p>
+                  Время расчёта:{' '}
+                  <span className="text-white font-medium tabular-nums">{calculatedAtDisplay ?? '—'}</span>
+                </p>
+                <p className="text-slate-400">
+                  Градостроительные источники: в полном отчёте будет отдельный слой; сейчас не подключены к живым
+                  государственным контурам данных.
+                </p>
+              </div>
+            ) : null}
+
             <Toc items={tocItems} />
           </div>
         </div>
@@ -342,6 +369,58 @@ export function LocationStandaloneFullReport({
               </div>
             </div>
           </SectionShell>
+
+          {!isFreePreview && meta ? (
+            <SectionShell
+              id="data-freshness"
+              title="Свежесть данных"
+              lead="Когда сформирован отчёт и какие источники уже участвуют в расчёте — без технических подробностей интеграций."
+            >
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Расчёт выполнен</p>
+                  <p className="mt-2 text-lg font-semibold text-white tabular-nums">{calculatedAtDisplay ?? generatedAt ?? '—'}</p>
+                  <p className="mt-2 text-sm text-slate-400 leading-relaxed">
+                    Адрес запроса: <span className="text-slate-200">{meta.inputAddress}</span>
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Уже используется в этом отчёте</p>
+                  <ul className="mt-3 space-y-2">
+                    {meta.clientFreshnessRu.usedSources.map((line, i) => (
+                      <li key={i} className="flex gap-3 text-sm text-slate-200 leading-relaxed">
+                        <span className="mt-2 w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {meta.clientFreshnessRu.preparingSources.length ? (
+                  <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">В подготовке / подключается отдельно</p>
+                    <ul className="mt-3 space-y-2">
+                      {meta.clientFreshnessRu.preparingSources.map((line, i) => (
+                        <li key={i} className="flex gap-3 text-sm text-slate-300 leading-relaxed">
+                          <span className="mt-2 w-1.5 h-1.5 rounded-full bg-amber-400/90 shrink-0" />
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <p className="text-sm text-slate-400 leading-relaxed max-w-3xl">{meta.dataFreshness.summaryRu}</p>
+              </div>
+            </SectionShell>
+          ) : !isFreePreview && !meta ? (
+            <SectionShell id="data-freshness" title="Свежесть данных">
+              <p className="text-sm text-slate-400 leading-relaxed max-w-3xl">
+                Данные рассчитаны ранее, точное время расчёта недоступно.
+              </p>
+            </SectionShell>
+          ) : null}
 
           {/* 2) Business-fit */}
           {!isFreePreview ? (

@@ -34,6 +34,8 @@ describe('standalone residential reportMode (free vs paid)', () => {
     });
 
     expect(report.reportMode).toBe('free');
+    expect(report.metadata?.calculatedAt).toBeDefined();
+    expect(report.metadata?.reportMode).toBe('free');
     expect(typeof report.free_brief).toBe('string');
     expect(report.free_brief!.length).toBeGreaterThan(10);
     expect(report.unifiedReport).toBeUndefined();
@@ -53,6 +55,8 @@ describe('standalone residential reportMode (free vs paid)', () => {
     });
 
     expect(report.reportMode).toBe('paid');
+    expect(report.metadata?.calculatedAt).toBeDefined();
+    expect(report.metadata?.reportMode).toBe('paid');
     expect(report.free_brief).toBeUndefined();
     expect(report.unifiedReport?.version).toBe('unified-location-potential-report-v1');
     expect(report.unifiedReport?.urbanDevelopmentForecastScore.score).toBe(0);

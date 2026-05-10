@@ -22,6 +22,7 @@ import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/g
 import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress, cacheSet } from '@/lib/location/cache';
 import { fetchOsmData, buildAnalysis, wrapLocationReport } from '@/lib/location';
+import { buildLocationReportResultMetadata } from '@/lib/location/report-result-metadata';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -99,12 +100,21 @@ export async function POST(req: NextRequest) {
     }
 
     const report = wrapLocationReport(locationScore, isPaid);
+    const normalizedAddr = normalizeAddress(rawAddress);
+    const calculatedAtIso = new Date().toISOString();
+    const metadata = buildLocationReportResultMetadata({
+      inputAddress: rawAddress,
+      normalizedAddress: normalizedAddr,
+      reportMode: isPaid ? 'paid' : 'free',
+      calculatedAtIso,
+    });
 
     return NextResponse.json({
-      address: normalizeAddress(rawAddress),
+      address: normalizedAddr,
       lat,
       lon,
       report,
+      metadata,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
