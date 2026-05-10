@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchOsmData, buildAnalysis, applyResidentialDemoSanity } from '@/lib/location';
 import { cacheGet, cacheSet } from '@/lib/location/cache';
+import {
+  isKorzunDiagnosticCoords,
+  logKorzunPipelineDiagnostics,
+} from '@/lib/location/korzun-pipeline-diagnostics';
 import type { AnalysisMeta } from '@/lib/location/types';
 
 export const dynamic = 'force-dynamic';
@@ -142,6 +146,15 @@ export async function POST(req: NextRequest) {
       }
 
       const ca = cached.entry.analysis;
+      if (isKorzunDiagnosticCoords(lat, lon)) {
+        logKorzunPipelineDiagnostics({
+          lat,
+          lon,
+          elementsCount: cached.entry.elementsCount,
+          analysis: ca,
+          cached: true,
+        });
+      }
       console.info(
         `[location-demo-analyze] result ` +
         `lat=${lat} lon=${lon} ` +
@@ -175,6 +188,16 @@ export async function POST(req: NextRequest) {
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
     const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: wantSpatial });
+    if (isKorzunDiagnosticCoords(lat, lon)) {
+      logKorzunPipelineDiagnostics({
+        lat,
+        lon,
+        elementsCount: elements.length,
+        elements,
+        analysis,
+        cached: false,
+      });
+    }
     const src = sourceLabel(usedFallbackQuery);
     if (!wantSpatial) {
       await cacheSet(lat, lon, analysis, src, elements.length);

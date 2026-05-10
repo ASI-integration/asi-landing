@@ -131,6 +131,45 @@ describe('unified location potential report', () => {
     expect(report.signals.transportInfrastructure.status).toBe('available');
   });
 
+  it('keeps strategic/medical demand lines ahead of score factors (truncation-safe)', () => {
+    const korzunLat = 59.8369;
+    const korzunLon = 30.3178;
+    const metro: OSMElement = {
+      type: 'node',
+      id: 1,
+      lat: korzunLat + 0.004,
+      lon: korzunLon + 0.004,
+      tags: { name: 'Тестовая', station: 'subway', railway: 'station' },
+    };
+    const pulkovoOsm: OSMElement = {
+      type: 'node',
+      id: 99,
+      lat: 59.800278,
+      lon: 30.262503,
+      tags: { aeroway: 'aerodrome', name: 'Пулково' },
+    };
+    const childrensHospital: OSMElement = {
+      type: 'node',
+      id: 201,
+      lat: korzunLat,
+      lon: korzunLon + 0.036,
+      tags: { amenity: 'hospital', name: 'Детская городская больница № 99 (тест)' },
+    };
+    const analysis = buildAnalysis([metro, pulkovoOsm, childrensHospital], korzunLat, korzunLon);
+    const input = locationReportInputFromLegacy({
+      address: 'Санкт-Петербург, ул. Солдата Корзуна, 12к',
+      locale: 'ru',
+      mode: 'residential',
+    });
+    const report = buildFullLocationReport(input, { analysis });
+
+    const drivers = report.signals.demand.guestDemandDrivers;
+    expect(drivers.length).toBeLessThanOrEqual(12);
+    expect(drivers[0] ?? '').toMatch(/Крупный транспортный|Транспортно-логистический/);
+    expect(drivers.some(l => l.includes('Пулково'))).toBe(true);
+    expect(drivers.some(l => l.includes('Детская городская'))).toBe(true);
+  });
+
   it('keeps canonical compatibility wrappers backed by the unified core', () => {
     const analysis = fixtureAnalysis();
     const residential = buildLocationStandaloneReport({

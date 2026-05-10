@@ -347,12 +347,14 @@ function buildDemand(input: LocationReportInput, analysis?: LocationAnalysis): D
     manualVerification: [],
     demandType: analysis.demandType,
     demandScore: score?.breakdown.demand_score ?? analysis.evergreenIndex,
-    guestDemandDrivers: [
-      ...(score?.top_positive_factors ?? []),
-      ...strategicHubPaidDetailLinesRu(analysis.strategicTransportHubMagnets ?? []),
-      ...specializedMedicalPaidDetailLinesRu(analysis.magnets ?? []),
-      ...(residential?.premiumComfortSignals ?? []),
-    ].slice(0, 8),
+    guestDemandDrivers: (() => {
+      const hubLines = strategicHubPaidDetailLinesRu(analysis.strategicTransportHubMagnets ?? []);
+      const medLines = specializedMedicalPaidDetailLinesRu(analysis.magnets ?? []);
+      const factorLines = score?.top_positive_factors ?? [];
+      const premiumLines = residential?.premiumComfortSignals ?? [];
+      // Strategic / specialized anchors must not be displaced by score-factor filler or premium copy.
+      return [...hubLines, ...medLines, ...factorLines, ...premiumLines].slice(0, 12);
+    })(),
     shortTermRentalPotential: score?.recommended_strategy ?? null,
     stayTypeStrategy: residential?.strategyRationaleRu ?? null,
   };

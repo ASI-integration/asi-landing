@@ -134,6 +134,12 @@ export function LocationStandaloneFullReport({
   const urbanForecastNoLiveData =
     urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignals.length === 0;
 
+  const demandSignalLines = useMemo(() => {
+    if (isFreePreview || !report.unifiedReport?.sections) return [];
+    const demandSec = report.unifiedReport.sections.find(s => s.id === 'demand');
+    return (demandSec?.items ?? []).filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+  }, [isFreePreview, report.unifiedReport]);
+
   const tocItems = useMemo(() => {
     if (isFreePreview) {
       return [
@@ -141,17 +147,23 @@ export function LocationStandaloneFullReport({
         { id: 'next-step', label: 'Полный отчёт' },
       ];
     }
-    return [
+    const base = [
       { id: 'summary', label: 'Итог' },
       { id: 'data-freshness', label: 'Свежесть данных' },
       { id: 'business-fit', label: 'Business-fit' },
       { id: 'magnets', label: 'Магниты' },
+    ];
+    const demandToc =
+      demandSignalLines.length > 0 ? [{ id: 'demand-signals-detail', label: 'Факторы спроса' } as const] : [];
+    return [
+      ...base,
+      ...demandToc,
       { id: 'competition', label: 'Конкуренция' },
       { id: 'income-strategy', label: 'Доход / стратегия' },
       { id: 'urban-forecast', label: 'Прогноз развития района' },
       { id: 'next-step', label: 'Следующий шаг' },
     ];
-  }, [isFreePreview]);
+  }, [isFreePreview, demandSignalLines.length]);
 
   const meta = report.metadata;
 
@@ -536,6 +548,25 @@ export function LocationStandaloneFullReport({
               <p className="text-slate-400">Секция магнитов отсутствует в данных отчёта.</p>
             )}
           </SectionShell>
+
+          {demandSignalLines.length > 0 ? (
+            <SectionShell
+              id="demand-signals-detail"
+              title="Факторы спроса (детализация)"
+              lead="Региональные транспортные узлы и крупная медицина не входят в список prime-магнитов в пешей доступности — они показываются отдельно как контекст спроса."
+            >
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                <ul className="space-y-3">
+                  {demandSignalLines.map((line, i) => (
+                    <li key={i} className="flex gap-3 text-sm text-slate-200 leading-relaxed">
+                      <span className="mt-2 w-1.5 h-1.5 rounded-full bg-cyan-400/90 shrink-0" />
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </SectionShell>
+          ) : null}
 
           {/* 4) Конкуренция */}
           <SectionShell
