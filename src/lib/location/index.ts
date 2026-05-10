@@ -92,6 +92,7 @@ export type {
   UrbanDevelopmentCollectionStatus,
   UrbanDevelopmentConfidence,
   UrbanDevelopmentEvidence,
+  UrbanDevelopmentGeoSignalPrecision,
   UrbanDevelopmentGeoPoint,
   UrbanDevelopmentLifecycleStage,
   UrbanDevelopmentManualCheck,

@@ -6,6 +6,7 @@ import {
   composeProcurementLocationReference,
   extractPublicProcurementGeo,
 } from '../data-sources/public-procurement/extract-public-procurement-geo';
+import { assessProcurementGeoSignalQuality } from '../data-sources/public-procurement/procurement-geo-signal-quality';
 import {
   extractGeoFromValidatedProcurementNotice,
   runPublicProcurementIngestionPipeline,
@@ -36,6 +37,61 @@ describe('Russian urban planning terms glossary', () => {
     expect(classifySrc).not.toContain('ru-urban-planning-terms-dictionary');
     expect(PUBLIC_PROCUREMENT_URBAN_KEYWORD_RULES.length).toBeGreaterThan(0);
     expect(RU_URBAN_PLANNING_TERM_ENTRIES.length).toBe(10);
+  });
+});
+
+describe('procurement geography signal quality', () => {
+  it('classifies structured address as exact_address with high confidence', () => {
+    const q = assessProcurementGeoSignalQuality({
+      region: 'Москва',
+      city: 'Москва',
+      districtOrOkrug: 'Южный административный округ',
+      locationOrAddressHint: 'ул. Варшавское шоссе, д. 150',
+    });
+    expect(q.geoPrecision).toBe('exact_address');
+    expect(q.confidence).toBe('high');
+    expect(q.reasonRu.length).toBeGreaterThan(10);
+  });
+
+  it('classifies district without street hint as district_level', () => {
+    const q = assessProcurementGeoSignalQuality({
+      region: 'Москва',
+      city: 'Москва',
+      districtOrOkrug: 'Северный административный округ',
+    });
+    expect(q.geoPrecision).toBe('district_level');
+    expect(q.confidence).toBe('medium');
+  });
+
+  it('classifies city without district or address as city_level', () => {
+    const q = assessProcurementGeoSignalQuality({
+      region: 'Тула',
+      city: 'Тула',
+    });
+    expect(q.geoPrecision).toBe('city_level');
+    expect(q.confidence).toBe('medium');
+  });
+
+  it('classifies region-only extraction as region_level', () => {
+    const q = assessProcurementGeoSignalQuality({
+      region: 'Тульская область',
+    });
+    expect(q.geoPrecision).toBe('region_level');
+    expect(q.confidence).toBe('medium');
+  });
+
+  it('classifies unstructured location hint as text_hint_only', () => {
+    const q = assessProcurementGeoSignalQuality({
+      locationOrAddressHint: 'объект около ТЦ, без адреса',
+    });
+    expect(q.geoPrecision).toBe('text_hint_only');
+    expect(q.confidence).toBe('low');
+  });
+
+  it('classifies empty extraction as unknown', () => {
+    const q = assessProcurementGeoSignalQuality({});
+    expect(q.geoPrecision).toBe('unknown');
+    expect(q.confidence).toBe('low');
   });
 });
 
@@ -109,9 +165,15 @@ describe('procurement pipeline: geo stage before classification', () => {
     expect(normalized.locationReference).toMatch(/Северн/i);
     expect(normalized.locationReference).toMatch(/Ленинградское/);
 
+    expect(normalized.geoPrecision).toBe('exact_address');
+    expect(normalized.geoSignalConfidence).toBe('high');
+    expect(audit.geoSignalQuality.reasonRu.length).toBeGreaterThan(5);
+
     const serialized = JSON.stringify(normalized);
     expect(serialized).not.toContain('sourceSnippets');
     expect(serialized).not.toContain('geoExtraction');
+    expect(serialized).not.toContain('reasonRu');
+    expect(serialized).not.toContain('geoSignalQuality');
   });
 
   it('still emits thematic procurement signals unchanged after geo enrichment path', () => {
@@ -132,5 +194,6 @@ describe('procurement pipeline: geo stage before classification', () => {
     expect(normalized.signalType).toBe('planning_contract');
     expect(normalized.lifecycleStage).toBe('procurement');
     expect(normalized.locationReference).toContain('Тула');
+    expect(normalized.geoPrecision).toBe('city_level');
   });
 });
