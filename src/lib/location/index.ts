@@ -115,6 +115,16 @@ export {
   normalizeUrbanDevelopmentSignals,
   urbanDevelopmentSnapshotFromSignals,
 } from './data-sources/urban-development';
+export type {
+  UrbanDevelopmentForecastConfidence,
+  UrbanDevelopmentForecastContributingSignalRef,
+  UrbanDevelopmentForecastLevel,
+  UrbanDevelopmentForecastScore,
+} from './data-sources/urban-development-forecast-score';
+export {
+  computeUrbanDevelopmentForecastScore,
+  emptyUrbanDevelopmentForecastScore,
+} from './data-sources/urban-development-forecast-score';
 export {
   buildLocationReportPermalink,
   createPreviewReportInput,

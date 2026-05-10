@@ -112,6 +112,10 @@ export type {
   SourceAvailability,
   TransportInfrastructureSignals,
   UnifiedLocationReport,
+  UrbanDevelopmentForecastConfidence,
+  UrbanDevelopmentForecastContributingSignalRef,
+  UrbanDevelopmentForecastLevel,
+  UrbanDevelopmentForecastScore,
   UrbanDevelopmentSignals,
 } from './unified-report';
 export type {
