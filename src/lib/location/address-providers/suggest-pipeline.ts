@@ -9,6 +9,11 @@ import {
   normalizeRuAddressQuery,
   rerankRuSuggestionsByLocality,
 } from './ru-normalize';
+import {
+  buildRuMetroSuggestQueryVariants,
+  resolveRuAddressSearchProfiles,
+  shouldExpandRuMetroSuggest,
+} from './ru-address-search-profile';
 import { geocodePlainAddressForMarket } from './geocode-pipeline';
 
 function googleMapsKey(): string | null {
@@ -21,6 +26,71 @@ function googleMapsKey(): string | null {
 function twogisCatalogKey(): string | null {
   const k = (process.env.TWOGIS_CATALOG_API_KEY ?? '').trim();
   return k || null;
+}
+
+function uniqueSuggestQueries(queries: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const q of queries) {
+    const t = q.trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
+function dedupeSuggestionRows(rows: AddressSuggestionRow[]): AddressSuggestionRow[] {
+  const seen = new Set<string>();
+  const out: AddressSuggestionRow[] = [];
+  for (const row of rows) {
+    const pid = row.placeId?.trim();
+    const tgis = row.twogisItemId?.trim();
+    const key = pid || tgis || row.value.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+    if (out.length >= 14) break;
+  }
+  return out;
+}
+
+async function mergeGoogleAutocomplete(
+  queries: string[],
+  apiKey: string,
+  opts: {
+    language: string;
+    components?: string;
+    bias?: { location: string; radius: number };
+  },
+): Promise<AddressSuggestionRow[]> {
+  const batches = await Promise.all(
+    queries.map(q =>
+      googlePlacesAutocomplete(q, apiKey, opts).catch(() => [] as AddressSuggestionRow[]),
+    ),
+  );
+  return dedupeSuggestionRows(batches.flat());
+}
+
+async function mergeTwogis(queries: string[], apiKey: string): Promise<AddressSuggestionRow[]> {
+  const batches = await Promise.all(
+    queries.map(q => twogisAddressSuggest(q, apiKey).catch(() => [] as AddressSuggestionRow[])),
+  );
+  return dedupeSuggestionRows(batches.flat());
+}
+
+async function mergePhoton(queries: string[], market: AddressMarket): Promise<AddressSuggestionRow[]> {
+  const batches = await Promise.all(
+    queries.map(q => photonSuggest(q, market).catch(() => [] as AddressSuggestionRow[])),
+  );
+  return dedupeSuggestionRows(batches.flat());
+}
+
+async function mergeDadata(queries: string[], apiKey: string): Promise<AddressSuggestionRow[]> {
+  const batches = await Promise.all(
+    queries.map(q => dadataAddressSuggest(q, apiKey).catch(() => [] as AddressSuggestionRow[])),
+  );
+  return dedupeSuggestionRows(batches.flat());
 }
 
 export interface RunSuggestPipelineOptions {
@@ -59,14 +129,48 @@ export async function runSuggestPipeline(
 
   const contextCity = opts?.contextCity ?? null;
 
-  // For RU queries that don't name a city, append the caller-supplied context
-  // city (typed > viewport > last selection > session) so providers return
-  // local matches first instead of street-name lookalikes scattered across the
-  // country. With no context the query is sent as-is — UI disambiguates.
   const providerQuery =
     market === 'ru'
       ? buildProviderQueryWithContextCity(providerQueryRaw, contextCity)
       : providerQueryRaw;
+
+  const ruResolution =
+    market === 'ru'
+      ? resolveRuAddressSearchProfiles({
+          normalizedQuery: normalized,
+          contextCity,
+          biasLat: Number.isFinite(opts?.biasLat ?? NaN) ? (opts?.biasLat as number) : null,
+          biasLon: Number.isFinite(opts?.biasLon ?? NaN) ? (opts?.biasLon as number) : null,
+        })
+      : null;
+
+  const profileExpansionActive = market === 'ru' && shouldExpandRuMetroSuggest(normalized);
+
+  const ruSuggestQueries =
+    market === 'ru'
+      ? uniqueSuggestQueries([
+          providerQuery,
+          ...(profileExpansionActive
+            ? buildRuMetroSuggestQueryVariants(
+                providerQueryRaw.trim(),
+                normalized,
+                ruResolution?.profiles ?? [],
+              )
+            : []),
+        ])
+      : [providerQuery];
+
+  const rerankOpts =
+    market === 'ru'
+      ? {
+          contextCity,
+          biasLat: Number.isFinite(opts?.biasLat ?? NaN) ? (opts?.biasLat as number) : null,
+          biasLon: Number.isFinite(opts?.biasLon ?? NaN) ? (opts?.biasLon as number) : null,
+          addressSearchProfiles: ruResolution?.profiles ?? [],
+          addressSearchContextLocked: ruResolution?.contextLocked ?? false,
+          addressSearchExpansionActive: profileExpansionActive,
+        }
+      : { contextCity, biasLat: opts?.biasLat ?? null, biasLon: opts?.biasLon ?? null };
 
   const googleLang = market === 'ru' ? 'ru' : 'en';
   const googleComponents = market === 'ru' ? 'country:ru' : undefined;
@@ -85,13 +189,20 @@ export async function runSuggestPipeline(
   try {
     const gKey = googleMapsKey();
     if (gKey) {
-      let primary = await googlePlacesAutocomplete(providerQuery, gKey, {
-        language: googleLang,
-        components: googleComponents,
-        bias: googleBias,
-      });
+      let primary =
+        market === 'ru'
+          ? await mergeGoogleAutocomplete(ruSuggestQueries, gKey, {
+              language: googleLang,
+              components: googleComponents,
+              bias: googleBias,
+            })
+          : await googlePlacesAutocomplete(providerQuery, gKey, {
+              language: googleLang,
+              components: googleComponents,
+              bias: googleBias,
+            });
       if (market === 'ru') {
-        primary = rerankRuSuggestionsByLocality(normalized, primary, { contextCity });
+        primary = rerankRuSuggestionsByLocality(normalized, primary, rerankOpts);
       }
       if (primary.length > 0) {
         return {
@@ -107,8 +218,8 @@ export async function runSuggestPipeline(
     if (market === 'ru') {
       const dgKey = twogisCatalogKey();
       if (dgKey) {
-        let dg = await twogisAddressSuggest(providerQuery, dgKey);
-        dg = rerankRuSuggestionsByLocality(normalized, dg, { contextCity });
+        let dg = await mergeTwogis(ruSuggestQueries, dgKey);
+        dg = rerankRuSuggestionsByLocality(normalized, dg, rerankOpts);
         if (dg.length > 0) {
           console.warn('[address-suggest] ru fallback=2gis_catalog');
           return {
@@ -122,9 +233,12 @@ export async function runSuggestPipeline(
       }
     }
 
-    let photon = await photonSuggest(providerQuery, market);
+    let photon =
+      market === 'ru'
+        ? await mergePhoton(ruSuggestQueries, market)
+        : await photonSuggest(providerQuery, market);
     if (market === 'ru') {
-      photon = rerankRuSuggestionsByLocality(normalized, photon, { contextCity });
+      photon = rerankRuSuggestionsByLocality(normalized, photon, rerankOpts);
     }
     if (photon.length > 0) {
       console.warn(`[address-suggest] market=${market} fallback=photon after_google_empty_or_no_key`);
@@ -140,8 +254,8 @@ export async function runSuggestPipeline(
     if (market === 'ru') {
       const dadataKey = (process.env.DADATA_API_KEY ?? '').trim();
       if (dadataKey) {
-        let dd = await dadataAddressSuggest(providerQuery, dadataKey);
-        dd = rerankRuSuggestionsByLocality(normalized, dd, { contextCity });
+        let dd = await mergeDadata(ruSuggestQueries, dadataKey);
+        dd = rerankRuSuggestionsByLocality(normalized, dd, rerankOpts);
         if (dd.length > 0) {
           console.warn('[address-suggest] ru fallback=dadata');
           return {
@@ -155,10 +269,8 @@ export async function runSuggestPipeline(
       }
     }
 
-    // Last resort: forward-geocode the normalized query so autocomplete outages
-    // (Photon down, Places empty, etc.) do not hard-block the UI.
     try {
-      const geo = await geocodePlainAddressForMarket(market, normalized);
+      const geo = await geocodePlainAddressForMarket(market, trimmed);
       if (geo.result) {
         const r = geo.result;
         const label = (r.displayName ?? trimmed).trim() || trimmed;
