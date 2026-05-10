@@ -44,6 +44,8 @@ import { RU_DEMO_COPY } from '@/components/ru-demo-copy';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 import { applyResidentialDemoSanity } from '@/lib/location/client';
+import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
+import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -2227,7 +2229,15 @@ function ASIPanel({
         const rawGeneric = hasDetailed ? [] : generateScoreFactors(analysis, locale);
         const genericFactors = isRuResidentialDemo ? sanitizeRuFactorList(rawGeneric) : rawGeneric;
 
-        if (!hasDetailed && genericFactors.length === 0) return null;
+        const regionalRuExtras =
+          locale === 'ru'
+            ? [
+              strategicHubFreeBriefRu(analysis.strategicTransportHubMagnets ?? []),
+              specializedMedicalFreeBriefRu(analysis.magnets ?? []),
+            ].filter((x): x is string => Boolean(x))
+            : [];
+
+        if (!hasDetailed && genericFactors.length === 0 && regionalRuExtras.length === 0) return null;
 
         return (
           <div className="px-5 py-4 border-b border-slate-800/40">
@@ -2248,6 +2258,12 @@ function ASIPanel({
                     {factor}
                   </div>
                 ))}
+                {regionalRuExtras.map((line, i) => (
+                  <div key={`reg-${i}`} className="flex items-start gap-2 text-[15px] text-sky-200/90 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-400/90" />
+                    {line}
+                  </div>
+                ))}
               </div>
             ) : (
               <ul className="space-y-1.5">
@@ -2255,6 +2271,12 @@ function ASIPanel({
                   <li key={i} className="flex items-start gap-2 text-[15px] text-slate-400 leading-snug">
                     <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
                     {factor}
+                  </li>
+                ))}
+                {regionalRuExtras.map((line, i) => (
+                  <li key={`reg-f-${i}`} className="flex items-start gap-2 text-[15px] text-sky-200/90 leading-snug">
+                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-400/90" />
+                    {line}
                   </li>
                 ))}
               </ul>

@@ -93,9 +93,13 @@ export function normalizeCompetitorPressureLevel(
 export function patchLegacyLocationAnalysis(a: LocationAnalysis): LocationAnalysis {
   const ge = a.gravityExplanation;
   const sb = ge?.scoreBreakdown ?? { attraction: 0, competitorPressure: 0, clusterBonus: 0, trafficBoost: 0 };
+  const magnets = a.magnets ?? [];
+  const hubsFromMagnets = magnets.filter(m => m.categoryId === 'strategicTransportHub');
+  const hubField = a.strategicTransportHubMagnets ?? [];
+  const strategicTransportHubMagnets = hubField.length > 0 ? hubField : hubsFromMagnets;
   return {
     ...a,
-    strategicTransportHubMagnets: a.strategicTransportHubMagnets ?? [],
+    strategicTransportHubMagnets,
     spatialFoundation: a.spatialFoundation ?? createDisabledSpatialFoundation(),
     neighborhoodEnvironment: mergeNeighborhoodEnvironmentLayer(a.neighborhoodEnvironment),
     footTraffic: normalizeFootTrafficFields(a.footTraffic),
