@@ -322,7 +322,7 @@ function pickBusinessFitVerdict(
 
 function buildFreeBriefRu(args: { verdict: string; topDriver: string | null }): string {
   const driverBit = args.topDriver ? `Ключевой фактор: ${args.topDriver}. ` : '';
-  return `${args.verdict} ${driverBit}В полном отчёте — магниты спроса, конкуренция, сравнение моделей дохода, рекомендации и аналитика развития района.`.replace(
+  return `${args.verdict} ${driverBit}В полном отчёте — магниты спроса, конкуренция, сравнение моделей дохода и рекомендации. Прогноз развития района доступен в полном отчёте.`.replace(
     /\s+/g,
     ' ',
   ).trim();

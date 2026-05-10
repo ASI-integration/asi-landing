@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
-import type {
-  FullLocationReport,
-  IncomeEstimate,
-  RecommendationItem,
-  RiskItem,
+import {
+  URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU,
+  type FullLocationReport,
+  type IncomeEstimate,
+  type RecommendationItem,
+  type RiskItem,
+  type UrbanDevelopmentForecastDigest,
 } from '@/lib/location/report-contract';
 
 function fmtDate(iso: string): string {
@@ -56,6 +58,19 @@ function priorityLabel(priority: RecommendationItem['priority']): string {
   return 'Позже';
 }
 
+function urbanForecastLevelRu(level: UrbanDevelopmentForecastDigest['level']): string {
+  if (level === 'low') return 'низкий';
+  if (level === 'moderate') return 'умеренный';
+  if (level === 'high') return 'высокий';
+  return 'очень высокий';
+}
+
+function urbanForecastConfidenceRu(level: UrbanDevelopmentForecastDigest['confidence']): string {
+  if (level === 'high') return 'Высокая';
+  if (level === 'medium') return 'Средняя';
+  return 'Низкая';
+}
+
 function Section({
   id,
   title,
@@ -79,6 +94,9 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
   const scoreRows = report.scoreBreakdown
     ? Object.entries(report.scoreBreakdown).filter(([, value]) => typeof value === 'number')
     : [];
+  const urbanForecast = report.urbanDevelopmentForecast;
+  const urbanForecastNoLiveData =
+    urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignalCount === 0;
 
   return (
     <div className="location-report-print min-h-screen bg-slate-100 text-slate-950">
@@ -316,6 +334,53 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             </ul>
           </Section>
         </div>
+
+        {urbanForecast ? (
+          <Section id="urban-development-forecast" title="Прогноз развития района">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Индикатор прогноза</p>
+                  <p className="mt-2 text-3xl font-bold tabular-nums text-slate-950">
+                    {urbanForecast.score}
+                    <span className="text-base font-medium text-slate-500"> / 100</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    не смешивается с основным Score отчёта — отдельный слой по сигналам градоразвития
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Уровень ожиданий</p>
+                  <p className="mt-2 text-lg font-bold text-slate-950">{urbanForecastLevelRu(urbanForecast.level)}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    уверенность: {urbanForecastConfidenceRu(urbanForecast.confidence)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Вклад сигналов</p>
+                  <p className="mt-2 text-lg font-bold tabular-nums text-slate-950">
+                    {urbanForecast.contributingSignalCount}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">нормализованных сигналов с заметным весом</p>
+                </div>
+              </div>
+              {urbanForecast.reasonsRu.length ? (
+                <ul className="mt-4 space-y-2 border-t border-slate-200 pt-4">
+                  {urbanForecast.reasonsRu.map(reason => (
+                    <li key={reason} className="text-sm leading-relaxed text-slate-700">
+                      {reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {urbanForecastNoLiveData ? (
+                <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-700">
+                  {URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU}
+                </p>
+              ) : null}
+            </div>
+          </Section>
+        ) : null}
 
         <Section id="risks" title="Risks And Limitations">
           <div className="grid gap-3 lg:grid-cols-3">

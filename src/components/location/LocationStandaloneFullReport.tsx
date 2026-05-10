@@ -3,7 +3,21 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { LocationStandaloneReport, LocationStandaloneReportSectionId } from '@/lib/location';
+import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from '@/lib/location/report-contract';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
+
+function urbanForecastLevelRu(level: 'low' | 'moderate' | 'high' | 'very_high'): string {
+  if (level === 'low') return 'низкий';
+  if (level === 'moderate') return 'умеренный';
+  if (level === 'high') return 'высокий';
+  return 'очень высокий';
+}
+
+function urbanForecastConfidenceRu(level: 'low' | 'medium' | 'high'): string {
+  if (level === 'high') return 'высокая';
+  if (level === 'medium') return 'средняя';
+  return 'низкая';
+}
 
 function fmtRub(n: number | null): string {
   if (n == null || !Number.isFinite(n)) return '—';
@@ -116,6 +130,9 @@ export function LocationStandaloneFullReport({
   const competition = pickSection(report, 'competition');
   const incomeStrategy = pickSection(report, 'income_strategy');
   const freeBrief = report.free_brief ?? (isFreePreview ? summary?.verdict ?? null : null);
+  const urbanForecast = !isFreePreview ? report.unifiedReport?.urbanDevelopmentForecastScore : undefined;
+  const urbanForecastNoLiveData =
+    urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignals.length === 0;
 
   const tocItems = useMemo(() => {
     if (isFreePreview) {
@@ -130,6 +147,7 @@ export function LocationStandaloneFullReport({
       { id: 'magnets', label: 'Магниты' },
       { id: 'competition', label: 'Конкуренция' },
       { id: 'income-strategy', label: 'Доход / стратегия' },
+      { id: 'urban-forecast', label: 'Прогноз развития района' },
       { id: 'next-step', label: 'Следующий шаг' },
     ];
   }, [isFreePreview]);
@@ -233,7 +251,7 @@ export function LocationStandaloneFullReport({
                 <div className="rounded-2xl border border-indigo-500/25 bg-indigo-950/15 p-5">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-200/80">Что в полном отчёте</p>
                   <p className="mt-2 text-sm text-slate-200 leading-relaxed">
-                    Магниты и дистанции, давление конкурентов, сравнение моделей дохода, рекомендации и блок развития района — в платной версии.
+                    Магниты и дистанции, давление конкурентов, сравнение моделей дохода и рекомендации — в платной версии. Прогноз развития района доступен в полном отчёте.
                   </p>
                   <div className="print-hide mt-4">
                     <Link
@@ -535,6 +553,57 @@ export function LocationStandaloneFullReport({
               <p className="text-slate-400">Секция дохода/стратегии отсутствует в данных отчёта.</p>
             )}
           </SectionShell>
+
+          {!isFreePreview && urbanForecast ? (
+            <SectionShell
+              id="urban-forecast"
+              title="Прогноз развития района"
+              lead="Отдельный слой по сигналам градостроительного развития. Основной вердикт и Score локации по магнитам и спросу здесь не меняются."
+            >
+              <div className="grid lg:grid-cols-3 gap-5">
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Индикатор прогноза</p>
+                  <p className="mt-2 text-4xl font-bold text-white tabular-nums">
+                    {urbanForecast.score}
+                    <span className="text-lg font-medium text-slate-500"> / 100</span>
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                    при отсутствии нормализованных сигналов остаётся 0 и низкий уровень ожиданий
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Уровень / уверенность</p>
+                  <p className="mt-2 text-xl font-bold text-white">{urbanForecastLevelRu(urbanForecast.level)}</p>
+                  <p className="mt-2 text-sm text-slate-400">уверенность прогноза: {urbanForecastConfidenceRu(urbanForecast.confidence)}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Сигналов с вкладом</p>
+                  <p className="mt-2 text-3xl font-bold text-white tabular-nums">{urbanForecast.contributingSignals.length}</p>
+                  <p className="mt-2 text-xs text-slate-500 leading-relaxed">учитываются нормализованные источники градоразвития</p>
+                </div>
+              </div>
+
+              {urbanForecast.reasonsRu.length ? (
+                <div className="mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Объяснение</p>
+                  <ul className="mt-3 space-y-2">
+                    {urbanForecast.reasonsRu.map((line, i) => (
+                      <li key={i} className="flex gap-3 text-sm text-slate-200 leading-relaxed">
+                        <span className="mt-2 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {urbanForecastNoLiveData ? (
+                <p className="mt-6 rounded-2xl border border-slate-800/60 bg-slate-900/25 p-5 text-sm text-slate-300 leading-relaxed">
+                  {URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU}
+                </p>
+              ) : null}
+            </SectionShell>
+          ) : null}
           </>
           ) : null}
 
@@ -544,7 +613,7 @@ export function LocationStandaloneFullReport({
             title="Следующий шаг"
             lead={
               isFreePreview
-                ? 'Это бесплатный фрагмент. Полный отчёт добавляет карту магнитов, конкуренцию, доход по моделям, рекомендации и разбор развития района.'
+                ? 'Это бесплатный фрагмент. Полный отчёт добавляет карту магнитов, конкуренцию, доход по моделям и рекомендации. Прогноз развития района доступен в полном отчёте.'
                 : 'Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как заходить, как упаковать, какой ценой и на каких каналах забрать спрос.'
             }
           >
@@ -561,7 +630,7 @@ export function LocationStandaloneFullReport({
                   </h3>
                   <p className="mt-3 text-slate-300 leading-relaxed max-w-2xl">
                     {isFreePreview
-                      ? 'Вы смотрите укороченную версию. Полный отчёт сохраняет те же расчёты по объекту, но раскрывает магниты, конкуренцию, доход по моделям, рекомендации и блок развития района.'
+                      ? 'Вы смотрите укороченную версию. Полный отчёт сохраняет те же расчёты по объекту, но раскрывает магниты, конкуренцию, доход по моделям и рекомендации. Прогноз развития района доступен в полном отчёте.'
                       : 'Мы уже посчитали базовый потенциал локации: спросовые магниты, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель (owner/operator/investor) и запуск.'}
                   </p>
 
@@ -585,7 +654,7 @@ export function LocationStandaloneFullReport({
                       <li className="flex gap-3">
                         <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
                         {isFreePreview
-                          ? 'Рекомендации, полная аналитическая сводка и прогноз развития района'
+                          ? 'Прогноз развития района доступен в полном отчёте'
                           : 'Как снизить ошибки перед запуском: упаковка, прайс, операционные «узкие места»'}
                       </li>
                     </ul>
