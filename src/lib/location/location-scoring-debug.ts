@@ -18,14 +18,60 @@ export function formatLocationDemandKernelDebug(result: LocationDemandScoringKer
   lines.push('-- accepted --');
   for (const d of result.acceptedDrivers) {
     lines.push(
-      `${d.magnetFactId} | ${d.sourceName} | ${d.category} | tier=${d.resolvedTier} | kind=${d.driverKind} | vote=${d.demandTypeVote ?? '—'} | contrib=${d.finalContribution.toFixed(2)} | ${d.reason}`,
+      [
+        d.magnetFactId,
+        d.sourceName,
+        d.category,
+        `tier=${d.resolvedTier}`,
+        `kind=${d.driverKind}`,
+        `vote=${d.demandTypeVote ?? '—'}`,
+        `contrib=${d.finalContribution.toFixed(2)}`,
+        `tagAlign=${d.tagAlignmentStatus ?? '—'}`,
+        `publicDisplay=${d.publicDisplayEligible === true ? 'true' : d.publicDisplayEligible === false ? 'false' : '—'}`,
+        d.publicDisplayRejectReason ? `publicReject=${d.publicDisplayRejectReason}` : '',
+        d.reason,
+      ]
+        .filter(Boolean)
+        .join(' | '),
     );
   }
 
   lines.push('-- rejected / capped-out --');
   for (const d of result.rejectedDrivers) {
     lines.push(
-      `${d.magnetFactId} | ${d.sourceName} | acc=${d.accepted} | contrib=${d.finalContribution.toFixed(2)} | ${d.reason}`,
+      [
+        d.magnetFactId,
+        d.sourceName,
+        `acc=${d.accepted}`,
+        `contrib=${d.finalContribution.toFixed(2)}`,
+        `tagAlign=${d.tagAlignmentStatus ?? '—'}`,
+        `publicDisplay=${d.publicDisplayEligible === true ? 'true' : d.publicDisplayEligible === false ? 'false' : '—'}`,
+        d.publicDisplayRejectReason ? `publicReject=${d.publicDisplayRejectReason}` : '',
+        d.reason,
+      ]
+        .filter(Boolean)
+        .join(' | '),
+    );
+  }
+
+  lines.push('-- scored trace (all drivers) --');
+  for (const d of result.scoredDrivers) {
+    lines.push(
+      [
+        d.magnetFactId,
+        d.sourceName,
+        `acc=${d.accepted}`,
+        `tier=${d.resolvedTier}`,
+        `kind=${d.driverKind}`,
+        `vote=${d.demandTypeVote ?? '—'}`,
+        `contrib=${d.finalContribution.toFixed(3)}`,
+        `tagAlign=${d.tagAlignmentStatus ?? '—'}`,
+        `publicDisplayEligible=${d.publicDisplayEligible ?? '—'}`,
+        d.publicDisplayRejectReason ? `publicReject=${d.publicDisplayRejectReason}` : '',
+        d.reason,
+      ]
+        .filter(Boolean)
+        .join(' | '),
     );
   }
 

@@ -2,7 +2,7 @@
  * Deterministic demand scoring kernel v1 — ranks POIs before score/headline/public claims.
  */
 
-import type { DemandSignal, MagnetFact } from './location-decision-contract';
+import type { CanonicalLocationFact, DemandSignal, MagnetFact } from './location-decision-contract';
 import type { MagnetItem } from './types';
 import {
   baseWeightForTier,
@@ -30,6 +30,157 @@ const CAP_LOCAL_INTEREST = 4;
 const CAP_HOTEL_SUPPORT = 6;
 const CAP_TOURISM_NO_ANCHOR = 8;
 const NO_TIER1_BLEND_FLOOR = 0.58;
+
+/** Stricter than kernel acceptance — hero bullets / demand signals */
+const MIN_PUBLIC_DISPLAY_CONTRIBUTION = 0.22;
+const PUBLIC_DISPLAY_STRONG_T2 = 1.12;
+const PUBLIC_DISPLAY_METRO_RAIL_MIN = 0.38;
+const PUBLIC_DISPLAY_EXPLICIT_T2_MIN = 0.48;
+
+const PUBLIC_DRIVER_EXPLICIT_CATEGORIES = new Set([
+  'hospital',
+  'specializedMedicalAnchor',
+  'university',
+  'stadium',
+  'convention',
+  'shopping_major',
+  'railway_station',
+  'airport',
+  'strategicTransportHub',
+]);
+
+export function magnetIndexFromMagnetFactId(id: string): number | null {
+  const p = id.split(':');
+  if (p.length < 2) return null;
+  const n = Number.parseInt(p[1]!, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function magnetCategoryFromFactIndex(magnetFactId: string, magnets: readonly MagnetItem[]): string | null {
+  const i = magnetIndexFromMagnetFactId(magnetFactId);
+  if (i == null) return null;
+  return magnets[i]?.categoryId ?? null;
+}
+
+function tagAlignmentStatusFromCanonical(cf: CanonicalLocationFact | undefined): string {
+  const w = cf?.warnings?.find(x => x.startsWith('tag_alignment_'));
+  return w ?? 'tag_alignment_none';
+}
+
+function passesPublicDisplayRules(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): boolean {
+  if (!d.accepted || d.finalContribution < MIN_PUBLIC_DISPLAY_CONTRIBUTION) return false;
+  if (d.driverKind === 'noise' || d.driverKind === 'local_interest') return false;
+  if (isHotelCategory(magnets, d.magnetFactId)) return false;
+
+  const cat = magnetCategoryFromFactIndex(d.magnetFactId, magnets);
+
+  if (d.driverKind === 'supporting_infrastructure') {
+    if (!isMetroOrRail(magnets, d.magnetFactId)) return false;
+    return d.finalContribution >= PUBLIC_DISPLAY_METRO_RAIL_MIN;
+  }
+
+  if (d.driverKind === 'unknown_uncapped') {
+    return d.resolvedTier <= 2 && d.finalContribution >= PUBLIC_DISPLAY_STRONG_T2 * 0.72;
+  }
+
+  if (d.driverKind !== 'real_demand_driver') return false;
+
+  if (cat === 'major_hotel' || cat === 'mid_hotel') return false;
+
+  if (d.resolvedTier === 1) return true;
+
+  if (d.resolvedTier === 2) {
+    if (d.finalContribution >= PUBLIC_DISPLAY_STRONG_T2) return true;
+    if (cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= PUBLIC_DISPLAY_EXPLICIT_T2_MIN) {
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+function computePublicDisplayRejectReason(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): string {
+  if (!d.accepted) return 'public_reject:not_accepted_kernel';
+  if (d.finalContribution < MIN_PUBLIC_DISPLAY_CONTRIBUTION) {
+    return 'public_reject:below_public_contribution_threshold';
+  }
+  if (d.driverKind === 'noise') return 'public_reject:noise';
+  if (d.driverKind === 'local_interest') return 'public_reject:local_interest';
+  if (isHotelCategory(magnets, d.magnetFactId)) return 'public_reject:hotel_accommodation_context';
+  if (d.driverKind === 'supporting_infrastructure' && !isMetroOrRail(magnets, d.magnetFactId)) {
+    return 'public_reject:generic_supporting_infrastructure';
+  }
+  if (
+    d.driverKind === 'supporting_infrastructure' &&
+    isMetroOrRail(magnets, d.magnetFactId) &&
+    d.finalContribution < PUBLIC_DISPLAY_METRO_RAIL_MIN
+  ) {
+    return 'public_reject:transit_evidence_below_public_floor';
+  }
+  if (
+    d.driverKind === 'unknown_uncapped' &&
+    (d.resolvedTier > 2 || d.finalContribution < PUBLIC_DISPLAY_STRONG_T2 * 0.72)
+  ) {
+    return 'public_reject:unknown_anchor_not_public_strong_enough';
+  }
+  if (d.driverKind === 'real_demand_driver') {
+    const cat = magnetCategoryFromFactIndex(d.magnetFactId, magnets);
+    if (d.resolvedTier >= 3) return 'public_reject:tier3_weak_anchor';
+    if (
+      d.resolvedTier === 2 &&
+      d.finalContribution < PUBLIC_DISPLAY_STRONG_T2 &&
+      !(cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= PUBLIC_DISPLAY_EXPLICIT_T2_MIN)
+    ) {
+      return 'public_reject:tier2_below_public_strength';
+    }
+  }
+  return 'public_reject:rules';
+}
+
+/** Tourism may win vote aggregation from weak leisure — re-label unless real anchors + margin vs medical/business/transport. */
+function resolveDominantDemandTypeWithTourismHardGate(
+  working: LocationDemandScoredDriver[],
+  magnets: readonly MagnetItem[],
+  preliminary: LocationDemandKernelDemandType,
+): LocationDemandKernelDemandType {
+  if (preliminary !== 'tourist') return preliminary;
+
+  const sumAccepted = (vote: LocationDemandKernelDemandType | null) =>
+    working.filter(d => d.accepted && d.demandTypeVote === vote).reduce((s, d) => s + d.finalContribution, 0);
+
+  const realTouristAnchorContrib = working
+    .filter(d => {
+      if (!d.accepted || d.demandTypeVote !== 'tourist') return false;
+      if (d.driverKind !== 'real_demand_driver') return false;
+      const cat = magnetCategoryFromFactIndex(d.magnetFactId, magnets);
+      if (!cat || cat === 'major_hotel' || cat === 'mid_hotel') return false;
+      if (!['stadium', 'convention', 'entertainment', 'attraction'].includes(cat)) return false;
+      if (cat === 'attraction' && (d.resolvedTier >= 3 || d.scaleClass === 'weak_local')) return false;
+      return d.resolvedTier <= 2;
+    })
+    .reduce((s, d) => s + d.finalContribution, 0);
+
+  const touristTotal = sumAccepted('tourist');
+  const med = sumAccepted('medical');
+  const biz =
+    sumAccepted('corporate/business') + sumAccepted('industrial') + sumAccepted('education');
+  const tr = sumAccepted('transport');
+
+  const MARGIN = 1.22;
+
+  if (realTouristAnchorContrib < 0.42) {
+    if (med >= biz && med >= tr && med > 0.16) return med > 0.32 ? 'medical' : 'mixed';
+    if (biz >= med && biz > 0.18) return 'corporate/business';
+    return 'mixed';
+  }
+
+  if (touristTotal + 1e-6 < med * MARGIN && med > 0.18) return med >= biz ? 'medical' : 'mixed';
+  if (touristTotal + 1e-6 < biz * MARGIN && biz > 0.2) return 'corporate/business';
+  if (touristTotal + 1e-6 < tr * MARGIN && tr > 0.26) return 'transport';
+
+  return preliminary;
+}
 
 function emptyResult(engineFinal: number): LocationDemandScoringKernelResult {
   const breakdown = {
@@ -301,7 +452,8 @@ export function runLocationDemandScoringKernel(
 
   let kernelEvidenceScore = Math.min(100, Math.round((finalSum / REF_SUM_FOR_FULL_SCORE) * 100));
 
-  const dominantDemandType = arbitrateDominantType(working);
+  let dominantDemandType = arbitrateDominantType(working);
+  dominantDemandType = resolveDominantDemandTypeWithTourismHardGate(working, magnets, dominantDemandType);
 
   const driverStrength = Math.min(1, finalSum / 38);
   const blendFactor = 0.1 + 0.9 * driverStrength;
@@ -314,8 +466,20 @@ export function runLocationDemandScoringKernel(
     warnings.push('kernel:integrity_skip_blend');
   }
 
-  const acceptedDrivers = working.filter(d => d.accepted && d.finalContribution > 0.05);
-  const rejectedDrivers = working.filter(d => !d.accepted || d.finalContribution <= 0.05);
+  const scoredDriversAnnotated: LocationDemandScoredDriver[] = working.map(d => {
+    const idx = magnetIndexFromMagnetFactId(d.magnetFactId);
+    const cf = idx != null ? canonicalFacts?.[idx] : undefined;
+    const eligible = passesPublicDisplayRules(d, magnets);
+    return {
+      ...d,
+      tagAlignmentStatus: tagAlignmentStatusFromCanonical(cf),
+      publicDisplayEligible: eligible,
+      publicDisplayRejectReason: eligible ? undefined : computePublicDisplayRejectReason(d, magnets),
+    };
+  });
+
+  const acceptedDrivers = scoredDriversAnnotated.filter(d => d.accepted && d.finalContribution > 0.05);
+  const rejectedDrivers = scoredDriversAnnotated.filter(d => !d.accepted || d.finalContribution <= 0.05);
 
   if (!effectiveTouristAnchor && magnets.some(m => m.categoryId === 'major_hotel' || m.categoryId === 'mid_hotel')) {
     debugTrace.push('rule:hotels_do_not_create_tourism');
@@ -324,7 +488,7 @@ export function runLocationDemandScoringKernel(
   return {
     acceptedDrivers,
     rejectedDrivers,
-    scoredDrivers: working,
+    scoredDrivers: scoredDriversAnnotated,
     dominantDemandType,
     scoreBreakdown: breakdown,
     kernelEvidenceScore,
@@ -364,11 +528,12 @@ export function buildDemandSignalsFromKernel(args: {
   const byFact = new Map(magnetFacts.map(f => [f.id, f]));
   const primaryDrivers = accepted.filter(
     d =>
-      d.driverKind === 'real_demand_driver' ||
-      d.driverKind === 'unknown_uncapped' ||
-      (d.driverKind === 'supporting_infrastructure' &&
-        isMetroOrRail(magnets, d.magnetFactId) &&
-        d.finalContribution > 0.25),
+      d.publicDisplayEligible &&
+      (d.driverKind === 'real_demand_driver' ||
+        d.driverKind === 'unknown_uncapped' ||
+        (d.driverKind === 'supporting_infrastructure' &&
+          isMetroOrRail(magnets, d.magnetFactId) &&
+          d.finalContribution >= PUBLIC_DISPLAY_METRO_RAIL_MIN)),
   );
 
   const ordered = [...primaryDrivers].sort((a, b) => b.finalContribution - a.finalContribution);
@@ -440,24 +605,20 @@ function isMetroOrRail(magnets: readonly MagnetItem[], magnetFactId: string): bo
   return m?.categoryId === 'metro' || m?.categoryId === 'railway_station';
 }
 
-/** Evidence rows for public claims — demand anchors first, then transit context */
-export function kernelDriversEligibleForPublicClaims(args: {
+/** Evidence rows for public claims — stricter than kernel acceptance (noise/hotel/generic tier-3 excluded). */
+export function kernelDriversEligibleForPublicDisplay(args: {
   kernel: LocationDemandScoringKernelResult;
   magnets: readonly MagnetItem[];
 }): LocationDemandScoredDriver[] {
   const { kernel, magnets } = args;
-  const pool = kernel.acceptedDrivers.filter(d => d.finalContribution > 0.12);
+  const pool = kernel.scoredDrivers.filter(d => d.publicDisplayEligible);
 
   const demandAnchors = pool.filter(
-    d =>
-      d.driverKind === 'real_demand_driver' ||
-      d.driverKind === 'unknown_uncapped',
+    d => d.driverKind === 'real_demand_driver' || d.driverKind === 'unknown_uncapped',
   );
 
   const transit = pool.filter(
-    d =>
-      d.driverKind === 'supporting_infrastructure' &&
-      isMetroOrRail(magnets, d.magnetFactId),
+    d => d.driverKind === 'supporting_infrastructure' && isMetroOrRail(magnets, d.magnetFactId),
   );
 
   const ranked = [...demandAnchors, ...transit].sort((a, b) => b.finalContribution - a.finalContribution);
@@ -470,4 +631,12 @@ export function kernelDriversEligibleForPublicClaims(args: {
     dedup.push(d);
   }
   return dedup;
+}
+
+/** @deprecated Prefer {@link kernelDriversEligibleForPublicDisplay} — kept for binary compat in forks */
+export function kernelDriversEligibleForPublicClaims(args: {
+  kernel: LocationDemandScoringKernelResult;
+  magnets: readonly MagnetItem[];
+}): LocationDemandScoredDriver[] {
+  return kernelDriversEligibleForPublicDisplay(args);
 }

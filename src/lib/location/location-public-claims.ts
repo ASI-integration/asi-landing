@@ -11,6 +11,30 @@ import type {
 } from './location-decision-contract';
 import { FORBIDDEN_PUBLIC_WORDING_RU } from './signals/location-signal-taxonomy';
 
+function magnetCategoryIdFromFactKey(id: string): string {
+  const parts = id.split(':');
+  return parts.length >= 3 ? parts[2]! : '';
+}
+
+/** Hotels / weak leisure never qualify as “real tourist anchor” for headline copy */
+function kernelAllowsTourismPublicHeadline(decision: LocationDecision): boolean {
+  const k = decision.demandKernelV1;
+  if (!k) return false;
+
+  const anchorCats = new Set(['stadium', 'convention', 'entertainment', 'attraction']);
+
+  return k.scoredDrivers.some(d => {
+    if (!d.publicDisplayEligible || d.demandTypeVote !== 'tourist') return false;
+    if (d.driverKind !== 'real_demand_driver') return false;
+
+    const cat = magnetCategoryIdFromFactKey(d.magnetFactId);
+    if (cat === 'major_hotel' || cat === 'mid_hotel') return false;
+    if (!anchorCats.has(cat)) return false;
+    if (cat === 'attraction' && (d.resolvedTier >= 3 || d.scaleClass === 'weak_local')) return false;
+    return d.resolvedTier <= 2;
+  });
+}
+
 export function buildPublicClaimsRu(input: {
   evidenceItems: readonly LocationEvidenceItem[];
   magnetFacts: readonly MagnetFact[];
@@ -123,6 +147,9 @@ export function publicDemandProfileHeadline(
         case 'industrial':
           return 'Промышленно-деловой профиль спроса';
         case 'tourist':
+          if (!kernelAllowsTourismPublicHeadline(decision)) {
+            return 'Смешанный профиль спроса по данным карты';
+          }
           return 'Туристический и событийный спрос по якорям карты';
         case 'education':
           return 'Образовательно-деловой профиль спроса';
@@ -142,6 +169,9 @@ export function publicDemandProfileHeadline(
         case 'industrial':
           return 'Industrial/business-led demand';
         case 'tourist':
+          if (!kernelAllowsTourismPublicHeadline(decision)) {
+            return 'Mixed demand profile from map evidence';
+          }
           return 'Tourism/event-led demand (map anchors)';
         case 'education':
           return 'Education-related demand profile';

@@ -4,9 +4,7 @@
  */
 
 import type { LocationAnalysis, OSMElement } from './types';
-import type { CanonicalLocationFact, LocationDecision, MagnetTier } from './location-decision-contract';
-import { haversineMeters } from './gravity-scoring';
-import { classifyElement } from './overpass-classify';
+import type { LocationDecision, MagnetTier } from './location-decision-contract';
 import { publicLocationScore, scoreBandFromPublicScore } from './location-score-public';
 import {
   assertDemandSignalsHaveEvidence,
@@ -20,9 +18,10 @@ import {
   buildPublicClaimsRu,
   validatePublicClaimPipeline,
 } from './location-public-claims';
+import { attachOsmTagsToMagnetCanonicalFacts } from './kernel-osm-tag-alignment';
 import {
   buildDemandSignalsFromKernel,
-  kernelDriversEligibleForPublicClaims,
+  kernelDriversEligibleForPublicDisplay,
   magnetRoleForScoredDriver,
   runLocationDemandScoringKernel,
 } from './location-scoring-kernel';
@@ -68,48 +67,6 @@ export function ruResidentialLocationDecisionForDemo(input: {
     inputAddress: input.inputAddress,
     coordinates: input.coordinates,
     locale: input.locale ?? 'ru',
-  });
-}
-
-/** Align OSM tags to classified magnets by nearest matching category (deterministic v1). */
-function canonicalFactsWithOsmTagsForKernel(args: {
-  magnets: LocationAnalysis['magnets'];
-  rawElements?: readonly OSMElement[];
-  origin: { lat: number; lon: number };
-}): CanonicalLocationFact[] {
-  const base = canonicalFactsFromMagnetsFallback(args.magnets);
-  const { rawElements, magnets, origin } = args;
-  if (!rawElements?.length) return base;
-
-  const candidates: Array<{
-    categoryId: string;
-    lat: number;
-    lon: number;
-    tags: Record<string, string>;
-  }> = [];
-
-  for (const el of rawElements) {
-    const cl = classifyElement(el);
-    const lat = el.lat ?? el.center?.lat;
-    const lon = el.lon ?? el.center?.lon;
-    if (!cl || lat == null || lon == null) continue;
-    candidates.push({ categoryId: cl.categoryId, lat, lon, tags: el.tags ?? {} });
-  }
-
-  return base.map((cf, idx) => {
-    const m = magnets[idx];
-    if (!m) return cf;
-    let bestTags: Record<string, string> | undefined;
-    let bestD = Infinity;
-    for (const c of candidates) {
-      if (c.categoryId !== m.categoryId) continue;
-      const d = haversineMeters(m.lat, m.lon, c.lat, c.lon);
-      if (d < bestD && d < 180) {
-        bestD = d;
-        bestTags = c.tags;
-      }
-    }
-    return bestTags ? { ...cf, rawTags: bestTags } : cf;
   });
 }
 
@@ -173,10 +130,10 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       ? trace.finalScore
       : publicLocationScore(analysis);
 
-  const canonicalFactsForKernel = canonicalFactsWithOsmTagsForKernel({
+  const canonicalFactsForKernel = attachOsmTagsToMagnetCanonicalFacts({
     magnets: analysis.magnets,
-    rawElements: input.rawElements,
-    origin: coords,
+    baseFacts: canonicalFactsFromMagnetsFallback(analysis.magnets),
+    rawElements: input.rawElements ?? [],
   });
 
   const demandKernelV1 = runLocationDemandScoringKernel({
@@ -190,7 +147,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     ),
   });
 
-  const evidenceDrivers = kernelDriversEligibleForPublicClaims({
+  const evidenceDrivers = kernelDriversEligibleForPublicDisplay({
     kernel: demandKernelV1,
     magnets: analysis.magnets,
   }).slice(0, 5);

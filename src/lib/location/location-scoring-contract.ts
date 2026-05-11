@@ -53,6 +53,10 @@ export interface LocationDemandScoredDriver {
   finalContribution: number;
   accepted: boolean;
   reason: string;
+  /** Populated by kernel v1 — OSM tag alignment / public-display gates (trace / locationClaimTrace). */
+  tagAlignmentStatus?: string;
+  publicDisplayEligible?: boolean;
+  publicDisplayRejectReason?: string;
 }
 
 export interface LocationDemandScoringKernelResult {
