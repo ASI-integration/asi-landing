@@ -40,7 +40,7 @@ async function main() {
     inputAddress: ADDRESS,
   });
 
-  const projected = enrichAnalysisWithReportProjection(analysis, { reportMode: 'free' });
+  const projected = enrichAnalysisWithReportProjection(analysis, { reportMode: 'free', rawElements: elements });
   const trace = projected.scoringTrace!;
 
   const ruDemoClone = cloneAnalysisForResidentialDemoPatch(analysis);

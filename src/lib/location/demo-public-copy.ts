@@ -67,52 +67,21 @@ export function sanitizeRuFactorList(lines: readonly string[]): string[] {
   return out;
 }
 
-/** Removes POI names and jargon from one RU explanation line (demo output). */
+/**
+ * Demo copy sanitizer — preserves structured evidence (object + distance).
+ * Does not collapse named lines into generic «туристический поток» / «крупный узел» phrasing.
+ */
 export function generalizeRuPublicScoreExplanation(line: string): string {
   const trimmed = (line ?? '').trim();
   if (!trimmed) return trimmed;
 
-  const lower = trimmed.toLowerCase();
-
-  if (/крупный транспортный узел в транспортной доступности/i.test(trimmed)) {
-    return 'Есть крупные транспортные узлы в зоне доступности.';
-  }
-  if (/крупн(?:ый|ая|ое)\s+транспортно-логистическ/i.test(trimmed)) {
-    return 'Есть крупные транспортные узлы в зоне доступности.';
-  }
-  if (/крупная медицина в зоне доступности/i.test(trimmed)) {
-    return 'Есть медицинские или социальные объекты в зоне доступности.';
+  if (/—\s*около\s+\d/.test(trimmed)) {
+    return sanitizeRuPublicFactor(trimmed) ?? trimmed;
   }
 
-  if (/ключевой транспортный якорь/i.test(trimmed)) {
-    return 'Крупный транспортный узел рядом — транспортная доступность усиливает спрос.';
-  }
-
-  if (/деловой поток подтверждён якорями поблизости/i.test(trimmed)) {
-    return 'Рядом деловые объекты в зоне доступности.';
-  }
-
-  if (/локальные деловые сигналы рядом/i.test(trimmed)) {
-    return 'Есть отдельные деловые точки рядом без крупного якоря спроса.';
-  }
-
-  const businessFlow =
-    /^деловой поток:/i.test(trimmed) ||
-    /^стабильный поток командированных/i.test(trimmed) ||
-    /^деловой трафик в зоне доступности/i.test(trimmed);
-
-  if (businessFlow) {
-    const industrial =
-      /завод|фабрик|комбинат|промышленн|предприят|metal|steel|машиностро/i.test(lower);
-    if (industrial) return 'Рядом производственные и деловые объекты в зоне доступности.';
-    return 'Рядом деловые объекты в зоне доступности.';
-  }
-
-  if (/туристический поток:/i.test(trimmed)) {
-    const ent =
-      /театр|концерт|арена|стадион|цирк|развлеч|nightclub|клуб\b|event|фестивал/i.test(lower);
-    if (ent) return 'Есть развлекательные или событийные объекты в зоне доступности.';
-    return 'Есть туристические или досуговые объекты в зоне доступности.';
+  const hasDistanceToken = /\d[\d\s,.]*\s*(?:м|км)\b/i.test(trimmed);
+  if (hasDistanceToken && trimmed.length >= 24) {
+    return sanitizeRuPublicFactor(trimmed) ?? trimmed;
   }
 
   if (
@@ -120,17 +89,15 @@ export function generalizeRuPublicScoreExplanation(line: string): string {
     /^метро\b/i.test(trimmed) ||
     /метро\s+(?:доступно|есть|рядом)/i.test(trimmed)
   ) {
-    return trimmed.replace(/^Metro\b/i, 'Метро');
+    const cleaned = sanitizeRuPublicFactor(trimmed) ?? trimmed;
+    return cleaned.replace(/^Metro\b/i, 'Метро');
   }
 
-  let out = trimmed.replace(/\s+[—–:]\s*.+?\([^)]*\d[^)]*(?:м|км)[^)]*\)/gu, '');
-  out = out.replace(/\s*\([^)]*\d[^)]*(?:м|км)[^)]*\)/gu, '');
-  out = out.replace(/\s{2,}/g, ' ').trim();
-
+  const out = trimmed.replace(/\s{2,}/g, ' ').trim();
   if (out.length < 12) {
     return 'В зоне доступности есть сигналы спроса по карте (общая формулировка, низкая детализация).';
   }
-  return out;
+  return sanitizeRuPublicFactor(out) ?? out;
 }
 
 /** Deduped list for «Почему такой балл?» (max 5). */

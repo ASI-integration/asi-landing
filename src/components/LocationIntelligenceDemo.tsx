@@ -23,6 +23,7 @@ import {
   locationDemoIncompleteUserMessage,
   applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
+  buildLocationDecision,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -1972,6 +1973,16 @@ function ASIPanel({
       : analysis.conclusion;
 
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const kernelCoords = analysis.scoringTrace?.coordinates;
+  const kernelEvidenceRu =
+    isRuResidentialDemo && !dataBlocked && kernelCoords
+      ? buildLocationDecision({
+          analysis,
+          inputAddress: address || '',
+          coordinates: kernelCoords,
+          locale: 'ru',
+        }).uiProjection.keyEvidenceBullets
+      : [];
   const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
   const sanity =
     isRuResidentialDemo && !dataBlocked
@@ -2048,7 +2059,12 @@ function ASIPanel({
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
     const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
-    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(merged, 5) : merged;
+    const cleaned =
+      isRuResidentialDemo && kernelEvidenceRu.length > 0
+        ? kernelEvidenceRu
+        : isRuResidentialDemo
+          ? normalizeRuDemoExplanationLines(merged, 5)
+          : merged;
 
     return cleaned.slice(0, 2).map((factor) => {
       const normalized = factor.replace(/\s+/g, ' ').trim();
@@ -2161,7 +2177,12 @@ function ASIPanel({
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
     const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
-    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(base, 5) : base;
+    const cleaned =
+      isRuResidentialDemo && kernelEvidenceRu.length > 0
+        ? kernelEvidenceRu
+        : isRuResidentialDemo
+          ? normalizeRuDemoExplanationLines(base, 5)
+          : base;
     return cleaned.slice(0, 2);
   })();
 
@@ -2337,10 +2358,13 @@ function ASIPanel({
         if (isRuResidentialDemo) {
           const rawGeneric =
             rawPos.length + rawNeg.length === 0 ? generateScoreFactors(analysis, locale) : [];
-          const mergedRu = normalizeRuDemoExplanationLines(
-            [...rawPos, ...rawNeg, ...rawGeneric, ...regionalRuExtras],
-            5,
-          );
+          const mergedRu =
+            kernelEvidenceRu.length > 0
+              ? kernelEvidenceRu.slice(0, 5)
+              : normalizeRuDemoExplanationLines(
+                  [...rawPos, ...rawNeg, ...rawGeneric, ...regionalRuExtras],
+                  5,
+                );
           if (mergedRu.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">

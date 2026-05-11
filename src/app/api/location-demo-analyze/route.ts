@@ -6,7 +6,9 @@ import {
   cacheEntryPassesDataIntegrity,
   cloneAnalysisForResidentialDemoPatch,
   applyResidentialDemoPresentationToAnalysis,
+  attachLocationDecisionToAnalysis,
 } from '@/lib/location';
+import type { OSMElement } from '@/lib/location';
 import { patchLegacyLocationAnalysis } from '@/lib/location/foot-traffic';
 import { cacheGet, cacheSet, cacheEvictCoord } from '@/lib/location/cache';
 import {
@@ -125,8 +127,12 @@ function withDemoSanityPayload(args: {
   meta: AnalysisMeta;
   locale: 'en' | 'ru';
   wantSpatial: boolean;
+  lat: number;
+  lon: number;
+  osmElements?: readonly OSMElement[];
+  inputAddress?: string;
 }) {
-  const { analysis, elementsCount, meta, locale, wantSpatial } = args;
+  const { analysis, elementsCount, meta, locale, wantSpatial, lat, lon, osmElements, inputAddress } = args;
   const blocked = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
 
   let analysisOut = analysis;
@@ -136,9 +142,16 @@ function withDemoSanityPayload(args: {
     demoSanity = applyResidentialDemoPresentationToAnalysis(analysisOut);
   }
 
+  const analysisWithKernel = attachLocationDecisionToAnalysis(analysisOut, {
+    inputAddress: (inputAddress ?? '').trim(),
+    coordinates: { lat, lon },
+    rawElements: osmElements,
+    locale,
+  });
+
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
   return {
-    analysis: analysisOut,
+    analysis: analysisWithKernel,
     elementsCount,
     meta: metaWithDemo,
     ...(demoSanity ? {
@@ -284,6 +297,8 @@ export async function POST(req: NextRequest) {
         meta,
         locale,
         wantSpatial,
+        lat,
+        lon,
       }));
     }
 
@@ -371,6 +386,9 @@ export async function POST(req: NextRequest) {
       meta,
       locale,
       wantSpatial,
+      lat,
+      lon,
+      osmElements: elements,
     }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

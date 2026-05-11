@@ -326,3 +326,24 @@ export type {
 export { publicLocationScore, scoreBandFromPublicScore } from './location-score-public';
 export { buildLocationScoreCustodySnapshot, assertPublicScoreCustody } from './location-score-chain-of-custody';
 export type { LocationScoreCustodySnapshot } from './location-score-chain-of-custody';
+
+export {
+  buildLocationDecision,
+  attachLocationDecisionToAnalysis,
+} from './location-decision-kernel';
+export type { LocationDecisionBuildInput } from './location-decision-kernel';
+export type {
+  LocationDecision,
+  LocationDecisionScoreBand,
+  AddressIdentity,
+  CanonicalLocationFact,
+  MagnetFact,
+  MagnetRole,
+  MagnetTier,
+  DemandSignal,
+  LocationEvidenceItem,
+  LocationUiProjection,
+  LocationPublicReportSection,
+  LocationDecisionRawObjectStats,
+  LocationDecisionDataIntegrity,
+} from './location-decision-contract';

@@ -1,4 +1,4 @@
-import type { LocationAnalysis, RecommendedStrategy, SpatialTier } from './types';
+import type { LocationAnalysis, OSMElement, RecommendedStrategy, SpatialTier } from './types';
 import type { CommercialFormatFitEntry, CommercialOverallVerdict } from './commercial-format-fit';
 import { buildCommercialFormatFit } from './commercial-format-fit';
 import { createDisabledSpatialFoundation } from './spatial-foundation';
@@ -338,6 +338,8 @@ export function buildLocationStandaloneReport(args: {
   address: string;
   /** Исходный текст адреса пользователя; по умолчанию совпадает с `address`. */
   inputAddress?: string;
+  /** Сырые объекты OSM того же прогона — улучшают canonicalFacts в Decision Kernel для free-проекции */
+  rawOsmElements?: readonly OSMElement[];
   /** Для тестов окружения (ЕИС / procurement probe); в проде не передаётся. */
   metadataEnv?: Record<string, string | undefined>;
   analysis: LocationAnalysis;
@@ -348,7 +350,10 @@ export function buildLocationStandaloneReport(args: {
   reportMode?: LocationStandaloneReportMode;
 }): LocationStandaloneReport {
   const reportMode = args.reportMode ?? 'paid';
-  const analysis = enrichAnalysisWithReportProjection(args.analysis, { reportMode });
+  const analysis = enrichAnalysisWithReportProjection(args.analysis, {
+    reportMode,
+    rawElements: args.rawOsmElements,
+  });
   const generatedAtIso = new Date().toISOString();
   const market = args.market ?? 'RU';
   const score = analysis.locationScore;
