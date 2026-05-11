@@ -171,6 +171,13 @@ export type { ReportPermalinkSurface } from './report-state';
 
 export { buildLocationDecision, attachLocationDecisionToAnalysis } from './location-decision-kernel';
 export type { LocationDecisionBuildInput } from './location-decision-kernel';
+export {
+  RU_RESIDENTIAL_NEUTRAL_EVIDENCE_LINE_RU,
+  formatRuResidentialEvidenceRowRu,
+  resolveRuResidentialDemandHeadlineRu,
+  buildRuResidentialPublicEvidenceLines,
+  ruResidentialDemandSignalsIncludeTouristEvidence,
+} from './ru-residential-ui-projection';
 export type {
   LocationDecision,
   LocationUiProjection,

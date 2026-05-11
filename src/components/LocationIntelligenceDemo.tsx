@@ -21,9 +21,10 @@ import {
   applyLocationDataIntegrityGate,
   locationDemoPresentationBlocked,
   locationDemoIncompleteUserMessage,
-  applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
   buildLocationDecision,
+  buildRuResidentialPublicEvidenceLines,
+  resolveRuResidentialDemandHeadlineRu,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -50,10 +51,7 @@ import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
 import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
-import {
-  normalizeRuDemoExplanationLines,
-  sanitizeRuFactorList,
-} from '@/lib/location/demo-public-copy';
+import { sanitizeRuFactorList } from '@/lib/location/demo-public-copy';
 import {
   readRecentAddressesFromStorage,
   rememberRecentAddress,
@@ -91,9 +89,9 @@ interface SelectedAddress {
   lon: number;
 }
 
-type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
 
+type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
 const SUGGEST_TIMEOUT_MS = 8_000;
@@ -1974,19 +1972,22 @@ function ASIPanel({
 
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
   const kernelCoords = analysis.scoringTrace?.coordinates;
-  const kernelEvidenceRu =
+  const ruResidentialLocationDecision =
     isRuResidentialDemo && !dataBlocked && kernelCoords
       ? buildLocationDecision({
           analysis,
           inputAddress: address || '',
           coordinates: kernelCoords,
           locale: 'ru',
-        }).uiProjection.keyEvidenceBullets
-      : [];
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity =
+        })
+      : null;
+  const ruResidentialEvidenceLines =
     isRuResidentialDemo && !dataBlocked
-      ? (serverSanity ?? applyResidentialDemoPresentationToAnalysis(analysis))
+      ? buildRuResidentialPublicEvidenceLines(ruResidentialLocationDecision, 5)
+      : [];
+  const ruResidentialDemandHeadlineResolved =
+    isRuResidentialDemo && !dataBlocked
+      ? resolveRuResidentialDemandHeadlineRu(ruResidentialLocationDecision)
       : null;
   const publicScore = publicLocationScore(analysis);
   const band = dataBlocked
@@ -2038,40 +2039,6 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
-  const ruResidentialDemandHeadlineRu = (dt: DemandType): string => {
-    switch (dt) {
-      case 'tourism-led':
-        return 'Туристический спрос в зоне';
-      case 'business-led':
-        return 'Спрос от делового и офисного трафика';
-      case 'transport-led':
-        return 'Транзитный и транспортно-связанный спрос';
-      default:
-        return 'Смешанный профиль спроса';
-    }
-  };
-  const aboveFoldReasons = (() => {
-    if (dataBlocked) return [];
-    const ls = analysis.locationScore;
-    const specificFactors = [
-      ...(ls?.top_positive_factors ?? []),
-      ...(ls?.top_negative_factors ?? []),
-    ];
-    const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
-    const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
-    const cleaned =
-      isRuResidentialDemo && kernelEvidenceRu.length > 0
-        ? kernelEvidenceRu
-        : isRuResidentialDemo
-          ? normalizeRuDemoExplanationLines(merged, 5)
-          : merged;
-
-    return cleaned.slice(0, 2).map((factor) => {
-      const normalized = factor.replace(/\s+/g, ' ').trim();
-      return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
-    });
-  })();
-
   async function requestFullReportAsync() {
     if (fullReportBusy) return;
     setFullReportErr(null);
@@ -2164,6 +2131,12 @@ function ASIPanel({
 
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
+    if (isRuResidentialDemo) {
+      return ruResidentialEvidenceLines.slice(0, 2).map((factor) => {
+        const normalized = factor.replace(/\s+/g, ' ').trim();
+        return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
+      });
+    }
     const ls = analysis.locationScore;
     const pos = ls?.top_positive_factors ?? [];
     const neg = ls?.top_negative_factors ?? [];
@@ -2177,13 +2150,7 @@ function ASIPanel({
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
     const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
-    const cleaned =
-      isRuResidentialDemo && kernelEvidenceRu.length > 0
-        ? kernelEvidenceRu
-        : isRuResidentialDemo
-          ? normalizeRuDemoExplanationLines(base, 5)
-          : base;
-    return cleaned.slice(0, 2);
+    return base.slice(0, 2);
   })();
 
   return (
@@ -2254,7 +2221,7 @@ function ASIPanel({
                 </p>
               ) : (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
-                {ruResidentialDemandHeadlineRu(analysis.demandType)}
+                {ruResidentialDemandHeadlineResolved}
               </p>
               )
             ) : (
@@ -2356,23 +2323,14 @@ function ASIPanel({
             : [];
 
         if (isRuResidentialDemo) {
-          const rawGeneric =
-            rawPos.length + rawNeg.length === 0 ? generateScoreFactors(analysis, locale) : [];
-          const mergedRu =
-            kernelEvidenceRu.length > 0
-              ? kernelEvidenceRu.slice(0, 5)
-              : normalizeRuDemoExplanationLines(
-                  [...rawPos, ...rawNeg, ...rawGeneric, ...regionalRuExtras],
-                  5,
-                );
-          if (mergedRu.length === 0) return null;
+          if (dataBlocked || ruResidentialEvidenceLines.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">
               <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
                 Почему такой балл?
               </h3>
               <ul className="space-y-2">
-                {mergedRu.map((line, i) => (
+                {ruResidentialEvidenceLines.map((line, i) => (
                   <li key={i} className="flex items-start gap-2 text-[16px] text-slate-300 leading-snug">
                     <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
                     {line}
