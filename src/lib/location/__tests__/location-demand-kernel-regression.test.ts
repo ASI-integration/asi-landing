@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildAnalysis } from '../gravity-scoring';
 import type { OSMElement } from '../types';
-import { buildLocationDecision } from '../location-decision-kernel';
+import type { LocationDecision } from '../location-decision-contract';
+import {
+  attachLocationDecisionToAnalysis,
+  buildLocationDecision,
+  ruResidentialLocationDecisionForDemo,
+} from '../location-decision-kernel';
 import { publicDemandProfileHeadline } from '../location-public-claims';
 import { runLocationDemandScoringKernel } from '../location-scoring-kernel';
 import { canonicalFactsFromMagnetsFallback, magnetItemToMagnetFact } from '../location-decision-rules';
@@ -101,5 +106,90 @@ describe('demand scoring kernel v1 regressions', () => {
     expect(/больниц|клиническ/i.test(top)).toBe(true);
 
     expect(decision.demandSignals.every(s => !String(s.type).includes('tourist_demand'))).toBe(true);
+  });
+
+  it('demo resolver prefers API-attached locationDecision (raw OSM tags) over client-only rebuild', () => {
+    const els: OSMElement[] = [
+      node(1, 0.018, 0.016, { aeroway: 'aerodrome', name: 'Аэропорт Малый Фикстура' }),
+      node(2, 0.004, 0.003, { railway: 'halt', name: 'Остановочный пункт Юг' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const merged = attachLocationDecisionToAnalysis(analysis, {
+      inputAddress: 'fixture',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    const attached = merged.locationDecision;
+    expect(attached).toBeDefined();
+
+    const resolved = ruResidentialLocationDecisionForDemo({
+      analysis: merged,
+      inputAddress: 'fixture',
+      coordinates: ORIGIN,
+      locale: 'ru',
+    });
+    expect(resolved).toBe(attached);
+
+    const { locationDecision: _drop, ...withoutAttached } = merged;
+    const rebuilt = ruResidentialLocationDecisionForDemo({
+      analysis: withoutAttached,
+      inputAddress: 'fixture',
+      coordinates: ORIGIN,
+      locale: 'ru',
+    });
+    expect(rebuilt).not.toBe(attached);
+    expect(rebuilt.demandKernelV1).not.toBeNull();
+    expect(Math.round(rebuilt.finalScore ?? NaN)).toBe(
+      Math.round(rebuilt.demandKernelV1!.blendedPublicScore),
+    );
+  });
+
+  it('demand headline never uses magnet-role fallback when kernel v1 is present (weak/unclear)', () => {
+    const stubKernel = {
+      acceptedDrivers: [],
+      rejectedDrivers: [],
+      scoredDrivers: [],
+      dominantDemandType: 'weak/unclear' as const,
+      scoreBreakdown: {
+        rawSumBeforeCaps: 0,
+        cappedSupportingInfra: 0,
+        cappedLocalInterest: 0,
+        cappedHotels: 0,
+        cappedGenericBusiness: 0,
+        cappedTourismWithoutAnchor: 0,
+        cappedNoTier1Penalty: 0,
+        finalWeightedSum: 0,
+      },
+      kernelEvidenceScore: 30,
+      blendedPublicScore: 31,
+      warnings: [],
+      debugTrace: [],
+    };
+    const decision = {
+      demandKernelV1: stubKernel,
+      demandSignals: [
+        {
+          id: 'ds:noise_tourist_proxy',
+          type: 'tourist_demand',
+          strength: 'strong' as const,
+          evidenceFactIds: ['mf:tourist'],
+          reason: 'legacy-ranked',
+          publicLabelRu: 'туристический',
+          internalReason: 'test',
+        },
+      ],
+      magnetFacts: [
+        {
+          id: 'mf:tourist',
+          role: 'tourist_demand',
+          name: 'Fake attraction',
+        },
+      ],
+    } as unknown as LocationDecision;
+
+    const headline = publicDemandProfileHeadline(decision, 'ru');
+    expect(headline).not.toMatch(/туристическ/i);
+    expect(headline).toContain('ограничен');
   });
 });

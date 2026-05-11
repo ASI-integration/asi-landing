@@ -3,6 +3,7 @@
 // Keep them clearly separated in comments: real-world vs ASI layer.
 
 import type { MagnetDiagnosticsLayer } from './magnet-diagnostics';
+import type { LocationDecision } from './location-decision-contract';
 import type { LocationScoringTrace } from './location-scoring-trace';
 
 // ── Real-world / map layer ────────────────────────────────────────────────────
@@ -460,6 +461,12 @@ export interface LocationAnalysis {
    * Older persisted payloads may omit this field; callers must not recompute headline score outside the gravity pipeline.
    */
   scoringTrace?: LocationScoringTrace;
+
+  /**
+   * Populated by `/api/location-demo-analyze` after demand kernel assembly (includes OSM tag enrichment server-side).
+   * Client surfaces must prefer this over recomputing the decision kernel without raw OSM elements.
+   */
+  locationDecision?: LocationDecision;
 
   // Detected objects (real-world data)
   magnets: MagnetItem[];

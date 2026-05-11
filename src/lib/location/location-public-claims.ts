@@ -98,8 +98,20 @@ export function publicDemandProfileHeadline(
   decision: LocationDecision,
   locale: 'ru' | 'en',
 ): string {
-  const dominantKernel = decision.demandKernelV1?.dominantDemandType;
-  if (dominantKernel && dominantKernel !== 'weak/unclear') {
+  const kernel = decision.demandKernelV1;
+  if (kernel) {
+    const dominantKernel = kernel.dominantDemandType;
+
+    if (dominantKernel === 'weak/unclear') {
+      const incomplete = decision.demandSignals.find(s => s.id === 'ds:generic_incomplete_data');
+      if (locale === 'ru') {
+        if (incomplete) return incomplete.publicLabelRu;
+        return 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.';
+      }
+      if (incomplete?.reason) return 'Insufficient map evidence to profile demand.';
+      return 'Limited demand profile — no stable demand anchors confirmed on the map.';
+    }
+
     if (locale === 'ru') {
       switch (dominantKernel) {
         case 'medical':

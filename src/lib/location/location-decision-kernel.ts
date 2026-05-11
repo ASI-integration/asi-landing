@@ -37,6 +37,40 @@ export interface LocationDecisionBuildInput {
   locale?: 'en' | 'ru';
 }
 
+const DEMO_COORD_MATCH_EPS = 1e-4;
+
+function demoCoordinatesMatch(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): boolean {
+  return Math.abs(a.lat - b.lat) <= DEMO_COORD_MATCH_EPS && Math.abs(a.lon - b.lon) <= DEMO_COORD_MATCH_EPS;
+}
+
+/**
+ * RU residential demo: reuse API-attached `locationDecision` on the analysis when present so the UI matches
+ * server-side kernel input (OSM tags via rawElements). Falls back to `buildLocationDecision` for legacy payloads.
+ */
+export function ruResidentialLocationDecisionForDemo(input: {
+  analysis: LocationAnalysis;
+  inputAddress: string;
+  coordinates: { lat: number; lon: number };
+  locale?: 'en' | 'ru';
+}): LocationDecision {
+  const attached = input.analysis.locationDecision;
+  if (
+    attached?.demandKernelV1 &&
+    demoCoordinatesMatch(attached.coordinates, input.coordinates)
+  ) {
+    return attached;
+  }
+  return buildLocationDecision({
+    analysis: input.analysis,
+    inputAddress: input.inputAddress,
+    coordinates: input.coordinates,
+    locale: input.locale ?? 'ru',
+  });
+}
+
 /** Align OSM tags to classified magnets by nearest matching category (deterministic v1). */
 function canonicalFactsWithOsmTagsForKernel(args: {
   magnets: LocationAnalysis['magnets'];

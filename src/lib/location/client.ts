@@ -169,7 +169,11 @@ export type {
 } from './report-contract';
 export type { ReportPermalinkSurface } from './report-state';
 
-export { buildLocationDecision, attachLocationDecisionToAnalysis } from './location-decision-kernel';
+export {
+  buildLocationDecision,
+  attachLocationDecisionToAnalysis,
+  ruResidentialLocationDecisionForDemo,
+} from './location-decision-kernel';
 export type { LocationDecisionBuildInput } from './location-decision-kernel';
 export {
   RU_RESIDENTIAL_NEUTRAL_EVIDENCE_LINE_RU,

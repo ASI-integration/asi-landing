@@ -330,6 +330,7 @@ export type { LocationScoreCustodySnapshot } from './location-score-chain-of-cus
 export {
   buildLocationDecision,
   attachLocationDecisionToAnalysis,
+  ruResidentialLocationDecisionForDemo,
 } from './location-decision-kernel';
 export type { LocationDecisionBuildInput } from './location-decision-kernel';
 export type {

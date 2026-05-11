@@ -23,7 +23,7 @@ import {
   locationDemoIncompleteUserMessage,
   applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
-  buildLocationDecision,
+  ruResidentialLocationDecisionForDemo,
   publicDemandProfileHeadline,
   formatLocationDemandKernelDebug,
 } from '@/lib/location/client';
@@ -1976,7 +1976,7 @@ function ASIPanel({
   const kernelCoords = analysis.scoringTrace?.coordinates;
   const residentialLocationDecision =
     isRuResidentialDemo && !dataBlocked && kernelCoords
-      ? buildLocationDecision({
+      ? ruResidentialLocationDecisionForDemo({
           analysis,
           inputAddress: address || '',
           coordinates: kernelCoords,
