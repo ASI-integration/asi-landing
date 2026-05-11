@@ -36,6 +36,13 @@ export interface GeocodeResult {
   lon: number;
   /** Display name returned by the provider, if available */
   displayName?: string;
+  /** Optional ranking audit — POI-vs-address guard, tests, LOCATION_DEBUG */
+  geocodeDebug?: {
+    winnerTypes?: string[];
+    skippedEstablishment?: boolean;
+    nominatimClass?: string;
+    nominatimType?: string;
+  };
 }
 
 /**

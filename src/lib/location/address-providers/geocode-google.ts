@@ -1,12 +1,11 @@
 import type { GeocodeResult } from '../providers/types';
+import type { GoogleGeocodeRawResult } from './geocode-google-pick';
+import { pickGoogleGeocodeResultForQuery } from './geocode-google-pick';
 
 const TIMEOUT_MS = 8_000;
 
 interface GoogleGeocodeResponse {
-  results?: Array<{
-    formatted_address?: string;
-    geometry?: { location?: { lat: number; lng: number } };
-  }>;
+  results?: GoogleGeocodeRawResult[];
   status: string;
 }
 
@@ -34,13 +33,8 @@ export async function googleForwardGeocode(
     });
     if (!res.ok) return null;
     const data = (await res.json()) as GoogleGeocodeResponse;
-    if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) return null;
-    const loc = data.results[0].geometry.location;
-    return {
-      lat: loc.lat,
-      lon: loc.lng,
-      displayName: data.results[0].formatted_address,
-    };
+    if (data.status !== 'OK' || !data.results?.length) return null;
+    return pickGoogleGeocodeResultForQuery(address, data.results);
   } catch {
     return null;
   }
