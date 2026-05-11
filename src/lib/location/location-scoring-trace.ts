@@ -58,6 +58,17 @@ export interface LocationScoringEvidenceRef {
 /**
  * Unified scoring contract — `finalScore` must be frozen before `publicBullets` / rich evidence text.
  */
+/** Diagnostics: map ingest vs headline score (blocked incomplete analyses). */
+export interface LocationScoringIntegritySnapshot {
+  analysisComplete: boolean;
+  scoreBlockedDueToIncompleteData: boolean;
+  rawObjectsCount: number;
+  classifiedMagnetsCount: number;
+  providerHadFailure: boolean;
+  /** Populated when the HTTP handler served a persistent-cache row */
+  cacheServed?: boolean;
+}
+
 export interface LocationScoringTrace {
   inputAddress?: string;
   coordinates: { lat: number; lon: number };
@@ -74,4 +85,5 @@ export interface LocationScoringTrace {
   publicBullets: string[];
   removedPublicBullets: string[];
   warnings: string[];
+  integrity?: LocationScoringIntegritySnapshot;
 }

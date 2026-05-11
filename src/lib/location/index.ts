@@ -14,6 +14,7 @@ export type {
   ScoreBand,
   Band,
   LocationAnalysis,
+  AnalysisIntegritySnapshot,
   LocationScoreOutput,
   AnalysisFreshness,
   AnalysisMeta,
@@ -230,9 +231,27 @@ export type {
   EvergreenIndexDiagnostics,
   LocationScoreFeatures,
   LocationScoringCapApplied,
+  LocationScoringIntegritySnapshot,
   LocationScoringTrace,
 } from './location-scoring-trace';
 export { buildLocationScoringTrace } from './location-scoring-pipeline';
+
+export {
+  applyLocationDataIntegrityGate,
+  evaluateLocationDataIntegrity,
+  cacheEntryPassesDataIntegrity,
+  locationDemoPresentationBlocked,
+  locationDemoIncompleteUserMessage,
+  LOCATION_DEMO_INCOMPLETE_RU,
+  LOCATION_DEMO_INCOMPLETE_EN,
+  isLikelyUrbanCoordinates,
+} from './location-data-integrity';
+export type {
+  LocationDataIntegrityWarningCode,
+  LocationDataIntegrityInput,
+  LocationDataIntegrityResult,
+  CacheEntryIntegrityProbe,
+} from './location-data-integrity';
 export {
   applyReportProjectionToTrace,
   enrichAnalysisWithReportProjection,

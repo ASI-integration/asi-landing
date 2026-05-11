@@ -297,6 +297,13 @@ export interface Band {
 /** How current a cached analysis result is */
 export type AnalysisFreshness = 'fresh' | 'stale';
 
+/** OSM / provider completeness — attached after `applyLocationDataIntegrityGate` */
+export interface AnalysisIntegritySnapshot {
+  analysisIncomplete: boolean;
+  scoreBlockedDueToIncompleteData: boolean;
+  reasons: string[];
+}
+
 /** Metadata attached to every analysis API response */
 export interface AnalysisMeta {
   freshness: AnalysisFreshness;
@@ -306,6 +313,8 @@ export interface AnalysisMeta {
   source: string;
   /** true when the response body came from cache, not a live fetch */
   cached: boolean;
+  analysisIncomplete?: boolean;
+  scoreBlockedDueToIncompleteData?: boolean;
   /** Stale cache returned while a background live refresh is in flight */
   refreshing?: boolean;
   /** Live fetch used a reduced Overpass query after primary queries failed */
@@ -325,7 +334,11 @@ export interface AnalysisMeta {
       | 'osm_provider_unavailable'
       | 'osm_fallback_query'
       | 'geocode_fallback'
-      | 'competitor_data_unavailable';
+      | 'competitor_data_unavailable'
+      | 'osm_empty_result'
+      | 'osm_sparse_result'
+      | 'analysis_incomplete'
+      | 'score_blocked_due_to_incomplete_data';
     message: string;
   }>;
 }
@@ -436,6 +449,11 @@ export interface LocationAnalysis {
   scoreBand: ScoreBand;
   /** Explainable composite score (0–100), stable output contract for production-shaping */
   locationScore?: LocationScoreOutput;
+
+  /**
+   * Populated when OSM/Overpass data is missing or unreliable — UI must not treat as a normal weak score.
+   */
+  analysisIntegrity?: AnalysisIntegritySnapshot;
 
   /**
    * End-to-end scoring audit trail — numeric headline finalized before public/evidence projection layers.
