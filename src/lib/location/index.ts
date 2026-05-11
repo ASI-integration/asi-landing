@@ -346,4 +346,12 @@ export type {
   LocationPublicReportSection,
   LocationDecisionRawObjectStats,
   LocationDecisionDataIntegrity,
+  LocationPublicClaim,
+  LocationPublicClaimTrace,
 } from './location-decision-contract';
+export {
+  buildPublicClaimsRu,
+  lintPublicClaimSurfaceRu,
+  publicDemandProfileHeadline,
+  validatePublicClaimPipeline,
+} from './location-public-claims';

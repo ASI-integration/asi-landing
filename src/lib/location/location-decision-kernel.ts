@@ -15,6 +15,10 @@ import {
   evidenceItemsFromMagnetFacts,
   magnetItemToMagnetFact,
 } from './location-decision-rules';
+import {
+  buildPublicClaimsRu,
+  validatePublicClaimPipeline,
+} from './location-public-claims';
 
 export interface LocationDecisionBuildInput {
   analysis: LocationAnalysis;
@@ -88,7 +92,15 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];
 
   const evidenceItems = evidenceItemsFromMagnetFacts(magnetFacts, 5);
-  const keyEvidenceBullets = evidenceItems.map(e => e.publicExplanationRu);
+  const publicClaims = buildPublicClaimsRu({ evidenceItems, magnetFacts, demandSignals });
+  const keyEvidenceBullets = publicClaims.map(c => c.textRu);
+
+  const claimProblems = validatePublicClaimPipeline({
+    magnetFacts,
+    evidenceItems,
+    demandSignals,
+    publicClaims,
+  });
 
   const locale = input.locale ?? 'ru';
   const env =
@@ -111,6 +123,9 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     if (!s.evidenceFactIds.length && s.id !== 'ds:generic_incomplete_data') {
       warnings.push(`kernel: demand signal ${s.id} lacks evidenceFactIds`);
     }
+  }
+  for (const p of claimProblems) {
+    warnings.push(`kernel:public_claim:${p}`);
   }
 
   const uiProjection = {
@@ -153,6 +168,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     finalScore: Number.isFinite(finalScore) ? finalScore : null,
     scoreBand,
     evidenceItems,
+    publicClaims,
     publicReportSections,
     uiProjection,
     warnings,

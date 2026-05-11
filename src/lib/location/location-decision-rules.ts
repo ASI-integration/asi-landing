@@ -5,6 +5,7 @@
 import type { MagnetItem, OSMElement } from './types';
 import { MAGNET_CATEGORIES } from './config';
 import { classifyElement } from './overpass-classify';
+import { looksLikeWeakLocalAttractionPoi } from './signals/location-signal-taxonomy';
 import type {
   AddressIdentity,
   CanonicalLocationFact,
@@ -92,15 +93,30 @@ function tierFromMagnet(m: MagnetItem): MagnetTier {
   return 'weak';
 }
 
-/** Tourist/event anchors that justify upgrading attraction POIs beyond local_interest */
+/** Recover category id segment from `mf:<idx>:<categoryId>:<dist>` */
+function magnetCategoryIdFromFactId(factId: string): string {
+  const parts = factId.split(':');
+  return parts.length >= 3 ? parts[2]! : '';
+}
+
+function informativeEvidenceNameRu(name: string | undefined, categoryId: string): boolean {
+  const n = (name ?? '').trim().toLowerCase();
+  if (!n && categoryId !== 'metro') return false;
+  if (categoryId === 'attraction' && (n === 'достопримечательность' || !n)) return false;
+  return true;
+}
+
+/**
+ * True when ≥2 independent event/leisure anchors (entertainment / stadium / convention)
+ * sit within walking distance — enough to treat nearby attractions as tourist demand evidence.
+ * Hotels and offices never substitute for this cluster (taxonomy/eligibility only).
+ */
 export function hasTouristAnchorCluster(magnets: readonly MagnetItem[]): boolean {
   const anchors = magnets.filter(
     x =>
-      ['entertainment', 'stadium', 'convention', 'major_hotel'].includes(x.categoryId) &&
-      x.distance <= 1200,
+      ['entertainment', 'stadium', 'convention'].includes(x.categoryId) && x.distance <= 1200,
   );
-  if (anchors.length >= 2) return true;
-  return anchors.some(a => a.categoryId === 'major_hotel' && a.distance <= 450);
+  return anchors.length >= 2;
 }
 
 export function magnetRoleFromCategory(
@@ -131,6 +147,9 @@ export function magnetRoleFromCategory(
   }
 
   if (m.categoryId === 'attraction') {
+    if (looksLikeWeakLocalAttractionPoi(m)) {
+      return { role: 'local_interest', tier: 'weak' };
+    }
     if (hasTouristAnchorCluster(magnets)) {
       return { role: 'tourist_demand', tier: tier === 'weak' ? 'weak' : tier };
     }
@@ -141,8 +160,9 @@ export function magnetRoleFromCategory(
     return { role: 'business_demand', tier };
   }
 
+  /** Hotels / serviced apartments: supply context only — not standalone tourist demand evidence */
   if (m.categoryId === 'major_hotel' || m.categoryId === 'mid_hotel') {
-    return { role: 'tourist_demand', tier };
+    return { role: 'local_interest', tier: 'weak' };
   }
 
   return { role: 'local_interest', tier: 'weak' };
@@ -167,7 +187,7 @@ function roleTailRu(role: MagnetRole): string {
     case 'business_demand':
       return 'деловой спрос в зоне доступности';
     case 'tourist_demand':
-      return 'туристический спрос (есть якоря событий/размещения поблизости)';
+      return 'туристический спрос (есть якоря событий и досуга поблизости)';
     case 'event_demand':
       return 'событийный и досуговый спрос в зоне';
     case 'local_interest':
@@ -177,10 +197,26 @@ function roleTailRu(role: MagnetRole): string {
   }
 }
 
+/** Generic placeholder labels from OSM/classifier — not a station name */
+function isGenericMetroEvidenceName(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return n === 'метро' || n === 'subway' || n === 'metro';
+}
+
+function publicEvidenceDisplayNameRu(mf: MagnetFact): string {
+  if (mf.role === 'accessibility' && mf.category.toLowerCase().includes('метро')) {
+    if (!mf.name.trim() || isGenericMetroEvidenceName(mf.name)) {
+      return 'Станция метро (название не указано в данных карты)';
+    }
+  }
+  return mf.name.trim();
+}
+
 export function formatPublicEvidenceLineRu(mf: MagnetFact): string {
   const dist = formatDistanceRu(mf.distanceMeters);
   const tail = roleTailRu(mf.role);
-  return `${mf.name} — около ${dist}: ${tail}.`;
+  const label = publicEvidenceDisplayNameRu(mf);
+  return `${label} — около ${dist}: ${tail}.`;
 }
 
 export function magnetItemToMagnetFact(
@@ -189,7 +225,15 @@ export function magnetItemToMagnetFact(
   magnets: readonly MagnetItem[],
 ): MagnetFact {
   const meta = categoryMeta(m.categoryId);
-  const { role, tier } = magnetRoleFromCategory(m, magnets);
+  let { role, tier } = magnetRoleFromCategory(m, magnets);
+  /** Walking-distance transit stops must surface as accessibility evidence even when gravity tier is weak */
+  if (
+    role === 'accessibility' &&
+    (m.categoryId === 'metro' || m.categoryId === 'railway_station') &&
+    tier === 'weak'
+  ) {
+    tier = 'secondary';
+  }
   const categoryLabel = meta?.labelRu ?? m.categoryLabel ?? m.categoryId;
   const id = `mf:${idx}:${m.categoryId}:${Math.round(m.distance)}`;
 
@@ -197,6 +241,9 @@ export function magnetItemToMagnetFact(
     m.categoryId !== 'food' &&
     m.categoryId !== 'shopping_local' &&
     m.categoryId !== 'education_local';
+
+  const roleEligiblePublic =
+    role !== 'local_interest' && role !== 'competitor' && role !== 'environment_risk';
 
   const mf: MagnetFact = {
     id,
@@ -208,7 +255,11 @@ export function magnetItemToMagnetFact(
     distanceMeters: Math.round(m.distance),
     evidenceSource: 'classified_magnet',
     includedInScore: included,
-    includedInPublicReport: included && (tier === 'primary' || tier === 'secondary'),
+    includedInPublicReport:
+      included &&
+      (tier === 'primary' || tier === 'secondary') &&
+      roleEligiblePublic &&
+      informativeEvidenceNameRu(m.name, m.categoryId),
     explanationRu: '',
     explanationEn: '',
     internalWeight: m.weight,
@@ -219,11 +270,24 @@ export function magnetItemToMagnetFact(
   return mf;
 }
 
+/** Strong/moderate public kernel evidence: tier + role + informative POI name */
+export function isStrongPublicEvidenceMagnetFact(f: MagnetFact): boolean {
+  return (
+    f.includedInPublicReport &&
+    (f.tier === 'primary' || f.tier === 'secondary') &&
+    f.role !== 'local_interest' &&
+    informativeEvidenceNameRu(f.name, magnetCategoryIdFromFactId(f.id)) &&
+    Boolean(f.category?.trim()) &&
+    Number.isFinite(f.distanceMeters)
+  );
+}
+
 /** DemandSignal rows are emitted only from MagnetFacts — never from raw prose */
 export function demandSignalsFromMagnetFacts(facts: readonly MagnetFact[]): DemandSignal[] {
   const out: DemandSignal[] = [];
   for (const f of facts) {
     if (!f.includedInScore) continue;
+    if (f.role === 'local_interest') continue;
 
     let strength: DemandSignalStrength = 'weak';
     if (f.tier === 'primary') strength = 'strong';
@@ -310,7 +374,17 @@ export function evidenceItemsFromMagnetFacts(
   facts: readonly MagnetFact[],
   max = 5,
 ): LocationEvidenceItem[] {
-  const ranked = [...facts].filter(f => f.includedInScore && f.name.trim());
+  const base = [...facts].filter(
+    f =>
+      f.includedInScore &&
+      f.role !== 'local_interest' &&
+      (f.name.trim() || f.role === 'accessibility') &&
+      informativeEvidenceNameRu(f.name, magnetCategoryIdFromFactId(f.id)),
+  );
+
+  const strongPool = base.filter(isStrongPublicEvidenceMagnetFact);
+  const ranked = strongPool.length > 0 ? strongPool : base;
+
   ranked.sort((a, b) => {
     const tierRank = (t: MagnetTier) =>
       t === 'primary' ? 0 : t === 'secondary' ? 1 : t === 'weak' ? 2 : 3;
@@ -321,6 +395,7 @@ export function evidenceItemsFromMagnetFacts(
 
   const picked = ranked.slice(0, max);
   return picked.map(mf => ({
+    evidenceId: `ev:${mf.id}`,
     factId: mf.id,
     objectName: mf.name,
     typeRu: mf.category,

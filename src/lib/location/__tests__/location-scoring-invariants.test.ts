@@ -13,7 +13,6 @@ import {
   enrichAnalysisWithReportProjection,
 } from '../location-scoring-projection';
 import { filterResidentialPrimeMagnets } from '../residential-prime-magnets';
-import { PUBLIC_COPY_POLICY } from '../location-scoring-rules';
 
 const ORIGIN = { lat: 55.7522, lon: 37.6156 };
 
@@ -106,8 +105,8 @@ describe('location scoring invariants', () => {
     expect(analysis.scoringTrace!.finalScore).toBeGreaterThan(12);
   });
 
-  it('generalized ultra-short public lines are explicitly marked low-confidence', () => {
-    expect(generalizeRuPublicScoreExplanation('abc')).toContain(PUBLIC_COPY_POLICY.lowConfidenceMarker);
+  it('generalized ultra-short public lines are dropped (no invented map claims)', () => {
+    expect(generalizeRuPublicScoreExplanation('abc')).toBe('');
   });
 
   it('golden fixture module avoids Cyrillic street literals used as regression exceptions', () => {

@@ -95,7 +95,8 @@ export function generalizeRuPublicScoreExplanation(line: string): string {
 
   const out = trimmed.replace(/\s{2,}/g, ' ').trim();
   if (out.length < 12) {
-    return 'В зоне доступности есть сигналы спроса по карте (общая формулировка, низкая детализация).';
+    /** No invented map-backed claims — callers must fall back to kernel bullets or stay silent. */
+    return '';
   }
   return sanitizeRuPublicFactor(out) ?? out;
 }
@@ -107,7 +108,7 @@ export function normalizeRuDemoExplanationLines(lines: readonly string[], max = 
   for (const line of lines) {
     const cleaned = sanitizeRuPublicFactor(line);
     if (!cleaned) continue;
-    const gen = generalizeRuPublicScoreExplanation(cleaned);
+    const gen = generalizeRuPublicScoreExplanation(cleaned).trim();
     if (!gen || seen.has(gen)) continue;
     seen.add(gen);
     out.push(gen);

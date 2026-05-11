@@ -21,10 +21,10 @@ import {
   applyLocationDataIntegrityGate,
   locationDemoPresentationBlocked,
   locationDemoIncompleteUserMessage,
+  applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
   buildLocationDecision,
-  buildRuResidentialPublicEvidenceLines,
-  resolveRuResidentialDemandHeadlineRu,
+  publicDemandProfileHeadline,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -32,6 +32,7 @@ import type {
   Band,
   AnalysisMeta,
   DemandType,
+  LocationPublicClaim,
   NeighborhoodEnvironmentConcernLevel,
   ResidentialDemoSanity,
 } from '@/lib/location/client';
@@ -1972,7 +1973,7 @@ function ASIPanel({
 
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
   const kernelCoords = analysis.scoringTrace?.coordinates;
-  const ruResidentialLocationDecision =
+  const residentialLocationDecision =
     isRuResidentialDemo && !dataBlocked && kernelCoords
       ? buildLocationDecision({
           analysis,
@@ -1981,13 +1982,12 @@ function ASIPanel({
           locale: 'ru',
         })
       : null;
-  const ruResidentialEvidenceLines =
+  const residentialPublicClaims: LocationPublicClaim[] =
+    residentialLocationDecision?.publicClaims ?? [];
+  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
+  const sanity =
     isRuResidentialDemo && !dataBlocked
-      ? buildRuResidentialPublicEvidenceLines(ruResidentialLocationDecision, 5)
-      : [];
-  const ruResidentialDemandHeadlineResolved =
-    isRuResidentialDemo && !dataBlocked
-      ? resolveRuResidentialDemandHeadlineRu(ruResidentialLocationDecision)
+      ? (serverSanity ?? applyResidentialDemoPresentationToAnalysis(analysis))
       : null;
   const publicScore = publicLocationScore(analysis);
   const band = dataBlocked
@@ -2005,10 +2005,19 @@ function ASIPanel({
   const [magnetExpanded, setMagnetExpanded] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
+  const [claimTraceDebug, setClaimTraceDebug] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
     return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    try {
+      setClaimTraceDebug(new URLSearchParams(window.location.search).get('locationClaimTrace') === '1');
+    } catch {
+      setClaimTraceDebug(false);
+    }
   }, []);
 
   const hasMagnets = magnets.length > 0;
@@ -2131,12 +2140,7 @@ function ASIPanel({
 
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
-    if (isRuResidentialDemo) {
-      return ruResidentialEvidenceLines.slice(0, 2).map((factor) => {
-        const normalized = factor.replace(/\s+/g, ' ').trim();
-        return normalized.length > 86 ? `${normalized.slice(0, 83).trimEnd()}...` : normalized;
-      });
-    }
+    if (isRuResidentialDemo) return residentialPublicClaims.slice(0, 2).map(c => c.textRu);
     const ls = analysis.locationScore;
     const pos = ls?.top_positive_factors ?? [];
     const neg = ls?.top_negative_factors ?? [];
@@ -2152,6 +2156,9 @@ function ASIPanel({
     const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
     return base.slice(0, 2);
   })();
+
+  const dashboardClaimRows: LocationPublicClaim[] =
+    isRuResidentialDemo ? residentialPublicClaims.slice(0, 2) : [];
 
   return (
     <>
@@ -2193,16 +2200,34 @@ function ASIPanel({
                     <EvergreenRing index={publicScore} band={band} animated={animated} copy={c} />
                   </div>
                 </div>
-                {dashboardBullets.length > 0 && (
+                {isRuResidentialDemo ? (
+                  dashboardClaimRows.length > 0 ? (
+                    <ul className="mt-3 space-y-1.5">
+                      {dashboardClaimRows.map((claim, i) => (
+                        <li key={i} className="flex flex-col gap-0.5 leading-snug text-[15px] text-slate-200">
+                          <div className="flex items-start gap-2">
+                            <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                            <span>{claim.textRu}</span>
+                          </div>
+                          {claimTraceDebug ? (
+                            <span className="pl-4 text-[10px] font-mono text-slate-600 leading-tight">
+                              mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null
+                ) : dashboardBullets.length > 0 ? (
                   <ul className="mt-3 space-y-1.5">
                     {dashboardBullets.map((line, i) => (
-                      <li key={i} className={`flex items-start gap-2 leading-snug ${isRuResidentialDemo ? 'text-[15px] text-slate-200' : 'text-[14px] text-slate-300'}`}>
+                      <li key={i} className="flex items-start gap-2 leading-snug text-[14px] text-slate-300">
                         <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
                         {line}
                       </li>
                     ))}
                   </ul>
-                )}
+                ) : null}
               </>
             )}
           </div>
@@ -2221,7 +2246,9 @@ function ASIPanel({
                 </p>
               ) : (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
-                {ruResidentialDemandHeadlineResolved}
+                {residentialLocationDecision
+                  ? publicDemandProfileHeadline(residentialLocationDecision, 'ru')
+                  : 'Профиль спроса: нет координат расчёта для привязки фактов карты.'}
               </p>
               )
             ) : (
@@ -2323,17 +2350,25 @@ function ASIPanel({
             : [];
 
         if (isRuResidentialDemo) {
-          if (dataBlocked || ruResidentialEvidenceLines.length === 0) return null;
+          const mergedClaims = residentialPublicClaims.slice(0, 5);
+          if (dataBlocked || mergedClaims.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">
               <h3 className="text-[20px] md:text-[22px] font-semibold text-slate-100 leading-tight mb-3">
                 Почему такой балл?
               </h3>
               <ul className="space-y-2">
-                {ruResidentialEvidenceLines.map((line, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[16px] text-slate-300 leading-snug">
-                    <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
-                    {line}
+                {mergedClaims.map((claim, i) => (
+                  <li key={i} className="flex flex-col gap-0.5 text-[16px] text-slate-300 leading-snug">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
+                      <span>{claim.textRu}</span>
+                    </div>
+                    {claimTraceDebug ? (
+                      <span className="pl-5 text-[10px] font-mono text-slate-600 leading-tight">
+                        mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -2782,15 +2817,13 @@ function CommercialFlowBlock({ analysis, locale }: { analysis: LocationAnalysis;
   const ft = analysis.footTraffic;
   const { transitShare, localActiveShare, destinationShare } = ft.transitVsTarget;
 
-  let conclusion: string;
-  if (destinationShare >= 0.45)
-    conclusion = 'У точки есть сильный целевой поток — люди приходят сюда намеренно.';
-  else if (transitShare >= 0.50)
-    conclusion = 'В локации преобладает транзитный поток — высокая проходимость, но низкая задерживаемость.';
-  else if (localActiveShare >= 0.40)
-    conclusion = 'Активная локальная аудитория — жители и работающие рядом составляют основу потока.';
-  else
-    conclusion = 'Поток смешанный: часть людей проходит транзитом, часть приходит целенаправленно.';
+  const transitPct = Math.round(transitShare * 100);
+  const localPct = Math.round(localActiveShare * 100);
+  const destPct = Math.round(destinationShare * 100);
+  const conclusion =
+    locale === 'ru'
+      ? `Модель потока по долям: транзит ${transitPct}% · локальный ${localPct}% · целевой ${destPct}% (интерпретация не заменяет факты карты).`
+      : `Flow model shares: transit ${transitPct}% · local ${localPct}% · destination ${destPct}% (not a substitute for map-backed evidence).`;
 
   const bars: Array<{ label: string; share: number; color: string; desc: string }> = [
     { label: 'Транзитный', share: transitShare, color: 'bg-indigo-400', desc: 'Проходящие мимо без намерения остановиться' },

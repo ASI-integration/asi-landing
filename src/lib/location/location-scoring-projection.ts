@@ -4,7 +4,7 @@
 
 import type { LocationAnalysis, OSMElement } from './types';
 import type { LocationScoringTrace } from './location-scoring-trace';
-import { normalizeRuDemoExplanationLines, sanitizeRuPublicFactor } from './demo-public-copy';
+import { sanitizeRuPublicFactor } from './demo-public-copy';
 import { SCORING_EVIDENCE_GROUPS } from './location-scoring-rules';
 import { buildLocationDecision } from './location-decision-kernel';
 
@@ -73,7 +73,8 @@ export function applyReportProjectionToTrace(
     return next;
   }
 
-  next.publicBullets = normalizeRuDemoExplanationLines(rawFactors, 6);
+  /** Free surface stays kernel-only — no sanitized scoring prose without EvidenceItem trace. */
+  next.publicBullets = [];
   next.removedPublicBullets = rawFactors.filter(line => sanitizeRuPublicFactor(line) == null);
 
   return next;

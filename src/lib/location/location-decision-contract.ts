@@ -80,12 +80,27 @@ export interface DemandSignal {
 }
 
 export interface LocationEvidenceItem {
+  /** Stable UI/trace id — pairs with {@link MagnetFact.id} via {@link factId}. */
+  evidenceId: string;
   factId: string;
   objectName: string;
   typeRu: string;
   subtypeRu?: string;
   distanceMeters: number;
   publicExplanationRu: string;
+}
+
+/** Trace bundle for every kernel-backed public bullet (RU copy surface). */
+export interface LocationPublicClaimTrace {
+  magnetFactId: string;
+  evidenceId: string;
+  demandSignalId: string | null;
+  eligibilityReason: string;
+}
+
+export interface LocationPublicClaim {
+  textRu: string;
+  trace: LocationPublicClaimTrace;
 }
 
 export interface LocationPublicReportSection {
@@ -131,6 +146,8 @@ export interface LocationDecision {
   finalScore: number | null;
   scoreBand: LocationDecisionScoreBand;
   evidenceItems: LocationEvidenceItem[];
+  /** Kernel-backed bullets with MagnetFact / DemandSignal trace — preferred public surface. */
+  publicClaims: LocationPublicClaim[];
   publicReportSections: LocationPublicReportSection[];
   uiProjection: LocationUiProjection;
   warnings: string[];

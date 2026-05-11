@@ -17,7 +17,6 @@ import {
   normalizeReportAddress,
   type LocationReportResultMetadata,
 } from './report-result-metadata';
-import { normalizeRuDemoExplanationLines } from './demo-public-copy';
 import { enrichAnalysisWithReportProjection } from './location-scoring-projection';
 
 export type LocationStandaloneReportSectionId =
@@ -369,10 +368,7 @@ export function buildLocationStandaloneReport(args: {
     const drivers =
       analysis.scoringTrace?.publicBullets?.length
         ? analysis.scoringTrace.publicBullets.slice(0, 5)
-        : normalizeRuDemoExplanationLines(
-          [...(score?.top_positive_factors ?? []), ...(score?.top_negative_factors ?? [])],
-          5,
-        );
+        : [];
     const free_brief = buildFreeBriefRu({ verdict: args.verdict });
     return {
       version: 'v1',

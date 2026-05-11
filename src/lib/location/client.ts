@@ -184,4 +184,11 @@ export type {
   MagnetFact,
   DemandSignal,
   LocationEvidenceItem,
+  LocationPublicClaim,
+  LocationPublicClaimTrace,
 } from './location-decision-contract';
+export {
+  lintPublicClaimSurfaceRu,
+  publicDemandProfileHeadline,
+  validatePublicClaimPipeline,
+} from './location-public-claims';
