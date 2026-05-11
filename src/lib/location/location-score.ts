@@ -7,6 +7,8 @@ import type {
   AudienceAnalysis,
 } from './types';
 import { GRAVITY_CONFIG } from './config';
+import { LOCATION_SCORE_COMPONENT_WEIGHTS } from './location-scoring-rules';
+import type { LocationScoreFeatures } from './location-scoring-trace';
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -83,7 +85,7 @@ function formatDistRu(m: number): string {
   return m < 1000 ? `${Math.round(m / 10) * 10} м` : `${(m / 1000).toFixed(1)} км`;
 }
 
-export function buildLocationScoreOutput(input: {
+export type LocationScoreComputationInput = {
   evergreenIndex: number;
   gravityExplanation: GravityExplanation;
   competitorPressure: number;
@@ -93,11 +95,12 @@ export function buildLocationScoreOutput(input: {
   footTraffic: FootTrafficSummary;
   audienceAnalysis: AudienceAnalysis;
   accessibilityStopCount?: number;
-}): LocationScoreOutput {
-  // ── Component scores (keep as floats — round only at the final step) ────────
-  // Early Math.round() on sub-scores quantises inputs into the weighted formula
-  // and kills the small differences that distinguish 88 from 94 from 99.
+};
 
+/** Numeric scoring slice reused by `buildLocationScoreOutput` and `LocationScoringTrace`. */
+export function computeLocationScoreFeatures(input: LocationScoreComputationInput): LocationScoreFeatures & {
+  location_score_base: number;
+} {
   const supply_score = clamp(
     100 - (clamp(input.competitorPressure, 0, GRAVITY_CONFIG.competitorPressureMax) / GRAVITY_CONFIG.competitorPressureMax) * 100,
     0,
@@ -108,10 +111,8 @@ export function buildLocationScoreOutput(input: {
   const magnet_score = clamp((attractionScaled / 70) * 100, 0, 100);
   const seasonality_score = clamp((input.footTraffic.stability01 ?? 0) * 100, 0, 100);
 
-  // demand_score: evergreen + magnet blend (no circularity — evergreenIndex is already computed)
   const demand_score = clamp(0.6 * input.evergreenIndex + 0.4 * magnet_score, 0, 100);
 
-  // accessibility_score: metro = strong base; additional stops add up to ~35 pts
   const accessibility_score = clamp(
     (input.hasMetro ? 60 : 0) + Math.min(40, (input.accessibilityStopCount ?? 0) * 5),
     0,
@@ -120,18 +121,45 @@ export function buildLocationScoreOutput(input: {
 
   const audience_fit_score = clamp(input.audienceAnalysis.audienceFitScore, 0, 100);
 
-  // ── Final weighted location score — ONE round, at the very end ──────────────
-  // AudienceFit 40% | Demand 25% | Competition 20% | Accessibility 15%
-  const location_score = clamp(
+  const { audience_fit: wAud, demand: wDem, supply: wSup, accessibility: wAcc } = LOCATION_SCORE_COMPONENT_WEIGHTS;
+
+  const location_score_base = clamp(
     Math.round(
-      0.40 * audience_fit_score +
-      0.25 * demand_score +
-      0.20 * supply_score +
-      0.15 * accessibility_score,
+      wAud * audience_fit_score +
+      wDem * demand_score +
+      wSup * supply_score +
+      wAcc * accessibility_score,
     ),
     0,
     100,
   );
+
+  return {
+    evergreenIndex: input.evergreenIndex,
+    attractionScaled,
+    competitorPressure: input.competitorPressure,
+    magnet_score,
+    demand_score,
+    supply_score,
+    accessibility_score,
+    audience_fit_score,
+    seasonality_score,
+    location_score_base,
+  };
+}
+
+export function buildLocationScoreOutput(input: LocationScoreComputationInput): LocationScoreOutput {
+  const features = computeLocationScoreFeatures(input);
+  const {
+    magnet_score,
+    demand_score,
+    supply_score,
+    accessibility_score,
+    audience_fit_score,
+    seasonality_score,
+  } = features;
+
+  const location_score = features.location_score_base;
 
   // Round breakdown fields for UI display only — the floats were already used in location_score above.
   const breakdown = {

@@ -1,3 +1,8 @@
+/**
+ * Unified report assembly reads scores from `LocationAnalysis` only (projection / copy).
+ * Numeric headline must come from `gravity-scoring` → `locationScore`; never derive new composites here.
+ */
+
 import type {
   ConfidenceLevel,
   DataQualityLevel,

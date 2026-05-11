@@ -8,9 +8,8 @@
  * All functions are pure (no side-effects, no I/O) so they can run in any
  * runtime (Node, Edge, browser).
  *
- * NOTE: scores are intentionally deterministic/simulated for the pilot demo.
- * Production upgrade path: replace scoreAddress() with a real provider call
- * (2GIS, Overpass, etc.) and derive metrics from live data.
+ * LEGACY / DEMO ONLY: simulated deterministic scores — not the gravity / evergreen engine.
+ * Production paths use `gravity-scoring.ts` + `location-scoring-pipeline.ts`; do not merge this module into scoring traces.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -4,6 +4,9 @@
  * Goal: capture outputs + run basic sanity checks so the location demo/report
  * does not overstate proxy outputs and remains testable.
  *
+ * Scoring audit trail / headline rules live in `src/lib/location/gravity-scoring.ts` +
+ * `location-scoring-pipeline.ts` — this script is QA mirror only (not a second scorer).
+ *
  * Usage:
  *   npx tsx scripts/location-validation-harness.ts
  *

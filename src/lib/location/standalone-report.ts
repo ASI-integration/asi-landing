@@ -18,6 +18,7 @@ import {
   type LocationReportResultMetadata,
 } from './report-result-metadata';
 import { normalizeRuDemoExplanationLines } from './demo-public-copy';
+import { enrichAnalysisWithReportProjection } from './location-scoring-projection';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -222,7 +223,7 @@ export function buildCommercialReport(args: {
   address: string;
   analysis: LocationAnalysis;
 }): LocationCommercialReport {
-  const { analysis } = args;
+  const analysis = enrichAnalysisWithReportProjection(args.analysis, { reportMode: 'paid' });
   const generatedAtIso = new Date().toISOString();
   const unifiedReport = buildFullLocationReport(
     locationReportInputFromLegacy({
@@ -346,8 +347,8 @@ export function buildLocationStandaloneReport(args: {
   /** Defaults to paid (full permalink payload including unifiedReport). */
   reportMode?: LocationStandaloneReportMode;
 }): LocationStandaloneReport {
-  const { analysis } = args;
   const reportMode = args.reportMode ?? 'paid';
+  const analysis = enrichAnalysisWithReportProjection(args.analysis, { reportMode });
   const generatedAtIso = new Date().toISOString();
   const market = args.market ?? 'RU';
   const score = analysis.locationScore;
@@ -360,11 +361,13 @@ export function buildLocationStandaloneReport(args: {
   });
 
   if (reportMode === 'free') {
-    const driverLines = normalizeRuDemoExplanationLines(
-      [...(score?.top_positive_factors ?? []), ...(score?.top_negative_factors ?? [])],
-      5,
-    );
-    const drivers = driverLines;
+    const drivers =
+      analysis.scoringTrace?.publicBullets?.length
+        ? analysis.scoringTrace.publicBullets.slice(0, 5)
+        : normalizeRuDemoExplanationLines(
+          [...(score?.top_positive_factors ?? []), ...(score?.top_negative_factors ?? [])],
+          5,
+        );
     const free_brief = buildFreeBriefRu({ verdict: args.verdict });
     return {
       version: 'v1',

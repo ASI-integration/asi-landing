@@ -8,7 +8,7 @@
  *   3. Operational suitability (Block 3)
  *   4. Confidence      (Block 4) — pass-3: clarity, burden stack, cross-score consistency, ambiguity
  *
- * Does NOT modify commercial scoring; purely additive.
+ * Does NOT modify commercial scoring; purely additive (READ-ONLY use of `locationScore` / traces for copy thresholds).
  */
 
 import type {

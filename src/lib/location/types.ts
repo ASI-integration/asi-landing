@@ -3,6 +3,7 @@
 // Keep them clearly separated in comments: real-world vs ASI layer.
 
 import type { MagnetDiagnosticsLayer } from './magnet-diagnostics';
+import type { LocationScoringTrace } from './location-scoring-trace';
 
 // ── Real-world / map layer ────────────────────────────────────────────────────
 
@@ -435,6 +436,12 @@ export interface LocationAnalysis {
   scoreBand: ScoreBand;
   /** Explainable composite score (0–100), stable output contract for production-shaping */
   locationScore?: LocationScoreOutput;
+
+  /**
+   * End-to-end scoring audit trail — numeric headline finalized before public/evidence projection layers.
+   * Older persisted payloads may omit this field; callers must not recompute headline score outside the gravity pipeline.
+   */
+  scoringTrace?: LocationScoringTrace;
 
   // Detected objects (real-world data)
   magnets: MagnetItem[];
