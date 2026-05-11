@@ -12,7 +12,11 @@ import { geocodePlainAddressForMarket } from '../src/lib/location/address-provid
 import { fetchOsmData } from '../src/lib/location/overpass';
 import { buildAnalysis } from '../src/lib/location/gravity-scoring';
 import { enrichAnalysisWithReportProjection } from '../src/lib/location/location-scoring-projection';
-import { applyResidentialDemoSanity } from '../src/lib/location/residential-demo-sanity';
+import {
+  cloneAnalysisForResidentialDemoPatch,
+  applyResidentialDemoPresentationToAnalysis,
+} from '../src/lib/location/residential-demo-presentation';
+import { buildLocationScoreCustodySnapshot } from '../src/lib/location/location-score-chain-of-custody';
 
 const ADDRESS =
   process.env.DEMO_TRACE_ADDRESS?.trim() ||
@@ -38,11 +42,13 @@ async function main() {
 
   const projected = enrichAnalysisWithReportProjection(analysis, { reportMode: 'free' });
   const trace = projected.scoringTrace!;
-  const sanityRu = applyResidentialDemoSanity(analysis);
+
+  const ruDemoClone = cloneAnalysisForResidentialDemoPatch(analysis);
+  const demoSanityMeta = applyResidentialDemoPresentationToAnalysis(ruDemoClone);
 
   const slice = {
     note:
-      'RU residential demo hero shows evergreenIndex/100, not location_score. Server also sends displayScore (sanity cap).',
+      'Public /100 headline is scoringTrace.finalScore. RU residential demo guards are caps on the trace (see capsApplied ru_residential_demo_presentation). evergreenIndex stays an internal scoreFeatures input.',
     geocode: {
       winner: geo.winner,
       selectedGeocodeResult: displayName,
@@ -52,13 +58,10 @@ async function main() {
       usedFallbackQuery: Boolean(usedFallbackQuery),
       hadProviderFailure: Boolean(hadProviderFailure),
     },
-    uiResidentialRu: {
-      evergreenIndexHero: analysis.evergreenIndex,
-      displayScoreFromSanity: sanityRu.displayScore,
-      engineHeadline: analysis.locationScore?.location_score,
-      scoringTraceFinalScore: trace.finalScore,
-    },
-    scoringTrace: {
+    custodyEngine: buildLocationScoreCustodySnapshot(analysis),
+    custodyRuDemoResponseLike: buildLocationScoreCustodySnapshot(ruDemoClone),
+    demoSanityMeta,
+    scoringTraceProjectedFreeMode: {
       inputAddress: trace.inputAddress,
       coordinates: trace.coordinates,
       selectedGeocodeResult: trace.selectedGeocodeResult,

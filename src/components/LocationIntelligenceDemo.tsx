@@ -21,6 +21,8 @@ import {
   applyLocationDataIntegrityGate,
   locationDemoPresentationBlocked,
   locationDemoIncompleteUserMessage,
+  applyResidentialDemoPresentationToAnalysis,
+  publicLocationScore,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -45,7 +47,6 @@ import {
 } from '@/components/location-intelligence-locale';
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
-import { applyResidentialDemoSanity } from '@/lib/location/client';
 import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
 import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
 import {
@@ -368,8 +369,8 @@ function emitAnalysisTelemetry(
   pushLine({
     badge: 'IDX',
     text: locale === 'ru'
-      ? `индекс локации обновлён · ${analysis.evergreenIndex}`
-      : `location index updated · ${analysis.evergreenIndex}`,
+      ? `индекс локации обновлён · ${publicLocationScore(analysis)}`
+      : `location index updated · ${publicLocationScore(analysis)}`,
     kind: 'ok',
   });
   const fresh = dataFreshnessLabel(meta, c);
@@ -385,7 +386,7 @@ function emitAnalysisTelemetry(
     });
   }
   updateSnapshot({
-    evergreenIndex: analysis.evergreenIndex,
+    evergreenIndex: publicLocationScore(analysis),
     magnetCount: analysis.magnets.length,
     competitorCount: analysis.competitors.length,
     demandTypeLabel: demandTypeLabel(analysis.demandType, locale),
@@ -456,14 +457,14 @@ function InfoTooltip({ text }: { text: string }) {
 // ── Market Snapshot table ─────────────────────────────────────────────────────
 
 function MarketSnapshotTable({
-  evergreenIndex,
+  headlineScore,
   demandType,
   competitorCount,
   strategy,
   locale,
   c,
 }: {
-  evergreenIndex: number;
+  headlineScore: number;
   demandType: DemandType;
   competitorCount: number;
   strategy: 'mid_term' | 'hybrid' | 'short_term';
@@ -490,16 +491,16 @@ function MarketSnapshotTable({
   };
 
   const adr =
-    strategy === 'short_term' ? Math.round(85 + evergreenIndex * 0.5)
-    : strategy === 'hybrid'   ? Math.round(65 + evergreenIndex * 0.4)
-    :                           Math.round(45 + evergreenIndex * 0.3);
-  const occupancy = Math.round(50 + (evergreenIndex / 100) * 35);
+    strategy === 'short_term' ? Math.round(85 + headlineScore * 0.5)
+    : strategy === 'hybrid'   ? Math.round(65 + headlineScore * 0.4)
+    :                           Math.round(45 + headlineScore * 0.3);
+  const occupancy = Math.round(50 + (headlineScore / 100) * 35);
   const revpar = Math.round(adr * occupancy / 100);
   const isRu = locale === 'ru';
   const adrRub = Math.round(
-    strategy === 'short_term' ? (2500 + evergreenIndex * 22)
-    : strategy === 'hybrid'   ? (2000 + evergreenIndex * 18)
-    :                           (1600 + evergreenIndex * 13),
+    strategy === 'short_term' ? (2500 + headlineScore * 22)
+    : strategy === 'hybrid'   ? (2000 + headlineScore * 18)
+    :                           (1600 + headlineScore * 13),
   );
   const revparRub = Math.round(adrRub * occupancy / 100);
   const fmtRub = (n: number) => `${(Math.round(n / 500) * 500).toLocaleString('ru-RU')} ₽`;
@@ -510,7 +511,7 @@ function MarketSnapshotTable({
     :                                 'bg-orange-400';
 
   const rows: Array<{ label: string; value: React.ReactNode; tooltip?: string }> = [
-    { label: c.marketRows.locationScore,    value: `${evergreenIndex} / 100` },
+    { label: c.marketRows.locationScore,    value: `${headlineScore} / 100` },
     { label: c.marketRows.demandLevel,      value: demandLevelMap[demandType] },
     {
       label: c.marketRows.demandStability,
@@ -1969,13 +1970,21 @@ function ASIPanel({
           analysis.audienceAnalysis,
         )
       : analysis.conclusion;
+
+  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
+  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
+  const sanity =
+    isRuResidentialDemo && !dataBlocked
+      ? (serverSanity ?? applyResidentialDemoPresentationToAnalysis(analysis))
+      : null;
+  const publicScore = publicLocationScore(analysis);
   const band = dataBlocked
     ? getBand(0)
-    : getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+    : getBand(publicScore, analysis.audienceAnalysis?.primaryAudience);
   // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
   const strategy: 'mid_term' | 'hybrid' | 'short_term' =
     analysis.locationScore?.recommended_strategy ??
-    (evergreenIndex >= 70 ? 'short_term' : evergreenIndex >= 45 ? 'hybrid' : 'mid_term');
+    (publicScore >= 70 ? 'short_term' : publicScore >= 45 ? 'hybrid' : 'mid_term');
   const strategyPoints =
     strategy === 'mid_term' ? c.strategyMidTerm
     : strategy === 'hybrid' ? c.strategyHybrid
@@ -2018,7 +2027,6 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
-  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
   const ruResidentialDemandHeadlineRu = (dt: DemandType): string => {
     switch (dt) {
       case 'tourism-led':
@@ -2031,10 +2039,6 @@ function ASIPanel({
         return 'Смешанный профиль спроса';
     }
   };
-  const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo
-    ? (serverSanity ?? (!dataBlocked ? applyResidentialDemoSanity(analysis) : null))
-    : null;
   const aboveFoldReasons = (() => {
     if (dataBlocked) return [];
     const ls = analysis.locationScore;
@@ -2193,12 +2197,12 @@ function ASIPanel({
                 <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
                   <div className="leading-none">
                     <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
-                      {evergreenIndex}
+                      {publicScore}
                     </span>
                     <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
                   </div>
                   <div className="ml-auto hidden lg:block">
-                    <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
+                    <EvergreenRing index={publicScore} band={band} animated={animated} copy={c} />
                   </div>
                 </div>
                 {dashboardBullets.length > 0 && (
@@ -2611,7 +2615,7 @@ function ASIPanel({
       {/* Market snapshot — EN only; RU keeps the result page focused on the five core sections. */}
       {locale !== 'ru' && (
         <MarketSnapshotTable
-          evergreenIndex={evergreenIndex}
+          headlineScore={publicScore}
           demandType={analysis.demandType}
           competitorCount={competitors.length}
           strategy={strategy}
@@ -2881,9 +2885,10 @@ function CommercialASIPanel({
 }) {
   const router = useRouter();
   const dataBlocked = locationDemoPresentationBlocked(analysis);
+  const publicScoreCommercial = publicLocationScore(analysis);
   const band = dataBlocked
     ? getBand(0)
-    : getBand(analysis.evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+    : getBand(publicScoreCommercial, analysis.audienceAnalysis?.primaryAudience);
   const [visible, setVisible] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
@@ -2992,7 +2997,7 @@ function CommercialASIPanel({
           {/* Header KPIs */}
           <div className="grid grid-cols-2 border-b border-slate-800/60">
             <div className="flex flex-col items-center justify-center gap-1 p-5 border-r border-slate-800/40">
-              <EvergreenRing index={analysis.evergreenIndex} band={band} animated={animated} copy={c} />
+              <EvergreenRing index={publicScoreCommercial} band={band} animated={animated} copy={c} />
             </div>
             <div className="flex flex-col justify-center gap-0.5 p-5">
               <p className="text-[14px] font-semibold text-slate-400 mb-1">Потенциал формата</p>

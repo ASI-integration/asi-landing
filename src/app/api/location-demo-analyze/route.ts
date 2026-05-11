@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchOsmData,
   buildAnalysis,
-  applyResidentialDemoSanity,
   applyLocationDataIntegrityGate,
   cacheEntryPassesDataIntegrity,
+  cloneAnalysisForResidentialDemoPatch,
+  applyResidentialDemoPresentationToAnalysis,
 } from '@/lib/location';
 import { patchLegacyLocationAnalysis } from '@/lib/location/foot-traffic';
 import { cacheGet, cacheSet, cacheEvictCoord } from '@/lib/location/cache';
@@ -127,17 +128,21 @@ function withDemoSanityPayload(args: {
 }) {
   const { analysis, elementsCount, meta, locale, wantSpatial } = args;
   const blocked = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
-  const demoSanity = locale === 'ru' && !wantSpatial && !blocked
-    ? applyResidentialDemoSanity(analysis)
-    : null;
+
+  let analysisOut = analysis;
+  let demoSanity: ReturnType<typeof applyResidentialDemoPresentationToAnalysis> = null;
+  if (locale === 'ru' && !wantSpatial && !blocked) {
+    analysisOut = cloneAnalysisForResidentialDemoPatch(analysis);
+    demoSanity = applyResidentialDemoPresentationToAnalysis(analysisOut);
+  }
+
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
   return {
-    analysis,
+    analysis: analysisOut,
     elementsCount,
     meta: metaWithDemo,
     ...(demoSanity ? {
       demoSanity,
-      displayScore: demoSanity.displayScore,
       displayAudience: demoSanity.displayAudience,
       displayAudienceLabelRu: demoSanity.audienceLabelRu,
       displayVerdictLabelRu: demoSanity.verdictLabelRu,

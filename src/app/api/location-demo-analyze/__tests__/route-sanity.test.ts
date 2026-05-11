@@ -58,6 +58,22 @@ const baseEnv: NeighborhoodEnvironmentLayer = {
 };
 
 function komendantskyFixture(): LocationAnalysis {
+  const magnets: MagnetItem[] = [
+    magnet({ categoryId: 'metro', name: 'Комендантский проспект', distance: 473, weight: 9, strengthClass: 'strong' }),
+    magnet({ categoryId: 'metro', name: 'Вход 1', distance: 680, weight: 9, strengthClass: 'medium' }),
+    magnet({ categoryId: 'metro', name: 'Вход 2', distance: 686, weight: 9, strengthClass: 'medium' }),
+    magnet({ categoryId: 'attraction', name: 'Самолет - стрекоза', distance: 481, attractionScore: 2.1, strengthClass: 'weak' }),
+    magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 3, subType: 'office', weight: 4 }),
+    magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 236, subType: 'office', weight: 4 }),
+    magnet({ categoryId: 'business', name: 'Марио', distance: 282, subType: 'office', weight: 4 }),
+    magnet({ categoryId: 'business', name: 'Ренессанс Страхование', distance: 412, subType: 'office', weight: 4 }),
+    magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 445, subType: 'office', weight: 3 }),
+    magnet({ categoryId: 'shopping_major', name: 'Крокус', distance: 794, weight: 4, strengthClass: 'medium' }),
+    magnet({ categoryId: 'shopping_major', name: 'Сабина', distance: 854, weight: 4, strengthClass: 'medium' }),
+    magnet({ categoryId: 'food', name: 'Локальное кафе', distance: 380 }),
+    magnet({ categoryId: 'shopping_local', name: 'Локальный магазин', distance: 410 }),
+  ];
+
   return {
     evergreenIndex: 93,
     scoreBand: 'strong' as ScoreBand,
@@ -78,30 +94,7 @@ function komendantskyFixture(): LocationAnalysis {
       top_negative_factors: [],
       recommended_strategy: 'hybrid',
     },
-    magnets: [
-      // Metro station + entrances (should dedupe to 1 transport anchor)
-      magnet({ categoryId: 'metro', name: 'Комендантский проспект', distance: 473, weight: 9, strengthClass: 'strong' }),
-      magnet({ categoryId: 'metro', name: 'Вход 1', distance: 680, weight: 9, strengthClass: 'medium' }),
-      magnet({ categoryId: 'metro', name: 'Вход 2', distance: 686, weight: 9, strengthClass: 'medium' }),
-
-      // Minor tourist attraction (must NOT become Tier-1)
-      magnet({ categoryId: 'attraction', name: 'Самолет - стрекоза', distance: 481, attractionScore: 2.1, strengthClass: 'weak' }),
-
-      // Business offices (subType=office must be treated as weak/local unless name is a real Tier-1 employment magnet)
-      magnet({ categoryId: 'business', name: 'Ингосстрах', distance: 3, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Ренессанс страхование', distance: 236, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Марио', distance: 282, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Ренессанс Страхование', distance: 412, subType: 'office', weight: 4 }),
-      magnet({ categoryId: 'business', name: 'Слетать.ру', distance: 445, subType: 'office', weight: 3 }),
-
-      // Shopping major nearby (should not produce strong BUSINESS verdict by itself)
-      magnet({ categoryId: 'shopping_major', name: 'Крокус', distance: 794, weight: 4, strengthClass: 'medium' }),
-      magnet({ categoryId: 'shopping_major', name: 'Сабина', distance: 854, weight: 4, strengthClass: 'medium' }),
-
-      // Local food/shop magnets
-      magnet({ categoryId: 'food', name: 'Локальное кафе', distance: 380 }),
-      magnet({ categoryId: 'shopping_local', name: 'Локальный магазин', distance: 410 }),
-    ],
+    magnets,
     magnetCountByCategory: {},
     accessibilityStops: [],
     competitors: [],
@@ -145,6 +138,35 @@ function komendantskyFixture(): LocationAnalysis {
     },
     neighborhoodEnvironment: baseEnv,
     heatmapPoints: [],
+    scoringTrace: {
+      coordinates: { lat: 60.014315, lon: 30.253552 },
+      rawObjectsCount: 120,
+      classifiedMagnets: magnets.map(m => ({
+        categoryId: m.categoryId,
+        name: m.name,
+        distanceM: Math.round(m.distance),
+        attractionScore: m.attractionScore,
+        strengthClass: m.strengthClass,
+      })),
+      scoreFeatures: {
+        evergreenIndex: 93,
+        attractionScaled: 0,
+        competitorPressure: 0,
+        magnet_score: 50,
+        demand_score: 99,
+        supply_score: 60,
+        accessibility_score: 50,
+        audience_fit_score: 62,
+        seasonality_score: 60,
+      },
+      baseScore: 99,
+      capsApplied: [],
+      finalScore: 99,
+      evidence: [],
+      publicBullets: [],
+      removedPublicBullets: [],
+      warnings: [],
+    },
     conclusion: '',
   };
 }
@@ -153,7 +175,12 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
   beforeEach(() => {
     mockCacheGet.mockResolvedValue(null);
     mockCacheSet.mockResolvedValue(undefined);
-    mockFetchOsmData.mockResolvedValue({ elements: [], hadProviderFailure: false, usedFallbackQuery: false });
+    // Non-empty raw snapshot so integrity gate does not zero out the mocked analysis headliner.
+    mockFetchOsmData.mockResolvedValue({
+      elements: [{ type: 'node', id: 9_001_001, lat: 60.014315, lon: 30.253552, tags: { amenity: 'cafe', name: 'Fixture café' } }],
+      hadProviderFailure: false,
+      usedFallbackQuery: false,
+    });
     mockBuildAnalysis.mockReturnValue(komendantskyFixture());
   });
 
@@ -168,7 +195,7 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.displayScore).toBeLessThanOrEqual(70);
+    expect(body.analysis.scoringTrace.finalScore).toBeLessThanOrEqual(70);
     expect(body.displayAudience).not.toBe('BUSINESS');
     expect(body.meta.demoSanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
     expect(body.meta.demoSanity.capReasonsRu).toContain(

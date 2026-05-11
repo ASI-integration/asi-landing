@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { applyResidentialDemoSanity } from '../residential-demo-sanity';
+import {
+  applyResidentialDemoSanity,
+  computeResidentialDemoPresentation,
+} from '../residential-demo-sanity';
 import type {
   MagnetItem,
   LocationAnalysis,
@@ -7,6 +10,7 @@ import type {
   TargetAudience,
   ScoreBand,
 } from '../types';
+import type { LocationScoringTrace } from '../location-scoring-trace';
 import type {
   ResidentialDemoAudience,
   ResidentialDemoVerdictTone,
@@ -24,6 +28,32 @@ function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' 
     strengthClass: p.strengthClass ?? 'medium',
     attractionScore: p.attractionScore ?? 3,
     ...p,
+  };
+}
+
+function mkTrace(evergreenIndex: number, finalScore: number): LocationScoringTrace {
+  return {
+    coordinates: { lat: 59.93, lon: 30.36 },
+    rawObjectsCount: 0,
+    classifiedMagnets: [],
+    scoreFeatures: {
+      evergreenIndex,
+      attractionScaled: 0,
+      competitorPressure: 0,
+      magnet_score: 0,
+      demand_score: 0,
+      supply_score: 0,
+      accessibility_score: 0,
+      audience_fit_score: 0,
+      seasonality_score: 0,
+    },
+    baseScore: finalScore,
+    capsApplied: [],
+    finalScore,
+    evidence: [],
+    publicBullets: [],
+    removedPublicBullets: [],
+    warnings: [],
   };
 }
 
@@ -49,6 +79,7 @@ const baseEnv: NeighborhoodEnvironmentLayer = {
 
 function fixture(p: {
   evergreenIndex: number;
+  compositeHeadline?: number;
   magnets: MagnetItem[];
   primaryAudience: TargetAudience;
   audienceFitScore: number;
@@ -56,14 +87,15 @@ function fixture(p: {
   audienceSharePct?: number;
   businessClusterDetected?: boolean;
 }): LocationAnalysis {
+  const headline = p.compositeHeadline ?? p.evergreenIndex;
   return {
     evergreenIndex: p.evergreenIndex,
-    scoreBand: (p.evergreenIndex >= 70 ? 'strong' : p.evergreenIndex >= 45 ? 'medium' : 'weak') as ScoreBand,
+    scoreBand: (headline >= 70 ? 'strong' : headline >= 45 ? 'medium' : headline > 0 ? 'weak' : 'none') as ScoreBand,
     locationScore: {
-      location_score: p.evergreenIndex,
+      location_score: headline,
       rating: 'viable',
       breakdown: {
-        demand_score: p.evergreenIndex,
+        demand_score: headline,
         supply_score: 60,
         magnet_score: 50,
         seasonality_score: 60,
@@ -120,6 +152,7 @@ function fixture(p: {
     },
     neighborhoodEnvironment: baseEnv,
     heatmapPoints: [],
+    scoringTrace: mkTrace(p.evergreenIndex, headline),
     conclusion: '',
   };
 }
@@ -148,6 +181,7 @@ describe('RU residential golden regression matrix', () => {
     name: string;
     magnets: MagnetItem[];
     evergreenIndex: number;
+    compositeHeadline?: number;
     primaryAudience: TargetAudience;
     audienceFitScore: number;
     fallbackMode?: boolean;
@@ -530,6 +564,7 @@ describe('RU residential golden regression matrix', () => {
         magnet({ categoryId: 'shopping_local', name: 'Локальный магазин', distance: 410 }),
       ],
       evergreenIndex: 93,
+      compositeHeadline: 99,
       primaryAudience: 'BUSINESS',
       audienceFitScore: 62,
       fallbackMode: false,
@@ -568,6 +603,7 @@ describe('RU residential golden regression matrix', () => {
   it.each(cases)('$name', (c) => {
     const analysis = fixture({
       evergreenIndex: c.evergreenIndex,
+      compositeHeadline: c.compositeHeadline,
       magnets: c.magnets,
       primaryAudience: c.primaryAudience,
       audienceFitScore: c.audienceFitScore,
@@ -577,9 +613,10 @@ describe('RU residential golden regression matrix', () => {
     });
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeGreaterThanOrEqual(c.expected.displayScoreMin);
-    expect(sanity.displayScore).toBeLessThanOrEqual(c.expected.displayScoreMax);
+    expect(cappedHeadline).toBeGreaterThanOrEqual(c.expected.displayScoreMin);
+    expect(cappedHeadline).toBeLessThanOrEqual(c.expected.displayScoreMax);
     expect(sanity.displayAudience).toBe(c.expected.displayAudience);
     expect(sanity.verdictTone).toBe(c.expected.verdictTone);
 

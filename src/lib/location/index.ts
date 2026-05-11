@@ -311,9 +311,18 @@ export type { PrimeMagnetAnchorType } from './residential-prime-magnets';
 
 export { buildResidentialAnalysis } from './residential-analysis';
 
-export { applyResidentialDemoSanity } from './residential-demo-sanity';
+export {
+  applyResidentialDemoSanity,
+  computeResidentialDemoPresentation,
+  applyResidentialDemoPresentationToAnalysis,
+  cloneAnalysisForResidentialDemoPatch,
+} from './residential-demo-sanity';
 export type {
   ResidentialDemoSanity,
   ResidentialDemoAudience,
   ResidentialDemoVerdictTone,
 } from './residential-demo-sanity';
+
+export { publicLocationScore, scoreBandFromPublicScore } from './location-score-public';
+export { buildLocationScoreCustodySnapshot, assertPublicScoreCustody } from './location-score-chain-of-custody';
+export type { LocationScoreCustodySnapshot } from './location-score-chain-of-custody';

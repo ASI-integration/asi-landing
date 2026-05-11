@@ -5,7 +5,7 @@
  *   - detects Tier-1 demand magnets (including RU-specific weak-office/attraction guards)
  *   - applies score caps to prevent inflated “Сильная” headlines on ordinary residential addresses
  *   - gates / downgrades the displayed audience when business demand is driven only by weak offices
- *   - maps a final displayScore to a RU verdict label + tone
+ *   - maps the presentation headline (trace.finalScore after guards) to a RU verdict label + tone
  *
  * Note:
  *   - This file is presentation/guard logic for the RU residential demo path.
@@ -25,8 +25,6 @@ export type ResidentialDemoAudience = 'RESIDENTIAL' | 'BUSINESS' | 'TOURIST' | '
 export type ResidentialDemoVerdictTone = 'strong' | 'medium' | 'weak';
 
 export interface ResidentialDemoSanity {
-  /** Capped, presentation-only headline score. */
-  displayScore: number;
   displayAudience: ResidentialDemoAudience;
   audienceLabelRu: string;
   verdictLabelRu: string;
@@ -293,16 +291,16 @@ function audienceLabelRu(a: ResidentialDemoAudience): string {
 // ── Verdict map ───────────────────────────────────────────────────────────────
 
 function buildVerdict(args: {
-  displayScore: number;
+  headlineScore: number;
   tier1Count: number;
   displayAudience: ResidentialDemoAudience;
   capApplied: boolean;
 }): { label: string; tone: ResidentialDemoVerdictTone } {
-  const { displayScore, tier1Count, displayAudience, capApplied } = args;
+  const { headlineScore, tier1Count, displayAudience, capApplied } = args;
 
   // "Сильная" only when at least 2 independent tier-1 magnets confirmed
   // AND no caps fired AND score still strong.
-  if (displayScore >= 80 && tier1Count >= 2 && !capApplied) {
+  if (headlineScore >= 80 && tier1Count >= 2 && !capApplied) {
     if (displayAudience === 'BUSINESS') {
       return { label: 'Сильная локация для командированных', tone: 'strong' };
     }
@@ -312,15 +310,15 @@ function buildVerdict(args: {
     return { label: 'Сильная локация для посуточной аренды', tone: 'strong' };
   }
 
-  if (displayScore >= 70 && tier1Count >= 2) {
+  if (headlineScore >= 70 && tier1Count >= 2) {
     return { label: 'Хорошая локация', tone: 'medium' };
   }
 
-  if (displayScore >= 60) {
+  if (headlineScore >= 60) {
     return { label: 'Обычная жилая локация с умеренным потенциалом', tone: 'medium' };
   }
 
-  if (displayScore >= 45) {
+  if (headlineScore >= 45) {
     return { label: 'Спокойная жилая зона, спрос требует проверки', tone: 'weak' };
   }
 
@@ -348,16 +346,16 @@ const FLOOR_REASON_TIER2_CLUSTER =
   'Есть несколько локальных магнитов спроса (вторичный кластер); оценка не должна схлопываться в «почти ноль».';
 
 /**
- * Apply RU residential demo sanity rules.
- *
- * This is the canonical rules engine used by the RU demo presentation layer.
+ * Pure computation: tier guards + audience mapping from the composite headline (`trace.finalScore`).
+ * Does not mutate analysis — callers append caps + rewrite trace via `applyResidentialDemoPresentationToAnalysis`.
  */
-export function applyResidentialLocationRules(
+export function computeResidentialDemoPresentation(
   analysis: LocationAnalysis,
-): ResidentialDemoSanity {
+  headlineBeforeCaps: number,
+): { sanity: ResidentialDemoSanity; cappedHeadline: number } {
   const tier1 = detectTier1(analysis);
   const tier1Count = tier1.length;
-  const baseScore = analysis.evergreenIndex;
+  const baseScore = headlineBeforeCaps;
   const capReasons: string[] = [];
 
   let cappedScore = baseScore;
@@ -479,14 +477,13 @@ export function applyResidentialLocationRules(
   }
 
   const verdict = buildVerdict({
-    displayScore: cappedScore,
+    headlineScore: cappedScore,
     tier1Count,
     displayAudience,
     capApplied,
   });
 
-  return {
-    displayScore: cappedScore,
+  const sanity: ResidentialDemoSanity = {
     displayAudience,
     audienceLabelRu: audienceLabelRu(displayAudience),
     verdictLabelRu: verdict.label,
@@ -496,5 +493,16 @@ export function applyResidentialLocationRules(
     tier1Count,
     tier1Magnets: tier1,
   };
+
+  return { sanity, cappedHeadline: cappedScore };
+}
+
+/** Thin wrapper: presentation metadata only (no trace mutation). Prefer `computeResidentialDemoPresentation`. */
+export function applyResidentialLocationRules(analysis: LocationAnalysis): ResidentialDemoSanity {
+  const headline =
+    analysis.scoringTrace?.finalScore ??
+    analysis.locationScore?.location_score ??
+    analysis.evergreenIndex;
+  return computeResidentialDemoPresentation(analysis, headline).sanity;
 }
 

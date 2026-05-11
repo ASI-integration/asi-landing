@@ -26,6 +26,7 @@ import { computeHeatmap } from './heatmap';
 import { generateConclusion } from './explanation';
 import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatmapFactors } from './foot-traffic';
 import { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
+import { scoreBandFromPublicScore } from './location-score-public';
 import { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 import { buildAudienceAnalysis } from './audience-scoring';
 import { buildNeighborhoodEnvironmentLayer } from './neighborhood-environment';
@@ -752,9 +753,6 @@ export function buildAnalysis(
   } =
     calcEvergreenIndex(magnets, competitors, accessibilityDeduped.length);
 
-  const scoreBand: ScoreBand =
-    evergreenIndex >= 70 ? 'strong' : evergreenIndex >= 45 ? 'medium' : evergreenIndex > 0 ? 'weak' : 'none';
-
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
   const strongestMagnets = pickMainMagnets(magnets, gravityExplanation.demandType);
   const clusterZones = detectClusterZones(magnets);
@@ -796,6 +794,8 @@ export function buildAnalysis(
     commercialNeighborhoodModifier.applied
       ? withAdjustedLocationScoreHeadline(locationScore, commercialNeighborhoodModifier.adjustedLocationScore)
       : locationScore;
+
+  const scoreBand: ScoreBand = scoreBandFromPublicScore(locationScoreAdjusted.location_score);
 
   const scoringTrace = buildLocationScoringTrace({
     inputAddress: options?.inputAddress,
