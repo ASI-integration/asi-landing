@@ -31,6 +31,8 @@ export interface LocationDemandKernelScoreBreakdown {
   cappedGenericBusiness: number;
   cappedTourismWithoutAnchor: number;
   cappedNoTier1Penalty: number;
+  /** Points trimmed from blended public score for sparse small-city guard */
+  cappedSmallCitySparse: number;
   finalWeightedSum: number;
 }
 
@@ -59,6 +61,13 @@ export interface LocationDemandScoredDriver {
   publicDisplayRejectReason?: string;
 }
 
+export interface SmallCitySparsePublicScoreGuard {
+  readonly applied: boolean;
+  readonly reason: string;
+  readonly scoreBefore: number;
+  readonly scoreAfter: number;
+}
+
 export interface LocationDemandScoringKernelResult {
   acceptedDrivers: LocationDemandScoredDriver[];
   rejectedDrivers: LocationDemandScoredDriver[];
@@ -69,6 +78,8 @@ export interface LocationDemandScoringKernelResult {
   kernelEvidenceScore: number;
   /** Score blended with engine headline for published headline when integrity allows */
   blendedPublicScore: number;
+  /** When set, explains sparse small-city headline score cap (non-UI diagnostics). */
+  smallCitySparseScoreGuard?: SmallCitySparsePublicScoreGuard;
   warnings: string[];
   debugTrace: string[];
 }
@@ -80,4 +91,6 @@ export interface LocationDemandKernelInput {
   engineFinalScore: number;
   analysisIncomplete?: boolean;
   scoreBlockedDueToIncompleteData?: boolean;
+  /** Inferred from RU address for small-town demand safeguards */
+  cityScaleTier?: import('./city-scale-from-address').InferredCityScaleTier;
 }

@@ -4,8 +4,10 @@
 
 import type { CanonicalLocationFact } from './location-decision-contract';
 import type { MagnetItem } from './types';
+import type { InferredCityScaleTier } from './city-scale-from-address';
 import {
   isStrongBusinessAnchorPoi,
+  looksLikeSmallTownMunicipalHospitalPoi,
   looksLikeWeakLocalAttractionPoi,
   looksLikeWeakLocalBusinessPoi,
   looksLikeWeakLocalMedicalPoi,
@@ -121,6 +123,7 @@ export type ScaleClass = 'verified_major' | 'medium' | 'weak_local' | 'unknown';
 export function inferScaleClass(
   m: MagnetItem,
   tags?: Record<string, string>,
+  cityTier?: InferredCityScaleTier,
 ): ScaleClass {
   const t = tags ?? {};
   const name = (m.name ?? '').toLowerCase();
@@ -140,12 +143,24 @@ export function inferScaleClass(
 
   if (m.categoryId === 'hospital') {
     if (looksLikeWeakLocalMedicalPoi(m)) return 'weak_local';
+    if (
+      (cityTier === 'small' || cityTier === 'micro') &&
+      looksLikeSmallTownMunicipalHospitalPoi(m)
+    ) {
+      return 'weak_local';
+    }
     if (MEDICAL_MAJOR_NAME_HINT_RE.test(name) && m.strengthClass === 'strong') return 'verified_major';
     if (MEDICAL_MAJOR_NAME_HINT_RE.test(name)) return 'medium';
     return 'unknown';
   }
 
   if (m.categoryId === 'specializedMedicalAnchor') {
+    if (
+      (cityTier === 'small' || cityTier === 'micro') &&
+      looksLikeSmallTownMunicipalHospitalPoi(m)
+    ) {
+      return 'weak_local';
+    }
     if (m.specializedMedicalReachBand === 'primary') return 'verified_major';
     return 'medium';
   }
@@ -214,8 +229,10 @@ export function resolveDemandTier(args: {
   m: MagnetItem;
   scaleClass: ScaleClass;
   tags?: Record<string, string>;
+  cityTier?: InferredCityScaleTier;
 }): LocationDemandResolvedTier {
   const { m, scaleClass } = args;
+  const ct = args.cityTier;
 
   const forceWeak =
     m.categoryId === 'food' ||
@@ -239,6 +256,9 @@ export function resolveDemandTier(args: {
   }
 
   if (m.categoryId === 'hospital') {
+    if ((ct === 'small' || ct === 'micro') && looksLikeSmallTownMunicipalHospitalPoi(m)) {
+      return 3;
+    }
     if (scaleClass === 'verified_major') return 1;
     if (scaleClass === 'medium') return 2;
     if (scaleClass === 'unknown') return 2;
@@ -246,6 +266,9 @@ export function resolveDemandTier(args: {
   }
 
   if (m.categoryId === 'specializedMedicalAnchor') {
+    if ((ct === 'small' || ct === 'micro') && looksLikeSmallTownMunicipalHospitalPoi(m)) {
+      return 3;
+    }
     if (m.specializedMedicalReachBand === 'primary') return 1;
     return 2;
   }

@@ -13,7 +13,9 @@ export function formatLocationDemandKernelDebug(result: LocationDemandScoringKer
   lines.push(
     `breakdown: raw=${result.scoreBreakdown.rawSumBeforeCaps.toFixed(2)} final=${result.scoreBreakdown.finalWeightedSum.toFixed(2)}`,
   );
-  lines.push(`caps: supportingΔ=${result.scoreBreakdown.cappedSupportingInfra.toFixed(2)} localΔ=${result.scoreBreakdown.cappedLocalInterest.toFixed(2)} hotelsΔ=${result.scoreBreakdown.cappedHotels.toFixed(2)} tourismΔ=${result.scoreBreakdown.cappedTourismWithoutAnchor.toFixed(2)} noTier1Δ=${result.scoreBreakdown.cappedNoTier1Penalty.toFixed(2)}`);
+  lines.push(
+    `caps: supportingΔ=${result.scoreBreakdown.cappedSupportingInfra.toFixed(2)} localΔ=${result.scoreBreakdown.cappedLocalInterest.toFixed(2)} hotelsΔ=${result.scoreBreakdown.cappedHotels.toFixed(2)} tourismΔ=${result.scoreBreakdown.cappedTourismWithoutAnchor.toFixed(2)} noTier1Δ=${result.scoreBreakdown.cappedNoTier1Penalty.toFixed(2)} smallCityΔ=${result.scoreBreakdown.cappedSmallCitySparse.toFixed(2)}`,
+  );
 
   lines.push('-- accepted --');
   for (const d of result.acceptedDrivers) {

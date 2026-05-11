@@ -80,7 +80,13 @@ const CBD_CONTEXT_NAME_RE =
 // Note: JS \b only recognises ASCII word chars, so Cyrillic word boundaries are
 // emulated with `(?:^|\s)` / `(?:$|\s|\W)` lookarounds where needed.
 const WEAK_TOURIST_NAME_RE =
-  /завод|фабрика|комбинат|промышленн|(?:^|\s)оао(?:$|\s|\W)|(?:^|\s)ао(?:$|\s|\W)|(?:^|\s)ооо(?:$|\s|\W)|предприяти|музей\s+истории\s+(?:предприятия|завода|фабрики|комбината|техники)|корпоративный\s+музей/i;
+  /завод|фабрика|комбинат|промышленн|(?:^|\s)оао(?:$|\s|\W)|(?:^|\s)ао(?:$|\s|\W)|(?:^|\s)ооо(?:$|\s|\W)|предприяти|музей\s+истории\s+(?:предприятия|завода|фабрики|комбината|техники)|корпоративный\s+музей|музей\s+метро|метро\s+музей|музей\s+метрополитен|metro\s+museum|метромузей|домик|ремесел|краеведческ|(?:^|\s)репка(?:$|\s|\W)|(?:^|\s)волна(?:$|\s|\W)/i;
+
+const SMALL_TOWN_MUNICIPAL_HOSPITAL_RE =
+  /городская|гбуз|\bмб\b|муниципальн|районн|поселков|участков|поликлиник|амбулатор|учреждени|црб|цгб/i;
+
+const REGIONAL_MAJOR_MEDICAL_RE =
+  /областн|федеральн|(?:^|\s)нии(?:$|\s|\W)|научн(?:ый|ого|)?\s+центр|онкологическ|кардиологическ|перинатальн/i;
 
 const STRONG_MEDICAL_NAME_RE =
   /больниц|госпитал|медицинский\s+центр|клиническая\s+больниц|перинатальн|онкологическ|кардиологическ|(?:^|\s)нии(?:$|\s|\W)|научный\s+центр|многопрофильн/i;
@@ -136,11 +142,38 @@ export function looksLikeWeakLocalBusinessPoi(m: MagnetItem): boolean {
   return false;
 }
 
+/**
+ * Factory / industrial POIs need a non-generic name (length + not bare «Завод»)
+ * before they count as a named industrial anchor.
+ */
+export function looksLikeNamedIndustrialAnchorPoi(m: MagnetItem): boolean {
+  if (m.categoryId !== 'business') return false;
+  const st = m.subType?.toLowerCase().trim();
+  if (st !== 'factory' && st !== 'industrial') return false;
+  const n = nameStr(m.name);
+  if (!n) return false;
+  if (/^(?:завод|фабрика|промзона|производство)(?:\s*№?\s*\d+)?$/i.test(n)) return false;
+  return n.length >= 8;
+}
+
 export function isStrongBusinessAnchorPoi(m: MagnetItem): boolean {
   if (m.categoryId !== 'business') return false;
   const st = m.subType?.toLowerCase().trim();
-  if (st === 'factory' || st === 'industrial') return true;
+  if (st === 'factory' || st === 'industrial') {
+    return looksLikeNamedIndustrialAnchorPoi(m);
+  }
   return STRONG_BUSINESS_ANCHOR_NAME_RE.test(nameStr(m.name));
+}
+
+/** District / municipal hospitals typical of small towns — not regional referral centers. */
+export function looksLikeSmallTownMunicipalHospitalPoi(m: MagnetItem): boolean {
+  if (m.categoryId !== 'hospital' && m.categoryId !== 'specializedMedicalAnchor') return false;
+  const n = nameStr(m.name);
+  if (!n) return false;
+  if (REGIONAL_MAJOR_MEDICAL_RE.test(n)) return false;
+  if (SMALL_TOWN_MUNICIPAL_HOSPITAL_RE.test(n)) return true;
+  if (/\bгкб\b|клиническая\s+больниц/i.test(n)) return true;
+  return false;
 }
 
 export function isCbdTransitAnchorPoi(m: MagnetItem): boolean {

@@ -5,6 +5,9 @@
       "id": "yalta_nab",
       "cityKey": "yalta",
       "addressRu": "набережная имени Ленина, 15, Ялта, Крым",
+      "expectedCity": "Ялта",
+      "expectedRegion": "Крым",
+      "expectedProfileExpectation": "tourist_anchor",
       "replay": {
         "lat": 44.4974,
         "lon": 34.1694,
@@ -47,6 +50,9 @@
       "id": "rostov_med_cluster",
       "cityKey": "rostov",
       "addressRu": "улица Седова, 20, Ростов-на-Дону",
+      "expectedCity": "Ростов-на-Дону",
+      "expectedRegion": "Ростовская область",
+      "expectedProfileExpectation": "medical_cluster",
       "replay": {
         "lat": 47.2357,
         "lon": 39.7015,
@@ -108,6 +114,9 @@
       "id": "kemerovo_industrial",
       "cityKey": "kemerovo",
       "addressRu": "проспект Химиков, 32, Кемерово",
+      "expectedCity": "Кемерово",
+      "expectedRegion": "Кемеровская область",
+      "expectedProfileExpectation": "industrial_business",
       "replay": {
         "lat": 55.3331,
         "lon": 86.0833,
@@ -149,6 +158,9 @@
       "id": "novosibirsk_education",
       "cityKey": "novosibirsk",
       "addressRu": "улица Пирогова, 2, Новосибирск",
+      "expectedCity": "Новосибирск",
+      "expectedRegion": "Новосибирская область",
+      "expectedProfileExpectation": "education_anchor",
       "replay": {
         "lat": 55.0084,
         "lon": 82.9357,
@@ -190,6 +202,9 @@
       "id": "saransk_metro_stadium",
       "cityKey": "saransk",
       "addressRu": "проспект 60 лет Октября, 1, Саранск",
+      "expectedCity": "Саранск",
+      "expectedRegion": "Республика Мордовия",
+      "expectedProfileExpectation": "transport_event",
       "replay": {
         "lat": 54.1872,
         "lon": 45.1839,
@@ -233,6 +248,9 @@
       "id": "lodeynoye_sparse",
       "cityKey": "lodeynoye_pole",
       "addressRu": "улица Урицкого, 15, Лодейное Поле",
+      "expectedCity": "Лодейное Поле",
+      "expectedRegion": "Ленинградская область",
+      "expectedProfileExpectation": "weak_sparse",
       "replay": {
         "lat": 60.7267,
         "lon": 33.5431,
@@ -255,6 +273,56 @@
             "tags": {
               "amenity": "cafe",
               "name": "Кафе Лодейное"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100603,
+            "lat": 60.7378,
+            "lon": 33.546,
+            "tags": {
+              "amenity": "hospital",
+              "name": "Городская клиническая больница"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100604,
+            "lat": 60.7385,
+            "lon": 33.5455,
+            "tags": {
+              "amenity": "hospital",
+              "name": "ГБУЗ ЛО \"Лодейнопольская МБ\""
+            }
+          },
+          {
+            "type": "node",
+            "id": 100605,
+            "lat": 60.7295,
+            "lon": 33.542,
+            "tags": {
+              "tourism": "attraction",
+              "name": "МКУ Лодейнопольский центр ремесел"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100606,
+            "lat": 60.7306,
+            "lon": 33.544,
+            "tags": {
+              "tourism": "attraction",
+              "name": "Домик Петра I"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100607,
+            "lat": 60.7242,
+            "lon": 33.5425,
+            "tags": {
+              "man_made": "works",
+              "name": "Завод"
             }
           }
         ]

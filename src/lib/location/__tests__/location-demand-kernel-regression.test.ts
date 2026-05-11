@@ -159,6 +159,7 @@ describe('demand scoring kernel v1 regressions', () => {
         cappedGenericBusiness: 0,
         cappedTourismWithoutAnchor: 0,
         cappedNoTier1Penalty: 0,
+        cappedSmallCitySparse: 0,
         finalWeightedSum: 0,
       },
       kernelEvidenceScore: 30,

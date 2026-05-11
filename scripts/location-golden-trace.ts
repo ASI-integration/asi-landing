@@ -16,13 +16,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { OSMElement } from '../src/lib/location/types';
-import type { LocationPublicSummary } from '../src/lib/location/location-decision-contract';
+import type { LocationDecision, LocationPublicSummary } from '../src/lib/location/location-decision-contract';
+import type { MagnetItem, OSMElement } from '../src/lib/location/types';
 import { geocodePlainAddressForMarket } from '../src/lib/location/address-providers/geocode-pipeline';
 import { fetchOsmData } from '../src/lib/location/overpass';
 import { buildAnalysis } from '../src/lib/location/gravity-scoring';
 import { enrichAnalysisWithReportProjection } from '../src/lib/location/location-scoring-projection';
 import { buildLocationDecision } from '../src/lib/location/location-decision-kernel';
+import type { GoldenHarnessCaseDiagnostics } from '../src/lib/location/location-golden-harness-diagnostics';
+import { buildGoldenHarnessCaseDiagnostics } from '../src/lib/location/location-golden-harness-diagnostics';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
@@ -41,6 +43,9 @@ interface GoldenCaseFile {
     id: string;
     cityKey: string;
     addressRu: string;
+    expectedCity?: string;
+    expectedRegion?: string;
+    expectedProfileExpectation?: string;
     replay: { lat: number; lon: number; elements: OSMElement[] };
   }[];
 }
@@ -68,6 +73,7 @@ interface GoldenCaseOutput {
   > & {
     publicDriverLinesRu: string[];
   };
+  diagnostics: GoldenHarnessCaseDiagnostics;
   errorMessage?: string;
 }
 
@@ -104,13 +110,38 @@ function serializePublicSummary(s: LocationPublicSummary): GoldenCaseOutput['pub
   };
 }
 
-function buildSummaryFromPipeline(args: {
+function harnessDiag(
+  c: GoldenCaseFile['cases'][number],
+  args: {
+    lat: number | null;
+    lon: number | null;
+    geocodeDisplayName: string | null;
+    decision: LocationDecision | null;
+    magnets: readonly MagnetItem[];
+  },
+): GoldenHarnessCaseDiagnostics {
+  return buildGoldenHarnessCaseDiagnostics({
+    fixtureMeta: {
+      expectedCity: c.expectedCity,
+      expectedRegion: c.expectedRegion,
+      expectedProfileExpectation: c.expectedProfileExpectation,
+    },
+    lat: args.lat,
+    lon: args.lon,
+    geocodeDisplayName: args.geocodeDisplayName,
+    addressRu: c.addressRu,
+    magnets: args.magnets,
+    decision: args.decision,
+  });
+}
+
+function buildPipeline(args: {
   elements: OSMElement[];
   lat: number;
   lon: number;
   inputAddress: string;
   selectedGeocodeResult?: string | null;
-}): LocationPublicSummary {
+}): { publicSummary: LocationPublicSummary; decision: LocationDecision; magnets: readonly MagnetItem[] } {
   const { elements, lat, lon, inputAddress } = args;
   const analysis = buildAnalysis(elements, lat, lon, {
     spatialFoundation: false,
@@ -136,7 +167,7 @@ function buildSummaryFromPipeline(args: {
   if (!ps) {
     throw new Error('location_golden: buildLocationDecision returned null publicSummary');
   }
-  return ps;
+  return { publicSummary: ps, decision, magnets: projected.magnets };
 }
 
 function compactSummaryLine(o: GoldenCaseOutput): string {
@@ -184,6 +215,13 @@ async function runLiveCase(
         hadProviderFailure: false,
         usedFallbackQuery: false,
         publicSummary: emptySummaryPlaceholder(),
+        diagnostics: harnessDiag(c, {
+          lat: null,
+          lon: null,
+          geocodeDisplayName: null,
+          decision: null,
+          magnets: [],
+        }),
         errorMessage: `geocode exceeded ${geocodeMs}ms`,
       };
     }
@@ -205,6 +243,13 @@ async function runLiveCase(
         hadProviderFailure: false,
         usedFallbackQuery: false,
         publicSummary: emptySummaryPlaceholder(),
+        diagnostics: harnessDiag(c, {
+          lat: null,
+          lon: null,
+          geocodeDisplayName: geo.result?.displayName ?? null,
+          decision: null,
+          magnets: [],
+        }),
         errorMessage: 'geocode returned no coordinates',
       };
     }
@@ -227,6 +272,13 @@ async function runLiveCase(
         hadProviderFailure: false,
         usedFallbackQuery: false,
         publicSummary: emptySummaryPlaceholder(),
+        diagnostics: harnessDiag(c, {
+          lat,
+          lon,
+          geocodeDisplayName: geo.result?.displayName ?? null,
+          decision: null,
+          magnets: [],
+        }),
         errorMessage: `overpass exceeded ${overpassMs}ms`,
       };
     }
@@ -254,11 +306,18 @@ async function runLiveCase(
         hadProviderFailure,
         usedFallbackQuery,
         publicSummary: emptySummaryPlaceholder(),
+        diagnostics: harnessDiag(c, {
+          lat,
+          lon,
+          geocodeDisplayName: geo.result?.displayName ?? null,
+          decision: null,
+          magnets: [],
+        }),
       };
     }
 
     const displayName = geo.result?.displayName ?? null;
-    const ps = buildSummaryFromPipeline({
+    const { publicSummary: ps, decision, magnets } = buildPipeline({
       elements: osm.elements,
       lat,
       lon,
@@ -278,6 +337,13 @@ async function runLiveCase(
       hadProviderFailure,
       usedFallbackQuery,
       publicSummary: serializePublicSummary(ps),
+      diagnostics: harnessDiag(c, {
+        lat,
+        lon,
+        geocodeDisplayName: displayName,
+        decision,
+        magnets,
+      }),
     };
     out.summaryLine = compactSummaryLine(out);
     return out;
@@ -295,6 +361,13 @@ async function runLiveCase(
       hadProviderFailure,
       usedFallbackQuery,
       publicSummary: emptySummaryPlaceholder(),
+      diagnostics: harnessDiag(c, {
+        lat: null,
+        lon: null,
+        geocodeDisplayName: null,
+        decision: null,
+        magnets: [],
+      }),
       errorMessage: msg,
     };
   }
@@ -317,7 +390,7 @@ function runFixtureCase(c: GoldenCaseFile['cases'][number]): GoldenCaseOutput {
   const mode = 'fixture' as const;
   try {
     const { lat, lon, elements } = c.replay;
-    const ps = buildSummaryFromPipeline({
+    const { publicSummary: ps, decision, magnets } = buildPipeline({
       elements,
       lat,
       lon,
@@ -336,6 +409,13 @@ function runFixtureCase(c: GoldenCaseFile['cases'][number]): GoldenCaseOutput {
       hadProviderFailure: false,
       usedFallbackQuery: false,
       publicSummary: serializePublicSummary(ps),
+      diagnostics: harnessDiag(c, {
+        lat,
+        lon,
+        geocodeDisplayName: null,
+        decision,
+        magnets,
+      }),
     };
     out.summaryLine = compactSummaryLine(out);
     return out;
@@ -353,6 +433,13 @@ function runFixtureCase(c: GoldenCaseFile['cases'][number]): GoldenCaseOutput {
       hadProviderFailure: false,
       usedFallbackQuery: false,
       publicSummary: emptySummaryPlaceholder(),
+      diagnostics: harnessDiag(c, {
+        lat: c.replay.lat,
+        lon: c.replay.lon,
+        geocodeDisplayName: null,
+        decision: null,
+        magnets: [],
+      }),
       errorMessage: msg,
     };
   }

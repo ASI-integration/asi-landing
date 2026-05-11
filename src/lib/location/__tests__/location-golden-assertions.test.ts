@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { OSMElement } from '../types';
+import type { LocationDecision } from '../location-decision-contract';
 import type { LocationPublicSummary } from '../location-decision-contract';
 import bundle from '../__fixtures__/golden-addresses.json';
 import { buildAnalysis } from '../gravity-scoring';
@@ -12,6 +13,9 @@ interface GoldenCase {
   id: string;
   cityKey: GoldenCityKey;
   addressRu: string;
+  expectedCity?: string;
+  expectedRegion?: string;
+  expectedProfileExpectation?: string;
   replay: { lat: number; lon: number; elements: OSMElement[] };
 }
 
@@ -21,7 +25,7 @@ function assertCases(x: unknown): asserts x is { cases: GoldenCase[] } {
   }
 }
 
-function publicSummaryFromReplay(c: GoldenCase): LocationPublicSummary {
+function locationDecisionFromReplay(c: GoldenCase): LocationDecision {
   const { lat, lon, elements } = c.replay;
   const analysis = buildAnalysis(elements, lat, lon, {
     spatialFoundation: false,
@@ -35,7 +39,7 @@ function publicSummaryFromReplay(c: GoldenCase): LocationPublicSummary {
   if (!trace?.coordinates) {
     throw new Error(`missing scoringTrace.coordinates for case ${c.id}`);
   }
-  const decision = buildLocationDecision({
+  return buildLocationDecision({
     analysis: projected,
     inputAddress: c.addressRu,
     coordinates: trace.coordinates,
@@ -43,7 +47,10 @@ function publicSummaryFromReplay(c: GoldenCase): LocationPublicSummary {
     selectedGeocodeResult: c.addressRu,
     locale: 'ru',
   });
-  const ps = decision.publicSummary;
+}
+
+function publicSummaryFromReplay(c: GoldenCase): LocationPublicSummary {
+  const ps = locationDecisionFromReplay(c).publicSummary;
   if (!ps) {
     throw new Error(`null publicSummary for case ${c.id}`);
   }
@@ -107,12 +114,42 @@ describe('location golden assertions (LocationPublicSummary)', () => {
     expect(s.primaryDemandType).not.toBe('weak/unclear');
   });
 
-  it('Lodeynoye Pole: sparse retail — cautious / weak public profile', () => {
-    const s = publicSummaryFromReplay(byCity.get('lodeynoye_pole')!);
+  it('Lodeynoye Pole: small-city harness — no medical-primary from municipal hospitals; no tourist secondary from local interest; score capped or naturally low', () => {
+    const c = byCity.get('lodeynoye_pole')!;
+    const decision = locationDecisionFromReplay(c);
+    const s = decision.publicSummary!;
+    const kernel = decision.demandKernelV1;
+
+    expect(c.expectedProfileExpectation).toBe('weak_sparse');
     expect(['weak/unclear', 'mixed'] as const).toContainEqual(s.primaryDemandType);
+    expect(s.primaryDemandType).not.toBe('medical');
+    expect(s.secondaryDemandTypes.includes('tourist')).toBe(false);
+    expect(s.finalScore).not.toBeNull();
+    expect(s.finalScore!).toBeLessThanOrEqual(58);
+
+    const guard = kernel?.smallCitySparseScoreGuard;
+    expect(guard).toBeDefined();
+    expect(guard?.reason).toContain('small_city_sparse_cap');
+
     expect(
-      /ограничен|неустойчив|неоднознач|недостаточн/i.test(s.headlineRu) ||
+      /ограничен|неустойчив|неоднознач|недостаточн|Смешанный/i.test(s.headlineRu) ||
         s.trace.headlineReason === 'no_strict_public_drivers_after_surface_gates',
+    ).toBe(true);
+
+    for (const line of s.publicDrivers.map(d => d.textRu)) {
+      expect(line).not.toMatch(/домик\s+петра|центр\s+ремесел|^[^,]*\bзавод\b[^,]*$/i);
+    }
+
+    const scored = kernel?.scoredDrivers ?? [];
+    expect(
+      scored.every(
+        d =>
+          !(
+            d.demandTypeVote === 'tourist' &&
+            d.publicDisplayEligible &&
+            /домик|ремесел|петра/i.test(d.sourceName)
+          ),
+      ),
     ).toBe(true);
   });
 });

@@ -15,12 +15,14 @@ import {
   resolveDemandTier,
   tagsForMagnetIndex,
 } from './location-demand-kernel-rules';
+import type { InferredCityScaleTier } from './city-scale-from-address';
 import type {
   LocationDemandKernelDemandType,
   LocationDemandKernelInput,
   LocationDemandScaleClass,
   LocationDemandScoredDriver,
   LocationDemandScoringKernelResult,
+  SmallCitySparsePublicScoreGuard,
 } from './location-scoring-contract';
 import { formatPublicEvidenceLineRu } from './location-decision-rules';
 
@@ -30,6 +32,26 @@ const CAP_LOCAL_INTEREST = 4;
 const CAP_HOTEL_SUPPORT = 6;
 const CAP_TOURISM_NO_ANCHOR = 8;
 const NO_TIER1_BLEND_FLOOR = 0.58;
+const SMALL_CITY_PUBLIC_SCORE_CAP = 58;
+
+/** Mirrors taxonomy municipal vs regional split — kept in kernel to avoid brittle bundler ordering. */
+function coerceMunicipalHospitalScaleForSmallCity(
+  m: MagnetItem,
+  cityTier: InferredCityScaleTier | undefined,
+  scaleClass: ReturnType<typeof inferScaleClass>,
+): ReturnType<typeof inferScaleClass> {
+  if (m.categoryId !== 'hospital' && m.categoryId !== 'specializedMedicalAnchor') return scaleClass;
+  if (cityTier !== 'small' && cityTier !== 'micro') return scaleClass;
+  const n = (m.name ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!n) return scaleClass;
+  const regional =
+    /областн|федеральн|(?:^|\s)нии(?:$|\s|\W)|научн(?:ый|ого|)?\s+центр|онкологическ|кардиологическ|перинатальн/i;
+  if (regional.test(n)) return scaleClass;
+  const municipal =
+    /городская|гбуз|муниципальн|районн|поселков|участков|поликлиник|амбулатор|учреждени|црб|цгб|\bмб\b|клиническая\s+больниц|\bгкб\b/i;
+  if (municipal.test(n)) return 'weak_local';
+  return scaleClass;
+}
 
 /** Stricter than kernel acceptance — hero bullets / demand signals */
 const MIN_PUBLIC_DISPLAY_CONTRIBUTION = 0.22;
@@ -191,6 +213,7 @@ function emptyResult(engineFinal: number): LocationDemandScoringKernelResult {
     cappedGenericBusiness: 0,
     cappedTourismWithoutAnchor: 0,
     cappedNoTier1Penalty: 0,
+    cappedSmallCitySparse: 0,
     finalWeightedSum: 0,
   };
   return {
@@ -292,19 +315,22 @@ export function runLocationDemandScoringKernel(
     cappedGenericBusiness: 0,
     cappedTourismWithoutAnchor: 0,
     cappedNoTier1Penalty: 0,
+    cappedSmallCitySparse: 0,
     finalWeightedSum: 0,
   };
 
   const staged: LocationDemandScoredDriver[] = [];
 
+  const cityTier = input.cityScaleTier;
   const n = Math.min(magnets.length, magnetFacts.length);
   for (let i = 0; i < n; i++) {
     const m = magnets[i]!;
     const mf = magnetFacts[i]!;
     const tags = tagsForMagnetIndex(i, canonicalFacts);
     const { kind, reason: kindReason } = classifyDriverKind({ m, magnets, tags });
-    const scaleClass = inferScaleClass(m, tags);
-    let tier = resolveDemandTier({ m, scaleClass, tags });
+    let scaleClass = inferScaleClass(m, tags, cityTier);
+    scaleClass = coerceMunicipalHospitalScaleForSmallCity(m, cityTier, scaleClass);
+    let tier = resolveDemandTier({ m, scaleClass, tags, cityTier });
 
     if (scaleClass === 'unknown' && tier === 1 && (m.categoryId === 'airport' || m.categoryId === 'strategicTransportHub')) {
       tier = 2;
@@ -373,6 +399,15 @@ export function runLocationDemandScoringKernel(
       `row:${mf.id}:kind=${kind}:tier=${tier}:scale=${scaleClass}:contrib=${contribution.toFixed(2)}:${driver.reason}`,
     );
   }
+
+  const structuralStrongAnchor = staged.some(
+    d =>
+      d.accepted &&
+      d.driverKind === 'real_demand_driver' &&
+      (d.resolvedTier === 1 ||
+        (d.resolvedTier === 2 && d.scaleClass === 'verified_major') ||
+        (d.resolvedTier === 2 && d.scaleClass === 'medium' && d.finalContribution >= 1.82)),
+  );
 
   const working = staged.map(d => ({ ...d }));
 
@@ -466,6 +501,35 @@ export function runLocationDemandScoringKernel(
     warnings.push('kernel:integrity_skip_blend');
   }
 
+  let smallCitySparseScoreGuard: SmallCitySparsePublicScoreGuard | undefined;
+  const cs = input.cityScaleTier;
+  if (!integritySkip && (cs === 'small' || cs === 'micro')) {
+    if (!structuralStrongAnchor && blendedPublicScore > SMALL_CITY_PUBLIC_SCORE_CAP) {
+      const before = blendedPublicScore;
+      blendedPublicScore = SMALL_CITY_PUBLIC_SCORE_CAP;
+      breakdown.cappedSmallCitySparse += before - blendedPublicScore;
+      smallCitySparseScoreGuard = {
+        applied: true,
+        reason:
+          'small_city_sparse_cap:no_structural_tier1_or_verified_major_or_strong_tier2_medium_anchor',
+        scoreBefore: before,
+        scoreAfter: blendedPublicScore,
+      };
+      debugTrace.push(
+        `cap:small_city_sparse:before=${before}:after=${blendedPublicScore}:reason=no_structural_major_anchor`,
+      );
+    } else {
+      smallCitySparseScoreGuard = {
+        applied: false,
+        reason: structuralStrongAnchor
+          ? 'small_city_sparse_cap:skipped_verified_major_or_strong_tier2_anchor_present'
+          : `small_city_sparse_cap:skipped_score_within_cap_<=${SMALL_CITY_PUBLIC_SCORE_CAP}`,
+        scoreBefore: blendedPublicScore,
+        scoreAfter: blendedPublicScore,
+      };
+    }
+  }
+
   const scoredDriversAnnotated: LocationDemandScoredDriver[] = working.map(d => {
     const idx = magnetIndexFromMagnetFactId(d.magnetFactId);
     const cf = idx != null ? canonicalFacts?.[idx] : undefined;
@@ -493,6 +557,7 @@ export function runLocationDemandScoringKernel(
     scoreBreakdown: breakdown,
     kernelEvidenceScore,
     blendedPublicScore,
+    smallCitySparseScoreGuard,
     warnings,
     debugTrace,
   };

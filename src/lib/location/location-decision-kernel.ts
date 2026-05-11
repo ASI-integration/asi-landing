@@ -15,6 +15,7 @@ import {
 } from './location-decision-rules';
 import { validatePublicClaimPipeline } from './location-public-claims';
 import { attachOsmTagsToMagnetCanonicalFacts } from './kernel-osm-tag-alignment';
+import { inferCityScaleFromRuAddress } from './city-scale-from-address';
 import { buildDemandSignalsFromKernel, runLocationDemandScoringKernel } from './location-scoring-kernel';
 import {
   buildLocationPublicSummary,
@@ -133,6 +134,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     rawElements: input.rawElements ?? [],
   });
 
+  const cityScaleInference = inferCityScaleFromRuAddress(input.inputAddress);
   const demandKernelV1 = runLocationDemandScoringKernel({
     magnets: analysis.magnets,
     magnetFacts,
@@ -142,6 +144,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     scoreBlockedDueToIncompleteData: Boolean(
       analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData,
     ),
+    cityScaleTier: cityScaleInference.tier,
   });
 
   const strictPublicDrivers = selectStrictPublicSummaryDrivers({
