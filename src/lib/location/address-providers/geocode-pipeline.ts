@@ -5,7 +5,6 @@ import type { AddressMarket } from './types';
 import { googleForwardGeocode } from './geocode-google';
 import { buildRuMetroGeocodeVariants, resolveRuAddressSearchProfiles } from './ru-address-search-profile';
 import { normalizeRuAddressQuery } from './ru-normalize';
-import { looksLikeRuStreetWithHouseNumber } from './ru-house-number';
 
 function googleKey(): string | null {
   const k =
@@ -39,9 +38,7 @@ async function geocodeSingleAddress(
     }
   }
 
-  const fb = await geocodeWithFallback(address, {
-    preferStreetHouse: market === 'ru' && looksLikeRuStreetWithHouseNumber(address),
-  });
+  const fb = await geocodeWithFallback(address);
   return {
     result: fb.result,
     winner: fb.winner,

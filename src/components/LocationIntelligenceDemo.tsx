@@ -18,9 +18,6 @@ import {
   buildCommercialFormatFit,
   FIT_LEVEL_LABEL_RU,
   FIT_LEVEL_COLOR,
-  applyDemoFreeHeadlineCaps,
-  specializedMedicalDemoPublicLineRu,
-  strategicHubDemoPublicLineRu,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -46,6 +43,8 @@ import {
 import { generateConclusion } from '@/lib/location/client';
 import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-prime-magnets';
 import { applyResidentialDemoSanity } from '@/lib/location/client';
+import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
+import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
 import {
   normalizeRuDemoExplanationLines,
   sanitizeRuFactorList,
@@ -1951,11 +1950,8 @@ function ASIPanel({
 }) {
   const router = useRouter();
   const {
-    magnets, gravityExplanation, competitors, magnetCountByCategory,
+    magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
-  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
-  const demoFreeHeadlineCap = isRuResidentialDemo ? applyDemoFreeHeadlineCaps(analysis) : null;
-  const evergreenIndex = demoFreeHeadlineCap?.evergreenDisplay ?? analysis.evergreenIndex;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
   const conclusion =
     locale === 'ru'
@@ -2016,6 +2012,7 @@ function ASIPanel({
       : strategy === 'hybrid'      ? '$1 300 – $2 200'
       :                              '$1 800 – $3 300';
   })();
+  const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
   const ruResidentialDemandHeadlineRu = (dt: DemandType): string => {
     switch (dt) {
       case 'tourism-led':
@@ -2038,9 +2035,7 @@ function ASIPanel({
     ];
     const factors = specificFactors.length > 0 ? specificFactors : generateScoreFactors(analysis, locale);
     const merged = sanity ? [...sanity.capReasonsRu, ...factors] : factors;
-    const cleaned = isRuResidentialDemo
-      ? normalizeRuDemoExplanationLines(merged, { max: 5, analysis })
-      : merged;
+    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(merged, 5) : merged;
 
     return cleaned.slice(0, 2).map((factor) => {
       const normalized = factor.replace(/\s+/g, ' ').trim();
@@ -2152,9 +2147,7 @@ function ASIPanel({
       if (typeof n === 'string' && n.trim()) merged.push(n.trim());
     }
     const base = merged.length > 0 ? merged : generateScoreFactors(analysis, locale);
-    const cleaned = isRuResidentialDemo
-      ? normalizeRuDemoExplanationLines(base, { max: 5, analysis })
-      : base;
+    const cleaned = isRuResidentialDemo ? normalizeRuDemoExplanationLines(base, 5) : base;
     return cleaned.slice(0, 2);
   })();
 
@@ -2307,18 +2300,19 @@ function ASIPanel({
 
         const regionalRuExtras =
           locale === 'ru'
-            ? [strategicHubDemoPublicLineRu(analysis), specializedMedicalDemoPublicLineRu(analysis)].filter(
-              (x): x is string => Boolean(x),
-            )
+            ? [
+              strategicHubFreeBriefRu(analysis.strategicTransportHubMagnets ?? []),
+              specializedMedicalFreeBriefRu(analysis.magnets ?? []),
+            ].filter((x): x is string => Boolean(x))
             : [];
 
         if (isRuResidentialDemo) {
           const rawGeneric =
             rawPos.length + rawNeg.length === 0 ? generateScoreFactors(analysis, locale) : [];
-          const mergedRu = normalizeRuDemoExplanationLines([...rawPos, ...rawNeg, ...rawGeneric], {
-            max: 5,
-            analysis,
-          });
+          const mergedRu = normalizeRuDemoExplanationLines(
+            [...rawPos, ...rawNeg, ...rawGeneric, ...regionalRuExtras],
+            5,
+          );
           if (mergedRu.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">

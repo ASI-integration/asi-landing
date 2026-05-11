@@ -50,15 +50,6 @@ export { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './l
 export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 export { buildNeighborhoodEnvironmentLayer, emptyNeighborhoodEnvironmentLayer, mergeNeighborhoodEnvironmentLayer } from './neighborhood-environment';
 export { applyResidentialDemoSanity } from './residential-demo-sanity';
-export {
-  applyDemoFreeHeadlineCaps,
-  buildDemoPublicEvidenceFlags,
-  hasStrongConfirmedDemoAnchor,
-  specializedMedicalDemoPublicLineRu,
-  strategicHubDemoPublicLineRu,
-} from './demo-free-evidence';
-export { buildDemoLocationDiagnosticsSnapshot } from './demo-location-debug';
-export { gateRuDemoPublicPhrase } from './demo-public-copy';
 export type {
   ResidentialDemoSanity,
   ResidentialDemoAudience,

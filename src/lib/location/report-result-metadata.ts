@@ -37,12 +37,6 @@ export type LocationReportResultMetadata = {
     usedSources: string[];
     preparingSources: string[];
   };
-  /**
-   * Free/demo headline guard — present only when the composite score was capped
-   * because no strong confirmed anchor passed diagnostics-backed checks.
-   */
-  demoFreeHeadlineCapApplied?: boolean;
-  demoFreeHeadlineCapReasonRu?: string | null;
 };
 
 type MetadataEnv = Record<string, string | undefined>;
