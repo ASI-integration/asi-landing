@@ -14,7 +14,7 @@ import { strategicHubSubtypeLabelRu } from './strategic-transport-hub';
 // ── Score band (UI presentation) ──────────────────────────────────────────────
 
 /**
- * Map evergreenIndex to a Band descriptor.
+ * Map public headline score (0–100, typically `scoringTrace.finalScore`) to a Band descriptor.
  *
  * When `audience` is supplied the strong-tier label is rendered in Russian,
  * naming the dominant audience type:

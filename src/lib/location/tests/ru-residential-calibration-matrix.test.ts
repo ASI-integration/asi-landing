@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { applyResidentialDemoSanity } from '../residential-demo-sanity';
+import {
+  applyResidentialDemoSanity,
+  computeResidentialDemoPresentation,
+} from '../residential-demo-sanity';
 import type {
   MagnetItem,
   LocationAnalysis,
@@ -7,6 +10,7 @@ import type {
   TargetAudience,
   ScoreBand,
 } from '../types';
+import type { LocationScoringTrace } from '../location-scoring-trace';
 
 function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' | 'distance'>): MagnetItem {
   return {
@@ -20,6 +24,32 @@ function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' 
     strengthClass: p.strengthClass ?? 'medium',
     attractionScore: p.attractionScore ?? 3,
     ...p,
+  };
+}
+
+function mkTrace(evergreenIndex: number, finalScore: number): LocationScoringTrace {
+  return {
+    coordinates: { lat: 59.93, lon: 30.36 },
+    rawObjectsCount: 0,
+    classifiedMagnets: [],
+    scoreFeatures: {
+      evergreenIndex,
+      attractionScaled: 0,
+      competitorPressure: 0,
+      magnet_score: 0,
+      demand_score: 0,
+      supply_score: 0,
+      accessibility_score: 0,
+      audience_fit_score: 0,
+      seasonality_score: 0,
+    },
+    baseScore: finalScore,
+    capsApplied: [],
+    finalScore,
+    evidence: [],
+    publicBullets: [],
+    removedPublicBullets: [],
+    warnings: [],
   };
 }
 
@@ -45,6 +75,7 @@ const baseEnv: NeighborhoodEnvironmentLayer = {
 
 function fixture(p: {
   evergreenIndex: number;
+  compositeHeadline?: number;
   magnets: MagnetItem[];
   primaryAudience: TargetAudience;
   audienceFitScore: number;
@@ -53,14 +84,15 @@ function fixture(p: {
   businessClusterDetected?: boolean;
   accessibilityStopDistances?: number[];
 }): LocationAnalysis {
+  const headline = p.compositeHeadline ?? p.evergreenIndex;
   return {
     evergreenIndex: p.evergreenIndex,
-    scoreBand: (p.evergreenIndex >= 70 ? 'strong' : p.evergreenIndex >= 45 ? 'medium' : 'weak') as ScoreBand,
+    scoreBand: (headline >= 70 ? 'strong' : headline >= 45 ? 'medium' : headline > 0 ? 'weak' : 'none') as ScoreBand,
     locationScore: {
-      location_score: p.evergreenIndex,
+      location_score: headline,
       rating: 'viable',
       breakdown: {
-        demand_score: p.evergreenIndex,
+        demand_score: headline,
         supply_score: 60,
         magnet_score: 50,
         seasonality_score: 60,
@@ -124,6 +156,7 @@ function fixture(p: {
     },
     neighborhoodEnvironment: baseEnv,
     heatmapPoints: [],
+    scoringTrace: mkTrace(p.evergreenIndex, headline),
     conclusion: '',
   };
 }
@@ -141,6 +174,7 @@ type MatrixCase = {
   mustNotHappen?: string[];
   analysis: {
     evergreenIndex: number;
+    compositeHeadline?: number;
     magnets: MagnetItem[];
     primaryAudience: TargetAudience;
     audienceFitScore: number;
@@ -1039,9 +1073,10 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
   it.each(cases)('$address', (c) => {
     const analysis = fixture(c.analysis);
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeGreaterThanOrEqual(c.expectedRange[0]);
-    expect(sanity.displayScore).toBeLessThanOrEqual(c.expectedRange[1]);
+    expect(cappedHeadline).toBeGreaterThanOrEqual(c.expectedRange[0]);
+    expect(cappedHeadline).toBeLessThanOrEqual(c.expectedRange[1]);
 
     const allowed = normalizeExpectedAudience(c.expectedAudience).map(mapAudienceToDemo);
     expect(allowed).toContain(sanity.displayAudience);
@@ -1061,8 +1096,7 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
   });
 
   it('explicit regressions: secondary cluster does not collapse to near-zero', () => {
-    const sanity = applyResidentialDemoSanity(
-      fixture({
+    const analysisFloor = fixture({
         evergreenIndex: 6, // simulate gravity collapse; rules must floor it
         magnets: [
           magnet({ categoryId: 'civic', name: 'ЗАГС Красногвардейского района', distance: 420, weight: 3 }),
@@ -1080,39 +1114,40 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
         audienceFitScore: 40,
         businessClusterDetected: false,
         accessibilityStopDistances: [320],
-      }),
-    );
-    expect(sanity.displayScore).toBeGreaterThanOrEqual(35);
+      });
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysisFloor, analysisFloor.scoringTrace!.finalScore);
+    expect(cappedHeadline).toBeGreaterThanOrEqual(35);
   });
 
   it('explicit regressions: Bolshokhtinsky public display is capped + has secondary-cluster reason', () => {
     const okhta = cases.find(x => x.address.includes('Большeохтинский'));
     expect(okhta).toBeTruthy();
 
-    const sanity = applyResidentialDemoSanity(fixture(okhta!.analysis));
-    expect(sanity.displayScore).toBeGreaterThanOrEqual(35);
-    expect(sanity.displayScore).toBeLessThanOrEqual(55);
+    const okhtaAnalysis = fixture(okhta!.analysis);
+    const sanity = applyResidentialDemoSanity(okhtaAnalysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(okhtaAnalysis, okhtaAnalysis.scoringTrace!.finalScore);
+    expect(cappedHeadline).toBeGreaterThanOrEqual(35);
+    expect(cappedHeadline).toBeLessThanOrEqual(55);
     expect(sanity.displayAudience).not.toBe('BUSINESS');
     expect(sanity.verdictLabelRu).not.toContain('Сильная');
     expect(sanity.capReasonsRu.join(' ')).toContain('вторичный кластер');
   });
 
   it('explicit regressions: empty/weak residential stays weak', () => {
-    const sanity = applyResidentialDemoSanity(
-      fixture({
+    const weakAnalysis = fixture({
         evergreenIndex: 18,
         magnets: [],
         primaryAudience: 'BUSINESS',
         audienceFitScore: 10,
-      }),
-    );
-    expect(sanity.displayScore).toBe(18);
+      });
+    const sanity = applyResidentialDemoSanity(weakAnalysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(weakAnalysis, weakAnalysis.scoringTrace!.finalScore);
+    expect(cappedHeadline).toBe(18);
     expect(sanity.displayAudience).toBe('RESIDENTIAL');
   });
 
   it('explicit regressions: tier-1 business/tourist can still be strong', () => {
-    const businessStrong = applyResidentialDemoSanity(
-      fixture({
+    const bizAnalysis = fixture({
         evergreenIndex: 92,
         magnets: [
           magnet({ categoryId: 'business', name: 'Бизнес-центр Сенатор', distance: 450, subType: 'office', weight: 6, strengthClass: 'strong' }),
@@ -1121,13 +1156,13 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
         primaryAudience: 'BUSINESS',
         audienceFitScore: 78,
         businessClusterDetected: true,
-      }),
-    );
-    expect(businessStrong.displayScore).toBe(92);
+      });
+    const businessStrong = applyResidentialDemoSanity(bizAnalysis);
+    const bizCap = computeResidentialDemoPresentation(bizAnalysis, bizAnalysis.scoringTrace!.finalScore);
+    expect(bizCap.cappedHeadline).toBe(92);
     expect(businessStrong.displayAudience).toBe('BUSINESS');
 
-    const touristStrong = applyResidentialDemoSanity(
-      fixture({
+    const tourAnalysis = fixture({
         evergreenIndex: 88,
         magnets: [
           magnet({ categoryId: 'attraction', name: 'Большой музей современного искусства', distance: 300, strengthClass: 'strong', attractionScore: 4.8, weight: 6 }),
@@ -1136,9 +1171,10 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
         primaryAudience: 'TOURIST',
         audienceFitScore: 40,
         fallbackMode: false,
-      }),
-    );
-    expect(touristStrong.displayScore).toBe(88);
+      });
+    const touristStrong = applyResidentialDemoSanity(tourAnalysis);
+    const tourCap = computeResidentialDemoPresentation(tourAnalysis, tourAnalysis.scoringTrace!.finalScore);
+    expect(tourCap.cappedHeadline).toBe(88);
     expect(touristStrong.displayAudience).toBe('TOURIST');
   });
 });

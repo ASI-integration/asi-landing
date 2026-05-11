@@ -1,10 +1,7 @@
 /**
  * RU residential demo sanity layer.
  *
- * Implementation lives in the canonical rules module:
- * `src/lib/location/rules/residential-location-rules.ts`
- *
- * This file is kept as a stable import path for UI and existing tests.
+ * Presentation caps are recorded on `LocationScoringTrace.capsApplied` and rewrite `finalScore`.
  */
 
 export type {
@@ -14,6 +11,11 @@ export type {
 } from './rules/residential-location-rules';
 
 export {
+  computeResidentialDemoPresentation,
   applyResidentialLocationRules as applyResidentialDemoSanity,
 } from './rules/residential-location-rules';
 
+export {
+  applyResidentialDemoPresentationToAnalysis,
+  cloneAnalysisForResidentialDemoPatch,
+} from './residential-demo-presentation';

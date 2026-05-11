@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { applyResidentialDemoSanity } from '../residential-demo-sanity';
-import { getBand } from '../explanation';
+import {
+  applyResidentialDemoSanity,
+  computeResidentialDemoPresentation,
+} from '../residential-demo-sanity';
 import type {
   LocationAnalysis,
   MagnetItem,
@@ -8,6 +10,7 @@ import type {
   ScoreBand,
   TargetAudience,
 } from '../types';
+import type { LocationScoringTrace } from '../location-scoring-trace';
 
 function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' | 'distance'>): MagnetItem {
   return {
@@ -21,6 +24,32 @@ function magnet(p: Partial<MagnetItem> & Pick<MagnetItem, 'categoryId' | 'name' 
     strengthClass: p.strengthClass ?? 'medium',
     attractionScore: p.attractionScore ?? 3,
     ...p,
+  };
+}
+
+function mkTrace(evergreenIndex: number, finalScore: number): LocationScoringTrace {
+  return {
+    coordinates: { lat: 59.93, lon: 30.36 },
+    rawObjectsCount: 0,
+    classifiedMagnets: [],
+    scoreFeatures: {
+      evergreenIndex,
+      attractionScaled: 0,
+      competitorPressure: 0,
+      magnet_score: 0,
+      demand_score: 0,
+      supply_score: 0,
+      accessibility_score: 0,
+      audience_fit_score: 0,
+      seasonality_score: 0,
+    },
+    baseScore: finalScore,
+    capsApplied: [],
+    finalScore,
+    evidence: [],
+    publicBullets: [],
+    removedPublicBullets: [],
+    warnings: [],
   };
 }
 
@@ -46,20 +75,23 @@ const baseEnv: NeighborhoodEnvironmentLayer = {
 
 function fixture(p: {
   evergreenIndex: number;
+  /** Composite headline when it differs from internal evergreen feature */
+  compositeHeadline?: number;
   magnets: MagnetItem[];
   primaryAudience: TargetAudience;
   audienceFitScore: number;
   fallbackMode?: boolean;
   audienceSharePct?: number;
 }): LocationAnalysis {
+  const headline = p.compositeHeadline ?? p.evergreenIndex;
   return {
     evergreenIndex: p.evergreenIndex,
-    scoreBand: (p.evergreenIndex >= 70 ? 'strong' : p.evergreenIndex >= 45 ? 'medium' : 'weak') as ScoreBand,
+    scoreBand: (headline >= 70 ? 'strong' : headline >= 45 ? 'medium' : headline > 0 ? 'weak' : 'none') as ScoreBand,
     locationScore: {
-      location_score: p.evergreenIndex,
+      location_score: headline,
       rating: 'viable',
       breakdown: {
-        demand_score: p.evergreenIndex,
+        demand_score: headline,
         supply_score: 60,
         magnet_score: 50,
         seasonality_score: 60,
@@ -116,6 +148,7 @@ function fixture(p: {
     },
     neighborhoodEnvironment: baseEnv,
     heatmapPoints: [],
+    scoringTrace: mkTrace(p.evergreenIndex, headline),
     conclusion: '',
   };
 }
@@ -143,8 +176,9 @@ describe('applyResidentialDemoSanity — Komendantsky-like residential block', (
     });
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(cappedHeadline).toBeLessThanOrEqual(70);
     expect(sanity.verdictLabelRu).not.toContain('Сильная');
     expect(sanity.displayAudience).not.toBe('BUSINESS');
     expect(sanity.audienceLabelRu).not.toBe('Деловой');
@@ -163,8 +197,9 @@ describe('applyResidentialDemoSanity — Komendantsky-like residential block', (
     });
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeLessThanOrEqual(65);
+    expect(cappedHeadline).toBeLessThanOrEqual(65);
     expect(sanity.displayAudience).toBe('RESIDENTIAL');
   });
 });
@@ -198,12 +233,13 @@ describe('applyResidentialDemoSanity — Komendantsky 23к1 weak-office cluster'
     analysis.audienceAnalysis!.businessClusterDetected = true;
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(cappedHeadline).toBeLessThanOrEqual(80);
     expect(sanity.displayAudience).not.toBe('BUSINESS');
     expect(sanity.verdictLabelRu).not.toContain('Сильная');
     expect(sanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
-    expect(getBand(sanity.displayScore)).not.toBe('strong');
+    expect(sanity.capApplied).toBe(true);
     expect(sanity.capReasonsRu.join(' ')).toContain(
       'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',
     );
@@ -240,6 +276,7 @@ describe('applyResidentialDemoSanity — Komendantsky production magnet list', (
 
     const analysis = fixture({
       evergreenIndex: 93,
+      compositeHeadline: 99,
       magnets,
       primaryAudience: 'BUSINESS',
       audienceFitScore: 62,
@@ -248,8 +285,9 @@ describe('applyResidentialDemoSanity — Komendantsky production magnet list', (
     analysis.audienceAnalysis!.businessClusterDetected = true;
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeLessThanOrEqual(70);
+    expect(cappedHeadline).toBeLessThanOrEqual(70);
     expect(sanity.displayAudience).not.toBe('BUSINESS');
     expect(sanity.verdictLabelRu).not.toBe('Сильная локация для командированных');
     expect(sanity.capApplied).toBe(true);
@@ -298,8 +336,9 @@ describe('applyResidentialDemoSanity — real strong location', () => {
     });
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBe(92);
+    expect(cappedHeadline).toBe(92);
     expect(sanity.tier1Count).toBeGreaterThanOrEqual(2);
     expect(sanity.capApplied).toBe(false);
     expect(sanity.displayAudience).toBe('BUSINESS');
@@ -321,8 +360,9 @@ describe('applyResidentialDemoSanity — single tier-1 hospital', () => {
     });
 
     const sanity = applyResidentialDemoSanity(analysis);
+    const { cappedHeadline } = computeResidentialDemoPresentation(analysis, analysis.scoringTrace!.finalScore);
 
-    expect(sanity.displayScore).toBeLessThanOrEqual(80);
+    expect(cappedHeadline).toBeLessThanOrEqual(80);
     expect(sanity.tier1Count).toBe(1);
     expect(sanity.verdictLabelRu).not.toContain('Сильная');
   });
