@@ -190,7 +190,16 @@ export type {
   LocationEvidenceItem,
   LocationPublicClaim,
   LocationPublicClaimTrace,
+  LocationPublicSummary,
+  LocationPublicDriverRow,
+  LocationPublicSummaryDemandType,
 } from './location-decision-contract';
+export {
+  buildLocationPublicSummary,
+  selectStrictPublicSummaryDrivers,
+  applyVerdictContradictionGuards,
+  strongBusinessContributionFromDrivers,
+} from './location-public-summary';
 export {
   lintPublicClaimSurfaceRu,
   publicDemandProfileHeadline,

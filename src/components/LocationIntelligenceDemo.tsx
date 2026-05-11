@@ -24,7 +24,6 @@ import {
   applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
   ruResidentialLocationDecisionForDemo,
-  publicDemandProfileHeadline,
   formatLocationDemandKernelDebug,
 } from '@/lib/location/client';
 import type {
@@ -1983,8 +1982,10 @@ function ASIPanel({
           locale: 'ru',
         })
       : null;
-  const residentialPublicClaims: LocationPublicClaim[] =
-    residentialLocationDecision?.publicClaims ?? [];
+  const residentialPublicSummary = residentialLocationDecision?.publicSummary ?? null;
+  const residentialUiClaims: LocationPublicClaim[] = (residentialPublicSummary?.publicDrivers ?? []).map(
+    d => ({ textRu: d.textRu, trace: d.trace }),
+  );
   const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
   const sanity =
     isRuResidentialDemo && !dataBlocked
@@ -1999,15 +2000,25 @@ function ASIPanel({
       : enginePublicScore;
   const band = dataBlocked
     ? getBand(0)
-    : getBand(publicScore, analysis.audienceAnalysis?.primaryAudience);
-  // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
-  const strategy: 'mid_term' | 'hybrid' | 'short_term' =
-    analysis.locationScore?.recommended_strategy ??
-    (publicScore >= 70 ? 'short_term' : publicScore >= 45 ? 'hybrid' : 'mid_term');
+    : isRuResidentialDemo
+      ? getBand(publicScore)
+      : getBand(publicScore, analysis.audienceAnalysis?.primaryAudience);
+  const strategy: 'mid_term' | 'hybrid' | 'short_term' = isRuResidentialDemo
+    ? publicScore >= 70
+      ? 'short_term'
+      : publicScore >= 45
+        ? 'hybrid'
+        : 'mid_term'
+    : analysis.locationScore?.recommended_strategy ??
+      (publicScore >= 70 ? 'short_term' : publicScore >= 45 ? 'hybrid' : 'mid_term');
   const strategyPoints =
-    strategy === 'mid_term' ? c.strategyMidTerm
-    : strategy === 'hybrid' ? c.strategyHybrid
-    : c.strategyShortTerm;
+    isRuResidentialDemo && residentialPublicSummary
+      ? residentialPublicSummary.recommendedStrategyBulletsRu
+      : strategy === 'mid_term'
+        ? c.strategyMidTerm
+        : strategy === 'hybrid'
+          ? c.strategyHybrid
+          : c.strategyShortTerm;
   const [visible, setVisible] = useState(false);
   const [magnetExpanded, setMagnetExpanded] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
@@ -2147,7 +2158,7 @@ function ASIPanel({
 
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
-    if (isRuResidentialDemo) return residentialPublicClaims.slice(0, 2).map(c => c.textRu);
+    if (isRuResidentialDemo) return residentialUiClaims.slice(0, 2).map(c => c.textRu);
     const ls = analysis.locationScore;
     const pos = ls?.top_positive_factors ?? [];
     const neg = ls?.top_negative_factors ?? [];
@@ -2165,7 +2176,7 @@ function ASIPanel({
   })();
 
   const dashboardClaimRows: LocationPublicClaim[] =
-    isRuResidentialDemo ? residentialPublicClaims.slice(0, 2) : [];
+    isRuResidentialDemo ? residentialUiClaims.slice(0, 2) : [];
 
   return (
     <>
@@ -2219,15 +2230,30 @@ function ASIPanel({
                             </div>
                             {claimTraceDebug ? (
                               <span className="pl-4 text-[10px] font-mono text-slate-600 leading-tight">
-                                mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
+                                source:LocationPublicSummary · mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
                               </span>
                             ) : null}
                           </li>
                         ))}
                       </ul>
                     ) : null}
+                    {claimTraceDebug && residentialPublicSummary ? (
+                      <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
+                        {[
+                          'source:LocationPublicSummary',
+                          `primaryDemandType=${residentialPublicSummary.primaryDemandType}`,
+                          `publicDrivers=${residentialPublicSummary.publicDrivers.length}`,
+                          `rejectedFromPublic=${residentialPublicSummary.rejectedFromPublic.length}`,
+                          `headlineReason=${residentialPublicSummary.trace.headlineReason}`,
+                          `verdictReason=${residentialPublicSummary.trace.verdictReason}`,
+                          residentialPublicSummary.trace.contradictionWarnings.length
+                            ? `contradictionWarnings=${residentialPublicSummary.trace.contradictionWarnings.join(' | ')}`
+                            : 'contradictionWarnings=—',
+                        ].join('\n')}
+                      </pre>
+                    ) : null}
                     {claimTraceDebug && residentialLocationDecision?.demandKernelV1 ? (
-                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
                         {formatLocationDemandKernelDebug(residentialLocationDecision.demandKernelV1)}
                       </pre>
                     ) : null}
@@ -2260,9 +2286,10 @@ function ASIPanel({
                 </p>
               ) : (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
-                {residentialLocationDecision
-                  ? publicDemandProfileHeadline(residentialLocationDecision, 'ru')
-                  : 'Профиль спроса: нет координат расчёта для привязки фактов карты.'}
+                {residentialPublicSummary?.headlineRu ??
+                  (residentialLocationDecision
+                    ? 'Профиль спроса: нет сводки для публичного экрана.'
+                    : 'Профиль спроса: нет координат расчёта для привязки фактов карты.')}
               </p>
               )
             ) : (
@@ -2292,7 +2319,13 @@ function ASIPanel({
               </p>
             ) : null}
             <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${dataBlocked ? 'text-slate-400' : band.textColor}`}>
-              {dataBlocked ? (locale === 'ru' ? 'Анализ не завершён' : 'Analysis incomplete') : band.label}
+              {dataBlocked
+                ? locale === 'ru'
+                  ? 'Анализ не завершён'
+                  : 'Analysis incomplete'
+                : isRuResidentialDemo && residentialPublicSummary
+                  ? residentialPublicSummary.audienceVerdictRu
+                  : band.label}
             </p>
             <div className="mt-4 space-y-2">
               <button
@@ -2364,7 +2397,7 @@ function ASIPanel({
             : [];
 
         if (isRuResidentialDemo) {
-          const mergedClaims = residentialPublicClaims.slice(0, 5);
+          const mergedClaims = residentialUiClaims.slice(0, 5);
           if (dataBlocked || mergedClaims.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">
@@ -2380,7 +2413,7 @@ function ASIPanel({
                     </div>
                     {claimTraceDebug ? (
                       <span className="pl-5 text-[10px] font-mono text-slate-600 leading-tight">
-                        mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
+                        source:LocationPublicSummary · mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
                       </span>
                     ) : null}
                   </li>

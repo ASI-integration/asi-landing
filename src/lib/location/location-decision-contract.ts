@@ -7,7 +7,10 @@ import type {
   LocationScoringIntegritySnapshot,
   LocationScoringTrace,
 } from './location-scoring-trace';
-import type { LocationDemandScoringKernelResult } from './location-scoring-contract';
+import type {
+  LocationDemandKernelDemandType,
+  LocationDemandScoringKernelResult,
+} from './location-scoring-contract';
 
 /** Mirrors ScoreBand — kept local to avoid circular imports with types.ts */
 export type LocationDecisionScoreBand = 'strong' | 'medium' | 'weak' | 'none';
@@ -120,6 +123,41 @@ export interface LocationUiProjection {
   warnings: string[];
 }
 
+/** Canonical RU residential demo public surface — single consumer for hero / demand / verdict / bullets / strategy. */
+export type LocationPublicSummaryDemandType = LocationDemandKernelDemandType;
+
+export interface LocationPublicDriverRow {
+  textRu: string;
+  trace: LocationPublicClaimTrace;
+}
+
+export interface LocationPublicRejectedRow {
+  sourceName: string;
+  reason: string;
+}
+
+export interface LocationPublicSummaryTrace {
+  headlineReason: string;
+  verdictReason: string;
+  contradictionWarnings: string[];
+}
+
+export interface LocationPublicSummary {
+  finalScore: number | null;
+  scoreBand: LocationDecisionScoreBand;
+  primaryDemandType: LocationPublicSummaryDemandType;
+  secondaryDemandTypes: LocationPublicSummaryDemandType[];
+  headlineRu: string;
+  audienceVerdictRu: string;
+  publicDrivers: LocationPublicDriverRow[];
+  supportingContext: string[];
+  rejectedFromPublic: LocationPublicRejectedRow[];
+  warnings: string[];
+  debugTrace: string[];
+  recommendedStrategyBulletsRu: string[];
+  trace: LocationPublicSummaryTrace;
+}
+
 export interface LocationDecisionRawObjectStats {
   rawObjectsCount: number;
   classifiedMagnetCount: number;
@@ -151,6 +189,8 @@ export interface LocationDecision {
   evidenceItems: LocationEvidenceItem[];
   /** Kernel-backed bullets with MagnetFact / DemandSignal trace — preferred public surface. */
   publicClaims: LocationPublicClaim[];
+  /** RU residential demo: sole source for public UI; {@link publicClaims} align with {@link LocationPublicSummary.publicDrivers}. */
+  publicSummary: LocationPublicSummary | null;
   publicReportSections: LocationPublicReportSection[];
   uiProjection: LocationUiProjection;
   warnings: string[];

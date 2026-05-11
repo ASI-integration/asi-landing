@@ -4,27 +4,24 @@
  */
 
 import type { LocationAnalysis, OSMElement } from './types';
-import type { LocationDecision, MagnetTier } from './location-decision-contract';
+import type { LocationDecision } from './location-decision-contract';
 import { publicLocationScore, scoreBandFromPublicScore } from './location-score-public';
 import {
   assertDemandSignalsHaveEvidence,
   buildAddressIdentity,
   canonicalFactsFromMagnetsFallback,
   canonicalFactsFromOsmElements,
-  formatPublicEvidenceLineRu,
   magnetItemToMagnetFact,
 } from './location-decision-rules';
-import {
-  buildPublicClaimsRu,
-  validatePublicClaimPipeline,
-} from './location-public-claims';
+import { validatePublicClaimPipeline } from './location-public-claims';
 import { attachOsmTagsToMagnetCanonicalFacts } from './kernel-osm-tag-alignment';
+import { buildDemandSignalsFromKernel, runLocationDemandScoringKernel } from './location-scoring-kernel';
 import {
-  buildDemandSignalsFromKernel,
-  kernelDriversEligibleForPublicDisplay,
-  magnetRoleForScoredDriver,
-  runLocationDemandScoringKernel,
-} from './location-scoring-kernel';
+  buildLocationPublicSummary,
+  evidenceItemsFromStrictSummaryDrivers,
+  publicSummaryToClaims,
+  selectStrictPublicSummaryDrivers,
+} from './location-public-summary';
 
 export interface LocationDecisionBuildInput {
   analysis: LocationAnalysis;
@@ -147,29 +144,15 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     ),
   });
 
-  const evidenceDrivers = kernelDriversEligibleForPublicDisplay({
+  const strictPublicDrivers = selectStrictPublicSummaryDrivers({
     kernel: demandKernelV1,
     magnets: analysis.magnets,
-  }).slice(0, 5);
+  });
 
-  const evidenceItems = evidenceDrivers.flatMap(d => {
-    const mf = magnetFacts.find(m => m.id === d.magnetFactId);
-    if (!mf) return [];
-    const role = magnetRoleForScoredDriver(d) ?? mf.role;
-    const tierLabel: MagnetTier =
-      d.resolvedTier === 1 ? 'primary' : d.resolvedTier === 2 ? 'secondary' : 'weak';
-    const patched = { ...mf, role, tier: tierLabel };
-    return [
-      {
-        evidenceId: d.evidenceId,
-        factId: mf.id,
-        objectName: mf.name,
-        typeRu: mf.category,
-        subtypeRu: mf.subtype,
-        distanceMeters: mf.distanceMeters,
-        publicExplanationRu: formatPublicEvidenceLineRu(patched),
-      },
-    ];
+  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
+    strictDrivers: strictPublicDrivers,
+    magnetFacts,
+    magnets: analysis.magnets,
   });
 
   let demandSignals = buildDemandSignalsFromKernel({
@@ -205,7 +188,29 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
 
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];
 
-  const publicClaims = buildPublicClaimsRu({ evidenceItems, magnetFacts, demandSignals });
+  const baseWarningsPreSummary = [...addressIdentity.warnings, ...(trace?.warnings ?? [])];
+  for (const s of demandSignals) {
+    if (!s.evidenceFactIds.length && s.id !== 'ds:generic_incomplete_data') {
+      baseWarningsPreSummary.push(`kernel: demand signal ${s.id} lacks evidenceFactIds`);
+    }
+  }
+  for (const w of demandKernelV1.warnings) {
+    baseWarningsPreSummary.push(w);
+  }
+
+  const publicSummary = buildLocationPublicSummary({
+    analysis,
+    magnets: analysis.magnets,
+    magnetFacts,
+    kernel: demandKernelV1,
+    demandSignals,
+    finalScore: Number.isFinite(finalScore) ? finalScore : null,
+    scoreBand,
+    baseWarnings: baseWarningsPreSummary,
+    strictDrivers: strictPublicDrivers,
+  });
+
+  const publicClaims = publicSummaryToClaims(publicSummary.publicDrivers);
   const keyEvidenceBullets = publicClaims.map(c => c.textRu);
 
   const claimProblems = validatePublicClaimPipeline({
@@ -221,27 +226,16 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       ? analysis.neighborhoodEnvironment.environmentNarrativeRu
       : analysis.neighborhoodEnvironment.environmentNarrativeEn;
 
-  const strategySummary =
-    analysis.residentialAnalysis?.strategyRationaleRu ??
-    analysis.residentialAnalysis?.operationalNoteRu ??
-    analysis.conclusion;
+  const strategySummary = publicSummary.recommendedStrategyBulletsRu.join(' ');
 
   const heroTitle =
     locale === 'ru'
       ? `Индекс локации: ${finalScore ?? '—'}/100`
       : `Location index: ${finalScore ?? '—'}/100`;
 
-  const warnings = [...addressIdentity.warnings, ...(trace?.warnings ?? [])];
-  for (const s of demandSignals) {
-    if (!s.evidenceFactIds.length && s.id !== 'ds:generic_incomplete_data') {
-      warnings.push(`kernel: demand signal ${s.id} lacks evidenceFactIds`);
-    }
-  }
+  const warnings = [...publicSummary.warnings];
   for (const p of claimProblems) {
     warnings.push(`kernel:public_claim:${p}`);
-  }
-  for (const w of demandKernelV1.warnings) {
-    warnings.push(w);
   }
 
   const uiProjection = {
@@ -286,6 +280,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     scoreBand,
     evidenceItems,
     publicClaims,
+    publicSummary,
     publicReportSections,
     uiProjection,
     warnings,

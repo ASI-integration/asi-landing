@@ -122,6 +122,10 @@ export function publicDemandProfileHeadline(
   decision: LocationDecision,
   locale: 'ru' | 'en',
 ): string {
+  if (decision.publicSummary && locale === 'ru') {
+    return decision.publicSummary.headlineRu;
+  }
+
   const kernel = decision.demandKernelV1;
   if (kernel) {
     const dominantKernel = kernel.dominantDemandType;
