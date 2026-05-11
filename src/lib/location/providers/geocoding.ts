@@ -18,34 +18,100 @@ export interface GeocodeAttemptStatus {
   ok: boolean;
 }
 
+type NominatimHit = {
+  lat: string;
+  lon: string;
+  display_name?: string;
+  class?: string;
+  type?: string;
+  importance?: number;
+  address?: Record<string, string>;
+};
+
+function nominatimHousePreferenceScore(hit: NominatimHit): number {
+  const addr = hit.address ?? {};
+  const hasHouse = Boolean(addr.house_number || addr.house_name);
+  let s = hit.importance ?? 0;
+  if (hasHouse) s += 85;
+
+  const cls = hit.class ?? '';
+  const typ = hit.type ?? '';
+
+  if (cls === 'building' || typ === 'house') s += 45;
+  if (cls === 'place' && typ === 'house') s += 95;
+
+  if (
+    cls === 'amenity' ||
+    cls === 'shop' ||
+    cls === 'healthcare' ||
+    cls === 'office' ||
+    typ === 'clinic' ||
+    typ === 'doctors'
+  ) {
+    s -= 75;
+  }
+  if (cls === 'highway') s -= 35;
+
+  return s;
+}
+
+async function nominatimGeocodeSmart(address: string, preferStreetHouse: boolean): Promise<GeocodeResult | null> {
+  try {
+    const limit = preferStreetHouse ? 12 : 1;
+    const details = preferStreetHouse ? 1 : 0;
+    const url =
+      `https://nominatim.openstreetmap.org/search` +
+      `?format=json&q=${encodeURIComponent(address)}&limit=${limit}&addressdetails=${details}`;
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'ru,en' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as NominatimHit[];
+    if (!data.length) return null;
+
+    if (!preferStreetHouse) {
+      const h = data[0];
+      return {
+        lat: parseFloat(h.lat),
+        lon: parseFloat(h.lon),
+        displayName: h.display_name,
+      };
+    }
+
+    let best = data[0];
+    let bestScore = nominatimHousePreferenceScore(best);
+    for (const h of data.slice(1)) {
+      const sc = nominatimHousePreferenceScore(h);
+      if (sc > bestScore) {
+        best = h;
+        bestScore = sc;
+      }
+    }
+
+    return {
+      lat: parseFloat(best.lat),
+      lon: parseFloat(best.lon),
+      displayName: best.display_name,
+      geocodeDebug: {
+        nominatimClass: best.class,
+        nominatimType: best.type,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function createNominatimGeocodingProvider(): GeocodingProvider {
   return {
     id: 'nominatim',
 
     async geocode(address: string): Promise<GeocodeResult | null> {
-      try {
-        const url =
-          `https://nominatim.openstreetmap.org/search` +
-          `?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=0`;
-
-        const res = await fetch(url, {
-          headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'ru,en' },
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-
-        if (!res.ok) return null;
-
-        const data = await res.json() as Array<{ lat: string; lon: string; display_name?: string }>;
-        if (!data.length) return null;
-
-        return {
-          lat: parseFloat(data[0].lat),
-          lon: parseFloat(data[0].lon),
-          displayName: data[0].display_name,
-        };
-      } catch {
-        return null;
-      }
+      return nominatimGeocodeSmart(address, false);
     },
 
     async reverseGeocode(lat: number, lon: number): Promise<string | null> {
@@ -73,77 +139,145 @@ function createNominatimGeocodingProvider(): GeocodingProvider {
 /** Default singleton — Nominatim (free, OSM-based). */
 export const nominatimGeocodingProvider: GeocodingProvider = createNominatimGeocodingProvider();
 
+type PhotonProps = {
+  name?: string;
+  street?: string;
+  city?: string;
+  country?: string;
+  housenumber?: string;
+  postcode?: string;
+  osm_key?: string;
+  osm_value?: string;
+};
+
+function photonHousePreferenceScore(props: PhotonProps | undefined): number {
+  if (!props) return 0;
+  let s = 0;
+  if (props.housenumber && props.housenumber.trim()) s += 75;
+  if (props.street && props.street.trim()) s += 15;
+
+  const k = props.osm_key ?? '';
+  if (k === 'building' || k === 'addr') s += 40;
+  if (k === 'amenity' || k === 'shop' || k === 'healthcare') s -= 55;
+
+  return s;
+}
+
+async function photonGeocodeSmart(address: string, preferStreetHouse: boolean): Promise<GeocodeResult | null> {
+  try {
+    const limit = preferStreetHouse ? 10 : 1;
+    const url =
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=${limit}&lang=ru`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      features?: Array<{
+        geometry?: { coordinates?: [number, number] };
+        properties?: PhotonProps;
+      }>;
+    };
+    const feats = data.features ?? [];
+    if (!feats.length) return null;
+
+    type PhotonMapped = { lat: number; lon: number; props?: PhotonProps };
+    const mapped: PhotonMapped[] = [];
+    for (const f of feats) {
+      const coords = f.geometry?.coordinates;
+      if (!coords || coords.length < 2) continue;
+      const [lon, lat] = coords;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      mapped.push({ lat, lon, props: f.properties });
+    }
+
+    if (!mapped.length) return null;
+
+    let pick = mapped[0]!;
+    if (preferStreetHouse && mapped.length > 1) {
+      for (const m of mapped.slice(1)) {
+        if (photonHousePreferenceScore(m.props) > photonHousePreferenceScore(pick.props)) pick = m;
+      }
+    }
+
+    const props = pick.props;
+    const displayName = [props?.name, props?.street, props?.housenumber, props?.city, props?.country]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      lat: pick.lat,
+      lon: pick.lon,
+      displayName: displayName || undefined,
+      geocodeDebug:
+        preferStreetHouse && props
+          ? { winnerTypes: [props.osm_key ?? '', props.osm_value ?? ''].filter(Boolean) }
+          : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Photon (Komoot) — OSM-derived search API, second step when Nominatim is down or empty */
 function createPhotonGeocodingProvider(): GeocodingProvider {
   return {
     id: 'photon',
 
     async geocode(address: string): Promise<GeocodeResult | null> {
-      try {
-        const url =
-          `https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1&lang=ru`;
-        const res = await fetch(url, {
-          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as {
-          features?: Array<{
-            geometry?: { coordinates?: [number, number] };
-            properties?: { name?: string; street?: string; city?: string; country?: string };
-          }>;
-        };
-        const f = data.features?.[0];
-        const coords = f?.geometry?.coordinates;
-        if (!coords || coords.length < 2) return null;
-        const [lon, lat] = coords;
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-        const props = f.properties;
-        const displayName = [props?.name, props?.street, props?.city, props?.country]
-          .filter(Boolean)
-          .join(', ');
-        return {
-          lat,
-          lon,
-          displayName: displayName || undefined,
-        };
-      } catch {
-        return null;
-      }
+      return photonGeocodeSmart(address, false);
     },
   };
 }
 
 const photonGeocodingProvider: GeocodingProvider = createPhotonGeocodingProvider();
 
+export type GeocodeFallbackOptions = {
+  /**
+   * Prefer building/house hits over amenity POIs when the query looks like street + number.
+   */
+  preferStreetHouse?: boolean;
+};
+
 /**
  * Try geocoders in order; log outcome. Does not throw.
  */
-export async function geocodeWithFallback(address: string): Promise<{
+export async function geocodeWithFallback(
+  address: string,
+  options?: GeocodeFallbackOptions,
+): Promise<{
   result: GeocodeResult | null;
   /** Provider that returned coordinates, if any */
   winner: string | null;
   attempts: GeocodeAttemptStatus[];
 }> {
+  const prefer = options?.preferStreetHouse ?? false;
   const attempts: GeocodeAttemptStatus[] = [];
-  const chain: GeocodingProvider[] = [nominatimGeocodingProvider, photonGeocodingProvider];
 
-  for (const p of chain) {
-    try {
-      const r = await p.geocode(address);
-      attempts.push({ id: p.id, ok: r != null });
-      if (r) {
-        const failed = attempts.filter(a => !a.ok).map(a => a.id);
-        if (failed.length) {
-          console.warn(
-            `[location-geocode] geocode_chain winner=${p.id} failed_before=[${failed.join(',')}]`,
-          );
-        }
-        return { result: r, winner: p.id, attempts };
-      }
-    } catch {
-      attempts.push({ id: p.id, ok: false });
+  try {
+    const r = await nominatimGeocodeSmart(address, prefer);
+    attempts.push({ id: 'nominatim', ok: r != null });
+    if (r) {
+      return { result: r, winner: 'nominatim', attempts };
     }
+  } catch {
+    attempts.push({ id: 'nominatim', ok: false });
+  }
+
+  try {
+    const r = await photonGeocodeSmart(address, prefer);
+    attempts.push({ id: 'photon', ok: r != null });
+    if (r) {
+      const failed = attempts.filter(a => !a.ok).map(a => a.id);
+      if (failed.length) {
+        console.warn(
+          `[location-geocode] geocode_chain winner=photon failed_before=[${failed.join(',')}]`,
+        );
+      }
+      return { result: r, winner: 'photon', attempts };
+    }
+  } catch {
+    attempts.push({ id: 'photon', ok: false });
   }
 
   console.warn(
