@@ -1,26 +1,6 @@
 /**
- * RU demo / free-tier wording only — does not change magnet weights or fetch logic.
+ * RU demo / free-tier wording only — does not affect scoring or pipeline inputs.
  */
-
-import type { LocationAnalysis } from './types';
-import {
-  buildDemoPublicEvidenceFlags,
-  specializedMedicalDemoPublicLineRu,
-  strategicHubDemoPublicLineRu,
-  type DemoPublicEvidenceFlags,
-} from './demo-free-evidence';
-
-export type RuDemoExplanationDiagnostics = {
-  bulletsKept: string[];
-  bulletsRemovedByEvidenceGate: string[];
-  bulletsCollapsedSemanticDup: string[];
-};
-
-export type NormalizeRuDemoOptions = {
-  max?: number;
-  analysis?: LocationAnalysis;
-  diagnostics?: RuDemoExplanationDiagnostics;
-};
 
 export function sanitizeRuPublicFactor(line: string): string | null {
   const trimmed = (line ?? '').trim();
@@ -87,61 +67,26 @@ export function sanitizeRuFactorList(lines: readonly string[]): string[] {
   return out;
 }
 
-function semanticBucketRu(line: string): string {
-  const l = line.toLowerCase();
-  if (/транспортн|метро\b|вокзал|аэропорт|ж\/д|тпу|порт\b/.test(l)) return '__transport__';
-  if (/медицин|больниц|клиник|стационар|поликлиник/.test(l)) return '__medical__';
-  if (/делов|офис|командиров|кластер делов|бизнес|корпоратив/.test(l)) return '__business__';
-  if (/конкурен/.test(l)) return '__competition__';
-  if (/промышлен|магистрал|шум|озелен|средова|окружен/.test(l)) return '__environment__';
-  return `__other__:${line}`;
-}
-
-/** Requires structured magnet evidence (see demo-free-evidence). */
-export function gateRuDemoPublicPhrase(line: string, flags: DemoPublicEvidenceFlags): boolean {
-  const t = line.trim();
-
-  const vagueTransport =
-    /крупн(ый|ая|ое)?\s+транспортн/i.test(t) ||
-    /ключевой транспортный якорь/i.test(t) ||
-    /транспортная доступность усиливает спрос/i.test(t) ||
-    (/есть крупные транспортные узлы/i.test(t) && !/\d/.test(t));
-
-  if (vagueTransport && !flags.transport) return false;
-
-  const vagueMedical =
-    /крупная медицина/i.test(t) ||
-    (/медицинск(?:ие|ий)|социальн(?:ые|ый)\s+объект/i.test(t) && /зоне доступности/i.test(t));
-
-  if (vagueMedical && !flags.medical) return false;
-
-  const vagueBusiness =
-    /рядом деловые объекты/i.test(t) ||
-    /деловой поток подтверждён якорями/i.test(t) ||
-    (/производственные и деловые объекты/i.test(t) && !/\d/.test(t));
-
-  if (vagueBusiness && !flags.businessCluster) return false;
-
-  if (/сильные сигналы спроса/i.test(t) && !flags.demandStrong) return false;
-
-  return true;
-}
-
-/**
- * Removes POI names and jargon where safe.
- * Returns null when the line must be replaced by evidence-backed copy upstream.
- */
-export function generalizeRuPublicScoreExplanation(line: string): string | null {
+/** Removes POI names and jargon from one RU explanation line (demo output). */
+export function generalizeRuPublicScoreExplanation(line: string): string {
   const trimmed = (line ?? '').trim();
-  if (!trimmed) return null;
+  if (!trimmed) return trimmed;
 
   const lower = trimmed.toLowerCase();
 
-  if (/крупный транспортный узел в транспортной доступности/i.test(trimmed)) return null;
-  if (/крупн(?:ый|ая|ое)\s+транспортно-логистическ/i.test(trimmed)) return null;
-  if (/крупная медицина в зоне доступности/i.test(trimmed)) return null;
+  if (/крупный транспортный узел в транспортной доступности/i.test(trimmed)) {
+    return 'Есть крупные транспортные узлы в зоне доступности.';
+  }
+  if (/крупн(?:ый|ая|ое)\s+транспортно-логистическ/i.test(trimmed)) {
+    return 'Есть крупные транспортные узлы в зоне доступности.';
+  }
+  if (/крупная медицина в зоне доступности/i.test(trimmed)) {
+    return 'Есть медицинские или социальные объекты в зоне доступности.';
+  }
 
-  if (/ключевой транспортный якорь/i.test(trimmed)) return null;
+  if (/ключевой транспортный якорь/i.test(trimmed)) {
+    return 'Крупный транспортный узел рядом — транспортная доступность усиливает спрос.';
+  }
 
   if (/деловой поток подтверждён якорями поблизости/i.test(trimmed)) {
     return 'Рядом деловые объекты в зоне доступности.';
@@ -186,71 +131,18 @@ export function generalizeRuPublicScoreExplanation(line: string): string | null 
   return out;
 }
 
-function resolveNormalizeOpts(options?: number | NormalizeRuDemoOptions): NormalizeRuDemoOptions {
-  return typeof options === 'number' ? { max: options } : options ?? {};
-}
-
-function prefixEvidenceLines(analysis: LocationAnalysis | undefined): string[] {
-  if (!analysis) return [];
-  const t = strategicHubDemoPublicLineRu(analysis);
-  const m = specializedMedicalDemoPublicLineRu(analysis);
-  return [t, m].filter((x): x is string => Boolean(x));
-}
-
 /** Deduped list for «Почему такой балл?» (max 5). */
-export function normalizeRuDemoExplanationLines(
-  lines: readonly string[],
-  options?: number | NormalizeRuDemoOptions,
-): string[] {
-  const opts = resolveNormalizeOpts(options);
-  const max = opts.max ?? 5;
-  const analysis = opts.analysis;
-  const diagnostics = opts.diagnostics;
-
-  if (diagnostics) {
-    diagnostics.bulletsKept = [];
-    diagnostics.bulletsRemovedByEvidenceGate = [];
-    diagnostics.bulletsCollapsedSemanticDup = [];
-  }
-
-  const flags = buildDemoPublicEvidenceFlags(analysis);
-  const enriched = [...prefixEvidenceLines(analysis), ...lines];
-
-  const bucketSeen = new Set<string>();
-  const seenLine = new Set<string>();
+export function normalizeRuDemoExplanationLines(lines: readonly string[], max = 5): string[] {
+  const seen = new Set<string>();
   const out: string[] = [];
-
-  for (const raw of enriched) {
-    if (out.length >= max) break;
-
-    const cleaned = sanitizeRuPublicFactor(raw);
+  for (const line of lines) {
+    const cleaned = sanitizeRuPublicFactor(line);
     if (!cleaned) continue;
-
     const gen = generalizeRuPublicScoreExplanation(cleaned);
-    if (gen == null || !gen.trim()) {
-      diagnostics?.bulletsRemovedByEvidenceGate.push(raw);
-      continue;
-    }
-
-    if (!gateRuDemoPublicPhrase(gen, flags)) {
-      diagnostics?.bulletsRemovedByEvidenceGate.push(raw);
-      continue;
-    }
-
-    const bucket = semanticBucketRu(gen);
-    if (/^__(transport|medical|business|competition|environment)__$/.test(bucket)) {
-      if (bucketSeen.has(bucket)) {
-        diagnostics?.bulletsCollapsedSemanticDup.push(gen);
-        continue;
-      }
-      bucketSeen.add(bucket);
-    }
-
-    if (seenLine.has(gen)) continue;
-    seenLine.add(gen);
+    if (!gen || seen.has(gen)) continue;
+    seen.add(gen);
     out.push(gen);
-    diagnostics?.bulletsKept.push(gen);
+    if (out.length >= max) break;
   }
-
-  return out.slice(0, max);
+  return out;
 }

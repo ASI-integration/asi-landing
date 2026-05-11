@@ -18,7 +18,6 @@ import {
   type LocationReportResultMetadata,
 } from './report-result-metadata';
 import { normalizeRuDemoExplanationLines } from './demo-public-copy';
-import { applyDemoFreeHeadlineCaps } from './demo-free-evidence';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -361,37 +360,16 @@ export function buildLocationStandaloneReport(args: {
   });
 
   if (reportMode === 'free') {
-    const headlineCap = applyDemoFreeHeadlineCaps(args.analysis);
-    const workAnalysis =
-      headlineCap.capApplied
-        ? {
-            ...args.analysis,
-            evergreenIndex: headlineCap.evergreenDisplay,
-            locationScore:
-              args.analysis.locationScore != null
-                ? { ...args.analysis.locationScore, location_score: headlineCap.locationScoreDisplay }
-                : undefined,
-          }
-        : args.analysis;
-
     const driverLines = normalizeRuDemoExplanationLines(
       [...(score?.top_positive_factors ?? []), ...(score?.top_negative_factors ?? [])],
-      { max: 5, analysis: workAnalysis },
+      5,
     );
     const drivers = driverLines;
     const free_brief = buildFreeBriefRu({ verdict: args.verdict });
-    const metadataOut =
-      headlineCap.capApplied
-        ? {
-            ...metadata,
-            demoFreeHeadlineCapApplied: true,
-            demoFreeHeadlineCapReasonRu: headlineCap.reasonRu,
-          }
-        : metadata;
     return {
       version: 'v1',
       reportMode: 'free',
-      metadata: metadataOut,
+      metadata,
       free_brief,
       address: args.address,
       generated_at_iso: generatedAtIso,
