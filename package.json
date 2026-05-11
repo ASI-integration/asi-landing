@@ -20,7 +20,9 @@
     "test:e2e": "playwright test",
     "test:e2e:report": "playwright show-report",
     "lighthouse": "node scripts/lighthouse.mjs",
-    "test:telegram:live": "node scripts/telegram-live-acceptance.mjs"
+    "test:telegram:live": "node scripts/telegram-live-acceptance.mjs",
+    "location:golden": "npx tsx scripts/location-golden-trace.ts",
+    "location:golden:assert": "vitest run src/lib/location/__tests__/location-golden-assertions.test.ts"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",

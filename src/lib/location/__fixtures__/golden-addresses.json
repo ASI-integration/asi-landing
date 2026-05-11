@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "yalta_nab",
+      "cityKey": "yalta",
+      "addressRu": "набережная имени Ленина, 15, Ялта, Крым",
+      "replay": {
+        "lat": 44.4974,
+        "lon": 34.1694,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100101,
+            "lat": 44.4981,
+            "lon": 34.1702,
+            "tags": {
+              "leisure": "stadium",
+              "name": "Стадион Спартак Ялта"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100102,
+            "lat": 44.4969,
+            "lon": 34.1685,
+            "tags": {
+              "tourism": "attraction",
+              "name": "Смотровая площадка набережная"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100103,
+            "lat": 44.4978,
+            "lon": 34.1705,
+            "tags": {
+              "tourism": "hotel",
+              "name": "Отель Набережная",
+              "stars": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "rostov_med_cluster",
+      "cityKey": "rostov",
+      "addressRu": "улица Седова, 20, Ростов-на-Дону",
+      "replay": {
+        "lat": 47.2357,
+        "lon": 39.7015,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100201,
+            "lat": 47.2365,
+            "lon": 39.7022,
+            "tags": {
+              "amenity": "hospital",
+              "name": "Городская клиническая больница №4"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100202,
+            "lat": 47.2368,
+            "lon": 39.7025,
+            "tags": {
+              "amenity": "hospital",
+              "name": "Областной онкологический диспансер"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100203,
+            "lat": 47.235,
+            "lon": 39.7008,
+            "tags": {
+              "tourism": "hotel",
+              "name": "Hotel Rostov Inn"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100204,
+            "lat": 47.2353,
+            "lon": 39.701,
+            "tags": {
+              "office": "yes",
+              "name": "Офис Торговый дом"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100205,
+            "lat": 47.2355,
+            "lon": 39.7012,
+            "tags": {
+              "office": "yes",
+              "name": "Кадровое агентство Успех"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "kemerovo_industrial",
+      "cityKey": "kemerovo",
+      "addressRu": "проспект Химиков, 32, Кемерово",
+      "replay": {
+        "lat": 55.3331,
+        "lon": 86.0833,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100301,
+            "lat": 55.334,
+            "lon": 86.0845,
+            "tags": {
+              "landuse": "industrial",
+              "name": "Промышленная зона юг"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100302,
+            "lat": 55.3325,
+            "lon": 86.082,
+            "tags": {
+              "man_made": "works",
+              "name": "Завод металлоконструкций"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100303,
+            "lat": 55.3328,
+            "lon": 86.083,
+            "tags": {
+              "office": "yes",
+              "name": "Деловой центр Кузбасс"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "novosibirsk_education",
+      "cityKey": "novosibirsk",
+      "addressRu": "улица Пирогова, 2, Новосибирск",
+      "replay": {
+        "lat": 55.0084,
+        "lon": 82.9357,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100401,
+            "lat": 55.0092,
+            "lon": 82.9365,
+            "tags": {
+              "amenity": "university",
+              "name": "Новосибирский государственный университет"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100402,
+            "lat": 55.0078,
+            "lon": 82.9348,
+            "tags": {
+              "amenity": "college",
+              "name": "Политехнический колледж"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100403,
+            "lat": 55.008,
+            "lon": 82.935,
+            "tags": {
+              "shop": "mall",
+              "name": "ТРЦ Галерея Новосибирск"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "saransk_metro_stadium",
+      "cityKey": "saransk",
+      "addressRu": "проспект 60 лет Октября, 1, Саранск",
+      "replay": {
+        "lat": 54.1872,
+        "lon": 45.1839,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100501,
+            "lat": 54.188,
+            "lon": 45.1848,
+            "tags": {
+              "railway": "station",
+              "station": "subway",
+              "name": "Саранск — станция метро Дубравная"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100502,
+            "lat": 54.1865,
+            "lon": 45.1825,
+            "tags": {
+              "leisure": "stadium",
+              "name": "Мордовия Арена"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100503,
+            "lat": 54.1875,
+            "lon": 45.184,
+            "tags": {
+              "tourism": "hotel",
+              "name": "Гостиница Саранск",
+              "stars": "4"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "lodeynoye_sparse",
+      "cityKey": "lodeynoye_pole",
+      "addressRu": "улица Урицкого, 15, Лодейное Поле",
+      "replay": {
+        "lat": 60.7267,
+        "lon": 33.5431,
+        "elements": [
+          {
+            "type": "node",
+            "id": 100601,
+            "lat": 60.7275,
+            "lon": 33.544,
+            "tags": {
+              "shop": "convenience",
+              "name": "Магазин у дома"
+            }
+          },
+          {
+            "type": "node",
+            "id": 100602,
+            "lat": 60.726,
+            "lon": 33.542,
+            "tags": {
+              "amenity": "cafe",
+              "name": "Кафе Лодейное"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
