@@ -6,6 +6,8 @@
  * Primary audience priority: BUSINESS (corporate / commanded travelers) first.
  * Auto-fallback to TOURIST when no viable business magnets exist within range.
  *
+ * Inputs raw classified magnets only — no report/evidence/free-tier projection participates here.
+ *
  * Scoring model
  * ─────────────
  *  • Exponential distance decay:  score = weight × exp(−distance / DECAY_FACTOR)

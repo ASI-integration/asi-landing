@@ -47,6 +47,8 @@ import {
   specializedMedicalWeightTierMultiplier,
 } from './specialized-medical-anchor';
 import { emptyMagnetDiagnostics, type MagnetDiagnosticCandidate } from './magnet-diagnostics';
+import type { EvergreenIndexDiagnostics } from './location-scoring-trace';
+import { buildLocationScoringTrace } from './location-scoring-pipeline';
 
 export type BuildAnalysisOptions = {
   /**
@@ -54,6 +56,8 @@ export type BuildAnalysisOptions = {
    * Default false — keeps legacy residential / paywalled report behaviour unless explicitly enabled.
    */
   spatialFoundation?: boolean;
+  /** Optional audit metadata — never affects scoring math */
+  inputAddress?: string;
 };
 
 // ── Business subType weight adjustments ──────────────────────────────────────
@@ -333,6 +337,7 @@ export function calcEvergreenIndex(
   competitorPressureValue: number;
   footTraffic: FootTrafficSummary;
   heatmapFactors: FootTrafficHeatmapFactors;
+  evergreenDiagnostics: EvergreenIndexDiagnostics;
 } {
   const empty: GravityExplanation = {
     dominantMagnets: [],
@@ -355,11 +360,17 @@ export function calcEvergreenIndex(
     const competitorPressureValue = calcCompetitorPressure(competitors);
     const rawScore = -competitorPressureValue + accessibilityBonus;
     const index = Math.max(5, Math.min(100, Math.round(rawScore)));
+    const evergreenDiagnostics: EvergreenIndexDiagnostics = {
+      rawGravityScoreBeforeSoftCap: rawScore,
+      rawGravityScoreAfterSoftCap: rawScore,
+      softCapApplied: false,
+    };
     return {
       index,
       competitorPressureValue,
       footTraffic: emptyFootTrafficSummary(),
       heatmapFactors: emptyFactors,
+      evergreenDiagnostics,
       gravityExplanation: {
         ...empty,
         competitorPressureLevel:
@@ -399,6 +410,11 @@ export function calcEvergreenIndex(
   // Soft cap above 80: compresses without flattening mid-range. Times Square (rawScore ~270) → still 100.
   const rawCapped = rawScore <= 80 ? rawScore : 80 + (rawScore - 80) * 0.60;
   const index = Math.max(5, Math.min(100, Math.round(rawCapped)));
+  const evergreenDiagnostics: EvergreenIndexDiagnostics = {
+    rawGravityScoreBeforeSoftCap: rawScore,
+    rawGravityScoreAfterSoftCap: rawCapped,
+    softCapApplied: rawScore > 80,
+  };
 
   const sorted = [...magnets].sort((a, b) => b.attractionScore - a.attractionScore);
   const dominantMagnets = sorted.slice(0, 3).map(m => m.name);
@@ -412,6 +428,7 @@ export function calcEvergreenIndex(
     competitorPressureValue,
     footTraffic,
     heatmapFactors,
+    evergreenDiagnostics,
     gravityExplanation: {
       dominantMagnets,
       strongestZoneLabel,
@@ -731,6 +748,7 @@ export function buildAnalysis(
     competitorPressureValue,
     footTraffic,
     heatmapFactors,
+    evergreenDiagnostics,
   } =
     calcEvergreenIndex(magnets, competitors, accessibilityDeduped.length);
 
@@ -779,6 +797,28 @@ export function buildAnalysis(
       ? withAdjustedLocationScoreHeadline(locationScore, commercialNeighborhoodModifier.adjustedLocationScore)
       : locationScore;
 
+  const scoringTrace = buildLocationScoringTrace({
+    inputAddress: options?.inputAddress,
+    coordinates: { lat, lon },
+    rawObjectsCount: elements.length,
+    magnets,
+    evergreenDiagnostics,
+    locationScoreInput: {
+      evergreenIndex,
+      gravityExplanation,
+      competitorPressure: competitorPressureValue,
+      magnetCount: magnets.length,
+      hasMetro,
+      attractionCount,
+      footTraffic,
+      audienceAnalysis,
+      accessibilityStopCount: accessibilityDeduped.length,
+    },
+    baseLocationScore: locationScore,
+    modifier: commercialNeighborhoodModifier,
+    headlineLocationScore: locationScoreAdjusted,
+  });
+
   // ── Debug diagnostics (gated by env flag) ──────────────────────────────────
   if (process.env.LOCATION_DEBUG === '1') {
     const majorHotelFound = magnets.filter(m => m.categoryId === 'major_hotel');
@@ -826,6 +866,7 @@ export function buildAnalysis(
     evergreenIndex,
     scoreBand,
     locationScore: locationScoreAdjusted,
+    scoringTrace,
     magnets,
     strategicTransportHubMagnets,
     magnetCountByCategory,

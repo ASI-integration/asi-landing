@@ -127,7 +127,9 @@ export function generalizeRuPublicScoreExplanation(line: string): string {
   out = out.replace(/\s*\([^)]*\d[^)]*(?:м|км)[^)]*\)/gu, '');
   out = out.replace(/\s{2,}/g, ' ').trim();
 
-  if (out.length < 12) return 'В зоне доступности есть сигналы спроса по карте.';
+  if (out.length < 12) {
+    return 'В зоне доступности есть сигналы спроса по карте (общая формулировка, низкая детализация).';
+  }
   return out;
 }
 

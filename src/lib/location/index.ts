@@ -226,7 +226,26 @@ export {
 } from './gravity-scoring';
 export type { BuildAnalysisOptions } from './gravity-scoring';
 
-export { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
+export type {
+  EvergreenIndexDiagnostics,
+  LocationScoreFeatures,
+  LocationScoringCapApplied,
+  LocationScoringTrace,
+} from './location-scoring-trace';
+export { buildLocationScoringTrace } from './location-scoring-pipeline';
+export {
+  applyReportProjectionToTrace,
+  enrichAnalysisWithReportProjection,
+} from './location-scoring-projection';
+export type { LocationReportPublicMode } from './location-scoring-projection';
+export { LOCATION_SCORING_RUNTIME_EXPORT } from './location-scoring-rules';
+
+export {
+  buildLocationScoreOutput,
+  computeLocationScoreFeatures,
+  withAdjustedLocationScoreHeadline,
+} from './location-score';
+export type { LocationScoreComputationInput } from './location-score';
 
 export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 
