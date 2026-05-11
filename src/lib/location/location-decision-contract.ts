@@ -7,6 +7,7 @@ import type {
   LocationScoringIntegritySnapshot,
   LocationScoringTrace,
 } from './location-scoring-trace';
+import type { LocationDemandScoringKernelResult } from './location-scoring-contract';
 
 /** Mirrors ScoreBand — kept local to avoid circular imports with types.ts */
 export type LocationDecisionScoreBand = 'strong' | 'medium' | 'weak' | 'none';
@@ -141,6 +142,8 @@ export interface LocationDecision {
   rawObjectStats: LocationDecisionRawObjectStats;
   canonicalFacts: CanonicalLocationFact[];
   magnetFacts: MagnetFact[];
+  /** Deterministic demand scoring v1 — ranks POIs before score / headline / public claims */
+  demandKernelV1: LocationDemandScoringKernelResult | null;
   demandSignals: DemandSignal[];
   scoreTrace: LocationScoringTrace | null;
   finalScore: number | null;

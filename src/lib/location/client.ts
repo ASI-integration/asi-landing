@@ -192,3 +192,4 @@ export {
   publicDemandProfileHeadline,
   validatePublicClaimPipeline,
 } from './location-public-claims';
+export { formatLocationDemandKernelDebug } from './location-scoring-debug';

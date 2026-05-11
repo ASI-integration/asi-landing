@@ -98,14 +98,61 @@ export function publicDemandProfileHeadline(
   decision: LocationDecision,
   locale: 'ru' | 'en',
 ): string {
+  const dominantKernel = decision.demandKernelV1?.dominantDemandType;
+  if (dominantKernel && dominantKernel !== 'weak/unclear') {
+    if (locale === 'ru') {
+      switch (dominantKernel) {
+        case 'medical':
+          return 'Спрос с медицинским якорем в зоне (по весам подтверждённых ядер)';
+        case 'corporate/business':
+          return 'Спрос от делового и офисного трафика';
+        case 'transport':
+          return 'Транзитный и транспортно-связанный спрос';
+        case 'industrial':
+          return 'Промышленно-деловой профиль спроса';
+        case 'tourist':
+          return 'Туристический и событийный спрос по якорям карты';
+        case 'education':
+          return 'Образовательно-деловой профиль спроса';
+        case 'mixed':
+          return 'Смешанный профиль спроса по данным карты';
+        default:
+          break;
+      }
+    } else {
+      switch (dominantKernel) {
+        case 'medical':
+          return 'Medical-anchor demand (kernel-weighted)';
+        case 'corporate/business':
+          return 'Business and office traffic demand';
+        case 'transport':
+          return 'Transit-linked demand';
+        case 'industrial':
+          return 'Industrial/business-led demand';
+        case 'tourist':
+          return 'Tourism/event-led demand (map anchors)';
+        case 'education':
+          return 'Education-related demand profile';
+        case 'mixed':
+          return 'Mixed demand profile from map evidence';
+        default:
+          break;
+      }
+    }
+  }
+
   const incomplete = decision.demandSignals.find(s => s.id === 'ds:generic_incomplete_data');
   const signals = decision.demandSignals.filter(s => s.id !== 'ds:generic_incomplete_data');
   if (signals.length === 0) {
     if (locale === 'ru') {
-      return incomplete?.publicLabelRu ?? 'Профиль спроса не выделен по данным карты.';
+      if (incomplete) return incomplete.publicLabelRu;
+      return decision.demandKernelV1
+        ? 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.'
+        : 'Профиль спроса не выделен по данным карты.';
     }
-    return incomplete?.reason
-      ? 'Insufficient map evidence to profile demand.'
+    if (incomplete?.reason) return 'Insufficient map evidence to profile demand.';
+    return decision.demandKernelV1
+      ? 'Limited demand profile — no stable demand anchors confirmed on the map.'
       : 'Demand profile not identifiable from map evidence.';
   }
 

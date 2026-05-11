@@ -25,6 +25,7 @@ import {
   publicLocationScore,
   buildLocationDecision,
   publicDemandProfileHeadline,
+  formatLocationDemandKernelDebug,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -1989,7 +1990,13 @@ function ASIPanel({
     isRuResidentialDemo && !dataBlocked
       ? (serverSanity ?? applyResidentialDemoPresentationToAnalysis(analysis))
       : null;
-  const publicScore = publicLocationScore(analysis);
+  const enginePublicScore = publicLocationScore(analysis);
+  const publicScore =
+    isRuResidentialDemo &&
+    residentialLocationDecision?.finalScore != null &&
+    Number.isFinite(residentialLocationDecision.finalScore)
+      ? Math.round(residentialLocationDecision.finalScore)
+      : enginePublicScore;
   const band = dataBlocked
     ? getBand(0)
     : getBand(publicScore, analysis.audienceAnalysis?.primaryAudience);
@@ -2201,23 +2208,30 @@ function ASIPanel({
                   </div>
                 </div>
                 {isRuResidentialDemo ? (
-                  dashboardClaimRows.length > 0 ? (
-                    <ul className="mt-3 space-y-1.5">
-                      {dashboardClaimRows.map((claim, i) => (
-                        <li key={i} className="flex flex-col gap-0.5 leading-snug text-[15px] text-slate-200">
-                          <div className="flex items-start gap-2">
-                            <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
-                            <span>{claim.textRu}</span>
-                          </div>
-                          {claimTraceDebug ? (
-                            <span className="pl-4 text-[10px] font-mono text-slate-600 leading-tight">
-                              mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null
+                  <>
+                    {dashboardClaimRows.length > 0 ? (
+                      <ul className="mt-3 space-y-1.5">
+                        {dashboardClaimRows.map((claim, i) => (
+                          <li key={i} className="flex flex-col gap-0.5 leading-snug text-[15px] text-slate-200">
+                            <div className="flex items-start gap-2">
+                              <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                              <span>{claim.textRu}</span>
+                            </div>
+                            {claimTraceDebug ? (
+                              <span className="pl-4 text-[10px] font-mono text-slate-600 leading-tight">
+                                mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
+                              </span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {claimTraceDebug && residentialLocationDecision?.demandKernelV1 ? (
+                      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
+                        {formatLocationDemandKernelDebug(residentialLocationDecision.demandKernelV1)}
+                      </pre>
+                    ) : null}
+                  </>
                 ) : dashboardBullets.length > 0 ? (
                   <ul className="mt-3 space-y-1.5">
                     {dashboardBullets.map((line, i) => (
