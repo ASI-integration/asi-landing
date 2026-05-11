@@ -21,7 +21,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
 import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress, cacheSet } from '@/lib/location/cache';
-import { fetchOsmData, buildAnalysis, wrapLocationReport } from '@/lib/location';
+import { fetchOsmData, buildAnalysis, wrapLocationReport, applyLocationDataIntegrityGate } from '@/lib/location';
 import { buildLocationReportResultMetadata } from '@/lib/location/report-result-metadata';
 
 export const dynamic = 'force-dynamic';
@@ -79,6 +79,14 @@ export async function POST(req: NextRequest) {
   try {
     const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon);
+    applyLocationDataIntegrityGate(analysis, {
+      lat,
+      lon,
+      rawObjectsCount: elements.length,
+      hadProviderFailure,
+      usedFallbackQuery,
+      cacheServed: false,
+    });
     const locationScore = analysis.locationScore;
 
     if (!locationScore) {
@@ -87,8 +95,10 @@ export async function POST(req: NextRequest) {
 
     // Cache the analysis under the resolved coords (reuses existing cache; no new services)
     try {
-      const src = sourceLabel(usedFallbackQuery);
-      await cacheSet(lat, lon, analysis, src, elements.length);
+      if (!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
+        const src = sourceLabel(usedFallbackQuery);
+        await cacheSet(lat, lon, analysis, src, elements.length);
+      }
     } catch {
       // cache is best-effort; do not fail the request
     }

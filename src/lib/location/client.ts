@@ -49,6 +49,14 @@ export { patchLegacyLocationAnalysis, emptyFootTrafficSummary } from './foot-tra
 export { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
 export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
 export { buildNeighborhoodEnvironmentLayer, emptyNeighborhoodEnvironmentLayer, mergeNeighborhoodEnvironmentLayer } from './neighborhood-environment';
+export {
+  applyLocationDataIntegrityGate,
+  locationDemoPresentationBlocked,
+  locationDemoIncompleteUserMessage,
+  LOCATION_DEMO_INCOMPLETE_RU,
+  LOCATION_DEMO_INCOMPLETE_EN,
+} from './location-data-integrity';
+
 export { applyResidentialDemoSanity } from './residential-demo-sanity';
 export type {
   ResidentialDemoSanity,
@@ -70,6 +78,7 @@ export type {
   ScoreBand,
   Band,
   LocationAnalysis,
+  AnalysisIntegritySnapshot,
   LocationScoreOutput,
   AnalysisFreshness,
   AnalysisMeta,

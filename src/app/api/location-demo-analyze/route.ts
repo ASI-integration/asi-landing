@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchOsmData, buildAnalysis, applyResidentialDemoSanity } from '@/lib/location';
-import { cacheGet, cacheSet } from '@/lib/location/cache';
+import {
+  fetchOsmData,
+  buildAnalysis,
+  applyResidentialDemoSanity,
+  applyLocationDataIntegrityGate,
+  cacheEntryPassesDataIntegrity,
+} from '@/lib/location';
+import { patchLegacyLocationAnalysis } from '@/lib/location/foot-traffic';
+import { cacheGet, cacheSet, cacheEvictCoord } from '@/lib/location/cache';
 import {
   isKorzunDiagnosticCoords,
   logKorzunPipelineDiagnostics,
@@ -13,6 +20,51 @@ export const maxDuration = 60;
 
 function sourceLabel(usedFallback: boolean | undefined): string {
   return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';
+}
+
+function mergeAnalysisIntegrityWarnings(
+  meta: AnalysisMeta,
+  analysis: Awaited<ReturnType<typeof buildAnalysis>>,
+  locale: 'en' | 'ru',
+): void {
+  const reasons = analysis.analysisIntegrity?.reasons;
+  if (!reasons?.length) return;
+  const seen = new Set((meta.warnings ?? []).map(w => w.code));
+  const extra: NonNullable<AnalysisMeta['warnings']> = [];
+  const catalog: Record<string, { en: string; ru: string }> = {
+    osm_empty_result: {
+      en: 'OpenStreetMap returned no nearby objects for this point.',
+      ru: 'OpenStreetMap не вернул объектов рядом с этой точкой.',
+    },
+    osm_sparse_result: {
+      en: 'Urban map coverage looks too sparse to score this location reliably.',
+      ru: 'Покрытие карты в городской зоне слишком бедное для уверенной оценки.',
+    },
+    analysis_incomplete: {
+      en: 'The preview could not be completed with available map data.',
+      ru: 'Предпросмотр не удалось завершить по доступным данным карты.',
+    },
+    score_blocked_due_to_incomplete_data: {
+      en: 'Headline score withheld because map signals were incomplete.',
+      ru: 'Итоговый индекс скрыт: данные карты были неполными.',
+    },
+  };
+  for (const code of reasons) {
+    if (seen.has(code as NonNullable<AnalysisMeta['warnings']>[number]['code'])) continue;
+    const row = catalog[code];
+    if (!row) continue;
+    seen.add(code as NonNullable<AnalysisMeta['warnings']>[number]['code']);
+    extra.push({
+      code: code as NonNullable<AnalysisMeta['warnings']>[number]['code'],
+      message: locale === 'ru' ? row.ru : row.en,
+    });
+  }
+  meta.warnings = [...(meta.warnings ?? []), ...extra];
+}
+
+function attachIntegrityMeta(meta: AnalysisMeta, analysis: Awaited<ReturnType<typeof buildAnalysis>>): void {
+  meta.analysisIncomplete = !!analysis.analysisIntegrity?.analysisIncomplete;
+  meta.scoreBlockedDueToIncompleteData = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
 }
 
 function buildWarnings(args: {
@@ -74,7 +126,8 @@ function withDemoSanityPayload(args: {
   wantSpatial: boolean;
 }) {
   const { analysis, elementsCount, meta, locale, wantSpatial } = args;
-  const demoSanity = locale === 'ru' && !wantSpatial
+  const blocked = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
+  const demoSanity = locale === 'ru' && !wantSpatial && !blocked
     ? applyResidentialDemoSanity(analysis)
     : null;
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
@@ -95,8 +148,17 @@ function withDemoSanityPayload(args: {
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
-    const { elements, usedFallbackQuery } = await fetchOsmData(lat, lon);
+    const { elements, usedFallbackQuery, hadProviderFailure } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: false });
+    applyLocationDataIntegrityGate(analysis, {
+      lat,
+      lon,
+      rawObjectsCount: elements.length,
+      hadProviderFailure,
+      usedFallbackQuery,
+      cacheServed: false,
+    });
+    if (analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) return;
     await cacheSet(lat, lon, analysis, sourceLabel(usedFallbackQuery), elements.length);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -118,7 +180,27 @@ export async function POST(req: NextRequest) {
 
     // ── Cache check (residential / default pipeline only) ─────────────────────
     // Commercial spatial variant mutates magnet scores — never read/write the shared coord cache row.
-    const cached = wantSpatial ? null : await cacheGet(lat, lon);
+    let cached = wantSpatial ? null : await cacheGet(lat, lon);
+
+    if (cached) {
+      const probeLat = cached.entry.lat ?? lat;
+      const probeLon = cached.entry.lon ?? lon;
+      const patchedProbe = patchLegacyLocationAnalysis({
+        ...cached.entry.analysis,
+        accessibilityStops: cached.entry.analysis.accessibilityStops ?? [],
+      });
+      if (
+        !cacheEntryPassesDataIntegrity({
+          elementsCount: cached.entry.elementsCount,
+          lat: probeLat,
+          lon: probeLon,
+          analysis: patchedProbe,
+        })
+      ) {
+        await cacheEvictCoord(lat, lon);
+        cached = null;
+      }
+    }
 
     if (cached) {
       const meta: AnalysisMeta = {
@@ -145,7 +227,22 @@ export async function POST(req: NextRequest) {
         fetchAndCache(lat, lon);
       }
 
-      const ca = cached.entry.analysis;
+      const ca = patchLegacyLocationAnalysis({
+        ...cached.entry.analysis,
+        accessibilityStops: cached.entry.analysis.accessibilityStops ?? [],
+      });
+      const usedFb = cached.entry.source.includes('fallback');
+      applyLocationDataIntegrityGate(ca, {
+        lat,
+        lon,
+        rawObjectsCount: cached.entry.elementsCount,
+        hadProviderFailure: false,
+        usedFallbackQuery: usedFb,
+        cacheServed: true,
+      });
+      mergeAnalysisIntegrityWarnings(meta, ca, locale);
+      attachIntegrityMeta(meta, ca);
+
       if (isKorzunDiagnosticCoords(lat, lon)) {
         logKorzunPipelineDiagnostics({
           lat,
@@ -177,7 +274,7 @@ export async function POST(req: NextRequest) {
       );
 
       return NextResponse.json(withDemoSanityPayload({
-        analysis: cached.entry.analysis,
+        analysis: ca,
         elementsCount: cached.entry.elementsCount,
         meta,
         locale,
@@ -188,6 +285,14 @@ export async function POST(req: NextRequest) {
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
     const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
     const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: wantSpatial });
+    applyLocationDataIntegrityGate(analysis, {
+      lat,
+      lon,
+      rawObjectsCount: elements.length,
+      hadProviderFailure,
+      usedFallbackQuery,
+      cacheServed: false,
+    });
     if (isKorzunDiagnosticCoords(lat, lon)) {
       logKorzunPipelineDiagnostics({
         lat,
@@ -199,7 +304,7 @@ export async function POST(req: NextRequest) {
       });
     }
     const src = sourceLabel(usedFallbackQuery);
-    if (!wantSpatial) {
+    if (!wantSpatial && !analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
       await cacheSet(lat, lon, analysis, src, elements.length);
     }
 
@@ -230,6 +335,8 @@ export async function POST(req: NextRequest) {
       usedFallbackQuery,
       hadProviderFailure,
     });
+    mergeAnalysisIntegrityWarnings(meta, analysis, locale);
+    attachIntegrityMeta(meta, analysis);
 
     // ── Structured diagnostics — always logged; helps detect silent regressions ──
     console.info(

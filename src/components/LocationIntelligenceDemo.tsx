@@ -18,6 +18,9 @@ import {
   buildCommercialFormatFit,
   FIT_LEVEL_LABEL_RU,
   FIT_LEVEL_COLOR,
+  applyLocationDataIntegrityGate,
+  locationDemoPresentationBlocked,
+  locationDemoIncompleteUserMessage,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -1953,6 +1956,7 @@ function ASIPanel({
     magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
+  const dataBlocked = locationDemoPresentationBlocked(analysis);
   const conclusion =
     locale === 'ru'
       ? generateConclusion(
@@ -1965,7 +1969,9 @@ function ASIPanel({
           analysis.audienceAnalysis,
         )
       : analysis.conclusion;
-  const band = getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+  const band = dataBlocked
+    ? getBand(0)
+    : getBand(evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
   // Use the engine's recommendation when available; fallback aligns with getBand thresholds.
   const strategy: 'mid_term' | 'hybrid' | 'short_term' =
     analysis.locationScore?.recommended_strategy ??
@@ -2026,8 +2032,11 @@ function ASIPanel({
     }
   };
   const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
-  const sanity = isRuResidentialDemo ? (serverSanity ?? applyResidentialDemoSanity(analysis)) : null;
+  const sanity = isRuResidentialDemo
+    ? (serverSanity ?? (!dataBlocked ? applyResidentialDemoSanity(analysis) : null))
+    : null;
   const aboveFoldReasons = (() => {
+    if (dataBlocked) return [];
     const ls = analysis.locationScore;
     const specificFactors = [
       ...(ls?.top_positive_factors ?? []),
@@ -2134,6 +2143,7 @@ function ASIPanel({
   }
 
   const dashboardBullets: string[] = (() => {
+    if (dataBlocked) return [];
     const ls = analysis.locationScore;
     const pos = ls?.top_positive_factors ?? [];
     const neg = ls?.top_negative_factors ?? [];
@@ -2174,26 +2184,34 @@ function ASIPanel({
                 {locale === 'ru' ? 'Индекс' : 'Index'}
               </p>
             ) : null}
-            <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
-              <div className="leading-none">
-                <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
-                  {evergreenIndex}
-                </span>
-                <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
-              </div>
-              <div className="ml-auto hidden lg:block">
-                <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
-              </div>
-            </div>
-            {dashboardBullets.length > 0 && (
-              <ul className="mt-3 space-y-1.5">
-                {dashboardBullets.map((line, i) => (
-                  <li key={i} className={`flex items-start gap-2 leading-snug ${isRuResidentialDemo ? 'text-[15px] text-slate-200' : 'text-[14px] text-slate-300'}`}>
-                    <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
-                    {line}
-                  </li>
-                ))}
-              </ul>
+            {dataBlocked ? (
+              <p className={`text-[15px] leading-relaxed text-slate-300 ${isRuResidentialDemo ? 'mt-1' : 'mt-2'}`}>
+                {locationDemoIncompleteUserMessage(locale)}
+              </p>
+            ) : (
+              <>
+                <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
+                  <div className="leading-none">
+                    <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
+                      {evergreenIndex}
+                    </span>
+                    <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
+                  </div>
+                  <div className="ml-auto hidden lg:block">
+                    <EvergreenRing index={evergreenIndex} band={band} animated={animated} copy={c} />
+                  </div>
+                </div>
+                {dashboardBullets.length > 0 && (
+                  <ul className="mt-3 space-y-1.5">
+                    {dashboardBullets.map((line, i) => (
+                      <li key={i} className={`flex items-start gap-2 leading-snug ${isRuResidentialDemo ? 'text-[15px] text-slate-200' : 'text-[14px] text-slate-300'}`}>
+                        <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
             )}
           </div>
 
@@ -2205,9 +2223,15 @@ function ASIPanel({
               </p>
             ) : null}
             {isRuResidentialDemo ? (
+              dataBlocked ? (
+                <p className="mt-1 text-[15px] text-slate-500 leading-snug">
+                  {locale === 'ru' ? 'Профиль спроса недоступен без данных карты.' : 'Demand profile unavailable without map data.'}
+                </p>
+              ) : (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
                 {ruResidentialDemandHeadlineRu(analysis.demandType)}
               </p>
+              )
             ) : (
               <>
                 <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
@@ -2234,8 +2258,8 @@ function ASIPanel({
                 {locale === 'ru' ? 'Вердикт' : 'Verdict'}
               </p>
             ) : null}
-            <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${band.textColor}`}>
-              {band.label}
+            <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${dataBlocked ? 'text-slate-400' : band.textColor}`}>
+              {dataBlocked ? (locale === 'ru' ? 'Анализ не завершён' : 'Analysis incomplete') : band.label}
             </p>
             <div className="mt-4 space-y-2">
               <button
@@ -2452,7 +2476,7 @@ function ASIPanel({
         );
       })()}
 
-      {analysis.locationScore && (() => {
+      {analysis.locationScore && !dataBlocked && (() => {
         const _loc: string = locale;
         if (_loc === 'ru') return null;
         const ls = analysis.locationScore!
@@ -2856,7 +2880,10 @@ function CommercialASIPanel({
   c: (typeof LOC_COPY)['en'];
 }) {
   const router = useRouter();
-  const band = getBand(analysis.evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
+  const dataBlocked = locationDemoPresentationBlocked(analysis);
+  const band = dataBlocked
+    ? getBand(0)
+    : getBand(analysis.evergreenIndex, analysis.audienceAnalysis?.primaryAudience);
   const [visible, setVisible] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
@@ -2952,34 +2979,46 @@ function CommercialASIPanel({
     >
       {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
 
-      {/* Header KPIs */}
-      <div className="grid grid-cols-2 border-b border-slate-800/60">
-        <div className="flex flex-col items-center justify-center gap-1 p-5 border-r border-slate-800/40">
-          <EvergreenRing index={analysis.evergreenIndex} band={band} animated={animated} copy={c} />
-        </div>
-        <div className="flex flex-col justify-center gap-0.5 p-5">
-          <p className="text-[14px] font-semibold text-slate-400 mb-1">Потенциал формата</p>
-          <p className={`text-[20px] font-bold leading-tight ${verdictColorClass}`}>
-            {fit.overallVerdictLabelRu}
-          </p>
-          <p className="text-[14px] text-slate-400 mt-1 leading-snug font-medium">
-            {analysis.magnets.length} объектов притяжения рядом ·{' '}
-            {analysis.demandType === 'business-led'
-              ? 'спрос завязан на офисный и деловой трафик'
-              : analysis.demandType === 'tourism-led'
-                ? 'спрос завязан на туристический и досуговой трафик'
-                : analysis.demandType === 'transport-led'
-                  ? 'спрос завязан на транзит и транспортную связность'
-                  : 'смешанный профиль спроса'}
+      {dataBlocked ? (
+        <div className="px-5 py-4 border-b border-slate-800/60">
+          <p className="text-[14px] text-slate-300 leading-relaxed">
+            {locationDemoIncompleteUserMessage(locale)}
           </p>
         </div>
-      </div>
+      ) : null}
 
-      {/* Flow block */}
-      <CommercialFlowBlock analysis={analysis} locale={locale} />
+      {!dataBlocked ? (
+        <>
+          {/* Header KPIs */}
+          <div className="grid grid-cols-2 border-b border-slate-800/60">
+            <div className="flex flex-col items-center justify-center gap-1 p-5 border-r border-slate-800/40">
+              <EvergreenRing index={analysis.evergreenIndex} band={band} animated={animated} copy={c} />
+            </div>
+            <div className="flex flex-col justify-center gap-0.5 p-5">
+              <p className="text-[14px] font-semibold text-slate-400 mb-1">Потенциал формата</p>
+              <p className={`text-[20px] font-bold leading-tight ${verdictColorClass}`}>
+                {fit.overallVerdictLabelRu}
+              </p>
+              <p className="text-[14px] text-slate-400 mt-1 leading-snug font-medium">
+                {analysis.magnets.length} объектов притяжения рядом ·{' '}
+                {analysis.demandType === 'business-led'
+                  ? 'спрос завязан на офисный и деловой трафик'
+                  : analysis.demandType === 'tourism-led'
+                    ? 'спрос завязан на туристический и досуговой трафик'
+                    : analysis.demandType === 'transport-led'
+                      ? 'спрос завязан на транзит и транспортную связность'
+                      : 'смешанный профиль спроса'}
+              </p>
+            </div>
+          </div>
 
-      {/* Format fit matrix */}
-      <CommercialFormatFitBlock analysis={analysis} />
+          {/* Flow block */}
+          <CommercialFlowBlock analysis={analysis} locale={locale} />
+
+          {/* Format fit matrix */}
+          <CommercialFormatFitBlock analysis={analysis} />
+        </>
+      ) : null}
 
       {/* CTA */}
       <div className="px-5 py-5">
@@ -3191,9 +3230,19 @@ export function LocationIntelligenceDemo({
     }).then(result => {
       clearTimeout(abortTimeout);
       if (cancelled) return;
-      const resolvedAnalysis = result?.analysis ?? buildAnalysis([], selected.lat, selected.lon, {
-        spatialFoundation: mode === 'commercial',
-      });
+      const resolvedAnalysis = result?.analysis ?? (() => {
+        const empty = buildAnalysis([], selected.lat, selected.lon, {
+          spatialFoundation: mode === 'commercial',
+        });
+        applyLocationDataIntegrityGate(empty, {
+          lat: selected.lat,
+          lon: selected.lon,
+          rawObjectsCount: 0,
+          hadProviderFailure: true,
+          cacheServed: false,
+        });
+        return empty;
+      })();
       const resolvedMetaBase = result?.meta ?? null;
       const resolvedMeta: AnalysisMeta | null =
         resolvedMetaBase && usedFallbackGeocode

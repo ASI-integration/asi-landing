@@ -131,6 +131,15 @@ export async function cacheGetByAddress(address: string): Promise<CacheResult | 
   }
 }
 
+/** Remove a coordinate-keyed row (e.g. poisoned incomplete legacy cache). */
+export async function cacheEvictCoord(lat: number, lon: number): Promise<void> {
+  try {
+    await supabase.from('location_analysis_cache').delete().eq('coord_key', makeCoordKey(lat, lon));
+  } catch {
+    // best-effort
+  }
+}
+
 /** Store a live-fetched result. Pass address to also index by address. */
 export async function cacheSet(
   lat: number,
