@@ -30,7 +30,14 @@ describe('small-city municipal hospital scale coerce', () => {
       magnets,
       magnetFacts,
       engineFinalScore: 70,
-      cityScaleTier: 'small',
+      cityScaleInference: {
+        cityScale: 'small_city',
+        populationTier: '30k-100k',
+        marketGravityCoefficient: 0.7,
+        specialMarketFlags: [],
+        populationApprox: 30_000,
+        inferredFrom: 'unit_test',
+      },
     });
     const h = out.scoredDrivers[0];
     expect(h?.resolvedTier).not.toBe(1);

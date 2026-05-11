@@ -15,7 +15,7 @@ import {
   resolveDemandTier,
   tagsForMagnetIndex,
 } from './location-demand-kernel-rules';
-import type { InferredCityScaleTier } from './city-scale-from-address';
+import type { CityScale, CityScaleInference, SpecialMarketFlag } from './city-scale-from-address';
 import type {
   LocationDemandKernelDemandType,
   LocationDemandKernelInput,
@@ -25,6 +25,14 @@ import type {
   SmallCitySparsePublicScoreGuard,
 } from './location-scoring-contract';
 import { formatPublicEvidenceLineRu } from './location-decision-rules';
+
+function isLowGravityCityScale(cityScale: CityScale): boolean {
+  return cityScale === 'small_city' || cityScale === 'micro_city' || cityScale === 'settlement' || cityScale === 'unknown';
+}
+
+function hasFlag(flags: readonly SpecialMarketFlag[], flag: SpecialMarketFlag): boolean {
+  return flags.includes(flag);
+}
 
 const REF_SUM_FOR_FULL_SCORE = 44;
 const CAP_SUPPORTING_INFRA = 11;
@@ -37,11 +45,11 @@ const SMALL_CITY_PUBLIC_SCORE_CAP = 58;
 /** Mirrors taxonomy municipal vs regional split — kept in kernel to avoid brittle bundler ordering. */
 function coerceMunicipalHospitalScaleForSmallCity(
   m: MagnetItem,
-  cityTier: InferredCityScaleTier | undefined,
+  cityScale: CityScale | undefined,
   scaleClass: ReturnType<typeof inferScaleClass>,
 ): ReturnType<typeof inferScaleClass> {
   if (m.categoryId !== 'hospital' && m.categoryId !== 'specializedMedicalAnchor') return scaleClass;
-  if (cityTier !== 'small' && cityTier !== 'micro') return scaleClass;
+  if (!isLowGravityCityScale(cityScale ?? 'unknown')) return scaleClass;
   const n = (m.name ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!n) return scaleClass;
   const regional =
@@ -58,6 +66,41 @@ const MIN_PUBLIC_DISPLAY_CONTRIBUTION = 0.22;
 const PUBLIC_DISPLAY_STRONG_T2 = 1.12;
 const PUBLIC_DISPLAY_METRO_RAIL_MIN = 0.38;
 const PUBLIC_DISPLAY_EXPLICIT_T2_MIN = 0.48;
+
+const CITY_PUBLIC_MULTIPLIER: Readonly<Record<CityScale, number>> = {
+  federal_mega: 1,
+  mega_city: 1,
+  million_plus: 1.05,
+  large_regional: 1.1,
+  medium_city: 1.15,
+  small_city: 1.28,
+  micro_city: 1.38,
+  settlement: 1.48,
+  unknown: 1.32,
+};
+
+function publicDisplayMultiplierForDriver(args: {
+  cityScale: CityScale;
+  specialMarketFlags: readonly SpecialMarketFlag[];
+  demandTypeVote: LocationDemandScoredDriver['demandTypeVote'];
+}): number {
+  const { cityScale, specialMarketFlags, demandTypeVote } = args;
+  let mult = CITY_PUBLIC_MULTIPLIER[cityScale] ?? CITY_PUBLIC_MULTIPLIER.unknown;
+
+  // Resort / medical / transport exception flags relax the "strong public" thresholds
+  // for otherwise weak local signals, but only in small-ish cities.
+  const resort = hasFlag(specialMarketFlags, 'resort_exception') || hasFlag(specialMarketFlags, 'federal_tourist_anchor');
+  const medical = hasFlag(specialMarketFlags, 'regional_medical_cluster');
+  const transport = hasFlag(specialMarketFlags, 'large_transport_hub') || hasFlag(specialMarketFlags, 'port_or_logistics_gateway');
+
+  if (isLowGravityCityScale(cityScale)) {
+    if (demandTypeVote === 'tourist' && resort) mult *= 0.7;
+    if (demandTypeVote === 'medical' && medical) mult *= 0.85;
+    if (demandTypeVote === 'transport' && transport) mult *= 0.9;
+  }
+
+  return mult;
+}
 
 const PUBLIC_DRIVER_EXPLICIT_CATEGORIES = new Set([
   'hospital',
@@ -89,8 +132,20 @@ function tagAlignmentStatusFromCanonical(cf: CanonicalLocationFact | undefined):
   return w ?? 'tag_alignment_none';
 }
 
-function passesPublicDisplayRules(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): boolean {
-  if (!d.accepted || d.finalContribution < MIN_PUBLIC_DISPLAY_CONTRIBUTION) return false;
+function passesPublicDisplayRules(args: {
+  d: LocationDemandScoredDriver;
+  magnets: readonly MagnetItem[];
+  cityScale: CityScale;
+  specialMarketFlags: readonly SpecialMarketFlag[];
+}): boolean {
+  const { d, magnets, cityScale, specialMarketFlags } = args;
+  const mult = publicDisplayMultiplierForDriver({ cityScale, specialMarketFlags, demandTypeVote: d.demandTypeVote });
+  const minContribution = MIN_PUBLIC_DISPLAY_CONTRIBUTION * mult;
+  const strongT2 = PUBLIC_DISPLAY_STRONG_T2 * mult;
+  const metroRailMin = PUBLIC_DISPLAY_METRO_RAIL_MIN * mult;
+  const explicitT2Min = PUBLIC_DISPLAY_EXPLICIT_T2_MIN * mult;
+
+  if (!d.accepted || d.finalContribution < minContribution) return false;
   if (d.driverKind === 'noise' || d.driverKind === 'local_interest') return false;
   if (isHotelCategory(magnets, d.magnetFactId)) return false;
 
@@ -98,11 +153,11 @@ function passesPublicDisplayRules(d: LocationDemandScoredDriver, magnets: readon
 
   if (d.driverKind === 'supporting_infrastructure') {
     if (!isMetroOrRail(magnets, d.magnetFactId)) return false;
-    return d.finalContribution >= PUBLIC_DISPLAY_METRO_RAIL_MIN;
+    return d.finalContribution >= metroRailMin;
   }
 
   if (d.driverKind === 'unknown_uncapped') {
-    return d.resolvedTier <= 2 && d.finalContribution >= PUBLIC_DISPLAY_STRONG_T2 * 0.72;
+    return d.resolvedTier <= 2 && d.finalContribution >= strongT2 * 0.72;
   }
 
   if (d.driverKind !== 'real_demand_driver') return false;
@@ -112,8 +167,8 @@ function passesPublicDisplayRules(d: LocationDemandScoredDriver, magnets: readon
   if (d.resolvedTier === 1) return true;
 
   if (d.resolvedTier === 2) {
-    if (d.finalContribution >= PUBLIC_DISPLAY_STRONG_T2) return true;
-    if (cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= PUBLIC_DISPLAY_EXPLICIT_T2_MIN) {
+    if (d.finalContribution >= strongT2) return true;
+    if (cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= explicitT2Min) {
       return true;
     }
     return false;
@@ -122,9 +177,21 @@ function passesPublicDisplayRules(d: LocationDemandScoredDriver, magnets: readon
   return false;
 }
 
-function computePublicDisplayRejectReason(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): string {
+function computePublicDisplayRejectReason(args: {
+  d: LocationDemandScoredDriver;
+  magnets: readonly MagnetItem[];
+  cityScale: CityScale;
+  specialMarketFlags: readonly SpecialMarketFlag[];
+}): string {
+  const { d, magnets, cityScale, specialMarketFlags } = args;
+  const mult = publicDisplayMultiplierForDriver({ cityScale, specialMarketFlags, demandTypeVote: d.demandTypeVote });
+  const minContribution = MIN_PUBLIC_DISPLAY_CONTRIBUTION * mult;
+  const strongT2 = PUBLIC_DISPLAY_STRONG_T2 * mult;
+  const metroRailMin = PUBLIC_DISPLAY_METRO_RAIL_MIN * mult;
+  const explicitT2Min = PUBLIC_DISPLAY_EXPLICIT_T2_MIN * mult;
+
   if (!d.accepted) return 'public_reject:not_accepted_kernel';
-  if (d.finalContribution < MIN_PUBLIC_DISPLAY_CONTRIBUTION) {
+  if (d.finalContribution < minContribution) {
     return 'public_reject:below_public_contribution_threshold';
   }
   if (d.driverKind === 'noise') return 'public_reject:noise';
@@ -136,13 +203,13 @@ function computePublicDisplayRejectReason(d: LocationDemandScoredDriver, magnets
   if (
     d.driverKind === 'supporting_infrastructure' &&
     isMetroOrRail(magnets, d.magnetFactId) &&
-    d.finalContribution < PUBLIC_DISPLAY_METRO_RAIL_MIN
+    d.finalContribution < metroRailMin
   ) {
     return 'public_reject:transit_evidence_below_public_floor';
   }
   if (
     d.driverKind === 'unknown_uncapped' &&
-    (d.resolvedTier > 2 || d.finalContribution < PUBLIC_DISPLAY_STRONG_T2 * 0.72)
+    (d.resolvedTier > 2 || d.finalContribution < strongT2 * 0.72)
   ) {
     return 'public_reject:unknown_anchor_not_public_strong_enough';
   }
@@ -151,8 +218,8 @@ function computePublicDisplayRejectReason(d: LocationDemandScoredDriver, magnets
     if (d.resolvedTier >= 3) return 'public_reject:tier3_weak_anchor';
     if (
       d.resolvedTier === 2 &&
-      d.finalContribution < PUBLIC_DISPLAY_STRONG_T2 &&
-      !(cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= PUBLIC_DISPLAY_EXPLICIT_T2_MIN)
+      d.finalContribution < strongT2 &&
+      !(cat && PUBLIC_DRIVER_EXPLICIT_CATEGORIES.has(cat) && d.finalContribution >= explicitT2Min)
     ) {
       return 'public_reject:tier2_below_public_strength';
     }
@@ -204,7 +271,7 @@ function resolveDominantDemandTypeWithTourismHardGate(
   return preliminary;
 }
 
-function emptyResult(engineFinal: number): LocationDemandScoringKernelResult {
+function emptyResult(engineFinal: number, cityScaleInference: CityScaleInference): LocationDemandScoringKernelResult {
   const breakdown = {
     rawSumBeforeCaps: 0,
     cappedSupportingInfra: 0,
@@ -224,6 +291,12 @@ function emptyResult(engineFinal: number): LocationDemandScoringKernelResult {
     scoreBreakdown: breakdown,
     kernelEvidenceScore: 0,
     blendedPublicScore: Math.round(engineFinal),
+    cityScale: cityScaleInference.cityScale,
+    populationTier: cityScaleInference.populationTier,
+    marketGravityCoefficient: cityScaleInference.marketGravityCoefficient,
+    specialMarketFlags: cityScaleInference.specialMarketFlags,
+    scoreCapReason: null,
+    cityGravityScoreCapGuard: undefined,
     warnings: [],
     debugTrace: ['kernel:empty_input'],
   };
@@ -240,7 +313,10 @@ function voteWeight(d: LocationDemandScoredDriver): number {
   return d.finalContribution;
 }
 
-function arbitrateDominantType(votes: LocationDemandScoredDriver[]): LocationDemandKernelDemandType {
+function arbitrateDominantType(
+  votes: LocationDemandScoredDriver[],
+  cityScale: CityScale,
+): LocationDemandKernelDemandType {
   const buckets = new Map<LocationDemandKernelDemandType, number>();
   for (const d of votes) {
     const w = voteWeight(d);
@@ -261,8 +337,12 @@ function arbitrateDominantType(votes: LocationDemandScoredDriver[]): LocationDem
   }
 
   const total = [...buckets.values()].reduce((a, b) => a + b, 0);
-  if (best < total * 0.28) return 'mixed';
-  if (second >= best * 0.85 && bestType !== 'weak/unclear') return 'mixed';
+  const low = isLowGravityCityScale(cityScale);
+  const bestThreshold = low ? 0.34 : 0.28;
+  if (best < total * bestThreshold) return low ? 'weak/unclear' : 'mixed';
+
+  const secondThreshold = low ? 0.92 : 0.85;
+  if (second >= best * secondThreshold && bestType !== 'weak/unclear') return 'mixed';
   return bestType;
 }
 
@@ -298,8 +378,19 @@ export function runLocationDemandScoringKernel(
   const warnings: string[] = [];
   const { magnets, magnetFacts, canonicalFacts, engineFinalScore } = input;
 
+  const cityScaleInference: CityScaleInference =
+    input.cityScaleInference ??
+    ({
+      cityScale: 'unknown',
+      populationTier: 'unknown',
+      marketGravityCoefficient: 0.72,
+      specialMarketFlags: [],
+      populationApprox: null,
+      inferredFrom: 'no_city_scale_in_kernel_input',
+    } satisfies CityScaleInference);
+
   if (!magnetFacts.length || !magnets.length) {
-    return emptyResult(engineFinalScore);
+    return emptyResult(engineFinalScore, cityScaleInference);
   }
 
   const integritySkip =
@@ -321,20 +412,41 @@ export function runLocationDemandScoringKernel(
 
   const staged: LocationDemandScoredDriver[] = [];
 
-  const cityTier = input.cityScaleTier;
+  const { cityScale } = cityScaleInference;
+  debugTrace.push(
+    `cityScale=${cityScale}:populationTier=${cityScaleInference.populationTier}:marketGravity=${cityScaleInference.marketGravityCoefficient.toFixed(
+      2,
+    )}:flags=${cityScaleInference.specialMarketFlags.length ? cityScaleInference.specialMarketFlags.join(',') : 'none'}`,
+  );
+
+  const flagResort =
+    hasFlag(cityScaleInference.specialMarketFlags, 'resort_exception') ||
+    hasFlag(cityScaleInference.specialMarketFlags, 'federal_tourist_anchor');
+  const flagMedical = hasFlag(cityScaleInference.specialMarketFlags, 'regional_medical_cluster');
+  const flagIndustrial = hasFlag(cityScaleInference.specialMarketFlags, 'major_industrial_employer');
+  const flagTransport =
+    hasFlag(cityScaleInference.specialMarketFlags, 'large_transport_hub') ||
+    hasFlag(cityScaleInference.specialMarketFlags, 'port_or_logistics_gateway');
+
   const n = Math.min(magnets.length, magnetFacts.length);
   for (let i = 0; i < n; i++) {
     const m = magnets[i]!;
     const mf = magnetFacts[i]!;
     const tags = tagsForMagnetIndex(i, canonicalFacts);
-    const { kind, reason: kindReason } = classifyDriverKind({ m, magnets, tags });
-    let scaleClass = inferScaleClass(m, tags, cityTier);
-    scaleClass = coerceMunicipalHospitalScaleForSmallCity(m, cityTier, scaleClass);
-    let tier = resolveDemandTier({ m, scaleClass, tags, cityTier });
+    let { kind, reason: kindReason } = classifyDriverKind({ m, magnets, tags });
+    let scaleClass = inferScaleClass(m, tags, cityScale);
+    scaleClass = coerceMunicipalHospitalScaleForSmallCity(m, cityScale, scaleClass);
+    let tier = resolveDemandTier({ m, scaleClass, tags, cityScaleInference });
 
     if (scaleClass === 'unknown' && tier === 1 && (m.categoryId === 'airport' || m.categoryId === 'strategicTransportHub')) {
       tier = 2;
       debugTrace.push(`${mf.id}:tier_downgrade:unknown_scale_airport_like`);
+    }
+
+    // Resort exceptions may "promote" otherwise weak local tourist POIs into scoring drivers.
+    if (kind === 'local_interest' && flagResort && m.categoryId === 'attraction' && tier <= 2) {
+      debugTrace.push(`${mf.id}:city_gravity_resort_promote_local_interest`);
+      kind = 'real_demand_driver';
     }
 
     const demandTypeVote = demandTypeVoteForMagnet(m, kind);
@@ -349,6 +461,20 @@ export function runLocationDemandScoringKernel(
 
     const baseWeight = baseWeightForTier(tier, kind);
     let contribution = baseWeight * distCoeff * scaleCoeff * confCoeff;
+
+    // Market gravity influences contribution magnitude deterministically.
+    contribution *= cityScaleInference.marketGravityCoefficient;
+
+    // In low-gravity cities, weak/unknown-scale POIs are strongly dampened unless a special market flag lifts them.
+    if (isLowGravityCityScale(cityScale) && (scaleClass === 'weak_local' || scaleClass === 'unknown')) {
+      let penalty = 0.65;
+      if (demandTypeVote === 'tourist' && flagResort) penalty = 1;
+      else if (demandTypeVote === 'medical' && flagMedical) penalty = 1;
+      else if (demandTypeVote === 'industrial' && flagIndustrial) penalty = 1;
+      else if (demandTypeVote === 'corporate/business' && flagIndustrial) penalty = 1;
+      else if (demandTypeVote === 'transport' && flagTransport) penalty = 1;
+      contribution *= penalty;
+    }
 
     if (kind === 'noise') contribution = 0;
 
@@ -487,7 +613,7 @@ export function runLocationDemandScoringKernel(
 
   let kernelEvidenceScore = Math.min(100, Math.round((finalSum / REF_SUM_FOR_FULL_SCORE) * 100));
 
-  let dominantDemandType = arbitrateDominantType(working);
+  let dominantDemandType = arbitrateDominantType(working, cityScale);
   dominantDemandType = resolveDominantDemandTypeWithTourismHardGate(working, magnets, dominantDemandType);
 
   const driverStrength = Math.min(1, finalSum / 38);
@@ -501,44 +627,129 @@ export function runLocationDemandScoringKernel(
     warnings.push('kernel:integrity_skip_blend');
   }
 
+  const cityCapFor = (cs: CityScale): number => {
+    switch (cs) {
+      case 'federal_mega':
+      case 'mega_city':
+        return 100;
+      case 'million_plus':
+        return 95;
+      case 'large_regional':
+        return 90;
+      case 'medium_city':
+        return 82;
+      case 'small_city':
+        return 68;
+      case 'micro_city':
+        return SMALL_CITY_PUBLIC_SCORE_CAP; // keep legacy behavior for Lodeynoye Pole
+      case 'settlement':
+        return 52;
+      case 'unknown':
+        return 62;
+      default:
+        return 70;
+    }
+  };
+
+  const capBase = cityCapFor(cityScale);
+
+  const hasTouristAnchorTier12 = working.some(
+    d => d.accepted && d.demandTypeVote === 'tourist' && d.resolvedTier <= 2,
+  );
+  const hasMedicalAnchorTier12 = working.some(
+    d => d.accepted && d.demandTypeVote === 'medical' && d.resolvedTier <= 2,
+  );
+  const hasIndustrialAnchorTier12 = working.some(
+    d => d.accepted && d.demandTypeVote === 'industrial' && d.resolvedTier <= 2,
+  );
+  const hasTransportAnchorTier12 = working.some(
+    d => d.accepted && d.demandTypeVote === 'transport' && d.resolvedTier <= 2,
+  );
+
+  const hasCapLift =
+    structuralStrongAnchor ||
+    (flagResort && hasTouristAnchorTier12) ||
+    (flagMedical && hasMedicalAnchorTier12) ||
+    (flagIndustrial && hasIndustrialAnchorTier12) ||
+    (flagTransport && hasTransportAnchorTier12);
+
+  let cityGravityScoreCapGuard:
+    | import('./location-scoring-contract').CityGravityScoreCapGuard
+    | undefined;
+  let scoreCapReason: string | null = null;
   let smallCitySparseScoreGuard: SmallCitySparsePublicScoreGuard | undefined;
-  const cs = input.cityScaleTier;
-  if (!integritySkip && (cs === 'small' || cs === 'micro')) {
-    if (!structuralStrongAnchor && blendedPublicScore > SMALL_CITY_PUBLIC_SCORE_CAP) {
+
+  if (!integritySkip && capBase < 100) {
+    const effectiveCap = hasCapLift ? 100 : capBase;
+    if (!hasCapLift && blendedPublicScore > effectiveCap) {
       const before = blendedPublicScore;
-      blendedPublicScore = SMALL_CITY_PUBLIC_SCORE_CAP;
+      blendedPublicScore = effectiveCap;
       breakdown.cappedSmallCitySparse += before - blendedPublicScore;
-      smallCitySparseScoreGuard = {
+      scoreCapReason = `city_gravity_cap:applied:cityScale=${cityScale}:cap=${effectiveCap}`;
+      cityGravityScoreCapGuard = {
         applied: true,
-        reason:
-          'small_city_sparse_cap:no_structural_tier1_or_verified_major_or_strong_tier2_medium_anchor',
+        reason: scoreCapReason,
+        cap: effectiveCap,
         scoreBefore: before,
         scoreAfter: blendedPublicScore,
       };
+
+      if (isLowGravityCityScale(cityScale)) {
+        smallCitySparseScoreGuard = {
+          applied: true,
+          reason: 'small_city_sparse_cap:no_city_gravity_anchor_tier1_or_verified_major',
+          scoreBefore: before,
+          scoreAfter: blendedPublicScore,
+        };
+      }
       debugTrace.push(
-        `cap:small_city_sparse:before=${before}:after=${blendedPublicScore}:reason=no_structural_major_anchor`,
+        `cap:city_gravity:before=${before}:after=${blendedPublicScore}:reason=${scoreCapReason}`,
       );
     } else {
-      smallCitySparseScoreGuard = {
+      scoreCapReason = null;
+      cityGravityScoreCapGuard = {
         applied: false,
-        reason: structuralStrongAnchor
-          ? 'small_city_sparse_cap:skipped_verified_major_or_strong_tier2_anchor_present'
-          : `small_city_sparse_cap:skipped_score_within_cap_<=${SMALL_CITY_PUBLIC_SCORE_CAP}`,
+        reason: hasCapLift
+          ? `city_gravity_cap:skipped_anchor_present:cityScale=${cityScale}`
+          : `city_gravity_cap:skipped_score_within_cap_<=${effectiveCap}`,
+        cap: effectiveCap,
         scoreBefore: blendedPublicScore,
         scoreAfter: blendedPublicScore,
       };
+      if (isLowGravityCityScale(cityScale)) {
+        smallCitySparseScoreGuard = {
+          applied: false,
+          reason: hasCapLift
+            ? 'small_city_sparse_cap:skipped_verified_anchor_present'
+            : `small_city_sparse_cap:skipped_score_within_cap_<=${effectiveCap}`,
+          scoreBefore: blendedPublicScore,
+          scoreAfter: blendedPublicScore,
+        };
+      }
     }
   }
 
   const scoredDriversAnnotated: LocationDemandScoredDriver[] = working.map(d => {
     const idx = magnetIndexFromMagnetFactId(d.magnetFactId);
     const cf = idx != null ? canonicalFacts?.[idx] : undefined;
-    const eligible = passesPublicDisplayRules(d, magnets);
+    const eligible = passesPublicDisplayRules({
+      d,
+      magnets,
+      cityScale,
+      specialMarketFlags: cityScaleInference.specialMarketFlags,
+    });
     return {
       ...d,
       tagAlignmentStatus: tagAlignmentStatusFromCanonical(cf),
       publicDisplayEligible: eligible,
-      publicDisplayRejectReason: eligible ? undefined : computePublicDisplayRejectReason(d, magnets),
+      publicDisplayRejectReason: eligible
+        ? undefined
+        : computePublicDisplayRejectReason({
+            d,
+            magnets,
+            cityScale,
+            specialMarketFlags: cityScaleInference.specialMarketFlags,
+          }),
     };
   });
 
@@ -558,6 +769,12 @@ export function runLocationDemandScoringKernel(
     kernelEvidenceScore,
     blendedPublicScore,
     smallCitySparseScoreGuard,
+    cityGravityScoreCapGuard,
+    cityScale,
+    populationTier: cityScaleInference.populationTier,
+    marketGravityCoefficient: cityScaleInference.marketGravityCoefficient,
+    specialMarketFlags: cityScaleInference.specialMarketFlags,
+    scoreCapReason,
     warnings,
     debugTrace,
   };

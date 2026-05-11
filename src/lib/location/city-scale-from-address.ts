@@ -1,34 +1,116 @@
 /**
- * Heuristic city-scale tier for demand-kernel safeguards (RU residential demo).
- * Uses address text only — no external population API.
+ * Canonical, deterministic RU city scale inference used by the demand/scoring kernel.
+ *
+ * Important:
+ * - No live population data (static metadata only).
+ * - Longest-match static table over normalized address (fixture city names).
  */
 
-export type InferredCityScaleTier = 'micro' | 'small' | 'medium' | 'large' | 'unknown';
+export type CityScale =
+  | 'federal_mega'
+  | 'mega_city'
+  | 'million_plus'
+  | 'large_regional'
+  | 'medium_city'
+  | 'small_city'
+  | 'micro_city'
+  | 'settlement'
+  | 'unknown';
+
+export type PopulationTier = '5m+' | '1m-5m' | '500k-1m' | '100k-500k' | '30k-100k' | '<30k' | 'unknown';
+
+export type SpecialMarketFlag =
+  | 'resort_exception'
+  | 'federal_tourist_anchor'
+  | 'major_industrial_employer'
+  | 'large_transport_hub'
+  | 'port_or_logistics_gateway'
+  | 'university_town'
+  | 'shift_worker_demand'
+  | 'regional_medical_cluster';
 
 export interface CityScaleInference {
-  readonly tier: InferredCityScaleTier;
+  readonly cityScale: CityScale;
+  readonly populationTier: PopulationTier;
+  readonly marketGravityCoefficient: number;
+  readonly specialMarketFlags: readonly SpecialMarketFlag[];
   /** Approximate population when known from static table; null if unknown */
   readonly populationApprox: number | null;
   /** Human-readable provenance for diagnostics */
   readonly inferredFrom: string;
+  /** Conservative hardcoded metadata (static table only). */
+  readonly cityName?: string;
+  readonly region?: string;
 }
-
-const TABLE: ReadonlyArray<{
-  needle: string;
-  tier: InferredCityScaleTier;
-  populationApprox: number | null;
-}> = [
-  { needle: 'лодейное поле', tier: 'small', populationApprox: 21_000 },
-  { needle: 'ростов-на-дону', tier: 'large', populationApprox: 1_150_000 },
-  { needle: 'новосибирск', tier: 'large', populationApprox: 1_630_000 },
-  { needle: 'кемерово', tier: 'large', populationApprox: 550_000 },
-  { needle: 'саранск', tier: 'medium', populationApprox: 318_000 },
-  { needle: 'ялта', tier: 'medium', populationApprox: 82_000 },
-];
 
 function normAddr(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim();
 }
+
+export function marketGravityCoefficientFromCityScale(cityScale: CityScale): number {
+  const MARKET_GRAVITY: Readonly<Record<CityScale, number>> = {
+    federal_mega: 1.35,
+    mega_city: 1.25,
+    million_plus: 1.15,
+    large_regional: 0.95,
+    medium_city: 0.85,
+    small_city: 0.7,
+    micro_city: 0.5,
+    settlement: 0.35,
+    unknown: 0.72,
+  };
+  return MARKET_GRAVITY[cityScale] ?? MARKET_GRAVITY.unknown;
+}
+
+type Row = {
+  needle: string;
+  cityScale: CityScale;
+  populationTier: PopulationTier;
+  populationApprox: number | null;
+  cityName: string;
+  region: string;
+  specialMarketFlags?: readonly SpecialMarketFlag[];
+};
+
+/**
+ * Deterministic metadata for cities present in golden / validation fixtures.
+ * Add new rows here (no external APIs).
+ */
+const TABLE: ReadonlyArray<Row> = [
+  // Federal / mega
+  { needle: 'москва', cityScale: 'federal_mega', populationTier: '5m+', populationApprox: 12_500_000, cityName: 'Москва', region: 'Москва' },
+  {
+    needle: 'санкт-петербург',
+    cityScale: 'mega_city',
+    populationTier: '5m+',
+    populationApprox: 5_400_000,
+    cityName: 'Санкт‑Петербург',
+    region: 'Санкт‑Петербург',
+    specialMarketFlags: ['port_or_logistics_gateway', 'large_transport_hub'],
+  },
+  { needle: 'спб', cityScale: 'mega_city', populationTier: '5m+', populationApprox: 5_400_000, cityName: 'Санкт‑Петербург', region: 'Санкт‑Петербург', specialMarketFlags: ['port_or_logistics_gateway', 'large_transport_hub'] },
+
+  // Million-plus
+  { needle: 'екатеринбург', cityScale: 'million_plus', populationTier: '1m-5m', populationApprox: 1_500_000, cityName: 'Екатеринбург', region: 'Свердловская область' },
+  { needle: 'новосибирск', cityScale: 'million_plus', populationTier: '1m-5m', populationApprox: 1_630_000, cityName: 'Новосибирск', region: 'Новосибирская область', specialMarketFlags: ['large_transport_hub', 'university_town'] },
+  { needle: 'красноярск', cityScale: 'million_plus', populationTier: '1m-5m', populationApprox: 1_090_000, cityName: 'Красноярск', region: 'Красноярский край', specialMarketFlags: ['large_transport_hub', 'port_or_logistics_gateway'] },
+  { needle: 'ростов-на-дону', cityScale: 'million_plus', populationTier: '1m-5m', populationApprox: 1_150_000, cityName: 'Ростов-на-Дону', region: 'Ростовская область', specialMarketFlags: ['port_or_logistics_gateway', 'large_transport_hub'] },
+  { needle: 'ростов', cityScale: 'million_plus', populationTier: '1m-5m', populationApprox: 1_150_000, cityName: 'Ростов-на-Дону', region: 'Ростовская область', specialMarketFlags: ['port_or_logistics_gateway', 'large_transport_hub'] },
+
+  // Large regional (500k–1m)
+  { needle: 'кемерово', cityScale: 'large_regional', populationTier: '500k-1m', populationApprox: 550_000, cityName: 'Кемерово', region: 'Кемеровская область', specialMarketFlags: ['major_industrial_employer', 'shift_worker_demand', 'regional_medical_cluster'] },
+  { needle: 'севастополь', cityScale: 'large_regional', populationTier: '500k-1m', populationApprox: 520_000, cityName: 'Севастополь', region: 'Севастополь', specialMarketFlags: ['resort_exception', 'port_or_logistics_gateway', 'large_transport_hub'] },
+
+  // Medium city (100k–500k)
+  { needle: 'саранск', cityScale: 'medium_city', populationTier: '100k-500k', populationApprox: 318_000, cityName: 'Саранск', region: 'Республика Мордовия', specialMarketFlags: ['university_town'] },
+  { needle: 'прокопьевск', cityScale: 'medium_city', populationTier: '100k-500k', populationApprox: 200_000, cityName: 'Прокопьевск', region: 'Кемеровская область', specialMarketFlags: ['major_industrial_employer', 'shift_worker_demand'] },
+
+  // Small city (30k–100k)
+  { needle: 'ялта', cityScale: 'small_city', populationTier: '30k-100k', populationApprox: 82_000, cityName: 'Ялта', region: 'Крым', specialMarketFlags: ['resort_exception', 'federal_tourist_anchor'] },
+
+  // Micro / settlement (<30k)
+  { needle: 'лодейное поле', cityScale: 'micro_city', populationTier: '<30k', populationApprox: 21_000, cityName: 'Лодейное Поле', region: 'Ленинградская область' },
+];
 
 /**
  * Longest-match static table over normalized address (Cyrillic city names in fixtures).
@@ -36,22 +118,41 @@ function normAddr(s: string): string {
 export function inferCityScaleFromRuAddress(addressRu: string): CityScaleInference {
   const n = normAddr(addressRu);
   if (!n || n === 'fixture') {
-    return { tier: 'unknown', populationApprox: null, inferredFrom: 'no_city_token' };
-  }
-
-  let best: (typeof TABLE)[number] | null = null;
-  for (const row of TABLE) {
-    if (!n.includes(row.needle)) continue;
-    if (!best || row.needle.length > best.needle.length) {
-      best = row;
-    }
-  }
-  if (best) {
     return {
-      tier: best.tier,
-      populationApprox: best.populationApprox,
-      inferredFrom: `static_table:${best.needle}`,
+      cityScale: 'unknown',
+      populationTier: 'unknown',
+      populationApprox: null,
+      marketGravityCoefficient: marketGravityCoefficientFromCityScale('unknown'),
+      specialMarketFlags: [],
+      inferredFrom: 'no_city_token',
     };
   }
-  return { tier: 'unknown', populationApprox: null, inferredFrom: 'no_match' };
+
+  let best: Row | null = null;
+  for (const row of TABLE) {
+    if (!n.includes(row.needle)) continue;
+    if (!best || row.needle.length > best.needle.length) best = row;
+  }
+
+  if (!best) {
+    return {
+      cityScale: 'unknown',
+      populationTier: 'unknown',
+      populationApprox: null,
+      marketGravityCoefficient: marketGravityCoefficientFromCityScale('unknown'),
+      specialMarketFlags: [],
+      inferredFrom: 'no_match',
+    };
+  }
+
+  return {
+    cityScale: best.cityScale,
+    populationTier: best.populationTier,
+    populationApprox: best.populationApprox,
+    marketGravityCoefficient: marketGravityCoefficientFromCityScale(best.cityScale),
+    specialMarketFlags: best.specialMarketFlags ?? [],
+    inferredFrom: `static_table:${best.needle}`,
+    cityName: best.cityName,
+    region: best.region,
+  };
 }

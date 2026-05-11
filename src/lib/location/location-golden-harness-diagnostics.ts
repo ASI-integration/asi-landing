@@ -40,6 +40,9 @@ export interface GoldenHarnessCaseDiagnostics {
   readonly expectedProfileExpectation?: string;
   readonly cityPopulationApprox: number | null;
   readonly cityScale: string;
+  readonly populationTier: string;
+  readonly marketGravityCoefficient: number;
+  readonly specialMarketFlags: readonly string[];
   readonly cityScaleInference: string;
   readonly smallCitySparseScoreGuard: {
     readonly applied: boolean;
@@ -47,6 +50,14 @@ export interface GoldenHarnessCaseDiagnostics {
     readonly scoreBefore: number;
     readonly scoreAfter: number;
   } | null;
+  readonly cityGravityScoreCapGuard: {
+    readonly applied: boolean;
+    readonly reason: string;
+    readonly cap: number;
+    readonly scoreBefore: number;
+    readonly scoreAfter: number;
+  } | null;
+  readonly scoreCapReason: string | null;
   readonly publicDrivers: readonly GoldenHarnessPublicDriverDiag[];
   readonly rejectedFromPublicTop: readonly GoldenHarnessRejectedDiag[];
 }
@@ -80,6 +91,7 @@ export function buildGoldenHarnessCaseDiagnostics(args: {
   const scale = inferCityScaleFromRuAddress(args.addressRu);
   const k = args.decision?.demandKernelV1;
   const guard = k?.smallCitySparseScoreGuard ?? null;
+  const cityGravityGuard = k?.cityGravityScoreCapGuard ?? null;
 
   const magnets = args.magnets;
   const scored = k?.scoredDrivers ?? [];
@@ -120,7 +132,10 @@ export function buildGoldenHarnessCaseDiagnostics(args: {
     expectedRegion: args.fixtureMeta.expectedRegion,
     expectedProfileExpectation: args.fixtureMeta.expectedProfileExpectation,
     cityPopulationApprox: scale.populationApprox,
-    cityScale: scale.tier,
+    cityScale: scale.cityScale,
+    populationTier: scale.populationTier,
+    marketGravityCoefficient: scale.marketGravityCoefficient,
+    specialMarketFlags: scale.specialMarketFlags,
     cityScaleInference: scale.inferredFrom,
     smallCitySparseScoreGuard: guard
       ? {
@@ -130,6 +145,16 @@ export function buildGoldenHarnessCaseDiagnostics(args: {
           scoreAfter: guard.scoreAfter,
         }
       : null,
+    cityGravityScoreCapGuard: cityGravityGuard
+      ? {
+          applied: cityGravityGuard.applied,
+          reason: cityGravityGuard.reason,
+          cap: cityGravityGuard.cap,
+          scoreBefore: cityGravityGuard.scoreBefore,
+          scoreAfter: cityGravityGuard.scoreAfter,
+        }
+      : null,
+    scoreCapReason: k?.scoreCapReason ?? null,
     publicDrivers: publicDriverRows,
     rejectedFromPublicTop: rejectedTop,
   };

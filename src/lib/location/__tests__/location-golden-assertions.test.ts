@@ -121,15 +121,22 @@ describe('location golden assertions (LocationPublicSummary)', () => {
     const kernel = decision.demandKernelV1;
 
     expect(c.expectedProfileExpectation).toBe('weak_sparse');
+    expect(s.cityScale).toBe('micro_city');
+    expect(s.populationTier).toBe('<30k');
+    // Micro cities must never get optimistic lift; when cap applies, reason must be present.
+    const guard = kernel?.cityGravityScoreCapGuard;
+    if (guard?.applied) {
+      expect(s.scoreCapReason).toMatch(/city_gravity_cap:applied/);
+    }
     expect(['weak/unclear', 'mixed'] as const).toContainEqual(s.primaryDemandType);
     expect(s.primaryDemandType).not.toBe('medical');
     expect(s.secondaryDemandTypes.includes('tourist')).toBe(false);
     expect(s.finalScore).not.toBeNull();
     expect(s.finalScore!).toBeLessThanOrEqual(58);
 
-    const guard = kernel?.smallCitySparseScoreGuard;
-    expect(guard).toBeDefined();
-    expect(guard?.reason).toContain('small_city_sparse_cap');
+    const smallGuard = kernel?.smallCitySparseScoreGuard;
+    expect(smallGuard).toBeDefined();
+    expect(smallGuard?.reason).toContain('small_city_sparse_cap');
 
     expect(
       /ограничен|неустойчив|неоднознач|недостаточн|Смешанный/i.test(s.headlineRu) ||

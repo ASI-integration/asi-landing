@@ -4,7 +4,7 @@
 
 import type { CanonicalLocationFact } from './location-decision-contract';
 import type { MagnetItem } from './types';
-import type { InferredCityScaleTier } from './city-scale-from-address';
+import type { CityScale, CityScaleInference } from './city-scale-from-address';
 import {
   isStrongBusinessAnchorPoi,
   looksLikeSmallTownMunicipalHospitalPoi,
@@ -123,7 +123,7 @@ export type ScaleClass = 'verified_major' | 'medium' | 'weak_local' | 'unknown';
 export function inferScaleClass(
   m: MagnetItem,
   tags?: Record<string, string>,
-  cityTier?: InferredCityScaleTier,
+  cityScale?: CityScale,
 ): ScaleClass {
   const t = tags ?? {};
   const name = (m.name ?? '').toLowerCase();
@@ -143,10 +143,8 @@ export function inferScaleClass(
 
   if (m.categoryId === 'hospital') {
     if (looksLikeWeakLocalMedicalPoi(m)) return 'weak_local';
-    if (
-      (cityTier === 'small' || cityTier === 'micro') &&
-      looksLikeSmallTownMunicipalHospitalPoi(m)
-    ) {
+    const cityIsMunicipalLike = cityScale === 'small_city' || cityScale === 'micro_city' || cityScale === 'settlement' || cityScale === 'unknown';
+    if (cityIsMunicipalLike && looksLikeSmallTownMunicipalHospitalPoi(m)) {
       return 'weak_local';
     }
     if (MEDICAL_MAJOR_NAME_HINT_RE.test(name) && m.strengthClass === 'strong') return 'verified_major';
@@ -156,7 +154,7 @@ export function inferScaleClass(
 
   if (m.categoryId === 'specializedMedicalAnchor') {
     if (
-      (cityTier === 'small' || cityTier === 'micro') &&
+      (cityScale === 'small_city' || cityScale === 'micro_city' || cityScale === 'settlement' || cityScale === 'unknown') &&
       looksLikeSmallTownMunicipalHospitalPoi(m)
     ) {
       return 'weak_local';
@@ -229,10 +227,17 @@ export function resolveDemandTier(args: {
   m: MagnetItem;
   scaleClass: ScaleClass;
   tags?: Record<string, string>;
-  cityTier?: InferredCityScaleTier;
+  cityScaleInference?: CityScaleInference;
 }): LocationDemandResolvedTier {
   const { m, scaleClass } = args;
-  const ct = args.cityTier;
+  const cityScale = args.cityScaleInference?.cityScale;
+  const flags = args.cityScaleInference?.specialMarketFlags ?? [];
+  const cityIsMunicipalLike = cityScale === 'small_city' || cityScale === 'micro_city' || cityScale === 'settlement' || cityScale === 'unknown';
+  const resortException = flags.includes('resort_exception') || flags.includes('federal_tourist_anchor');
+  const regionalMedicalCluster = flags.includes('regional_medical_cluster');
+  const majorIndustrialEmployer = flags.includes('major_industrial_employer');
+  const universityTown = flags.includes('university_town');
+  const largeTransportHub = flags.includes('large_transport_hub') || flags.includes('port_or_logistics_gateway');
 
   const forceWeak =
     m.categoryId === 'food' ||
@@ -256,8 +261,8 @@ export function resolveDemandTier(args: {
   }
 
   if (m.categoryId === 'hospital') {
-    if ((ct === 'small' || ct === 'micro') && looksLikeSmallTownMunicipalHospitalPoi(m)) {
-      return 3;
+    if (cityIsMunicipalLike && looksLikeSmallTownMunicipalHospitalPoi(m)) {
+      return regionalMedicalCluster ? 2 : 3;
     }
     if (scaleClass === 'verified_major') return 1;
     if (scaleClass === 'medium') return 2;
@@ -266,8 +271,8 @@ export function resolveDemandTier(args: {
   }
 
   if (m.categoryId === 'specializedMedicalAnchor') {
-    if ((ct === 'small' || ct === 'micro') && looksLikeSmallTownMunicipalHospitalPoi(m)) {
-      return 3;
+    if (cityIsMunicipalLike && looksLikeSmallTownMunicipalHospitalPoi(m)) {
+      return regionalMedicalCluster ? 2 : 3;
     }
     if (m.specializedMedicalReachBand === 'primary') return 1;
     return 2;
@@ -275,12 +280,12 @@ export function resolveDemandTier(args: {
 
   if (m.categoryId === 'university') {
     if (scaleClass === 'verified_major') return 1;
-    if (scaleClass === 'medium') return 2;
+    if (scaleClass === 'medium') return cityIsMunicipalLike && !universityTown ? 3 : 2;
     return 3;
   }
 
   if (m.categoryId === 'railway_station') {
-    if (scaleClass === 'medium') return 2;
+    if (scaleClass === 'medium') return cityIsMunicipalLike && !largeTransportHub ? 3 : 2;
     if (scaleClass === 'unknown') return 3;
     return 3;
   }
@@ -292,7 +297,8 @@ export function resolveDemandTier(args: {
   if (m.categoryId === 'business') {
     const st = m.subType?.toLowerCase();
     if (st === 'factory' || st === 'industrial') {
-      if (scaleClass === 'verified_major' || scaleClass === 'medium') return 2;
+      if (scaleClass === 'verified_major') return 2;
+      if (scaleClass === 'medium') return cityIsMunicipalLike && !majorIndustrialEmployer ? 3 : 2;
       return 3;
     }
     if (isStrongBusinessAnchorPoi(m)) return 2;
@@ -309,7 +315,7 @@ export function resolveDemandTier(args: {
   if (m.categoryId === 'shopping_major') return 2;
 
   if (m.categoryId === 'attraction') {
-    if (looksLikeWeakLocalAttractionPoi(m)) return 3;
+    if (looksLikeWeakLocalAttractionPoi(m)) return cityIsMunicipalLike && resortException ? 2 : 3;
     return 2;
   }
 

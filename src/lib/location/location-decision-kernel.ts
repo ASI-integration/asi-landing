@@ -144,12 +144,15 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     scoreBlockedDueToIncompleteData: Boolean(
       analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData,
     ),
-    cityScaleTier: cityScaleInference.tier,
+    cityScaleInference,
   });
 
   const strictPublicDrivers = selectStrictPublicSummaryDrivers({
     kernel: demandKernelV1,
     magnets: analysis.magnets,
+    allowWeakLocalAttractionInResort:
+      demandKernelV1.specialMarketFlags.includes('resort_exception') ||
+      demandKernelV1.specialMarketFlags.includes('federal_tourist_anchor'),
   });
 
   const evidenceItems = evidenceItemsFromStrictSummaryDrivers({

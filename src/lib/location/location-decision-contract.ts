@@ -11,6 +11,7 @@ import type {
   LocationDemandKernelDemandType,
   LocationDemandScoringKernelResult,
 } from './location-scoring-contract';
+import type { CityScale, PopulationTier, SpecialMarketFlag } from './city-scale-from-address';
 
 /** Mirrors ScoreBand — kept local to avoid circular imports with types.ts */
 export type LocationDecisionScoreBand = 'strong' | 'medium' | 'weak' | 'none';
@@ -147,6 +148,12 @@ export interface LocationPublicSummary {
   scoreBand: LocationDecisionScoreBand;
   primaryDemandType: LocationPublicSummaryDemandType;
   secondaryDemandTypes: LocationPublicSummaryDemandType[];
+  cityScale: CityScale;
+  populationTier: PopulationTier;
+  marketGravityCoefficient: number;
+  specialMarketFlags: readonly SpecialMarketFlag[];
+  /** Deterministic score cap reason when a city-scale guard reduced the headline score. */
+  scoreCapReason: string | null;
   headlineRu: string;
   audienceVerdictRu: string;
   publicDrivers: LocationPublicDriverRow[];

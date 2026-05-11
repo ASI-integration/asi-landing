@@ -43,7 +43,9 @@ const TOURIST_ANCHOR_CATS = new Set(['stadium', 'convention', 'attraction']);
 export function verifiedTouristAnchorDrivers(
   drivers: readonly LocationDemandScoredDriver[],
   magnets: readonly MagnetItem[],
+  args?: { allowWeakLocalAttractionInResort?: boolean },
 ): LocationDemandScoredDriver[] {
+  const allowWeakLocalAttractionInResort = Boolean(args?.allowWeakLocalAttractionInResort);
   return drivers.filter(d => {
     if (!d.accepted || d.demandTypeVote !== 'tourist') return false;
     if (d.driverKind !== 'real_demand_driver') return false;
@@ -51,7 +53,12 @@ export function verifiedTouristAnchorDrivers(
     const cat = m?.categoryId;
     if (!cat || cat === 'major_hotel' || cat === 'mid_hotel' || cat === 'entertainment') return false;
     if (!TOURIST_ANCHOR_CATS.has(cat)) return false;
-    if (cat === 'attraction' && (d.resolvedTier >= 3 || d.scaleClass === 'weak_local')) return false;
+    if (
+      cat === 'attraction' &&
+      (d.resolvedTier >= 3 || (d.scaleClass === 'weak_local' && !allowWeakLocalAttractionInResort))
+    ) {
+      return false;
+    }
     return d.resolvedTier <= 2;
   });
 }
@@ -62,8 +69,9 @@ export function verifiedTouristAnchorDrivers(
 export function selectStrictPublicSummaryDrivers(args: {
   kernel: LocationDemandScoringKernelResult;
   magnets: readonly MagnetItem[];
+  allowWeakLocalAttractionInResort?: boolean;
 }): LocationDemandScoredDriver[] {
-  const { kernel, magnets } = args;
+  const { kernel, magnets, allowWeakLocalAttractionInResort } = args;
   const pool = kernel.scoredDrivers.filter(d => d.publicDisplayEligible);
   const demandAnchors = pool.filter(
     d => d.driverKind === 'real_demand_driver' || d.driverKind === 'unknown_uncapped',
@@ -82,7 +90,11 @@ export function selectStrictPublicSummaryDrivers(args: {
     if (seen.has(d.magnetFactId)) continue;
     const m = magnetForDriver(d, magnets);
     if (!m) continue;
-    if (!passesResidentialPublicSurfaceGate(d, m)) {
+    if (
+      !passesResidentialPublicSurfaceGate(d, m, {
+        allowWeakLocalAttractionInResort: Boolean(allowWeakLocalAttractionInResort),
+      })
+    ) {
       continue;
     }
     seen.add(d.magnetFactId);
@@ -91,7 +103,11 @@ export function selectStrictPublicSummaryDrivers(args: {
   return out;
 }
 
-function passesResidentialPublicSurfaceGate(d: LocationDemandScoredDriver, m: MagnetItem): boolean {
+function passesResidentialPublicSurfaceGate(
+  d: LocationDemandScoredDriver,
+  m: MagnetItem,
+  args: { allowWeakLocalAttractionInResort: boolean },
+): boolean {
   if (m.categoryId === 'major_hotel' || m.categoryId === 'mid_hotel') return false;
   if (m.categoryId === 'entertainment') return false;
   if (m.categoryId === 'shopping_local' || m.categoryId === 'food') return false;
@@ -103,7 +119,9 @@ function passesResidentialPublicSurfaceGate(d: LocationDemandScoredDriver, m: Ma
     if (!isStrongBusinessAnchorPoi(m)) return false;
   }
 
-  if (m.categoryId === 'attraction' && looksLikeWeakLocalAttractionPoi(m)) return false;
+  if (m.categoryId === 'attraction' && looksLikeWeakLocalAttractionPoi(m) && !args.allowWeakLocalAttractionInResort) {
+    return false;
+  }
 
   const n = `${m.name} ${m.subType ?? ''}`.toLowerCase();
   if (
@@ -211,13 +229,16 @@ function buildHeadlineRu(args: {
   strictDrivers: readonly LocationDemandScoredDriver[];
   magnets: readonly MagnetItem[];
   incompleteLabel: string | null;
+  allowWeakLocalAttractionInResort: boolean;
 }): { text: string; reason: string } {
   const { primary, strictDrivers, magnets, incompleteLabel } = args;
   if (incompleteLabel) {
     return { text: incompleteLabel, reason: 'integrity:generic_incomplete_data_signal' };
   }
 
-  const anchors = verifiedTouristAnchorDrivers(strictDrivers, magnets);
+  const anchors = verifiedTouristAnchorDrivers(strictDrivers, magnets, {
+    allowWeakLocalAttractionInResort: args.allowWeakLocalAttractionInResort,
+  });
   const mixedUnstable = 'Смешанный / неустойчивый спрос по данным карты';
 
   if (strictDrivers.length === 0) {
@@ -357,10 +378,31 @@ export function buildLocationPublicSummary(args: {
   const warnings = [...args.baseWarnings];
   const { kernel, magnets, magnetFacts, demandSignals, finalScore, scoreBand } = args;
 
+  debugTrace.push(
+    `cityScale=${kernel.cityScale}:populationTier=${kernel.populationTier}:marketGravity=${kernel.marketGravityCoefficient.toFixed(
+      2,
+    )}:flags=${kernel.specialMarketFlags.length ? kernel.specialMarketFlags.join(',') : 'none'}`,
+  );
+  if (kernel.scoreCapReason) {
+    debugTrace.push(`scoreCapReason=${kernel.scoreCapReason}`);
+  }
+
   const incomplete = demandSignals.find(s => s.id === 'ds:generic_incomplete_data');
 
-  const strictDrivers = args.strictDrivers ?? selectStrictPublicSummaryDrivers({ kernel, magnets });
+  const strictDrivers =
+    args.strictDrivers ??
+    selectStrictPublicSummaryDrivers({
+      kernel,
+      magnets,
+      allowWeakLocalAttractionInResort:
+        kernel.specialMarketFlags.includes('resort_exception') ||
+        kernel.specialMarketFlags.includes('federal_tourist_anchor'),
+    });
   debugTrace.push(`strict_public_drivers=${strictDrivers.length}`);
+
+  const allowWeakLocalAttractionInResort =
+    kernel.specialMarketFlags.includes('resort_exception') ||
+    kernel.specialMarketFlags.includes('federal_tourist_anchor');
 
   const rejectedFromPublic: LocationPublicRejectedRow[] = [];
   for (const d of kernel.scoredDrivers) {
@@ -374,7 +416,10 @@ export function buildLocationPublicSummary(args: {
       continue;
     }
     const m = magnetForDriver(d, magnets);
-    if (m && !passesResidentialPublicSurfaceGate(d, m)) {
+    if (
+      m &&
+      !passesResidentialPublicSurfaceGate(d, m, { allowWeakLocalAttractionInResort })
+    ) {
       rejectedFromPublic.push({
         sourceName: d.sourceName,
         reason: 'summary_surface_gate:non_anchor_category_or_weak_business',
@@ -399,6 +444,8 @@ export function buildLocationPublicSummary(args: {
     strictDrivers,
     magnets,
     incompleteLabel: incomplete?.publicLabelRu ?? null,
+    allowWeakLocalAttractionInResort:
+      kernel.specialMarketFlags.includes('resort_exception') || kernel.specialMarketFlags.includes('federal_tourist_anchor'),
   });
 
   const headlineRu = headline.text;
@@ -466,6 +513,11 @@ export function buildLocationPublicSummary(args: {
     scoreBand,
     primaryDemandType: primary,
     secondaryDemandTypes: secondaries,
+    cityScale: kernel.cityScale,
+    populationTier: kernel.populationTier,
+    marketGravityCoefficient: kernel.marketGravityCoefficient,
+    specialMarketFlags: kernel.specialMarketFlags,
+    scoreCapReason: kernel.scoreCapReason,
     headlineRu,
     audienceVerdictRu,
     publicDrivers,

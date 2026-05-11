@@ -68,6 +68,14 @@ export interface SmallCitySparsePublicScoreGuard {
   readonly scoreAfter: number;
 }
 
+export interface CityGravityScoreCapGuard {
+  readonly applied: boolean;
+  readonly reason: string;
+  readonly cap: number;
+  readonly scoreBefore: number;
+  readonly scoreAfter: number;
+}
+
 export interface LocationDemandScoringKernelResult {
   acceptedDrivers: LocationDemandScoredDriver[];
   rejectedDrivers: LocationDemandScoredDriver[];
@@ -78,8 +86,17 @@ export interface LocationDemandScoringKernelResult {
   kernelEvidenceScore: number;
   /** Score blended with engine headline for published headline when integrity allows */
   blendedPublicScore: number;
-  /** When set, explains sparse small-city headline score cap (non-UI diagnostics). */
+  /** When set, explains sparse small-city headline score cap (non-UI diagnostics; legacy). */
   smallCitySparseScoreGuard?: SmallCitySparsePublicScoreGuard;
+  /** Deterministic macro-demand cap driven by the canonical cityScale layer. */
+  cityGravityScoreCapGuard?: CityGravityScoreCapGuard;
+  /** Deterministic city scale context used by this kernel run. */
+  cityScale: import('./city-scale-from-address').CityScale;
+  populationTier: import('./city-scale-from-address').PopulationTier;
+  marketGravityCoefficient: number;
+  specialMarketFlags: readonly import('./city-scale-from-address').SpecialMarketFlag[];
+  /** Non-null when {@link cityGravityScoreCapGuard} is applied. */
+  scoreCapReason: string | null;
   warnings: string[];
   debugTrace: string[];
 }
@@ -91,6 +108,6 @@ export interface LocationDemandKernelInput {
   engineFinalScore: number;
   analysisIncomplete?: boolean;
   scoreBlockedDueToIncompleteData?: boolean;
-  /** Inferred from RU address for small-town demand safeguards */
-  cityScaleTier?: import('./city-scale-from-address').InferredCityScaleTier;
+  /** Inferred from RU address for deterministic city-scale macro-demand layer. */
+  cityScaleInference?: import('./city-scale-from-address').CityScaleInference;
 }
