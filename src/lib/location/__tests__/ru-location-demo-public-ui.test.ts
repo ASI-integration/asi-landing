@@ -6,13 +6,26 @@ const repoRoot = path.join(__dirname, '../../..', '..');
 const ruPagePath = path.join(repoRoot, 'src/app/ru/location-analysis/page.tsx');
 const demoComponentPath = path.join(repoRoot, 'src/components/LocationIntelligenceDemo.tsx');
 
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let n = 0;
+  let i = 0;
+  while ((i = haystack.indexOf(needle, i)) !== -1) {
+    n += 1;
+    i += needle.length;
+  }
+  return n;
+}
+
 describe('RU /ru/location-analysis public demo UI contract', () => {
   it('page CTA uses new copy and drops legacy headline', () => {
-    const src = fs.readFileSync(ruPagePath, 'utf8');
-    expect(src).toContain('Хотите понять, как использовать эту локацию?');
-    expect(src).toContain('Получить подробный разбор');
-    expect(src).toContain('Первичный разбор можно запросить бесплатно.');
-    expect(src).not.toContain('Объект выглядит перспективным?');
+    const pageSrc = fs.readFileSync(ruPagePath, 'utf8');
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    const combined = `${pageSrc}\n${demoSrc}`;
+    expect(pageSrc).toContain('Хотите понять, как использовать эту локацию?');
+    expect(combined).not.toContain('Получить подробный разбор');
+    expect(countOccurrences(combined, 'Получить подробный отчёт')).toBe(1);
+    expect(pageSrc).not.toContain('Объект выглядит перспективным?');
   });
 
   it('LocationIntelligenceDemo omits residential/commercial toggle labels', () => {
