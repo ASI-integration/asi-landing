@@ -2596,27 +2596,23 @@ function ASIPanel({
         />
       )}
 
-      {/* CTA — lead capture */}
-      <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
-        {!isRuResidentialDemo ? (
-          <>
-            <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
-            <p className="text-[14px] text-slate-400 leading-snug mb-4">
-              {c.ctaBlock.body}
-            </p>
-          </>
-        ) : null}
-        <button
-          onClick={() =>
-            router.push(LOCATION_REPORT_PRODUCT_PATH)}
-          className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.99]"
-        >
-          {c.ctaBlock.button}
-        </button>
-        {!isRuResidentialDemo ? (
+      {/* CTA — lead capture (RU residential free/demo uses page-level footer CTA only) */}
+      {!isRuResidentialDemo ? (
+        <div className="px-5 py-5 border-b border-slate-800/40 bg-slate-800/20">
+          <p className="text-[11px] text-slate-400 uppercase tracking-[0.16em] mb-2">{c.ctaBlock.title}</p>
+          <p className="text-[14px] text-slate-400 leading-snug mb-4">
+            {c.ctaBlock.body}
+          </p>
+          <button
+            onClick={() =>
+              router.push(LOCATION_REPORT_PRODUCT_PATH)}
+            className="w-full py-3 px-4 rounded-xl bg-slate-100 hover:bg-white hover:brightness-110 text-slate-900 text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.99]"
+          >
+            {c.ctaBlock.button}
+          </button>
           <p className="mt-2 text-[13px] text-slate-500 text-center">{c.ctaBlock.note}</p>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {/* Analytics: gravity signals + foot traffic — EN only; RU hides internal zone/magnet labels */}
       {hasMagnets && locale !== 'ru' && (
