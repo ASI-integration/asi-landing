@@ -168,3 +168,13 @@ export type {
   RiskItem,
 } from './report-contract';
 export type { ReportPermalinkSurface } from './report-state';
+
+export { buildLocationDecision, attachLocationDecisionToAnalysis } from './location-decision-kernel';
+export type { LocationDecisionBuildInput } from './location-decision-kernel';
+export type {
+  LocationDecision,
+  LocationUiProjection,
+  MagnetFact,
+  DemandSignal,
+  LocationEvidenceItem,
+} from './location-decision-contract';

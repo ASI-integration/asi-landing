@@ -5,6 +5,9 @@
  * Core calculation is unchanged: we compute the full result and then
  * trim fields for preview mode.
  *
+ * TODO(location-decision-kernel): optionally attach `attachLocationDecisionToAnalysis` on the JSON
+ * payload so previews reuse the same Decision spine as `/api/location-demo-analyze`.
+ *
  * Request body:
  *   { address: string; is_paid: boolean; locale?: "ru" | "en" }
  *

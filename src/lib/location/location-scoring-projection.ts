@@ -2,10 +2,11 @@
  * Report/demo projection — attaches evidence + public wording AFTER numeric scoring.
  */
 
-import type { LocationAnalysis } from './types';
+import type { LocationAnalysis, OSMElement } from './types';
 import type { LocationScoringTrace } from './location-scoring-trace';
 import { normalizeRuDemoExplanationLines, sanitizeRuPublicFactor } from './demo-public-copy';
 import { SCORING_EVIDENCE_GROUPS } from './location-scoring-rules';
+import { buildLocationDecision } from './location-decision-kernel';
 
 function cloneTrace(trace: LocationScoringTrace): LocationScoringTrace {
   return {
@@ -52,6 +53,7 @@ export function applyReportProjectionToTrace(
   trace: LocationScoringTrace,
   mode: LocationReportPublicMode,
   score: NonNullable<LocationAnalysis['locationScore']>,
+  opts?: { kernelBullets?: string[] },
 ): LocationScoringTrace {
   const next = cloneTrace(trace);
   next.evidence = engineEvidenceFromTrace(trace);
@@ -64,6 +66,13 @@ export function applyReportProjectionToTrace(
     return next;
   }
 
+  const kernelFirst = (opts?.kernelBullets ?? []).filter(Boolean).slice(0, 6);
+  if (kernelFirst.length > 0) {
+    next.publicBullets = kernelFirst;
+    next.removedPublicBullets = rawFactors.filter(line => sanitizeRuPublicFactor(line) == null);
+    return next;
+  }
+
   next.publicBullets = normalizeRuDemoExplanationLines(rawFactors, 6);
   next.removedPublicBullets = rawFactors.filter(line => sanitizeRuPublicFactor(line) == null);
 
@@ -72,7 +81,7 @@ export function applyReportProjectionToTrace(
 
 export function enrichAnalysisWithReportProjection(
   analysis: LocationAnalysis,
-  opts: { reportMode: 'free' | 'paid' },
+  opts: { reportMode: 'free' | 'paid'; rawElements?: readonly OSMElement[] },
 ): LocationAnalysis {
   const trace = analysis.scoringTrace;
   const score = analysis.locationScore;
@@ -80,8 +89,20 @@ export function enrichAnalysisWithReportProjection(
 
   const mode: LocationReportPublicMode = opts.reportMode === 'free' ? 'free_demo_sanitize' : 'paid_factors';
 
+  const kernelBullets =
+    mode === 'free_demo_sanitize'
+      ? buildLocationDecision({
+          analysis,
+          inputAddress: trace.inputAddress ?? '',
+          coordinates: trace.coordinates,
+          rawElements: opts.rawElements,
+          selectedGeocodeResult: trace.selectedGeocodeResult,
+          locale: 'ru',
+        }).uiProjection.keyEvidenceBullets
+      : undefined;
+
   return {
     ...analysis,
-    scoringTrace: applyReportProjectionToTrace(trace, mode, score),
+    scoringTrace: applyReportProjectionToTrace(trace, mode, score, { kernelBullets }),
   };
 }
