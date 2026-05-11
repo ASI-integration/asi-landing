@@ -23,6 +23,7 @@ lighthouse-reports/
 .lighthouse-tmp/
 
 # Dev/debug artifacts
+tmp/location-golden/
 cookies_ru*.txt
 err.txt
 logs*.txt
