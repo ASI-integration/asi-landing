@@ -1053,7 +1053,8 @@ describe('RU residential canonical calibration matrix (deterministic harness)', 
       archetype: 'village / settlement',
       expectedBand: 'moderate',
       expectedRange: [35, 60],
-      expectedAudience: 'tourist',
+      /** Tier‑1 demo gate no longer treats isolated museum+hotel as walking anchors — presentation stays residential */
+      expectedAudience: ['tourist', 'residential'],
       analysis: {
         evergreenIndex: 45,
         magnets: [

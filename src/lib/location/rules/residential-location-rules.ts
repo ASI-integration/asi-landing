@@ -18,6 +18,8 @@ import {
   type ResidentialPrimeMagnet,
 } from '../residential-prime-magnets';
 import { GRAVITY_CONFIG } from '../config';
+import { hasTouristAnchorCluster } from '../location-decision-rules';
+import { looksLikeWeakLocalAttractionPoi } from '../signals/location-signal-taxonomy';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -87,20 +89,31 @@ function isMetroEntranceOrExit(name: string | undefined): boolean {
 }
 
 const MAJOR_TOURIST_ATTRACTION_NAME_RE =
-  // Explicit major tourist categories. Keep strict to avoid
-  // demoting everything (e.g. generic sculptures should stay Tier-2).
-  /(?:музей|театр|театральный|концертный\s+зал|концерт|стадион|арена|конгресс-центр|выставка|выставочный\s+центр|конвенц|экспо|landmark|достопримечательность|major\s+attraction)/i;
+  // Museums use cluster gate separately (`mentionsMuseum` + `hasTouristAnchorCluster`).
+  /(?:театр|театральный|концертный\s+зал|концерт|стадион|арена|конгресс-центр|выставка|выставочный\s+центр|конвенц|экспо|landmark|major\s+attraction)/i;
 
 function isMajorTouristAttraction(
   magnet: ResidentialPrimeMagnet,
   raw: MagnetItem | undefined,
+  allMagnets: readonly MagnetItem[],
 ): boolean {
   if (isStrongTier1BusinessByName(magnet.name)) return false; // defensive: business word in attraction name shouldn't promote it
+  if (raw && looksLikeWeakLocalAttractionPoi(raw)) return false;
+
+  const mentionsMuseum = /\bмузей\b|museum/i.test(magnet.name);
+  if (mentionsMuseum && !hasTouristAnchorCluster(allMagnets)) return false;
+
   if (MAJOR_TOURIST_ATTRACTION_NAME_RE.test(magnet.name)) return true;
 
-  // "Tourist site with strong category/source" fallback — only when both
-  // strength + attractionScore are clearly high.
-  if (raw?.strengthClass === 'strong' && raw.attractionScore >= 4.2) return true;
+  // Named landmark-ish fallback — never lifts unnamed/generic tiles or museums without cluster.
+  if (
+    raw?.strengthClass === 'strong' &&
+    raw.attractionScore >= 4.2 &&
+    !mentionsMuseum &&
+    !looksLikeWeakLocalAttractionPoi(raw)
+  ) {
+    return true;
+  }
 
   return false;
 }
@@ -172,7 +185,7 @@ function detectTier1(analysis: LocationAnalysis): ResidentialPrimeMagnet[] {
 
     // Attractions: generic sculptures/art objects must not become Tier-1 tourist magnets.
     if (m.categoryId === 'attraction') {
-      if (!isMajorTouristAttraction(m, raw)) continue;
+      if (!isMajorTouristAttraction(m, raw, analysis.magnets)) continue;
     }
 
     out.push(m);
