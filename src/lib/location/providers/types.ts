@@ -36,6 +36,12 @@ export interface GeocodeResult {
   lon: number;
   /** Display name returned by the provider, if available */
   displayName?: string;
+  /** Primary city / town from structured response when available */
+  locality?: string;
+  settlement?: string;
+  municipality?: string;
+  adminArea1?: string;
+  adminArea2?: string;
 }
 
 /**

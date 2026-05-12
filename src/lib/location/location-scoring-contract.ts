@@ -95,6 +95,8 @@ export interface LocationDemandScoringKernelResult {
   populationTier: import('./city-scale-from-address').PopulationTier;
   marketGravityCoefficient: number;
   specialMarketFlags: readonly import('./city-scale-from-address').SpecialMarketFlag[];
+  /** Provenance string (static table / mismatch guards) for harness diagnostics. */
+  cityScaleInferenceProvenance?: string;
   /** Non-null when {@link cityGravityScoreCapGuard} is applied. */
   scoreCapReason: string | null;
   warnings: string[];

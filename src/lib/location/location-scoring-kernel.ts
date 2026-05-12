@@ -295,6 +295,7 @@ function emptyResult(engineFinal: number, cityScaleInference: CityScaleInference
     populationTier: cityScaleInference.populationTier,
     marketGravityCoefficient: cityScaleInference.marketGravityCoefficient,
     specialMarketFlags: cityScaleInference.specialMarketFlags,
+    cityScaleInferenceProvenance: cityScaleInference.inferredFrom,
     scoreCapReason: null,
     cityGravityScoreCapGuard: undefined,
     warnings: [],
@@ -668,10 +669,11 @@ export function runLocationDemandScoringKernel(
 
   const hasCapLift =
     structuralStrongAnchor ||
-    (flagResort && hasTouristAnchorTier12) ||
-    (flagMedical && hasMedicalAnchorTier12) ||
-    (flagIndustrial && hasIndustrialAnchorTier12) ||
-    (flagTransport && hasTransportAnchorTier12);
+    (cityScale !== 'unknown' &&
+      ((flagResort && hasTouristAnchorTier12) ||
+        (flagMedical && hasMedicalAnchorTier12) ||
+        (flagIndustrial && hasIndustrialAnchorTier12) ||
+        (flagTransport && hasTransportAnchorTier12)));
 
   let cityGravityScoreCapGuard:
     | import('./location-scoring-contract').CityGravityScoreCapGuard
@@ -760,6 +762,10 @@ export function runLocationDemandScoringKernel(
     debugTrace.push('rule:hotels_do_not_create_tourism');
   }
 
+  if (cityScale === 'unknown' && !integritySkip) {
+    warnings.push('warning: city_scale_unknown_conservative_cap');
+  }
+
   return {
     acceptedDrivers,
     rejectedDrivers,
@@ -774,6 +780,7 @@ export function runLocationDemandScoringKernel(
     populationTier: cityScaleInference.populationTier,
     marketGravityCoefficient: cityScaleInference.marketGravityCoefficient,
     specialMarketFlags: cityScaleInference.specialMarketFlags,
+    cityScaleInferenceProvenance: cityScaleInference.inferredFrom,
     scoreCapReason,
     warnings,
     debugTrace,

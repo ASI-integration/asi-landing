@@ -15,7 +15,11 @@ import {
 } from './location-decision-rules';
 import { validatePublicClaimPipeline } from './location-public-claims';
 import { attachOsmTagsToMagnetCanonicalFacts } from './kernel-osm-tag-alignment';
-import { inferCityScaleFromRuAddress } from './city-scale-from-address';
+import {
+  cityScaleInferenceAfterGeocodeMismatch,
+  inferCityScaleFromRuAddress,
+} from './city-scale-from-address';
+import { evaluateRuGeocodeCitySanity } from './address-providers/geocode-city-sanity';
 import { buildDemandSignalsFromKernel, runLocationDemandScoringKernel } from './location-scoring-kernel';
 import {
   buildLocationPublicSummary,
@@ -32,6 +36,8 @@ export interface LocationDecisionBuildInput {
   selectedGeocodeResult?: string | null;
   geocodeSubjectHint?: 'address' | 'poi' | 'ambiguous';
   locale?: 'en' | 'ru';
+  /** Structured geocode (RU): enables city token vs returned locality sanity before macro layer. */
+  geocodeResult?: import('./providers/types').GeocodeResult | null;
 }
 
 const DEMO_COORD_MATCH_EPS = 1e-4;
@@ -134,7 +140,21 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     rawElements: input.rawElements ?? [],
   });
 
-  const cityScaleInference = inferCityScaleFromRuAddress(input.inputAddress);
+  const baseCityScaleInference = inferCityScaleFromRuAddress(input.inputAddress);
+  const geoSanity =
+    (input.locale ?? 'ru') === 'ru' && input.geocodeResult
+      ? evaluateRuGeocodeCitySanity(input.inputAddress, input.geocodeResult)
+      : null;
+  const cityScaleInference =
+    geoSanity?.cityMismatch === true
+      ? cityScaleInferenceAfterGeocodeMismatch(baseCityScaleInference)
+      : baseCityScaleInference;
+
+  const geocodeHarnessWarnings: string[] = [];
+  if (geoSanity?.cityMismatch) {
+    geocodeHarnessWarnings.push(`warning: geocode_city_mismatch:${geoSanity.mismatchReason ?? 'unknown'}`);
+  }
+
   const demandKernelV1 = runLocationDemandScoringKernel({
     magnets: analysis.magnets,
     magnetFacts,
@@ -194,7 +214,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
 
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];
 
-  const baseWarningsPreSummary = [...addressIdentity.warnings, ...(trace?.warnings ?? [])];
+  const baseWarningsPreSummary = [...geocodeHarnessWarnings, ...addressIdentity.warnings, ...(trace?.warnings ?? [])];
   for (const s of demandSignals) {
     if (!s.evidenceFactIds.length && s.id !== 'ds:generic_incomplete_data') {
       baseWarningsPreSummary.push(`kernel: demand signal ${s.id} lacks evidenceFactIds`);

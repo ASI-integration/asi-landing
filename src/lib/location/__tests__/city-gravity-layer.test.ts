@@ -112,6 +112,7 @@ describe('city gravity layer (deterministic cityScale + populationTier)', () => 
 
     const kernel = d.demandKernelV1!;
     expect(kernel.scoredDrivers.every(x => x.resolvedTier !== 1)).toBe(true);
+    expect(kernel.warnings.some(w => w.includes('city_scale_unknown_conservative_cap'))).toBe(true);
   });
 });
 

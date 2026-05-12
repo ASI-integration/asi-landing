@@ -11,13 +11,17 @@
  * Optional tuning:
  *   LOCATION_GOLDEN_GEOCODE_MS (default 30000)
  *   LOCATION_GOLDEN_OVERPASS_MS (default 45000)
+ *
+ * Live-only alternate case list (same schema as golden-addresses.json; replay unused in live):
+ *   LOCATION_GOLDEN_LIVE_CASELIST=tmp/location-golden-live-ru-acceptance.json
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { LocationDecision, LocationPublicSummary } from '../src/lib/location/location-decision-contract';
 import type { MagnetItem, OSMElement } from '../src/lib/location/types';
+import type { GeocodeResult } from '../src/lib/location/providers/types';
 import { geocodePlainAddressForMarket } from '../src/lib/location/address-providers/geocode-pipeline';
 import { fetchOsmData } from '../src/lib/location/overpass';
 import { buildAnalysis } from '../src/lib/location/gravity-scoring';
@@ -70,8 +74,14 @@ interface GoldenCaseOutput {
     | 'headlineRu'
     | 'audienceVerdictRu'
     | 'trace'
+    | 'cityScale'
+    | 'populationTier'
+    | 'marketGravityCoefficient'
+    | 'specialMarketFlags'
+    | 'scoreCapReason'
   > & {
     publicDriverLinesRu: string[];
+    rejectedFromPublicCount: number;
   };
   diagnostics: GoldenHarnessCaseDiagnostics;
   errorMessage?: string;
@@ -80,6 +90,17 @@ interface GoldenCaseOutput {
 function loadFixture(): GoldenCaseFile {
   const p = join(REPO_ROOT, 'src/lib/location/__fixtures__/golden-addresses.json');
   return JSON.parse(readFileSync(p, 'utf8')) as GoldenCaseFile;
+}
+
+/** Live-only override: same JSON shape as golden-addresses.json; replay is ignored in live mode. */
+function loadBundle(): GoldenCaseFile {
+  const live = process.env.LOCATION_GOLDEN_LIVE === '1';
+  const rel = process.env.LOCATION_GOLDEN_LIVE_CASELIST?.trim();
+  if (live && rel) {
+    const p = isAbsolute(rel) ? rel : join(REPO_ROOT, rel);
+    return JSON.parse(readFileSync(p, 'utf8')) as GoldenCaseFile;
+  }
+  return loadFixture();
 }
 
 type GoldenTimeout = { readonly __locationGoldenTimeout: true };
@@ -107,6 +128,12 @@ function serializePublicSummary(s: LocationPublicSummary): GoldenCaseOutput['pub
     audienceVerdictRu: s.audienceVerdictRu,
     trace: s.trace,
     publicDriverLinesRu: s.publicDrivers.map(d => d.textRu),
+    cityScale: s.cityScale,
+    populationTier: s.populationTier,
+    marketGravityCoefficient: s.marketGravityCoefficient,
+    specialMarketFlags: [...s.specialMarketFlags],
+    scoreCapReason: s.scoreCapReason,
+    rejectedFromPublicCount: s.rejectedFromPublic.length,
   };
 }
 
@@ -116,6 +143,7 @@ function harnessDiag(
     lat: number | null;
     lon: number | null;
     geocodeDisplayName: string | null;
+    geocodeResult?: GeocodeResult | null;
     decision: LocationDecision | null;
     magnets: readonly MagnetItem[];
   },
@@ -129,6 +157,7 @@ function harnessDiag(
     lat: args.lat,
     lon: args.lon,
     geocodeDisplayName: args.geocodeDisplayName,
+    geocodeResult: args.geocodeResult,
     addressRu: c.addressRu,
     magnets: args.magnets,
     decision: args.decision,
@@ -141,6 +170,7 @@ function buildPipeline(args: {
   lon: number;
   inputAddress: string;
   selectedGeocodeResult?: string | null;
+  geocodeResult?: GeocodeResult | null;
 }): { publicSummary: LocationPublicSummary; decision: LocationDecision; magnets: readonly MagnetItem[] } {
   const { elements, lat, lon, inputAddress } = args;
   const analysis = buildAnalysis(elements, lat, lon, {
@@ -162,6 +192,7 @@ function buildPipeline(args: {
     rawElements: elements,
     selectedGeocodeResult: args.selectedGeocodeResult ?? trace.selectedGeocodeResult,
     locale: 'ru',
+    geocodeResult: args.geocodeResult,
   });
   const ps = decision.publicSummary;
   if (!ps) {
@@ -247,6 +278,7 @@ async function runLiveCase(
           lat: null,
           lon: null,
           geocodeDisplayName: geo.result?.displayName ?? null,
+          geocodeResult: geo.result ?? null,
           decision: null,
           magnets: [],
         }),
@@ -276,6 +308,7 @@ async function runLiveCase(
           lat,
           lon,
           geocodeDisplayName: geo.result?.displayName ?? null,
+          geocodeResult: geo.result ?? null,
           decision: null,
           magnets: [],
         }),
@@ -310,6 +343,7 @@ async function runLiveCase(
           lat,
           lon,
           geocodeDisplayName: geo.result?.displayName ?? null,
+          geocodeResult: geo.result ?? null,
           decision: null,
           magnets: [],
         }),
@@ -323,6 +357,7 @@ async function runLiveCase(
       lon,
       inputAddress: c.addressRu,
       selectedGeocodeResult: displayName,
+      geocodeResult: geo.result ?? null,
     });
 
     const out: GoldenCaseOutput = {
@@ -341,6 +376,7 @@ async function runLiveCase(
         lat,
         lon,
         geocodeDisplayName: displayName,
+        geocodeResult: geo.result ?? null,
         decision,
         magnets,
       }),
@@ -383,6 +419,12 @@ function emptySummaryPlaceholder(): GoldenCaseOutput['publicSummary'] {
     audienceVerdictRu: '',
     trace: { headlineReason: '', verdictReason: '', contradictionWarnings: [] },
     publicDriverLinesRu: [],
+    cityScale: 'unknown',
+    populationTier: 'unknown',
+    marketGravityCoefficient: 1,
+    specialMarketFlags: [],
+    scoreCapReason: null,
+    rejectedFromPublicCount: 0,
   };
 }
 
@@ -450,7 +492,7 @@ async function main() {
   const geocodeMs = Number(process.env.LOCATION_GOLDEN_GEOCODE_MS ?? 30_000);
   const overpassMs = Number(process.env.LOCATION_GOLDEN_OVERPASS_MS ?? 45_000);
 
-  const bundle = loadFixture();
+  const bundle = loadBundle();
   const cases: GoldenCaseOutput[] = [];
 
   for (const c of bundle.cases) {

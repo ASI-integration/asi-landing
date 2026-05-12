@@ -6,6 +6,11 @@ interface GoogleGeocodeResponse {
   results?: Array<{
     formatted_address?: string;
     geometry?: { location?: { lat: number; lng: number } };
+    address_components?: Array<{
+      long_name: string;
+      short_name: string;
+      types: string[];
+    }>;
   }>;
   status: string;
 }
@@ -35,12 +40,34 @@ export async function googleForwardGeocode(
     if (!res.ok) return null;
     const data = (await res.json()) as GoogleGeocodeResponse;
     if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) return null;
-    const loc = data.results[0].geometry.location;
-    return {
-      lat: loc.lat,
-      lon: loc.lng,
-      displayName: data.results[0].formatted_address,
+    const hit = data.results[0];
+    const g = hit.geometry?.location;
+    if (!g) return null;
+    const out: GeocodeResult = {
+      lat: g.lat,
+      lon: g.lng,
+      displayName: hit.formatted_address,
     };
+    const comps = hit.address_components;
+    if (comps?.length) {
+      const pick = (...types: string[]) => {
+        for (const ty of types) {
+          const c = comps.find(x => x.types.includes(ty));
+          if (c?.long_name) return c.long_name;
+        }
+        return undefined;
+      };
+      const locality =
+        pick('locality') ?? pick('postal_town') ?? pick('administrative_area_level_3') ?? pick('administrative_area_level_4');
+      const admin1 = pick('administrative_area_level_1');
+      const admin2 = pick('administrative_area_level_2');
+      const municipality = pick('administrative_area_level_5', 'administrative_area_level_6');
+      if (locality) out.locality = locality;
+      if (admin1) out.adminArea1 = admin1;
+      if (admin2) out.adminArea2 = admin2;
+      if (municipality) out.municipality = municipality;
+    }
+    return out;
   } catch {
     return null;
   }

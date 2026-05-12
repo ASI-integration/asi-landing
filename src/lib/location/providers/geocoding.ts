@@ -26,7 +26,7 @@ function createNominatimGeocodingProvider(): GeocodingProvider {
       try {
         const url =
           `https://nominatim.openstreetmap.org/search` +
-          `?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=0`;
+          `?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1`;
 
         const res = await fetch(url, {
           headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'ru,en' },
@@ -35,13 +35,33 @@ function createNominatimGeocodingProvider(): GeocodingProvider {
 
         if (!res.ok) return null;
 
-        const data = await res.json() as Array<{ lat: string; lon: string; display_name?: string }>;
+        const data = await res.json() as Array<{
+          lat: string;
+          lon: string;
+          display_name?: string;
+          address?: {
+            city?: string;
+            town?: string;
+            village?: string;
+            hamlet?: string;
+            municipality?: string;
+            county?: string;
+            state?: string;
+          };
+        }>;
         if (!data.length) return null;
 
+        const row = data[0];
+        const addr = row.address;
+        const locality = addr?.city ?? addr?.town ?? addr?.village ?? addr?.hamlet ?? addr?.municipality;
+
         return {
-          lat: parseFloat(data[0].lat),
-          lon: parseFloat(data[0].lon),
-          displayName: data[0].display_name,
+          lat: parseFloat(row.lat),
+          lon: parseFloat(row.lon),
+          displayName: row.display_name,
+          locality,
+          adminArea1: addr?.state,
+          adminArea2: addr?.county,
         };
       } catch {
         return null;
@@ -106,6 +126,7 @@ function createPhotonGeocodingProvider(): GeocodingProvider {
           lat,
           lon,
           displayName: displayName || undefined,
+          locality: props?.city,
         };
       } catch {
         return null;
