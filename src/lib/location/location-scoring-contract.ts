@@ -76,6 +76,16 @@ export interface CityGravityScoreCapGuard {
   readonly scoreAfter: number;
 }
 
+/** RU market-context settlement cap trace (satellite commuter belt, etc.). */
+export interface LocationMarketContextCapDiagnostics {
+  readonly marketType: string;
+  readonly specialMarketFlags: readonly string[];
+  readonly scoreBeforeMarketCap: number;
+  readonly scoreAfterMarketCap: number;
+  readonly capApplied: boolean;
+  readonly capReason: string | null;
+}
+
 export interface LocationDemandScoringKernelResult {
   acceptedDrivers: LocationDemandScoredDriver[];
   rejectedDrivers: LocationDemandScoredDriver[];
@@ -99,6 +109,8 @@ export interface LocationDemandScoringKernelResult {
   cityScaleInferenceProvenance?: string;
   /** Non-null when {@link cityGravityScoreCapGuard} is applied. */
   scoreCapReason: string | null;
+  /** When address matched {@link CityScaleInference.ruMarketContext}, records settlement headline cap. */
+  marketContextDiagnostics?: LocationMarketContextCapDiagnostics;
   warnings: string[];
   debugTrace: string[];
 }

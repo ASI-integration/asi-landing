@@ -133,6 +133,15 @@ export interface GoldenHarnessCaseDiagnostics {
     readonly scoreAfter: number;
   } | null;
   readonly scoreCapReason: string | null;
+  /** Present when {@link CityScaleInference.ruMarketContext} drove headline cap diagnostics. */
+  readonly marketContextDiagnostics: {
+    readonly marketType: string;
+    readonly specialMarketFlags: readonly string[];
+    readonly scoreBeforeMarketCap: number;
+    readonly scoreAfterMarketCap: number;
+    readonly capApplied: boolean;
+    readonly capReason: string | null;
+  } | null;
   readonly publicDrivers: readonly GoldenHarnessPublicDriverDiag[];
   readonly rejectedFromPublicTop: readonly GoldenHarnessRejectedDiag[];
   /** Present when {@link LocationDecision.publicSummary}.primaryDemandType is `medical`. */
@@ -424,6 +433,16 @@ export function buildGoldenHarnessCaseDiagnostics(args: {
         }
       : null,
     scoreCapReason: k?.scoreCapReason ?? null,
+    marketContextDiagnostics: k?.marketContextDiagnostics
+      ? {
+          marketType: k.marketContextDiagnostics.marketType,
+          specialMarketFlags: [...k.marketContextDiagnostics.specialMarketFlags],
+          scoreBeforeMarketCap: k.marketContextDiagnostics.scoreBeforeMarketCap,
+          scoreAfterMarketCap: k.marketContextDiagnostics.scoreAfterMarketCap,
+          capApplied: k.marketContextDiagnostics.capApplied,
+          capReason: k.marketContextDiagnostics.capReason,
+        }
+      : null,
     publicDrivers: publicDriverRows,
     rejectedFromPublicTop: rejectedTop,
     medicalPrimaryAudit,

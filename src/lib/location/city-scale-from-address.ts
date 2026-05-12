@@ -6,6 +6,9 @@
  * - Longest-match static table over normalized address (fixture city names).
  */
 
+import type { RuMarketContextKernelSlice } from './canon/ru-market-context';
+import { buildRuMarketContextKernelSlice, resolveRuMarketContextFromRuAddress } from './canon/ru-market-context';
+
 export type CityScale =
   | 'federal_mega'
   | 'mega_city'
@@ -41,7 +44,14 @@ export interface CityScaleInference {
   /** Conservative hardcoded metadata (static table only). */
   readonly cityName?: string;
   readonly region?: string;
+  /**
+   * When set, address matched canonical RU market-context (e.g. satellite commuter suburb).
+   * Prevents inheriting mega-city gravity from a co-mentioned macro city in the same string.
+   */
+  readonly ruMarketContext?: RuMarketContextKernelSlice;
 }
+
+export type { RuMarketContextKernelSlice } from './canon/ru-market-context';
 
 function normAddr(s: string): string {
   return s
@@ -181,6 +191,22 @@ export function inferCityScaleFromRuAddress(addressRu: string): CityScaleInferen
     };
   }
 
+  const marketResolution = resolveRuMarketContextFromRuAddress(addressRu);
+  if (marketResolution) {
+    const e = marketResolution.entry;
+    return {
+      cityScale: e.kernelCityScale as CityScale,
+      populationTier: e.populationTier as PopulationTier,
+      populationApprox: e.populationApprox,
+      marketGravityCoefficient: marketGravityCoefficientFromCityScale(e.kernelCityScale as CityScale),
+      specialMarketFlags: [...e.specialMarketFlags] as SpecialMarketFlag[],
+      inferredFrom: `ru_market_context:${e.normalizedName}|alias=${marketResolution.matchedAlias}`,
+      cityName: e.normalizedName,
+      region: e.regionHint,
+      ruMarketContext: buildRuMarketContextKernelSlice(marketResolution),
+    };
+  }
+
   let best: Row | null = null;
   for (const row of TABLE) {
     if (!n.includes(row.needle)) continue;
@@ -219,5 +245,6 @@ export function cityScaleInferenceAfterGeocodeMismatch(base: CityScaleInference)
     marketGravityCoefficient: marketGravityCoefficientFromCityScale('unknown'),
     specialMarketFlags: [],
     inferredFrom: `${base.inferredFrom}|geocode_city_mismatch`,
+    // Drop settlement market-context when typed city disagrees with geocoder — macro layer unreliable.
   };
 }

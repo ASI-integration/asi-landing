@@ -77,6 +77,15 @@ export function formatLocationDemandKernelDebug(result: LocationDemandScoringKer
     );
   }
 
+  if (result.marketContextDiagnostics) {
+    lines.push(
+      `market_context: type=${result.marketContextDiagnostics.marketType} before=${result.marketContextDiagnostics.scoreBeforeMarketCap} after=${result.marketContextDiagnostics.scoreAfterMarketCap} applied=${result.marketContextDiagnostics.capApplied}`,
+    );
+    if (result.marketContextDiagnostics.capReason) {
+      lines.push(`market_context_cap_reason=${result.marketContextDiagnostics.capReason}`);
+    }
+  }
+
   if (result.warnings.length) {
     lines.push('-- warnings --');
     lines.push(...result.warnings.map(w => `WARN ${w}`));

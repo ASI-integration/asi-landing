@@ -22,9 +22,11 @@ import type {
   LocationDemandScaleClass,
   LocationDemandScoredDriver,
   LocationDemandScoringKernelResult,
+  LocationMarketContextCapDiagnostics,
   SmallCitySparsePublicScoreGuard,
 } from './location-scoring-contract';
 import { formatPublicEvidenceLineRu } from './location-decision-rules';
+import { marketContextEffectivePublicCap } from './canon/ru-market-context';
 
 function isLowGravityCityScale(cityScale: CityScale): boolean {
   return cityScale === 'small_city' || cityScale === 'micro_city' || cityScale === 'settlement' || cityScale === 'unknown';
@@ -32,6 +34,15 @@ function isLowGravityCityScale(cityScale: CityScale): boolean {
 
 function hasFlag(flags: readonly SpecialMarketFlag[], flag: SpecialMarketFlag): boolean {
   return flags.includes(flag);
+}
+
+function countVerifiedMajorAnchors(drivers: readonly LocationDemandScoredDriver[]): number {
+  return drivers.filter(
+    d =>
+      d.accepted &&
+      d.driverKind === 'real_demand_driver' &&
+      (d.resolvedTier === 1 || (d.resolvedTier === 2 && d.scaleClass === 'verified_major')),
+  ).length;
 }
 
 const REF_SUM_FOR_FULL_SCORE = 44;
@@ -298,8 +309,26 @@ function emptyResult(engineFinal: number, cityScaleInference: CityScaleInference
     cityScaleInferenceProvenance: cityScaleInference.inferredFrom,
     scoreCapReason: null,
     cityGravityScoreCapGuard: undefined,
+    marketContextDiagnostics: buildEmptyMarketContextDiagnostics(cityScaleInference, engineFinal),
     warnings: [],
     debugTrace: ['kernel:empty_input'],
+  };
+}
+
+function buildEmptyMarketContextDiagnostics(
+  cityScaleInference: CityScaleInference,
+  engineFinal: number,
+): LocationMarketContextCapDiagnostics | undefined {
+  const mc = cityScaleInference.ruMarketContext;
+  if (!mc) return undefined;
+  const rounded = Math.round(engineFinal);
+  return {
+    marketType: mc.marketType,
+    specialMarketFlags: cityScaleInference.specialMarketFlags.map(String),
+    scoreBeforeMarketCap: rounded,
+    scoreAfterMarketCap: rounded,
+    capApplied: false,
+    capReason: null,
   };
 }
 
@@ -536,6 +565,8 @@ export function runLocationDemandScoringKernel(
         (d.resolvedTier === 2 && d.scaleClass === 'medium' && d.finalContribution >= 1.82)),
   );
 
+  const verifiedMajorAnchorCount = countVerifiedMajorAnchors(staged);
+
   const working = staged.map(d => ({ ...d }));
 
   /** Tier-1/2 real leisure/tourism POIs unlock higher tourism stacking budgets */
@@ -654,34 +685,85 @@ export function runLocationDemandScoringKernel(
 
   const capBase = cityCapFor(cityScale);
 
-  const hasTouristAnchorTier12 = working.some(
-    d => d.accepted && d.demandTypeVote === 'tourist' && d.resolvedTier <= 2,
-  );
-  const hasMedicalAnchorTier12 = working.some(
-    d => d.accepted && d.demandTypeVote === 'medical' && d.resolvedTier <= 2,
-  );
-  const hasIndustrialAnchorTier12 = working.some(
-    d => d.accepted && d.demandTypeVote === 'industrial' && d.resolvedTier <= 2,
-  );
-  const hasTransportAnchorTier12 = working.some(
-    d => d.accepted && d.demandTypeVote === 'transport' && d.resolvedTier <= 2,
-  );
-
-  const hasCapLift =
-    structuralStrongAnchor ||
-    (cityScale !== 'unknown' &&
-      ((flagResort && hasTouristAnchorTier12) ||
-        (flagMedical && hasMedicalAnchorTier12) ||
-        (flagIndustrial && hasIndustrialAnchorTier12) ||
-        (flagTransport && hasTransportAnchorTier12)));
-
   let cityGravityScoreCapGuard:
     | import('./location-scoring-contract').CityGravityScoreCapGuard
     | undefined;
   let scoreCapReason: string | null = null;
   let smallCitySparseScoreGuard: SmallCitySparsePublicScoreGuard | undefined;
+  let marketContextDiagnostics: LocationMarketContextCapDiagnostics | undefined;
 
-  if (!integritySkip && capBase < 100) {
+  const mcSlice = cityScaleInference.ruMarketContext;
+
+  if (!integritySkip && mcSlice) {
+    const { cap: marketCap, reasonKey } = marketContextEffectivePublicCap(mcSlice, verifiedMajorAnchorCount);
+    const scoreBeforeMarketCap = blendedPublicScore;
+    let appliedReason: string | null = null;
+    if (blendedPublicScore > marketCap) {
+      const before = blendedPublicScore;
+      blendedPublicScore = marketCap;
+      breakdown.cappedSmallCitySparse += before - blendedPublicScore;
+      scoreCapReason = `market_context_cap:applied:${reasonKey}:cap=${marketCap}`;
+      appliedReason = scoreCapReason;
+      cityGravityScoreCapGuard = {
+        applied: true,
+        reason: scoreCapReason,
+        cap: marketCap,
+        scoreBefore: before,
+        scoreAfter: blendedPublicScore,
+      };
+      smallCitySparseScoreGuard = {
+        applied: true,
+        reason: `market_context_satellite:${reasonKey}`,
+        scoreBefore: before,
+        scoreAfter: blendedPublicScore,
+      };
+      debugTrace.push(`cap:market_context:before=${before}:after=${blendedPublicScore}:${reasonKey}`);
+    } else {
+      scoreCapReason = null;
+      cityGravityScoreCapGuard = {
+        applied: false,
+        reason: `market_context_cap:skipped_within_cap_<=${marketCap}:${reasonKey}`,
+        cap: marketCap,
+        scoreBefore: blendedPublicScore,
+        scoreAfter: blendedPublicScore,
+      };
+      smallCitySparseScoreGuard = {
+        applied: false,
+        reason: `market_context_satellite:within_cap_${marketCap}`,
+        scoreBefore: blendedPublicScore,
+        scoreAfter: blendedPublicScore,
+      };
+    }
+    marketContextDiagnostics = {
+      marketType: mcSlice.marketType,
+      specialMarketFlags: cityScaleInference.specialMarketFlags.map(String),
+      scoreBeforeMarketCap,
+      scoreAfterMarketCap: blendedPublicScore,
+      capApplied: scoreBeforeMarketCap > blendedPublicScore,
+      capReason: appliedReason,
+    };
+  } else if (!integritySkip && capBase < 100) {
+    const hasTouristAnchorTier12 = working.some(
+      d => d.accepted && d.demandTypeVote === 'tourist' && d.resolvedTier <= 2,
+    );
+    const hasMedicalAnchorTier12 = working.some(
+      d => d.accepted && d.demandTypeVote === 'medical' && d.resolvedTier <= 2,
+    );
+    const hasIndustrialAnchorTier12 = working.some(
+      d => d.accepted && d.demandTypeVote === 'industrial' && d.resolvedTier <= 2,
+    );
+    const hasTransportAnchorTier12 = working.some(
+      d => d.accepted && d.demandTypeVote === 'transport' && d.resolvedTier <= 2,
+    );
+
+    const hasCapLift =
+      structuralStrongAnchor ||
+      (cityScale !== 'unknown' &&
+        ((flagResort && hasTouristAnchorTier12) ||
+          (flagMedical && hasMedicalAnchorTier12) ||
+          (flagIndustrial && hasIndustrialAnchorTier12) ||
+          (flagTransport && hasTransportAnchorTier12)));
+
     const effectiveCap = hasCapLift ? 100 : capBase;
     if (!hasCapLift && blendedPublicScore > effectiveCap) {
       const before = blendedPublicScore;
@@ -782,6 +864,7 @@ export function runLocationDemandScoringKernel(
     specialMarketFlags: cityScaleInference.specialMarketFlags,
     cityScaleInferenceProvenance: cityScaleInference.inferredFrom,
     scoreCapReason,
+    marketContextDiagnostics,
     warnings,
     debugTrace,
   };
