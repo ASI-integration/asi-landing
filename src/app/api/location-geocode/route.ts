@@ -12,7 +12,8 @@
  * proceed to POST /api/location-demo-analyze with the resolved lat/lon.
  *
  * Accepts:  { address: string }
- * Returns:  { address: string; lat: number; lon: number; fromCache: boolean }
+ * Returns:  { address: string; lat: number; lon: number; fromCache: boolean; geocodeResult?: object }
+ * On address-cache hit (`fromCache: true`), `geocodeResult` is omitted (coords only).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -70,5 +71,6 @@ export async function POST(req: NextRequest) {
     lat: result.lat,
     lon: result.lon,
     fromCache: false,
+    geocodeResult: result,
   });
 }

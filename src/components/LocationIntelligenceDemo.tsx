@@ -57,6 +57,11 @@ import {
   readRecentAddressesFromStorage,
   rememberRecentAddress,
 } from '@/lib/location/recent-addresses';
+import type { GeocodeResult } from '@/lib/location/providers/types';
+import {
+  buildLocationDemoAnalyzePostBody,
+  parseLooseGeocodeResult,
+} from '@/lib/location/location-demo-analyze-client-body';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -88,6 +93,10 @@ interface SelectedAddress {
   value: string;
   lat: number;
   lon: number;
+  /** User-typed or chosen address string for `/api/location-demo-analyze` RU sanity (defaults to `value` when omitted). */
+  inputAddress?: string;
+  /** Structured forward-geocode when the geocode or resolve API returned one. */
+  geocodeResult?: GeocodeResult;
 }
 
 type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
@@ -243,19 +252,27 @@ async function fetchLocationAnalysis(
   lat: number,
   lon: number,
   signal?: AbortSignal,
-  opts?: { spatialFoundation?: boolean },
+  opts?: {
+    spatialFoundation?: boolean;
+    inputAddress?: string;
+    geocodeResult?: GeocodeResult | null;
+  },
 ): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
   try {
+    const locale: 'en' | 'ru' =
+      typeof window !== 'undefined' && window.location?.pathname?.startsWith('/ru') ? 'ru' : 'en';
+    const body = buildLocationDemoAnalyzePostBody({
+      lat,
+      lon,
+      locale,
+      spatialFoundation: opts?.spatialFoundation,
+      inputAddress: opts?.inputAddress,
+      geocodeResult: opts?.geocodeResult,
+    });
     const res = await fetch('/api/location-demo-analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lat,
-        lon,
-        // Used only to localize warning strings from the server.
-        locale: typeof window !== 'undefined' && window.location?.pathname?.startsWith('/ru') ? 'ru' : 'en',
-        ...(opts?.spatialFoundation ? { spatialFoundation: true } : {}),
-      }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) return null;
@@ -1208,7 +1225,7 @@ function AddressInput({
   async function pick(s: Suggestion) {
     if (resolvingPick) return;
 
-    const doSelect = (lat: number, lon: number) => {
+    const doSelect = (lat: number, lon: number, extra?: { geocodeResult?: GeocodeResult }) => {
       setLocked(true);
       setLockedValue(s.value);
       setText('');
@@ -1224,7 +1241,13 @@ function AddressInput({
       });
       if (locale === 'ru') rememberSelectedCity(s.value);
       rememberRecentAddress(s.value);
-      onSelect({ value: s.value, lat, lon });
+      onSelect({
+        value: s.value,
+        lat,
+        lon,
+        inputAddress: s.value,
+        ...(extra?.geocodeResult ? { geocodeResult: extra.geocodeResult } : {}),
+      });
     };
 
     if (
@@ -1268,10 +1291,15 @@ function AddressInput({
       });
       clearTimeout(timer);
       if (res.ok) {
-        const data = (await res.json()) as { lat?: unknown; lon?: unknown };
+        const data = (await res.json()) as {
+          lat?: unknown;
+          lon?: unknown;
+          geocodeResult?: unknown;
+        };
         if (typeof data.lat === 'number' && typeof data.lon === 'number') {
+          const geo = parseLooseGeocodeResult(data.geocodeResult);
           console.info('[location-demo] addressResolve ok', { lat: data.lat, lon: data.lon });
-          doSelect(data.lat, data.lon);
+          doSelect(data.lat, data.lon, geo ? { geocodeResult: geo } : undefined);
           return;
         }
       }
@@ -3221,7 +3249,13 @@ export function LocationIntelligenceDemo({
         cache: 'no-store',
       });
       clearTimeout(timer);
-      const raw = (await res.json().catch(() => ({}))) as { error?: unknown; address?: unknown; lat?: unknown; lon?: unknown };
+      const raw = (await res.json().catch(() => ({}))) as {
+        error?: unknown;
+        address?: unknown;
+        lat?: unknown;
+        lon?: unknown;
+        geocodeResult?: unknown;
+      };
       if (!res.ok) {
         const serverMsg = typeof raw.error === 'string' ? raw.error : '';
         console.warn('[location-demo] fallback_geocode http_error', {
@@ -3243,7 +3277,14 @@ export function LocationIntelligenceDemo({
         lon: raw.lon,
       });
       rememberRecentAddress(label);
-      setSelected({ value: label, lat: raw.lat, lon: raw.lon });
+      const geo = parseLooseGeocodeResult(raw.geocodeResult);
+      setSelected({
+        value: label,
+        lat: raw.lat,
+        lon: raw.lon,
+        inputAddress: q.trim(),
+        ...(geo ? { geocodeResult: geo } : {}),
+      });
       setUsedFallbackGeocode(true);
       locTel?.pushLine({
         badge: 'ADR',
@@ -3294,6 +3335,8 @@ export function LocationIntelligenceDemo({
     const fetchStart = Date.now();
     fetchLocationAnalysis(selected.lat, selected.lon, controller.signal, {
       spatialFoundation: mode === 'commercial',
+      inputAddress: selected.inputAddress ?? selected.value,
+      geocodeResult: selected.geocodeResult,
     }).then(result => {
       clearTimeout(abortTimeout);
       if (cancelled) return;

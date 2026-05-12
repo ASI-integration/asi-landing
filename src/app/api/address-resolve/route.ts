@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
       lat: result.lat,
       lon: result.lon,
       displayName: result.displayName,
+      ...(result.geocodeResult ? { geocodeResult: result.geocodeResult } : {}),
     });
   } catch (err) {
     if (timeoutId) clearTimeout(timeoutId);
