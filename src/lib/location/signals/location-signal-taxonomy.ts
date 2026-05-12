@@ -82,6 +82,13 @@ const CBD_CONTEXT_NAME_RE =
 const WEAK_TOURIST_NAME_RE =
   /завод|фабрика|комбинат|промышленн|(?:^|\s)оао(?:$|\s|\W)|(?:^|\s)ао(?:$|\s|\W)|(?:^|\s)ооо(?:$|\s|\W)|предприяти|музей\s+истории\s+(?:предприятия|завода|фабрики|комбината|техники)|корпоративный\s+музей|музей\s+метро|метро\s+музей|музей\s+метрополитен|metro\s+museum|метромузей|домик|ремесел|краеведческ|(?:^|\s)репка(?:$|\s|\W)|(?:^|\s)волна(?:$|\s|\W)/i;
 
+/** Replica / mini-exhibition / name-only landmark cues — public-display gate only (does not alter gravity taxonomy). */
+const WEAK_PUBLIC_TOURIST_DISPLAY_NAME_RE =
+  /выставк|экспозиц|бабочек|тропическ|эйфелев|эйфелев|eiffel|реплик|макет|декоративн|мини[\s\-]?(?:париж|европ)|лофт\s*музей/i;
+
+const STRONG_PUBLIC_MUSEUM_NAME_HINT_RE =
+  /эрмитаж|третьяковск|пушкинск|кремлевск|музей\-заповедник|государственн(?:ый|ого)\s+(?:музей|музе)|федеральн|национальн|мирового\s+наследия|unesco|юнеско/i;
+
 const SMALL_TOWN_MUNICIPAL_HOSPITAL_RE =
   /городская|гбуз|\bмб\b|муниципальн|районн|поселков|участков|поликлиник|амбулатор|учреждени|црб|цгб/i;
 
@@ -190,6 +197,26 @@ export function isCbdTransitAnchorPoi(m: MagnetItem): boolean {
 export function looksLikeWeakLocalAttractionPoi(m: MagnetItem): boolean {
   if (m.categoryId !== 'attraction') return false;
   return WEAK_TOURIST_NAME_RE.test(nameStr(m.name));
+}
+
+/**
+ * Decorative replicas / mini-exhibitions / keyword landmarks for **RU residential public bullets/headline only**.
+ * Does **not** include taxonomy-weak anchors (e.g. neighbourhood crafts centres) — those stay resort-addressable separately.
+ */
+export function looksLikeWeakPublicTouristSurfacePoi(m: Pick<MagnetItem, 'categoryId' | 'name'>): boolean {
+  if (m.categoryId !== 'attraction') return false;
+  return WEAK_PUBLIC_TOURIST_DISPLAY_NAME_RE.test(nameStr(m.name));
+}
+
+/**
+ * Typical neighbourhood museum/gallery without federal/world-scale naming — needs cluster/evidence/resort context to headline.
+ */
+export function looksLikeSmallCommunityMuseumPublicSurfacePoi(m: Pick<MagnetItem, 'categoryId' | 'name'>): boolean {
+  if (m.categoryId !== 'attraction') return false;
+  const n = nameStr(m.name);
+  if (!/музей|museum|галерея|gallery/i.test(n)) return false;
+  if (STRONG_PUBLIC_MUSEUM_NAME_HINT_RE.test(n)) return false;
+  return true;
 }
 
 export function looksLikeWeakLocalMedicalPoi(m: MagnetItem): boolean {

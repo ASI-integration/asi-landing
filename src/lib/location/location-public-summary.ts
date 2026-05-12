@@ -4,6 +4,7 @@
  */
 
 import type { LocationAnalysis, MagnetItem } from './types';
+import type { SpecialMarketFlag } from './city-scale-from-address';
 import type {
   DemandSignal,
   LocationDecisionScoreBand,
@@ -24,9 +25,11 @@ import { computeResidentialDemoPresentation } from './rules/residential-location
 import { formatPublicEvidenceLineRu } from './location-decision-rules';
 import {
   isStrongBusinessAnchorPoi,
+  looksLikeSmallCommunityMuseumPublicSurfacePoi,
   looksLikeWeakLocalAttractionPoi,
   looksLikeWeakLocalBusinessPoi,
   looksLikeWeakLocalRetailPoi,
+  looksLikeWeakPublicTouristSurfacePoi,
 } from './signals/location-signal-taxonomy';
 import { magnetRoleForScoredDriver } from './location-scoring-kernel';
 
@@ -37,15 +40,81 @@ function magnetForDriver(d: LocationDemandScoredDriver, magnets: readonly Magnet
   return magnets[i];
 }
 
+type MagnetProximity = Pick<MagnetItem, 'categoryId' | 'distance'>;
+
+/** Map-backed stadium/convention proximity strong enough to justify promoting cautious attractions in public copy. */
+export function hasVerifiedPublicTouristClusterProximity(magnets: readonly MagnetProximity[]): boolean {
+  return magnets.some(
+    m => (m.categoryId === 'stadium' || m.categoryId === 'convention') && m.distance <= 1200,
+  );
+}
+
+function maxEvidenceSupportCountForFact(demandSignals: readonly DemandSignal[], factId: string): number {
+  let best = 0;
+  for (const s of demandSignals) {
+    if (!s.evidenceFactIds.includes(factId)) continue;
+    best = Math.max(best, s.evidenceFactIds.length);
+  }
+  return best;
+}
+
+/**
+ * Weak-pattern / neighbourhood museum attractions need extra evidence before they may headline as tourist demand.
+ */
+export function passesRuResidentialWeakTouristPromotionGate(args: {
+  d: LocationDemandScoredDriver;
+  magnet: Pick<MagnetItem, 'categoryId' | 'name'>;
+  proximityMagnets: readonly MagnetProximity[];
+  demandSignals: readonly DemandSignal[];
+  specialMarketFlags: readonly SpecialMarketFlag[];
+}): boolean {
+  const { d, magnet, proximityMagnets, demandSignals, specialMarketFlags } = args;
+  const weakSurface = looksLikeWeakPublicTouristSurfacePoi(magnet);
+  const smallMuseum = looksLikeSmallCommunityMuseumPublicSurfacePoi(magnet);
+  if (!weakSurface && !smallMuseum) return true;
+
+  const tierStrong = d.resolvedTier === 1 && d.scaleClass === 'verified_major';
+  const multiEvidence = maxEvidenceSupportCountForFact(demandSignals, d.magnetFactId) >= 2;
+  const cluster = hasVerifiedPublicTouristClusterProximity(proximityMagnets);
+  const resort =
+    specialMarketFlags.includes('resort_exception') || specialMarketFlags.includes('federal_tourist_anchor');
+
+  if (tierStrong) return true;
+  if (multiEvidence) return true;
+  if (cluster) return true;
+
+  if (resort && d.driverKind === 'real_demand_driver' && d.scaleClass !== 'weak_local') {
+    return !weakSurface;
+  }
+
+  return false;
+}
+
+function needsRuResidentialWeakTouristPromotionGate(m: MagnetItem, d: LocationDemandScoredDriver): boolean {
+  return (
+    d.demandTypeVote === 'tourist' &&
+    m.categoryId === 'attraction' &&
+    (looksLikeWeakPublicTouristSurfacePoi(m) || looksLikeSmallCommunityMuseumPublicSurfacePoi(m))
+  );
+}
+
 const TOURIST_ANCHOR_CATS = new Set(['stadium', 'convention', 'attraction']);
 
 /** Verified map-backed tourist anchors for STR (not hotels / nightlife / generic retail). */
 export function verifiedTouristAnchorDrivers(
   drivers: readonly LocationDemandScoredDriver[],
   magnets: readonly MagnetItem[],
-  args?: { allowWeakLocalAttractionInResort?: boolean },
+  args?: {
+    allowWeakLocalAttractionInResort?: boolean;
+    demandSignals?: readonly DemandSignal[];
+    specialMarketFlags?: readonly SpecialMarketFlag[];
+  },
 ): LocationDemandScoredDriver[] {
   const allowWeakLocalAttractionInResort = Boolean(args?.allowWeakLocalAttractionInResort);
+  const demandSignals = args?.demandSignals ?? [];
+  const specialMarketFlags = args?.specialMarketFlags ?? [];
+  const proximityMagnets = magnets.map(m => ({ categoryId: m.categoryId, distance: m.distance }));
+
   return drivers.filter(d => {
     if (!d.accepted || d.demandTypeVote !== 'tourist') return false;
     if (d.driverKind !== 'real_demand_driver') return false;
@@ -59,6 +128,19 @@ export function verifiedTouristAnchorDrivers(
     ) {
       return false;
     }
+    if (m && cat === 'attraction' && needsRuResidentialWeakTouristPromotionGate(m, d)) {
+      if (
+        !passesRuResidentialWeakTouristPromotionGate({
+          d,
+          magnet: m,
+          proximityMagnets,
+          demandSignals,
+          specialMarketFlags,
+        })
+      ) {
+        return false;
+      }
+    }
     return d.resolvedTier <= 2;
   });
 }
@@ -70,8 +152,12 @@ export function selectStrictPublicSummaryDrivers(args: {
   kernel: LocationDemandScoringKernelResult;
   magnets: readonly MagnetItem[];
   allowWeakLocalAttractionInResort?: boolean;
+  /** When omitted, multi-evidence promotion for cautious attractions is unavailable (conservative). */
+  demandSignals?: readonly DemandSignal[];
 }): LocationDemandScoredDriver[] {
   const { kernel, magnets, allowWeakLocalAttractionInResort } = args;
+  const demandSignals = args.demandSignals ?? [];
+  const specialMarketFlags = kernel.specialMarketFlags;
   const pool = kernel.scoredDrivers.filter(d => d.publicDisplayEligible);
   const demandAnchors = pool.filter(
     d => d.driverKind === 'real_demand_driver' || d.driverKind === 'unknown_uncapped',
@@ -93,6 +179,9 @@ export function selectStrictPublicSummaryDrivers(args: {
     if (
       !passesResidentialPublicSurfaceGate(d, m, {
         allowWeakLocalAttractionInResort: Boolean(allowWeakLocalAttractionInResort),
+        magnets,
+        demandSignals,
+        specialMarketFlags,
       })
     ) {
       continue;
@@ -106,7 +195,12 @@ export function selectStrictPublicSummaryDrivers(args: {
 function passesResidentialPublicSurfaceGate(
   d: LocationDemandScoredDriver,
   m: MagnetItem,
-  args: { allowWeakLocalAttractionInResort: boolean },
+  args: {
+    allowWeakLocalAttractionInResort: boolean;
+    magnets: readonly MagnetItem[];
+    demandSignals: readonly DemandSignal[];
+    specialMarketFlags: readonly SpecialMarketFlag[];
+  },
 ): boolean {
   if (m.categoryId === 'major_hotel' || m.categoryId === 'mid_hotel') return false;
   if (m.categoryId === 'entertainment') return false;
@@ -130,6 +224,21 @@ function passesResidentialPublicSurfaceGate(
     /кадров(ое|ая|ый)\s+агентств/i.test(n)
   ) {
     return false;
+  }
+
+  if (needsRuResidentialWeakTouristPromotionGate(m, d)) {
+    const proximityMagnets = args.magnets.map(x => ({ categoryId: x.categoryId, distance: x.distance }));
+    if (
+      !passesRuResidentialWeakTouristPromotionGate({
+        d,
+        magnet: m,
+        proximityMagnets,
+        demandSignals: args.demandSignals,
+        specialMarketFlags: args.specialMarketFlags,
+      })
+    ) {
+      return false;
+    }
   }
 
   if (m.categoryId === 'attraction' && d.resolvedTier >= 3) return false;
@@ -230,6 +339,8 @@ function buildHeadlineRu(args: {
   magnets: readonly MagnetItem[];
   incompleteLabel: string | null;
   allowWeakLocalAttractionInResort: boolean;
+  demandSignals: readonly DemandSignal[];
+  specialMarketFlags: readonly SpecialMarketFlag[];
 }): { text: string; reason: string } {
   const { primary, strictDrivers, magnets, incompleteLabel } = args;
   if (incompleteLabel) {
@@ -238,6 +349,8 @@ function buildHeadlineRu(args: {
 
   const anchors = verifiedTouristAnchorDrivers(strictDrivers, magnets, {
     allowWeakLocalAttractionInResort: args.allowWeakLocalAttractionInResort,
+    demandSignals: args.demandSignals,
+    specialMarketFlags: args.specialMarketFlags,
   });
   const mixedUnstable = 'Смешанный / неустойчивый спрос по данным карты';
 
@@ -246,7 +359,13 @@ function buildHeadlineRu(args: {
   }
 
   if (primary === 'tourist' && anchors.length === 0) {
-    return { text: mixedUnstable, reason: 'tourist_vote_without_verified_map_tourist_anchor' };
+    const hasNonTouristMass = strictDrivers.some(
+      x => Boolean(x.demandTypeVote && x.demandTypeVote !== 'tourist' && contributionWeight(x) > 0),
+    );
+    return {
+      text: hasNonTouristMass ? 'Смешанный локальный спрос' : 'Обычная жилая локация с отдельными точками интереса',
+      reason: 'tourist_primary_without_promotable_tourist_anchor',
+    };
   }
 
   const med = medicalMass(strictDrivers);
@@ -394,6 +513,7 @@ export function buildLocationPublicSummary(args: {
     selectStrictPublicSummaryDrivers({
       kernel,
       magnets,
+      demandSignals,
       allowWeakLocalAttractionInResort:
         kernel.specialMarketFlags.includes('resort_exception') ||
         kernel.specialMarketFlags.includes('federal_tourist_anchor'),
@@ -418,7 +538,12 @@ export function buildLocationPublicSummary(args: {
     const m = magnetForDriver(d, magnets);
     if (
       m &&
-      !passesResidentialPublicSurfaceGate(d, m, { allowWeakLocalAttractionInResort })
+      !passesResidentialPublicSurfaceGate(d, m, {
+        allowWeakLocalAttractionInResort,
+        magnets,
+        demandSignals,
+        specialMarketFlags: kernel.specialMarketFlags,
+      })
     ) {
       rejectedFromPublic.push({
         sourceName: d.sourceName,
@@ -446,6 +571,8 @@ export function buildLocationPublicSummary(args: {
     incompleteLabel: incomplete?.publicLabelRu ?? null,
     allowWeakLocalAttractionInResort:
       kernel.specialMarketFlags.includes('resort_exception') || kernel.specialMarketFlags.includes('federal_tourist_anchor'),
+    demandSignals,
+    specialMarketFlags: kernel.specialMarketFlags,
   });
 
   const headlineRu = headline.text;

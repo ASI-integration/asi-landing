@@ -9,7 +9,12 @@ import type {
   LocationPublicClaim,
   MagnetFact,
 } from './location-decision-contract';
-import { FORBIDDEN_PUBLIC_WORDING_RU } from './signals/location-signal-taxonomy';
+import { passesRuResidentialWeakTouristPromotionGate } from './location-public-summary';
+import {
+  FORBIDDEN_PUBLIC_WORDING_RU,
+  looksLikeSmallCommunityMuseumPublicSurfacePoi,
+  looksLikeWeakPublicTouristSurfacePoi,
+} from './signals/location-signal-taxonomy';
 
 function magnetCategoryIdFromFactKey(id: string): string {
   const parts = id.split(':');
@@ -23,6 +28,11 @@ function kernelAllowsTourismPublicHeadline(decision: LocationDecision): boolean 
 
   const anchorCats = new Set(['stadium', 'convention', 'entertainment', 'attraction']);
 
+  const proximityMagnets = decision.magnetFacts.map(mf => ({
+    categoryId: magnetCategoryIdFromFactKey(mf.id),
+    distance: mf.distanceMeters ?? 0,
+  }));
+
   return k.scoredDrivers.some(d => {
     if (!d.publicDisplayEligible || d.demandTypeVote !== 'tourist') return false;
     if (d.driverKind !== 'real_demand_driver') return false;
@@ -31,7 +41,29 @@ function kernelAllowsTourismPublicHeadline(decision: LocationDecision): boolean 
     if (cat === 'major_hotel' || cat === 'mid_hotel') return false;
     if (!anchorCats.has(cat)) return false;
     if (cat === 'attraction' && (d.resolvedTier >= 3 || d.scaleClass === 'weak_local')) return false;
-    return d.resolvedTier <= 2;
+    if (d.resolvedTier > 2) return false;
+
+    if (cat === 'attraction') {
+      const mf = decision.magnetFacts.find(m => m.id === d.magnetFactId);
+      if (!mf) return false;
+      const magnet = { categoryId: cat, name: mf.name };
+      const cautiousAttraction =
+        looksLikeWeakPublicTouristSurfacePoi(magnet) || looksLikeSmallCommunityMuseumPublicSurfacePoi(magnet);
+      if (
+        cautiousAttraction &&
+        !passesRuResidentialWeakTouristPromotionGate({
+          d,
+          magnet,
+          proximityMagnets,
+          demandSignals: decision.demandSignals,
+          specialMarketFlags: k.specialMarketFlags,
+        })
+      ) {
+        return false;
+      }
+    }
+
+    return true;
   });
 }
 

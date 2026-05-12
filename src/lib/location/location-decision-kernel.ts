@@ -167,20 +167,6 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     cityScaleInference,
   });
 
-  const strictPublicDrivers = selectStrictPublicSummaryDrivers({
-    kernel: demandKernelV1,
-    magnets: analysis.magnets,
-    allowWeakLocalAttractionInResort:
-      demandKernelV1.specialMarketFlags.includes('resort_exception') ||
-      demandKernelV1.specialMarketFlags.includes('federal_tourist_anchor'),
-  });
-
-  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
-    strictDrivers: strictPublicDrivers,
-    magnetFacts,
-    magnets: analysis.magnets,
-  });
-
   let demandSignals = buildDemandSignalsFromKernel({
     accepted: demandKernelV1.acceptedDrivers,
     magnetFacts,
@@ -209,6 +195,21 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       demandSignals = demandSignals.filter(s => s.evidenceFactIds.length > 0);
     }
   }
+
+  const strictPublicDrivers = selectStrictPublicSummaryDrivers({
+    kernel: demandKernelV1,
+    magnets: analysis.magnets,
+    demandSignals,
+    allowWeakLocalAttractionInResort:
+      demandKernelV1.specialMarketFlags.includes('resort_exception') ||
+      demandKernelV1.specialMarketFlags.includes('federal_tourist_anchor'),
+  });
+
+  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
+    strictDrivers: strictPublicDrivers,
+    magnetFacts,
+    magnets: analysis.magnets,
+  });
 
   const finalScore = demandKernelV1.blendedPublicScore;
 
