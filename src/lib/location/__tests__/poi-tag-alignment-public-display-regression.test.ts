@@ -125,7 +125,13 @@ describe('POI tag alignment + public display regression (live screenshot scenari
     const officeShown = decision.publicClaims.some(c => /^\s*Офис\s+—/i.test(c.textRu) || c.textRu.includes('Офис — около'));
     expect(officeShown).toBe(false);
 
-    expect(decision.publicClaims.some(c => /больниц/i.test(c.textRu))).toBe(true);
+    // Current public contract: weak/generic medical evidence may stay internal-only.
+    expect(decision.publicClaims.length).toBe(0);
+    expect(decision.publicSummary?.publicDrivers.length ?? 0).toBe(0);
+    const medicalDrivers = decision.demandKernelV1?.scoredDrivers.filter(d => d.demandTypeVote === 'medical') ?? [];
+    expect(medicalDrivers.length).toBeGreaterThan(0);
+    expect(medicalDrivers.some(d => d.accepted)).toBe(true);
+    expect(medicalDrivers.every(d => d.publicDisplayEligible === false)).toBe(true);
 
     if (acceptedHotel) {
       const h = decision.demandKernelV1?.scoredDrivers.find(d => /Three Star/i.test(d.sourceName));
