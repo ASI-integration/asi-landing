@@ -52,6 +52,7 @@ describe('ru-residential-ui-projection', () => {
 
   it('public evidence lines never include legacy generic score-factor phrases', () => {
     const item: LocationEvidenceItem = {
+      evidenceId: 'ev:0:business:100',
       factId: 'mf:0:business:100',
       objectName: 'БЦ Пример',
       typeRu: 'Бизнес-центр',
