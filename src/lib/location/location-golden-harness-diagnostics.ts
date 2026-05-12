@@ -146,6 +146,13 @@ export interface GoldenHarnessCaseDiagnostics {
   readonly rejectedFromPublicTop: readonly GoldenHarnessRejectedDiag[];
   /** Present when {@link LocationDecision.publicSummary}.primaryDemandType is `medical`. */
   readonly medicalPrimaryAudit: GoldenHarnessMedicalPrimaryAudit | null;
+  /** Mirrors {@link LocationPublicSummary.presentationDiagnostics} when present. */
+  readonly presentationDiagnostics: {
+    readonly partialDataScoreCapApplied: boolean;
+    readonly partialDataScoreCapReason: string | null;
+    readonly genericMedicalSuppressed: boolean;
+    readonly verifiedMajorMedicalAnchorCount: number;
+  } | null;
 }
 
 const MEDICAL_DOMINANCE_FOCUS_CASE_IDS = new Set<string>([
@@ -446,5 +453,6 @@ export function buildGoldenHarnessCaseDiagnostics(args: {
     publicDrivers: publicDriverRows,
     rejectedFromPublicTop: rejectedTop,
     medicalPrimaryAudit,
+    presentationDiagnostics: args.decision?.publicSummary?.presentationDiagnostics ?? null,
   };
 }

@@ -27,6 +27,11 @@ import {
   publicSummaryToClaims,
   selectStrictPublicSummaryDrivers,
 } from './location-public-summary';
+import {
+  countVerifiedMajorMedicalAnchors,
+  strictPublicDriversAreOnlyGenericMedical,
+} from './location-medical-surface-policy';
+import { inferPartialCartographicPreviewFromAnalysis } from './location-partial-cartographic-policy';
 
 export interface LocationDecisionBuildInput {
   analysis: LocationAnalysis;
@@ -38,6 +43,8 @@ export interface LocationDecisionBuildInput {
   locale?: 'en' | 'ru';
   /** Structured geocode (RU): enables city token vs returned locality sanity before macro layer. */
   geocodeResult?: import('./providers/types').GeocodeResult | null;
+  /** When true, RU public headline score is capped for preliminary / partial map fetches (matches demo meta warnings). */
+  partialCartographicPreview?: boolean;
 }
 
 const DEMO_COORD_MATCH_EPS = 1e-4;
@@ -205,13 +212,38 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       demandKernelV1.specialMarketFlags.includes('federal_tourist_anchor'),
   });
 
-  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
-    strictDrivers: strictPublicDrivers,
-    magnetFacts,
-    magnets: analysis.magnets,
-  });
+  const partialCartographicPreview =
+    Boolean(input.partialCartographicPreview) || inferPartialCartographicPreviewFromAnalysis(analysis);
 
-  const finalScore = demandKernelV1.blendedPublicScore;
+  const verifiedMajorMedicalAnchorCount = countVerifiedMajorMedicalAnchors(
+    demandKernelV1.scoredDrivers,
+    analysis.magnets,
+    demandKernelV1.specialMarketFlags,
+  );
+
+  let finalScore = demandKernelV1.blendedPublicScore;
+  let partialDataScoreCapApplied = false;
+  let partialDataScoreCapReason: string | null = null;
+
+  if (Number.isFinite(finalScore) && partialCartographicPreview) {
+    const blocked = Boolean(analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData);
+    const cluster = demandKernelV1.specialMarketFlags.includes('regional_medical_cluster');
+    const lift = verifiedMajorMedicalAnchorCount > 0 || cluster;
+    let cap = 101;
+    if (blocked) cap = Math.min(cap, 79);
+    if (!lift) {
+      cap = Math.min(cap, 70);
+      if (strictPublicDriversAreOnlyGenericMedical(strictPublicDrivers, analysis.magnets)) {
+        cap = Math.min(cap, 65);
+      }
+    }
+    const rounded = Math.round(finalScore);
+    if (rounded > cap) {
+      partialDataScoreCapApplied = true;
+      partialDataScoreCapReason = `partial_cartographic_public_cap:from=${rounded}:to=${cap}:lift=${lift}:blocked=${blocked}`;
+      finalScore = cap;
+    }
+  }
 
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];
 
@@ -225,6 +257,12 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     baseWarningsPreSummary.push(w);
   }
 
+  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
+    strictDrivers: strictPublicDrivers,
+    magnetFacts,
+    magnets: analysis.magnets,
+  });
+
   const publicSummary = buildLocationPublicSummary({
     analysis,
     magnets: analysis.magnets,
@@ -235,6 +273,13 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     scoreBand,
     baseWarnings: baseWarningsPreSummary,
     strictDrivers: strictPublicDrivers,
+    partialCartographicContext: partialCartographicPreview,
+    presentationDiagnostics: {
+      partialDataScoreCapApplied,
+      partialDataScoreCapReason,
+      genericMedicalSuppressed: false,
+      verifiedMajorMedicalAnchorCount,
+    },
   });
 
   const publicClaims = publicSummaryToClaims(publicSummary.publicDrivers);

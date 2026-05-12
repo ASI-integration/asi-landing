@@ -1,3 +1,4 @@
+import { PARTIAL_CARTOGRAPHIC_WARNING_CODES } from '@/lib/location/location-demo-partial-warnings';
 import type { AnalysisMeta, LocationAnalysis } from '@/lib/location/types';
 
 /** Boundaries for staged RU demo loading copy (ms elapsed since analysis request started). */
@@ -9,10 +10,6 @@ export function ruDemoLoadingStageIndex(elapsedMs: number): 0 | 1 | 2 {
   if (elapsedMs < RU_DEMO_LOADING_STAGE_BOUNDARIES_MS[1]) return 1;
   return 2;
 }
-
-export const PARTIAL_CARTOGRAPHIC_WARNING_CODES: ReadonlySet<
-  NonNullable<AnalysisMeta['warnings']>[number]['code']
-> = new Set(['partial_result', 'overpass_timeout', 'geocode_timeout', 'insufficient_data']);
 
 export type LocationDemoReportDeferMode = 'residential' | 'commercial';
 

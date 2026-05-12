@@ -11,6 +11,7 @@ import type {
   LocationEvidenceItem,
   LocationPublicClaim,
   LocationPublicDriverRow,
+  LocationPublicPresentationDiagnostics,
   LocationPublicRejectedRow,
   LocationPublicSummary,
   LocationPublicSummaryDemandType,
@@ -32,6 +33,7 @@ import {
   looksLikeWeakPublicTouristSurfacePoi,
 } from './signals/location-signal-taxonomy';
 import { magnetRoleForScoredDriver } from './location-scoring-kernel';
+import { medicalPrimaryStrongPublicCopyEligible } from './location-medical-surface-policy';
 
 function magnetForDriver(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): MagnetItem | undefined {
   const parts = d.magnetFactId.split(':');
@@ -341,8 +343,9 @@ function buildHeadlineRu(args: {
   allowWeakLocalAttractionInResort: boolean;
   demandSignals: readonly DemandSignal[];
   specialMarketFlags: readonly SpecialMarketFlag[];
-}): { text: string; reason: string } {
-  const { primary, strictDrivers, magnets, incompleteLabel } = args;
+  partialCartographicContext: boolean;
+}): { text: string; reason: string; genericMedicalSuppressed?: boolean } {
+  const { primary, strictDrivers, magnets, incompleteLabel, partialCartographicContext } = args;
   if (incompleteLabel) {
     return { text: incompleteLabel, reason: 'integrity:generic_incomplete_data_signal' };
   }
@@ -372,10 +375,17 @@ function buildHeadlineRu(args: {
   const tour = touristMass(strictDrivers);
   if (med > tour * 1.12 && med >= 0.14) {
     if (primary === 'tourist') {
-      return {
-        text: 'Смешанный спрос: медицинский якорь заметнее досуговых сигналов',
-        reason: 'medical_public_driver_mass_over_tourist',
-      };
+      const medEligible = medicalPrimaryStrongPublicCopyEligible({
+        strictDrivers,
+        magnets,
+        specialMarketFlags: args.specialMarketFlags,
+      });
+      if (medEligible) {
+        return {
+          text: 'Смешанный спрос: медицинский якорь заметнее досуговых сигналов',
+          reason: 'medical_public_driver_mass_over_tourist',
+        };
+      }
     }
   }
 
@@ -385,8 +395,28 @@ function buildHeadlineRu(args: {
         text: 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.',
         reason: 'primary_weak_unclear',
       };
-    case 'medical':
-      return { text: 'Спрос с медицинским якорем в зоне (по устойчивым публичным драйверам)', reason: 'primary_medical' };
+    case 'medical': {
+      const eligible = medicalPrimaryStrongPublicCopyEligible({
+        strictDrivers,
+        magnets,
+        specialMarketFlags: args.specialMarketFlags,
+      });
+      if (!eligible) {
+        return {
+          text: partialCartographicContext
+            ? 'Предварительно: рядом есть медицинские объекты, нужна проверка карты'
+            : 'Обычная жилая локация с отдельными медицинскими объектами поблизости',
+          reason: partialCartographicContext
+            ? 'medical_primary_suppressed_generic_partial_map'
+            : 'medical_primary_suppressed_generic_surface',
+          genericMedicalSuppressed: true,
+        };
+      }
+      return {
+        text: 'Спрос с медицинским якорем в зоне (по устойчивым публичным драйверам)',
+        reason: 'primary_medical',
+      };
+    }
     case 'corporate/business':
       return { text: 'Спрос от делового и офисного трафика (по устойчивым публичным драйверам)', reason: 'primary_business' };
     case 'transport':
@@ -454,6 +484,9 @@ export function applyVerdictContradictionGuards(args: {
   let verdict = args.baseVerdict;
   const { primary, secondaries, strictDrivers } = args;
   const bizMass = strongBusinessContributionFromDrivers(strictDrivers);
+  const industrialMass = strictDrivers
+    .filter(d => d.demandTypeVote === 'industrial')
+    .reduce((s, d) => s + contributionWeight(d), 0);
 
   if (primary === 'tourist' && /командированных/i.test(verdict)) {
     if (!hasStrongSecondaryBusiness(secondaries) || bizMass < 0.42) {
@@ -470,6 +503,15 @@ export function applyVerdictContradictionGuards(args: {
   if (primary === 'tourist' && /медицинск/i.test(verdict)) {
     warnings.push('contradiction_guard:tourist_primary_with_medical_verdict');
     verdict = 'Туристический и событийный контекст — медицинский сценарий не доминирует в публичном выводе';
+  }
+
+  if (/командированных/i.test(verdict)) {
+    const corpStrong =
+      (hasStrongSecondaryBusiness(secondaries) && bizMass >= 0.42) || industrialMass >= 0.42;
+    if ((primary === 'medical' || primary === 'weak/unclear') && !corpStrong) {
+      warnings.push('contradiction_guard:commander_verdict_without_corporate_medical_anchor');
+      verdict = 'Предварительно: рядом есть медицинские объекты, нужна проверка карты';
+    }
   }
 
   return { verdict, warnings };
@@ -492,10 +534,16 @@ export function buildLocationPublicSummary(args: {
   baseWarnings: readonly string[];
   /** When provided, must match evidence construction in {@link buildLocationDecision}. */
   strictDrivers?: readonly LocationDemandScoredDriver[];
+  /** Partial / incomplete map preview — tightens medical headline copy. */
+  partialCartographicContext?: boolean;
+  /** Seeded by {@link buildLocationDecision}; headline step may set `genericMedicalSuppressed`. */
+  presentationDiagnostics?: LocationPublicPresentationDiagnostics;
 }): LocationPublicSummary {
   const debugTrace: string[] = [];
   const warnings = [...args.baseWarnings];
   const { kernel, magnets, magnetFacts, demandSignals, finalScore, scoreBand } = args;
+  const partialCartographicContext = Boolean(args.partialCartographicContext);
+  const diagSeed = args.presentationDiagnostics;
 
   debugTrace.push(
     `cityScale=${kernel.cityScale}:populationTier=${kernel.populationTier}:marketGravity=${kernel.marketGravityCoefficient.toFixed(
@@ -557,7 +605,13 @@ export function buildLocationPublicSummary(args: {
   const tourM = touristMass(strictDrivers);
   if (strictDrivers.length > 0 && medM > tourM * 1.15 && medM >= 0.16) {
     if (primary === 'tourist' || primary === 'mixed') {
-      primary = medM > businessMass(strictDrivers) * 1.05 ? 'medical' : 'mixed';
+      const wouldMedical = medM > businessMass(strictDrivers) * 1.05;
+      const medSurfaceOk = medicalPrimaryStrongPublicCopyEligible({
+        strictDrivers,
+        magnets,
+        specialMarketFlags: kernel.specialMarketFlags,
+      });
+      primary = wouldMedical ? (medSurfaceOk ? 'medical' : 'mixed') : 'mixed';
       debugTrace.push('override_primary_to_medical_or_mixed_by_public_driver_mass');
     }
   }
@@ -573,10 +627,18 @@ export function buildLocationPublicSummary(args: {
       kernel.specialMarketFlags.includes('resort_exception') || kernel.specialMarketFlags.includes('federal_tourist_anchor'),
     demandSignals,
     specialMarketFlags: kernel.specialMarketFlags,
+    partialCartographicContext,
   });
 
   const headlineRu = headline.text;
   debugTrace.push(`headline:${headline.reason}`);
+
+  const presentationDiagnostics: LocationPublicPresentationDiagnostics = {
+    partialDataScoreCapApplied: diagSeed?.partialDataScoreCapApplied ?? false,
+    partialDataScoreCapReason: diagSeed?.partialDataScoreCapReason ?? null,
+    genericMedicalSuppressed: Boolean(headline.genericMedicalSuppressed),
+    verifiedMajorMedicalAnchorCount: diagSeed?.verifiedMajorMedicalAnchorCount ?? 0,
+  };
 
   const scoreForSanity = finalScore ?? 0;
   const { sanity } = computeResidentialDemoPresentation(args.analysis, scoreForSanity);
@@ -658,6 +720,7 @@ export function buildLocationPublicSummary(args: {
       verdictReason,
       contradictionWarnings: contradiction.warnings,
     },
+    presentationDiagnostics,
   };
 }
 

@@ -20,6 +20,7 @@ import {
 import { GRAVITY_CONFIG } from '../config';
 import { hasTouristAnchorCluster } from '../location-decision-rules';
 import { looksLikeWeakLocalAttractionPoi } from '../signals/location-signal-taxonomy';
+import { isGenericMedicalSurfaceName } from '../location-medical-surface-policy';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -187,6 +188,9 @@ function detectTier1(analysis: LocationAnalysis): ResidentialPrimeMagnet[] {
     if (m.categoryId === 'attraction') {
       if (!isMajorTouristAttraction(m, raw, analysis.magnets)) continue;
     }
+
+    // Hospitals: OSM default names like «Больница» are not independent verified anchors for commander/corporate copy.
+    if (m.categoryId === 'hospital' && isGenericMedicalSurfaceName(m.name)) continue;
 
     out.push(m);
   }

@@ -143,6 +143,14 @@ export interface LocationPublicSummaryTrace {
   contradictionWarnings: string[];
 }
 
+/** RU residential demo / golden harness diagnostics — safe to log; not primary UI copy. */
+export interface LocationPublicPresentationDiagnostics {
+  partialDataScoreCapApplied: boolean;
+  partialDataScoreCapReason: string | null;
+  genericMedicalSuppressed: boolean;
+  verifiedMajorMedicalAnchorCount: number;
+}
+
 export interface LocationPublicSummary {
   finalScore: number | null;
   scoreBand: LocationDecisionScoreBand;
@@ -163,6 +171,7 @@ export interface LocationPublicSummary {
   debugTrace: string[];
   recommendedStrategyBulletsRu: string[];
   trace: LocationPublicSummaryTrace;
+  presentationDiagnostics?: LocationPublicPresentationDiagnostics;
 }
 
 export interface LocationDecisionRawObjectStats {

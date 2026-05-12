@@ -15,6 +15,7 @@ import {
   isKorzunDiagnosticCoords,
   logKorzunPipelineDiagnostics,
 } from '@/lib/location/korzun-pipeline-diagnostics';
+import { metaWarningsIndicatePartialCartography } from '@/lib/location/location-demo-partial-warnings';
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 
@@ -185,6 +186,7 @@ function withDemoSanityPayload(args: {
     coordinates: { lat, lon },
     rawElements: osmElements,
     locale,
+    partialCartographicPreview: metaWarningsIndicatePartialCartography(meta.warnings),
     ...(geocodeResult ? { geocodeResult } : {}),
   });
 
