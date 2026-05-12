@@ -62,7 +62,7 @@ describe('RU demo: defer misleading paid-report CTA when map data blocks scoring
     ).toBe(true);
   });
 
-  it('does not defer residential when blocked but kernel exposed at least one driver line', () => {
+  it('defers residential when score is blocked even if stale kernel publicDrivers exist', () => {
     const analysis = {
       analysisIntegrity: {
         analysisIncomplete: true,
@@ -80,6 +80,70 @@ describe('RU demo: defer misleading paid-report CTA when map data blocks scoring
       ruDemoDeferPaidReportForMapRetry({
         locale: 'ru',
         meta: metaScoreBlocked,
+        analysis,
+        mode: 'residential',
+      }),
+    ).toBe(true);
+  });
+
+  it('defers residential when incomplete + partial cartographic warning + no usable publicDrivers', () => {
+    const meta: AnalysisMeta = {
+      freshness: 'fresh',
+      updatedAt: new Date().toISOString(),
+      source: 'test',
+      cached: false,
+      scoreBlockedDueToIncompleteData: false,
+      warnings: [{ code: 'partial_result', message: 'Часть картографических данных не успела загрузиться.' }],
+    };
+    const analysis = {
+      analysisIntegrity: {
+        analysisIncomplete: true,
+        scoreBlockedDueToIncompleteData: false,
+        reasons: [],
+      },
+      locationDecision: {
+        publicSummary: {
+          publicDrivers: [],
+        },
+      },
+    } as unknown as LocationAnalysis;
+
+    expect(
+      ruDemoDeferPaidReportForMapRetry({
+        locale: 'ru',
+        meta,
+        analysis,
+        mode: 'residential',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not defer residential partial preview with real publicDrivers when score not blocked', () => {
+    const meta: AnalysisMeta = {
+      freshness: 'fresh',
+      updatedAt: new Date().toISOString(),
+      source: 'test',
+      cached: false,
+      scoreBlockedDueToIncompleteData: false,
+      warnings: [{ code: 'partial_result', message: 'Предварительная оценка.' }],
+    };
+    const analysis = {
+      analysisIntegrity: {
+        analysisIncomplete: false,
+        scoreBlockedDueToIncompleteData: false,
+        reasons: [],
+      },
+      locationDecision: {
+        publicSummary: {
+          publicDrivers: [{ textRu: 'Устойчивый якорь карты рядом', trace: {} }],
+        },
+      },
+    } as unknown as LocationAnalysis;
+
+    expect(
+      ruDemoDeferPaidReportForMapRetry({
+        locale: 'ru',
+        meta,
         analysis,
         mode: 'residential',
       }),

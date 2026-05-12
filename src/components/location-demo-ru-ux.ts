@@ -24,9 +24,12 @@ function ruDemoAnalysisHasUsablePublicDriverLines(analysis: LocationAnalysis): b
 }
 
 /**
- * RU demo: when scoring is blocked *and* there is nothing actionable in `publicDrivers`,
- * paid-report CTAs read as misleading — prioritize retry and clarify prerequisites.
- * Partial `partial_result` with a real preliminary score (`!scoreBlocked`) stays unchanged.
+ * RU demo: when the headline preview is blocked or map data is incomplete without a usable
+ * public summary, paid-report CTAs read as misleading — prioritize retry and clarify prerequisites.
+ *
+ * Note: `locationDecision.publicDrivers` may still contain lines while
+ * `scoreBlockedDueToIncompleteData` is true (kernel attaches before presentation gates). Residential
+ * must not treat those as “usable” for CTA ordering when the score is blocked.
  */
 export function ruDemoDeferPaidReportForMapRetry(args: {
   locale: string;
@@ -35,14 +38,21 @@ export function ruDemoDeferPaidReportForMapRetry(args: {
   mode: LocationDemoReportDeferMode;
 }): boolean {
   if (args.locale !== 'ru') return false;
-  const blocked =
+  const blockedScore =
     Boolean(args.meta?.scoreBlockedDueToIncompleteData) ||
     Boolean(args.analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData);
-  if (!blocked) return false;
 
-  if (args.mode === 'commercial') return true;
+  if (args.mode === 'commercial') return blockedScore;
 
-  return !ruDemoAnalysisHasUsablePublicDriverLines(args.analysis);
+  if (blockedScore) return true;
+
+  const analysisIncomplete = Boolean(args.analysis.analysisIntegrity?.analysisIncomplete);
+  const partialMapWarn = metaHasPartialCartographicWarning(args.meta);
+  const noUsablePublic = !ruDemoAnalysisHasUsablePublicDriverLines(args.analysis);
+
+  if (analysisIncomplete && partialMapWarn && noUsablePublic) return true;
+
+  return false;
 }
 
 export function metaHasPartialCartographicWarning(meta: AnalysisMeta | null | undefined): boolean {
