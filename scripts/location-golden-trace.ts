@@ -86,6 +86,7 @@ interface GoldenCaseOutput {
     | 'marketGravityCoefficient'
     | 'specialMarketFlags'
     | 'scoreCapReason'
+    | 'presentationDiagnostics'
   > & {
     publicDriverLinesRu: string[];
     rejectedFromPublicCount: number;
@@ -144,6 +145,7 @@ function serializePublicSummary(s: LocationPublicSummary): GoldenCaseOutput['pub
     marketGravityCoefficient: s.marketGravityCoefficient,
     specialMarketFlags: [...s.specialMarketFlags],
     scoreCapReason: s.scoreCapReason,
+    presentationDiagnostics: s.presentationDiagnostics,
     rejectedFromPublicCount: s.rejectedFromPublic.length,
   };
 }
@@ -236,6 +238,7 @@ function buildPipeline(args: {
   inputAddress: string;
   selectedGeocodeResult?: string | null;
   geocodeResult?: GeocodeResult | null;
+  partialCartographicPreview?: boolean;
 }): { publicSummary: LocationPublicSummary; decision: LocationDecision; magnets: readonly MagnetItem[] } {
   const { elements, lat, lon, inputAddress } = args;
   const analysis = buildAnalysis(elements, lat, lon, {
@@ -258,6 +261,7 @@ function buildPipeline(args: {
     selectedGeocodeResult: args.selectedGeocodeResult ?? trace.selectedGeocodeResult,
     locale: 'ru',
     geocodeResult: args.geocodeResult,
+    partialCartographicPreview: args.partialCartographicPreview,
   });
   const ps = decision.publicSummary;
   if (!ps) {
@@ -453,6 +457,7 @@ async function runLiveCase(
       inputAddress: c.addressRu,
       selectedGeocodeResult: displayName,
       geocodeResult: geo.result ?? null,
+      partialCartographicPreview: status === 'partial_result',
     });
 
     const out: GoldenCaseOutput = {

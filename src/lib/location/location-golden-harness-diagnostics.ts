@@ -148,8 +148,11 @@ export interface GoldenHarnessCaseDiagnostics {
   readonly medicalPrimaryAudit: GoldenHarnessMedicalPrimaryAudit | null;
   /** Mirrors {@link LocationPublicSummary.presentationDiagnostics} when present. */
   readonly presentationDiagnostics: {
+    readonly partialCartographicPreview: boolean;
     readonly partialDataScoreCapApplied: boolean;
     readonly partialDataScoreCapReason: string | null;
+    readonly scoreBeforePartialDataCap: number | null;
+    readonly scoreAfterPartialDataCap: number | null;
     readonly genericMedicalSuppressed: boolean;
     readonly verifiedMajorMedicalAnchorCount: number;
   } | null;

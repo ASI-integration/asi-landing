@@ -637,8 +637,11 @@ export function buildLocationPublicSummary(args: {
   debugTrace.push(`headline:${headline.reason}`);
 
   const presentationDiagnostics: LocationPublicPresentationDiagnostics = {
+    partialCartographicPreview: diagSeed?.partialCartographicPreview ?? partialCartographicContext,
     partialDataScoreCapApplied: diagSeed?.partialDataScoreCapApplied ?? false,
     partialDataScoreCapReason: diagSeed?.partialDataScoreCapReason ?? null,
+    scoreBeforePartialDataCap: diagSeed?.scoreBeforePartialDataCap ?? null,
+    scoreAfterPartialDataCap: diagSeed?.scoreAfterPartialDataCap ?? finalScore,
     genericMedicalSuppressed: Boolean(headline.genericMedicalSuppressed),
     verifiedMajorMedicalAnchorCount: diagSeed?.verifiedMajorMedicalAnchorCount ?? 0,
   };

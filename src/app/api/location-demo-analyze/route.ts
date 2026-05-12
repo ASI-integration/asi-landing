@@ -186,7 +186,12 @@ function withDemoSanityPayload(args: {
     coordinates: { lat, lon },
     rawElements: osmElements,
     locale,
-    partialCartographicPreview: metaWarningsIndicatePartialCartography(meta.warnings),
+    partialCartographicPreview:
+      metaWarningsIndicatePartialCartography(meta.warnings) ||
+      Boolean(meta.scoreBlockedDueToIncompleteData) ||
+      Boolean(meta.analysisIncomplete) ||
+      Boolean(analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) ||
+      Boolean(analysis.analysisIntegrity?.analysisIncomplete),
     ...(geocodeResult ? { geocodeResult } : {}),
   });
 

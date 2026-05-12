@@ -145,8 +145,11 @@ export interface LocationPublicSummaryTrace {
 
 /** RU residential demo / golden harness diagnostics — safe to log; not primary UI copy. */
 export interface LocationPublicPresentationDiagnostics {
+  partialCartographicPreview: boolean;
   partialDataScoreCapApplied: boolean;
   partialDataScoreCapReason: string | null;
+  scoreBeforePartialDataCap: number | null;
+  scoreAfterPartialDataCap: number | null;
   genericMedicalSuppressed: boolean;
   verifiedMajorMedicalAnchorCount: number;
 }

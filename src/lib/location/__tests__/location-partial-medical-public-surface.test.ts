@@ -10,6 +10,81 @@ function node(id: number, dLat: number, dLon: number, tags: Record<string, strin
 }
 
 describe('partial cartographic preview + generic medical public surface', () => {
+  it('spb_008_parkhomenko_15-like partial 94 caps at 70 even with named anchors', () => {
+    const els: OSMElement[] = [
+      node(101, 0.005, 0.004, { amenity: 'university', name: 'Университет' }),
+      node(102, 0.006, 0.0042, { amenity: 'university', name: 'Университет' }),
+      node(103, 0.004, 0.003, {
+        amenity: 'hospital',
+        name: 'Лечебно-реабилитационный центр Федерального центра сердца',
+      }),
+      node(104, 0.0045, 0.0032, { amenity: 'hospital', name: 'Детская городская больница святой Ольги' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 94;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Санкт-Петербург, проспект Пархоменко, 15',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+    const diag = decision.publicSummary?.presentationDiagnostics;
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThanOrEqual(70);
+    expect(diag?.partialCartographicPreview).toBe(true);
+    expect(diag?.partialDataScoreCapApplied).toBe(true);
+    expect(diag?.partialDataScoreCapReason).toContain('partial_verified_anchor_without_strong_cluster_evidence');
+    expect(diag?.scoreBeforePartialDataCap).toBeGreaterThan(70);
+    expect(diag?.scoreAfterPartialDataCap).toBeLessThanOrEqual(70);
+  });
+
+  it('novosib_017_krasny_50-like partial 90 caps at 70', () => {
+    const els: OSMElement[] = [
+      node(111, 0.0025, 0.002, { amenity: 'hospital', name: 'Городская клиническая больница №1' }),
+      node(112, 0.003, 0.0022, { amenity: 'hospital', name: 'Областная клиническая больница' }),
+      node(113, 0.0035, 0.0024, { amenity: 'hospital', name: 'Перинатальный центр' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 90;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Новосибирск, Красный проспект, 50',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThanOrEqual(70);
+    expect(decision.publicSummary?.presentationDiagnostics?.partialDataScoreCapApplied).toBe(true);
+  });
+
+  it('vladivostok_080_russkaya_46-like partial 83 caps at 70', () => {
+    const els: OSMElement[] = [
+      node(121, 0.0025, 0.002, { amenity: 'hospital', name: 'Краевая клиническая больница' }),
+      node(122, 0.003, 0.0022, { amenity: 'hospital', name: 'Медицинский центр ДВФУ' }),
+      node(123, 0.001, 0.001, { railway: 'station', name: 'Станция' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 83;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Владивосток, Русская улица, 46',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThanOrEqual(70);
+    expect(decision.publicSummary?.presentationDiagnostics?.scoreAfterPartialDataCap).toBeLessThanOrEqual(70);
+  });
+
   it('caps public headline score when preview is partial and only generic hospitals surface', () => {
     const els: OSMElement[] = [
       node(1, 0.004, 0.003, { amenity: 'hospital' }),
@@ -29,6 +104,9 @@ describe('partial cartographic preview + generic medical public surface', () => 
     expect(decision.finalScore).not.toBeNull();
     expect(decision.finalScore!).toBeLessThanOrEqual(65);
     expect(decision.publicSummary?.presentationDiagnostics?.partialDataScoreCapApplied).toBe(true);
+    expect(decision.publicSummary?.presentationDiagnostics?.partialDataScoreCapReason).toContain(
+      'partial_generic_medical_public_drivers',
+    );
     expect(decision.publicSummary?.presentationDiagnostics?.verifiedMajorMedicalAnchorCount).toBe(0);
     expect(decision.publicSummary?.headlineRu).not.toMatch(/медицинским якорем/i);
     expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Сильная локация для командированных/);
@@ -92,5 +170,29 @@ describe('partial cartographic preview + generic medical public surface', () => 
     });
     expect(decision.finalScore).not.toBeNull();
     expect(decision.finalScore!).toBeLessThanOrEqual(79);
+  });
+
+  it('verified named major anchors get higher partial cap only with strong regional medical evidence', () => {
+    const els: OSMElement[] = [
+      node(40, 0.003, 0.0025, { amenity: 'hospital', name: 'Федеральный научный медицинский центр' }),
+      node(41, 0.0035, 0.0029, { amenity: 'hospital', name: 'Краевой онкологический диспансер' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 95;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Ставрополь, улица Доваторцев, 1',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+    const diag = decision.publicSummary?.presentationDiagnostics;
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThanOrEqual(79);
+    expect(decision.finalScore!).toBeGreaterThan(70);
+    expect(diag?.partialDataScoreCapApplied).toBe(true);
+    expect(diag?.partialDataScoreCapReason).toContain('partial_strong_regional_medical_cluster_lift');
   });
 });
