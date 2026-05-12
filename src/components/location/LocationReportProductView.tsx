@@ -185,7 +185,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
         <Section id="executive-summary" title="Executive Summary">
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
-              <p className="text-sm font-semibold text-slate-900">Главные драйверы</p>
+              <p className="text-sm font-semibold text-slate-900">Главные факторы спроса</p>
               <ul className="mt-3 space-y-2">
                 {report.executiveSummary.keyDrivers.map(driver => (
                   <li key={driver} className="flex gap-2 text-sm leading-relaxed text-slate-700">

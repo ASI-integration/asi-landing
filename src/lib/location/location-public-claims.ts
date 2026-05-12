@@ -166,7 +166,7 @@ export function publicDemandProfileHeadline(
       const incomplete = decision.demandSignals.find(s => s.id === 'ds:generic_incomplete_data');
       if (locale === 'ru') {
         if (incomplete) return incomplete.publicLabelRu;
-        return 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.';
+        return 'Профиль спроса пока выглядит ограниченно — сильные точки спроса рядом не подтверждены.';
       }
       if (incomplete?.reason) return 'Insufficient map evidence to profile demand.';
       return 'Limited demand profile — no stable demand anchors confirmed on the map.';
@@ -175,7 +175,7 @@ export function publicDemandProfileHeadline(
     if (locale === 'ru') {
       switch (dominantKernel) {
         case 'medical':
-          return 'Спрос с медицинским якорем в зоне (по весам подтверждённых ядер)';
+          return 'Медицинские объекты рядом могут поддерживать спрос';
         case 'corporate/business':
           return 'Спрос от делового и офисного трафика';
         case 'transport':
@@ -184,13 +184,13 @@ export function publicDemandProfileHeadline(
           return 'Промышленно-деловой профиль спроса';
         case 'tourist':
           if (!kernelAllowsTourismPublicHeadline(decision)) {
-            return 'Смешанный профиль спроса по данным карты';
+            return 'Предварительная оценка: спрос выглядит неоднозначным';
           }
-          return 'Туристический и событийный спрос по якорям карты';
+          return 'Туристический и событийный спрос: рядом есть точки досуга и интереса';
         case 'education':
           return 'Образовательно-деловой профиль спроса';
         case 'mixed':
-          return 'Смешанный профиль спроса по данным карты';
+          return 'Предварительная оценка: спрос выглядит неоднозначным';
         default:
           break;
       }
@@ -225,8 +225,8 @@ export function publicDemandProfileHeadline(
     if (locale === 'ru') {
       if (incomplete) return incomplete.publicLabelRu;
       return decision.demandKernelV1
-        ? 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.'
-        : 'Профиль спроса не выделен по данным карты.';
+        ? 'Профиль спроса пока выглядит ограниченно — сильные точки спроса рядом не подтверждены.'
+        : 'По открытым данным профиль спроса пока не выделен.';
     }
     if (incomplete?.reason) return 'Insufficient map evidence to profile demand.';
     return decision.demandKernelV1
@@ -245,16 +245,16 @@ export function publicDemandProfileHeadline(
     switch (role) {
       case 'tourist_demand':
       case 'event_demand':
-        return 'Туристический и событийный спрос в зоне (по якорям карты)';
+        return 'Туристический и событийный спрос: рядом есть точки досуга и интереса';
       case 'business_demand':
         return 'Спрос от делового и офисного трафика';
       case 'accessibility':
       case 'transport_anchor':
         return 'Транзитный и транспортно-связанный спрос';
       case 'medical_demand':
-        return 'Спрос с медицинским якорем в зоне';
+        return 'Рядом есть медицинские объекты';
       default:
-        return 'Смешанный профиль спроса по данным карты';
+        return 'Предварительная оценка: спрос выглядит неоднозначным';
     }
   }
 

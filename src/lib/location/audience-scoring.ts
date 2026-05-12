@@ -291,11 +291,11 @@ function buildPrimaryDriverLabel(
     const transportTop = surfacing[0];
     if (transportTop) {
       const role = transportTop.categoryId === 'airport' ? 'аэропорт' : 'ж/д вокзал';
-      return `Ключевой транспортный якорь: ${transportTop.name} (${distRu(transportTop.distance)}, ${role})`;
+      return `Ключевой транспортный узел: ${transportTop.name} (${distRu(transportTop.distance)}, ${role})`;
     }
 
     const top = primaryMagnets.find(m => m.type === 'business');
-    if (!top) return `Деловых якорей рядом не обнаружено (${audienceSharePct}%).`;
+    if (!top) return `Сильных деловых объектов рядом не обнаружено (${audienceSharePct}%).`;
 
     const topTax = classifyMagnetSignal({
       // minimal MagnetItem shape for taxonomy
@@ -317,7 +317,7 @@ function buildPrimaryDriverLabel(
 
     // If taxonomy says "weak/hidden", never use strong public framing.
     if (topTax.publicClaimStrength === 'hidden_from_public_copy' || topTax.level === 'weak_local_signal') {
-      return `Локальные деловые сигналы рядом (${distRu(top.distance)}), но сильный деловой драйвер не подтверждён.`;
+      return `Локальные деловые сигналы рядом (${distRu(top.distance)}), но сильная деловая точка спроса не подтверждена.`;
     }
 
     const cluster = businessClusterDetected ? ' · деловой кластер' : '';
@@ -328,7 +328,7 @@ function buildPrimaryDriverLabel(
     const lowered = label.toLowerCase();
     for (const bad of FORBIDDEN_PUBLIC_WORDING_RU) {
       if (lowered.includes(bad)) {
-        return `Деловой поток подтверждён якорями поблизости.`;
+        return `Деловой поток подтверждён объектами поблизости.`;
       }
     }
     return label;
@@ -348,7 +348,7 @@ function buildPrimaryDriverLabel(
       return t.level === 'weak_local_signal' && t.publicClaimStrength !== 'hidden_from_public_copy';
     });
     if (hasAnyWeakSignal) {
-      return 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+      return 'Есть отдельные признаки спроса рядом, но крупная точка притяжения не подтверждена.';
     }
     return `Туристический поток (слабый сигнал — объекты не обнаружены)`;
   }
@@ -374,7 +374,7 @@ function buildPrimaryDriverLabel(
     if (top.categoryId === 'attraction') {
       return 'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён.';
     }
-    return 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+    return 'Есть отдельные признаки спроса рядом, но крупная точка притяжения не подтверждена.';
   }
 
   return `Основной поток: TOURIST — ${top.name} (${distRu(top.distance)})`;

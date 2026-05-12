@@ -67,7 +67,8 @@ describe('partial cartographic preview + generic medical public surface', () => 
     });
     const ps = decision.publicSummary;
     expect(ps?.primaryDemandType).toBe('medical');
-    expect(ps?.headlineRu).toMatch(/медицинским якорем/i);
+    expect(ps?.headlineRu).toMatch(/медицинск/i);
+    expect(ps?.headlineRu).not.toMatch(/якор/i);
     expect(ps?.presentationDiagnostics?.genericMedicalSuppressed).toBe(false);
   });
 

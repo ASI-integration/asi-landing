@@ -265,7 +265,7 @@ export function LocationStandaloneFullReport({
                     <p className="mt-2 text-xl font-bold text-white tabular-nums">
                       {summary?.income_rub_month != null ? `${fmtRub(summary.income_rub_month)} / мес` : '—'}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">Оценка / прокси, не гарантированная «рыночная правда»</p>
+                    <p className="mt-1 text-xs text-slate-500">Оценка по открытым данным, не гарантированная «рыночная правда»</p>
                     <p className="mt-1 text-xs text-slate-600">До расходов и комиссий управления</p>
                   </div>
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-5">
@@ -316,7 +316,7 @@ export function LocationStandaloneFullReport({
             lead={
               isFreePreview
                 ? 'Краткая оценка локации. Подробный расчёт доступен в полном отчёте.'
-                : 'Первое, что важно: вердикт и 3 драйвера, которые дают основной вклад в спрос и стратегию.'
+                : 'Первое, что важно: вердикт и три главных фактора, которые дают основной вклад в спрос и стратегию.'
             }
           >
             <div className="grid lg:grid-cols-3 gap-5">
@@ -332,7 +332,7 @@ export function LocationStandaloneFullReport({
 
                 <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
                   {!isFreePreview ? (
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Главные драйверы</p>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Главные факторы спроса</p>
                   ) : (
                     <p className="text-[17px] sm:text-[18px] font-semibold text-slate-100 leading-snug">
                       Факторы оценки
@@ -348,7 +348,7 @@ export function LocationStandaloneFullReport({
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-3 text-slate-400">Нет данных по драйверам.</p>
+                    <p className="mt-3 text-slate-400">Нет данных по факторам спроса.</p>
                   )}
                 </div>
               </div>
@@ -491,7 +491,7 @@ export function LocationStandaloneFullReport({
           <SectionShell
             id="magnets"
             title="Главные магниты"
-            lead="Устойчивые точки притяжения вокруг объекта — то, что формирует реальный спрос на проживание рядом. Только крупные городские и региональные якоря."
+            lead="Устойчивые точки притяжения вокруг объекта — то, что формирует реальный спрос на проживание рядом. Только крупные городские и региональные объекты."
           >
             {magnets ? (
               <>

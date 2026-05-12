@@ -338,7 +338,7 @@ export function buildLocationScoreOutput(input: LocationScoreComputationInput): 
 
   // ── Magnet density ──────────────────────────────────────────────────────────
   if (input.magnetCount <= 2) {
-    factors.push({ text: 'Мало магнитов спроса рядом — драйверов вокруг объекта недостаточно.', kind: 'negative', weight: 65 });
+    factors.push({ text: 'Мало магнитов спроса рядом — заметных точек спроса вокруг объекта недостаточно.', kind: 'negative', weight: 65 });
   } else if (input.magnetCount >= 7) {
     factors.push({ text: 'Насыщенное окружение поддерживает загрузку в течение года.', kind: 'positive', weight: 55 + input.magnetCount });
   }

@@ -37,7 +37,7 @@ describe('RU residential weak tourist public surface policy', () => {
     });
     const s = decision.publicSummary!;
     expect(s.publicDrivers.map(d => d.textRu).join('\n')).not.toMatch(/эйфелев|eiffel/i);
-    expect(s.headlineRu).not.toBe('Туристический и событийный спрос по якорям карты');
+    expect(s.headlineRu).not.toBe('Туристический и событийный спрос: рядом есть точки досуга и интереса');
   });
 
   it('Moscow: butterfly exhibition + leisure pair must not yield tourist-primary headline alone', () => {
@@ -55,7 +55,7 @@ describe('RU residential weak tourist public surface policy', () => {
       locale: 'ru',
     });
     const s = decision.publicSummary!;
-    expect(s.headlineRu).not.toBe('Туристический и событийный спрос по якорям карты');
+    expect(s.headlineRu).not.toBe('Туристический и событийный спрос: рядом есть точки досуга и интереса');
     expect(s.publicDrivers.map(d => d.textRu).join('\n')).not.toMatch(/бабочек/i);
   });
 
@@ -74,7 +74,7 @@ describe('RU residential weak tourist public surface policy', () => {
       locale: 'ru',
     });
     const s = decision.publicSummary!;
-    expect(s.headlineRu).not.toBe('Туристический и событийный спрос по якорям карты');
+    expect(s.headlineRu).not.toBe('Туристический и событийный спрос: рядом есть точки досуга и интереса');
   });
 
   it('Yalta: real stadium + leisure context keeps tourist/event headline path', () => {

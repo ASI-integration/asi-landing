@@ -126,12 +126,12 @@ const MAGNET_REASON_RU: Record<string, string> = {
   hospital:       'медкластер — стабильный поток персонала и посетителей',
   major_hotel:    'индикатор качества — коммерчески подтверждённая локация',
   railway_station: 'ж/д узел — устойчивый транспортный и деловой спрос',
-  attraction:     'туристический якорь — постоянный досуговый спрос',
+  attraction:     'популярное место — постоянный досуговый интерес гостей',
   convention:     'конгресс-центр — корпоративный спрос, деловые мероприятия',
   university:     'университет — сезонный и долгосрочный образовательный спрос',
   business:       'деловой кластер — корпоративный спрос, командированные',
   stadium:        'стадион / арена — периодические пики спроса в дни матчей',
-  entertainment:  'развлекательный якорь — досуговый трафик',
+  entertainment:  'развлекательное место — досуговый трафик',
   shopping_major: 'торговый центр — высокий поток посетителей',
 };
 
@@ -223,12 +223,12 @@ function getMagnetReason(m: MagnetItem, locale: 'en' | 'ru'): string | undefined
   if (m.categoryId === 'strategicTransportHub') {
     const kind = strategicHubSubtypeLabelRu(m.subType);
     return locale === 'ru'
-      ? `${kind} — крупный узел в зоне транспортной доступности (не пеший якорь)`
+      ? `${kind} — крупный узел в зоне транспортной доступности (в основном на машине или общественном транспорте)`
       : `${kind} — major hub in transit reach (not a walking-distance anchor)`;
   }
   if (m.categoryId === 'specializedMedicalAnchor') {
     return locale === 'ru'
-      ? 'крупная медицина — побочный спрос от пациентов и сопровождающих (не пеший якорь на дистанции)'
+      ? 'крупная медицина — побочный спрос от пациентов и сопровождающих (часто визиты на авто или транспорте)'
       : 'major healthcare — ancillary guest demand from patients and companions (not a walking anchor at distance)';
   }
   if (m.categoryId === 'business' && m.subType) {
@@ -333,7 +333,7 @@ export function generateConclusion(
       const hasWeakAttraction = magnets.some(looksLikeWeakLocalAttractionPoi);
       const fallback = hasWeakAttraction
         ? 'Есть отдельный культурный объект рядом, но сильный туристический поток не подтверждён.'
-        : 'Есть отдельные сигналы спроса рядом, но крупный якорь не подтверждён.';
+        : 'Есть отдельные признаки спроса рядом, но крупная точка притяжения не подтверждена.';
       const driverPart = driversLine ? ` Сигналы: ${driversLine}.` : '';
       return `${fallback}${driverPart}${hotelNote}${splitNote}${compNote}`.trim();
     }
@@ -347,7 +347,7 @@ export function generateConclusion(
         audienceAnalysis?.primaryAudience === 'BUSINESS'
           ? ' Подходит для делового потока и командированных.'
           : '';
-      const driverPart = driversLine ? ` Ключевые драйверы: ${driversLine}.` : ` ${audienceDriver}`;
+      const driverPart = driversLine ? ` Ключевые объекты рядом: ${driversLine}.` : ` ${audienceDriver}`;
       return `${strongLabel}.${b2bNote}${driverPart}${hotelNote}${splitNote}${compNote}`.trim();
     }
     if (idx >= 45) {

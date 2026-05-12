@@ -71,7 +71,7 @@ describe('RU demo: defer misleading paid-report CTA when map data blocks scoring
       },
       locationDecision: {
         publicSummary: {
-          publicDrivers: [{ textRu: 'Устойчивый якорь карты рядом', trace: {} }],
+          publicDrivers: [{ textRu: 'Крупный объект рядом — около 500 м: рядом есть точки досуга и интереса.', trace: {} }],
         },
       },
     } as unknown as LocationAnalysis;
@@ -135,7 +135,7 @@ describe('RU demo: defer misleading paid-report CTA when map data blocks scoring
       },
       locationDecision: {
         publicSummary: {
-          publicDrivers: [{ textRu: 'Устойчивый якорь карты рядом', trace: {} }],
+          publicDrivers: [{ textRu: 'Крупный объект рядом — около 500 м: рядом есть точки досуга и интереса.', trace: {} }],
         },
       },
     } as unknown as LocationAnalysis;

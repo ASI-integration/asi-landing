@@ -355,7 +355,7 @@ function buildHeadlineRu(args: {
     demandSignals: args.demandSignals,
     specialMarketFlags: args.specialMarketFlags,
   });
-  const mixedUnstable = 'Смешанный / неустойчивый спрос по данным карты';
+  const mixedUnstable = 'Данных пока недостаточно для уверенного вывода';
 
   if (strictDrivers.length === 0) {
     return { text: mixedUnstable, reason: 'no_strict_public_drivers_after_surface_gates' };
@@ -382,7 +382,7 @@ function buildHeadlineRu(args: {
       });
       if (medEligible) {
         return {
-          text: 'Смешанный спрос: медицинский якорь заметнее досуговых сигналов',
+          text: 'Смешанный спрос: медицина в окружении заметнее досуга',
           reason: 'medical_public_driver_mass_over_tourist',
         };
       }
@@ -392,7 +392,7 @@ function buildHeadlineRu(args: {
   switch (primary) {
     case 'weak/unclear':
       return {
-        text: 'Профиль спроса по карте ограничен — устойчивые якоря спроса не подтверждены.',
+        text: 'Профиль спроса пока выглядит ограниченно — сильные точки спроса рядом не подтверждены.',
         reason: 'primary_weak_unclear',
       };
     case 'medical': {
@@ -413,25 +413,28 @@ function buildHeadlineRu(args: {
         };
       }
       return {
-        text: 'Спрос с медицинским якорем в зоне (по устойчивым публичным драйверам)',
+        text: 'Медицинские объекты рядом могут поддерживать спрос',
         reason: 'primary_medical',
       };
     }
     case 'corporate/business':
-      return { text: 'Спрос от делового и офисного трафика (по устойчивым публичным драйверам)', reason: 'primary_business' };
+      return { text: 'Спрос от делового и офисного трафика', reason: 'primary_business' };
     case 'transport':
       return { text: 'Транзитный и транспортно-связанный спрос', reason: 'primary_transport' };
     case 'industrial':
       return { text: 'Промышленно-деловой профиль спроса', reason: 'primary_industrial' };
     case 'tourist':
-      return { text: 'Туристический и событийный спрос по якорям карты', reason: 'primary_tourist_verified' };
+      return {
+        text: 'Туристический и событийный спрос: рядом есть точки досуга и интереса',
+        reason: 'primary_tourist_verified',
+      };
     case 'education':
       return { text: 'Образовательно-деловой профиль спроса', reason: 'primary_education' };
     case 'mixed':
       if (med >= 0.14 && businessMass(strictDrivers) >= 0.12) {
         return { text: 'Смешанный спрос: медицина и деловой контекст', reason: 'mixed_medical_business' };
       }
-      return { text: 'Смешанный профиль спроса по данным карты', reason: 'primary_mixed' };
+      return { text: 'Предварительная оценка: спрос выглядит неоднозначным', reason: 'primary_mixed' };
     default:
       return { text: mixedUnstable, reason: 'fallback' };
   }
@@ -440,8 +443,8 @@ function buildHeadlineRu(args: {
 function defaultStrategyRu(primary: LocationPublicSummaryDemandType, cautious: boolean): string[] {
   if (cautious) {
     return [
-      'Публичная демо-оценка опирается только на устойчивые якоря карты — спорные сигналы скрыты.',
-      'Для сценария посуточной аренды и рисков по конкуренции лучше заказать полный отчёт с детализацией.',
+      'Публичная демо-оценка показывает только самые надёжные объекты на карте — спорные места скрыты.',
+      'Для посуточной аренды и оценки конкуренции лучше заказать полный отчёт с детализацией.',
     ];
   }
   switch (primary) {
@@ -469,7 +472,7 @@ function defaultStrategyRu(primary: LocationPublicSummaryDemandType, cautious: b
     default:
       return [
         'Зафиксируйте сценарий гостя (1–3 ночи vs неделя) и под него настройте минимальный стандарт уборки и расходников.',
-        'Если якоря спроса спорные, полный отчёт поможет отделить «красивую карту» от устойчивого дохода.',
+        'Если точки спроса спорные, полный отчёт поможет отделить привлекательную карту от реальной загрузки.',
       ];
   }
 }
@@ -497,12 +500,12 @@ export function applyVerdictContradictionGuards(args: {
 
   if (primary === 'medical' && /туристическ/i.test(verdict)) {
     warnings.push('contradiction_guard:medical_primary_with_tourist_verdict');
-    verdict = 'Спрос с медицинским якорем — туристический сценарий здесь вторичен';
+    verdict = 'Рядом сильнее медицина — туризм для этой точки вторичен';
   }
 
   if (primary === 'tourist' && /медицинск/i.test(verdict)) {
     warnings.push('contradiction_guard:tourist_primary_with_medical_verdict');
-    verdict = 'Туристический и событийный контекст — медицинский сценарий не доминирует в публичном выводе';
+    verdict = 'Туризм и события доминируют — медицинский профиль в публичном выводе не главный';
   }
 
   if (/командированных/i.test(verdict)) {
@@ -518,9 +521,9 @@ export function applyVerdictContradictionGuards(args: {
 }
 
 function cautiousVerdictFromScore(score: number): string {
-  if (score >= 60) return 'Потенциал есть, но публичные якоря спроса неоднозначны — нужен детальный разбор';
-  if (score >= 45) return 'Осторожный вывод: устойчивые публичные драйверы не выделены';
-  return 'Слабый публичный сигнал — для сценария дохода нужен полный отчёт';
+  if (score >= 60) return 'Потенциал есть, но точки спроса рядом неоднозначны — нужен детальный разбор';
+  if (score >= 45) return 'Осторожный вывод: явных сильных точек спроса мало';
+  return 'Предварительная оценка слабая — для точного вывода нужен полный расчёт';
 }
 
 export function buildLocationPublicSummary(args: {
@@ -669,7 +672,7 @@ export function buildLocationPublicSummary(args: {
   const supportingContext: string[] = [];
   if (strictDrivers.length > 0 && rejectedFromPublic.length > 0) {
     supportingContext.push(
-      `Рядом есть дополнительные объекты карты (${rejectedFromPublic.length}), не используемые как публичные драйверы балла.`,
+      `Рядом есть дополнительные объекты на карте (${rejectedFromPublic.length}), они не учтены в упрощённом балле.`,
     );
   }
 

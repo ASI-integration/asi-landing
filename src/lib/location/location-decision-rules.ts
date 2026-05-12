@@ -181,13 +181,13 @@ function roleTailRu(role: MagnetRole): string {
     case 'accessibility':
       return 'плюс к транспортной доступности';
     case 'transport_anchor':
-      return 'стратегический транспортный якорь';
+      return 'удобный выезд на дальние направления и пересадки';
     case 'medical_demand':
       return 'усиливает медицинский спрос';
     case 'business_demand':
-      return 'деловой спрос в зоне доступности';
+      return 'рядом есть учебные или деловые объекты';
     case 'tourist_demand':
-      return 'туристический спрос (есть якоря событий и досуга поблизости)';
+      return 'рядом есть точки досуга и интереса';
     case 'event_demand':
       return 'событийный и досуговый спрос в зоне';
     case 'local_interest':
@@ -206,7 +206,7 @@ function isGenericMetroEvidenceName(name: string): boolean {
 function publicEvidenceDisplayNameRu(mf: MagnetFact): string {
   if (mf.role === 'accessibility' && mf.category.toLowerCase().includes('метро')) {
     if (!mf.name.trim() || isGenericMetroEvidenceName(mf.name)) {
-      return 'Станция метро (название не указано в данных карты)';
+      return 'Станция метро (название не указано в открытых данных)';
     }
   }
   return mf.name.trim();

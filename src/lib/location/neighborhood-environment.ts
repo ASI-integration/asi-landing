@@ -374,15 +374,15 @@ export function buildNeighborhoodEnvironmentLayer(
   }
   if (industrialRaw >= 10) {
     reasonsEn.push('Industrial or logistics-related mapped land use nearby.');
-    reasonsRu.push('Рядом отмечены промышленные или логистические зоны по данным карты.');
+    reasonsRu.push('Рядом отмечены промышленные или логистические зоны.');
   }
   if (aviationRaw >= 12) {
     reasonsEn.push('Close to airport infrastructure or runway geometry in OSM (aviation noise proxy).');
-    reasonsRu.push('Близость к аэропортной инфраструктуре или ВПП по данным OSM (прокси авиашума).');
+    reasonsRu.push('Близость к аэропортной инфраструктуре или ВПП может давать шум и нагрузку.');
   }
   if (nightlifeRaw >= 8) {
     reasonsEn.push('Dense late-night venue footprint (nightlife intensity proxy).');
-    reasonsRu.push('Плотная сеть ночных заведений по карте (прокси ночной нагрузки).');
+    reasonsRu.push('Плотная сеть ночных заведений рядом — возможна повышенная ночная нагрузка.');
   }
   if (transitRaw >= 8) {
     reasonsEn.push('Very high transit stop density — busy pedestrian–bus corridor proxy.');

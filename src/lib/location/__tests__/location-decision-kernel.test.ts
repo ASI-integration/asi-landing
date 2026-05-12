@@ -133,7 +133,7 @@ describe('Location Decision Kernel', () => {
     const bullets = d.uiProjection.keyEvidenceBullets.join('\n');
     expect(bullets).toMatch(/доступности/i);
     expect(bullets).not.toMatch(/туристическим\s+спросом/i);
-    expect(bullets).toMatch(/Станция метро \(название не указано в данных карты\)/);
+    expect(bullets).toMatch(/Станция метро \(название не указано в открытых данных\)/);
   });
 
   it('kernel emits no tourist_demand demandSignals when only local-interest magnets exist', () => {
