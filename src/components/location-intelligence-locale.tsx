@@ -86,6 +86,10 @@ export const LOC_COPY: Record<
     collapse: string;
     noOsm: string;
     loadingSteps: string[];
+    /** RU demo: time-based loading lines (0–10s, 10–25s, 25s+). EN carries equivalents for typing symmetry. */
+    loadingWallClockStages: readonly [string, string, string];
+    /** When map/geocode is partial or timed out — banner fallback if API omits a message */
+    partialCartographicEstimate: string;
     runStarted: string;
     sectionTitle: string;
     sectionLead: string;
@@ -219,6 +223,13 @@ export const LOC_COPY: Record<
       'Reviewing urban-development signals…',
       'Building your short summary…',
     ],
+    loadingWallClockStages: [
+      'Checking the address and surroundings…',
+      'Dense map zone — gathering more context…',
+      'The map is responding slowly. We will show a preliminary summary if some data is still loading.',
+    ] as const,
+    partialCartographicEstimate:
+      'Some map data did not load in time. This is a preliminary estimate.',
     runStarted: 'Run started',
     sectionTitle: 'Location analysis runs automatically',
     sectionLead:
@@ -378,6 +389,13 @@ export const LOC_COPY: Record<
       'Проверяем градостроительные сигналы…',
       'Формируем краткий вывод…',
     ],
+    loadingWallClockStages: [
+      'Анализируем адрес и окружение объекта…',
+      'Плотная зона карты — собираем больше данных…',
+      'Карта отвечает медленно. Покажем предварительный вывод, если часть данных не успеет загрузиться.',
+    ] as const,
+    partialCartographicEstimate:
+      'Часть картографических данных не успела загрузиться. Это предварительная оценка.',
     runStarted: 'расчёт запущен',
     sectionTitle: 'Оцените потенциал вашего объекта',
     sectionLead:

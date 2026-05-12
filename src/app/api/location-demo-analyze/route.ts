@@ -105,14 +105,24 @@ function buildWarnings(args: {
   const { elementsCount, usedFallbackQuery, hadProviderFailure, locale } = args;
   const warnings: NonNullable<AnalysisMeta['warnings']> = [];
 
+  const preliminaryMsg =
+    locale === 'ru'
+      ? 'Часть картографических данных не успела загрузиться. Это предварительная оценка.'
+      : 'Some map data did not load in time. This is a preliminary estimate.';
+
   if (hadProviderFailure) {
-    warnings.push({
-      code: 'osm_provider_unavailable',
-      message: locale === 'ru'
-        ? 'Источник карт временно недоступен: часть сигналов может отсутствовать.'
-        : 'Map provider temporarily unavailable: some signals may be missing.',
-    });
+    if (elementsCount > 0) {
+      warnings.push({ code: 'partial_result', message: preliminaryMsg });
+    } else {
+      warnings.push({
+        code: 'overpass_timeout',
+        message: preliminaryMsg,
+      });
+    }
+  } else if (usedFallbackQuery) {
+    warnings.push({ code: 'partial_result', message: preliminaryMsg });
   }
+
   if (usedFallbackQuery) {
     warnings.push({
       code: 'osm_fallback_query',

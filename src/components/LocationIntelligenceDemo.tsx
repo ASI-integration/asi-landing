@@ -62,6 +62,11 @@ import {
   buildLocationDemoAnalyzePostBody,
   parseLooseGeocodeResult,
 } from '@/lib/location/location-demo-analyze-client-body';
+import {
+  metaHasPartialCartographicWarning,
+  partialCartographicBannerMessage,
+  ruDemoLoadingStageIndex,
+} from '@/components/location-demo-ru-ux';
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
@@ -102,6 +107,12 @@ interface SelectedAddress {
 type AnalysisMetaWithDemoSanity = AnalysisMeta & { demoSanity?: ResidentialDemoSanity };
 
 type SuggestStatus = 'idle' | 'ok' | 'no_results' | 'no_key' | 'error';
+
+type LocationAnalysisFetchOutcome =
+  | { kind: 'ok'; analysis: LocationAnalysis; meta: AnalysisMetaWithDemoSanity }
+  | { kind: 'aborted' }
+  | { kind: 'error' };
+
 // ── Address suggestion fetch (server-side locale routing; no browser Maps SDK) ─
 
 const SUGGEST_TIMEOUT_MS = 8_000;
@@ -257,7 +268,7 @@ async function fetchLocationAnalysis(
     inputAddress?: string;
     geocodeResult?: GeocodeResult | null;
   },
-): Promise<{ analysis: LocationAnalysis; meta: AnalysisMeta } | null> {
+): Promise<LocationAnalysisFetchOutcome> {
   try {
     const locale: 'en' | 'ru' =
       typeof window !== 'undefined' && window.location?.pathname?.startsWith('/ru') ? 'ru' : 'en';
@@ -275,13 +286,13 @@ async function fetchLocationAnalysis(
       body: JSON.stringify(body),
       signal,
     });
-    if (!res.ok) return null;
-    const data = await res.json() as {
+    if (!res.ok) return { kind: 'error' };
+    const data = await res.json().catch(() => null) as {
       analysis?: LocationAnalysis;
       meta?: AnalysisMetaWithDemoSanity;
       demoSanity?: ResidentialDemoSanity;
-    };
-    if (!data.analysis) return null;
+    } | null;
+    if (!data || typeof data !== 'object' || !data.analysis) return { kind: 'error' };
     const analysis: LocationAnalysis = patchLegacyLocationAnalysis({
       ...data.analysis,
       accessibilityStops: data.analysis.accessibilityStops ?? [],
@@ -295,9 +306,10 @@ async function fetchLocationAnalysis(
     const meta: AnalysisMetaWithDemoSanity = data.demoSanity
       ? { ...metaBase, demoSanity: data.demoSanity }
       : metaBase;
-    return { analysis, meta };
-  } catch {
-    return null;
+    return { kind: 'ok', analysis, meta };
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') return { kind: 'aborted' };
+    return { kind: 'error' };
   }
 }
 
@@ -651,6 +663,26 @@ function ConfidenceWarningsStrip({ meta, locale }: { meta: AnalysisMeta; locale:
   );
 }
 
+/** RU demo: map/geocode partial or slow (`partial_result` / `overpass_timeout` / `geocode_timeout`). */
+function RuPartialCartographicResultBanner({
+  locale,
+  meta,
+  fallbackCopy,
+}: {
+  locale: LocDemoLocale;
+  meta: AnalysisMeta | null;
+  fallbackCopy: string;
+}) {
+  if (locale !== 'ru' || !meta || !metaHasPartialCartographicWarning(meta)) return null;
+  return (
+    <div className="px-5 py-3 border-b border-amber-900/40 bg-amber-950/25" role="status">
+      <p className="text-[13px] text-amber-100/95 leading-snug">
+        {partialCartographicBannerMessage(meta, fallbackCopy)}
+      </p>
+    </div>
+  );
+}
+
 // ── Idle map panel ─────────────────────────────────────────────────────────────
 
 const BLOBS = [
@@ -765,11 +797,20 @@ function IdleMapPanel({ locale, c }: { locale: LocDemoLocale; c: (typeof LOC_COP
 
 // ── Map loading overlay (shared) ─────────────────────────────────────────────
 
-function MapLoadingOverlay({ c }: { c: (typeof LOC_COPY)['en'] }) {
+function MapLoadingOverlay({
+  c,
+  titleOverride,
+}: {
+  c: (typeof LOC_COPY)['en'];
+  /** When set (RU staged loading), replaces {@link c.mapLoadingTitle}. */
+  titleOverride?: string;
+}) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm rounded-2xl">
       <div className="w-7 h-7 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin mb-4" />
-      <p className="text-white font-semibold text-sm">{c.mapLoadingTitle}</p>
+      <p className="text-white font-semibold text-sm px-4 text-center leading-snug" aria-live="polite">
+        {titleOverride ?? c.mapLoadingTitle}
+      </p>
       <p className="mt-1 text-xs text-slate-500">{c.mapLoadingSub}</p>
     </div>
   );
@@ -788,6 +829,7 @@ function TwoGISMapPanel({
   locale: _locale,
   c,
   height = 420,
+  loadingMapTitleOverride,
 }: {
   lat: number;
   lon: number;
@@ -795,6 +837,7 @@ function TwoGISMapPanel({
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
   height?: number;
+  loadingMapTitleOverride?: string;
 }) {
   const apiKey = process.env.NEXT_PUBLIC_TWOGIS_API_KEY;
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -850,7 +893,9 @@ function TwoGISMapPanel({
         className="relative w-full rounded-2xl border border-slate-800 overflow-hidden h-[320px] sm:h-[380px] lg:h-[360px] xl:h-[420px]"
       >
         <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
-        {(!sdkReady || loading) && <MapLoadingOverlay c={c} />}
+        {(!sdkReady || loading) && (
+          <MapLoadingOverlay c={c} titleOverride={loading ? loadingMapTitleOverride : undefined} />
+        )}
       </div>
     );
   }
@@ -878,7 +923,7 @@ function TwoGISMapPanel({
         style={{ display: 'block' }}
         onError={() => setIframeError(true)}
       />
-      {loading && <MapLoadingOverlay c={c} />}
+      {loading && <MapLoadingOverlay c={c} titleOverride={loadingMapTitleOverride} />}
     </div>
   );
 }
@@ -2216,6 +2261,11 @@ function ASIPanel({
         transition: 'opacity 0.4s ease, transform 0.4s ease',
       }}
     >
+      <RuPartialCartographicResultBanner
+        locale={locale}
+        meta={meta}
+        fallbackCopy={c.partialCartographicEstimate}
+      />
       {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       {meta && !isRuResidentialDemo ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
       {/* Main result dashboard — 3 columns on desktop */}
@@ -3073,6 +3123,11 @@ function CommercialASIPanel({
       }}
     >
       {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
+      <RuPartialCartographicResultBanner
+        locale={locale}
+        meta={meta}
+        fallbackCopy={c.partialCartographicEstimate}
+      />
 
       {dataBlocked ? (
         <div className="px-5 py-4 border-b border-slate-800/60">
@@ -3179,6 +3234,8 @@ export function LocationIntelligenceDemo({
   const mapFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
   const heatmapDivRef = useRef<HTMLDivElement>(null);
+  /** Wall-clock elapsed during analysis loading — drives staged RU loading copy only. */
+  const [ruLoadingElapsedMs, setRuLoadingElapsedMs] = useState(0);
 
   function showMapFeedback(msg: string) {
     if (mapFeedbackTimerRef.current) clearTimeout(mapFeedbackTimerRef.current);
@@ -3304,6 +3361,14 @@ export function LocationIntelligenceDemo({
     }
   }
 
+  useEffect(() => {
+    if (phase !== 'loading' || locale !== 'ru') return;
+    const t0 = Date.now();
+    setRuLoadingElapsedMs(0);
+    const id = window.setInterval(() => setRuLoadingElapsedMs(Date.now() - t0), 400);
+    return () => window.clearInterval(id);
+  }, [phase, locale]);
+
   function reset() {
     setSelected(null);
     setPhase('idle');
@@ -3328,19 +3393,25 @@ export function LocationIntelligenceDemo({
     const abortTimeout = setTimeout(() => controller.abort(), LOCATION_ANALYSIS_FETCH_MS);
 
     const STEP_MS = 680;
-    const tickers = c.loadingSteps.map((_, i) =>
-      i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * STEP_MS),
-    ).filter(Boolean) as ReturnType<typeof setTimeout>[];
+    const tickers =
+      locale === 'ru'
+        ? ([] as ReturnType<typeof setTimeout>[])
+        : c.loadingSteps
+          .map((_, i) =>
+            i === 0 ? null : setTimeout(() => { if (!cancelled) setStep(i); }, i * STEP_MS),
+          )
+          .filter(Boolean) as ReturnType<typeof setTimeout>[];
 
     const fetchStart = Date.now();
     fetchLocationAnalysis(selected.lat, selected.lon, controller.signal, {
       spatialFoundation: mode === 'commercial',
       inputAddress: selected.inputAddress ?? selected.value,
       geocodeResult: selected.geocodeResult,
-    }).then(result => {
+    }).then(outcome => {
       clearTimeout(abortTimeout);
       if (cancelled) return;
-      const resolvedAnalysis = result?.analysis ?? (() => {
+
+      const emptyAnalysis = () => {
         const empty = buildAnalysis([], selected.lat, selected.lon, {
           spatialFoundation: mode === 'commercial',
         });
@@ -3352,8 +3423,35 @@ export function LocationIntelligenceDemo({
           cacheServed: false,
         });
         return empty;
-      })();
-      const resolvedMetaBase = result?.meta ?? null;
+      };
+
+      let resolvedAnalysis: LocationAnalysis;
+      let resolvedMetaBase: AnalysisMeta | null;
+
+      if (outcome.kind === 'ok') {
+        resolvedAnalysis = outcome.analysis;
+        resolvedMetaBase = outcome.meta;
+      } else {
+        resolvedAnalysis = emptyAnalysis();
+        resolvedMetaBase =
+          locale === 'ru' && outcome.kind === 'aborted'
+            ? {
+              freshness: 'fresh',
+              updatedAt: new Date().toISOString(),
+              source: 'client-timeout',
+              cached: false,
+              confidence: 'low',
+              analysisIncomplete: true,
+              warnings: [
+                {
+                  code: 'overpass_timeout',
+                  message: c.partialCartographicEstimate,
+                },
+              ],
+            }
+            : null;
+      }
+
       const resolvedMeta: AnalysisMeta | null =
         resolvedMetaBase && usedFallbackGeocode
           ? {
@@ -3390,6 +3488,11 @@ export function LocationIntelligenceDemo({
       tickers.forEach(clearTimeout);
     };
   }, [phase, selected, locale, c, mode, usedFallbackGeocode]);
+
+  const ruLoadingWallClockLine =
+    locale === 'ru'
+      ? c.loadingWallClockStages[ruDemoLoadingStageIndex(ruLoadingElapsedMs)]
+      : undefined;
 
   return (
     <section
@@ -3683,7 +3786,7 @@ export function LocationIntelligenceDemo({
                   {geocodeFallbackBusy
                     ? c.submitGeocodingAddress
                     : phase === 'loading'
-                      ? c.loadingSteps[step]
+                      ? (locale === 'ru' ? ruLoadingWallClockLine : c.loadingSteps[step])
                       : mode === 'commercial' && locale === 'ru'
                         ? 'Пространственный анализ точки'
                         : c.submitIdle}
@@ -3705,6 +3808,9 @@ export function LocationIntelligenceDemo({
                   loading={phase === 'loading'}
                   locale={locale}
                   c={c}
+                  loadingMapTitleOverride={
+                    locale === 'ru' && phase === 'loading' ? ruLoadingWallClockLine : undefined
+                  }
                 />
               ) : (
                 <IdleMapPanel locale={locale} c={c} />

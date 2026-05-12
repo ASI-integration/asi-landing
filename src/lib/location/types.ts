@@ -339,7 +339,13 @@ export interface AnalysisMeta {
       | 'osm_empty_result'
       | 'osm_sparse_result'
       | 'analysis_incomplete'
-      | 'score_blocked_due_to_incomplete_data';
+      | 'score_blocked_due_to_incomplete_data'
+      /** Map data incomplete but a preliminary analysis is shown */
+      | 'partial_result'
+      /** Overpass / map fetch timed out or failed before full coverage */
+      | 'overpass_timeout'
+      /** Forward-geocode step exceeded client budget (demo UX) */
+      | 'geocode_timeout';
     message: string;
   }>;
 }
