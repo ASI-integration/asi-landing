@@ -65,6 +65,7 @@ import {
 import {
   metaHasPartialCartographicWarning,
   partialCartographicBannerMessage,
+  ruDemoDeferPaidReportForMapRetry,
   ruDemoLoadingStageIndex,
 } from '@/components/location-demo-ru-ux';
 
@@ -2016,6 +2017,7 @@ function ASIPanel({
   locale,
   c,
   mode,
+  onRetryAnalysis,
 }: {
   analysis: LocationAnalysis;
   address: string;
@@ -2024,6 +2026,7 @@ function ASIPanel({
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
   mode: LocationAnalysisMode;
+  onRetryAnalysis?: () => void;
 }) {
   const router = useRouter();
   const {
@@ -2251,6 +2254,10 @@ function ASIPanel({
   const dashboardClaimRows: LocationPublicClaim[] =
     isRuResidentialDemo ? residentialUiClaims.slice(0, 2) : [];
 
+  const deferPaidReportForMapRetry =
+    Boolean(onRetryAnalysis) &&
+    ruDemoDeferPaidReportForMapRetry({ locale, meta, analysis, mode });
+
   return (
     <>
     <div
@@ -2406,16 +2413,41 @@ function ASIPanel({
                   : band.label}
             </p>
             <div className="mt-4 space-y-2">
-              <button
-                type="button"
-                onClick={requestFullReportAsync}
-                disabled={fullReportBusy}
-                className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-              >
-                {locale === 'ru'
-                  ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
-                  : (fullReportBusy ? 'Generating…' : 'Request report')}
-              </button>
+              {deferPaidReportForMapRetry ? (
+                <>
+                  <p className="text-[12px] text-slate-500 leading-snug">{c.mapDataIncompletePaidReportPrerequisite}</p>
+                  <button
+                    type="button"
+                    onClick={onRetryAnalysis}
+                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    {c.mapDataIncompleteRetryCta}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestFullReportAsync}
+                    disabled={fullReportBusy}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:opacity-50 border border-slate-800/60 text-slate-200 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    {locale === 'ru'
+                      ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                      : (fullReportBusy ? 'Generating…' : 'Request report')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={requestFullReportAsync}
+                    disabled={fullReportBusy}
+                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    {locale === 'ru'
+                      ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                      : (fullReportBusy ? 'Generating…' : 'Request report')}
+                  </button>
+                </>
+              )}
               {locale === 'ru' ? (
                 <button
                   type="button"
@@ -2449,7 +2481,7 @@ function ASIPanel({
       <div className="px-5 py-4 border-b border-slate-800/40">
         {isRuResidentialDemo ? (
           <p className="text-[17px] md:text-[18px] font-medium text-slate-300 leading-snug">
-            Краткая оценка локации. Подробный расчёт доступен в полном отчёте.
+            {dataBlocked ? c.mapDataIncompletePreviewLead : 'Краткая оценка локации. Подробный расчёт доступен в полном отчёте.'}
           </p>
         ) : (
           <p className="text-[14px] text-slate-500 leading-snug">
@@ -3015,6 +3047,7 @@ function CommercialASIPanel({
   meta,
   locale,
   c,
+  onRetryAnalysis,
 }: {
   analysis: LocationAnalysis;
   address: string;
@@ -3022,6 +3055,7 @@ function CommercialASIPanel({
   meta: AnalysisMeta | null;
   locale: LocDemoLocale;
   c: (typeof LOC_COPY)['en'];
+  onRetryAnalysis?: () => void;
 }) {
   const router = useRouter();
   const dataBlocked = locationDemoPresentationBlocked(analysis);
@@ -3113,6 +3147,10 @@ function CommercialASIPanel({
     })();
   }
 
+  const deferPaidReportForMapRetry =
+    Boolean(onRetryAnalysis) &&
+    ruDemoDeferPaidReportForMapRetry({ locale, meta, analysis, mode: 'commercial' });
+
   return (
     <div
       className={`rounded-2xl border ${band.border} ${band.bg} overflow-hidden`}
@@ -3171,22 +3209,44 @@ function CommercialASIPanel({
       ) : null}
 
       {/* CTA */}
-      <div className="px-5 py-5">
-        <button
-          type="button"
-          onClick={openCommercialReport}
-          className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-        >
-          Открыть демо‑перmalink (пространственный)
-        </button>
-        <button
-          type="button"
-          onClick={requestFullReportAsync}
-          disabled={fullReportBusy}
-          className="mt-2 w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-        >
-          {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать отчёт'}
-        </button>
+      <div className="px-5 py-5 space-y-2">
+        {deferPaidReportForMapRetry ? (
+          <>
+            <p className="text-[12px] text-slate-500 leading-snug">{c.mapDataIncompletePaidReportPrerequisite}</p>
+            <button
+              type="button"
+              onClick={onRetryAnalysis}
+              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              {c.mapDataIncompleteRetryCta}
+            </button>
+            <button
+              type="button"
+              onClick={openCommercialReport}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              Открыть демо‑перmalink (пространственный)
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={openCommercialReport}
+              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              Открыть демо‑перmalink (пространственный)
+            </button>
+            <button
+              type="button"
+              onClick={requestFullReportAsync}
+              disabled={fullReportBusy}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать отчёт'}
+            </button>
+          </>
+        )}
         {fullReportErr ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
             Не удалось запустить полный отчёт: {fullReportErr}
@@ -3442,6 +3502,7 @@ export function LocationIntelligenceDemo({
               cached: false,
               confidence: 'low',
               analysisIncomplete: true,
+              scoreBlockedDueToIncompleteData: true,
               warnings: [
                 {
                   code: 'overpass_timeout',
@@ -3728,6 +3789,7 @@ export function LocationIntelligenceDemo({
                     meta={analysisMeta}
                     locale={locale}
                     c={c}
+                    onRetryAnalysis={startAnalysisRun}
                   />
                 ) : (
                   <ASIPanel
@@ -3738,6 +3800,7 @@ export function LocationIntelligenceDemo({
                     locale={locale}
                     c={c}
                     mode={mode}
+                    onRetryAnalysis={startAnalysisRun}
                   />
                 )}
               </div>

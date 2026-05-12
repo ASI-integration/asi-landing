@@ -90,6 +90,12 @@ export const LOC_COPY: Record<
     loadingWallClockStages: readonly [string, string, string];
     /** When map/geocode is partial or timed out — banner fallback if API omits a message */
     partialCartographicEstimate: string;
+    /** Primary action when preview failed due to missing map data */
+    mapDataIncompleteRetryCta: string;
+    /** Clarifies paid / full report needs successful map collection */
+    mapDataIncompletePaidReportPrerequisite: string;
+    /** Replaces teaser copy below dashboard when preview could not be built */
+    mapDataIncompletePreviewLead: string;
     runStarted: string;
     sectionTitle: string;
     sectionLead: string;
@@ -230,6 +236,11 @@ export const LOC_COPY: Record<
     ] as const,
     partialCartographicEstimate:
       'Some map data did not load in time. This is a preliminary estimate.',
+    mapDataIncompleteRetryCta: 'Retry analysis',
+    mapDataIncompletePaidReportPrerequisite:
+      'A full calculated report needs successful map data collection. Right now the preview cannot be completed.',
+    mapDataIncompletePreviewLead:
+      'Brief scoring and paid reports rely on complete map data — that did not happen for this attempt.',
     runStarted: 'Run started',
     sectionTitle: 'Location analysis runs automatically',
     sectionLead:
@@ -396,6 +407,11 @@ export const LOC_COPY: Record<
     ] as const,
     partialCartographicEstimate:
       'Часть картографических данных не успела загрузиться. Это предварительная оценка.',
+    mapDataIncompleteRetryCta: 'Повторить анализ',
+    mapDataIncompletePaidReportPrerequisite:
+      'Полный отчёт с расчётом возможен только после успешного сбора данных карты. Сейчас предварительную оценку завершить нельзя.',
+    mapDataIncompletePreviewLead:
+      'Краткая оценка и платный отчёт опираются на полный сбор данных карты — в этот раз этого не произошло.',
     runStarted: 'расчёт запущен',
     sectionTitle: 'Оцените потенциал вашего объекта',
     sectionLead:

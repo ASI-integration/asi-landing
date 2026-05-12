@@ -345,7 +345,9 @@ export interface AnalysisMeta {
       /** Overpass / map fetch timed out or failed before full coverage */
       | 'overpass_timeout'
       /** Forward-geocode step exceeded client budget (demo UX) */
-      | 'geocode_timeout';
+      | 'geocode_timeout'
+      /** Map fetch insufficient for a meaningful preview (optional diagnostic code) */
+      | 'insufficient_data';
     message: string;
   }>;
 }

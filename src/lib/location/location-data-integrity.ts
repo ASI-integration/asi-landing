@@ -10,10 +10,10 @@ import type { LocationScoringIntegritySnapshot, LocationScoringTrace } from './l
 
 /** Russian copy for free/demo UI when analysis cannot be scored reliably */
 export const LOCATION_DEMO_INCOMPLETE_RU =
-  'Не удалось получить достаточно данных по карте. Попробуйте повторить анализ или запросить полный отчёт.';
+  'Не удалось получить достаточно данных по карте для предварительной оценки.';
 
 export const LOCATION_DEMO_INCOMPLETE_EN =
-  'We could not retrieve enough map data for this location. Please try the analysis again or request a full report.';
+  "We couldn't retrieve enough map data to complete this preview.";
 
 export type LocationDataIntegrityWarningCode =
   | 'osm_provider_unavailable'

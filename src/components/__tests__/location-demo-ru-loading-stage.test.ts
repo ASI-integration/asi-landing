@@ -44,5 +44,11 @@ describe('partial cartographic warnings helper', () => {
       warnings: [{ code: 'overpass_timeout', message: '  server msg  ' }],
     };
     expect(partialCartographicBannerMessage(mWorded, 'fallback')).toBe('server msg');
+
+    const mInsufficient: AnalysisMeta = {
+      ...mSparse,
+      warnings: [{ code: 'insufficient_data', message: 'bad' }],
+    };
+    expect(metaHasPartialCartographicWarning(mInsufficient)).toBe(true);
   });
 });
