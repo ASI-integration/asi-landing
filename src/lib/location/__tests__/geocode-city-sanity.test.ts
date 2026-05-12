@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { GeocodeResult } from '../providers/types';
 import { evaluateRuGeocodeCitySanity, extractRuRequestedCityToken } from '../address-providers/geocode-city-sanity';
 import { inferCityScaleFromRuAddress } from '../city-scale-from-address';
 import { buildAnalysis } from '../gravity-scoring';
 import { enrichAnalysisWithReportProjection } from '../location-scoring-projection';
-import { buildLocationDecision } from '../location-decision-kernel';
+import * as decisionKernel from '../location-decision-kernel';
 
 describe('geocode city sanity (RU)', () => {
   it('flags Kemerovo request vs Sosnovka locality', () => {
@@ -67,6 +67,63 @@ describe('canonical cityScale table gaps', () => {
 });
 
 describe('geocode mismatch → unknown macro + warnings', () => {
+  it('attachLocationDecisionToAnalysis (demo API path): Кемерово typed vs Сосновка + Новокузнецкий округ', () => {
+    const elements = [
+      {
+        type: 'node' as const,
+        id: 9_000_002,
+        lat: 54.1,
+        lon: 86.2,
+        tags: { amenity: 'hospital', name: 'Поликлиника' },
+      },
+    ];
+    const analysis = buildAnalysis(elements, 54.1, 86.2, {
+      spatialFoundation: false,
+      inputAddress: 'Кемерово, 2-я Луговая ул., 27',
+    });
+    const geo: GeocodeResult = {
+      lat: 54.1,
+      lon: 86.2,
+      displayName: '2-я Луговая ул., 27, Сосновка, Россия',
+      locality: 'Сосновка',
+      municipality: 'Сосновка',
+      adminArea2: 'Новокузнецкий округ',
+      adminArea1: 'Кемеровская область',
+    };
+    const merged = decisionKernel.attachLocationDecisionToAnalysis(analysis, {
+      inputAddress: 'Кемерово, 2-я Луговая ул., 27',
+      coordinates: { lat: 54.1, lon: 86.2 },
+      rawElements: elements,
+      locale: 'ru',
+      geocodeResult: geo,
+    });
+    expect(merged.locationDecision.publicSummary?.cityScale).toBe('unknown');
+    expect(merged.locationDecision.warnings.some(w => w.includes('warning: geocode_city_mismatch'))).toBe(true);
+    expect(merged.locationDecision.demandKernelV1?.cityScaleInferenceProvenance).toMatch(/geocode_city_mismatch/);
+  });
+
+  it('enrichAnalysisWithReportProjection forwards geocodeResult to buildLocationDecision', () => {
+    const elements = [
+      {
+        type: 'node' as const,
+        id: 9_000_003,
+        lat: 55.0,
+        lon: 82.9,
+        tags: { amenity: 'cafe', name: 'Кафе' },
+      },
+    ];
+    const analysis = buildAnalysis(elements, 55.0, 82.9, { spatialFoundation: false, inputAddress: 'Кемерово, ул. Тест' });
+    const geo: GeocodeResult = { lat: 54.0, lon: 86.0, locality: 'Сосновка' };
+    const spy = vi.spyOn(decisionKernel, 'buildLocationDecision');
+    enrichAnalysisWithReportProjection(analysis, { reportMode: 'free', rawElements: elements, geocodeResult: geo });
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        geocodeResult: expect.objectContaining({ locality: 'Сосновка' }),
+      }),
+    );
+    spy.mockRestore();
+  });
+
   it('buildLocationDecision downgrades scale when geocode disagrees', () => {
     const elements = [
       {
@@ -95,7 +152,7 @@ describe('geocode mismatch → unknown macro + warnings', () => {
       locality: 'Сосновка',
     };
 
-    const d = buildLocationDecision({
+    const d = decisionKernel.buildLocationDecision({
       analysis: projected,
       inputAddress: 'Кемерово, тестовая улица',
       coordinates: trace.coordinates,

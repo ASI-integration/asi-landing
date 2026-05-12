@@ -202,4 +202,36 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
       'Рядом есть локальные офисные точки, но сильный деловой магнит не подтверждён.',
     );
   });
+
+  it('passes geocodeResult into locationDecision for RU city mismatch (geocode_city_mismatch)', async () => {
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: 60.014315,
+        lon: 30.253552,
+        locale: 'ru',
+        inputAddress: 'Кемерово, 2-я Луговая ул., 27',
+        geocodeResult: {
+          lat: 60.014315,
+          lon: 30.253552,
+          locality: 'Сосновка',
+          municipality: 'Сосновка',
+          adminArea2: 'Новокузнецкий округ',
+          adminArea1: 'Кемеровская область',
+          displayName: '2-я Луговая ул., 27, Сосновка',
+        },
+      }),
+    });
+
+    const res = await POST(req as any);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    const ld = body.analysis.locationDecision;
+    expect(ld).toBeTruthy();
+    expect(ld.publicSummary?.cityScale).toBe('unknown');
+    expect(ld.warnings.some((w: string) => w.includes('warning: geocode_city_mismatch'))).toBe(true);
+    expect(ld.demandKernelV1?.cityScaleInferenceProvenance).toMatch(/geocode_city_mismatch/);
+  });
 });

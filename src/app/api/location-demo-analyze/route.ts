@@ -16,10 +16,36 @@ import {
   logKorzunPipelineDiagnostics,
 } from '@/lib/location/korzun-pipeline-diagnostics';
 import type { AnalysisMeta } from '@/lib/location/types';
+import type { GeocodeResult } from '@/lib/location/providers/types';
 
 export const dynamic = 'force-dynamic';
 /** Allow slow Overpass batches on Vercel (default is often 10s). */
 export const maxDuration = 60;
+
+function parseOptionalInputAddress(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const t = v.trim();
+  return t || undefined;
+}
+
+/** Accepts structured forward-geocode payload from the client (same shape as {@link GeocodeResult}). */
+function parseOptionalGeocodeResult(v: unknown): GeocodeResult | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.lat !== 'number' || typeof o.lon !== 'number') return undefined;
+  if (!Number.isFinite(o.lat) || !Number.isFinite(o.lon)) return undefined;
+  const s = (x: unknown): string | undefined => (typeof x === 'string' ? x : undefined);
+  return {
+    lat: o.lat,
+    lon: o.lon,
+    displayName: s(o.displayName),
+    locality: s(o.locality),
+    settlement: s(o.settlement),
+    municipality: s(o.municipality),
+    adminArea1: s(o.adminArea1),
+    adminArea2: s(o.adminArea2),
+  };
+}
 
 function sourceLabel(usedFallback: boolean | undefined): string {
   return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';
@@ -131,8 +157,10 @@ function withDemoSanityPayload(args: {
   lon: number;
   osmElements?: readonly OSMElement[];
   inputAddress?: string;
+  geocodeResult?: GeocodeResult;
 }) {
-  const { analysis, elementsCount, meta, locale, wantSpatial, lat, lon, osmElements, inputAddress } = args;
+  const { analysis, elementsCount, meta, locale, wantSpatial, lat, lon, osmElements, inputAddress, geocodeResult } =
+    args;
   const blocked = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
 
   let analysisOut = analysis;
@@ -147,6 +175,7 @@ function withDemoSanityPayload(args: {
     coordinates: { lat, lon },
     rawElements: osmElements,
     locale,
+    ...(geocodeResult ? { geocodeResult } : {}),
   });
 
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
@@ -186,11 +215,20 @@ async function fetchAndCache(lat: number, lon: number): Promise<void> {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { lat?: unknown; lon?: unknown; spatialFoundation?: unknown; locale?: unknown };
+    const body = await req.json() as {
+      lat?: unknown;
+      lon?: unknown;
+      spatialFoundation?: unknown;
+      locale?: unknown;
+      inputAddress?: unknown;
+      geocodeResult?: unknown;
+    };
     const lat = typeof body.lat === 'number' ? body.lat : null;
     const lon = typeof body.lon === 'number' ? body.lon : null;
     const wantSpatial = body.spatialFoundation === true;
     const locale: 'en' | 'ru' = body.locale === 'en' ? 'en' : 'ru';
+    const inputAddress = parseOptionalInputAddress(body.inputAddress);
+    const geocodeResult = parseOptionalGeocodeResult(body.geocodeResult);
 
     if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       return NextResponse.json({ error: 'lat/lon required' }, { status: 400 });
@@ -299,6 +337,8 @@ export async function POST(req: NextRequest) {
         wantSpatial,
         lat,
         lon,
+        inputAddress,
+        geocodeResult,
       }));
     }
 
@@ -389,6 +429,8 @@ export async function POST(req: NextRequest) {
       lat,
       lon,
       osmElements: elements,
+      inputAddress,
+      geocodeResult,
     }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

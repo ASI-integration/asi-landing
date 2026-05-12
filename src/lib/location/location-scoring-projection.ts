@@ -2,6 +2,7 @@
  * Report/demo projection — attaches evidence + public wording AFTER numeric scoring.
  */
 
+import type { GeocodeResult } from './providers/types';
 import type { LocationAnalysis, OSMElement } from './types';
 import type { LocationScoringTrace } from './location-scoring-trace';
 import { sanitizeRuPublicFactor } from './demo-public-copy';
@@ -82,7 +83,12 @@ export function applyReportProjectionToTrace(
 
 export function enrichAnalysisWithReportProjection(
   analysis: LocationAnalysis,
-  opts: { reportMode: 'free' | 'paid'; rawElements?: readonly OSMElement[] },
+  opts: {
+    reportMode: 'free' | 'paid';
+    rawElements?: readonly OSMElement[];
+    /** When set (e.g. demo analyze after forward geocode), kernel bullets match {@link buildLocationDecision} city sanity. */
+    geocodeResult?: GeocodeResult | null;
+  },
 ): LocationAnalysis {
   const trace = analysis.scoringTrace;
   const score = analysis.locationScore;
@@ -98,6 +104,7 @@ export function enrichAnalysisWithReportProjection(
           coordinates: trace.coordinates,
           rawElements: opts.rawElements,
           selectedGeocodeResult: trace.selectedGeocodeResult,
+          geocodeResult: opts.geocodeResult,
           locale: 'ru',
         }).uiProjection.keyEvidenceBullets
       : undefined;
