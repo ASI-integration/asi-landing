@@ -33,6 +33,12 @@ export function isGenericMedicalSurfaceName(name: string | undefined): boolean {
   return false;
 }
 
+function isStrongNamedMedicalSurfaceName(name: string | undefined): boolean {
+  if (isGenericMedicalSurfaceName(name)) return false;
+  const n = name?.normalize('NFKC').trim().toLowerCase() ?? '';
+  return /областн|краев|республик|федеральн|научн|научно-исследовательск|(?:^|\s)нии(?:$|\s|\W)|клиническ|университетск|перинатальн|онколог|кардиолог|инфекцион|многопрофильн|гематолог|трансфузиолог/i.test(n);
+}
+
 function driverContributionWeight(d: LocationDemandScoredDriver): number {
   if (!d.accepted) return 0;
   if (d.driverKind === 'noise' || d.driverKind === 'local_interest') return 0;
@@ -88,6 +94,48 @@ export function countVerifiedMajorMedicalAnchors(
   return anchors.size;
 }
 
+export function countStrongNamedMedicalAnchors(
+  scored: readonly LocationDemandScoredDriver[],
+  magnets: readonly MagnetItem[],
+  specialMarketFlags: readonly string[],
+): number {
+  const anchors = new Set<string>();
+  const cluster = specialMarketFlags.includes('regional_medical_cluster');
+
+  for (const d of scored) {
+    if (!d.accepted || d.demandTypeVote !== 'medical') continue;
+    if (d.driverKind !== 'real_demand_driver') continue;
+    const m = magnetForScoredDriver(d, magnets);
+    if (!m || !isStrongNamedMedicalSurfaceName(m.name)) continue;
+
+    if (cluster && d.resolvedTier <= 2) {
+      anchors.add(d.magnetFactId);
+      continue;
+    }
+    if (d.resolvedTier === 1 && d.scaleClass !== 'weak_local') {
+      anchors.add(d.magnetFactId);
+      continue;
+    }
+    if (d.resolvedTier === 2 && (d.scaleClass === 'verified_major' || d.scaleClass === 'medium')) {
+      anchors.add(d.magnetFactId);
+    }
+  }
+
+  return anchors.size;
+}
+
+export function medicalPrimaryHighScoreEligible(args: {
+  scoredDrivers: readonly LocationDemandScoredDriver[];
+  magnets: readonly MagnetItem[];
+  specialMarketFlags: readonly string[];
+}): boolean {
+  if (args.specialMarketFlags.includes('regional_medical_cluster')) {
+    return countStrongNamedMedicalAnchors(args.scoredDrivers, args.magnets, args.specialMarketFlags) >= 1;
+  }
+
+  return countStrongNamedMedicalAnchors(args.scoredDrivers, args.magnets, args.specialMarketFlags) >= 2;
+}
+
 export function medicalPrimaryStrongPublicCopyEligible(args: {
   strictDrivers: readonly LocationDemandScoredDriver[];
   magnets: readonly MagnetItem[];
@@ -100,15 +148,15 @@ export function medicalPrimaryStrongPublicCopyEligible(args: {
   );
   if (!medical.length) return false;
 
-  const namedNonGeneric = medical.filter(d => {
+  const strongNamed = medical.filter(d => {
     const m = magnetForScoredDriver(d, args.magnets);
-    return m && !isGenericMedicalSurfaceName(m.name);
+    return m && isStrongNamedMedicalSurfaceName(m.name);
   });
-  if (namedNonGeneric.length >= 2) return true;
+  if (strongNamed.length >= 2) return true;
 
-  if (namedNonGeneric.some(d => d.scaleClass === 'verified_major' && d.resolvedTier <= 2)) return true;
-  if (namedNonGeneric.some(d => d.resolvedTier === 1 && d.scaleClass !== 'weak_local')) return true;
-  if (namedNonGeneric.some(d => d.resolvedTier === 2 && d.scaleClass === 'medium')) return true;
+  if (strongNamed.some(d => d.scaleClass === 'verified_major' && d.resolvedTier <= 2)) return true;
+  if (strongNamed.some(d => d.resolvedTier === 1 && d.scaleClass !== 'weak_local')) return true;
+  if (strongNamed.some(d => d.resolvedTier === 2 && d.scaleClass === 'medium')) return true;
 
   return false;
 }

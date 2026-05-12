@@ -6,7 +6,11 @@
  * Intentionally does not import `./city-scale-from-address` to avoid a circular module graph.
  */
 
-export type RuMarketType = 'satellite_commuter_suburb' | 'exurb_settlement';
+export type RuMarketType =
+  | 'satellite_commuter_suburb'
+  | 'exurb_settlement'
+  | 'remote_industrial_city'
+  | 'mono_industrial_city';
 
 export type RuMarketKernelCityScale = 'medium_city';
 
@@ -82,11 +86,57 @@ const SATELLITE_DEFAULT_RULES: readonly RuMarketContextCapOverrideRule[] = [
   { id: 'multiple_verified_major_anchors', minVerifiedMajorAnchors: 2, scoreCap: 96 },
 ];
 
+const REMOTE_INDUSTRIAL_DEFAULT_RULES: readonly RuMarketContextCapOverrideRule[] = [
+  { id: 'single_verified_major_anchor', minVerifiedMajorAnchors: 1, scoreCap: 82 },
+  { id: 'multiple_verified_major_anchors', minVerifiedMajorAnchors: 2, scoreCap: 86 },
+];
+
+const MONO_INDUSTRIAL_DEFAULT_RULES: readonly RuMarketContextCapOverrideRule[] = [
+  { id: 'single_verified_major_anchor', minVerifiedMajorAnchors: 1, scoreCap: 84 },
+  { id: 'multiple_verified_major_anchors', minVerifiedMajorAnchors: 2, scoreCap: 88 },
+];
+
 /**
  * Static satellite / near-metro commuter settlements (Leningrad Oblast belt and analogues).
  * Policy: metro + generic retail + dense housing cannot exceed defaultScoreCap without verified majors.
  */
 export const RU_MARKET_CONTEXT_ENTRIES: readonly RuMarketContextEntry[] = [
+  {
+    normalizedName: 'Норильск',
+    aliases: ['норильск', 'norilsk'],
+    kernelCityScale: 'medium_city',
+    populationTier: '100k-500k',
+    populationApprox: 180_000,
+    marketType: 'remote_industrial_city',
+    specialMarketFlags: ['major_industrial_employer', 'shift_worker_demand'],
+    defaultScoreCap: 76,
+    capOverrideRules: REMOTE_INDUSTRIAL_DEFAULT_RULES,
+    regionHint: 'Красноярский край',
+  },
+  {
+    normalizedName: 'Магнитогорск',
+    aliases: ['магнитогорск', 'magnitogorsk'],
+    kernelCityScale: 'medium_city',
+    populationTier: '100k-500k',
+    populationApprox: 410_000,
+    marketType: 'mono_industrial_city',
+    specialMarketFlags: ['major_industrial_employer', 'shift_worker_demand'],
+    defaultScoreCap: 78,
+    capOverrideRules: MONO_INDUSTRIAL_DEFAULT_RULES,
+    regionHint: 'Челябинская область',
+  },
+  {
+    normalizedName: 'Нижний Тагил',
+    aliases: ['нижний тагил', 'ntagil'],
+    kernelCityScale: 'medium_city',
+    populationTier: '100k-500k',
+    populationApprox: 340_000,
+    marketType: 'mono_industrial_city',
+    specialMarketFlags: ['major_industrial_employer', 'shift_worker_demand'],
+    defaultScoreCap: 78,
+    capOverrideRules: MONO_INDUSTRIAL_DEFAULT_RULES,
+    regionHint: 'Свердловская область',
+  },
   {
     normalizedName: 'Мурино',
     aliases: ['мурино', 'murino'],

@@ -45,6 +45,30 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.sections.some(s => s.id === 'magnets')).toBe(false);
   });
 
+  it('demo / free permalink builder prefers attached LocationDecision public verdict and bullets', () => {
+    const analysis = fixtureAnalysis();
+    Object.assign(analysis, {
+      locationDecision: {
+        publicSummary: { audienceVerdictRu: 'Канонический вывод LocationPublicSummary.' },
+        uiProjection: { keyEvidenceBullets: ['Канонический фактор LocationPublicSummary.'] },
+      },
+    });
+
+    const report = buildLocationStandaloneReport({
+      address: 'Москва, тест',
+      analysis,
+      verdict: 'Старый вывод не должен попасть в отчёт.',
+      reportMode: 'free',
+    });
+
+    const summary = report.sections.find(s => s.id === 'summary');
+    expect(summary && summary.id === 'summary').toBe(true);
+    if (summary?.id !== 'summary') throw new Error('summary section missing');
+    expect(summary.verdict).toBe('Канонический вывод LocationPublicSummary.');
+    expect(summary.drivers).toEqual(['Канонический фактор LocationPublicSummary.']);
+    expect(report.free_brief).toContain('Канонический вывод LocationPublicSummary.');
+  });
+
   it('paid / full-report pipeline builder keeps reportMode paid, unifiedReport, and detailed sections', () => {
     const analysis = fixtureAnalysis();
     const report = buildLocationStandaloneReport({

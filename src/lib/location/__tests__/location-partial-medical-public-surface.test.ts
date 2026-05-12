@@ -10,6 +10,115 @@ function node(id: number, dLat: number, dLon: number, tags: Record<string, strin
 }
 
 describe('partial cartographic preview + generic medical public surface', () => {
+  it.each([
+    [
+      'Россия, Красноярский край, Норильск, Ленинский проспект, 19',
+      [
+        { amenity: 'hospital', name: 'Норильская городская больница №2' },
+        { amenity: 'university', name: 'Ленинградский государственный университет им. А. С. Пушкина' },
+        { amenity: 'university', name: 'Московский институт предпринимательства и права, филиал' },
+        { amenity: 'hospital', name: 'Полярная медицина' },
+        { amenity: 'hospital' },
+      ],
+    ],
+    [
+      'Россия, Красноярский край, Норильск, Талнахская улица, 64',
+      [
+        { amenity: 'university', name: 'Московский институт предпринимательства и права, филиал' },
+        { amenity: 'university', name: 'Ленинградский государственный университет им. А. С. Пушкина' },
+        { amenity: 'hospital', name: 'Детская поликлиника' },
+        { amenity: 'hospital' },
+        { aeroway: 'aerodrome', name: 'Аэропорт Валёк' },
+      ],
+    ],
+  ])('Norilsk live-100 case is remote industrial, not million-plus: %s', (address, tagsList) => {
+    const els = tagsList.map((tags, idx) =>
+      node(900 + idx, 0.003 + idx * 0.001, 0.002 + idx * 0.001, tags as unknown as Record<string, string>),
+    );
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 90;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: address,
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.cityScale).toBe('medium_city');
+    expect(decision.demandKernelV1?.cityScaleInferenceProvenance).toMatch(/ru_market_context:Норильск/);
+    expect(decision.publicSummary?.specialMarketFlags).toEqual(
+      expect.arrayContaining(['major_industrial_employer', 'shift_worker_demand']),
+    );
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThan(89);
+  });
+
+  it('full-data generic medical-primary result cannot score 85+', () => {
+    const els: OSMElement[] = [
+      node(950, 0.002, 0.002, { amenity: 'hospital' }),
+      node(951, 0.0025, 0.0022, { amenity: 'hospital' }),
+      node(952, 0.003, 0.0024, { amenity: 'clinic', name: 'Клиника' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 96;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Москва, Кантемировская улица, 16к1',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.primaryDemandType).toBe('medical');
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThan(85);
+    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+  });
+
+  it('commander verdict cannot appear from medical-led score plus one industrial object', () => {
+    const els: OSMElement[] = [
+      node(960, 0.002, 0.002, { amenity: 'hospital', name: 'Детская больница №38' }),
+      node(961, 0.0025, 0.0022, { amenity: 'hospital', name: 'Больница №85' }),
+      node(962, 0.003, 0.0024, { amenity: 'hospital', name: 'Психиатрическая больница № 14' }),
+      node(963, 0.0022, 0.0026, {
+        landuse: 'industrial',
+        name: 'ВНИИА им. Духова, площадка Москворечье',
+      }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 98;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Москва, Кантемировская улица, 16к1',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Сильная локация для командированных/);
+  });
+
+  it('commander verdict cannot appear from ordinary institute cluster without business travel evidence', () => {
+    const els: OSMElement[] = [
+      node(970, 0.002, 0.002, { amenity: 'university', name: 'Балтийский институт психологии' }),
+      node(971, 0.0025, 0.0022, { amenity: 'university', name: 'Калининградский институт туризма' }),
+      node(972, 0.003, 0.0024, { amenity: 'hospital', name: 'МедЭксперт' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 82;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Калининград, улица Горького, 162',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.cityScale).toBe('large_regional');
+    expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Сильная локация для командированных/);
+  });
+
   it('spb_008_parkhomenko_15-like partial 94 caps at 70 even with named anchors', () => {
     const els: OSMElement[] = [
       node(101, 0.005, 0.004, { amenity: 'university', name: 'Университет' }),

@@ -306,6 +306,53 @@ function businessMass(drivers: readonly LocationDemandScoredDriver[]): number {
     .reduce((s, d) => s + contributionWeight(d), 0);
 }
 
+function commanderEligibleEducationCluster(drivers: readonly LocationDemandScoredDriver[]): boolean {
+  const strongUniversity = drivers.filter(
+    d =>
+      d.demandTypeVote === 'education' &&
+      contributionWeight(d) >= 0.42 &&
+      /университет|академия|федеральн|государственн|кампус|university|campus/i.test(d.sourceName),
+  );
+  return strongUniversity.length >= 2;
+}
+
+function commanderEligibleTransportCluster(drivers: readonly LocationDemandScoredDriver[]): boolean {
+  return drivers.some(
+    d =>
+      d.demandTypeVote === 'transport' &&
+      contributionWeight(d) >= 1.5 &&
+      (d.driverKind === 'real_demand_driver' || d.driverKind === 'unknown_uncapped'),
+  );
+}
+
+function commanderEligibleMedicalCluster(drivers: readonly LocationDemandScoredDriver[]): boolean {
+  const strongNamedMedical = drivers.filter(
+    d =>
+      d.demandTypeVote === 'medical' &&
+      contributionWeight(d) >= 0.42 &&
+      /областн|краев|республик|федеральн|научн|научно-исследовательск|(?:^|\s)нии(?:$|\s|\W)|клиническ|университетск|перинатальн|онколог|кардиолог|инфекцион|многопрофильн|гематолог|трансфузиолог/i.test(
+        d.sourceName,
+      ),
+  );
+  return strongNamedMedical.length >= 2;
+}
+
+function commanderEligibleBusinessCluster(args: {
+  primary: LocationPublicSummaryDemandType;
+  secondaries: readonly LocationPublicSummaryDemandType[];
+  drivers: readonly LocationDemandScoredDriver[];
+}): boolean {
+  const businessDrivers = args.drivers.filter(
+    d =>
+      (d.demandTypeVote === 'corporate/business' || d.demandTypeVote === 'industrial') &&
+      contributionWeight(d) >= 0.42,
+  );
+  const mass = businessDrivers.reduce((s, d) => s + contributionWeight(d), 0);
+  if (businessDrivers.length >= 2) return true;
+  if (args.primary === 'medical' || args.primary === 'education') return false;
+  return hasStrongSecondaryBusiness(args.secondaries) && mass >= 1.5;
+}
+
 function secondariesFromPrimary(
   primary: LocationPublicSummaryDemandType,
   drivers: readonly LocationDemandScoredDriver[],
@@ -487,9 +534,6 @@ export function applyVerdictContradictionGuards(args: {
   let verdict = args.baseVerdict;
   const { primary, secondaries, strictDrivers } = args;
   const bizMass = strongBusinessContributionFromDrivers(strictDrivers);
-  const industrialMass = strictDrivers
-    .filter(d => d.demandTypeVote === 'industrial')
-    .reduce((s, d) => s + contributionWeight(d), 0);
 
   if (primary === 'tourist' && /командированных/i.test(verdict)) {
     if (!hasStrongSecondaryBusiness(secondaries) || bizMass < 0.42) {
@@ -509,11 +553,17 @@ export function applyVerdictContradictionGuards(args: {
   }
 
   if (/командированных/i.test(verdict)) {
-    const corpStrong =
-      (hasStrongSecondaryBusiness(secondaries) && bizMass >= 0.42) || industrialMass >= 0.42;
-    if ((primary === 'medical' || primary === 'weak/unclear') && !corpStrong) {
-      warnings.push('contradiction_guard:commander_verdict_without_corporate_medical_anchor');
-      verdict = 'Предварительно: рядом есть медицинские объекты, нужна проверка карты';
+    const commanderEvidence =
+      commanderEligibleBusinessCluster({ primary, secondaries, drivers: strictDrivers }) ||
+      commanderEligibleTransportCluster(strictDrivers) ||
+      commanderEligibleEducationCluster(strictDrivers) ||
+      commanderEligibleMedicalCluster(strictDrivers);
+    if (!commanderEvidence) {
+      warnings.push('contradiction_guard:commander_verdict_without_strong_travel_evidence');
+      verdict =
+        primary === 'medical'
+          ? 'Предварительно: рядом есть медицинские объекты, нужна проверка карты'
+          : 'Хорошая локация с неоднозначным профилем спроса';
     }
   }
 

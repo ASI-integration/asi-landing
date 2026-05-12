@@ -29,6 +29,7 @@ import {
 } from './location-public-summary';
 import {
   countVerifiedMajorMedicalAnchors,
+  medicalPrimaryHighScoreEligible,
   medicalPrimaryStrongPublicCopyEligible,
   strictPublicDriversAreOnlyGenericMedical,
 } from './location-medical-surface-policy';
@@ -264,6 +265,23 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       finalScore = cap;
     }
     scoreAfterPartialDataCap = Math.round(finalScore);
+  }
+
+  if (
+    Number.isFinite(finalScore) &&
+    !partialCartographicPreview &&
+    Math.round(finalScore) >= 85 &&
+    demandKernelV1.dominantDemandType === 'medical' &&
+    !medicalPrimaryHighScoreEligible({
+      scoredDrivers: demandKernelV1.scoredDrivers,
+      magnets: analysis.magnets,
+      specialMarketFlags: demandKernelV1.specialMarketFlags,
+    })
+  ) {
+    const before = Math.round(finalScore);
+    finalScore = 84;
+    scoreAfterPartialDataCap = Math.round(finalScore);
+    demandKernelV1.warnings.push(`medical_primary_high_score_cap:ordinary_medical_surface:from=${before}:to=84`);
   }
 
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];

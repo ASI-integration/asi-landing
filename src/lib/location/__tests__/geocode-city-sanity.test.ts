@@ -48,8 +48,25 @@ describe('canonical cityScale table gaps', () => {
     ['Норильск, улица Тест', 'medium_city'],
     ['Нижний Новгород, улица Тест', 'million_plus'],
     ['Санкт Петербург, Невский проспект', 'mega_city'],
+    ['Россия, Красноярский край, Норильск, Ленинский проспект, 19', 'medium_city'],
+    ['Россия, Самара, Ленинградская улица, 64', 'million_plus'],
+    ['Россия, Уфа, улица Менделеева, 137', 'million_plus'],
+    ['Россия, Калининград, улица Горького, 162', 'large_regional'],
+    ['Россия, Краснодар, Красная улица, 176', 'million_plus'],
+    ['Россия, Тула, проспект Ленина, 85', 'large_regional'],
+    ['Россия, Хабаровск, улица Муравьёва-Амурского, 36', 'large_regional'],
+    ['Россия, Мурманск, проспект Ленина, 82', 'medium_city'],
+    ['Россия, Улан-Удэ, улица Ленина, 24', 'medium_city'],
+    ['Россия, Астрахань, улица Свердлова, 53', 'medium_city'],
   ] as const)('%s → %s', (addr, scale) => {
     expect(inferCityScaleFromRuAddress(addr).cityScale).toBe(scale);
+  });
+
+  it('does not match regional adjectives as city tokens', () => {
+    const norilsk = inferCityScaleFromRuAddress('Россия, Красноярский край, Норильск, Ленинский проспект, 19');
+    expect(norilsk.cityName).toBe('Норильск');
+    expect(norilsk.cityScale).toBe('medium_city');
+    expect(norilsk.inferredFrom).toMatch(/ru_market_context:Норильск/);
   });
 
   it('Sochi / Anapa / Vladivostok / Norilsk carry expected special flags', () => {

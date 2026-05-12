@@ -98,7 +98,8 @@ export function enrichAnalysisWithReportProjection(
 
   const kernelBullets =
     mode === 'free_demo_sanitize'
-      ? buildLocationDecision({
+      ? (analysis.locationDecision?.uiProjection.keyEvidenceBullets ??
+        buildLocationDecision({
           analysis,
           inputAddress: trace.inputAddress ?? '',
           coordinates: trace.coordinates,
@@ -106,7 +107,7 @@ export function enrichAnalysisWithReportProjection(
           selectedGeocodeResult: trace.selectedGeocodeResult,
           geocodeResult: opts.geocodeResult,
           locale: 'ru',
-        }).uiProjection.keyEvidenceBullets
+        }).uiProjection.keyEvidenceBullets)
       : undefined;
 
   return {

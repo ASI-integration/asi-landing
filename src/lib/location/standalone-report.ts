@@ -349,13 +349,17 @@ export function buildLocationStandaloneReport(args: {
   reportMode?: LocationStandaloneReportMode;
 }): LocationStandaloneReport {
   const reportMode = args.reportMode ?? 'paid';
+  const market = args.market ?? 'RU';
   const analysis = enrichAnalysisWithReportProjection(args.analysis, {
     reportMode,
     rawElements: args.rawOsmElements,
   });
   const generatedAtIso = new Date().toISOString();
-  const market = args.market ?? 'RU';
   const score = analysis.locationScore;
+  const reportVerdict =
+    market === 'RU'
+      ? (analysis.locationDecision?.publicSummary?.audienceVerdictRu ?? args.verdict)
+      : args.verdict;
   const metadata = buildLocationReportResultMetadata({
     inputAddress: args.inputAddress?.trim() || args.address,
     normalizedAddress: normalizeReportAddress(args.address),
@@ -369,7 +373,7 @@ export function buildLocationStandaloneReport(args: {
       analysis.scoringTrace?.publicBullets?.length
         ? analysis.scoringTrace.publicBullets.slice(0, 5)
         : [];
-    const free_brief = buildFreeBriefRu({ verdict: args.verdict });
+    const free_brief = buildFreeBriefRu({ verdict: reportVerdict });
     return {
       version: 'v1',
       reportMode: 'free',
@@ -380,7 +384,7 @@ export function buildLocationStandaloneReport(args: {
       sections: [
         {
           id: 'summary',
-          verdict: args.verdict,
+          verdict: reportVerdict,
           drivers,
           income_rub_month: null,
           recommended_strategy: null,
@@ -449,7 +453,7 @@ export function buildLocationStandaloneReport(args: {
     sections: [
       {
         id: 'summary',
-        verdict: args.verdict,
+        verdict: reportVerdict,
         drivers,
         income_rub_month: incomeRecommended,
         recommended_strategy: recommended,
