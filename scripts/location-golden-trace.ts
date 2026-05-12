@@ -23,12 +23,19 @@ import type { LocationDecision, LocationPublicSummary } from '../src/lib/locatio
 import type { MagnetItem, OSMElement } from '../src/lib/location/types';
 import type { GeocodeResult } from '../src/lib/location/providers/types';
 import { geocodePlainAddressForMarket } from '../src/lib/location/address-providers/geocode-pipeline';
-import { fetchOsmData } from '../src/lib/location/overpass';
+import { computeOverpassTimeoutSeconds, fetchOsmData, type OsmFetchResult } from '../src/lib/location/overpass';
 import { buildAnalysis } from '../src/lib/location/gravity-scoring';
 import { enrichAnalysisWithReportProjection } from '../src/lib/location/location-scoring-projection';
 import { buildLocationDecision } from '../src/lib/location/location-decision-kernel';
-import type { GoldenHarnessCaseDiagnostics } from '../src/lib/location/location-golden-harness-diagnostics';
-import { buildGoldenHarnessCaseDiagnostics } from '../src/lib/location/location-golden-harness-diagnostics';
+import type {
+  GoldenHarnessCaseDiagnostics,
+  GoldenHarnessOverpassDiagnostics,
+  LocationDecisionWarningHarness,
+} from '../src/lib/location/location-golden-harness-diagnostics';
+import {
+  buildGoldenHarnessCaseDiagnostics,
+  buildLocationDecisionWarningHarness,
+} from '../src/lib/location/location-golden-harness-diagnostics';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
@@ -84,6 +91,10 @@ interface GoldenCaseOutput {
     rejectedFromPublicCount: number;
   };
   diagnostics: GoldenHarnessCaseDiagnostics;
+  /** Mirrors {@link LocationDecision.warnings} + grouped slices for golden JSON review. */
+  locationDecisionWarningHarness: LocationDecisionWarningHarness | null;
+  /** Live mode only: Overpass wall-clock vs HTTP timeout vs pipeline stages. */
+  overpassHarness: GoldenHarnessOverpassDiagnostics | null;
   errorMessage?: string;
 }
 
@@ -137,6 +148,59 @@ function serializePublicSummary(s: LocationPublicSummary): GoldenCaseOutput['pub
   };
 }
 
+function buildOverpassHarnessDiagnostics(args: {
+  harnessWallClockBudgetMs: number;
+  perHttpRequestTimeoutMs: number;
+  harnessBudgetExceeded: boolean;
+  osm: OsmFetchResult;
+}): GoldenHarnessOverpassDiagnostics {
+  const overpassClauseTimeoutSeconds = computeOverpassTimeoutSeconds(args.perHttpRequestTimeoutMs);
+  const denseWouldActivate = args.perHttpRequestTimeoutMs <= 7_000;
+  const activationRequires =
+    'requestTimeoutMs<=7000 AND allowBroadFallback===false AND allowBackfill===false (fetchOsmData validationTightMode)';
+
+  const el = args.osm.elements.length;
+  const partial = args.harnessBudgetExceeded && el > 0;
+
+  let bottleneckSummary =
+    'Overpass: batched strict queries (core/full), optional transport backfill, broad radiusScale fallback, then minimal clauses; each batch uses [timeout:n] on the server.';
+  if (args.harnessBudgetExceeded && el === 0) {
+    bottleneckSummary =
+      'Harness wall clock aborted the in-flight fetch before any elements were merged — typical when many batched clauses + endpoint rotation exhaust LOCATION_GOLDEN_OVERPASS_MS, or every endpoint failed within per-HTTP budgets.';
+  } else if (args.harnessBudgetExceeded && el > 0) {
+    bottleneckSummary =
+      'Harness wall clock aborted mid-pipeline; JSON may omit later batches (broad/minimal). Treat demand typing / headline as potentially incomplete.';
+  } else if (args.osm.hadProviderFailure && el > 0 && el < 12) {
+    bottleneckSummary =
+      'Provider failures and/or sparse merge; some selector batches may be missing even though partial elements exist.';
+  }
+
+  let suggestedNextFallbackPath =
+    'Increase LOCATION_GOLDEN_OVERPASS_MS; retry off-peak; optionally point LOCATION_GOLDEN at disk-backed OSM cache for stable coords.';
+  if (args.perHttpRequestTimeoutMs <= 12_000) {
+    suggestedNextFallbackPath +=
+      ' If keeping tight per-HTTP timeouts, consider raising wall-clock budget first before toggling validation-tight mode.';
+  }
+
+  return {
+    harnessWallClockBudgetMs: args.harnessWallClockBudgetMs,
+    perHttpRequestTimeoutMs: args.perHttpRequestTimeoutMs,
+    overpassClauseTimeoutSeconds,
+    pipelineSummary:
+      'fetchOsmData: strict (core/full) → partial-failure backfill → broad fallback → minimal recovery (see overpass.ts)',
+    denseAreaStagedPipelineAvailable: true,
+    denseAreaStagedWouldActivateWithTheseOptions: denseWouldActivate,
+    denseAreaStagedActivationRequires: activationRequires,
+    harnessWallClockBudgetExceeded: args.harnessBudgetExceeded,
+    elementCountReturned: el,
+    partialElementsCapturedBeforeHarnessCutoff: partial,
+    usedFallbackQuery: Boolean(args.osm.usedFallbackQuery),
+    hadProviderFailure: Boolean(args.osm.hadProviderFailure),
+    bottleneckSummary,
+    suggestedNextFallbackPath,
+  };
+}
+
 function harnessDiag(
   c: GoldenCaseFile['cases'][number],
   args: {
@@ -149,6 +213,7 @@ function harnessDiag(
   },
 ): GoldenHarnessCaseDiagnostics {
   return buildGoldenHarnessCaseDiagnostics({
+    caseId: c.id,
     fixtureMeta: {
       expectedCity: c.expectedCity,
       expectedRegion: c.expectedRegion,
@@ -253,6 +318,8 @@ async function runLiveCase(
           decision: null,
           magnets: [],
         }),
+        locationDecisionWarningHarness: null,
+        overpassHarness: null,
         errorMessage: `geocode exceeded ${geocodeMs}ms`,
       };
     }
@@ -282,16 +349,50 @@ async function runLiveCase(
           decision: null,
           magnets: [],
         }),
+        locationDecisionWarningHarness: null,
+        overpassHarness: null,
         errorMessage: 'geocode returned no coordinates',
       };
     }
 
-    const osmResult = await raceWithTimeout(
-      fetchOsmData(lat, lon, { requestTimeoutMs: Math.min(20_000, overpassMs) }),
-      overpassMs,
-    );
+    const perHttp = Math.min(20_000, overpassMs);
+    const overpassController = new AbortController();
+    const overpassTimer = setTimeout(() => overpassController.abort(), overpassMs);
+    let osm: OsmFetchResult;
+    try {
+      osm = await fetchOsmData(lat, lon, {
+        requestTimeoutMs: perHttp,
+        signal: overpassController.signal,
+      });
+    } finally {
+      clearTimeout(overpassTimer);
+    }
+    const harnessBudgetExceeded = overpassController.signal.aborted;
+    const overpassHarness = buildOverpassHarnessDiagnostics({
+      harnessWallClockBudgetMs: overpassMs,
+      perHttpRequestTimeoutMs: perHttp,
+      harnessBudgetExceeded,
+      osm,
+    });
 
-    if (isGoldenTimeout(osmResult)) {
+    rawElementCount = osm.elements.length;
+    hadProviderFailure = Boolean(osm.hadProviderFailure);
+    usedFallbackQuery = Boolean(osm.usedFallbackQuery);
+
+    let status: LocationGoldenHarnessStatus;
+    if (harnessBudgetExceeded && osm.elements.length === 0) {
+      status = 'overpass_timeout';
+    } else if (harnessBudgetExceeded && osm.elements.length > 0) {
+      status = 'partial_result';
+    } else {
+      status = classifyAfterFetch({
+        elements: osm.elements,
+        hadProviderFailure,
+        usedFallbackQuery: osm.usedFallbackQuery,
+      });
+    }
+
+    if (status === 'overpass_timeout') {
       return {
         id: c.id,
         cityKey: c.cityKey,
@@ -301,8 +402,8 @@ async function runLiveCase(
         summaryLine: '',
         geocodeWinner,
         rawElementCount: 0,
-        hadProviderFailure: false,
-        usedFallbackQuery: false,
+        hadProviderFailure,
+        usedFallbackQuery,
         publicSummary: emptySummaryPlaceholder(),
         diagnostics: harnessDiag(c, {
           lat,
@@ -312,19 +413,11 @@ async function runLiveCase(
           decision: null,
           magnets: [],
         }),
-        errorMessage: `overpass exceeded ${overpassMs}ms`,
+        locationDecisionWarningHarness: null,
+        overpassHarness,
+        errorMessage: `overpass harness wall clock exceeded ${overpassMs}ms with zero merged elements`,
       };
     }
-
-    const osm = osmResult;
-    rawElementCount = osm.elements.length;
-    hadProviderFailure = Boolean(osm.hadProviderFailure);
-    usedFallbackQuery = Boolean(osm.usedFallbackQuery);
-    const status = classifyAfterFetch({
-      elements: osm.elements,
-      hadProviderFailure,
-      usedFallbackQuery: osm.usedFallbackQuery,
-    });
 
     if (status === 'no_raw_elements') {
       return {
@@ -347,6 +440,8 @@ async function runLiveCase(
           decision: null,
           magnets: [],
         }),
+        locationDecisionWarningHarness: null,
+        overpassHarness,
       };
     }
 
@@ -380,7 +475,12 @@ async function runLiveCase(
         decision,
         magnets,
       }),
+      locationDecisionWarningHarness: buildLocationDecisionWarningHarness(decision),
+      overpassHarness,
     };
+    if (harnessBudgetExceeded) {
+      out.errorMessage = `overpass harness wall clock exceeded ${overpassMs}ms with partial merged OSM (${rawElementCount} objects)`;
+    }
     out.summaryLine = compactSummaryLine(out);
     return out;
   } catch (e) {
@@ -404,6 +504,8 @@ async function runLiveCase(
         decision: null,
         magnets: [],
       }),
+      locationDecisionWarningHarness: null,
+      overpassHarness: null,
       errorMessage: msg,
     };
   }
@@ -458,6 +560,8 @@ function runFixtureCase(c: GoldenCaseFile['cases'][number]): GoldenCaseOutput {
         decision,
         magnets,
       }),
+      locationDecisionWarningHarness: buildLocationDecisionWarningHarness(decision),
+      overpassHarness: null,
     };
     out.summaryLine = compactSummaryLine(out);
     return out;
@@ -482,6 +586,8 @@ function runFixtureCase(c: GoldenCaseFile['cases'][number]): GoldenCaseOutput {
         decision: null,
         magnets: [],
       }),
+      locationDecisionWarningHarness: null,
+      overpassHarness: null,
       errorMessage: msg,
     };
   }

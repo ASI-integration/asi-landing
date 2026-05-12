@@ -186,7 +186,8 @@ function buildClauses(
   return parts;
 }
 
-function computeOverpassTimeoutSeconds(requestTimeoutMs?: number): number {
+/** Used by harnesses to align golden JSON diagnostics with the Overpass `[timeout:n]` clause. */
+export function computeOverpassTimeoutSeconds(requestTimeoutMs?: number): number {
   // Keep the server-side timeout aligned with the client-side budget to avoid
   // long-running queries that the client will abort anyway.
   const ms = requestTimeoutMs ?? 20_000;
