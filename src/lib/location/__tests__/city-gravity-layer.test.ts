@@ -83,8 +83,8 @@ describe('city gravity layer (deterministic cityScale + populationTier)', () => 
     expect(publicDriverTexts).not.toMatch(/ремесел/i);
     expect(publicDriverTexts).not.toMatch(/\bзавод\b/i);
 
-    // Strong medical anchor can surface in million-plus cities.
-    expect(publicDriverTexts).toMatch(/больниц|больница/i);
+    // Strong medical anchor can surface in million-plus cities without repeating POI-by-POI sales copy.
+    expect(publicDriverTexts).toMatch(/медицинские учреждени/i);
   });
 
   it('C: small resort exception — tourist headline can rise only when resort_exception exists', () => {

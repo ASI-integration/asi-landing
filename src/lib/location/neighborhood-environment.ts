@@ -118,7 +118,7 @@ function pickEnvironmentNarrative(
       en:
         'Demand signals are strong, while the mapped physical setting leans busier — noise and transport load are worth validating on site; exact unit choice matters more than average.',
       ru:
-        'Коммерческий профиль сильный, среда при этом более напряжённая — полезна проверка шума и транспорта на месте; важен точечный отбор объекта.',
+        'Среда умеренно загружена — перед покупкой или запуском аренды стоит проверить шум и транспорт.',
     };
   }
 
@@ -374,7 +374,7 @@ export function buildNeighborhoodEnvironmentLayer(
   }
   if (industrialRaw >= 10) {
     reasonsEn.push('Industrial or logistics-related mapped land use nearby.');
-    reasonsRu.push('Рядом отмечены промышленные или логистические зоны.');
+    reasonsRu.push('Поблизости есть признаки производственной или складской среды — проверьте шум и транспорт на месте.');
   }
   if (aviationRaw >= 12) {
     reasonsEn.push('Close to airport infrastructure or runway geometry in OSM (aviation noise proxy).');

@@ -39,4 +39,17 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(src).toContain('hidden on RU residential free/demo preview');
     expect(src).toMatch(/!isRuResidentialDemo\s*\?\s*\(\s*[\r\n]+\s*<CompetitorBreakdownBlock/);
   });
+
+  it('does not expose demo permalink actions in the public RU demo', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    expect(demoSrc).not.toMatch(/Открыть демо[\u2011\u2010-]permalink/i);
+    expect(demoSrc).not.toMatch(/Открыть демо[\u2011\u2010-]перmalink/i);
+    expect(demoSrc).not.toContain('пространственный');
+  });
+
+  it('uses preliminary helper copy instead of report-sales helper copy', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    expect(demoSrc).toContain('resolveRuDemoTopHelperText');
+    expect(demoSrc).not.toContain('Краткая оценка локации. Подробный расчёт доступен в полном отчёте.');
+  });
 });

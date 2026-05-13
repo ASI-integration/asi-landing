@@ -4,13 +4,83 @@ import { buildAnalysis } from '../gravity-scoring';
 import { buildLocationDecision } from '../location-decision-kernel';
 import {
   applyVerdictContradictionGuards,
+  buildLocationPublicSummary,
   strongBusinessContributionFromDrivers,
 } from '../location-public-summary';
+import type { MagnetFact } from '../location-decision-contract';
+import type { LocationDemandScoredDriver, LocationDemandScoringKernelResult } from '../location-scoring-contract';
 
 const ORIGIN = { lat: 44.495, lon: 34.166 }; // Crimea-ish coords — fixture only
 
 function node(id: number, dLat: number, dLon: number, tags: Record<string, string>): OSMElement {
   return { type: 'node', id, lat: ORIGIN.lat + dLat, lon: ORIGIN.lon + dLon, tags };
+}
+
+function medicalFact(id: string, name: string, distanceMeters: number): MagnetFact {
+  return {
+    id,
+    name,
+    category: 'Больница',
+    tier: 'primary',
+    role: 'medical_demand',
+    distanceMeters,
+    evidenceSource: 'classified_magnet',
+    includedInScore: true,
+    includedInPublicReport: true,
+    explanationRu: '',
+    explanationEn: '',
+  };
+}
+
+function medicalDriver(mf: MagnetFact, index: number): LocationDemandScoredDriver {
+  return {
+    magnetFactId: mf.id,
+    evidenceId: `ev:${mf.id}`,
+    sourceName: mf.name,
+    category: mf.category,
+    driverKind: 'real_demand_driver',
+    resolvedTier: 1,
+    scaleClass: 'verified_major',
+    demandTypeVote: 'medical',
+    distanceMeters: mf.distanceMeters,
+    baseWeight: 1,
+    distanceCoefficient: 1,
+    scaleCoefficient: 1,
+    confidenceCoefficient: 1,
+    finalContribution: 2 - index * 0.1,
+    accepted: true,
+    reason: 'test',
+    publicDisplayEligible: true,
+  };
+}
+
+function fakeKernel(drivers: LocationDemandScoredDriver[]): LocationDemandScoringKernelResult {
+  return {
+    acceptedDrivers: drivers,
+    rejectedDrivers: [],
+    scoredDrivers: drivers,
+    dominantDemandType: 'medical',
+    scoreBreakdown: {
+      rawSumBeforeCaps: 0,
+      cappedSupportingInfra: 0,
+      cappedLocalInterest: 0,
+      cappedHotels: 0,
+      cappedGenericBusiness: 0,
+      cappedTourismWithoutAnchor: 0,
+      cappedNoTier1Penalty: 0,
+      cappedSmallCitySparse: 0,
+      finalWeightedSum: 0,
+    },
+    kernelEvidenceScore: 72,
+    blendedPublicScore: 72,
+    cityScale: 'unknown',
+    populationTier: 'unknown',
+    marketGravityCoefficient: 1,
+    specialMarketFlags: [],
+    scoreCapReason: null,
+    warnings: [],
+    debugTrace: [],
+  };
 }
 
 describe('LocationPublicSummary — live screenshot regressions', () => {
@@ -60,6 +130,53 @@ describe('LocationPublicSummary — live screenshot regressions', () => {
     if (s.primaryDemandType === 'medical' || s.primaryDemandType === 'mixed') {
       expect(s.audienceVerdictRu).not.toMatch(/туристическ/i);
     }
+  });
+
+  it('groups repeated medical public bullets into human copy', () => {
+    const analysis = buildAnalysis([], ORIGIN.lat, ORIGIN.lon);
+    const magnetFacts: MagnetFact[] = [
+      medicalFact('mf:0:hospital:240', 'Федеральный кардиологический центр', 240),
+      medicalFact('mf:1:hospital:280', 'Областной онкологический диспансер', 280),
+      medicalFact('mf:2:hospital:320', 'Перинатальный центр', 320),
+    ];
+    const strictDrivers = magnetFacts.map((mf, i) => medicalDriver(mf, i));
+    const summary = buildLocationPublicSummary({
+      analysis,
+      magnets: [],
+      magnetFacts,
+      kernel: fakeKernel(strictDrivers),
+      demandSignals: [],
+      finalScore: 72,
+      scoreBand: 'strong',
+      baseWarnings: [],
+      strictDrivers,
+    });
+    const texts = summary.publicDrivers.map(d => d.textRu);
+    const joined = texts.join('\n');
+    expect(joined).not.toContain('усиливает медицинский спрос');
+    expect(texts.some(t => t.startsWith('Рядом есть несколько медицинских учреждений'))).toBe(true);
+    expect(texts).toContain('Они могут давать небольшой дополнительный спрос, но сами по себе не делают локацию сильной.');
+  });
+
+  it('limits one or two medical objects to a cautious single public bullet', () => {
+    const els: OSMElement[] = [
+      node(30, 0.0018, 0.0016, { amenity: 'hospital', name: 'Больница' }),
+      node(31, 0.0021, 0.0019, { amenity: 'clinic', name: 'Диспансер' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'fixture',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    const medicalTexts = decision.publicSummary!.publicDrivers
+      .map(d => d.textRu)
+      .filter(t => /медицинск|спрос/i.test(t));
+    expect(medicalTexts).toEqual([
+      'Поблизости есть медицинские учреждения, но этого недостаточно для сильного вывода по спросу.',
+    ]);
   });
 
   it('C contradiction guard: tourist primary + business verdict without strong business mass → adjusted', () => {

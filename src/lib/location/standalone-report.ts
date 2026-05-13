@@ -329,7 +329,7 @@ function pickBusinessFitVerdict(
 }
 
 function buildFreeBriefRu(args: { verdict: string }): string {
-  return `${args.verdict} Краткая оценка локации. Подробный расчёт доступен в полном отчёте.`.replace(/\s+/g, ' ').trim();
+  return `${args.verdict} Это быстрая предварительная оценка по открытым данным.`.replace(/\s+/g, ' ').trim();
 }
 
 

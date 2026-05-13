@@ -183,7 +183,7 @@ function roleTailRu(role: MagnetRole): string {
     case 'transport_anchor':
       return 'удобный выезд на дальние направления и пересадки';
     case 'medical_demand':
-      return 'усиливает медицинский спрос';
+      return 'медицинское учреждение поблизости';
     case 'business_demand':
       return 'рядом есть учебные или деловые объекты';
     case 'tourist_demand':

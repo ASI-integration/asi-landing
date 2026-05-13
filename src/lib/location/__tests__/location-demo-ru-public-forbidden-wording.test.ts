@@ -46,4 +46,15 @@ describe('RU location demo public copy — forbidden internal wording', () => {
       }
     }
   });
+
+  it('does not expose generic strong-commercial environment claims in residential demo copy sources', () => {
+    for (const rel of PUBLIC_RU_COPY_SOURCE_FILES_RELATIVE) {
+      const abs = join(__dirname, rel);
+      const src = readFileSync(abs, 'utf8');
+      expect(src, `${rel} must not contain generic commercial-profile claim`).not.toContain('Коммерческий профиль сильный');
+      expect(src, `${rel} must not contain generic industrial/logistics claim`).not.toContain(
+        'Рядом отмечены промышленные или логистические зоны',
+      );
+    }
+  });
 });

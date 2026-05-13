@@ -576,6 +576,22 @@ function cautiousVerdictFromScore(score: number): string {
   return 'Предварительная оценка слабая — для точного вывода нужен полный расчёт';
 }
 
+function compactRuNameList(names: readonly string[]): string {
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of names) {
+    const name = raw.trim().replace(/\s+/g, ' ');
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(name);
+  }
+  if (cleaned.length === 0) return '';
+  if (cleaned.length <= 3) return cleaned.join(', ');
+  return `${cleaned.slice(0, 3).join(', ')} и ещё ${cleaned.length - 3}`;
+}
+
 export function buildLocationPublicSummary(args: {
   analysis: LocationAnalysis;
   magnets: readonly MagnetItem[];
@@ -730,6 +746,12 @@ export function buildLocationPublicSummary(args: {
   }
 
   const sliceDrivers = strictDrivers.slice(0, Math.min(5, strictDrivers.length));
+  const medicalSliceDrivers = sliceDrivers.filter(d => d.demandTypeVote === 'medical');
+  const medicalNames = medicalSliceDrivers
+    .map(d => magnetFacts.find(m => m.id === d.magnetFactId)?.name ?? d.sourceName)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+  const groupedMedicalNames = compactRuNameList(medicalNames);
+  const firstMedicalDriver = medicalSliceDrivers[0] ?? null;
 
   const publicDrivers: LocationPublicDriverRow[] = [];
   for (const d of sliceDrivers) {
@@ -739,6 +761,33 @@ export function buildLocationPublicSummary(args: {
     const tierLabel: MagnetTier = d.resolvedTier === 1 ? 'primary' : d.resolvedTier === 2 ? 'secondary' : 'weak';
     const patched = { ...mf, role, tier: tierLabel };
     const ds = demandSignals.find(s => s.evidenceFactIds.includes(mf.id)) ?? null;
+    if (d.demandTypeVote === 'medical') {
+      if (d !== firstMedicalDriver) continue;
+      const trace = {
+        magnetFactId: mf.id,
+        evidenceId: d.evidenceId,
+        demandSignalId: ds?.id ?? null,
+        eligibilityReason: `location_public_summary:${headline.reason}:grouped_medical`,
+      };
+      if (medicalSliceDrivers.length >= 3) {
+        publicDrivers.push({
+          textRu: groupedMedicalNames
+            ? `Рядом есть несколько медицинских учреждений: ${groupedMedicalNames}.`
+            : 'Рядом есть несколько медицинских учреждений.',
+          trace,
+        });
+        publicDrivers.push({
+          textRu: 'Они могут давать небольшой дополнительный спрос, но сами по себе не делают локацию сильной.',
+          trace,
+        });
+      } else {
+        publicDrivers.push({
+          textRu: 'Поблизости есть медицинские учреждения, но этого недостаточно для сильного вывода по спросу.',
+          trace,
+        });
+      }
+      continue;
+    }
     publicDrivers.push({
       textRu: formatPublicEvidenceLineRu(patched),
       trace: {

@@ -6,11 +6,8 @@ import { extractRuCityFromValue } from '@/lib/location/address-providers/ru-norm
 import {
   CATEGORY_COLOR,
   buildAnalysis,
-  buildLocationStandaloneReport,
-  buildCommercialReport,
   buildLocationReportPermalink,
   LOCATION_REPORT_PRODUCT_PATH,
-  LOCATION_REPORT_SAMPLE_PATH,
   getBand,
   formatDist,
   projectToSVG,
@@ -68,6 +65,7 @@ import {
   metaHasPartialCartographicWarning,
   partialCartographicBannerMessage,
   resolveRuDemoResultCtaSurface,
+  resolveRuDemoTopHelperText,
   ruDemoLoadingStageIndex,
 } from '@/components/location-demo-ru-ux';
 
@@ -2221,33 +2219,6 @@ function ASIPanel({
     }
   }
 
-  function openStandaloneFullReportRu() {
-    (async () => {
-      const standalone = buildLocationStandaloneReport({
-        address,
-        inputAddress: address,
-        analysis,
-        verdict:
-          residentialPublicSummary?.audienceVerdictRu ??
-          (conclusion || 'Итог: данных недостаточно для уверенного вывода.'),
-        reportMode: 'free',
-      });
-
-      try {
-        const res = await fetch('/api/location-standalone-report', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ locale: 'ru', report: standalone }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
-        router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
-      } catch {
-        router.push(LOCATION_REPORT_SAMPLE_PATH);
-      }
-    })();
-  }
-
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
     if (isRuResidentialDemo) return residentialUiClaims.slice(0, 2).map(c => c.textRu);
@@ -2281,6 +2252,11 @@ function ASIPanel({
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
   const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
+  const topHelperText = resolveRuDemoTopHelperText({
+    locale,
+    dataBlocked,
+    partialUsableResult,
+  });
 
   return (
     <>
@@ -2461,15 +2437,6 @@ function ASIPanel({
                   </button>
                 </>
               )}
-              {locale === 'ru' && publicScoreState.analysisUsableForPublicScore ? (
-                <button
-                  type="button"
-                  onClick={openStandaloneFullReportRu}
-                  className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                >
-                  Открыть демо‑permalink
-                </button>
-              ) : null}
               {fullReportErr && !showRetryOnlyCta ? (
                 <p className="text-[12px] text-amber-400/90 leading-snug">
                   {locale === 'ru'
@@ -2496,7 +2463,7 @@ function ASIPanel({
       <div className="px-5 py-4 border-b border-slate-800/40">
         {isRuResidentialDemo ? (
           <p className="text-[17px] md:text-[18px] font-medium text-slate-300 leading-snug">
-            Краткая оценка локации. Подробный расчёт доступен в полном отчёте.
+            {topHelperText}
           </p>
         ) : (
           <p className="text-[14px] text-slate-500 leading-snug">
@@ -3152,24 +3119,6 @@ function CommercialASIPanel({
     }
   }
 
-  function openCommercialReport() {
-    (async () => {
-      const report = buildCommercialReport({ address, analysis });
-      try {
-        const res = await fetch('/api/location-standalone-report', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ locale: 'ru', report }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.reportId) throw new Error(json?.error || 'create_failed');
-        router.push(buildLocationReportPermalink({ reportId: String(json.reportId), locale: 'ru' }));
-      } catch {
-        router.push(LOCATION_REPORT_SAMPLE_PATH);
-      }
-    })();
-  }
-
   const partialUsableResult =
     locale === 'ru' &&
     publicScoreState.reportCtaEligible &&
@@ -3259,16 +3208,9 @@ function CommercialASIPanel({
           <>
             <button
               type="button"
-              onClick={openCommercialReport}
-              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-            >
-              Открыть демо‑перmalink (пространственный)
-            </button>
-            <button
-              type="button"
               onClick={requestFullReportAsync}
               disabled={fullReportBusy}
-              className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
               {fullReportBusy ? 'Готовим полный отчёт…' : reportCtaLabelRu}
             </button>

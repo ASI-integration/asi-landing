@@ -3,6 +3,7 @@ import type { AnalysisMeta, LocationAnalysis } from '@/lib/location/types';
 import {
   metaHasPartialCartographicWarning,
   resolveRuDemoResultCtaSurface,
+  resolveRuDemoTopHelperText,
   ruDemoDeferPaidReportForMapRetry,
 } from '@/components/location-demo-ru-ux';
 import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
@@ -233,7 +234,7 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
     const renderedCtas = [
       surface.showRetryCta ? surface.primaryCta : null,
       surface.showReportCta ? surface.reportCtaLabel : null,
-      surface.showDemoPermalink ? 'Открыть демо-permalink' : null,
+      surface.showDemoPermalink ? 'Скопировать ссылку на результат' : null,
     ].filter(Boolean);
 
     expect(surface.title).toBe('Анализ не завершён');
@@ -318,8 +319,14 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
       partialUsableResult: metaHasPartialCartographicWarning(meta),
     });
     expect(surface.showReportCta).toBe(true);
-    expect(surface.reportCtaLabel).toBe('Заказать полный отчёт');
+    expect(surface.reportCtaLabel).toBe('Проверить подробнее');
     expect(surface.showRetryCta).toBe(false);
+    expect(surface.showDemoPermalink).toBe(false);
+    expect(resolveRuDemoTopHelperText({
+      locale: 'ru',
+      dataBlocked: false,
+      partialUsableResult: true,
+    })).toBe('Предварительная оценка. Для точности нужен полный анализ карты.');
   });
 
   it('keeps complete result eligible for normal report CTA', () => {
@@ -363,5 +370,11 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
     expect(surface.showReportCta).toBe(true);
     expect(surface.reportCtaLabel).toBe('Заказать отчёт');
     expect(surface.showRetryCta).toBe(false);
+    expect(surface.showDemoPermalink).toBe(false);
+    expect(resolveRuDemoTopHelperText({
+      locale: 'ru',
+      dataBlocked: false,
+      partialUsableResult: false,
+    })).toBe('Это быстрая предварительная оценка по открытым данным.');
   });
 });

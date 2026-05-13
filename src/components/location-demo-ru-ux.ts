@@ -86,7 +86,7 @@ export function resolveRuDemoResultCtaSurface(args: {
 
   const reportCtaLabel =
     args.locale === 'ru'
-      ? (args.partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт')
+      ? (args.partialUsableResult ? 'Проверить подробнее' : 'Заказать отчёт')
       : 'Request report';
 
   return {
@@ -96,6 +96,23 @@ export function resolveRuDemoResultCtaSurface(args: {
     reportCtaLabel,
     showRetryCta: false,
     showReportCta: true,
-    showDemoPermalink: args.locale === 'ru' && args.publicScoreState.analysisUsableForPublicScore,
+    showDemoPermalink: false,
   };
+}
+
+export function resolveRuDemoTopHelperText(args: {
+  locale: string;
+  dataBlocked: boolean;
+  partialUsableResult: boolean;
+}): string {
+  if (args.locale !== 'ru') {
+    return 'Demo result is a fast preview. Details below explain factors, competition, and environment.';
+  }
+  if (args.dataBlocked) {
+    return 'Не удалось получить достаточно данных по карте. Попробуйте повторить анализ.';
+  }
+  if (args.partialUsableResult) {
+    return 'Предварительная оценка. Для точности нужен полный анализ карты.';
+  }
+  return 'Это быстрая предварительная оценка по открытым данным.';
 }
