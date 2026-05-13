@@ -21,6 +21,8 @@ import {
   applyLocationDataIntegrityGate,
   locationDemoPresentationBlocked,
   locationDemoIncompleteUserMessage,
+  locationDemoPublicSummaryHasUsableDriverLines,
+  resolveLocationDemoPublicScoreState,
   applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
   ruResidentialLocationDecisionForDemo,
@@ -65,7 +67,6 @@ import {
 import {
   metaHasPartialCartographicWarning,
   partialCartographicBannerMessage,
-  ruDemoDeferPaidReportForMapRetry,
   ruDemoLoadingStageIndex,
 } from '@/components/location-demo-ru-ux';
 
@@ -2033,7 +2034,7 @@ function ASIPanel({
     magnets, evergreenIndex, gravityExplanation, competitors, magnetCountByCategory,
   } = analysis;
   const footTraffic = footTrafficForLocale(analysis.footTraffic, locale);
-  const dataBlocked = locationDemoPresentationBlocked(analysis);
+  const scorePresentationBlocked = locationDemoPresentationBlocked(analysis);
   const conclusion =
     locale === 'ru'
       ? generateConclusion(
@@ -2050,7 +2051,7 @@ function ASIPanel({
   const isRuResidentialDemo = locale === 'ru' && mode === 'residential';
   const kernelCoords = analysis.scoringTrace?.coordinates;
   const residentialLocationDecision =
-    isRuResidentialDemo && !dataBlocked && kernelCoords
+    isRuResidentialDemo && !scorePresentationBlocked && kernelCoords
       ? ruResidentialLocationDecisionForDemo({
           analysis,
           inputAddress: address || '',
@@ -2059,6 +2060,17 @@ function ASIPanel({
         })
       : null;
   const residentialPublicSummary = residentialLocationDecision?.publicSummary ?? null;
+  const publicScoreState = resolveLocationDemoPublicScoreState({
+    meta,
+    analysis,
+    mode,
+    hasUsablePublicSummary: isRuResidentialDemo
+      ? locationDemoPublicSummaryHasUsableDriverLines(
+          residentialPublicSummary ?? analysis.locationDecision?.publicSummary,
+        )
+      : true,
+  });
+  const dataBlocked = !publicScoreState.analysisUsableForPublicScore;
   const residentialUiClaims: LocationPublicClaim[] = (residentialPublicSummary?.publicDrivers ?? []).map(
     d => ({ textRu: d.textRu, trace: d.trace }),
   );
@@ -2257,8 +2269,13 @@ function ASIPanel({
     isRuResidentialDemo ? residentialUiClaims.slice(0, 2) : [];
 
   const deferPaidReportForMapRetry =
-    Boolean(onRetryAnalysis) &&
-    ruDemoDeferPaidReportForMapRetry({ locale, meta, analysis, mode });
+    locale === 'ru' &&
+    publicScoreState.retryRecommended;
+  const partialUsableResult =
+    locale === 'ru' &&
+    publicScoreState.reportCtaEligible &&
+    metaHasPartialCartographicWarning(meta);
+  const reportCtaLabelRu = partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт';
 
   return (
     <>
@@ -2272,7 +2289,7 @@ function ASIPanel({
     >
       <RuPartialCartographicResultBanner
         locale={locale}
-        meta={meta}
+        meta={publicScoreState.analysisUsableForPublicScore ? meta : null}
         fallbackCopy={c.partialCartographicEstimate}
       />
       {!isRuResidentialDemo && meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
@@ -2421,19 +2438,10 @@ function ASIPanel({
                   <button
                     type="button"
                     onClick={onRetryAnalysis}
-                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    disabled={!onRetryAnalysis}
+                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                   >
                     {c.mapDataIncompleteRetryCta}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={requestFullReportAsync}
-                    disabled={fullReportBusy}
-                    className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:opacity-50 border border-slate-800/60 text-slate-200 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                  >
-                    {locale === 'ru'
-                      ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
-                      : (fullReportBusy ? 'Generating…' : 'Request report')}
                   </button>
                 </>
               ) : (
@@ -2445,12 +2453,12 @@ function ASIPanel({
                     className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                   >
                     {locale === 'ru'
-                      ? (fullReportBusy ? 'Готовим отчёт…' : 'Заказать отчёт')
+                      ? (fullReportBusy ? 'Готовим отчёт…' : reportCtaLabelRu)
                       : (fullReportBusy ? 'Generating…' : 'Request report')}
                   </button>
                 </>
               )}
-              {locale === 'ru' ? (
+              {locale === 'ru' && publicScoreState.analysisUsableForPublicScore ? (
                 <button
                   type="button"
                   onClick={openStandaloneFullReportRu}
@@ -3060,7 +3068,12 @@ function CommercialASIPanel({
   onRetryAnalysis?: () => void;
 }) {
   const router = useRouter();
-  const dataBlocked = locationDemoPresentationBlocked(analysis);
+  const publicScoreState = resolveLocationDemoPublicScoreState({
+    meta,
+    analysis,
+    mode: 'commercial',
+  });
+  const dataBlocked = !publicScoreState.analysisUsableForPublicScore;
   const publicScoreCommercial = publicLocationScore(analysis);
   const band = dataBlocked
     ? getBand(0)
@@ -3150,8 +3163,13 @@ function CommercialASIPanel({
   }
 
   const deferPaidReportForMapRetry =
-    Boolean(onRetryAnalysis) &&
-    ruDemoDeferPaidReportForMapRetry({ locale, meta, analysis, mode: 'commercial' });
+    locale === 'ru' &&
+    publicScoreState.retryRecommended;
+  const partialUsableResult =
+    locale === 'ru' &&
+    publicScoreState.reportCtaEligible &&
+    metaHasPartialCartographicWarning(meta);
+  const reportCtaLabelRu = partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт';
 
   return (
     <div
@@ -3165,7 +3183,7 @@ function CommercialASIPanel({
       {meta ? <AnalysisFreshnessStrip meta={meta} locale={locale} c={c} /> : null}
       <RuPartialCartographicResultBanner
         locale={locale}
-        meta={meta}
+        meta={publicScoreState.analysisUsableForPublicScore ? meta : null}
         fallbackCopy={c.partialCartographicEstimate}
       />
 
@@ -3218,16 +3236,10 @@ function CommercialASIPanel({
             <button
               type="button"
               onClick={onRetryAnalysis}
-              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              disabled={!onRetryAnalysis}
+              className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
               {c.mapDataIncompleteRetryCta}
-            </button>
-            <button
-              type="button"
-              onClick={openCommercialReport}
-              className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-            >
-              Открыть демо‑перmalink (пространственный)
             </button>
           </>
         ) : (
@@ -3245,7 +3257,7 @@ function CommercialASIPanel({
               disabled={fullReportBusy}
               className="w-full py-3 px-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 disabled:bg-slate-900/25 border border-slate-800/60 text-slate-100 text-[13px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
-              {fullReportBusy ? 'Готовим полный отчёт…' : 'Заказать отчёт'}
+              {fullReportBusy ? 'Готовим полный отчёт…' : reportCtaLabelRu}
             </button>
           </>
         )}

@@ -10,7 +10,7 @@ import type { LocationScoringIntegritySnapshot, LocationScoringTrace } from './l
 
 /** Russian copy for free/demo UI when analysis cannot be scored reliably */
 export const LOCATION_DEMO_INCOMPLETE_RU =
-  'Не удалось получить достаточно данных по карте для предварительной оценки.';
+  'Не удалось получить достаточно данных по карте. Попробуйте повторить анализ.';
 
 export const LOCATION_DEMO_INCOMPLETE_EN =
   "We couldn't retrieve enough map data to complete this preview.";

@@ -316,6 +316,14 @@ export interface AnalysisMeta {
   cached: boolean;
   analysisIncomplete?: boolean;
   scoreBlockedDueToIncompleteData?: boolean;
+  /** True when public UI may show a score/summary as a usable result. */
+  analysisUsableForPublicScore?: boolean;
+  /** True when paid/full report CTA is allowed for this demo result state. */
+  reportCtaEligible?: boolean;
+  /** True when the UI should prioritize rerunning map collection. */
+  retryRecommended?: boolean;
+  /** Machine-readable reason for a no-data / unusable public result. */
+  noDataReason?: string | null;
   /** Stale cache returned while a background live refresh is in flight */
   refreshing?: boolean;
   /** Live fetch used a reduced Overpass query after primary queries failed */

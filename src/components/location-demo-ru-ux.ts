@@ -1,4 +1,5 @@
 import { PARTIAL_CARTOGRAPHIC_WARNING_CODES } from '@/lib/location/location-demo-partial-warnings';
+import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
 import type { AnalysisMeta, LocationAnalysis } from '@/lib/location/types';
 
 /** Boundaries for staged RU demo loading copy (ms elapsed since analysis request started). */
@@ -12,13 +13,6 @@ export function ruDemoLoadingStageIndex(elapsedMs: number): 0 | 1 | 2 {
 }
 
 export type LocationDemoReportDeferMode = 'residential' | 'commercial';
-
-/** Non-empty public driver lines from the kernel-backed summary (headline-only incomplete states have zero rows). */
-function ruDemoAnalysisHasUsablePublicDriverLines(analysis: LocationAnalysis): boolean {
-  const rows = analysis.locationDecision?.publicSummary?.publicDrivers;
-  if (!rows?.length) return false;
-  return rows.some(r => typeof r.textRu === 'string' && r.textRu.trim().length > 0);
-}
 
 /**
  * RU demo: when the headline preview is blocked or map data is incomplete without a usable
@@ -35,21 +29,11 @@ export function ruDemoDeferPaidReportForMapRetry(args: {
   mode: LocationDemoReportDeferMode;
 }): boolean {
   if (args.locale !== 'ru') return false;
-  const blockedScore =
-    Boolean(args.meta?.scoreBlockedDueToIncompleteData) ||
-    Boolean(args.analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData);
-
-  if (args.mode === 'commercial') return blockedScore;
-
-  if (blockedScore) return true;
-
-  const analysisIncomplete = Boolean(args.analysis.analysisIntegrity?.analysisIncomplete);
-  const partialMapWarn = metaHasPartialCartographicWarning(args.meta);
-  const noUsablePublic = !ruDemoAnalysisHasUsablePublicDriverLines(args.analysis);
-
-  if (analysisIncomplete && partialMapWarn && noUsablePublic) return true;
-
-  return false;
+  return resolveLocationDemoPublicScoreState({
+    meta: args.meta,
+    analysis: args.analysis,
+    mode: args.mode,
+  }).retryRecommended;
 }
 
 export function metaHasPartialCartographicWarning(meta: AnalysisMeta | null | undefined): boolean {

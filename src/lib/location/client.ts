@@ -56,6 +56,15 @@ export {
   LOCATION_DEMO_INCOMPLETE_RU,
   LOCATION_DEMO_INCOMPLETE_EN,
 } from './location-data-integrity';
+export {
+  locationDemoAnalysisHasUsablePublicSummary,
+  locationDemoPublicSummaryHasUsableDriverLines,
+  resolveLocationDemoPublicScoreState,
+} from './location-demo-public-score-state';
+export type {
+  LocationDemoPublicScoreMode,
+  LocationDemoPublicScoreState,
+} from './location-demo-public-score-state';
 
 export {
   applyResidentialDemoSanity,

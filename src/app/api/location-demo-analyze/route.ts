@@ -16,6 +16,7 @@ import {
   logKorzunPipelineDiagnostics,
 } from '@/lib/location/korzun-pipeline-diagnostics';
 import { metaWarningsIndicatePartialCartography } from '@/lib/location/location-demo-partial-warnings';
+import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 
@@ -95,6 +96,18 @@ function mergeAnalysisIntegrityWarnings(
 function attachIntegrityMeta(meta: AnalysisMeta, analysis: Awaited<ReturnType<typeof buildAnalysis>>): void {
   meta.analysisIncomplete = !!analysis.analysisIntegrity?.analysisIncomplete;
   meta.scoreBlockedDueToIncompleteData = !!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData;
+}
+
+function attachPublicScoreStateMeta(
+  meta: AnalysisMeta,
+  analysis: Awaited<ReturnType<typeof buildAnalysis>>,
+  mode: 'residential' | 'commercial',
+): void {
+  const state = resolveLocationDemoPublicScoreState({ meta, analysis, mode });
+  meta.analysisUsableForPublicScore = state.analysisUsableForPublicScore;
+  meta.reportCtaEligible = state.reportCtaEligible;
+  meta.retryRecommended = state.retryRecommended;
+  meta.noDataReason = state.noDataReason;
 }
 
 function buildWarnings(args: {
@@ -198,6 +211,7 @@ function withDemoSanityPayload(args: {
       Boolean(analysis.analysisIntegrity?.analysisIncomplete),
     ...(geocodeResult ? { geocodeResult } : {}),
   });
+  attachPublicScoreStateMeta(meta, analysisWithKernel, wantSpatial ? 'commercial' : 'residential');
 
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;
   return {

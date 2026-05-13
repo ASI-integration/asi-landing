@@ -253,6 +253,15 @@ export type {
   CacheEntryIntegrityProbe,
 } from './location-data-integrity';
 export {
+  locationDemoAnalysisHasUsablePublicSummary,
+  locationDemoPublicSummaryHasUsableDriverLines,
+  resolveLocationDemoPublicScoreState,
+} from './location-demo-public-score-state';
+export type {
+  LocationDemoPublicScoreMode,
+  LocationDemoPublicScoreState,
+} from './location-demo-public-score-state';
+export {
   applyReportProjectionToTrace,
   enrichAnalysisWithReportProjection,
 } from './location-scoring-projection';
@@ -350,6 +359,22 @@ export type {
   LocationPublicClaim,
   LocationPublicClaimTrace,
 } from './location-decision-contract';
+export {
+  buildH3DemandContext,
+  DEFAULT_H3_DEMAND_CONTEXT_RESOLUTION,
+  H3_DEMAND_CONTEXT_MAX_RING,
+} from './h3/location-h3-context';
+export type {
+  BuildH3DemandContextInput,
+  H3DemandContextDiagnostics,
+  H3DemandDensityKey,
+  H3DemandSignal,
+  H3DemandType,
+  H3DemandVector,
+  H3RingDemandSummary,
+  H3ScoreSupportStatus,
+  H3SignalSource,
+} from './h3/location-h3-context';
 export {
   buildPublicClaimsRu,
   lintPublicClaimSurfaceRu,
