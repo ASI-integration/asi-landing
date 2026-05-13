@@ -125,6 +125,8 @@ function attachOverpassDiagnosticsMeta(
   meta.overpassQueryRadiusM = diagnostics.overpassQueryRadiusM;
   meta.overpassFallbackAttempted = diagnostics.overpassFallbackAttempted;
   meta.overpassFallbackSucceeded = diagnostics.overpassFallbackSucceeded;
+  meta.fallbackPoiCount = diagnostics.fallbackPoiCount;
+  meta.fallbackMedicalPoiCount = diagnostics.fallbackMedicalPoiCount;
   meta.overpassAttempts = diagnostics.overpassAttempts;
 }
 

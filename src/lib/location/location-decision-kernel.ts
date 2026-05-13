@@ -54,12 +54,114 @@ export interface LocationDecisionBuildInput {
 }
 
 const DEMO_COORD_MATCH_EPS = 1e-4;
+const FALLBACK_MEDICAL_CLUSTER_SCORE_FLOOR = 35;
+const FALLBACK_MEDICAL_CLUSTER_FLOOR_MAX_INPUT_SCORE = 24;
+
+interface FallbackMedicalClusterDiagnostics {
+  fallbackPoiCount: number | null;
+  fallbackMedicalPoiCount: number | null;
+  nearbyClusterDetected: boolean;
+  conservativeClusterFloorApplied: boolean;
+  clusterFloorReason: string | null;
+}
 
 function demoCoordinatesMatch(
   a: { lat: number; lon: number },
   b: { lat: number; lon: number },
 ): boolean {
   return Math.abs(a.lat - b.lat) <= DEMO_COORD_MATCH_EPS && Math.abs(a.lon - b.lon) <= DEMO_COORD_MATCH_EPS;
+}
+
+function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6_371_000;
+  const toRad = (v: number) => v * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function osmElementPoint(el: OSMElement): { lat: number; lon: number } | null {
+  const lat = el.lat ?? el.center?.lat;
+  const lon = el.lon ?? el.center?.lon;
+  return lat != null && lon != null && Number.isFinite(lat) && Number.isFinite(lon)
+    ? { lat, lon }
+    : null;
+}
+
+function isMedicalRawElement(el: OSMElement): boolean {
+  const t = el.tags ?? {};
+  const amenity = t.amenity ?? '';
+  const healthcare = t.healthcare ?? '';
+  if (
+    ['hospital', 'clinic', 'doctors', 'dentist'].includes(amenity) ||
+    ['hospital', 'clinic', 'doctor', 'doctors', 'laboratory', 'surgery', 'centre', 'center'].includes(healthcare)
+  ) {
+    return true;
+  }
+  const name = `${t.name ?? ''} ${t['name:ru'] ?? ''}`;
+  return /больниц|поликлин|клиник|диспанс|медиц|лаборатор|hospital|clinic|medical|laborator/i.test(name);
+}
+
+function isNamedMedicalRawElement(el: OSMElement): boolean {
+  const name = (el.tags?.name ?? el.tags?.['name:ru'] ?? '').normalize('NFKC').trim().toLowerCase();
+  if (!name) return false;
+  return !/^(?:больница|госпиталь|поликлиника|клиника|мед(?:ицинский)?\s*центр|диспансер|hospital|clinic)$/iu.test(
+    name,
+  );
+}
+
+function inspectFallbackMedicalCluster(
+  rawElements: readonly OSMElement[] | undefined,
+  coords: { lat: number; lon: number },
+  partialCartographicPreview: boolean,
+): FallbackMedicalClusterDiagnostics {
+  if (!partialCartographicPreview || !rawElements) {
+    return {
+      fallbackPoiCount: partialCartographicPreview ? rawElements?.length ?? null : null,
+      fallbackMedicalPoiCount: null,
+      nearbyClusterDetected: false,
+      conservativeClusterFloorApplied: false,
+      clusterFloorReason: null,
+    };
+  }
+
+  const medical = rawElements
+    .map(el => ({ el, point: osmElementPoint(el) }))
+    .filter((x): x is { el: OSMElement; point: { lat: number; lon: number } } => Boolean(x.point) && isMedicalRawElement(x.el))
+    .map(x => ({
+      distance: haversineMeters(coords, x.point),
+      named: isNamedMedicalRawElement(x.el),
+    }));
+
+  const namedWithin300 = medical.filter(x => x.named && x.distance <= 300).length;
+  const namedWithin500 = medical.filter(x => x.named && x.distance <= 500).length;
+  const namedWithin1000 = medical.filter(x => x.named && x.distance <= 1000).length;
+  const totalWithin300 = medical.filter(x => x.distance <= 300).length;
+  const totalWithin500 = medical.filter(x => x.distance <= 500).length;
+
+  let clusterFloorReason: string | null = null;
+  if (namedWithin500 >= 2) {
+    clusterFloorReason = `nearby_named_medical_cluster:namedWithin500=${namedWithin500}`;
+  } else if (namedWithin1000 >= 3 && totalWithin500 >= 2) {
+    clusterFloorReason =
+      `nearby_medical_campus_pattern:namedWithin1000=${namedWithin1000}:totalWithin500=${totalWithin500}`;
+  } else if (namedWithin1000 >= 2 && totalWithin300 >= 2) {
+    clusterFloorReason =
+      `close_medical_campus_pattern:namedWithin1000=${namedWithin1000}:totalWithin300=${totalWithin300}`;
+  }
+
+  return {
+    fallbackPoiCount: rawElements.length,
+    fallbackMedicalPoiCount: medical.length,
+    nearbyClusterDetected: clusterFloorReason != null,
+    conservativeClusterFloorApplied: false,
+    clusterFloorReason,
+  };
 }
 
 /**
@@ -240,6 +342,11 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
   let partialDataScoreCapReason: string | null = null;
   let scoreBeforePartialDataCap: number | null = null;
   let scoreAfterPartialDataCap: number | null = Number.isFinite(finalScore) ? Math.round(finalScore) : null;
+  const fallbackClusterDiagnostics = inspectFallbackMedicalCluster(
+    input.rawElements,
+    coords,
+    partialCartographicPreview,
+  );
 
   if (Number.isFinite(finalScore) && partialCartographicPreview) {
     const blocked = Boolean(analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData);
@@ -269,6 +376,22 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       finalScore = cap;
     }
     scoreAfterPartialDataCap = Math.round(finalScore);
+  }
+
+  if (
+    Number.isFinite(finalScore) &&
+    partialCartographicPreview &&
+    !analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData &&
+    fallbackClusterDiagnostics.nearbyClusterDetected &&
+    Math.round(finalScore) <= FALLBACK_MEDICAL_CLUSTER_FLOOR_MAX_INPUT_SCORE
+  ) {
+    const before = Math.round(finalScore);
+    finalScore = Math.max(finalScore, FALLBACK_MEDICAL_CLUSTER_SCORE_FLOOR);
+    fallbackClusterDiagnostics.conservativeClusterFloorApplied = Math.round(finalScore) > before;
+    fallbackClusterDiagnostics.clusterFloorReason =
+      `conservative_cluster_floor:${fallbackClusterDiagnostics.clusterFloorReason}:from=${before}:to=${Math.round(finalScore)}`;
+    scoreAfterPartialDataCap = Math.round(finalScore);
+    demandKernelV1.warnings.push(fallbackClusterDiagnostics.clusterFloorReason);
   }
 
   if (
@@ -375,6 +498,11 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       scoreAfterPartialDataCap,
       genericMedicalSuppressed: false,
       verifiedMajorMedicalAnchorCount,
+      fallbackPoiCount: fallbackClusterDiagnostics.fallbackPoiCount,
+      fallbackMedicalPoiCount: fallbackClusterDiagnostics.fallbackMedicalPoiCount,
+      nearbyClusterDetected: fallbackClusterDiagnostics.nearbyClusterDetected,
+      conservativeClusterFloorApplied: fallbackClusterDiagnostics.conservativeClusterFloorApplied,
+      clusterFloorReason: fallbackClusterDiagnostics.clusterFloorReason,
     },
   });
 
