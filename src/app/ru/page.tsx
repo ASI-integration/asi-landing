@@ -84,9 +84,15 @@ export default function HomeRu() {
                 <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
                   Получите вывод по локации
                 </h3>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
                   Отчёт помогает понять, стоит ли запускать объект, брать его в аренду или искать другой вариант.
                 </p>
+                <Link
+                  href={RU_LOCATION_CHECK_HREF}
+                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
+                >
+                  Получить вывод
+                </Link>
               </div>
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
