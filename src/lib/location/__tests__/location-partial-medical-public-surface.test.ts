@@ -76,6 +76,101 @@ describe('partial cartographic preview + generic medical public surface', () => 
     expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
   });
 
+  it('novorossiysk_094_sovetov_42-like full-data generic medical story cannot score 90', () => {
+    const els: OSMElement[] = [
+      node(953, 0.007, 0.006, { amenity: 'hospital', name: 'Горбольница' }),
+      node(954, 0.0072, 0.0062, { amenity: 'hospital' }),
+      node(955, 0.001, 0.0005, { tourism: 'attraction', name: 'Обелиск Новороссийская республика' }),
+      node(956, 0.0012, 0.0008, { tourism: 'attraction', name: 'Незнакомка' }),
+      node(957, 0.0014, 0.001, { tourism: 'attraction', name: 'Колодец' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 96;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Краснодарский край, Новороссийск, улица Советов, 42',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.primaryDemandType).toBe('medical');
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThanOrEqual(82);
+    expect(decision.publicSummary?.headlineRu).toMatch(/медицинские объекты|медицинскими объектами/i);
+    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+  });
+
+  it('nnov_014_rodionova_199-like ordinary-dominated medical surface cannot inflate to 84+', () => {
+    const els: OSMElement[] = [
+      node(958, 0.0025, 0.0022, { amenity: 'hospital', name: 'Международная клиническая больница имени Филоненко' }),
+      node(959, 0.008, 0.006, { amenity: 'hospital', name: 'Областная клиническая больница имени Семашко' }),
+      node(960, 0.0035, 0.003, { amenity: 'hospital', name: 'Тубдиспансер' }),
+      node(961, 0.016, 0.012, { amenity: 'hospital', name: 'Городская поликлиника №30' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 96;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Нижний Новгород, улица Родионова, 199',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.primaryDemandType).toBe('medical');
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThan(84);
+    expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Сильная локация для командированных/);
+    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+  });
+
+  it('voronezh_030_moskovsky_129_1-like medical surface cannot inflate to 84+ without strong evidence', () => {
+    const els: OSMElement[] = [
+      node(962, 0.009, 0.007, { amenity: 'hospital', name: 'Городская клиническая поликлиника № 4, корпус №1' }),
+      node(963, 0.0095, 0.0074, { amenity: 'hospital', name: 'БСМП' }),
+      node(964, 0.0045, 0.0038, { amenity: 'hospital', name: 'Военная поликлиника' }),
+      node(965, 0.0052, 0.0045, { amenity: 'hospital', name: 'Центр мануальной терапии' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 96;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Воронеж, Московский проспект, 129/1',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.primaryDemandType).toBe('medical');
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeLessThan(84);
+    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+  });
+
+  it('verified named regional medical cluster remains eligible for a high full-data score', () => {
+    const els: OSMElement[] = [
+      node(966, 0.0025, 0.002, { amenity: 'hospital', name: 'Федеральный научный медицинский центр' }),
+      node(967, 0.003, 0.0023, { amenity: 'hospital', name: 'Краевой онкологический диспансер' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 96;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Ставрополь, улица Доваторцев, 1',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+    });
+    expect(decision.publicSummary?.primaryDemandType).toBe('medical');
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeGreaterThan(82);
+    expect(decision.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]),
+    );
+  });
+
   it('commander verdict cannot appear from medical-led score plus one industrial object', () => {
     const els: OSMElement[] = [
       node(960, 0.002, 0.002, { amenity: 'hospital', name: 'Детская больница №38' }),
