@@ -152,6 +152,11 @@ export interface LocationPublicPresentationDiagnostics {
   scoreAfterPartialDataCap: number | null;
   genericMedicalSuppressed: boolean;
   verifiedMajorMedicalAnchorCount: number;
+  fallbackPoiCount?: number | null;
+  fallbackMedicalPoiCount?: number | null;
+  nearbyClusterDetected?: boolean;
+  conservativeClusterFloorApplied?: boolean;
+  clusterFloorReason?: string | null;
 }
 
 export interface LocationPublicSummary {

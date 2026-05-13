@@ -346,6 +346,10 @@ export interface AnalysisMeta {
   overpassFallbackAttempted?: boolean;
   /** True when the reduced Overpass fallback returned at least one OSM element */
   overpassFallbackSucceeded?: boolean;
+  /** Number of raw OSM elements returned by the reduced fallback query */
+  fallbackPoiCount?: number;
+  /** Number of health-related raw OSM elements returned by the reduced fallback query */
+  fallbackMedicalPoiCount?: number;
   /** Per-endpoint Overpass diagnostics; intended for logs/debugging, not copy */
   overpassAttempts?: Array<{
     endpoint: string;

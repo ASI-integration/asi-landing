@@ -344,6 +344,8 @@ export interface OverpassFetchDiagnostics {
   overpassQueryRadiusM?: number;
   overpassFallbackAttempted: boolean;
   overpassFallbackSucceeded: boolean;
+  fallbackPoiCount?: number;
+  fallbackMedicalPoiCount?: number;
   overpassAttempts: OverpassAttemptDiagnostics[];
 }
 
@@ -352,6 +354,8 @@ type OverpassDiagnosticsCollector = {
   attempts: OverpassAttemptDiagnostics[];
   fallbackAttempted: boolean;
   fallbackSucceeded: boolean;
+  fallbackPoiCount?: number;
+  fallbackMedicalPoiCount?: number;
 };
 
 type OverpassFetchOk = { ok: true; elements: OSMElement[]; endpoint: string };
@@ -653,6 +657,20 @@ function buildMinimalClauses(lat: number, lon: number): string[] {
   ];
 }
 
+function isFallbackMedicalPoi(el: OSMElement): boolean {
+  const t = el.tags ?? {};
+  const amenity = t.amenity ?? '';
+  const healthcare = t.healthcare ?? '';
+  if (
+    ['hospital', 'clinic', 'doctors', 'dentist'].includes(amenity) ||
+    ['hospital', 'clinic', 'doctor', 'doctors', 'laboratory', 'surgery', 'centre', 'center'].includes(healthcare)
+  ) {
+    return true;
+  }
+  const name = `${t.name ?? ''} ${t['name:ru'] ?? ''}`;
+  return /больниц|поликлин|клиник|диспанс|медиц|лаборатор|hospital|clinic|medical|laborator/i.test(name);
+}
+
 /**
  * Fast-demo fallback clauses: intentionally smaller than the full/broad profile, but broad
  * enough to prove real nearby map signal exists. These are collection-only safeguards; scoring
@@ -665,8 +683,13 @@ function buildLightFallbackClauses(lat: number, lon: number): string[] {
     ...r(capRadius(CATEGORY_RADIUS.metro, 950), '"station"="subway"'),
     ...r(capRadius(CATEGORY_RADIUS.railway_station, 1000), '"railway"="station"'),
     ...r(capRadius(CATEGORY_RADIUS.railway_station, 1000), '"amenity"="bus_station"'),
-    ...r(capRadius(CATEGORY_RADIUS.hospital, 800), '"amenity"="hospital"', false),
-    ...r(capRadius(CATEGORY_RADIUS.hospital, 800), '"healthcare"="hospital"'),
+    ...r(capRadius(CATEGORY_RADIUS.hospital, 1000), '"amenity"="hospital"', false),
+    ...r(capRadius(CATEGORY_RADIUS.hospital, 1000), '"healthcare"="hospital"'),
+    ...r(1000, '"amenity"="clinic"'),
+    ...r(1000, '"amenity"="doctors"'),
+    ...r(900, '"amenity"="dentist"'),
+    ...r(1000, '"healthcare"="clinic"'),
+    ...r(1000, '"healthcare"~"^(doctor|doctors|laboratory|surgery|centre|center)$"'),
     ...r(capRadius(CATEGORY_RADIUS.attraction, 800), '"tourism"="attraction"', false),
     ...r(capRadius(CATEGORY_RADIUS.attraction, 800), '"tourism"="museum"', false),
     ...r(capRadius(CATEGORY_RADIUS.major_hotel, 650), '"tourism"="hotel"'),
@@ -690,6 +713,8 @@ function makeDiagnosticsCollector(): OverpassDiagnosticsCollector {
     attempts: [],
     fallbackAttempted: false,
     fallbackSucceeded: false,
+    fallbackPoiCount: undefined,
+    fallbackMedicalPoiCount: undefined,
   };
 }
 
@@ -721,6 +746,8 @@ function finalizeDiagnostics(
     ...(success ? {} : { overpassFailureReason: diagnosticsFailureReason(collector.attempts) ?? 'overpass_all_failed' }),
     overpassFallbackAttempted: collector.fallbackAttempted,
     overpassFallbackSucceeded: collector.fallbackSucceeded,
+    ...(collector.fallbackPoiCount != null ? { fallbackPoiCount: collector.fallbackPoiCount } : {}),
+    ...(collector.fallbackMedicalPoiCount != null ? { fallbackMedicalPoiCount: collector.fallbackMedicalPoiCount } : {}),
     overpassAttempts: collector.attempts,
   };
 }
@@ -805,6 +832,8 @@ async function fetchOsmDataFastDemo(
   }
 
   const merged = dedupeElements([...strictElements, ...lightElements]);
+  collector.fallbackPoiCount = lightElements.length;
+  collector.fallbackMedicalPoiCount = lightElements.filter(isFallbackMedicalPoi).length;
   collector.fallbackSucceeded = lightElements.length > 0;
   const hadProviderFailure = true;
 

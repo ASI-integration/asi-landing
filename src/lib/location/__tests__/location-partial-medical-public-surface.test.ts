@@ -158,6 +158,59 @@ describe('partial cartographic preview + generic medical public surface', () => 
     );
   });
 
+  it('yoshkar-ola-like fallback medical cluster does not collapse into a tiny score', () => {
+    const els: OSMElement[] = [
+      node(1050, 0.0012, 0.001, { amenity: 'hospital', name: 'Республиканская больница' }),
+      node(1051, 0.0015, 0.0012, { healthcare: 'clinic', name: 'Медицинский центр Айболит' }),
+      node(1052, 0.002, 0.0014, { healthcare: 'laboratory', name: 'Клинико-диагностическая лаборатория' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 11;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Йошкар-Ола, улица Водопроводная, 77',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+    const diag = decision.publicSummary?.presentationDiagnostics;
+
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeGreaterThanOrEqual(30);
+    expect(decision.finalScore!).toBeLessThan(45);
+    expect(decision.publicSummary?.audienceVerdictRu).not.toBe('Хорошая локация');
+    expect(diag?.fallbackPoiCount).toBe(3);
+    expect(diag?.fallbackMedicalPoiCount).toBe(3);
+    expect(diag?.nearbyClusterDetected).toBe(true);
+    expect(diag?.conservativeClusterFloorApplied).toBe(true);
+    expect(diag?.clusterFloorReason).toContain('conservative_cluster_floor');
+  });
+
+  it('nnov rodionova-like partial ordinary medical-only remains modest', () => {
+    const els: OSMElement[] = [
+      node(1060, 0.0045, 0.0042, { amenity: 'hospital', name: 'Городская поликлиника №30' }),
+      node(1061, 0.006, 0.005, { amenity: 'hospital', name: 'Больница' }),
+    ];
+    const analysis = buildAnalysis(els, ORIGIN.lat, ORIGIN.lon);
+    const tr = analysis.scoringTrace;
+    if (tr) tr.finalScore = 29;
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Россия, Нижний Новгород, улица Родионова, 199',
+      coordinates: ORIGIN,
+      rawElements: els,
+      locale: 'ru',
+      partialCartographicPreview: true,
+    });
+
+    expect(decision.finalScore).not.toBeNull();
+    expect(decision.finalScore!).toBeGreaterThanOrEqual(20);
+    expect(decision.finalScore!).toBeLessThanOrEqual(35);
+    expect(decision.publicSummary?.presentationDiagnostics?.conservativeClusterFloorApplied).toBe(false);
+  });
+
   it('verified named regional medical cluster remains eligible for a high full-data score', () => {
     const els: OSMElement[] = [
       node(966, 0.0025, 0.002, { amenity: 'hospital', name: 'Федеральный научный медицинский центр' }),

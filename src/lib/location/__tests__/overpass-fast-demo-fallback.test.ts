@@ -53,6 +53,34 @@ describe('fetchOsmData fast demo fallback', () => {
     expect(result.overpassDiagnostics?.overpassQueryMode).toBe('light_fallback');
     expect(result.overpassDiagnostics?.overpassAttempts.some(a => a.queryMode === 'full' && !a.ok)).toBe(true);
     expect(result.overpassDiagnostics?.overpassAttempts.some(a => a.queryMode === 'light_fallback' && a.ok)).toBe(true);
+    expect(result.overpassDiagnostics?.fallbackPoiCount).toBe(1);
+    expect(result.overpassDiagnostics?.fallbackMedicalPoiCount).toBe(1);
+  });
+
+  it('keeps medical cluster tags in the light fallback query', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const query = decodeOverpassBody(init);
+      if (query.includes('"healthcare"~"^(doctor|doctors|laboratory|surgery|centre|center)$"')) {
+        return overpassResponse([]);
+      }
+      return overpassResponse([], 504);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { fetchOsmData } = await import('../overpass');
+    await fetchOsmData(56.3004, 44.078, {
+      fastDemo: true,
+      requestTimeoutMs: 100,
+      fastDemoPrimaryTimeoutMs: 500,
+      fastDemoFallbackTimeoutMs: 500,
+      disableRateLimit: true,
+    });
+
+    const queries = fetchMock.mock.calls.map(([, init]) => decodeOverpassBody(init));
+    const lightQuery = queries.find(q => q.includes('"healthcare"~"^(doctor|doctors|laboratory|surgery|centre|center)$"'));
+    expect(lightQuery).toContain('"amenity"="clinic"');
+    expect(lightQuery).toContain('"amenity"="doctors"');
+    expect(lightQuery).toContain('"healthcare"="clinic"');
   });
 
   it('returns no elements with diagnostics when full and fallback both fail', async () => {

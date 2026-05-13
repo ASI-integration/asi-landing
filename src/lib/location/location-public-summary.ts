@@ -710,6 +710,11 @@ export function buildLocationPublicSummary(args: {
     scoreAfterPartialDataCap: diagSeed?.scoreAfterPartialDataCap ?? finalScore,
     genericMedicalSuppressed: Boolean(headline.genericMedicalSuppressed),
     verifiedMajorMedicalAnchorCount: diagSeed?.verifiedMajorMedicalAnchorCount ?? 0,
+    fallbackPoiCount: diagSeed?.fallbackPoiCount ?? null,
+    fallbackMedicalPoiCount: diagSeed?.fallbackMedicalPoiCount ?? null,
+    nearbyClusterDetected: diagSeed?.nearbyClusterDetected ?? false,
+    conservativeClusterFloorApplied: diagSeed?.conservativeClusterFloorApplied ?? false,
+    clusterFloorReason: diagSeed?.clusterFloorReason ?? null,
   };
 
   const scoreForSanity = finalScore ?? 0;
