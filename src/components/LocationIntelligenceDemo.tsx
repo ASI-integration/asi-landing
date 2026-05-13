@@ -67,6 +67,7 @@ import {
 import {
   metaHasPartialCartographicWarning,
   partialCartographicBannerMessage,
+  resolveRuDemoResultCtaSurface,
   ruDemoLoadingStageIndex,
 } from '@/components/location-demo-ru-ux';
 
@@ -2155,6 +2156,7 @@ function ASIPanel({
       :                              '$1 800 – $3 300';
   })();
   async function requestFullReportAsync() {
+    if (locale === 'ru' && !publicScoreState.reportCtaEligible) return;
     if (fullReportBusy) return;
     setFullReportErr(null);
     setFullReportBusy(true);
@@ -2268,14 +2270,17 @@ function ASIPanel({
   const dashboardClaimRows: LocationPublicClaim[] =
     isRuResidentialDemo ? residentialUiClaims.slice(0, 2) : [];
 
-  const deferPaidReportForMapRetry =
-    locale === 'ru' &&
-    publicScoreState.retryRecommended;
   const partialUsableResult =
     locale === 'ru' &&
     publicScoreState.reportCtaEligible &&
     metaHasPartialCartographicWarning(meta);
-  const reportCtaLabelRu = partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт';
+  const ctaSurface = resolveRuDemoResultCtaSurface({
+    locale,
+    publicScoreState,
+    partialUsableResult,
+  });
+  const showRetryOnlyCta = ctaSurface.showRetryCta;
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
 
   return (
     <>
@@ -2296,20 +2301,17 @@ function ASIPanel({
       {meta && !isRuResidentialDemo ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
       {/* Main result dashboard — 3 columns on desktop */}
       <div className="p-5 md:p-6">
-        <div className="grid md:grid-cols-3 gap-4 md:gap-5 items-stretch">
+        <div className={`grid gap-4 md:gap-5 items-stretch ${dataBlocked ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
 
           {/* Left: Score / index */}
+          {!dataBlocked ? (
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
             {!isRuResidentialDemo ? (
               <p className="text-[13px] text-slate-400 font-medium">
                 {locale === 'ru' ? 'Индекс' : 'Index'}
               </p>
             ) : null}
-            {dataBlocked ? (
-              <p className={`text-[15px] leading-relaxed text-slate-300 ${isRuResidentialDemo ? 'mt-1' : 'mt-2'}`}>
-                {locationDemoIncompleteUserMessage(locale)}
-              </p>
-            ) : (
+            {(
               <>
                 <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
                   <div className="leading-none">
@@ -2375,8 +2377,10 @@ function ASIPanel({
               </>
             )}
           </div>
+          ) : null}
 
           {/* Middle: demand profile (+ income outside RU residential demo) */}
+          {!dataBlocked ? (
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
             {!isRuResidentialDemo ? (
               <p className="text-[13px] text-slate-400 font-medium">
@@ -2384,18 +2388,12 @@ function ASIPanel({
               </p>
             ) : null}
             {isRuResidentialDemo ? (
-              dataBlocked ? (
-                <p className="mt-1 text-[15px] text-slate-500 leading-snug">
-                  {locale === 'ru' ? 'Профиль спроса недоступен без данных карты.' : 'Demand profile unavailable without map data.'}
-                </p>
-              ) : (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
                 {residentialPublicSummary?.headlineRu ??
                   (residentialLocationDecision
                     ? 'Профиль спроса: нет сводки для публичного экрана.'
                     : 'Профиль спроса: нет координат расчёта для привязки фактов карты.')}
               </p>
-              )
             ) : (
               <>
                 <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
@@ -2414,6 +2412,7 @@ function ASIPanel({
               </>
             )}
           </div>
+          ) : null}
 
           {/* Right: Verdict + CTA */}
           <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5 flex flex-col">
@@ -2425,23 +2424,27 @@ function ASIPanel({
             <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${dataBlocked ? 'text-slate-400' : band.textColor}`}>
               {dataBlocked
                 ? locale === 'ru'
-                  ? 'Анализ не завершён'
+                  ? ctaSurface.title ?? 'Анализ не завершён'
                   : 'Analysis incomplete'
                 : isRuResidentialDemo && residentialPublicSummary
                   ? residentialPublicSummary.audienceVerdictRu
                   : band.label}
             </p>
+            {dataBlocked ? (
+              <p className="mt-3 text-[15px] leading-relaxed text-slate-300">
+                {ctaSurface.text ?? locationDemoIncompleteUserMessage(locale)}
+              </p>
+            ) : null}
             <div className="mt-4 space-y-2">
-              {deferPaidReportForMapRetry ? (
+              {showRetryOnlyCta ? (
                 <>
-                  <p className="text-[12px] text-slate-500 leading-snug">{c.mapDataIncompletePaidReportPrerequisite}</p>
                   <button
                     type="button"
                     onClick={onRetryAnalysis}
                     disabled={!onRetryAnalysis}
                     className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                   >
-                    {c.mapDataIncompleteRetryCta}
+                    {ctaSurface.primaryCta}
                   </button>
                 </>
               ) : (
@@ -2467,7 +2470,7 @@ function ASIPanel({
                   Открыть демо‑permalink
                 </button>
               ) : null}
-              {fullReportErr ? (
+              {fullReportErr && !showRetryOnlyCta ? (
                 <p className="text-[12px] text-amber-400/90 leading-snug">
                   {locale === 'ru'
                     ? `Не удалось запустить отчёт: ${fullReportErr}`
@@ -2480,6 +2483,8 @@ function ASIPanel({
       </div>
     </div>
 
+    {!dataBlocked ? (
+    <>
     {/* ── Detail sections — below summary panel ── */}
     <div
       className="mt-4 rounded-2xl border border-slate-800/40 overflow-hidden"
@@ -2491,7 +2496,7 @@ function ASIPanel({
       <div className="px-5 py-4 border-b border-slate-800/40">
         {isRuResidentialDemo ? (
           <p className="text-[17px] md:text-[18px] font-medium text-slate-300 leading-snug">
-            {dataBlocked ? c.mapDataIncompletePreviewLead : 'Краткая оценка локации. Подробный расчёт доступен в полном отчёте.'}
+            Краткая оценка локации. Подробный расчёт доступен в полном отчёте.
           </p>
         ) : (
           <p className="text-[14px] text-slate-500 leading-snug">
@@ -2975,6 +2980,8 @@ function ASIPanel({
 
     </div>
     </>
+    ) : null}
+    </>
   );
 }
 
@@ -3095,6 +3102,7 @@ function CommercialASIPanel({
     'text-slate-500';
 
   async function requestFullReportAsync() {
+    if (locale === 'ru' && !publicScoreState.reportCtaEligible) return;
     if (fullReportBusy) return;
     setFullReportErr(null);
     setFullReportBusy(true);
@@ -3162,14 +3170,17 @@ function CommercialASIPanel({
     })();
   }
 
-  const deferPaidReportForMapRetry =
-    locale === 'ru' &&
-    publicScoreState.retryRecommended;
   const partialUsableResult =
     locale === 'ru' &&
     publicScoreState.reportCtaEligible &&
     metaHasPartialCartographicWarning(meta);
-  const reportCtaLabelRu = partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт';
+  const ctaSurface = resolveRuDemoResultCtaSurface({
+    locale,
+    publicScoreState,
+    partialUsableResult,
+  });
+  const showRetryOnlyCta = ctaSurface.showRetryCta;
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
 
   return (
     <div
@@ -3189,8 +3200,11 @@ function CommercialASIPanel({
 
       {dataBlocked ? (
         <div className="px-5 py-4 border-b border-slate-800/60">
-          <p className="text-[14px] text-slate-300 leading-relaxed">
-            {locationDemoIncompleteUserMessage(locale)}
+          <p className="text-[24px] font-bold leading-tight text-slate-400">
+            {ctaSurface.title ?? 'Анализ не завершён'}
+          </p>
+          <p className="mt-3 text-[14px] text-slate-300 leading-relaxed">
+            {ctaSurface.text ?? locationDemoIncompleteUserMessage(locale)}
           </p>
         </div>
       ) : null}
@@ -3230,16 +3244,15 @@ function CommercialASIPanel({
 
       {/* CTA */}
       <div className="px-5 py-5 space-y-2">
-        {deferPaidReportForMapRetry ? (
+        {showRetryOnlyCta ? (
           <>
-            <p className="text-[12px] text-slate-500 leading-snug">{c.mapDataIncompletePaidReportPrerequisite}</p>
             <button
               type="button"
               onClick={onRetryAnalysis}
               disabled={!onRetryAnalysis}
               className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
-              {c.mapDataIncompleteRetryCta}
+              {ctaSurface.primaryCta}
             </button>
           </>
         ) : (
@@ -3261,7 +3274,7 @@ function CommercialASIPanel({
             </button>
           </>
         )}
-        {fullReportErr ? (
+        {fullReportErr && !showRetryOnlyCta ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
             Не удалось запустить полный отчёт: {fullReportErr}
           </p>

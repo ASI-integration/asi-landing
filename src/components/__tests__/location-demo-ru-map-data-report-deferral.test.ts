@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnalysisMeta, LocationAnalysis } from '@/lib/location/types';
 import {
   metaHasPartialCartographicWarning,
+  resolveRuDemoResultCtaSurface,
   ruDemoDeferPaidReportForMapRetry,
 } from '@/components/location-demo-ru-ux';
 import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
@@ -223,6 +224,28 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
     expect(state.analysisUsableForPublicScore).toBe(false);
     expect(state.reportCtaEligible).toBe(false);
     expect(state.noDataReason).toBe('osm_empty_result');
+
+    const surface = resolveRuDemoResultCtaSurface({
+      locale: 'ru',
+      publicScoreState: state,
+      partialUsableResult: false,
+    });
+    const renderedCtas = [
+      surface.showRetryCta ? surface.primaryCta : null,
+      surface.showReportCta ? surface.reportCtaLabel : null,
+      surface.showDemoPermalink ? 'Открыть демо-permalink' : null,
+    ].filter(Boolean);
+
+    expect(surface.title).toBe('Анализ не завершён');
+    expect(surface.text).toBe('Не удалось получить достаточно данных по карте. Попробуйте повторить анализ.');
+    expect(renderedCtas).toEqual(['Повторить анализ']);
+    expect(surface.showReportCta).toBe(false);
+    expect(surface.reportCtaLabel).toBeNull();
+    expect(surface.showDemoPermalink).toBe(false);
+    expect(`${surface.title ?? ''} ${surface.text ?? ''} ${renderedCtas.join(' ')}`).not.toContain('Полный отчёт');
+    expect(`${surface.title ?? ''} ${surface.text ?? ''} ${renderedCtas.join(' ')}`).not.toContain('Заказать отчёт');
+    expect(`${surface.title ?? ''} ${surface.text ?? ''} ${renderedCtas.join(' ')}`).not.toContain('Заказать полный отчёт');
+    expect(`${surface.title ?? ''} ${surface.text ?? ''} ${renderedCtas.join(' ')}`).not.toContain('permalink');
   });
 
   it('prioritizes retry for a no-data result', () => {
@@ -288,6 +311,15 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
     expect(state.reportCtaEligible).toBe(true);
     expect(state.retryRecommended).toBe(false);
     expect(state.noDataReason).toBeNull();
+
+    const surface = resolveRuDemoResultCtaSurface({
+      locale: 'ru',
+      publicScoreState: state,
+      partialUsableResult: metaHasPartialCartographicWarning(meta),
+    });
+    expect(surface.showReportCta).toBe(true);
+    expect(surface.reportCtaLabel).toBe('Заказать полный отчёт');
+    expect(surface.showRetryCta).toBe(false);
   });
 
   it('keeps complete result eligible for normal report CTA', () => {
@@ -322,5 +354,14 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
     expect(state.analysisUsableForPublicScore).toBe(true);
     expect(state.reportCtaEligible).toBe(true);
     expect(state.retryRecommended).toBe(false);
+
+    const surface = resolveRuDemoResultCtaSurface({
+      locale: 'ru',
+      publicScoreState: state,
+      partialUsableResult: metaHasPartialCartographicWarning(meta),
+    });
+    expect(surface.showReportCta).toBe(true);
+    expect(surface.reportCtaLabel).toBe('Заказать отчёт');
+    expect(surface.showRetryCta).toBe(false);
   });
 });

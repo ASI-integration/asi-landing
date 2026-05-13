@@ -238,9 +238,9 @@ export const LOC_COPY: Record<
       'Some map data did not load in time. This is a preliminary estimate.',
     mapDataIncompleteRetryCta: 'Retry analysis',
     mapDataIncompletePaidReportPrerequisite:
-      'A full calculated report needs successful map data collection. Right now the preview cannot be completed.',
+      'The analysis could not collect enough map data. Please retry.',
     mapDataIncompletePreviewLead:
-      'Brief scoring and paid reports rely on complete map data — that did not happen for this attempt.',
+      'The analysis could not collect enough map data. Please retry.',
     runStarted: 'Run started',
     sectionTitle: 'Location analysis runs automatically',
     sectionLead:
@@ -409,9 +409,9 @@ export const LOC_COPY: Record<
       'Предварительная оценка. Для точного расчёта нужен полный анализ карты.',
     mapDataIncompleteRetryCta: 'Повторить анализ',
     mapDataIncompletePaidReportPrerequisite:
-      'Полный отчёт с расчётом возможен только после успешного сбора данных карты. Сейчас предварительную оценку завершить нельзя.',
+      'Не удалось получить достаточно данных по карте. Попробуйте повторить анализ.',
     mapDataIncompletePreviewLead:
-      'Краткая оценка и платный отчёт опираются на полный сбор данных карты — в этот раз этого не произошло.',
+      'Не удалось получить достаточно данных по карте. Попробуйте повторить анализ.',
     runStarted: 'расчёт запущен',
     sectionTitle: 'Оцените потенциал вашего объекта',
     sectionLead:

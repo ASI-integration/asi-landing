@@ -1,5 +1,9 @@
 import { PARTIAL_CARTOGRAPHIC_WARNING_CODES } from '@/lib/location/location-demo-partial-warnings';
-import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
+import {
+  resolveLocationDemoPublicScoreState,
+  type LocationDemoPublicScoreState,
+} from '@/lib/location/location-demo-public-score-state';
+import { LOCATION_DEMO_INCOMPLETE_RU } from '@/lib/location/location-data-integrity';
 import type { AnalysisMeta, LocationAnalysis } from '@/lib/location/types';
 
 /** Boundaries for staged RU demo loading copy (ms elapsed since analysis request started). */
@@ -46,4 +50,52 @@ export function partialCartographicBannerMessage(meta: AnalysisMeta, fallback: s
   const hit = meta.warnings?.find(w => PARTIAL_CARTOGRAPHIC_WARNING_CODES.has(w.code));
   const m = hit?.message?.trim();
   return m ? m : fallback;
+}
+
+export interface RuDemoResultCtaSurface {
+  title: string | null;
+  text: string | null;
+  primaryCta: string;
+  reportCtaLabel: string | null;
+  showRetryCta: boolean;
+  showReportCta: boolean;
+  showDemoPermalink: boolean;
+}
+
+export function resolveRuDemoResultCtaSurface(args: {
+  locale: string;
+  publicScoreState: Pick<
+    LocationDemoPublicScoreState,
+    'analysisUsableForPublicScore' | 'reportCtaEligible'
+  >;
+  partialUsableResult: boolean;
+}): RuDemoResultCtaSurface {
+  const noUsableRuResult = args.locale === 'ru' && !args.publicScoreState.reportCtaEligible;
+
+  if (noUsableRuResult) {
+    return {
+      title: 'Анализ не завершён',
+      text: LOCATION_DEMO_INCOMPLETE_RU,
+      primaryCta: 'Повторить анализ',
+      reportCtaLabel: null,
+      showRetryCta: true,
+      showReportCta: false,
+      showDemoPermalink: false,
+    };
+  }
+
+  const reportCtaLabel =
+    args.locale === 'ru'
+      ? (args.partialUsableResult ? 'Заказать полный отчёт' : 'Заказать отчёт')
+      : 'Request report';
+
+  return {
+    title: null,
+    text: null,
+    primaryCta: reportCtaLabel,
+    reportCtaLabel,
+    showRetryCta: false,
+    showReportCta: true,
+    showDemoPermalink: args.locale === 'ru' && args.publicScoreState.analysisUsableForPublicScore,
+  };
 }
