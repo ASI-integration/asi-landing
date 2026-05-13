@@ -305,10 +305,64 @@ type FetchOverpassQueryOptions = {
   signal?: AbortSignal;
   /** Hard timeout per endpoint request (ms). Default 20000. */
   requestTimeoutMs?: number;
+  /** Skip local endpoint cooldowns for a reduced retry query. */
+  ignoreEndpointCooldown?: boolean;
+  /** Disable inter-request throttling in deterministic unit tests. */
+  disableRateLimit?: boolean;
+  /** Diagnostics collector shared across query attempts. */
+  diagnostics?: OverpassDiagnosticsCollector;
+  /** Query mode surfaced in API diagnostics. */
+  queryMode?: OverpassQueryMode;
+  /** Approximate max radius represented by this query. */
+  queryRadiusM?: number;
+};
+
+export type OverpassQueryMode = 'full' | 'light_fallback';
+
+export interface OverpassAttemptDiagnostics {
+  endpoint: string;
+  queryMode: OverpassQueryMode;
+  ok: boolean;
+  status: 'ok' | 'http_error' | 'timeout_or_network_error' | 'aborted' | 'parse_error' | 'skipped_cooldown';
+  httpStatus?: number;
+  durationMs: number;
+  elementCount: number;
+  querySize: number;
+  queryRadiusM?: number;
+  timeoutSec: number;
+  failureReason?: string;
+  errorBody?: string;
+}
+
+export interface OverpassFetchDiagnostics {
+  overpassAttemptCount: number;
+  overpassEndpoint?: string;
+  overpassQueryMode: OverpassQueryMode;
+  overpassDurationMs: number;
+  overpassFailureReason?: string;
+  overpassQuerySize?: number;
+  overpassQueryRadiusM?: number;
+  overpassFallbackAttempted: boolean;
+  overpassFallbackSucceeded: boolean;
+  overpassAttempts: OverpassAttemptDiagnostics[];
+}
+
+type OverpassDiagnosticsCollector = {
+  startedAt: number;
+  attempts: OverpassAttemptDiagnostics[];
+  fallbackAttempted: boolean;
+  fallbackSucceeded: boolean;
 };
 
 type OverpassFetchOk = { ok: true; elements: OSMElement[]; endpoint: string };
-type OverpassFetchBad = { ok: false; endpoint: string; status?: number; retryAfterMs?: number };
+type OverpassFetchBad = {
+  ok: false;
+  endpoint: string;
+  status?: number;
+  retryAfterMs?: number;
+  failureReason?: string;
+  errorBody?: string;
+};
 
 type EndpointHealth = { nextAvailableAt: number };
 const endpointHealth = new Map<string, EndpointHealth>();
@@ -347,10 +401,35 @@ async function fetchFromEndpoint(
   query: string,
   options?: FetchOverpassQueryOptions,
 ): Promise<OverpassFetchOk | OverpassFetchBad> {
-  if (options?.signal?.aborted) return { ok: false, endpoint };
+  const startedAt = Date.now();
+  const queryMode = options?.queryMode ?? 'full';
+  const querySize = query.length;
+  const timeoutMs = options?.requestTimeoutMs ?? 20_000;
+  const timeoutSec = computeOverpassTimeoutSeconds(timeoutMs);
+
+  const record = (attempt: Omit<OverpassAttemptDiagnostics, 'endpoint' | 'queryMode' | 'durationMs' | 'querySize' | 'timeoutSec'>): void => {
+    options?.diagnostics?.attempts.push({
+      endpoint,
+      queryMode,
+      durationMs: Date.now() - startedAt,
+      querySize,
+      timeoutSec,
+      ...(options?.queryRadiusM != null ? { queryRadiusM: options.queryRadiusM } : {}),
+      ...attempt,
+    });
+  };
+
+  if (options?.signal?.aborted) {
+    record({
+      ok: false,
+      status: 'aborted',
+      elementCount: 0,
+      failureReason: 'aborted_before_request',
+    });
+    return { ok: false, endpoint, failureReason: 'aborted_before_request' };
+  }
 
   const controller = new AbortController();
-  const timeoutMs = options?.requestTimeoutMs ?? 20_000;
   const signal =
     options?.signal
       ? AbortSignal.any([controller.signal, options.signal])
@@ -358,10 +437,12 @@ async function fetchFromEndpoint(
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const now = Date.now();
-    const waitFor = MIN_OVERPASS_REQUEST_INTERVAL_MS - (now - lastOverpassRequestStartedAt);
-    if (waitFor > 0) await sleepMs(waitFor, options?.signal);
-    lastOverpassRequestStartedAt = Date.now();
+    if (!options?.disableRateLimit) {
+      const now = Date.now();
+      const waitFor = MIN_OVERPASS_REQUEST_INTERVAL_MS - (now - lastOverpassRequestStartedAt);
+      if (waitFor > 0) await sleepMs(waitFor, options?.signal);
+      lastOverpassRequestStartedAt = Date.now();
+    }
 
     // Start the per-endpoint timer only when the network request is about to start,
     // so internal throttling doesn't eat into the fetch budget.
@@ -384,12 +465,49 @@ async function fetchFromEndpoint(
         retryAfter && Number.isFinite(Number(retryAfter))
           ? Math.max(0, Math.floor(Number(retryAfter) * 1000))
           : undefined;
-      return { ok: false, endpoint, status: res.status, retryAfterMs };
+      let errorBody: string | undefined;
+      try {
+        errorBody = (await res.text()).slice(0, 500);
+      } catch {
+        errorBody = undefined;
+      }
+      record({
+        ok: false,
+        status: 'http_error',
+        httpStatus: res.status,
+        elementCount: 0,
+        failureReason: `http_${res.status}`,
+        ...(errorBody ? { errorBody } : {}),
+      });
+      return { ok: false, endpoint, status: res.status, retryAfterMs, failureReason: `http_${res.status}`, errorBody };
     }
-    const json = await res.json();
-    return { ok: true, elements: (json.elements ?? []) as OSMElement[], endpoint };
+    try {
+      const json = await res.json();
+      const elements = (json.elements ?? []) as OSMElement[];
+      record({
+        ok: true,
+        status: 'ok',
+        elementCount: elements.length,
+      });
+      return { ok: true, elements, endpoint };
+    } catch {
+      record({
+        ok: false,
+        status: 'parse_error',
+        elementCount: 0,
+        failureReason: 'json_parse_error',
+      });
+      return { ok: false, endpoint, failureReason: 'json_parse_error' };
+    }
   } catch {
-    return { ok: false, endpoint };
+    const failureReason = signal.aborted ? 'timeout_or_aborted' : 'network_error';
+    record({
+      ok: false,
+      status: signal.aborted ? 'aborted' : 'timeout_or_network_error',
+      elementCount: 0,
+      failureReason,
+    });
+    return { ok: false, endpoint, failureReason };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -414,9 +532,22 @@ async function fetchOverpassQuery(
     if (options?.signal?.aborted) break;
 
     const h = getEndpointHealth(endpoint);
-    if (h.nextAvailableAt > Date.now()) {
+    if (!options?.ignoreEndpointCooldown && h.nextAvailableAt > Date.now()) {
       hadProviderFailure = true;
       failures.push({ endpoint, status: 429 });
+      options?.diagnostics?.attempts.push({
+        endpoint,
+        queryMode: options?.queryMode ?? 'full',
+        ok: false,
+        status: 'skipped_cooldown',
+        httpStatus: 429,
+        durationMs: 0,
+        elementCount: 0,
+        querySize: query.length,
+        ...(options?.queryRadiusM != null ? { queryRadiusM: options.queryRadiusM } : {}),
+        timeoutSec: computeOverpassTimeoutSeconds(options?.requestTimeoutMs),
+        failureReason: 'endpoint_cooldown',
+      });
       continue;
     }
 
@@ -494,6 +625,8 @@ export interface OsmFetchResult {
   usedFallbackQuery?: boolean;
   /** Result was served from the persistent on-disk cache (no network request made) */
   fromDiskCache?: boolean;
+  /** Structured Overpass diagnostics for API logs and demo no-data traces */
+  overpassDiagnostics?: OverpassFetchDiagnostics;
 }
 
 export interface DiskCacheEntry {
@@ -520,6 +653,169 @@ function buildMinimalClauses(lat: number, lon: number): string[] {
   ];
 }
 
+/**
+ * Fast-demo fallback clauses: intentionally smaller than the full/broad profile, but broad
+ * enough to prove real nearby map signal exists. These are collection-only safeguards; scoring
+ * policy and caps still run downstream.
+ */
+function buildLightFallbackClauses(lat: number, lon: number): string[] {
+  const r = (meters: number, filter: string, allGeom = true) => makeAround(filter, meters, lat, lon, allGeom);
+  return [
+    ...r(capRadius(CATEGORY_RADIUS.metro, 950), '"railway"="subway_entrance"', false),
+    ...r(capRadius(CATEGORY_RADIUS.metro, 950), '"station"="subway"'),
+    ...r(capRadius(CATEGORY_RADIUS.railway_station, 1000), '"railway"="station"'),
+    ...r(capRadius(CATEGORY_RADIUS.railway_station, 1000), '"amenity"="bus_station"'),
+    ...r(capRadius(CATEGORY_RADIUS.hospital, 800), '"amenity"="hospital"', false),
+    ...r(capRadius(CATEGORY_RADIUS.hospital, 800), '"healthcare"="hospital"'),
+    ...r(capRadius(CATEGORY_RADIUS.attraction, 800), '"tourism"="attraction"', false),
+    ...r(capRadius(CATEGORY_RADIUS.attraction, 800), '"tourism"="museum"', false),
+    ...r(capRadius(CATEGORY_RADIUS.major_hotel, 650), '"tourism"="hotel"'),
+    ...r(capRadius(CATEGORY_RADIUS.business, 850), '"office"'),
+    ...r(capRadius(CATEGORY_RADIUS.business, 850), '"amenity"="bank"', false),
+    ...r(capRadius(CATEGORY_RADIUS.shopping_major, 700), '"shop"="mall"', false),
+    ...r(capRadius(CATEGORY_RADIUS.shopping_local, 350), '"shop"="supermarket"', false),
+    ...r(capRadius(CATEGORY_RADIUS.food, 320), '"amenity"="restaurant"', false),
+    ...r(capRadius(CATEGORY_RADIUS.food, 320), '"amenity"="cafe"', false),
+    ...r(capRadius(COMPETITOR_RADIUS, 550), '"tourism"="apartment"'),
+    ...r(capRadius(COMPETITOR_RADIUS, 550), '"tourism"="guest_house"'),
+    ...r(capRadius(COMPETITOR_RADIUS, 550), '"tourism"="hostel"'),
+    ...r(capRadius(CATEGORY_RADIUS.accessibility_stop, 300), '"highway"="bus_stop"', false),
+    ...r(capRadius(CATEGORY_RADIUS.accessibility_stop, 300), '"public_transport"="platform"', false),
+  ];
+}
+
+function makeDiagnosticsCollector(): OverpassDiagnosticsCollector {
+  return {
+    startedAt: Date.now(),
+    attempts: [],
+    fallbackAttempted: false,
+    fallbackSucceeded: false,
+  };
+}
+
+function composeSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+  const live = signals.filter((s): s is AbortSignal => Boolean(s));
+  if (!live.length) return undefined;
+  return live.length === 1 ? live[0] : AbortSignal.any(live);
+}
+
+function diagnosticsFailureReason(attempts: readonly OverpassAttemptDiagnostics[]): string | undefined {
+  const failed = [...attempts].reverse().find(a => !a.ok);
+  return failed?.failureReason ?? failed?.status;
+}
+
+function finalizeDiagnostics(
+  collector: OverpassDiagnosticsCollector,
+  fallbackQuerySize?: number,
+  fallbackQueryRadiusM?: number,
+): OverpassFetchDiagnostics {
+  const success = [...collector.attempts].reverse().find(a => a.ok);
+  const last = collector.attempts[collector.attempts.length - 1];
+  return {
+    overpassAttemptCount: collector.attempts.length,
+    overpassEndpoint: success?.endpoint,
+    overpassQueryMode: success?.queryMode ?? last?.queryMode ?? 'full',
+    overpassDurationMs: Date.now() - collector.startedAt,
+    ...(success?.querySize ?? fallbackQuerySize ? { overpassQuerySize: success?.querySize ?? fallbackQuerySize } : {}),
+    ...(success?.queryRadiusM ?? fallbackQueryRadiusM ? { overpassQueryRadiusM: success?.queryRadiusM ?? fallbackQueryRadiusM } : {}),
+    ...(success ? {} : { overpassFailureReason: diagnosticsFailureReason(collector.attempts) ?? 'overpass_all_failed' }),
+    overpassFallbackAttempted: collector.fallbackAttempted,
+    overpassFallbackSucceeded: collector.fallbackSucceeded,
+    overpassAttempts: collector.attempts,
+  };
+}
+
+async function fetchOsmDataFastDemo(
+  lat: number,
+  lon: number,
+  options?: FetchOsmDataOptions,
+): Promise<OsmFetchResult> {
+  const collector = makeDiagnosticsCollector();
+  const perEndpointTimeoutMs = options?.requestTimeoutMs ?? 5_500;
+  const primaryTimeoutMs = options?.fastDemoPrimaryTimeoutMs ?? 14_000;
+  const fallbackTimeoutMs = options?.fastDemoFallbackTimeoutMs ?? 16_000;
+
+  const primaryController = new AbortController();
+  const primaryTimer = setTimeout(() => primaryController.abort(), primaryTimeoutMs);
+
+  let strictElements: OSMElement[] = [];
+  let strictHadProviderFailure = false;
+
+  try {
+    const primaryOptions: FetchOverpassQueryOptions = {
+      ...options,
+      signal: composeSignals(options?.signal, primaryController.signal),
+      requestTimeoutMs: perEndpointTimeoutMs,
+      diagnostics: collector,
+      queryMode: 'full',
+      queryRadiusM: CATEGORY_RADIUS.railway_station,
+    };
+
+    const stage1 = buildValidationTightClausesStage1(lat, lon);
+    const r1 = await fetchOverpassQuery(buildQuery(stage1, perEndpointTimeoutMs), primaryOptions);
+    strictHadProviderFailure = strictHadProviderFailure || r1.hadProviderFailure;
+    strictElements = dedupeElements([...strictElements, ...r1.elements]);
+
+    if (!primaryController.signal.aborted && strictElements.length < 12) {
+      const stage2 = buildValidationTightClausesStage2(lat, lon);
+      const r2 = await fetchOverpassQuery(buildQuery(stage2, perEndpointTimeoutMs), {
+        ...primaryOptions,
+        queryRadiusM: COMPETITOR_RADIUS,
+      });
+      strictHadProviderFailure = strictHadProviderFailure || r2.hadProviderFailure;
+      strictElements = dedupeElements([...strictElements, ...r2.elements]);
+    }
+  } finally {
+    clearTimeout(primaryTimer);
+  }
+
+  if (strictElements.length >= 12 && !strictHadProviderFailure) {
+    return {
+      elements: strictElements,
+      hadProviderFailure: false,
+      overpassDiagnostics: finalizeDiagnostics(collector),
+    };
+  }
+
+  collector.fallbackAttempted = true;
+  await sleepMs(300, options?.signal);
+
+  const fallbackController = new AbortController();
+  const fallbackTimer = setTimeout(() => fallbackController.abort(), fallbackTimeoutMs);
+  const lightClauses = buildLightFallbackClauses(lat, lon);
+  const lightQuery = buildQuery(lightClauses, perEndpointTimeoutMs);
+  const lightRadiusM = 1000;
+
+  let lightElements: OSMElement[] = [];
+  let lightHadProviderFailure = true;
+  try {
+    const lightResult = await fetchOverpassQuery(lightQuery, {
+      ...options,
+      signal: composeSignals(options?.signal, fallbackController.signal),
+      requestTimeoutMs: perEndpointTimeoutMs,
+      ignoreEndpointCooldown: true,
+      diagnostics: collector,
+      queryMode: 'light_fallback',
+      queryRadiusM: lightRadiusM,
+    });
+    lightElements = lightResult.elements;
+    lightHadProviderFailure = lightResult.hadProviderFailure;
+  } finally {
+    clearTimeout(fallbackTimer);
+  }
+
+  const merged = dedupeElements([...strictElements, ...lightElements]);
+  collector.fallbackSucceeded = lightElements.length > 0;
+  const hadProviderFailure = true;
+
+  return {
+    elements: merged,
+    hadProviderFailure: hadProviderFailure || lightHadProviderFailure || strictHadProviderFailure,
+    usedFallbackQuery: true,
+    overpassDiagnostics: finalizeDiagnostics(collector, lightQuery.length, lightRadiusM),
+  };
+}
+
 async function fetchOsmDataMinimal(
   lat: number,
   lon: number,
@@ -539,6 +835,14 @@ export type FetchOsmDataOptions = {
   signal?: AbortSignal;
   /** Hard timeout per endpoint request (ms). Default 20000. */
   requestTimeoutMs?: number;
+  /** Fast public demo profile: bounded primary query, then one light fallback. */
+  fastDemo?: boolean;
+  /** Max wall-clock time for the fast-demo primary query. */
+  fastDemoPrimaryTimeoutMs?: number;
+  /** Max wall-clock time for the fast-demo light fallback query. */
+  fastDemoFallbackTimeoutMs?: number;
+  /** Disable rate limiting in tests. */
+  disableRateLimit?: boolean;
   /** Disable strict partial-failure backfill query. */
   allowBackfill?: boolean;
   /**
@@ -561,6 +865,7 @@ const OSM_FETCH_CACHE_TTL_MS = 5 * 60 * 1000;
 // ── Persistent disk cache helpers ─────────────────────────────────────────────
 
 function makeDiskQueryProfile(validationTightMode: boolean, options?: FetchOsmDataOptions): string {
+  if (options?.fastDemo) return 'fast-demo';
   if (validationTightMode) return 'validation-tight';
   if (options?.allowBroadFallback !== false) return 'full';
   return (options?.allowBackfill ?? true) ? 'strict-backfill' : 'strict';
@@ -623,7 +928,7 @@ function saveToDiskCache(
 function makeOsmFetchCacheKey(lat: number, lon: number, options?: FetchOsmDataOptions): string {
   // Rounded coordinates keep keys stable and avoid cache fragmentation due to tiny float diffs.
   const coord = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-  const flags = `broad=${options?.allowBroadFallback !== false};backfill=${options?.allowBackfill ?? true}`;
+  const flags = `fast=${options?.fastDemo === true};broad=${options?.allowBroadFallback !== false};backfill=${options?.allowBackfill ?? true}`;
   return `${coord}|${flags}`;
 }
 
@@ -655,6 +960,13 @@ export async function fetchOsmData(lat: number, lon: number, options?: FetchOsmD
       osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
       return out;
     }
+  }
+
+  if (options?.fastDemo) {
+    const out = await fetchOsmDataFastDemo(lat, lon, options);
+    osmFetchCache.set(cacheKey, { expiresAt: Date.now() + OSM_FETCH_CACHE_TTL_MS, value: out });
+    saveToDiskCache(options?.diskCacheDir, diskFileName, lat, lon, diskProfile, out);
+    return out;
   }
 
   const strictBatchSize = tightBudget ? 34 : 24;

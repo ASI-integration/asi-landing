@@ -19,6 +19,7 @@ import { metaWarningsIndicatePartialCartography } from '@/lib/location/location-
 import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
+import type { OverpassFetchDiagnostics } from '@/lib/location/overpass';
 
 export const dynamic = 'force-dynamic';
 /** Allow slow Overpass batches on Vercel (default is often 10s). */
@@ -108,6 +109,23 @@ function attachPublicScoreStateMeta(
   meta.reportCtaEligible = state.reportCtaEligible;
   meta.retryRecommended = state.retryRecommended;
   meta.noDataReason = state.noDataReason;
+}
+
+function attachOverpassDiagnosticsMeta(
+  meta: AnalysisMeta,
+  diagnostics: OverpassFetchDiagnostics | undefined,
+): void {
+  if (!diagnostics) return;
+  meta.overpassAttemptCount = diagnostics.overpassAttemptCount;
+  meta.overpassEndpoint = diagnostics.overpassEndpoint;
+  meta.overpassQueryMode = diagnostics.overpassQueryMode;
+  meta.overpassDurationMs = diagnostics.overpassDurationMs;
+  meta.overpassFailureReason = diagnostics.overpassFailureReason;
+  meta.overpassQuerySize = diagnostics.overpassQuerySize;
+  meta.overpassQueryRadiusM = diagnostics.overpassQueryRadiusM;
+  meta.overpassFallbackAttempted = diagnostics.overpassFallbackAttempted;
+  meta.overpassFallbackSucceeded = diagnostics.overpassFallbackSucceeded;
+  meta.overpassAttempts = diagnostics.overpassAttempts;
 }
 
 function buildWarnings(args: {
@@ -230,7 +248,10 @@ function withDemoSanityPayload(args: {
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
-    const { elements, usedFallbackQuery, hadProviderFailure } = await fetchOsmData(lat, lon);
+    const { elements, usedFallbackQuery, hadProviderFailure } = await fetchOsmData(lat, lon, {
+      fastDemo: true,
+      requestTimeoutMs: 5_500,
+    });
     const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: false });
     applyLocationDataIntegrityGate(analysis, {
       lat,
@@ -378,7 +399,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Cache miss: live fetch ─────────────────────────────────────────────────
-    const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
+    const { elements, hadProviderFailure, usedFallbackQuery, overpassDiagnostics } = await fetchOsmData(lat, lon, {
+      fastDemo: true,
+      requestTimeoutMs: 5_500,
+    });
     const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: wantSpatial });
     applyLocationDataIntegrityGate(analysis, {
       lat,
@@ -419,6 +443,7 @@ export async function POST(req: NextRequest) {
       cached: false,
       ...(usedFallbackQuery ? { usedFallbackQuery: true } : {}),
     };
+    attachOverpassDiagnosticsMeta(meta, overpassDiagnostics);
     meta.warnings = buildWarnings({
       elementsCount: elements.length,
       usedFallbackQuery,
@@ -452,7 +477,12 @@ export async function POST(req: NextRequest) {
       `competitorPressure=${analysis.gravityExplanation.competitorPressureLevel} ` +
         `usedFallbackQuery=${!!usedFallbackQuery} ` +
         `spatialFoundation=${wantSpatial} ` +
-        `cached=false`,
+        `cached=false ` +
+        `overpassAttemptCount=${meta.overpassAttemptCount ?? 'n/a'} ` +
+        `overpassEndpoint=${meta.overpassEndpoint ?? 'n/a'} ` +
+        `overpassQueryMode=${meta.overpassQueryMode ?? 'n/a'} ` +
+        `overpassDurationMs=${meta.overpassDurationMs ?? 'n/a'} ` +
+        `overpassFailureReason=${meta.overpassFailureReason ?? 'n/a'}`,
     );
 
     return NextResponse.json(withDemoSanityPayload({

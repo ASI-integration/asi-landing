@@ -328,6 +328,39 @@ export interface AnalysisMeta {
   refreshing?: boolean;
   /** Live fetch used a reduced Overpass query after primary queries failed */
   usedFallbackQuery?: boolean;
+  /** Number of Overpass endpoint attempts made for this response */
+  overpassAttemptCount?: number;
+  /** Endpoint that returned the successful Overpass response, if any */
+  overpassEndpoint?: string;
+  /** Query profile that supplied the returned map data */
+  overpassQueryMode?: 'full' | 'light_fallback';
+  /** Total Overpass collection duration for this response */
+  overpassDurationMs?: number;
+  /** Last failure reason when Overpass did not produce usable elements */
+  overpassFailureReason?: string;
+  /** Character length of the successful/final Overpass query */
+  overpassQuerySize?: number;
+  /** Approximate max query radius for diagnostics */
+  overpassQueryRadiusM?: number;
+  /** True when a reduced Overpass fallback was attempted */
+  overpassFallbackAttempted?: boolean;
+  /** True when the reduced Overpass fallback returned at least one OSM element */
+  overpassFallbackSucceeded?: boolean;
+  /** Per-endpoint Overpass diagnostics; intended for logs/debugging, not copy */
+  overpassAttempts?: Array<{
+    endpoint: string;
+    queryMode: 'full' | 'light_fallback';
+    ok: boolean;
+    status: string;
+    httpStatus?: number;
+    durationMs: number;
+    elementCount: number;
+    querySize: number;
+    queryRadiusM?: number;
+    timeoutSec: number;
+    failureReason?: string;
+    errorBody?: string;
+  }>;
   /**
    * Confidence in this analysis given available signals.
    * This is not a "model accuracy" claim — it is a surface for demos and validation harnesses.

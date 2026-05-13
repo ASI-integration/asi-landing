@@ -171,6 +171,31 @@ function komendantskyFixture(): LocationAnalysis {
   };
 }
 
+function fixtureWithMagnets(magnets: MagnetItem[], rawObjectsCount: number): LocationAnalysis {
+  const base = komendantskyFixture();
+  return {
+    ...base,
+    magnets,
+    magnetCountByCategory: magnets.reduce<Record<string, number>>((acc, m) => {
+      acc[m.categoryId] = (acc[m.categoryId] ?? 0) + 1;
+      return acc;
+    }, {}),
+    strongestMagnets: magnets,
+    scoringTrace: {
+      ...base.scoringTrace!,
+      rawObjectsCount,
+      classifiedMagnets: magnets.map(m => ({
+        categoryId: m.categoryId,
+        name: m.name,
+        distanceM: Math.round(m.distance),
+        attractionScore: m.attractionScore,
+        strengthClass: m.strengthClass,
+      })),
+      warnings: [],
+    },
+  };
+}
+
 describe('POST /api/location-demo-analyze sanity envelope', () => {
   beforeEach(() => {
     mockCacheGet.mockResolvedValue(null);
@@ -233,5 +258,104 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
     expect(ld.publicSummary?.cityScale).toBe('unknown');
     expect(ld.warnings.some((w: string) => w.includes('warning: geocode_city_mismatch'))).toBe(true);
     expect(ld.demandKernelV1?.cityScaleInferenceProvenance).toMatch(/geocode_city_mismatch/);
+  });
+
+  it('uses fast-demo Overpass options for live map collection', async () => {
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: 56.3004529, lon: 44.077986, locale: 'ru' }),
+    });
+
+    const res = await POST(req as any);
+
+    expect(res.status).toBe(200);
+    expect(mockFetchOsmData).toHaveBeenCalledWith(
+      56.3004529,
+      44.077986,
+      expect.objectContaining({ fastDemo: true, requestTimeoutMs: 5500 }),
+    );
+  });
+
+  it('fallback success returns a partial usable result, not no-data', async () => {
+    const hospital = magnet({
+      categoryId: 'hospital',
+      name: 'Городская больница',
+      distance: 420,
+      weight: 7,
+      strengthClass: 'strong',
+      attractionScore: 8,
+    });
+    mockFetchOsmData.mockResolvedValueOnce({
+      elements: [{ type: 'node', id: 901, lat: 56.3, lon: 44.07, tags: { amenity: 'hospital', name: 'Городская больница' } }],
+      hadProviderFailure: true,
+      usedFallbackQuery: true,
+      overpassDiagnostics: {
+        overpassAttemptCount: 2,
+        overpassEndpoint: 'https://overpass-api.de/api/interpreter',
+        overpassQueryMode: 'light_fallback',
+        overpassDurationMs: 812,
+        overpassQuerySize: 1200,
+        overpassQueryRadiusM: 1000,
+        overpassFallbackAttempted: true,
+        overpassFallbackSucceeded: true,
+        overpassAttempts: [],
+      },
+    });
+    mockBuildAnalysis.mockReturnValueOnce(fixtureWithMagnets([hospital], 1));
+
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: 56.3004529, lon: 44.077986, locale: 'ru' }),
+    });
+
+    const res = await POST(req as any);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta.analysisUsableForPublicScore).toBe(true);
+    expect(body.meta.retryRecommended).toBe(false);
+    expect(body.meta.noDataReason).toBeNull();
+    expect(body.meta.usedFallbackQuery).toBe(true);
+    expect(body.meta.overpassQueryMode).toBe('light_fallback');
+    expect(body.analysis.locationDecision.publicSummary.presentationDiagnostics.partialCartographicPreview).toBe(true);
+  });
+
+  it('total Overpass failure returns no-data with retryRecommended and no fake score', async () => {
+    mockFetchOsmData.mockResolvedValueOnce({
+      elements: [],
+      hadProviderFailure: true,
+      usedFallbackQuery: true,
+      overpassDiagnostics: {
+        overpassAttemptCount: 4,
+        overpassQueryMode: 'light_fallback',
+        overpassDurationMs: 1200,
+        overpassFailureReason: 'http_504',
+        overpassQuerySize: 1000,
+        overpassQueryRadiusM: 1000,
+        overpassFallbackAttempted: true,
+        overpassFallbackSucceeded: false,
+        overpassAttempts: [],
+      },
+    });
+    mockBuildAnalysis.mockReturnValueOnce(fixtureWithMagnets([], 0));
+
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: 56.3004529, lon: 44.077986, locale: 'ru' }),
+    });
+
+    const res = await POST(req as any);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta.analysisUsableForPublicScore).toBe(false);
+    expect(body.meta.retryRecommended).toBe(true);
+    expect(body.meta.noDataReason).toBe('osm_empty_result');
+    expect(body.analysis.locationScore.location_score).toBe(0);
+    expect(body.analysis.scoringTrace.finalScore).toBe(0);
+    expect(body.meta.overpassFailureReason).toBe('http_504');
   });
 });
