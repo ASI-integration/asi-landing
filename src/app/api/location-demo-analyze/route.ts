@@ -106,22 +106,26 @@ function buildWarnings(args: {
   const { elementsCount, usedFallbackQuery, hadProviderFailure, locale } = args;
   const warnings: NonNullable<AnalysisMeta['warnings']> = [];
 
-  const preliminaryMsg =
+  const usablePartialMsg =
     locale === 'ru'
-      ? 'Часть картографических данных не успела загрузиться. Это предварительная оценка.'
+      ? 'Предварительная оценка. Для точного расчёта нужен полный анализ карты.'
       : 'Some map data did not load in time. This is a preliminary estimate.';
+  const noUsableResultMsg =
+    locale === 'ru'
+      ? 'Карта не успела загрузить данные для точного вывода. Повторите анализ.'
+      : 'Map data did not load enough for a reliable result. Please retry the analysis.';
 
   if (hadProviderFailure) {
     if (elementsCount > 0) {
-      warnings.push({ code: 'partial_result', message: preliminaryMsg });
+      warnings.push({ code: 'partial_result', message: usablePartialMsg });
     } else {
       warnings.push({
         code: 'overpass_timeout',
-        message: preliminaryMsg,
+        message: noUsableResultMsg,
       });
     }
   } else if (usedFallbackQuery) {
-    warnings.push({ code: 'partial_result', message: preliminaryMsg });
+    warnings.push({ code: 'partial_result', message: usablePartialMsg });
   }
 
   if (usedFallbackQuery) {

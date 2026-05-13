@@ -37,7 +37,10 @@ describe('partial cartographic warnings helper', () => {
       warnings: [{ code: 'partial_result', message: '' }],
     };
     expect(metaHasPartialCartographicWarning(mPartial)).toBe(true);
-    expect(partialCartographicBannerMessage(mPartial, 'fallback text')).toBe('fallback text');
+    expect(partialCartographicBannerMessage(
+      mPartial,
+      'Предварительная оценка. Для точного расчёта нужен полный анализ карты.',
+    )).toBe('Предварительная оценка. Для точного расчёта нужен полный анализ карты.');
 
     const mWorded: AnalysisMeta = {
       ...mSparse,

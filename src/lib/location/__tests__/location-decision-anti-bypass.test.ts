@@ -11,6 +11,17 @@ describe('location decision anti-bypass guards', () => {
     expect(src).not.toMatch(/computeLocationScoreFeatures/);
   });
 
+  it('RU residential UI reads score/headline/verdict from LocationDecision and LocationPublicSummary', () => {
+    const demoPath = fileURLToPath(new URL('../../../components/LocationIntelligenceDemo.tsx', import.meta.url));
+    const src = readFileSync(demoPath, 'utf8');
+    expect(src).toContain('residentialLocationDecision?.finalScore');
+    expect(src).toContain('residentialPublicSummary?.headlineRu');
+    expect(src).toContain('residentialPublicSummary.audienceVerdictRu');
+    expect(src).toContain('residentialPublicSummary?.publicDrivers');
+    expect(src).not.toMatch(/analysis\.scoringTrace\?\.publicBullets[\s\S]{0,240}isRuResidentialDemo/);
+    expect(src).not.toMatch(/demandKernelV1[\s\S]{0,240}audienceVerdictRu/);
+  });
+
   it('demo-public-copy does not define DemandSignal or invent typed demand signals', () => {
     const p = fileURLToPath(new URL('../demo-public-copy.ts', import.meta.url));
     const src = readFileSync(p, 'utf8');

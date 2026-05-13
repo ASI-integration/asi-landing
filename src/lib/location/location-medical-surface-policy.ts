@@ -58,6 +58,27 @@ export function strictPublicDriversAreOnlyGenericMedical(
   return medical.every(d => isGenericMedicalSurfaceName(magnetForScoredDriver(d, magnets)?.name));
 }
 
+/** True when the public surface has no positive non-medical demand drivers. */
+export function strictPublicDriversAreMedicalOnly(
+  strictDrivers: readonly LocationDemandScoredDriver[],
+): boolean {
+  const active = strictDrivers.filter(d => driverContributionWeight(d) > 0);
+  if (!active.length) return false;
+  return active.every(d => d.demandTypeVote === 'medical');
+}
+
+export function strongestStrictNonMedicalDemandContribution(
+  strictDrivers: readonly LocationDemandScoredDriver[],
+): number {
+  let best = 0;
+  for (const d of strictDrivers) {
+    if (!d.demandTypeVote || d.demandTypeVote === 'medical') continue;
+    if (d.driverKind !== 'real_demand_driver' && d.driverKind !== 'unknown_uncapped') continue;
+    best = Math.max(best, driverContributionWeight(d));
+  }
+  return best;
+}
+
 export function countVerifiedMajorMedicalAnchors(
   scored: readonly LocationDemandScoredDriver[],
   magnets: readonly MagnetItem[],

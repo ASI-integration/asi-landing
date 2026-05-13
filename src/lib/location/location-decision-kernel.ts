@@ -32,7 +32,9 @@ import {
   countVerifiedMajorMedicalAnchors,
   medicalPrimaryHighScoreEligible,
   medicalPrimaryStrongPublicCopyEligible,
+  strongestStrictNonMedicalDemandContribution,
   strictPublicDriversAreMedicalLed,
+  strictPublicDriversAreMedicalOnly,
   strictPublicDriversAreOnlyGenericMedical,
 } from './location-medical-surface-policy';
 import { inferPartialCartographicPreviewFromAnalysis } from './location-partial-cartographic-policy';
@@ -293,6 +295,47 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       `medical_primary_high_score_cap:ordinary_medical_surface:from=${before}:to=82:` +
         `strong=${medicalAudit.strongNamedAnchorCount}:ordinary=${medicalAudit.ordinaryOrGenericTotal.toFixed(2)}`,
     );
+  }
+
+  if (
+    Number.isFinite(finalScore) &&
+    (demandKernelV1.dominantDemandType === 'medical' ||
+      strictPublicDriversAreMedicalLed(strictPublicDrivers)) &&
+    !medicalPrimaryHighScoreEligible({
+      scoredDrivers: demandKernelV1.scoredDrivers,
+      magnets: analysis.magnets,
+      specialMarketFlags: demandKernelV1.specialMarketFlags,
+    })
+  ) {
+    const before = Math.round(finalScore);
+    const medicalOnly = strictPublicDriversAreMedicalOnly(strictPublicDrivers);
+    const strongestNonMedical = strongestStrictNonMedicalDemandContribution(strictPublicDrivers);
+    const cap = partialCartographicPreview
+      ? medicalOnly
+        ? 58
+        : 69
+      : medicalOnly
+        ? 62
+        : 69;
+
+    if (before > cap) {
+      const medicalAudit = auditMedicalPrimaryEvidence({
+        scoredDrivers: demandKernelV1.scoredDrivers,
+        magnets: analysis.magnets,
+        specialMarketFlags: demandKernelV1.specialMarketFlags,
+      });
+      finalScore = cap;
+      scoreAfterPartialDataCap = Math.round(finalScore);
+      demandKernelV1.warnings.push(
+        `medical_primary_ordinary_surface_cap:` +
+          `${partialCartographicPreview ? 'partial' : 'complete'}:` +
+          `${medicalOnly ? 'medical_only' : 'medical_led_mixed'}:` +
+          `from=${before}:to=${cap}:` +
+          `strong=${medicalAudit.strongNamedAnchorCount}:` +
+          `ordinary=${medicalAudit.ordinaryOrGenericTotal.toFixed(2)}:` +
+          `strongestNonMedical=${strongestNonMedical.toFixed(2)}`,
+      );
+    }
   }
 
   const scoreBand = scoreBandFromPublicScore(finalScore ?? 0) as LocationDecision['scoreBand'];

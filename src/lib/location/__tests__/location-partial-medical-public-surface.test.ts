@@ -54,7 +54,7 @@ describe('partial cartographic preview + generic medical public surface', () => 
     expect(decision.finalScore!).toBeLessThan(89);
   });
 
-  it('full-data generic medical-primary result cannot score 85+', () => {
+  it('ordinary medical-only result cannot produce 70+ by itself', () => {
     const els: OSMElement[] = [
       node(950, 0.002, 0.002, { amenity: 'hospital' }),
       node(951, 0.0025, 0.0022, { amenity: 'hospital' }),
@@ -72,8 +72,11 @@ describe('partial cartographic preview + generic medical public surface', () => 
     });
     expect(decision.publicSummary?.primaryDemandType).toBe('medical');
     expect(decision.finalScore).not.toBeNull();
-    expect(decision.finalScore!).toBeLessThan(85);
-    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+    expect(decision.finalScore!).toBeLessThan(70);
+    expect(decision.finalScore!).toBeLessThanOrEqual(62);
+    expect(decision.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('medical_primary_ordinary_surface_cap:complete:medical_only')]),
+    );
   });
 
   it('novorossiysk_094_sovetov_42-like full-data generic medical story cannot score 90', () => {
@@ -96,12 +99,13 @@ describe('partial cartographic preview + generic medical public surface', () => 
     });
     expect(decision.publicSummary?.primaryDemandType).toBe('medical');
     expect(decision.finalScore).not.toBeNull();
-    expect(decision.finalScore!).toBeLessThanOrEqual(82);
+    expect(decision.finalScore!).toBeLessThan(70);
+    expect(decision.finalScore!).toBeLessThanOrEqual(69);
     expect(decision.publicSummary?.headlineRu).toMatch(/медицинские объекты|медицинскими объектами/i);
     expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
   });
 
-  it('nnov_014_rodionova_199-like ordinary-dominated medical surface cannot inflate to 84+', () => {
+  it('nnov_014_rodionova_199-like ordinary-dominated medical-only surface caps near low 60s', () => {
     const els: OSMElement[] = [
       node(958, 0.0025, 0.0022, { amenity: 'hospital', name: 'Международная клиническая больница имени Филоненко' }),
       node(959, 0.008, 0.006, { amenity: 'hospital', name: 'Областная клиническая больница имени Семашко' }),
@@ -120,12 +124,13 @@ describe('partial cartographic preview + generic medical public surface', () => 
     });
     expect(decision.publicSummary?.primaryDemandType).toBe('medical');
     expect(decision.finalScore).not.toBeNull();
-    expect(decision.finalScore!).toBeLessThan(84);
+    expect(decision.finalScore!).toBeLessThan(70);
+    expect(decision.finalScore!).toBeLessThanOrEqual(62);
     expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Сильная локация для командированных/);
     expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
   });
 
-  it('voronezh_030_moskovsky_129_1-like medical surface cannot inflate to 84+ without strong evidence', () => {
+  it('voronezh_030_moskovsky_129_1-like partial medical-only surface caps below 60 without strong evidence', () => {
     const els: OSMElement[] = [
       node(962, 0.009, 0.007, { amenity: 'hospital', name: 'Городская клиническая поликлиника № 4, корпус №1' }),
       node(963, 0.0095, 0.0074, { amenity: 'hospital', name: 'БСМП' }),
@@ -141,11 +146,16 @@ describe('partial cartographic preview + generic medical public surface', () => 
       coordinates: ORIGIN,
       rawElements: els,
       locale: 'ru',
+      partialCartographicPreview: true,
     });
     expect(decision.publicSummary?.primaryDemandType).toBe('medical');
     expect(decision.finalScore).not.toBeNull();
-    expect(decision.finalScore!).toBeLessThan(84);
-    expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
+    expect(decision.finalScore!).toBeLessThan(60);
+    expect(decision.finalScore!).toBeLessThanOrEqual(58);
+    expect(decision.publicSummary?.audienceVerdictRu).not.toBe('Хорошая локация');
+    expect(decision.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('medical_primary_ordinary_surface_cap:partial:medical_only')]),
+    );
   });
 
   it('verified named regional medical cluster remains eligible for a high full-data score', () => {
@@ -306,7 +316,7 @@ describe('partial cartographic preview + generic medical public surface', () => 
       partialCartographicPreview: true,
     });
     expect(decision.finalScore).not.toBeNull();
-    expect(decision.finalScore!).toBeLessThanOrEqual(65);
+    expect(decision.finalScore!).toBeLessThanOrEqual(58);
     expect(decision.publicSummary?.presentationDiagnostics?.partialDataScoreCapApplied).toBe(true);
     expect(decision.publicSummary?.presentationDiagnostics?.partialDataScoreCapReason).toContain(
       'partial_generic_medical_public_drivers',
