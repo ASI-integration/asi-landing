@@ -277,6 +277,25 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
     );
   });
 
+  it('can include H3 diagnostics without changing the public score', async () => {
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: 60.014315, lon: 30.253552, locale: 'en' }),
+    });
+
+    const res = await POST(req as any);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta.h3Diagnostics).toBeTruthy();
+    expect(body.meta.h3Diagnostics.resolution).toBe(9);
+    expect(body.meta.h3Diagnostics.centerCell).toEqual(expect.any(String));
+    expect(body.analysis.locationDecision.finalScore).toBe(body.analysis.scoringTrace.finalScore);
+    expect(body.analysis.locationDecision.publicSummary.finalScore).toBe(body.analysis.locationDecision.finalScore);
+    expect(body.analysis.locationDecision.publicSummary.presentationDiagnostics).not.toHaveProperty('h3Diagnostics');
+  });
+
   it('fallback success returns a partial usable result, not no-data', async () => {
     const hospital = magnet({
       categoryId: 'hospital',

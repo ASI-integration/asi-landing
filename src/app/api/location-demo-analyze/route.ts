@@ -17,6 +17,7 @@ import {
 } from '@/lib/location/korzun-pipeline-diagnostics';
 import { metaWarningsIndicatePartialCartography } from '@/lib/location/location-demo-partial-warnings';
 import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
+import { buildH3DiagnosticsForAnalysis } from '@/lib/location/h3';
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 import type { OverpassFetchDiagnostics } from '@/lib/location/overpass';
@@ -230,6 +231,17 @@ function withDemoSanityPayload(args: {
       Boolean(analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) ||
       Boolean(analysis.analysisIntegrity?.analysisIncomplete),
     ...(geocodeResult ? { geocodeResult } : {}),
+  });
+  meta.h3Diagnostics = buildH3DiagnosticsForAnalysis({
+    analysis: analysisWithKernel,
+    lat,
+    lon,
+    context: {
+      source: meta.source,
+      rawObjectsCount: elementsCount,
+      confidence: meta.confidence,
+      usedFallbackQuery: meta.usedFallbackQuery,
+    },
   });
   attachPublicScoreStateMeta(meta, analysisWithKernel, wantSpatial ? 'commercial' : 'residential');
 
