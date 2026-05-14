@@ -179,6 +179,34 @@ describe('territorial scoring bridge', () => {
     expect(signals.deadZonePenalty.level).toBe('high');
   });
 
+  it('does not over-penalize a useful local medical demand signal as a dead-zone', () => {
+    const signals = buildTerritorialScoringBridgeSignals({
+      countedSignals: 1,
+      coverageUnits: 12,
+      coverageRadiusMeters: 1200,
+      diversityScore: 0.05,
+      businessSuitabilityScore: 0.04,
+      transportBalanceScore: 0,
+      monoFunctional: {
+        detected: false,
+        dominantShare: 1,
+        dominantCategory: 'medical',
+      },
+      deadZone: {
+        gapRatio: 0.78,
+        emptyUnitRatio: 0.72,
+        lowDensityUnitRatio: 0.06,
+      },
+      flags: {
+        hasLocalMedicalDemand: true,
+        lowSignal: true,
+      },
+    });
+
+    expect(signals.deadZonePenalty.value).toBe(0.6);
+    expect(signals.deadZonePenalty.level).toBe('moderate');
+  });
+
   it('does not convert missing territorial evidence into a dead-zone penalty', () => {
     const signals = buildTerritorialScoringBridgeSignals({
       countedSignals: 0,

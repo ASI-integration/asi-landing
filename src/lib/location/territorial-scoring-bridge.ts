@@ -48,6 +48,7 @@ export interface TerritorialScoringBridgeSource {
   flags?: {
     hasBusinessCore?: boolean;
     hasTransportAccess?: boolean;
+    hasLocalMedicalDemand?: boolean;
     transportOverDominated?: boolean;
     lowSignal?: boolean;
   };
@@ -75,6 +76,7 @@ export interface TerritorialScoringBridgeSignals {
   flags: {
     hasBusinessCore: boolean;
     hasTransportAccess: boolean;
+    hasLocalMedicalDemand: boolean;
     transportOverDominated: boolean;
     lowSignal: boolean;
   };
@@ -136,6 +138,7 @@ function calibratedDeadZonePenaltyValue(source: TerritorialScoringBridgeSource):
   const coverageUnits = Math.max(0, Math.floor(source.coverageUnits));
   const densityPerUnit = coverageUnits > 0 ? countedSignals / coverageUnits : 0;
   const hasTransportAccess = source.flags?.hasTransportAccess === true;
+  const hasLocalMedicalDemand = source.flags?.hasLocalMedicalDemand === true;
   const lowSignal = source.flags?.lowSignal === true || countedSignals <= 2;
   let value = raw;
 
@@ -165,6 +168,15 @@ function calibratedDeadZonePenaltyValue(source: TerritorialScoringBridgeSource):
 
   if (lowSignal && diversity < 0.25 && businessSuitability < 0.35) {
     value = Math.max(value, Math.min(1, raw + 0.15));
+  }
+
+  if (
+    hasLocalMedicalDemand &&
+    countedSignals <= 2 &&
+    source.monoFunctional.dominantCategory === 'medical' &&
+    !source.monoFunctional.detected
+  ) {
+    value = Math.min(value, 0.6);
   }
 
   return normalized01(value);
@@ -242,10 +254,23 @@ export function buildTerritorialScoringBridgeSignals(
     flags: {
       hasBusinessCore: source.flags?.hasBusinessCore === true,
       hasTransportAccess: source.flags?.hasTransportAccess === true,
+      hasLocalMedicalDemand: source.flags?.hasLocalMedicalDemand === true,
       transportOverDominated: source.flags?.transportOverDominated === true,
       lowSignal: source.flags?.lowSignal === true,
     },
   };
+}
+
+function hasLocalMedicalDemand(
+  magnets: Pick<LocationAnalysis, 'magnets'>['magnets'],
+): boolean {
+  return magnets.some(
+    m =>
+      m.categoryId === 'specializedMedicalAnchor' &&
+      m.strengthClass === 'weak' &&
+      m.distance <= 800 &&
+      m.attractionScore > 0,
+  );
 }
 
 export function buildTerritorialScoringSignalsForAnalysis(args: {
@@ -264,5 +289,13 @@ export function buildTerritorialScoringSignalsForAnalysis(args: {
     },
   });
 
-  return buildTerritorialScoringBridgeSignals(sourceFromTerritoryIntelligence(territory));
+  const source = sourceFromTerritoryIntelligence(territory);
+
+  return buildTerritorialScoringBridgeSignals({
+    ...source,
+    flags: {
+      ...source.flags,
+      hasLocalMedicalDemand: hasLocalMedicalDemand(args.analysis.magnets),
+    },
+  });
 }
