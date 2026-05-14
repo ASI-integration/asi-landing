@@ -5,7 +5,9 @@
 import type { MagnetDiagnosticsLayer } from './magnet-diagnostics';
 import type { LocationDecision } from './location-decision-contract';
 import type { LocationScoringTrace } from './location-scoring-trace';
-import type { H3Diagnostics } from './h3';
+import type { H3Diagnostics, H3MagnetDensitySummary, H3TerritoryIntelligence } from './h3';
+import type { TerritorialScoringBridgeSignals } from './territorial-scoring-bridge';
+import type { TerritorialScoringModifierSnapshot } from './territorial-scoring-modifier';
 
 // ── Real-world / map layer ────────────────────────────────────────────────────
 
@@ -368,6 +370,12 @@ export interface AnalysisMeta {
   }>;
   /** Internal H3/hex-grid diagnostics; debug/meta only, not public copy or scoring input. */
   h3Diagnostics?: H3Diagnostics;
+  /** Lightweight H3 magnet density summary for map/report rendering; not a scoring input. */
+  h3MagnetDensity?: H3MagnetDensitySummary;
+  /** Territory-level H3 intelligence for diagnostics/reporting; not a scoring input. */
+  h3TerritoryIntelligence?: H3TerritoryIntelligence;
+  /** Normalized non-H3 territorial signals for future scoring integration; no score weights implied. */
+  territorialScoringSignals?: TerritorialScoringBridgeSignals;
   /**
    * Confidence in this analysis given available signals.
    * This is not a "model accuracy" claim — it is a surface for demos and validation harnesses.
@@ -556,6 +564,18 @@ export interface LocationAnalysis {
    * Present on fresh analyses; legacy cached payloads may omit it.
    */
   commercialNeighborhoodModifier?: NeighborhoodEnvironmentCommercialModifierSnapshot;
+
+  /**
+   * Normalized territorial signals consumed by the secondary headline modifier.
+   * This is the only territorial input allowed in scoring; raw H3 internals stay behind the bridge.
+   */
+  territorialScoringSignals?: TerritorialScoringBridgeSignals;
+
+  /**
+   * Small bounded post-composite modifier based only on `territorialScoringSignals`.
+   * Present on fresh analyses; legacy cached payloads may omit it.
+   */
+  commercialTerritorialModifier?: TerritorialScoringModifierSnapshot;
 
   /**
    * Spatial foundation v1 — barrier-aware magnet scoring + corridor inflation when enabled.

@@ -17,7 +17,12 @@ import {
 } from '@/lib/location/korzun-pipeline-diagnostics';
 import { metaWarningsIndicatePartialCartography } from '@/lib/location/location-demo-partial-warnings';
 import { resolveLocationDemoPublicScoreState } from '@/lib/location/location-demo-public-score-state';
-import { buildH3DiagnosticsForAnalysis } from '@/lib/location/h3';
+import {
+  buildH3DiagnosticsForAnalysis,
+  buildH3MagnetDensitySummaryForAnalysis,
+  buildH3TerritoryIntelligenceForAnalysis,
+} from '@/lib/location/h3';
+import { buildTerritorialScoringSignalsForAnalysis } from '@/lib/location/territorial-scoring-bridge';
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 import type { OverpassFetchDiagnostics } from '@/lib/location/overpass';
@@ -243,6 +248,23 @@ function withDemoSanityPayload(args: {
       usedFallbackQuery: meta.usedFallbackQuery,
     },
   });
+  meta.h3MagnetDensity = buildH3MagnetDensitySummaryForAnalysis({
+    analysis: analysisWithKernel,
+    lat,
+    lon,
+  });
+  meta.h3TerritoryIntelligence = buildH3TerritoryIntelligenceForAnalysis({
+    analysis: analysisWithKernel,
+    lat,
+    lon,
+  });
+  meta.territorialScoringSignals =
+    analysisWithKernel.territorialScoringSignals ??
+    buildTerritorialScoringSignalsForAnalysis({
+      analysis: analysisWithKernel,
+      lat,
+      lon,
+    });
   attachPublicScoreStateMeta(meta, analysisWithKernel, wantSpatial ? 'commercial' : 'residential');
 
   const metaWithDemo = demoSanity ? { ...meta, demoSanity } : meta;

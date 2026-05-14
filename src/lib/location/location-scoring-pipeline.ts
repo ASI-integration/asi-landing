@@ -13,6 +13,7 @@ import type {
   LocationScoreOutput,
   NeighborhoodEnvironmentCommercialModifierSnapshot,
 } from './types';
+import type { TerritorialScoringModifierSnapshot } from './territorial-scoring-modifier';
 import { computeLocationScoreFeatures, type LocationScoreComputationInput } from './location-score';
 import { EVERGREEN_SOFT_CAP } from './location-scoring-rules';
 
@@ -26,6 +27,7 @@ export function buildLocationScoringTrace(args: {
   locationScoreInput: LocationScoreComputationInput;
   baseLocationScore: LocationScoreOutput;
   modifier: NeighborhoodEnvironmentCommercialModifierSnapshot;
+  territorialModifier?: TerritorialScoringModifierSnapshot;
   headlineLocationScore: LocationScoreOutput;
 }): LocationScoringTrace {
   const feats = computeLocationScoreFeatures(args.locationScoreInput);
@@ -48,6 +50,16 @@ export function buildLocationScoringTrace(args: {
       reason: args.modifier.explainRu,
       scoreBefore: args.modifier.baseLocationScore,
       scoreAfter: args.modifier.adjustedLocationScore,
+    });
+  }
+
+  if (args.territorialModifier?.applied) {
+    capsApplied.push({
+      kind: 'territorial_signals_headline',
+      phase: 'composite_headline',
+      reason: args.territorialModifier.explainRu,
+      scoreBefore: args.territorialModifier.baseLocationScore,
+      scoreAfter: args.territorialModifier.adjustedLocationScore,
     });
   }
 

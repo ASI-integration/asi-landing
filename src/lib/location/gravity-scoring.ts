@@ -28,6 +28,8 @@ import { computeFootTrafficLayer, emptyFootTrafficSummary, type FootTrafficHeatm
 import { buildLocationScoreOutput, withAdjustedLocationScoreHeadline } from './location-score';
 import { scoreBandFromPublicScore } from './location-score-public';
 import { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
+import { computeTerritorialScoringModifier } from './territorial-scoring-modifier';
+import { buildTerritorialScoringSignalsForAnalysis } from './territorial-scoring-bridge';
 import { buildAudienceAnalysis } from './audience-scoring';
 import { buildNeighborhoodEnvironmentLayer } from './neighborhood-environment';
 import { applySpatialFoundationLayer } from './spatial-foundation';
@@ -794,8 +796,24 @@ export function buildAnalysis(
     commercialNeighborhoodModifier.applied
       ? withAdjustedLocationScoreHeadline(locationScore, commercialNeighborhoodModifier.adjustedLocationScore)
       : locationScore;
+  const territorialScoringSignals = buildTerritorialScoringSignalsForAnalysis({
+    analysis: { magnets },
+    lat,
+    lon,
+  });
+  const commercialTerritorialModifier = computeTerritorialScoringModifier({
+    baseLocationScore: locationScoreAdjusted.location_score,
+    territorialScoringSignals,
+  });
+  const locationScoreFinal =
+    commercialTerritorialModifier.applied
+      ? withAdjustedLocationScoreHeadline(
+          locationScoreAdjusted,
+          commercialTerritorialModifier.adjustedLocationScore,
+        )
+      : locationScoreAdjusted;
 
-  const scoreBand: ScoreBand = scoreBandFromPublicScore(locationScoreAdjusted.location_score);
+  const scoreBand: ScoreBand = scoreBandFromPublicScore(locationScoreFinal.location_score);
 
   const scoringTrace = buildLocationScoringTrace({
     inputAddress: options?.inputAddress,
@@ -816,7 +834,8 @@ export function buildAnalysis(
     },
     baseLocationScore: locationScore,
     modifier: commercialNeighborhoodModifier,
-    headlineLocationScore: locationScoreAdjusted,
+    territorialModifier: commercialTerritorialModifier,
+    headlineLocationScore: locationScoreFinal,
   });
 
   // ── Debug diagnostics (gated by env flag) ──────────────────────────────────
@@ -865,7 +884,7 @@ export function buildAnalysis(
   const baseAnalysis = {
     evergreenIndex,
     scoreBand,
-    locationScore: locationScoreAdjusted,
+    locationScore: locationScoreFinal,
     scoringTrace,
     magnets,
     strategicTransportHubMagnets,
@@ -882,6 +901,8 @@ export function buildAnalysis(
     audienceAnalysis,
     neighborhoodEnvironment,
     commercialNeighborhoodModifier,
+    territorialScoringSignals,
+    commercialTerritorialModifier,
     spatialFoundation,
     heatmapPoints,
     conclusion,
