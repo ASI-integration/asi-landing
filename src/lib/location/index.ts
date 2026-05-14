@@ -276,6 +276,12 @@ export {
 export type { LocationScoreComputationInput } from './location-score';
 
 export { computeNeighborhoodEnvironmentCommercialModifier } from './neighborhood-environment-commercial-modifier';
+export { computeTerritorialScoringModifier } from './territorial-scoring-modifier';
+export type {
+  TerritorialScoringModifierContribution,
+  TerritorialScoringModifierReason,
+  TerritorialScoringModifierSnapshot,
+} from './territorial-scoring-modifier';
 
 export {
   detectLocationType,
@@ -288,6 +294,43 @@ export { getBand, bandFromScoreBand, generateConclusion, accessVerdictRu } from 
 
 export { computeHeatmap, projectToSVG } from './heatmap';
 export type { ProjectedPoint } from './heatmap';
+export {
+  H3_COVERAGE_PROFILES,
+  buildH3TerritoryIntelligence,
+  buildH3TerritoryIntelligenceForAnalysis,
+  h3CoverageCellsForRadius,
+} from './h3';
+export type {
+  H3CoverageAnalysisType,
+  H3CoverageOptions,
+  H3CoverageProfile,
+  H3Coordinate,
+  H3RadiusCoverage,
+  H3BusinessTravelerSignalLevel,
+  H3BusinessTravelerSuitabilitySignals,
+  H3DeadZoneSignal,
+  H3MonoFunctionalSignal,
+  H3TerritoryComparisonVector,
+  H3TerritoryFunctionality,
+  H3TerritoryIntelligence,
+  H3TerritoryIntelligenceOptions,
+} from './h3';
+export {
+  TERRITORIAL_SCORING_BRIDGE_VERSION,
+  buildTerritorialScoringBridgeSignals,
+  buildTerritorialScoringSignalsForAnalysis,
+} from './territorial-scoring-bridge';
+export type {
+  TerritorialNormalizedPenalty,
+  TerritorialNormalizedSignal,
+  TerritorialPenaltyLevel,
+  TerritorialScoringBridgeAnalysisOptions,
+  TerritorialScoringBridgeSignals,
+  TerritorialScoringBridgeSource,
+  TerritorialSignalCategory,
+  TerritorialSignalLevel,
+  TerritorialSignalQuality,
+} from './territorial-scoring-bridge';
 
 export {
   patchLegacyLocationAnalysis,

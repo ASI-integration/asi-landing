@@ -33,6 +33,7 @@ export interface LocationScoreFeatures {
 export type LocationScoringCapKind =
   | 'evergreen_soft_cap'
   | 'neighborhood_environment_headline'
+  | 'territorial_signals_headline'
   /** RU residential demo guardrails applied to composite headline — recorded on trace only after mutation. */
   | 'ru_residential_demo_presentation'
   /** Deterministic demand-driver kernel v1 blends headline toward evidenced anchors */

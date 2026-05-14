@@ -1,5 +1,14 @@
-import { gridDisk, latLngToCell } from 'h3-js';
 import type { LocationAnalysis, MagnetItem } from '../types';
+import {
+  h3CellFromLatLng,
+  h3CoverageCellsForRadius,
+  h3NeighborCells,
+  type H3CoverageAnalysisType,
+} from './geo-index';
+
+export * from './geo-index';
+export * from './magnet-aggregation';
+export * from './territory-intelligence';
 
 export type H3DiagnosticsResolution = 8 | 9 | 10;
 export type H3ClusterType = 'medical' | 'transport' | 'tourism' | 'business';
@@ -29,6 +38,9 @@ export interface H3DiagnosticsInput {
   pois: readonly H3DiagnosticPoi[];
   context?: H3DiagnosticContext;
   resolution?: H3DiagnosticsResolution;
+  analysisType?: H3CoverageAnalysisType;
+  coverageRadiusMeters?: number;
+  maxCellCount?: number;
 }
 
 export interface H3CategoryDensityCell {
@@ -58,6 +70,10 @@ export interface H3PoiCellAssignment {
 
 export interface H3Diagnostics {
   resolution: H3DiagnosticsResolution;
+  analysisType: H3CoverageAnalysisType;
+  coverageRadiusMeters: number;
+  coverageCellCount: number;
+  coverageCapped: boolean;
   centerCell: string;
   neighboringCells: string[];
   ringCells: string[];
@@ -76,6 +92,7 @@ export interface H3Diagnostics {
 }
 
 const DEFAULT_RESOLUTION: H3DiagnosticsResolution = 9;
+const DEFAULT_DIAGNOSTICS_COVERAGE_RADIUS_M = 520;
 const CLUSTER_TYPES: H3ClusterType[] = ['medical', 'transport', 'tourism', 'business'];
 
 const CATEGORY_CLUSTER_TYPES: Record<string, H3ClusterType[]> = {
@@ -194,17 +211,30 @@ function toPoi(magnet: MagnetItem, index: number): H3DiagnosticPoi {
 
 export function buildH3Diagnostics(input: H3DiagnosticsInput): H3Diagnostics {
   const resolution = normalizeResolution(input.resolution);
-  const centerCell = latLngToCell(input.lat, input.lon, resolution);
-  const ringCells = gridDisk(centerCell, 1);
-  const neighboringCells = ringCells.filter(cell => cell !== centerCell);
+  const coverageRadiusMeters =
+    Number.isFinite(input.coverageRadiusMeters) && (input.coverageRadiusMeters ?? 0) >= 0
+      ? input.coverageRadiusMeters ?? DEFAULT_DIAGNOSTICS_COVERAGE_RADIUS_M
+      : DEFAULT_DIAGNOSTICS_COVERAGE_RADIUS_M;
+  const coverage = h3CoverageCellsForRadius(
+    { lat: input.lat, lon: input.lon },
+    coverageRadiusMeters,
+    {
+      analysisType: input.analysisType ?? 'magnets',
+      resolution,
+      ...(input.maxCellCount != null ? { maxCellCount: input.maxCellCount } : {}),
+    },
+  );
+  const centerCell = coverage?.centerCell ?? h3CellFromLatLng({ lat: input.lat, lon: input.lon }, resolution);
+  const ringCells = coverage?.cells ?? [];
+  const neighboringCells = h3NeighborCells(centerCell);
   const ringSet = new Set(ringCells);
   const poiCountByCell: Record<string, number> = {};
   const categoryDensityByCell: Record<string, H3CategoryDensityCell> = {};
   const poiCells: H3PoiCellAssignment[] = [];
 
   for (const poi of input.pois) {
-    if (!Number.isFinite(poi.lat) || !Number.isFinite(poi.lon)) continue;
-    const cell = latLngToCell(poi.lat, poi.lon, resolution);
+    const cell = h3CellFromLatLng({ lat: poi.lat, lon: poi.lon }, resolution);
+    if (!cell) continue;
     const clusterTypes = clusterTypesForCategory(poi.categoryId);
     const clusterQuality = Object.fromEntries(
       clusterTypes.map(type => [type, clusterQualityForPoi(type, poi)]),
@@ -281,7 +311,11 @@ export function buildH3Diagnostics(input: H3DiagnosticsInput): H3Diagnostics {
 
   return {
     resolution,
-    centerCell,
+    analysisType: coverage?.analysisType ?? input.analysisType ?? 'magnets',
+    coverageRadiusMeters,
+    coverageCellCount: coverage?.cells.length ?? 0,
+    coverageCapped: coverage?.capped ?? false,
+    centerCell: centerCell ?? '',
     neighboringCells,
     ringCells,
     poiCountByCell,
@@ -305,6 +339,9 @@ export function buildH3DiagnosticsForAnalysis(args: {
   lon: number;
   context?: H3DiagnosticContext;
   resolution?: H3DiagnosticsResolution;
+  analysisType?: H3CoverageAnalysisType;
+  coverageRadiusMeters?: number;
+  maxCellCount?: number;
 }): H3Diagnostics {
   return buildH3Diagnostics({
     lat: args.lat,
@@ -312,5 +349,8 @@ export function buildH3DiagnosticsForAnalysis(args: {
     pois: args.analysis.magnets.map(toPoi),
     context: args.context,
     resolution: args.resolution,
+    analysisType: args.analysisType,
+    coverageRadiusMeters: args.coverageRadiusMeters,
+    maxCellCount: args.maxCellCount,
   });
 }
