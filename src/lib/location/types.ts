@@ -5,6 +5,7 @@
 import type { MagnetDiagnosticsLayer } from './magnet-diagnostics';
 import type { LocationDecision } from './location-decision-contract';
 import type { LocationScoringTrace } from './location-scoring-trace';
+import type { H3Diagnostics } from './h3';
 
 // ── Real-world / map layer ────────────────────────────────────────────────────
 
@@ -365,6 +366,8 @@ export interface AnalysisMeta {
     failureReason?: string;
     errorBody?: string;
   }>;
+  /** Internal H3/hex-grid diagnostics; debug/meta only, not public copy or scoring input. */
+  h3Diagnostics?: H3Diagnostics;
   /**
    * Confidence in this analysis given available signals.
    * This is not a "model accuracy" claim — it is a surface for demos and validation harnesses.
