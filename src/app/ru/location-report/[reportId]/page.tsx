@@ -20,7 +20,7 @@ function MissingReport() {
           <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт</p>
           <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Отчёт не найден</h1>
           <p className="mt-3 text-slate-300 leading-relaxed">
-            Ссылка устарела или отчёт был удалён. Запустите мини-анализ заново, чтобы получить новый permalink.
+            Ссылка устарела или отчёт был удалён. Запустите анализ заново или откройте пример отчёта.
           </p>
           <div className="mt-7 flex flex-col sm:flex-row gap-3">
             <Link
@@ -33,7 +33,7 @@ function MissingReport() {
               href={LOCATION_REPORT_SAMPLE_PATH}
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
             >
-              Открыть пример отчёта
+              Посмотреть пример отчёта
             </Link>
           </div>
         </div>

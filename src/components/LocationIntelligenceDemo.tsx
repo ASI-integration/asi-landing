@@ -2110,6 +2110,7 @@ function ASIPanel({
   const [magnetExpanded, setMagnetExpanded] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
+  const [fullReportOrder, setFullReportOrder] = useState<{ requestId: string } | null>(null);
   const [claimTraceDebug, setClaimTraceDebug] = useState(false);
 
   useEffect(() => {
@@ -2167,14 +2168,18 @@ function ASIPanel({
           locale,
           mode,
           delivery: { channel: 'dashboard', target: 'public' },
-          // Monetization hook (MVP): UI can upgrade this to 'included' or 'paid_required' later.
-          access_tier: 'unknown',
+          access_tier: locale === 'ru' && mode === 'residential' ? 'paid_required' : 'unknown',
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
 
       const requestId = String(json.requestId);
+
+      if (locale === 'ru' && mode === 'residential') {
+        setFullReportOrder({ requestId });
+        return;
+      }
 
       // Kick off processing (do not block the UI on the long request).
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -2251,12 +2256,25 @@ function ASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
   const topHelperText = resolveRuDemoTopHelperText({
     locale,
     dataBlocked,
     partialUsableResult,
   });
+  const previewStrongFactors = residentialUiClaims.length
+    ? residentialUiClaims.slice(0, 3).map(claim => claim.textRu)
+    : [
+        residentialPublicSummary?.headlineRu,
+        'Предварительный вывод построен по открытым картографическим данным.',
+        'Полный отчёт уточняет конкуренцию, риски окружения и сценарии монетизации.',
+      ].filter((line): line is string => Boolean(line));
+  const previewRisks = (analysis.locationScore?.top_negative_factors?.length
+    ? analysis.locationScore.top_negative_factors
+    : [
+        'Нужно вручную проверить цены и загрузку похожих объектов.',
+        'Итог зависит от качества квартиры, дома, фото и управления.',
+      ]).slice(0, 2);
 
   return (
     <>
@@ -2428,15 +2446,20 @@ function ASIPanel({
                   <button
                     type="button"
                     onClick={requestFullReportAsync}
-                    disabled={fullReportBusy}
+                    disabled={fullReportBusy || !!fullReportOrder}
                     className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                   >
                     {locale === 'ru'
-                      ? (fullReportBusy ? 'Готовим отчёт…' : reportCtaLabelRu)
+                      ? (fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu)
                       : (fullReportBusy ? 'Generating…' : 'Request report')}
                   </button>
                 </>
               )}
+              {fullReportOrder && locale === 'ru' ? (
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[12px] leading-relaxed text-emerald-100">
+                  Заявка сохранена. Мы подтвердим оплату вручную и отправим ссылку на полный отчёт. Номер заявки: {fullReportOrder.requestId}.
+                </div>
+              ) : null}
               {fullReportErr && !showRetryOnlyCta ? (
                 <p className="text-[12px] text-amber-400/90 leading-snug">
                   {locale === 'ru'
@@ -2450,7 +2473,75 @@ function ASIPanel({
       </div>
     </div>
 
-    {!dataBlocked ? (
+    {!dataBlocked && isRuResidentialDemo ? (
+      <div
+        className="mt-4 rounded-2xl border border-slate-800/40 overflow-hidden bg-slate-950/25"
+        style={{
+          opacity: visible ? 1 : 0,
+          transition: 'opacity 0.5s ease 0.15s',
+        }}
+      >
+        <div className="px-5 py-4 border-b border-slate-800/40">
+          <p className="text-[17px] md:text-[18px] font-medium text-slate-300 leading-snug">
+            {topHelperText}
+          </p>
+        </div>
+        <div className="grid gap-4 p-5 md:grid-cols-3">
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Кому подходит</p>
+            <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
+              {residentialPublicSummary?.primaryDemandType === 'corporate/business'
+                ? 'командированные и деловые поездки'
+                : residentialPublicSummary?.primaryDemandType === 'tourist'
+                  ? 'туристы и поездки выходного дня'
+                  : residentialPublicSummary?.primaryDemandType === 'medical'
+                    ? 'медицинские поездки и сопровождающие'
+                    : 'смешанный спрос: гости, командировки и локальные поездки'}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Сильные факторы</p>
+            <ul className="mt-2 space-y-2">
+              {previewStrongFactors.slice(0, 3).map((claim, i) => (
+                <li key={i} className="flex gap-2 text-[14px] leading-snug text-slate-300">
+                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                  <span>{claim}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Риски</p>
+            <ul className="mt-2 space-y-2">
+              {previewRisks.map((risk, i) => (
+                <li key={i} className="flex gap-2 text-[14px] leading-snug text-slate-300">
+                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                  <span>{risk}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-slate-800/40 p-5">
+          <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-indigo-500/10 p-5">
+            <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
+            <p className="relative text-[18px] font-semibold text-white">Полная детализация закрыта</p>
+            <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
+              В полном отчёте доступны разбор конкуренции, рисков окружения, ориентиры по доходу диапазоном
+              и список ручных проверок перед покупкой или запуском.
+            </p>
+            <button
+              type="button"
+              onClick={requestFullReportAsync}
+              disabled={fullReportBusy || !!fullReportOrder}
+              className="relative mt-4 inline-flex w-full items-center justify-center rounded-xl bg-white px-5 py-3 text-[14px] font-bold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-60 sm:w-auto"
+            >
+              {fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : 'Получить полный отчёт'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : !dataBlocked ? (
     <>
     {/* ── Detail sections — below summary panel ── */}
     <div
@@ -3129,7 +3220,7 @@ function CommercialASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
 
   return (
     <div

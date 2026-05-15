@@ -14,6 +14,13 @@ import {
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+function hasManualConfirmation(req: NextRequest): boolean {
+  const configured = process.env.LOCATION_REPORT_MANUAL_CONFIRM_KEY?.trim();
+  if (!configured) return false;
+  const supplied = req.headers.get('x-location-report-confirmation')?.trim();
+  return supplied === configured;
+}
+
 function parseMarket(locale: 'ru' | 'en'): AddressMarket {
   return locale === 'ru' ? 'ru' : 'en';
 }
@@ -31,6 +38,19 @@ export async function POST(req: NextRequest) {
 
   const entity = await getLocationReportRequestById(requestId);
   if (!entity) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+
+  if (entity.access_tier === 'paid_required' && !hasManualConfirmation(req)) {
+    return NextResponse.json(
+      {
+        status: entity.status,
+        error: 'manual_confirmation_required',
+        note: entity.locale === 'ru'
+          ? 'Полный отчёт формируется после оплаты или ручного подтверждения заказа.'
+          : 'The full report is generated after payment or manual order confirmation.',
+      },
+      { status: 403 },
+    );
+  }
 
   // Idempotency: if already done, return the result.
   if (entity.status === 'completed' && entity.report_id) {

@@ -307,7 +307,7 @@ export function buildFastReportPreview(args: {
     })),
     incomePotentialPreview: incomeFromScore(score),
     fullReportCta: {
-      label: input.locale === 'ru' ? 'Заказать полный отчёт' : 'Request full report',
+      label: input.locale === 'ru' ? 'Получить полный отчёт' : 'Request full report',
       href: args.fullReportHref,
       note: input.locale === 'ru'
         ? 'Полный отчёт глубже: структура спроса, магниты, конкуренция, стратегия и ограничения.'
@@ -344,7 +344,7 @@ export const sampleFullLocationReportRu: FullLocationReport = {
     requestedAtIso: '2026-05-09T09:00:00.000Z',
   },
   executiveSummary: {
-    verdict: 'Демонстрационный пример: локация выглядит перспективной, но требует проверки объекта.',
+    verdict: 'Демонстрационный пример: отчёт показывает спрос, риски и сценарии монетизации до решения.',
     summary:
       'Это sample-отчёт с безопасными демонстрационными данными. Он показывает коммерческую структуру будущего платного отчёта, а не описывает реальный адрес.',
     keyDrivers: [
@@ -524,7 +524,7 @@ export const sampleFullLocationReportRu: FullLocationReport = {
   nextSteps: [
     'Запустить быстрый preview по реальному адресу.',
     'Добавить параметры объекта и ограничения.',
-    'Заказать полный отчёт с permalink и PDF/печатью для партнёров.',
+    'Получить полный отчёт и PDF/печать для партнёров.',
   ],
   confidence: {
     level: 'medium',

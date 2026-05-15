@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
-import { LocationReportProductView } from '@/components/location/LocationReportProductView';
-import { sampleFullLocationReportRu } from '@/lib/location/report-contract';
+import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
+import { sampleStrLocationStandaloneReportRu } from '@/lib/location/standalone-report';
 
 export const metadata: Metadata = {
-  title: 'Пример полного отчёта по локации — ASI',
+  title: 'Пример отчёта по посуточной аренде — ASI',
   description:
-    'Демонстрационный sample полного отчёта ASI по потенциалу локации: структура, ограничения, confidence и print/PDF view.',
+    'Демонстрационный пример полного отчёта ASI по потенциалу локации для посуточной аренды.',
   robots: { index: false, follow: false },
 };
 
 export default function RuLocationReportSamplePage() {
-  return <LocationReportProductView report={sampleFullLocationReportRu} />;
+  return <LocationStandaloneFullReport report={sampleStrLocationStandaloneReportRu} />;
 }

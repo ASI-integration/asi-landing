@@ -10,6 +10,7 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 const CONNECT_HREF = '/connect';
 /** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
 const RU_LOCATION_CHECK_HREF = '/ru/location-analysis?mode=residential#location-check';
+const RU_STR_REPORT_HREF = '/ru/otchet-po-dohodnosti-obektov';
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
@@ -39,11 +40,11 @@ export default function HomeRu() {
           ctaLabel: 'Проверить объект по адресу',
           ctaHref: RU_LOCATION_CHECK_HREF,
           ctaExternal: false,
-          ctaSecondaryLabel: 'Запросить разбор объектов',
-          ctaSecondaryHref: CONNECT_HREF,
+          ctaSecondaryLabel: 'Получить полный отчёт',
+          ctaSecondaryHref: RU_STR_REPORT_HREF,
           ctaSecondaryExternal: false,
           ctaSub:
-            'Сначала проверьте адрес — затем решите, подключать ли управление ASI.',
+            'Оцените потенциал до покупки, запуска или подключения управления ASI.',
         }} telegramVariant="icon" showTopRow={false} />
 
         {/* ── Воронка: проверка → вывод → подключение ── */}
@@ -52,10 +53,10 @@ export default function HomeRu() {
         >
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
-              Как ASI ведёт объект от проверки до управления
+              Как ASI помогает принять решение по объекту
             </h2>
             <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-10 max-w-2xl">
-              Три шага: проверить локацию, понять вывод и при необходимости подключить управление.
+              Три шага: проверить адрес, увидеть вывод по локации и выбрать сценарий до вложений.
             </p>
             <div className="grid sm:grid-cols-3 gap-6">
 
@@ -67,13 +68,13 @@ export default function HomeRu() {
                   Проверьте объект
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Введите адрес и узнайте, есть ли у локации спрос, конкуренция и риски.
+                  Введите адрес и получите первичную оценку спроса, конкуренции и рисков.
                 </p>
                 <Link
                   href={RU_LOCATION_CHECK_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Проверить адрес
+                  Проверить объект по адресу
                 </Link>
               </div>
 
@@ -85,13 +86,13 @@ export default function HomeRu() {
                   Получите вывод по локации
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Отчёт помогает понять, стоит ли запускать объект, брать его в аренду или искать другой вариант.
+                  Отчёт показывает, какой сценарий подходит объекту: посуточная аренда, управление, покупка или дальнейшее сравнение.
                 </p>
                 <Link
                   href={RU_LOCATION_CHECK_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Получить вывод
+                  Получить предпросмотр
                 </Link>
               </div>
 
@@ -100,16 +101,16 @@ export default function HomeRu() {
                   3
                 </span>
                 <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
-                  Подключите управление
+                  Примите решение на данных
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Если объект подходит, ASI помогает автоматизировать коммуникацию, сценарии и операционные процессы.
+                  Используйте отчёт до покупки, запуска или подключения управления, чтобы не действовать вслепую.
                 </p>
                 <Link
-                  href={CONNECT_HREF}
+                  href={RU_STR_REPORT_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Запросить подключение
+                  Получить полный отчёт
                 </Link>
               </div>
 
@@ -121,10 +122,10 @@ export default function HomeRu() {
         <section className="py-12 sm:py-14 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-3xl mx-auto text-center">
             <h2 className="text-xl sm:text-2xl font-bold text-[var(--t-text)] mb-3">
-              Объект выглядит перспективным? Следующий шаг - подключить управление
+              Отчёт нужен до любого решения по объекту
             </h2>
             <p className="text-[var(--t-text-2)] text-sm sm:text-base leading-relaxed mb-6">
-              ASI помогает перейти от оценки локации к запуску: коммуникация, сценарии, контроль задач и операционная автоматизация.
+              Проверьте локацию, спрос, риски и сценарии монетизации до покупки, запуска посуточной аренды или подключения управления ASI.
             </p>
             <Link
               href={CONNECT_HREF}

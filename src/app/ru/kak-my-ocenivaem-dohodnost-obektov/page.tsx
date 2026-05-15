@@ -246,23 +246,23 @@ export default function KakMyOcenivaemPage() {
         <section className="py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)]">
-              Заказать отчёт по доходности объектов
+              Отчёт нужен до любого решения по объекту
             </h2>
             <p className="mt-4 text-[var(--t-text-2)] text-lg leading-relaxed">
-              Отправьте адрес — подготовим оценку потенциала с явными допущениями и ограничениями.
+              Проверьте спрос, риски и сценарии монетизации до покупки, запуска или подключения управления.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
                 href={SAMPLE_REPORT_HREF}
                 className="inline-flex items-center justify-center gap-2.5 px-8 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] transition-all shadow-lg hover:scale-[1.02] text-base w-full sm:w-auto"
               >
-                Открыть sample-отчёт
+                Посмотреть пример отчёта
               </Link>
               <Link
                 href={PRODUCT_HREF}
                 className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-bg)] transition-all text-base w-full sm:w-auto"
               >
-                Подробнее об отчёте
+                Получить полный отчёт
               </Link>
             </div>
             <p className="mt-4 text-xs text-[var(--t-muted)]">
