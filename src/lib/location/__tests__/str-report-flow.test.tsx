@@ -41,7 +41,7 @@ describe('RU STR location report flow', () => {
     expect(html).toContain('Вывод по посуточной аренде');
     expect(html).toContain('Кому подходит объект');
     expect(html).toContain('Сигналы спроса');
-    expect(html).toContain('Территория и риски слабой зоны');
+    expect(html).toContain('Территория и риски окружения');
     expect(html).toContain('Площадки бронирования и ручная проверка');
     expect(html).toContain('Риски и что проверить вручную');
   });
@@ -56,7 +56,9 @@ describe('RU STR location report flow', () => {
     });
 
     expect(report.strReport?.product).toBe('str-location-report');
-    expect(report.strReport?.weakZoneRisk.summaryRu).toMatch(/Недостаточно данных|слабой зоны|мало/i);
+    expect(report.strReport?.weakZoneRisk.summaryRu).toBe(
+      'Недостаточно данных для уверенного вывода по окружению. Рекомендуем проверить транспорт, конкуренцию и фактический спрос вручную.',
+    );
     expect(report.strReport?.risksAndManualChecksRu.length).toBeGreaterThan(0);
   });
 

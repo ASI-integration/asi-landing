@@ -535,8 +535,9 @@ export function buildStrLocationReportProjection(analysis: LocationAnalysis): St
       };
 
   const dead = territorial?.deadZonePenalty;
+  const hasTerritorialEvidence = Boolean(territorial && territorial.signalQuality !== 'none');
   const weakZoneLevel =
-    !dead ? 'unknown' :
+    !dead || !hasTerritorialEvidence ? 'unknown' :
     dead.value >= 0.67 ? 'high' :
     dead.value >= 0.4 ? 'medium' :
     'low';
@@ -549,7 +550,7 @@ export function buildStrLocationReportProjection(analysis: LocationAnalysis): St
           ? 'Есть умеренный риск неравномерного спроса: спрос рядом распределён неравномерно, перед запуском нужно проверить конкурентов и каналы продаж.'
           : weakZoneLevel === 'low'
             ? 'Риск неравномерного спроса низкий: рядом достаточно функций, которые могут поддерживать спрос.'
-            : 'Недостаточно данных, чтобы уверенно оценить риск неравномерного спроса.',
+            : 'Недостаточно данных для уверенного вывода по окружению. Рекомендуем проверить транспорт, конкуренцию и фактический спрос вручную.',
     gapRatio: dead?.gapRatio ?? null,
   } as const;
 
