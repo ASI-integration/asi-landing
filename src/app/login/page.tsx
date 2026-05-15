@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
 
+function safeRedirectPath(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  return value;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -34,7 +39,8 @@ export default function LoginPage() {
         setError(data.error || t('signup.errorGeneric'));
         return;
       }
-      router.push('/dashboard');
+      const params = new URLSearchParams(window.location.search);
+      router.push(safeRedirectPath(params.get('redirect')));
     } catch {
       setError(t('signup.errorGeneric'));
     } finally {
@@ -109,7 +115,10 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-slate-500">
             {t('login.signUpPrompt')}{' '}
-            <Link href="/connect" className="text-slate-900 font-medium hover:underline">
+            <Link
+              href={`/connect${typeof window !== 'undefined' && window.location.search ? window.location.search : ''}`}
+              className="text-slate-900 font-medium hover:underline"
+            >
               {t('cta.startTrial')}
             </Link>
           </p>

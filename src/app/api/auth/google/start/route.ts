@@ -24,11 +24,17 @@ function googleAuthUrl(params: Record<string, string>): string {
   return url.toString();
 }
 
+function safeRedirectPath(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  return value;
+}
+
 export async function GET(req: Request) {
   const clientId = (process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
   const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '').trim();
   const debug = new URL(req.url).searchParams.get('debug') === '1';
   const plan = new URL(req.url).searchParams.get('plan');
+  const redirectPath = safeRedirectPath(new URL(req.url).searchParams.get('redirect'));
 
   if (!clientId || !clientSecret) {
     const url = new URL('/connect', getRequestOrigin(req));
@@ -49,11 +55,12 @@ export async function GET(req: Request) {
 
   const session = await getSession();
   if (session.userId) {
-    if (debug) console.info('[GoogleOAuth][start] session exists; redirecting to dashboard', { userId: session.userId });
-    return NextResponse.redirect(new URL('/dashboard', origin));
+    if (debug) console.info('[GoogleOAuth][start] session exists; redirecting', { userId: session.userId, redirectPath });
+    return NextResponse.redirect(new URL(redirectPath, origin));
   }
   session.googleOauthState = state;
   session.googleOauthPlan = plan;
+  session.googleOauthRedirect = redirectPath;
   await session.save();
 
   const url = googleAuthUrl({
