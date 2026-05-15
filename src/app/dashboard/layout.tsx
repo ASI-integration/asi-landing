@@ -9,6 +9,7 @@ import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
 
 const navItems = [
   { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/data-source', key: 'dataSource' },
   { href: '/dashboard/properties', key: 'properties' },
   { href: '/dashboard/communication', key: 'communication' },

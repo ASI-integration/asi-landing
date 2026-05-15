@@ -53,6 +53,11 @@ function randomPassword(): string {
   return crypto.randomBytes(24).toString('base64').replace(/[+/=]/g, '').slice(0, 24);
 }
 
+function safeRedirectPath(value: string | undefined): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  return value;
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get('code') || '';
@@ -94,8 +99,10 @@ export async function GET(req: Request) {
 
   const expectedState = session.googleOauthState;
   const plan = session.googleOauthPlan;
+  const redirectPath = safeRedirectPath(session.googleOauthRedirect);
   session.googleOauthState = undefined;
   session.googleOauthPlan = undefined;
+  session.googleOauthRedirect = undefined;
   await session.save();
 
   if (!expectedState || expectedState !== state) return fail('bad_state');
@@ -171,8 +178,9 @@ export async function GET(req: Request) {
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {
       userId,
       hasCookieHeader: Boolean(req.headers.get('cookie')),
+      redirectPath,
     });
-    return NextResponse.redirect(new URL('/dashboard', origin));
+    return NextResponse.redirect(new URL(redirectPath, origin));
   } catch (err) {
     console.error('[GoogleOAuth][callback]', err);
     if (debug) {

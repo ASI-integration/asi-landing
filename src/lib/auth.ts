@@ -7,6 +7,7 @@ export type SessionData = {
   // OAuth transient state (must not be relied on long-term)
   googleOauthState?: string;
   googleOauthPlan?: unknown;
+  googleOauthRedirect?: string;
 };
 
 const IS_PROD = process.env.NODE_ENV === 'production';
