@@ -44,14 +44,14 @@ const REPORT_BLOCKS = [
   },
   {
     title: 'Риски и рекомендации',
-    text: 'Факторы, способные убить доходность, и пошаговый план проверок до сделки.',
+    text: 'Факторы, которые важно проверить заранее, и пошаговый план перед решением.',
   },
 ] as const;
 
 const WHY_CARDS = [
   {
-    title: 'Не купить слабый объект',
-    text: 'Узнать до сделки, есть ли здесь реальный спрос, или это инвестиция вслепую.',
+    title: 'Оценить потенциал до вложений',
+    text: 'Понять спрос, конкуренцию и риски до сделки, запуска или ремонта.',
   },
   {
     title: 'Не переплатить за аренду',
@@ -74,7 +74,7 @@ const COMPARISON_CARDS = [
   },
   {
     title: 'Полный отчёт',
-    text: 'Платный разбор для решения по объекту: оценка пригодности для посуточной аренды, спрос, конкуренция, территориальная сетка анализа, риск слабой зоны, диапазон дохода и ручные проверки.',
+    text: 'Платный разбор для решения по объекту: сценарии монетизации, спрос, конкуренция, риски окружения, диапазон дохода и ручные проверки.',
   },
 ] as const;
 
@@ -103,10 +103,10 @@ export default function OtchetPoDohodnostiPage() {
               </h1>
               <p className="mt-5 max-w-3xl text-lg leading-relaxed text-[var(--t-text-2)] sm:text-xl">
                 Для собственников, инвесторов и операторов краткосрочного размещения. Бесплатный предпросмотр покажет
-                базовый потенциал локации, а полный отчёт поможет решить, стоит ли запускать объект в посуточной аренде.
+                базовый потенциал локации, а полный отчёт поможет выбрать сценарий монетизации до покупки, запуска или подключения управления.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Оценить объект по адресу</PublicPrimaryCta>
+                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить объект по адресу</PublicPrimaryCta>
                 <Link
                   href={SAMPLE_REPORT_HREF}
                   className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-semibold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
@@ -129,9 +129,9 @@ export default function OtchetPoDohodnostiPage() {
               </h2>
               <ul className="mt-5 space-y-4">
                 {[
-                  'Итоговый вывод: хорошо подходит, условно подходит или слабая локация.',
+                  'Итоговый вывод по лучшему сценарию для объекта.',
                   'Кому подходит объект: командированные, туристы, семьи, медтуризм или смешанный спрос.',
-                  'Сигналы спроса, конкуренция и риск слабой зоны.',
+                  'Сигналы спроса, конкуренция и риски окружения.',
                   'Что проверить вручную перед оплатой аренды, покупкой или запуском.',
                 ].map((label) => (
                   <li key={label} className="flex gap-3">
@@ -142,8 +142,8 @@ export default function OtchetPoDohodnostiPage() {
               </ul>
               <PublicInfoCard className="mt-6 border-[var(--t-border)] bg-[var(--t-bg)] p-4">
                 <p className="text-sm leading-relaxed text-[var(--t-muted)]">
-                  Объективный анализ на основе реальных рыночных данных. Мы не обещаем золотые горы. Мы даём сухие цифры
-                  и статистику, чтобы вы избежали убытков и увидели настоящий потенциал объекта.
+                  Анализ на основе рыночных данных. Мы не обещаем доход. Мы даём цифры и статистику,
+                  чтобы вы не принимали решение вслепую и увидели потенциал объекта.
                 </p>
               </PublicInfoCard>
             </aside>
@@ -171,7 +171,7 @@ export default function OtchetPoDohodnostiPage() {
           <div className="mx-auto max-w-6xl">
             <PublicSectionHeader
               title="Что показывает отчёт"
-              description="Пять блоков, которые переводят локацию на язык решения: брать объект или нет, и что проверить дальше."
+              description="Пять блоков, которые переводят локацию на язык решения: какой сценарий выбрать и что проверить дальше."
             />
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               {REPORT_BLOCKS.map((item) => (
@@ -205,7 +205,7 @@ export default function OtchetPoDohodnostiPage() {
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <PublicSectionHeader
                 title="Для каких объектов подходит"
-                description="Помогает оценить рентабельность перед покупкой, арендой или запуском нового объекта, а также найти точки роста для уже работающей локации."
+                description="Помогает оценить потенциал перед покупкой, арендой или запуском нового объекта, а также найти точки роста для уже работающей локации."
               />
               <div className="flex flex-wrap gap-2 sm:gap-3">
                 {OBJECT_TYPES.map((label) => (
@@ -224,13 +224,13 @@ export default function OtchetPoDohodnostiPage() {
               title="Получите отчёт по посуточной аренде"
               description={
                 <p className="text-lg leading-relaxed text-[var(--t-text-2)]">
-                  Сначала проверьте адрес бесплатно. Если локация выглядит перспективной, закажите полный отчёт и
-                  получите ссылку после подтверждения оплаты.
+                  Сначала проверьте адрес бесплатно. Полный отчёт поможет увидеть спрос, риски и точки роста
+                  до покупки, запуска, ремонта или подключения управления.
                 </p>
               }
             />
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Получить отчёт по посуточной аренде</PublicPrimaryCta>
+              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Получить полный отчёт</PublicPrimaryCta>
               <Link
                 href={SAMPLE_REPORT_HREF}
                 className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-semibold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"

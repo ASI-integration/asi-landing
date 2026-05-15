@@ -258,7 +258,7 @@ export function LocationStandaloneFullReport({
             <div>
               {!isFreePreview ? (
                 <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                  ASI · Location Intelligence · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
+                  ASI · Анализ локации · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
                 </p>
               ) : (
                 <p className="text-[15px] sm:text-[17px] font-semibold text-slate-300 tracking-tight">
@@ -272,7 +272,7 @@ export function LocationStandaloneFullReport({
               <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
                 {isFreePreview
                   ? freeBrief
-                  : 'Документ, чтобы решить, стоит ли запускать объект в посуточной аренде, какие гости вероятнее всего будут бронировать и какие риски проверить вручную.'}
+                  : 'Документ, чтобы выбрать сценарий монетизации, понять вероятный спрос и заранее увидеть риски, которые стоит проверить вручную.'}
               </p>
             </div>
 
@@ -302,14 +302,14 @@ export function LocationStandaloneFullReport({
               ) : (
                 <div className="rounded-2xl border border-indigo-500/25 bg-indigo-950/15 p-5">
                   <p className="text-[16px] sm:text-[17px] font-semibold text-slate-100 leading-snug">
-                    Полный отчёт добавляет разбор магнитов, конкуренции и рекомендаций по модели запуска.
+                    Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.
                   </p>
                   <div className="print-hide mt-4">
                     <Link
                       href={LOCATION_REPORT_PRODUCT_PATH}
                       className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
                     >
-                      Заказать полный отчёт
+                      Получить полный отчёт
                     </Link>
                   </div>
                 </div>
@@ -402,7 +402,7 @@ export function LocationStandaloneFullReport({
                         {summary?.income_rub_month != null ? fmtRub(summary.income_rub_month) : '—'}
                         <span className="text-slate-500 text-sm font-normal"> / мес</span>
                       </p>
-                      <p className="mt-1 text-xs text-slate-600">Потенциал реализуется при корректной упаковке и каналах</p>
+                      <p className="mt-1 text-xs text-slate-600">Потенциал зависит от упаковки, цены и каналов</p>
                     </div>
                   ) : null}
                 </div>
@@ -415,7 +415,7 @@ export function LocationStandaloneFullReport({
               <SectionShell
                 id="str-suitability"
                 title="Вывод по посуточной аренде"
-                lead="Главный коммерческий вывод: стоит ли запускать объект в посуточном формате и насколько осторожно заходить в локацию."
+                lead="Главный коммерческий вывод: какой сценарий монетизации подходит объекту и какие проверки нужны до вложений."
               >
                 <div className="grid gap-5 lg:grid-cols-3">
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
@@ -487,8 +487,8 @@ export function LocationStandaloneFullReport({
 
               <SectionShell
                 id="territory-risk"
-                title="Территория и риски слабой зоны"
-                lead="Территориальная сетка анализа помогает понять, окружён ли объект реальными функциями спроса или попадает в разрыв между ними."
+                title="Территория и риски окружения"
+                lead="Территориальный разбор помогает понять, какие функции спроса есть рядом и какие факторы стоит проверить до решения."
               >
                 <div className="grid gap-5 lg:grid-cols-2">
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
@@ -516,7 +516,7 @@ export function LocationStandaloneFullReport({
                     </div>
                   </div>
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Риск слабой зоны</p>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Риск неравномерного спроса</p>
                     <p className={`mt-2 text-2xl font-bold ${weakZoneLabelRu(strReport.weakZoneRisk.level).className}`}>
                       {weakZoneLabelRu(strReport.weakZoneRisk.level).label}
                     </p>
@@ -928,7 +928,7 @@ export function LocationStandaloneFullReport({
             lead={
               isFreePreview
                 ? 'Это быстрая предварительная оценка по открытым данным.'
-                : 'Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как заходить, как упаковать, какой ценой и на каких каналах забрать спрос.'
+                : 'Вы уже получили базовую оценку потенциала локации и направление по стратегии. Дальше — превратить это в решение: как сравнить сценарии, какие вложения планировать и что проверить до запуска.'
             }
           >
             <div className="rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
@@ -945,7 +945,7 @@ export function LocationStandaloneFullReport({
                   <p className="mt-3 text-[15px] sm:text-[16px] text-slate-300 leading-relaxed max-w-2xl">
                     {isFreePreview
                       ? 'Подробный расчёт и разбор под вашу модель доступны в полном отчёте.'
-                      : 'Мы уже посчитали базовый потенциал локации: спросовые магниты, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель (owner/operator/investor) и запуск.'}
+                      : 'Мы уже посчитали базовый потенциал локации: спрос, конкуренцию и ориентир по доходу. Следующий шаг — прикладной разбор под вашу модель и выбор стратегии монетизации.'}
                   </p>
 
                   {!isFreePreview ? (
@@ -956,11 +956,11 @@ export function LocationStandaloneFullReport({
                       <ul className="mt-3 space-y-2 text-sm text-slate-200">
                         <li className="flex gap-3">
                           <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                          Какая стратегия подходит именно под этот объект — и где она «ломается» без доработок
+                          Какая стратегия подходит именно под этот объект и какие доработки стоит учесть заранее
                         </li>
                         <li className="flex gap-3">
                           <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                          Где реальный потенциал выше/ниже ожиданий: аудитория, каналы, ограничения, конкуренты
+                          Где потенциал может отличаться от ожиданий: аудитория, каналы, ограничения, конкуренты
                         </li>
                         <li className="flex gap-3">
                           <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
@@ -975,7 +975,7 @@ export function LocationStandaloneFullReport({
                   <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-6">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Один следующий шаг</p>
                     <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-                      Если объект рассматривается к запуску/покупке — лучше зафиксировать решение сейчас, пока выводы свежие и можно быстро докрутить модель.
+                      Используйте отчёт до покупки, запуска или подключения управления, чтобы сравнить сценарии и не принимать решение вслепую.
                     </p>
 
                     <div className="print-hide mt-5">

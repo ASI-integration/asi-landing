@@ -33,7 +33,7 @@ function MissingReport() {
               href={LOCATION_REPORT_SAMPLE_PATH}
               className="inline-flex items-center justify-center px-6 py-3 rounded-xl border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors"
             >
-              Открыть пример отчёта
+              Посмотреть пример отчёта
             </Link>
           </div>
         </div>

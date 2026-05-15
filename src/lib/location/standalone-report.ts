@@ -413,7 +413,7 @@ function strRecommendation(score: number | null): StrLocationRecommendation {
 function strRecommendationLabelRu(v: StrLocationRecommendation): string {
   if (v === 'good') return 'хорошо подходит для посуточной аренды';
   if (v === 'conditional') return 'подходит условно, нужна проверка модели';
-  return 'слабая локация, не рекомендуется без сильного объекта';
+  return 'требуется осторожный сценарий и дополнительная проверка';
 }
 
 function strAudienceFromDemandType(type: string | null | undefined): StrLocationAudience {
@@ -544,12 +544,12 @@ export function buildStrLocationReportProjection(analysis: LocationAnalysis): St
     level: weakZoneLevel,
     summaryRu:
       weakZoneLevel === 'high'
-        ? 'Есть выраженный риск слабой зоны: вокруг объекта мало устойчивых функций спроса, загрузка может зависеть от цены и качества объекта.'
+        ? 'Есть выраженный риск неравномерного спроса: вокруг объекта мало устойчивых функций спроса, загрузка может зависеть от цены и качества объекта.'
         : weakZoneLevel === 'medium'
-          ? 'Есть умеренный риск слабой зоны: спрос рядом неравномерный, перед запуском нужно проверить конкурентов и каналы продаж.'
+          ? 'Есть умеренный риск неравномерного спроса: спрос рядом распределён неравномерно, перед запуском нужно проверить конкурентов и каналы продаж.'
           : weakZoneLevel === 'low'
-            ? 'Риск слабой зоны низкий: рядом достаточно функций, которые могут поддерживать спрос.'
-            : 'Недостаточно данных, чтобы уверенно оценить риск слабой зоны.',
+            ? 'Риск неравномерного спроса низкий: рядом достаточно функций, которые могут поддерживать спрос.'
+            : 'Недостаточно данных, чтобы уверенно оценить риск неравномерного спроса.',
     gapRatio: dead?.gapRatio ?? null,
   } as const;
 
@@ -849,7 +849,7 @@ export const sampleStrLocationStandaloneReportRu: LocationStandaloneReport = {
     },
     weakZoneRisk: {
       level: 'low',
-      summaryRu: 'Риск слабой зоны низкий: рядом достаточно функций, которые могут поддерживать спрос.',
+      summaryRu: 'Риск неравномерного спроса низкий: рядом достаточно функций, которые могут поддерживать спрос.',
       gapRatio: 0.18,
     },
     competitionOta: {

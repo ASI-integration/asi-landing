@@ -2267,7 +2267,7 @@ function ASIPanel({
     : [
         residentialPublicSummary?.headlineRu,
         'Предварительный вывод построен по открытым картографическим данным.',
-        'Полный отчёт уточняет конкуренцию, территорию и риски запуска.',
+        'Полный отчёт уточняет конкуренцию, риски окружения и сценарии монетизации.',
       ].filter((line): line is string => Boolean(line));
   const previewRisks = (analysis.locationScore?.top_negative_factors?.length
     ? analysis.locationScore.top_negative_factors
@@ -2527,8 +2527,8 @@ function ASIPanel({
             <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
             <p className="relative text-[18px] font-semibold text-white">Полная детализация закрыта</p>
             <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
-              В полном отчёте доступны разбор конкуренции, территориальной сетки анализа, риска слабой зоны,
-              ориентиры по доходу диапазоном и список ручных проверок перед запуском.
+              В полном отчёте доступны разбор конкуренции, рисков окружения, ориентиры по доходу диапазоном
+              и список ручных проверок перед покупкой или запуском.
             </p>
             <button
               type="button"
@@ -3220,7 +3220,7 @@ function CommercialASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Заказать отчёт';
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
 
   return (
     <div

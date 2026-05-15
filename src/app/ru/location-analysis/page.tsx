@@ -44,7 +44,7 @@ export default async function RuLocationAnalysisPage(
               </h2>
               <p className="mt-4 text-base leading-relaxed text-slate-300 sm:text-lg">
                 Мы можем разобрать объект глубже: спрос, гостей, риски, цену, конкурентов и стратегию запуска. Это помогает
-                понять, стоит ли заходить в объект и как быстрее вывести его на доход.
+                выбрать сценарий монетизации до покупки, запуска посуточной аренды или подключения управления.
               </p>
               <Link
                 href="/ru/otchet-po-dohodnosti-obektov"

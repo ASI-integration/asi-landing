@@ -3,8 +3,31 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.join(__dirname, '../../..', '..');
+const ruHomePath = path.join(repoRoot, 'src/app/ru/page.tsx');
 const ruPagePath = path.join(repoRoot, 'src/app/ru/location-analysis/page.tsx');
+const ruReportProductPath = path.join(repoRoot, 'src/app/ru/otchet-po-dohodnosti-obektov/page.tsx');
+const ruReportShellPath = path.join(repoRoot, 'src/components/location/LocationStandaloneFullReport.tsx');
 const demoComponentPath = path.join(repoRoot, 'src/components/LocationIntelligenceDemo.tsx');
+
+const reportMarketingSourcePaths = [
+  ruHomePath,
+  ruPagePath,
+  ruReportProductPath,
+  ruReportShellPath,
+  demoComponentPath,
+] as const;
+
+const forbiddenReportMarketingCopy = [
+  'Объект выглядит перспективным',
+  'если объект подходит',
+  'если объект перспективен',
+  'искать другой вариант',
+  'неперспективный объект',
+  'не стоит запускать',
+  'слабый объект',
+  'стоит ли запускать',
+  'локация выглядит перспективной',
+] as const;
 
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0;
@@ -26,6 +49,24 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(combined).not.toContain('Получить подробный разбор');
     expect(countOccurrences(combined, 'Получить полный отчёт')).toBeGreaterThanOrEqual(1);
     expect(pageSrc).not.toContain('Объект выглядит перспективным?');
+  });
+
+  it('RU report marketing copy positions the report before any object decision', () => {
+    const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
+    const reportProductSrc = fs.readFileSync(ruReportProductPath, 'utf8');
+    const combined = reportMarketingSourcePaths.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+
+    expect(homeSrc).toContain('Отчёт нужен до любого решения по объекту');
+    expect(homeSrc).toContain(
+      'Проверьте локацию, спрос, риски и сценарии монетизации до покупки, запуска посуточной аренды или подключения управления ASI.',
+    );
+    expect(reportProductSrc).toContain('Проверить объект по адресу');
+    expect(reportProductSrc).toContain('Получить полный отчёт');
+    expect(reportProductSrc).toContain('Посмотреть пример отчёта');
+
+    for (const forbidden of forbiddenReportMarketingCopy) {
+      expect(combined, `RU report marketing copy must not contain «${forbidden}»`).not.toContain(forbidden);
+    }
   });
 
   it('LocationIntelligenceDemo omits residential/commercial toggle labels', () => {
