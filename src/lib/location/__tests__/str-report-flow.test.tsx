@@ -26,8 +26,10 @@ describe('RU STR location report flow', () => {
     expect(report.sections.map(section => section.id)).toEqual(['summary', 'next_step']);
 
     const source = readFileSync('src/components/LocationIntelligenceDemo.tsx', 'utf8');
-    expect(source).toContain('Полная детализация закрыта');
-    expect(source).toContain('Получить полный отчёт');
+    expect(source).toContain("from '@/lib/location/free-report-renderer'");
+    expect(source).toContain('buildFreeLocationReportViewModel({');
+    expect(source).toContain('freeReport?.cta.primaryLabel');
+    expect(source).not.toContain('Полная детализация закрыта');
   });
 
   it('paid report includes required sellable STR sections', () => {
