@@ -10,6 +10,7 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 const CONNECT_HREF = '/connect';
 /** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
 const RU_LOCATION_CHECK_HREF = '/ru/location-analysis?mode=residential#location-check';
+const RU_STR_REPORT_HREF = '/ru/otchet-po-dohodnosti-obektov';
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
@@ -36,11 +37,11 @@ export default function HomeRu() {
           offerHeadline: 'Ваш объект недвижимости. На автопилоте',
           offerSub:
             'ASI берёт на себя коммуникацию, операционные сценарии и анализ объектов: меньше ручной работы, меньше расходов на персонал и до 99% автоматизации управленческих процессов.',
-          ctaLabel: 'Проверить объект по адресу',
+          ctaLabel: 'Оценить объект по адресу',
           ctaHref: RU_LOCATION_CHECK_HREF,
           ctaExternal: false,
-          ctaSecondaryLabel: 'Запросить разбор объектов',
-          ctaSecondaryHref: CONNECT_HREF,
+          ctaSecondaryLabel: 'Получить отчёт по посуточной аренде',
+          ctaSecondaryHref: RU_STR_REPORT_HREF,
           ctaSecondaryExternal: false,
           ctaSub:
             'Сначала проверьте адрес — затем решите, подключать ли управление ASI.',
@@ -55,7 +56,7 @@ export default function HomeRu() {
               Как ASI ведёт объект от проверки до управления
             </h2>
             <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-10 max-w-2xl">
-              Три шага: проверить локацию, понять вывод и при необходимости подключить управление.
+              Три шага: проверить локацию, увидеть бесплатный предпросмотр и заказать полный отчёт по посуточной аренде.
             </p>
             <div className="grid sm:grid-cols-3 gap-6">
 
@@ -82,16 +83,16 @@ export default function HomeRu() {
                   2
                 </span>
                 <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
-                  Получите вывод по локации
+                  Получите бесплатный предпросмотр
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Отчёт помогает понять, стоит ли запускать объект, брать его в аренду или искать другой вариант.
+                  Предпросмотр показывает общий потенциал, подходящую аудиторию, сильные факторы и основные риски.
                 </p>
                 <Link
                   href={RU_LOCATION_CHECK_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Получить вывод
+                  Получить предпросмотр
                 </Link>
               </div>
 
@@ -100,16 +101,16 @@ export default function HomeRu() {
                   3
                 </span>
                 <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
-                  Подключите управление
+                  Закажите полный отчёт
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Если объект подходит, ASI помогает автоматизировать коммуникацию, сценарии и операционные процессы.
+                  Полный отчёт раскрывает спрос, конкуренцию, риск слабой зоны, диапазон дохода и ручные проверки.
                 </p>
                 <Link
-                  href={CONNECT_HREF}
+                  href={RU_STR_REPORT_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Запросить подключение
+                  Получить отчёт
                 </Link>
               </div>
 

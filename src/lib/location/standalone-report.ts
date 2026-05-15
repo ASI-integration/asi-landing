@@ -29,6 +29,61 @@ export type LocationStandaloneReportSectionId =
 
 export type LocationStandaloneReportMode = 'free' | 'paid';
 
+export type StrLocationRecommendation = 'good' | 'conditional' | 'weak';
+export type StrLocationAudience =
+  | 'business'
+  | 'tourists'
+  | 'families'
+  | 'medical'
+  | 'mixed';
+
+export type StrLocationReportProjection = {
+  product: 'str-location-report';
+  suitabilityScore: number | null;
+  recommendation: StrLocationRecommendation;
+  recommendationLabelRu: string;
+  executiveConclusionRu: string;
+  audienceFit: {
+    primary: StrLocationAudience;
+    suitableForRu: string[];
+    explanationRu: string;
+  };
+  signalGroups: {
+    businessCorporateRu: string[];
+    transportRu: string[];
+    medicalUniversityTourismLocalRu: string[];
+  };
+  territorialInterpretation: {
+    summaryRu: string;
+    signalQualityRu: string;
+    diversityRu: string;
+    businessSuitabilityRu: string;
+    transportBalanceRu: string;
+    countedSignals: number | null;
+    coverageUnits: number | null;
+  };
+  weakZoneRisk: {
+    level: 'low' | 'medium' | 'high' | 'unknown';
+    summaryRu: string;
+    gapRatio: number | null;
+  };
+  competitionOta: {
+    pressureLevel: LocationAnalysis['gravityExplanation']['competitorPressureLevel'];
+    competitorCount: number;
+    notesRu: string[];
+  };
+  monetization: {
+    strategy: RecommendedStrategy | null;
+    monthlyIncomeRangeRub: { low: number; high: number } | null;
+    notesRu: string[];
+  };
+  risksAndManualChecksRu: string[];
+  confidence: {
+    level: 'low' | 'medium' | 'high';
+    reasonsRu: string[];
+  };
+};
+
 export type LocationStandaloneReport = {
   version: 'v1';
   /**
@@ -39,6 +94,8 @@ export type LocationStandaloneReport = {
   metadata?: LocationReportResultMetadata;
   /** Short teaser for `reportMode: 'free'` permalinks (RU copy). */
   free_brief?: string;
+  /** Sellable RU short-term-rental report projection. Present on new paid STR reports. */
+  strReport?: StrLocationReportProjection;
   address: string;
   generated_at_iso: string;
   unifiedReport?: UnifiedLocationReport;
@@ -332,6 +389,262 @@ function buildFreeBriefRu(args: { verdict: string }): string {
   return `${args.verdict} Это быстрая предварительная оценка по открытым данным.`.replace(/\s+/g, ' ').trim();
 }
 
+function levelRu(level: 'none' | 'weak' | 'moderate' | 'strong'): string {
+  if (level === 'strong') return 'сильный';
+  if (level === 'moderate') return 'средний';
+  if (level === 'weak') return 'слабый';
+  return 'нет сигнала';
+}
+
+function signalQualityRu(level: 'none' | 'low' | 'medium' | 'high'): string {
+  if (level === 'high') return 'высокая';
+  if (level === 'medium') return 'средняя';
+  if (level === 'low') return 'низкая';
+  return 'нет достаточных сигналов';
+}
+
+function strRecommendation(score: number | null): StrLocationRecommendation {
+  if (score == null) return 'conditional';
+  if (score >= 70) return 'good';
+  if (score >= 45) return 'conditional';
+  return 'weak';
+}
+
+function strRecommendationLabelRu(v: StrLocationRecommendation): string {
+  if (v === 'good') return 'хорошо подходит для посуточной аренды';
+  if (v === 'conditional') return 'подходит условно, нужна проверка модели';
+  return 'слабая локация, не рекомендуется без сильного объекта';
+}
+
+function strAudienceFromDemandType(type: string | null | undefined): StrLocationAudience {
+  if (type === 'corporate/business' || type === 'industrial') return 'business';
+  if (type === 'tourist') return 'tourists';
+  if (type === 'medical') return 'medical';
+  if (type === 'mixed' || type === 'education' || type === 'transport') return 'mixed';
+  return 'mixed';
+}
+
+function audienceLabelRu(v: StrLocationAudience): string {
+  if (v === 'business') return 'командированные';
+  if (v === 'tourists') return 'туристы';
+  if (v === 'families') return 'семьи';
+  if (v === 'medical') return 'медтуризм';
+  return 'смешанный спрос';
+}
+
+function uniqueNonEmpty(lines: Array<string | null | undefined>, limit: number): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const t = line?.replace(/\s+/g, ' ').trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function magnetLine(m: Pick<LocationAnalysis['magnets'][number], 'name' | 'distance' | 'categoryLabel'>): string {
+  const distance = Math.round(m.distance);
+  return `${m.name} (${distance < 1000 ? `${distance} м` : `${(distance / 1000).toFixed(1)} км`})`;
+}
+
+function incomeRangeRub(value: number | null | undefined): { low: number; high: number } | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return {
+    low: Math.max(0, Math.round((value * 0.82) / 5000) * 5000),
+    high: Math.max(0, Math.round((value * 1.18) / 5000) * 5000),
+  };
+}
+
+export function buildStrLocationReportProjection(analysis: LocationAnalysis): StrLocationReportProjection {
+  const score =
+    analysis.locationDecision?.finalScore ??
+    analysis.locationScore?.location_score ??
+    (Number.isFinite(analysis.evergreenIndex) ? Math.round(analysis.evergreenIndex) : null);
+  const recommendation = strRecommendation(score);
+  const publicSummary = analysis.locationDecision?.publicSummary;
+  const primary = strAudienceFromDemandType(publicSummary?.primaryDemandType ?? null);
+  const secondaryAudiences = (publicSummary?.secondaryDemandTypes ?? [])
+    .map(strAudienceFromDemandType)
+    .filter(v => v !== primary);
+  const suitableForRu = uniqueNonEmpty(
+    [
+      audienceLabelRu(primary),
+      ...secondaryAudiences.map(audienceLabelRu),
+      analysis.audienceAnalysis?.primaryAudience === 'FAMILY' ? 'семьи' : null,
+      (publicSummary?.secondaryDemandTypes?.length ?? 0) > 0 ? 'смешанный спрос' : null,
+    ],
+    5,
+  );
+
+  const byCat = (categories: string[]) =>
+    analysis.magnets
+      .filter(m => categories.includes(m.categoryId))
+      .sort((a, b) => a.distance - b.distance)
+      .map(magnetLine);
+  const businessCorporateRu = uniqueNonEmpty(
+    [
+      ...byCat(['business', 'convention', 'major_hotel']),
+      ...(analysis.locationDecision?.demandSignals ?? [])
+        .filter(s => s.type.includes('business') || s.publicLabelRu.toLowerCase().includes('делов'))
+        .map(s => s.publicLabelRu),
+    ],
+    5,
+  );
+  const transportRu = uniqueNonEmpty(
+    [
+      ...byCat(['metro', 'railway_station', 'airport', 'strategicTransportHub']),
+      ...(analysis.accessibilityStops ?? []).slice(0, 3).map(s => `${s.name} (${Math.round(s.distance)} м)`),
+    ],
+    5,
+  );
+  const medicalUniversityTourismLocalRu = uniqueNonEmpty(
+    [
+      ...byCat(['hospital', 'specializedMedicalAnchor', 'university', 'attraction', 'stadium', 'shopping_major']),
+      ...(analysis.strongestMagnets ?? [])
+        .filter(m => ['hospital', 'specializedMedicalAnchor', 'university', 'attraction'].includes(m.categoryId))
+        .map(magnetLine),
+    ],
+    6,
+  );
+
+  const territorial = analysis.territorialScoringSignals;
+  const territorialInterpretation = territorial
+    ? {
+        summaryRu:
+          territorial.signalQuality === 'none'
+            ? 'В территориальной сетке анализа мало подтверждённых точек спроса, поэтому вывод требует ручной проверки.'
+            : `Территориальная сетка анализа показывает ${signalQualityRu(territorial.signalQuality)} плотность сигналов: разнообразие окружения ${levelRu(territorial.diversity.level)}, деловой потенциал ${levelRu(territorial.businessSuitability.level)}.`,
+        signalQualityRu: signalQualityRu(territorial.signalQuality),
+        diversityRu: levelRu(territorial.diversity.level),
+        businessSuitabilityRu: levelRu(territorial.businessSuitability.level),
+        transportBalanceRu: levelRu(territorial.transportBalance.level),
+        countedSignals: territorial.countedSignals,
+        coverageUnits: territorial.coverageUnits,
+      }
+    : {
+        summaryRu: 'Территориальная сетка анализа для этого отчёта недоступна; вывод опирается на найденные объекты спроса и конкуренцию.',
+        signalQualityRu: 'нет достаточных сигналов',
+        diversityRu: 'нет сигнала',
+        businessSuitabilityRu: 'нет сигнала',
+        transportBalanceRu: 'нет сигнала',
+        countedSignals: null,
+        coverageUnits: null,
+      };
+
+  const dead = territorial?.deadZonePenalty;
+  const weakZoneLevel =
+    !dead ? 'unknown' :
+    dead.value >= 0.67 ? 'high' :
+    dead.value >= 0.4 ? 'medium' :
+    'low';
+  const weakZoneRisk = {
+    level: weakZoneLevel,
+    summaryRu:
+      weakZoneLevel === 'high'
+        ? 'Есть выраженный риск слабой зоны: вокруг объекта мало устойчивых функций спроса, загрузка может зависеть от цены и качества объекта.'
+        : weakZoneLevel === 'medium'
+          ? 'Есть умеренный риск слабой зоны: спрос рядом неравномерный, перед запуском нужно проверить конкурентов и каналы продаж.'
+          : weakZoneLevel === 'low'
+            ? 'Риск слабой зоны низкий: рядом достаточно функций, которые могут поддерживать спрос.'
+            : 'Недостаточно данных, чтобы уверенно оценить риск слабой зоны.',
+    gapRatio: dead?.gapRatio ?? null,
+  } as const;
+
+  const recommended = analysis.locationScore?.recommended_strategy ?? null;
+  const incomeValue =
+    recommended && analysis.locationScore
+      ? analysis.locationScore.estimated_monthly_income[recommended]
+      : analysis.locationScore?.estimated_monthly_income.short_term;
+  const competition = analysis.gravityExplanation.competitorPressureLevel;
+  const competitionOta = {
+    pressureLevel: competition,
+    competitorCount: analysis.competitors.length,
+    notesRu: uniqueNonEmpty(
+      [
+        analysis.competitors.length > 0
+          ? `В открытых данных рядом найдено объектов размещения: ${analysis.competitors.length}. Это не полный срез площадок бронирования, но полезный индикатор давления.`
+          : 'В открытых данных рядом не найдено плотного слоя объектов размещения; перед запуском всё равно нужно проверить площадки бронирования вручную.',
+        competition === 'high'
+          ? 'При высоком давлении важны упаковка объявления, отзывы, динамическая цена и отдельная стратегия каналов.'
+          : competition === 'medium'
+            ? 'Конкуренция есть, но локация может работать при чётком позиционировании и контроле цены.'
+            : 'Низкое видимое давление может быть плюсом, но также требует проверки реального спроса на площадках.',
+      ],
+      3,
+    ),
+  };
+
+  const riskCandidates = [
+    ...(analysis.locationScore?.top_negative_factors ?? []),
+    weakZoneRisk.level === 'high' || weakZoneRisk.level === 'medium' ? weakZoneRisk.summaryRu : null,
+    competition === 'high' ? 'Высокая конкуренция: нужно сравнить качество и цены похожих объектов.' : null,
+    analysis.neighborhoodEnvironment?.concernLevel === 'high' || analysis.neighborhoodEnvironment?.concernLevel === 'elevated'
+      ? analysis.neighborhoodEnvironment.environmentNarrativeRu
+      : null,
+    analysis.magnets.length === 0 ? 'Не найдены сильные точки притяжения рядом; спрос нужно подтверждать вручную.' : null,
+    'Проверьте фактические ставки, сезонность, состояние дома, ограничения по размещению гостей и правила площадок бронирования.',
+  ];
+
+  const confidenceLevel = analysis.residentialAnalysis?.confidence ?? (
+    territorial?.signalQuality === 'high' ? 'high' :
+    territorial?.signalQuality === 'medium' ? 'medium' :
+    'low'
+  );
+
+  return {
+    product: 'str-location-report',
+    suitabilityScore: score,
+    recommendation,
+    recommendationLabelRu: strRecommendationLabelRu(recommendation),
+    executiveConclusionRu:
+      recommendation === 'good'
+        ? 'Локация выглядит сильной для посуточной аренды: есть спросовые сигналы, которые можно превратить в понятное позиционирование объекта.'
+        : recommendation === 'conditional'
+          ? 'Локация может работать в посуточной аренде, но решение зависит от цены входа, качества объекта, каналов продаж и ручной проверки рисков.'
+          : 'Локация выглядит слабой для массовой посуточной аренды. Заходить стоит только при сильном объекте, низкой цене входа или понятном нишевом спросе.',
+    audienceFit: {
+      primary,
+      suitableForRu,
+      explanationRu: publicSummary?.headlineRu ?? analysis.audienceAnalysis?.primaryDriverLabel ?? 'Профиль спроса смешанный; требуется проверка по фактическим каналам продаж.',
+    },
+    signalGroups: {
+      businessCorporateRu,
+      transportRu,
+      medicalUniversityTourismLocalRu,
+    },
+    territorialInterpretation,
+    weakZoneRisk,
+    competitionOta,
+    monetization: {
+      strategy: recommended,
+      monthlyIncomeRangeRub: incomeRangeRub(incomeValue),
+      notesRu: [
+        'Диапазон — ориентир для сравнения сценариев, а не обещание дохода.',
+        'Фактическая выручка зависит от сезона, состояния объекта, отзывов, фото, цены, комиссий и качества управления.',
+      ],
+    },
+    risksAndManualChecksRu: uniqueNonEmpty(riskCandidates, 7),
+    confidence: {
+      level: confidenceLevel,
+      reasonsRu: uniqueNonEmpty(
+        [
+          ...(analysis.residentialAnalysis?.confidenceReasons ?? []),
+          territorial
+            ? `Качество территориальных сигналов: ${signalQualityRu(territorial.signalQuality)}.`
+            : 'Территориальные сигналы недоступны.',
+          analysis.locationDecision?.dataIntegrity.scoreBlockedDueToIncompleteData
+            ? 'Часть данных карты была неполной, вывод нужно перепроверить вручную.'
+            : null,
+        ],
+        4,
+      ),
+    },
+  };
+}
+
 
 export function buildLocationStandaloneReport(args: {
   address: string;
@@ -447,6 +760,7 @@ export function buildLocationStandaloneReport(args: {
     version: 'v1',
     reportMode: 'paid',
     metadata,
+    strReport: buildStrLocationReportProjection(analysis),
     address: args.address,
     generated_at_iso: generatedAtIso,
     unifiedReport,
@@ -492,4 +806,141 @@ export function buildLocationStandaloneReport(args: {
     ],
   };
 }
+
+export const sampleStrLocationStandaloneReportRu: LocationStandaloneReport = {
+  version: 'v1',
+  reportMode: 'paid',
+  address: 'Санкт-Петербург, Невский проспект, 88',
+  generated_at_iso: '2026-05-10T10:00:00.000Z',
+  strReport: {
+    product: 'str-location-report',
+    suitabilityScore: 78,
+    recommendation: 'good',
+    recommendationLabelRu: 'хорошо подходит для посуточной аренды',
+    executiveConclusionRu:
+      'Пример показывает формат платного отчёта: локация выглядит сильной для посуточной аренды за счёт смешанного спроса, транспорта и туристических точек притяжения.',
+    audienceFit: {
+      primary: 'mixed',
+      suitableForRu: ['командированные', 'туристы', 'семьи', 'смешанный спрос'],
+      explanationRu:
+        'Адрес находится в зоне, где деловой, туристический и транспортный спрос дополняют друг друга. Это снижает зависимость от одного сценария загрузки.',
+    },
+    signalGroups: {
+      businessCorporateRu: [
+        'Деловая активность в центральной части города',
+        'Отели и апарт-форматы рядом подтверждают спрос на краткосрочное размещение',
+      ],
+      transportRu: ['Метро в пешей доступности', 'Удобный выезд к Московскому вокзалу'],
+      medicalUniversityTourismLocalRu: [
+        'Туристические маршруты центрального района',
+        'Учебные и культурные объекты в зоне поездки',
+        'Кафе, сервисы и повседневная инфраструктура рядом',
+      ],
+    },
+    territorialInterpretation: {
+      summaryRu:
+        'Территориальная сетка анализа показывает плотное и разнообразное окружение: спрос не завязан только на одну точку.',
+      signalQualityRu: 'высокая',
+      diversityRu: 'сильный',
+      businessSuitabilityRu: 'средний',
+      transportBalanceRu: 'сильный',
+      countedSignals: 12,
+      coverageUnits: 8,
+    },
+    weakZoneRisk: {
+      level: 'low',
+      summaryRu: 'Риск слабой зоны низкий: рядом достаточно функций, которые могут поддерживать спрос.',
+      gapRatio: 0.18,
+    },
+    competitionOta: {
+      pressureLevel: 'medium',
+      competitorCount: 14,
+      notesRu: [
+        'Видимое давление конкуренции среднее: объекту потребуется сильная упаковка, фото и понятное позиционирование.',
+        'Перед покупкой или арендой нужно вручную проверить площадки бронирования, цены похожих объектов и сезонность.',
+      ],
+    },
+    monetization: {
+      strategy: 'short_term',
+      monthlyIncomeRangeRub: { low: 165000, high: 245000 },
+      notesRu: [
+        'Диапазон — ориентир для сравнения сценариев, а не обещание дохода.',
+        'Фактическая выручка зависит от сезона, состояния объекта, отзывов, фото, цены, комиссий и качества управления.',
+      ],
+    },
+    risksAndManualChecksRu: [
+      'Проверить фактические ставки и загрузку похожих объектов на площадках бронирования.',
+      'Оценить шум, подъезд, входную группу и правила дома для гостей.',
+      'Сравнить посуточный сценарий со среднесрочной арендой на низкий сезон.',
+    ],
+    confidence: {
+      level: 'high',
+      reasonsRu: [
+        'В примере достаточно транспортных, туристических и сервисных сигналов.',
+        'Конкуренция видима, поэтому вывод требует проверки цены и качества объекта.',
+      ],
+    },
+  },
+  unifiedReport: undefined,
+  sections: [
+    {
+      id: 'summary',
+      verdict: 'Демонстрационный пример полного отчёта по посуточной аренде.',
+      drivers: [
+        'Смешанный спрос: туристы, командированные и поездки выходного дня.',
+        'Транспорт и центральная инфраструктура поддерживают загрузку.',
+        'Конкуренция требует сильной упаковки объекта.',
+      ],
+      income_rub_month: 205000,
+      recommended_strategy: 'short_term',
+    },
+    {
+      id: 'business_fit',
+      business_fit_verdict: 'fit',
+      primary_magnets: [
+        { title: 'Центральная деловая и сервисная зона', distance_m: 450 },
+        { title: 'Крупный транспортный узел', distance_m: 900 },
+      ],
+      note: 'Подходит для командировок и коротких городских поездок.',
+    },
+    {
+      id: 'magnets',
+      primary: [
+        {
+          category_id: 'metro',
+          name: 'Метро в пешей доступности',
+          distance_m: 420,
+          anchor_type: 'POSITIVE_DEMAND_ANCHOR',
+          anchor_label_ru: 'Сильный спрос',
+          category_label_ru: 'Транспорт',
+        },
+        {
+          category_id: 'attraction',
+          name: 'Центральные туристические маршруты',
+          distance_m: 700,
+          anchor_type: 'POSITIVE_DEMAND_ANCHOR',
+          anchor_label_ru: 'Сильный спрос',
+          category_label_ru: 'Туризм',
+        },
+      ],
+      secondary: [],
+    },
+    {
+      id: 'competition',
+      competitor_count: 14,
+      pressure_level: 'medium',
+    },
+    {
+      id: 'income_strategy',
+      recommended_strategy: 'short_term',
+      monthly_income_rub: {
+        short_term: 205000,
+        hybrid: 185000,
+        mid_term: 135000,
+      },
+      positioning_hint: 'Рекомендуемая стратегия: посуточная аренда с деловым и туристическим позиционированием.',
+    },
+    { id: 'next_step', cta: 'get_full_breakdown' },
+  ],
+};
 

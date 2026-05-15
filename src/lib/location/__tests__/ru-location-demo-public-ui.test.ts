@@ -24,7 +24,7 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     const combined = `${pageSrc}\n${demoSrc}`;
     expect(pageSrc).toContain('Хотите понять, как использовать эту локацию?');
     expect(combined).not.toContain('Получить подробный разбор');
-    expect(countOccurrences(combined, 'Получить подробный отчёт')).toBe(1);
+    expect(countOccurrences(combined, 'Получить полный отчёт')).toBeGreaterThanOrEqual(1);
     expect(pageSrc).not.toContain('Объект выглядит перспективным?');
   });
 

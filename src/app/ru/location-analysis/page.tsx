@@ -47,10 +47,10 @@ export default async function RuLocationAnalysisPage(
                 понять, стоит ли заходить в объект и как быстрее вывести его на доход.
               </p>
               <Link
-                href="/connect"
+                href="/ru/otchet-po-dohodnosti-obektov"
                 className="mt-8 inline-flex min-w-[min(100%,280px)] items-center justify-center rounded-xl bg-white px-8 py-4 text-base font-bold text-slate-900 shadow-lg transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
-                Получить подробный отчёт
+                Получить полный отчёт
               </Link>
             </div>
           </section>
