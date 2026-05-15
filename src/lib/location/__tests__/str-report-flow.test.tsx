@@ -32,8 +32,8 @@ describe('RU STR location report flow', () => {
     );
 
     expect(html).toContain('Бесплатный фрагмент по локации');
-    expect(html).toContain('Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.');
-    expect(html).toContain('Получить полный отчёт');
+    expect(html).toContain('Подробный отчёт показывает, что относится к полной платной аналитике.');
+    expect(html).toContain('Заказать подробный отчёт');
     expect(html).not.toContain('Отчёт по посуточной аренде');
     expect(html).not.toContain('Вывод по посуточной аренде');
   });
