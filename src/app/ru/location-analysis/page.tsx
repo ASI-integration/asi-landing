@@ -6,11 +6,11 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { ThemeProvider } from '@/theme/ThemeProvider';
+import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 import {
   PublicInfoCard,
   PublicPrimaryCta,
   PublicSection,
-  PublicSectionHeader,
 } from '@/components/public';
 
 export const metadata: Metadata = {
@@ -21,31 +21,6 @@ export const metadata: Metadata = {
 
 const DASHBOARD_LOGIN_HREF = '/login';
 const REPORT_PRODUCT_HREF = '/ru/otchet-po-dohodnosti-obektov';
-
-const GENERAL_REPORT_ITEMS = [
-  'Первичная оценка потенциала объекта.',
-  'Сигналы спроса вокруг адреса.',
-  'Карта магнитов и окружения.',
-  'Конкуренты рядом.',
-  'Ориентир по доходу как оценка, не гарантия.',
-  'Риски, которые стоит проверить вручную.',
-  'Рекомендация по сценарию: посуточная аренда, среднесрок, управление, сравнение объектов.',
-  'Понятный вывод до покупки, запуска или подключения управления.',
-] as const;
-
-const DETAILED_REPORT_ITEMS = [
-  'Полный разбор локации.',
-  'Аудитория спроса: командированные, туристы, семьи, медтуризм, смешанный спрос.',
-  'Транспортные, медицинские, учебные, туристические и деловые сигналы.',
-  'Территориальный разбор окружения.',
-  'Конкуренция и OTA-зависимость.',
-  'Стратегия монетизации.',
-  'Сценарии доходности диапазонами, без гарантий.',
-  'Риски и ручные проверки.',
-  'Рекомендации по упаковке объекта.',
-  'Следующий шаг: запуск, сравнение, управление или доработка стратегии.',
-  'Ссылка на сохранённый отчёт в личном кабинете.',
-] as const;
 
 export default async function RuLocationAnalysisPage(
   props: { searchParams: Promise<{ mode?: string }> },
@@ -98,59 +73,7 @@ export default async function RuLocationAnalysisPage(
             </div>
           </PublicSection>
 
-          <PublicSection variant="muted">
-            <div className="mx-auto max-w-6xl">
-              <PublicSectionHeader
-                title="Общий и подробный отчёт"
-                description="Публичная страница объясняет ценность проверки. Подробный формат открывается через личный кабинет."
-              />
-              <div className="mt-8 grid gap-6 lg:grid-cols-2">
-                <PublicInfoCard className="p-6">
-                  <h2 className="text-2xl font-bold text-[var(--t-text)]">Что входит в общий отчёт</h2>
-                  <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)]">
-                    Общий отчёт помогает быстро понять потенциал объекта и принять первое решение на данных.
-                  </p>
-                  <ul className="mt-6 grid gap-3">
-                    {GENERAL_REPORT_ITEMS.map((item) => (
-                      <li key={item} className="flex gap-3 text-sm leading-relaxed text-[var(--t-muted)]">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </PublicInfoCard>
-
-                <PublicInfoCard className="p-6">
-                  <h2 className="text-2xl font-bold text-[var(--t-text)]">Что входит в подробный отчёт</h2>
-                  <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)]">
-                    Подробный отчёт доступен в личном кабинете и сохраняется как отдельная страница, чтобы его можно было открыть повторно или отправить партнёру.
-                  </p>
-                  <ul className="mt-6 grid gap-3">
-                    {DETAILED_REPORT_ITEMS.map((item) => (
-                      <li key={item} className="flex gap-3 text-sm leading-relaxed text-[var(--t-muted)]">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                    <Link
-                      href={DASHBOARD_LOGIN_HREF}
-                      className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-[var(--t-accent)] px-5 py-3 text-base font-bold text-white transition-colors hover:bg-[var(--t-accent-hover)]"
-                    >
-                      Открыть личный кабинет
-                    </Link>
-                    <Link
-                      href={DASHBOARD_LOGIN_HREF}
-                      className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
-                    >
-                      Запросить подробный отчёт
-                    </Link>
-                  </div>
-                </PublicInfoCard>
-              </div>
-            </div>
-          </PublicSection>
+          <RuGeneralLocationReportCta primaryHref="#location-check" secondaryHref={DASHBOARD_LOGIN_HREF} />
 
           <section id="location-check" className="scroll-mt-20">
             <LocationIntelligenceDemo locale="ru" initialMode={mode} edgeToHeader />

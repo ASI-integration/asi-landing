@@ -6,6 +6,7 @@ import { TgIcon } from '@/components/TgIcon';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
+import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 
 const CONNECT_HREF = '/connect';
 /** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
@@ -173,44 +174,7 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Форматы ── */}
-        <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-4xl mx-auto">
-            <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Форматы доступны в личном кабинете
-            </h2>
-            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-8 max-w-3xl">
-              На публичной странице мы показываем ценность проверки и отчёта без тарифных карточек. В личном кабинете можно выбрать формат работы, запросить подробный отчёт и вернуться к сохранённым материалам.
-            </p>
-            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 sm:p-8">
-              <div className="grid gap-5 sm:grid-cols-3">
-                {[
-                  'Общий вывод по адресу для первого решения.',
-                  'Подробный отчёт с сохранённой страницей в личном кабинете.',
-                  'Подключение управления и автоматизации под ваш портфель.',
-                ].map((text) => (
-                  <div key={text} className="rounded-xl border border-[var(--t-border)] bg-[var(--t-bg)] p-5">
-                    <p className="text-sm leading-relaxed text-[var(--t-text-2)]">{text}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Link
-                  href={DASHBOARD_LOGIN_HREF}
-                  className="inline-flex min-h-[52px] items-center justify-center rounded-xl bg-[var(--t-accent)] px-6 py-3 text-base font-bold text-white transition-colors hover:bg-[var(--t-accent-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface)]"
-                >
-                  Перейти в личный кабинет
-                </Link>
-                <Link
-                  href={DASHBOARD_LOGIN_HREF}
-                  className="inline-flex min-h-[52px] items-center justify-center rounded-xl border border-[var(--t-border)] px-6 py-3 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface)]"
-                >
-                  Запросить подробный отчёт
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
+        <RuGeneralLocationReportCta id="pricing" primaryHref={RU_LOCATION_CHECK_HREF} secondaryHref={DASHBOARD_LOGIN_HREF} />
 
         {/* ── FAQ ── */}
         <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">
@@ -245,7 +209,7 @@ export default function HomeRu() {
                 },
                 {
                   q: 'Как происходит подключение?',
-                  a: 'Оставьте заявку через форму. Мы смотрим на ваши объекты и текущие задачи, после чего предлагаем конкретный формат работы.',
+                  a: 'Оставьте заявку через форму. Мы смотрим на ваши объекты и текущие задачи, после чего предлагаем конкретный следующий шаг.',
                 },
               ].map(({ q, a }) => (
                 <details key={q} className="group py-3 list-none [&::-webkit-details-marker]:hidden">

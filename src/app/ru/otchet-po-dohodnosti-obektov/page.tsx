@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
+import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 import {
   PublicBadge,
   PublicInfoCard,
@@ -48,31 +49,6 @@ const REPORT_BLOCKS = [
   },
 ] as const;
 
-const GENERAL_REPORT_ITEMS = [
-  'Первичная оценка потенциала объекта.',
-  'Сигналы спроса вокруг адреса.',
-  'Карта магнитов и окружения.',
-  'Конкуренты рядом.',
-  'Ориентир по доходу как оценка, не гарантия.',
-  'Риски, которые стоит проверить вручную.',
-  'Рекомендация по сценарию: посуточная аренда, среднесрок, управление, сравнение объектов.',
-  'Понятный вывод до покупки, запуска или подключения управления.',
-] as const;
-
-const DETAILED_REPORT_ITEMS = [
-  'Полный разбор локации.',
-  'Аудитория спроса: командированные, туристы, семьи, медтуризм, смешанный спрос.',
-  'Транспортные, медицинские, учебные, туристические и деловые сигналы.',
-  'Территориальный разбор окружения.',
-  'Конкуренция и OTA-зависимость.',
-  'Стратегия монетизации.',
-  'Сценарии доходности диапазонами, без гарантий.',
-  'Риски и ручные проверки.',
-  'Рекомендации по упаковке объекта.',
-  'Следующий шаг: запуск, сравнение, управление или доработка стратегии.',
-  'Ссылка на сохранённый отчёт в личном кабинете.',
-] as const;
-
 const WHY_CARDS = [
   {
     title: 'Оценить потенциал до вложений',
@@ -89,17 +65,6 @@ const WHY_CARDS = [
   {
     title: 'Увидеть риски заранее',
     text: 'Заранее выявить скрытую сезонность, жесткую конкуренцию и другие подводные камни локации.',
-  },
-] as const;
-
-const COMPARISON_CARDS = [
-  {
-    title: 'Общий отчёт',
-    text: 'Помогает быстро понять потенциал объекта и принять первое решение на данных.',
-  },
-  {
-    title: 'Подробный отчёт',
-    text: 'Доступен в личном кабинете и сохраняется как отдельная страница, чтобы его можно было открыть повторно или отправить партнёру.',
   },
 ] as const;
 
@@ -208,81 +173,7 @@ export default function OtchetPoDohodnostiPage() {
           </div>
         </PublicSection>
 
-        <PublicSection variant="default">
-          <div className="mx-auto max-w-6xl">
-            <PublicSectionHeader title="Экспресс-оценка и полный отчёт" />
-            <div className="mt-8 grid gap-5 lg:grid-cols-2">
-              {COMPARISON_CARDS.map((card) => (
-                <PublicInfoCard key={card.title} className="p-6">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                    {card.title}
-                  </p>
-                  <p className="mt-5 text-base leading-relaxed text-[var(--t-text-2)]">{card.text}</p>
-                </PublicInfoCard>
-              ))}
-            </div>
-          </div>
-        </PublicSection>
-
-        <PublicSection variant="muted">
-          <div className="mx-auto max-w-6xl">
-            <div className="grid gap-8 lg:grid-cols-2">
-              <PublicInfoCard className="p-6 sm:p-7">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                  Общий отчёт
-                </p>
-                <h2 className="mt-3 text-2xl font-bold tracking-tight text-[var(--t-text)]">
-                  Что входит в общий отчёт
-                </h2>
-                <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)]">
-                  Общий отчёт помогает быстро понять потенциал объекта и принять первое решение на данных.
-                </p>
-                <ul className="mt-6 grid gap-3">
-                  {GENERAL_REPORT_ITEMS.map((item) => (
-                    <li key={item} className="flex gap-3 text-sm leading-relaxed text-[var(--t-muted)]">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </PublicInfoCard>
-
-              <PublicInfoCard className="p-6 sm:p-7">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--t-muted)]">
-                  Подробный отчёт
-                </p>
-                <h2 className="mt-3 text-2xl font-bold tracking-tight text-[var(--t-text)]">
-                  Что входит в подробный отчёт
-                </h2>
-                <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)]">
-                  Подробный отчёт доступен в личном кабинете и сохраняется как отдельная страница, чтобы его можно было открыть повторно или отправить партнёру.
-                </p>
-                <ul className="mt-6 grid gap-3">
-                  {DETAILED_REPORT_ITEMS.map((item) => (
-                    <li key={item} className="flex gap-3 text-sm leading-relaxed text-[var(--t-muted)]">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--t-accent)]" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                  <Link
-                    href={DASHBOARD_LOGIN_HREF}
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-[var(--t-accent)] px-5 py-3 text-base font-bold text-white transition-colors hover:bg-[var(--t-accent-hover)]"
-                  >
-                    Открыть личный кабинет
-                  </Link>
-                  <Link
-                    href={DASHBOARD_LOGIN_HREF}
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
-                  >
-                    Запросить подробный отчёт
-                  </Link>
-                </div>
-              </PublicInfoCard>
-            </div>
-          </div>
-        </PublicSection>
+        <RuGeneralLocationReportCta primaryHref={EXPRESS_ASSESSMENT_HREF} secondaryHref={DASHBOARD_LOGIN_HREF} />
 
         <PublicSection variant="muted">
           <div className="mx-auto max-w-6xl">
