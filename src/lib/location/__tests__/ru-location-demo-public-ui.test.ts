@@ -9,6 +9,7 @@ const ruReportProductPath = path.join(repoRoot, 'src/app/ru/otchet-po-dohodnosti
 const ruReportShellPath = path.join(repoRoot, 'src/components/location/LocationStandaloneFullReport.tsx');
 const demoComponentPath = path.join(repoRoot, 'src/components/LocationIntelligenceDemo.tsx');
 const ruGeneralReportCtaPath = path.join(repoRoot, 'src/components/ru/RuGeneralLocationReportCta.tsx');
+const freeReportRendererPath = path.join(repoRoot, 'src/lib/location/free-report-renderer.ts');
 
 const reportMarketingSourcePaths = [
   ruHomePath,
@@ -144,5 +145,52 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
     expect(demoSrc).toContain('resolveRuDemoTopHelperText');
     expect(demoSrc).not.toContain('Краткая оценка локации. Подробный расчёт доступен в полном отчёте.');
+  });
+
+  it('public RU result uses Free Report Renderer for free report contents', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+
+    expect(demoSrc).toContain("from '@/lib/location/free-report-renderer'");
+    expect(demoSrc).toContain('buildFreeLocationReportViewModel({');
+    expect(demoSrc).toContain('freeReport?.topEvidenceBullets');
+    expect(demoSrc).toContain('freeReport?.shortVerdict');
+    expect(demoSrc).toContain('freeReport?.shortRecommendation');
+    expect(demoSrc).not.toContain('residentialUiClaims');
+    expect(demoSrc).not.toContain('publicDrivers ?? []).map');
+  });
+
+  it('public RU UI does not contain raw/debug/full-report-only sections', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+
+    for (const forbidden of [
+      'locationClaimTrace',
+      'formatLocationDemandKernelDebug',
+      'source:LocationPublicSummary',
+      'previewRisks',
+      'Полная детализация закрыта',
+      '>Риски<',
+      'Кому подходит',
+      'competitorDetails',
+      'revenueScenarios',
+      'fullUrbanDevelopmentRadar',
+      'rawSources',
+      'debugTrace',
+      'scoreTrace',
+      'kernelTrace',
+      'fullMagnetList',
+      'internalWeights',
+      'formulas',
+    ]) {
+      expect(demoSrc, `public RU source must not expose ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  it('public RU UI shows CTA to detailed report from the free report view model', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    const rendererSrc = fs.readFileSync(freeReportRendererPath, 'utf8');
+
+    expect(rendererSrc).toContain("primaryLabel: 'Перейти к подробному отчёту'");
+    expect(rendererSrc).toContain("primaryHref: '/login'");
+    expect(demoSrc).toContain('freeReport?.cta.primaryLabel');
   });
 });

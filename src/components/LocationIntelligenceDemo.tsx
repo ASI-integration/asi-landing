@@ -23,7 +23,6 @@ import {
   applyResidentialDemoPresentationToAnalysis,
   publicLocationScore,
   ruResidentialLocationDecisionForDemo,
-  formatLocationDemandKernelDebug,
 } from '@/lib/location/client';
 import type {
   LocationAnalysis,
@@ -31,10 +30,13 @@ import type {
   Band,
   AnalysisMeta,
   DemandType,
-  LocationPublicClaim,
   NeighborhoodEnvironmentConcernLevel,
   ResidentialDemoSanity,
 } from '@/lib/location/client';
+import {
+  buildFreeLocationReportViewModel,
+  type FreeLocationReportEvidenceBullet,
+} from '@/lib/location/free-report-renderer';
 import {
   useLocationTelemetryOptional,
   type LocationTelemetrySnapshot,
@@ -2009,6 +2011,11 @@ function NeighborhoodEnvironmentPanel({
 
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
+function formatFreeEvidenceLine(bullet: FreeLocationReportEvidenceBullet): string {
+  const reason = bullet.shortReason ? ` — ${bullet.shortReason}` : '';
+  return `${bullet.name} · ${bullet.category} · ${bullet.distanceLabel}${reason}`;
+}
+
 function ASIPanel({
   analysis,
   address,
@@ -2070,9 +2077,14 @@ function ASIPanel({
       : true,
   });
   const dataBlocked = !publicScoreState.analysisUsableForPublicScore;
-  const residentialUiClaims: LocationPublicClaim[] = (residentialPublicSummary?.publicDrivers ?? []).map(
-    d => ({ textRu: d.textRu, trace: d.trace }),
-  );
+  const freeReport = isRuResidentialDemo
+    ? buildFreeLocationReportViewModel({
+        address,
+        analysis,
+        decision: residentialLocationDecision ?? analysis.locationDecision ?? null,
+        meta,
+      })
+    : null;
   const serverSanity = (meta as AnalysisMetaWithDemoSanity | null)?.demoSanity;
   const sanity =
     isRuResidentialDemo && !dataBlocked
@@ -2080,9 +2092,11 @@ function ASIPanel({
       : null;
   const enginePublicScore = publicLocationScore(analysis);
   const publicScore =
-    isRuResidentialDemo &&
-    residentialLocationDecision?.finalScore != null &&
-    Number.isFinite(residentialLocationDecision.finalScore)
+    isRuResidentialDemo && freeReport?.publicScore != null
+      ? freeReport.publicScore
+      : isRuResidentialDemo &&
+        residentialLocationDecision?.finalScore != null &&
+        Number.isFinite(residentialLocationDecision.finalScore)
       ? Math.round(residentialLocationDecision.finalScore)
       : enginePublicScore;
   const band = dataBlocked
@@ -2099,8 +2113,8 @@ function ASIPanel({
     : analysis.locationScore?.recommended_strategy ??
       (publicScore >= 70 ? 'short_term' : publicScore >= 45 ? 'hybrid' : 'mid_term');
   const strategyPoints =
-    isRuResidentialDemo && residentialPublicSummary
-      ? residentialPublicSummary.recommendedStrategyBulletsRu
+    isRuResidentialDemo
+      ? [freeReport?.shortRecommendation].filter((line): line is string => Boolean(line))
       : strategy === 'mid_term'
         ? c.strategyMidTerm
         : strategy === 'hybrid'
@@ -2111,19 +2125,10 @@ function ASIPanel({
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
   const [fullReportOrder, setFullReportOrder] = useState<{ requestId: string } | null>(null);
-  const [claimTraceDebug, setClaimTraceDebug] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
     return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    try {
-      setClaimTraceDebug(new URLSearchParams(window.location.search).get('locationClaimTrace') === '1');
-    } catch {
-      setClaimTraceDebug(false);
-    }
   }, []);
 
   const hasMagnets = magnets.length > 0;
@@ -2226,7 +2231,9 @@ function ASIPanel({
 
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
-    if (isRuResidentialDemo) return residentialUiClaims.slice(0, 2).map(c => c.textRu);
+    if (isRuResidentialDemo) {
+      return (freeReport?.topEvidenceBullets ?? []).slice(0, 2).map(formatFreeEvidenceLine);
+    }
     const ls = analysis.locationScore;
     const pos = ls?.top_positive_factors ?? [];
     const neg = ls?.top_negative_factors ?? [];
@@ -2243,9 +2250,6 @@ function ASIPanel({
     return base.slice(0, 2);
   })();
 
-  const dashboardClaimRows: LocationPublicClaim[] =
-    isRuResidentialDemo ? residentialUiClaims.slice(0, 2) : [];
-
   const partialUsableResult =
     locale === 'ru' &&
     publicScoreState.reportCtaEligible &&
@@ -2256,25 +2260,13 @@ function ASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
+  const reportCtaLabelRu = freeReport?.cta.primaryLabel ?? ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
   const topHelperText = resolveRuDemoTopHelperText({
     locale,
     dataBlocked,
     partialUsableResult,
   });
-  const previewStrongFactors = residentialUiClaims.length
-    ? residentialUiClaims.slice(0, 3).map(claim => claim.textRu)
-    : [
-        residentialPublicSummary?.headlineRu,
-        'Предварительный вывод построен по открытым картографическим данным.',
-        'Полный отчёт уточняет конкуренцию, риски окружения и сценарии монетизации.',
-      ].filter((line): line is string => Boolean(line));
-  const previewRisks = (analysis.locationScore?.top_negative_factors?.length
-    ? analysis.locationScore.top_negative_factors
-    : [
-        'Нужно вручную проверить цены и загрузку похожих объектов.',
-        'Итог зависит от качества квартиры, дома, фото и управления.',
-      ]).slice(0, 2);
+  const freeEvidenceLines = (freeReport?.topEvidenceBullets ?? []).map(formatFreeEvidenceLine);
 
   return (
     <>
@@ -2320,42 +2312,15 @@ function ASIPanel({
                 </div>
                 {isRuResidentialDemo ? (
                   <>
-                    {dashboardClaimRows.length > 0 ? (
+                    {dashboardBullets.length > 0 ? (
                       <ul className="mt-3 space-y-1.5">
-                        {dashboardClaimRows.map((claim, i) => (
-                          <li key={i} className="flex flex-col gap-0.5 leading-snug text-[15px] text-slate-200">
-                            <div className="flex items-start gap-2">
-                              <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
-                              <span>{claim.textRu}</span>
-                            </div>
-                            {claimTraceDebug ? (
-                              <span className="pl-4 text-[10px] font-mono text-slate-600 leading-tight">
-                                source:LocationPublicSummary · mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
-                              </span>
-                            ) : null}
+                        {dashboardBullets.map((line, i) => (
+                          <li key={i} className="flex items-start gap-2 leading-snug text-[15px] text-slate-200">
+                            <span className="mt-[6px] shrink-0 w-1.5 h-1.5 rounded-full bg-slate-600" />
+                            <span>{line}</span>
                           </li>
                         ))}
                       </ul>
-                    ) : null}
-                    {claimTraceDebug && residentialPublicSummary ? (
-                      <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
-                        {[
-                          'source:LocationPublicSummary',
-                          `primaryDemandType=${residentialPublicSummary.primaryDemandType}`,
-                          `publicDrivers=${residentialPublicSummary.publicDrivers.length}`,
-                          `rejectedFromPublic=${residentialPublicSummary.rejectedFromPublic.length}`,
-                          `headlineReason=${residentialPublicSummary.trace.headlineReason}`,
-                          `verdictReason=${residentialPublicSummary.trace.verdictReason}`,
-                          residentialPublicSummary.trace.contradictionWarnings.length
-                            ? `contradictionWarnings=${residentialPublicSummary.trace.contradictionWarnings.join(' | ')}`
-                            : 'contradictionWarnings=—',
-                        ].join('\n')}
-                      </pre>
-                    ) : null}
-                    {claimTraceDebug && residentialLocationDecision?.demandKernelV1 ? (
-                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950/80 p-2 text-[10px] leading-snug text-slate-400 font-mono">
-                        {formatLocationDemandKernelDebug(residentialLocationDecision.demandKernelV1)}
-                      </pre>
                     ) : null}
                   </>
                 ) : dashboardBullets.length > 0 ? (
@@ -2383,10 +2348,7 @@ function ASIPanel({
             ) : null}
             {isRuResidentialDemo ? (
               <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
-                {residentialPublicSummary?.headlineRu ??
-                  (residentialLocationDecision
-                    ? 'Профиль спроса: нет сводки для публичного экрана.'
-                    : 'Профиль спроса: нет координат расчёта для привязки фактов карты.')}
+                {freeReport?.shortRecommendation}
               </p>
             ) : (
               <>
@@ -2420,8 +2382,8 @@ function ASIPanel({
                 ? locale === 'ru'
                   ? ctaSurface.title ?? 'Анализ не завершён'
                   : 'Analysis incomplete'
-                : isRuResidentialDemo && residentialPublicSummary
-                  ? residentialPublicSummary.audienceVerdictRu
+                : isRuResidentialDemo
+                  ? freeReport?.shortVerdict ?? band.label
                   : band.label}
             </p>
             {dataBlocked ? (
@@ -2488,47 +2450,42 @@ function ASIPanel({
         </div>
         <div className="grid gap-4 p-5 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Кому подходит</p>
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Адрес</p>
             <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
-              {residentialPublicSummary?.primaryDemandType === 'corporate/business'
-                ? 'командированные и деловые поездки'
-                : residentialPublicSummary?.primaryDemandType === 'tourist'
-                  ? 'туристы и поездки выходного дня'
-                  : residentialPublicSummary?.primaryDemandType === 'medical'
-                    ? 'медицинские поездки и сопровождающие'
-                    : 'смешанный спрос: гости, командировки и локальные поездки'}
+              {freeReport?.address || address}
             </p>
+            {freeReport?.calculatedAt || freeReport?.dataFreshness ? (
+              <p className="mt-2 text-[12px] leading-snug text-slate-500">
+                {freeReport.calculatedAt ? `Расчёт: ${formatUpdatedAtReadable(freeReport.calculatedAt, 'ru') || freeReport.calculatedAt}` : null}
+                {freeReport.calculatedAt && freeReport.dataFreshness ? ' · ' : null}
+                {freeReport.dataFreshness ? `Данные: ${freeReport.dataFreshness}` : null}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Сильные факторы</p>
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Подтверждённые факторы</p>
             <ul className="mt-2 space-y-2">
-              {previewStrongFactors.slice(0, 3).map((claim, i) => (
+              {freeEvidenceLines.slice(0, 5).map((line, i) => (
                 <li key={i} className="flex gap-2 text-[14px] leading-snug text-slate-300">
                   <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                  <span>{claim}</span>
+                  <span>{line}</span>
                 </li>
               ))}
             </ul>
           </div>
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Риски</p>
-            <ul className="mt-2 space-y-2">
-              {previewRisks.map((risk, i) => (
-                <li key={i} className="flex gap-2 text-[14px] leading-snug text-slate-300">
-                  <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                  <span>{risk}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Рекомендация</p>
+            <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
+              {freeReport?.shortRecommendation}
+            </p>
           </div>
         </div>
         <div className="border-t border-slate-800/40 p-5">
           <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-indigo-500/10 p-5">
             <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
-            <p className="relative text-[18px] font-semibold text-white">Полная детализация закрыта</p>
+            <p className="relative text-[18px] font-semibold text-white">Подробный отчёт</p>
             <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
-              В полном отчёте доступны разбор конкуренции, рисков окружения, ориентиры по доходу диапазоном
-              и список ручных проверок перед покупкой или запуском.
+              {freeReport?.paidReportTeaser}
             </p>
             <button
               type="button"
@@ -2536,7 +2493,7 @@ function ASIPanel({
               disabled={fullReportBusy || !!fullReportOrder}
               className="relative mt-4 inline-flex w-full items-center justify-center rounded-xl bg-white px-5 py-3 text-[14px] font-bold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-60 sm:w-auto"
             >
-              {fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : 'Получить полный отчёт'}
+              {fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : freeReport?.cta.primaryLabel}
             </button>
           </div>
         </div>
@@ -2580,7 +2537,7 @@ function ASIPanel({
             : [];
 
         if (isRuResidentialDemo) {
-          const mergedClaims = residentialUiClaims.slice(0, 5);
+          const mergedClaims = freeEvidenceLines.slice(0, 5);
           if (dataBlocked || mergedClaims.length === 0) return null;
           return (
             <div className="px-5 py-4 border-b border-slate-800/40">
@@ -2588,17 +2545,10 @@ function ASIPanel({
                 Почему такой балл?
               </h3>
               <ul className="space-y-2">
-                {mergedClaims.map((claim, i) => (
-                  <li key={i} className="flex flex-col gap-0.5 text-[16px] text-slate-300 leading-snug">
-                    <div className="flex items-start gap-2">
-                      <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
-                      <span>{claim.textRu}</span>
-                    </div>
-                    {claimTraceDebug ? (
-                      <span className="pl-5 text-[10px] font-mono text-slate-600 leading-tight">
-                        source:LocationPublicSummary · mf:{claim.trace.magnetFactId} · ev:{claim.trace.evidenceId} · ds:{claim.trace.demandSignalId ?? '—'} · {claim.trace.eligibilityReason}
-                      </span>
-                    ) : null}
+                {mergedClaims.map((line, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[16px] text-slate-300 leading-snug">
+                    <span className="mt-[7px] shrink-0 w-1.5 h-1.5 rounded-full bg-sky-500/80" />
+                    <span>{line}</span>
                   </li>
                 ))}
               </ul>
