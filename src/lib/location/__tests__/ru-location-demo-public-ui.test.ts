@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { buildFreeLocationReportViewModel } from '../free-report-renderer';
+import { FREE_LOCATION_REPORT_CTA } from '../location-report-structure';
 
 const repoRoot = path.join(__dirname, '../../..', '..');
 const ruHomePath = path.join(repoRoot, 'src/app/ru/page.tsx');
@@ -9,7 +11,6 @@ const ruReportProductPath = path.join(repoRoot, 'src/app/ru/otchet-po-dohodnosti
 const ruReportShellPath = path.join(repoRoot, 'src/components/location/LocationStandaloneFullReport.tsx');
 const demoComponentPath = path.join(repoRoot, 'src/components/LocationIntelligenceDemo.tsx');
 const ruGeneralReportCtaPath = path.join(repoRoot, 'src/components/ru/RuGeneralLocationReportCta.tsx');
-const freeReportRendererPath = path.join(repoRoot, 'src/lib/location/free-report-renderer.ts');
 
 const reportMarketingSourcePaths = [
   ruHomePath,
@@ -187,10 +188,16 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
 
   it('public RU UI shows CTA to detailed report from the free report view model', () => {
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
-    const rendererSrc = fs.readFileSync(freeReportRendererPath, 'utf8');
+    const freeReport = buildFreeLocationReportViewModel({
+      address: 'Санкт-Петербург, Невский проспект, 88',
+    });
 
-    expect(rendererSrc).toContain("primaryLabel: 'Перейти к подробному отчёту'");
-    expect(rendererSrc).toContain("primaryHref: '/login'");
+    expect(freeReport.structure.cta).toBe(FREE_LOCATION_REPORT_CTA);
+    expect(freeReport.cta).toEqual({
+      primaryLabel: FREE_LOCATION_REPORT_CTA.primaryLabel,
+      primaryHref: FREE_LOCATION_REPORT_CTA.primaryHref,
+    });
+    expect(demoSrc).toContain('reportCtaLabelRu = freeReport?.cta.primaryLabel');
     expect(demoSrc).toContain('freeReport?.cta.primaryLabel');
   });
 });
