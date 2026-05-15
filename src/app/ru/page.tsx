@@ -10,7 +10,7 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 const CONNECT_HREF = '/connect';
 /** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
 const RU_LOCATION_CHECK_HREF = '/ru/location-analysis?mode=residential#location-check';
-const RU_STR_REPORT_HREF = '/ru/otchet-po-dohodnosti-obektov';
+const DASHBOARD_LOGIN_HREF = '/login';
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
@@ -40,8 +40,8 @@ export default function HomeRu() {
           ctaLabel: 'Проверить объект по адресу',
           ctaHref: RU_LOCATION_CHECK_HREF,
           ctaExternal: false,
-          ctaSecondaryLabel: 'Получить полный отчёт',
-          ctaSecondaryHref: RU_STR_REPORT_HREF,
+          ctaSecondaryLabel: 'Перейти к подробному отчёту',
+          ctaSecondaryHref: DASHBOARD_LOGIN_HREF,
           ctaSecondaryExternal: false,
           ctaSub:
             'Оцените потенциал до покупки, запуска или подключения управления ASI.',
@@ -92,7 +92,7 @@ export default function HomeRu() {
                   href={RU_LOCATION_CHECK_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Получить предпросмотр
+                  Получить общий вывод
                 </Link>
               </div>
 
@@ -107,10 +107,10 @@ export default function HomeRu() {
                   Используйте отчёт до покупки, запуска или подключения управления, чтобы не действовать вслепую.
                 </p>
                 <Link
-                  href={RU_STR_REPORT_HREF}
+                  href={DASHBOARD_LOGIN_HREF}
                   className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Получить полный отчёт
+                  Открыть личный кабинет
                 </Link>
               </div>
 
@@ -173,86 +173,41 @@ export default function HomeRu() {
           </div>
         </section>
 
-        {/* ── Тарифы ── */}
+        {/* ── Форматы ── */}
         <section id="pricing" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-surface-2)] border-t border-[var(--t-border)]">
-          <div className="max-w-5xl mx-auto">
+          <div className="max-w-4xl mx-auto">
             <h2 className="text-3xl sm:text-4xl font-bold text-[var(--t-text)] mb-3">
-              Тарифы
+              Форматы доступны в личном кабинете
             </h2>
-            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-10">
-              Выберите формат подключения под ваш масштаб и задачи.
+            <p className="text-[var(--t-text-2)] text-lg leading-relaxed mb-8 max-w-3xl">
+              На публичной странице мы показываем ценность проверки и отчёта без тарифных карточек. В личном кабинете можно выбрать формат работы, запросить подробный отчёт и вернуться к сохранённым материалам.
             </p>
-            <div className="grid sm:grid-cols-3 gap-6">
-
-              {/* Owner */}
-              <Link
-                href="/connect?plan=small"
-                className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Для собственника"
-              >
-                <span className="inline-block self-start px-3 py-1 bg-emerald-500/10 text-emerald-700 text-xs font-medium rounded-full border border-emerald-500/20">
-                  1–3 объекта
-                </span>
-                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
-                  12 900 ₽ / объект / месяц
-                </p>
-                <p className="mt-1 text-sm text-[var(--t-muted)] font-medium">
-                  Для собственника
-                </p>
-                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
-                  Подходит для собственников, которые хотят автоматизировать входящие обращения, коммуникацию с гостями и базовые операционные сценарии без найма дополнительного персонала.
-                </p>
-                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
-                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
-                </div>
-              </Link>
-
-              {/* Operator */}
-              <Link
-                href="/connect?plan=growth"
-                className="p-6 rounded-xl border border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--t-accent)_14%,transparent)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Для оператора"
-              >
-                <span className="inline-block self-start px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-medium rounded-full border border-amber-500/20">
-                  До 15 объектов
-                </span>
-                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
-                  8 900 ₽ / объект / месяц
-                </p>
-                <p className="mt-1 text-sm text-[var(--t-text-2)] font-medium">
-                  Для оператора
-                </p>
-                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
-                  Для операторов, которым нужен единый контур работы с несколькими объектами: коммуникация, обращения, задачи, доступы и видимость по доходности.
-                </p>
-                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
-                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
-                </div>
-              </Link>
-
-              {/* Management company */}
-              <Link
-                href="/connect?plan=enterprise"
-                className="p-6 rounded-xl border border-[var(--t-border)] bg-[var(--t-surface)] hover:bg-[var(--t-surface-2)] transition-all flex flex-col min-h-[420px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                aria-label="Выбрать тариф Для управляющей компании"
-              >
-                <span className="inline-block self-start px-3 py-1 bg-blue-500/10 text-blue-400 text-xs font-medium rounded-full border border-blue-500/20">
-                  Индивидуально
-                </span>
-                <p className="mt-4 text-xl font-semibold text-[var(--t-text)]">
-                  По запросу
-                </p>
-                <p className="mt-1 text-sm text-[var(--t-muted)] font-medium">
-                  Для управляющей компании
-                </p>
-                <p className="mt-4 text-[var(--t-text-2)] text-sm leading-relaxed flex-1">
-                  Для портфелей с большим числом объектов, кастомной логикой процессов и отдельными требованиями к внедрению и поддержке.
-                </p>
-                <div className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[var(--t-text)]">
-                  Выбрать <span className="text-[var(--t-muted)]" aria-hidden>→</span>
-                </div>
-              </Link>
-
+            <div className="rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] p-6 sm:p-8">
+              <div className="grid gap-5 sm:grid-cols-3">
+                {[
+                  'Общий вывод по адресу для первого решения.',
+                  'Подробный отчёт с сохранённой страницей в личном кабинете.',
+                  'Подключение управления и автоматизации под ваш портфель.',
+                ].map((text) => (
+                  <div key={text} className="rounded-xl border border-[var(--t-border)] bg-[var(--t-bg)] p-5">
+                    <p className="text-sm leading-relaxed text-[var(--t-text-2)]">{text}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <Link
+                  href={DASHBOARD_LOGIN_HREF}
+                  className="inline-flex min-h-[52px] items-center justify-center rounded-xl bg-[var(--t-accent)] px-6 py-3 text-base font-bold text-white transition-colors hover:bg-[var(--t-accent-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface)]"
+                >
+                  Перейти в личный кабинет
+                </Link>
+                <Link
+                  href={DASHBOARD_LOGIN_HREF}
+                  className="inline-flex min-h-[52px] items-center justify-center rounded-xl border border-[var(--t-border)] px-6 py-3 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface)]"
+                >
+                  Запросить подробный отчёт
+                </Link>
+              </div>
             </div>
           </div>
         </section>

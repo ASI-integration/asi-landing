@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 import { sampleStrLocationStandaloneReportRu } from '@/lib/location/standalone-report';
+import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'Пример отчёта по посуточной аренде — ASI',
@@ -10,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function RuLocationReportSamplePage() {
-  return <LocationStandaloneFullReport report={sampleStrLocationStandaloneReportRu} />;
+  return (
+    <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
+      <LocationStandaloneFullReport report={sampleStrLocationStandaloneReportRu} />
+    </ThemeProvider>
+  );
 }
