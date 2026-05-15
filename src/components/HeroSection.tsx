@@ -20,8 +20,8 @@ export interface HeroContent {
   /* bottom-center */
   offerHeadline: React.ReactNode;
   offerSub: React.ReactNode;
-  ctaLabel: string;
-  ctaHref: string;
+  ctaLabel?: string;
+  ctaHref?: string;
   ctaExternal?: boolean;
   ctaSub?: string;
   /** Optional second button (e.g. internal link); renders below primary CTA */
@@ -51,6 +51,7 @@ export function HeroSection({
 
   const secondaryIsInternal =
     typeof ctaSecondaryHref === 'string' && ctaSecondaryHref.startsWith('/');
+  const hasPrimaryCta = Boolean(ctaLabel && ctaHref);
   const hasSecondaryCta = Boolean(ctaSecondaryLabel && ctaSecondaryHref);
 
   return (
@@ -153,51 +154,55 @@ export function HeroSection({
           <p className="mt-6 text-xl sm:text-2xl text-[var(--t-text-2)] leading-snug">
             {offerSub}
           </p>
-          <div
-            className={[
-              'mt-10 flex flex-col items-center gap-3',
-              hasSecondaryCta ? 'max-w-xl mx-auto' : '',
-            ].join(' ')}
-          >
-            <a
-              href={ctaHref}
-              {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          {(hasPrimaryCta || hasSecondaryCta || ctaSub) && (
+            <div
               className={[
-                'inline-flex items-center justify-center px-10 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] active:scale-[0.98] transition-all shadow-lg hover:scale-[1.02] text-base sm:text-lg',
-                hasSecondaryCta ? 'w-full sm:w-auto min-w-[min(100%,280px)]' : '',
+                'mt-10 flex flex-col items-center gap-3',
+                hasSecondaryCta ? 'max-w-xl mx-auto' : '',
               ].join(' ')}
             >
-              {ctaLabel}
-            </a>
-            {ctaSecondaryLabel && ctaSecondaryHref && (
-              secondaryIsInternal ? (
-                <Link
-                  href={ctaSecondaryHref}
-                  className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
-                >
-                  {ctaSecondaryLabel}
-                </Link>
-              ) : (
+              {hasPrimaryCta && (
                 <a
-                  href={ctaSecondaryHref}
-                  {...(ctaSecondaryExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                  className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
+                  href={ctaHref}
+                  {...(ctaExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className={[
+                    'inline-flex items-center justify-center px-10 py-4 bg-[var(--t-accent)] text-white font-bold rounded-xl hover:bg-[var(--t-accent-hover)] active:scale-[0.98] transition-all shadow-lg hover:scale-[1.02] text-base sm:text-lg',
+                    hasSecondaryCta ? 'w-full sm:w-auto min-w-[min(100%,280px)]' : '',
+                  ].join(' ')}
                 >
-                  {ctaSecondaryLabel}
+                  {ctaLabel}
                 </a>
-              )
-            )}
-            {ctaSub && (
-              <p
-                className={[
-                  'leading-snug text-center px-1',
-                  hasSecondaryCta ? 'text-sm text-[var(--t-text-2)]' : 'text-xs text-[var(--t-muted)]',
-                ].join(' ')}
-              >
-                {ctaSub}
-              </p>
-            )}
-          </div>
+              )}
+              {ctaSecondaryLabel && ctaSecondaryHref && (
+                secondaryIsInternal ? (
+                  <Link
+                    href={ctaSecondaryHref}
+                    className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
+                  >
+                    {ctaSecondaryLabel}
+                  </Link>
+                ) : (
+                  <a
+                    href={ctaSecondaryHref}
+                    {...(ctaSecondaryExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    className="inline-flex items-center justify-center w-full sm:w-auto min-w-[min(100%,280px)] px-10 py-4 rounded-xl border-2 border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text)] font-semibold hover:bg-[var(--t-surface-2)] active:scale-[0.98] transition-all text-base sm:text-lg"
+                  >
+                    {ctaSecondaryLabel}
+                  </a>
+                )
+              )}
+              {ctaSub && (
+                <p
+                  className={[
+                    'leading-snug text-center px-1',
+                    hasSecondaryCta ? 'text-sm text-[var(--t-text-2)]' : 'text-xs text-[var(--t-muted)]',
+                  ].join(' ')}
+                >
+                  {ctaSub}
+                </p>
+              )}
+            </div>
+          )}
 
           {heroBenefits && heroBenefits.length > 0 && (
             <div className="mt-12 sm:mt-14 grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">

@@ -36,25 +36,20 @@ export default function HomeRu() {
           offerHeadline: 'Ваш объект недвижимости. На автопилоте',
           offerSub:
             'ASI берёт на себя коммуникацию, операционные сценарии и анализ объектов: меньше ручной работы, меньше расходов на персонал и до 99% автоматизации управленческих процессов.',
-          ctaLabel: 'Оценить объект по адресу',
-          ctaHref: RU_LOCATION_CHECK_HREF,
-          ctaExternal: false,
-          ctaSub:
-            'Оцените потенциал до покупки, запуска или подключения управления ASI.',
         }} telegramVariant="icon" showTopRow={false} />
 
-        {/* ── Воронка: проверка → вывод → подключение ── */}
+        {/* ── Воронка: проверка → решение ── */}
         <section
-          className="scroll-mt-20 py-16 sm:py-20 px-4 sm:px-6 bg-[var(--t-bg)] border-t-2 border-[color:var(--t-accent)]"
+          className="scroll-mt-20 py-12 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)] border-t-2 border-[color:var(--t-accent)]"
         >
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
               Как ASI помогает принять решение по объекту
             </h2>
-            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-10 max-w-2xl">
-              Три шага: проверить адрес, увидеть вывод по локации и выбрать сценарий до вложений.
+            <p className="text-[var(--t-text-2)] text-base sm:text-lg mb-8 max-w-2xl">
+              Сначала проверьте адрес, затем используйте вывод для решения до вложений.
             </p>
-            <div className="grid sm:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6">
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
                 <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--t-accent)] text-white text-2xl font-bold mb-5" aria-hidden>
@@ -64,26 +59,14 @@ export default function HomeRu() {
                   Проверьте объект
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Введите адрес и получите первичную оценку спроса, конкуренции и рисков.
+                  Введите адрес и получите общий вывод по локации: спрос, конкуренция, риски и ближайшие сильные объекты.
                 </p>
-                <p className="text-sm font-semibold text-[var(--t-text)]">
-                  Начните с оценки объекта по адресу
-                </p>
-              </div>
-
-              <div className="flex flex-col p-7 sm:p-8 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] min-h-[300px]">
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--t-surface-2)] border-2 border-[var(--t-accent)] text-[var(--t-accent)] text-2xl font-bold mb-5" aria-hidden>
-                  2
-                </span>
-                <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
-                  Получите вывод по локации
-                </h3>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Отчёт показывает, какой сценарий подходит объекту: посуточная аренда, управление, покупка или дальнейшее сравнение.
-                </p>
-                <p className="text-sm font-semibold text-[var(--t-text)]">
-                  Получите общий отчёт по локации
-                </p>
+                <Link
+                  href={RU_LOCATION_CHECK_HREF}
+                  className="inline-flex items-center justify-center px-6 py-3.5 rounded-xl bg-[var(--t-accent)] text-white font-bold text-sm sm:text-base hover:bg-[var(--t-accent-hover)] transition-colors shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-surface)]"
+                >
+                  Оценить объект по адресу
+                </Link>
               </div>
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
@@ -94,7 +77,7 @@ export default function HomeRu() {
                   Примите решение на данных
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Используйте отчёт до покупки, запуска или подключения управления, чтобы не действовать вслепую.
+                  Используйте общий вывод до покупки, запуска или подключения управления, чтобы не действовать вслепую.
                 </p>
                 <p className="text-sm font-semibold text-[var(--t-text)]">
                   Подробный отчёт доступен в личном кабинете

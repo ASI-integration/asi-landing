@@ -36,6 +36,26 @@ const forbiddenReportMarketingCopy = [
 ] as const;
 
 describe('RU /ru/location-analysis public demo UI contract', () => {
+  it('RU landing keeps address check CTA inside the first decision step', () => {
+    const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
+
+    expect(homeSrc).not.toContain("ctaLabel: 'Оценить объект по адресу'");
+    expect(homeSrc).not.toContain('Оцените потенциал до покупки, запуска или подключения управления ASI.');
+    expect(homeSrc).not.toContain('Три шага: проверить адрес');
+    expect(homeSrc).not.toContain('Получите вывод по локации');
+    expect(homeSrc).not.toContain('Получите общий отчёт по локации');
+    expect(homeSrc).toContain('Сначала проверьте адрес, затем используйте вывод для решения до вложений.');
+    expect(homeSrc).toContain(
+      'Введите адрес и получите общий вывод по локации: спрос, конкуренция, риски и ближайшие сильные объекты.',
+    );
+    expect(homeSrc).toContain(
+      'Используйте общий вывод до покупки, запуска или подключения управления, чтобы не действовать вслепую.',
+    );
+    expect(homeSrc).toContain('Подробный отчёт доступен в личном кабинете');
+    expect(homeSrc.match(/Оценить объект по адресу/g)).toHaveLength(1);
+    expect(homeSrc).toContain('href={RU_LOCATION_CHECK_HREF}');
+  });
+
   it('page CTA uses new copy and drops legacy headline', () => {
     const pageSrc = fs.readFileSync(ruPagePath, 'utf8');
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
