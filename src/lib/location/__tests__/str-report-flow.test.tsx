@@ -25,9 +25,17 @@ describe('RU STR location report flow', () => {
     expect(report.unifiedReport).toBeUndefined();
     expect(report.sections.map(section => section.id)).toEqual(['summary', 'next_step']);
 
-    const source = readFileSync('src/components/LocationIntelligenceDemo.tsx', 'utf8');
-    expect(source).toContain('Полная детализация закрыта');
-    expect(source).toContain('Получить полный отчёт');
+    const html = renderToString(
+      React.createElement(LocationStandaloneFullReport, {
+        report,
+      }),
+    );
+
+    expect(html).toContain('Бесплатный фрагмент по локации');
+    expect(html).toContain('Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.');
+    expect(html).toContain('Получить полный отчёт');
+    expect(html).not.toContain('Отчёт по посуточной аренде');
+    expect(html).not.toContain('Вывод по посуточной аренде');
   });
 
   it('paid report includes required sellable STR sections', () => {
