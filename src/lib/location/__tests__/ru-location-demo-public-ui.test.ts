@@ -8,6 +8,7 @@ const ruPagePath = path.join(repoRoot, 'src/app/ru/location-analysis/page.tsx');
 const ruReportProductPath = path.join(repoRoot, 'src/app/ru/otchet-po-dohodnosti-obektov/page.tsx');
 const ruReportShellPath = path.join(repoRoot, 'src/components/location/LocationStandaloneFullReport.tsx');
 const demoComponentPath = path.join(repoRoot, 'src/components/LocationIntelligenceDemo.tsx');
+const ruGeneralReportCtaPath = path.join(repoRoot, 'src/components/ru/RuGeneralLocationReportCta.tsx');
 
 const reportMarketingSourcePaths = [
   ruHomePath,
@@ -15,6 +16,7 @@ const reportMarketingSourcePaths = [
   ruReportProductPath,
   ruReportShellPath,
   demoComponentPath,
+  ruGeneralReportCtaPath,
 ] as const;
 
 const forbiddenReportMarketingCopy = [
@@ -64,29 +66,33 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
       ruHomePath,
       ruPagePath,
       ruReportProductPath,
+      ruGeneralReportCtaPath,
     ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
 
     expect(publicMarketingSrc).not.toContain('12 900 ₽ / объект / месяц');
     expect(publicMarketingSrc).not.toContain('8 900 ₽ / объект / месяц');
     expect(publicMarketingSrc).not.toContain('По запросу');
-    expect(publicMarketingSrc).toContain('Форматы доступны в личном кабинете');
-    expect(publicMarketingSrc).toContain('Перейти в личный кабинет');
+    expect(publicMarketingSrc).toContain('Получите отчёт по локации');
+    expect(publicMarketingSrc).toContain('Получить общий отчёт');
+    expect(publicMarketingSrc).toContain('Заказать подробный отчёт');
+    expect(publicMarketingSrc).not.toContain('Форматы доступны в личном кабинете');
   });
 
-  it('public RU report pages describe general and detailed reports', () => {
+  it('public RU report pages use the general report CTA', () => {
     const publicReportSrc = [
       ruPagePath,
       ruReportProductPath,
+      ruGeneralReportCtaPath,
     ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
 
-    expect(publicReportSrc).toContain('Что входит в общий отчёт');
-    expect(publicReportSrc).toContain('Что входит в подробный отчёт');
     expect(publicReportSrc).toContain(
-      'Общий отчёт помогает быстро понять потенциал объекта и принять первое решение на данных.',
+      'Введите адрес — ASI покажет общий вывод по объекту: насколько место подходит для посуточной аренды и какие факторы рядом влияют на спрос.',
     );
     expect(publicReportSrc).toContain(
-      'Подробный отчёт доступен в личном кабинете и сохраняется как отдельная страница',
+      'Если нужен полный разбор, подробный отчёт можно заказать в личном кабинете: конкуренты, риски, стратегия запуска и прогноз развития района.',
     );
+    expect(publicReportSrc).not.toContain('Что входит в общий отчёт');
+    expect(publicReportSrc).not.toContain('Что входит в подробный отчёт');
   });
 
   it('detailed report CTAs route to the existing login/dashboard flow', () => {
@@ -94,12 +100,13 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
       ruHomePath,
       ruPagePath,
       ruReportProductPath,
+      ruGeneralReportCtaPath,
     ].map(file => fs.readFileSync(file, 'utf8')).join('\n');
 
     expect(publicReportSrc).toContain("const DASHBOARD_LOGIN_HREF = '/login'");
     expect(publicReportSrc).toMatch(/href=\{DASHBOARD_LOGIN_HREF\}[\s\S]{0,500}Перейти к подробному отчёту/);
-    expect(publicReportSrc).toMatch(/href=\{DASHBOARD_LOGIN_HREF\}[\s\S]{0,500}Открыть личный кабинет/);
-    expect(publicReportSrc).toMatch(/href=\{DASHBOARD_LOGIN_HREF\}[\s\S]{0,500}Запросить подробный отчёт/);
+    expect(publicReportSrc).toContain('secondaryHref={DASHBOARD_LOGIN_HREF}');
+    expect(publicReportSrc).toMatch(/href=\{secondaryHref\}[\s\S]{0,500}Заказать подробный отчёт/);
   });
 
   it('public RU route files do not import purchase core or scoring internals', () => {
