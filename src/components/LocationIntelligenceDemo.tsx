@@ -2267,6 +2267,9 @@ function ASIPanel({
     partialUsableResult,
   });
   const freeEvidenceLines = (freeReport?.topEvidenceBullets ?? []).map(formatFreeEvidenceLine);
+  const freeReportCalculatedAt = freeReport?.calculatedAt ?? null;
+  const freeReportDataFreshness = freeReport?.dataFreshness ?? null;
+  const hasFreeReportMeta = Boolean(freeReportCalculatedAt || freeReportDataFreshness);
 
   return (
     <>
@@ -2454,11 +2457,11 @@ function ASIPanel({
             <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
               {freeReport?.address || address}
             </p>
-            {freeReport?.calculatedAt || freeReport?.dataFreshness ? (
+            {hasFreeReportMeta ? (
               <p className="mt-2 text-[12px] leading-snug text-slate-500">
-                {freeReport.calculatedAt ? `Расчёт: ${formatUpdatedAtReadable(freeReport.calculatedAt, 'ru') || freeReport.calculatedAt}` : null}
-                {freeReport.calculatedAt && freeReport.dataFreshness ? ' · ' : null}
-                {freeReport.dataFreshness ? `Данные: ${freeReport.dataFreshness}` : null}
+                {freeReportCalculatedAt ? `Расчёт: ${formatUpdatedAtReadable(freeReportCalculatedAt, 'ru') || freeReportCalculatedAt}` : null}
+                {freeReportCalculatedAt && freeReportDataFreshness ? ' · ' : null}
+                {freeReportDataFreshness ? `Данные: ${freeReportDataFreshness}` : null}
               </p>
             ) : null}
           </div>
