@@ -50,6 +50,28 @@ export type {
   LocationReportResultMetadata,
   LocationReportSourceStatus,
 } from './report-result-metadata';
+export type {
+  FreeLocationReportForbiddenField,
+  FreeLocationReportSectionId,
+  LocationReportScopeMode,
+  PaidLocationReportSectionId,
+  PlannedLocationReportSection,
+  PlannedLocationReportSectionId,
+  ReportScopeSectionStatus,
+} from './report-scope-contract';
+export {
+  FREE_TOP_EVIDENCE_BULLETS_LIMIT,
+  commercialFootTrafficPlannedSection,
+  forbiddenFreeReportFields,
+  freePdfSections,
+  freeReportSections,
+  isFreeReportFieldForbidden,
+  isFreeReportSectionAllowed,
+  locationReportScopeContract,
+  paidPdfSections,
+  paidReportSections,
+  resolveCommercialFootTrafficSectionStatus,
+} from './report-scope-contract';
 export {
   buildLocationReportResultMetadata,
   clientFreshnessPlainTextRu,
