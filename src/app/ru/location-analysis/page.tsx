@@ -6,7 +6,6 @@ import { LocationTelemetryProvider } from '@/context/landing-location-telemetry'
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 import {
   PublicInfoCard,
   PublicPrimaryCta,
@@ -19,7 +18,6 @@ export const metadata: Metadata = {
     'Введите адрес и получите общий вывод по потенциалу объекта. Подробный отчёт доступен в личном кабинете ASI.',
 };
 
-const DASHBOARD_LOGIN_HREF = '/login';
 const REPORT_PRODUCT_HREF = '/ru/otchet-po-dohodnosti-obektov';
 
 export default async function RuLocationAnalysisPage(
@@ -49,13 +47,7 @@ export default async function RuLocationAnalysisPage(
                   Проверьте адрес, получите общий вывод по спросу, окружению, конкуренции и рискам, а затем переходите к подробному отчёту в личном кабинете.
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                  <PublicPrimaryCta href="#location-check">Проверить объект по адресу</PublicPrimaryCta>
-                  <Link
-                    href={DASHBOARD_LOGIN_HREF}
-                    className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-semibold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
-                  >
-                    Перейти к подробному отчёту
-                  </Link>
+                  <PublicPrimaryCta href="#location-check">Оценить объект по адресу</PublicPrimaryCta>
                 </div>
               </div>
 
@@ -72,8 +64,6 @@ export default async function RuLocationAnalysisPage(
               </PublicInfoCard>
             </div>
           </PublicSection>
-
-          <RuGeneralLocationReportCta primaryHref="#location-check" secondaryHref={DASHBOARD_LOGIN_HREF} />
 
           <section id="location-check" className="scroll-mt-20">
             <LocationIntelligenceDemo locale="ru" initialMode={mode} edgeToHeader />
@@ -99,13 +89,7 @@ export default async function RuLocationAnalysisPage(
                   href={REPORT_PRODUCT_HREF}
                   className="inline-flex min-w-[min(100%,260px)] items-center justify-center rounded-xl border border-[var(--t-border)] px-6 py-4 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
                 >
-                  Получить общий вывод
-                </Link>
-                <Link
-                  href={DASHBOARD_LOGIN_HREF}
-                  className="inline-flex min-w-[min(100%,280px)] items-center justify-center rounded-xl bg-[var(--t-accent)] px-8 py-4 text-base font-bold text-white shadow-lg transition-colors hover:bg-[var(--t-accent-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                >
-                  Перейти к подробному отчёту
+                  Как устроен отчёт
                 </Link>
               </div>
             </div>

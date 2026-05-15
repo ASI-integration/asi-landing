@@ -1,19 +1,22 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from '@/contexts/SessionContext';
 
 export function DashboardAuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { session, loading } = useSession();
 
   useEffect(() => {
     if (loading) return;
     if (!session?.user) {
-      router.replace('/connect');
+      const query = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
+      const redirect = `${pathname || '/dashboard'}${query ? `?${query}` : ''}`;
+      router.replace(`/connect?redirect=${encodeURIComponent(redirect)}`);
     }
-  }, [session, loading, router]);
+  }, [session, loading, router, pathname]);
 
   if (loading) {
     return (

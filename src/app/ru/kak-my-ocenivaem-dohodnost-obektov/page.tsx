@@ -262,7 +262,7 @@ export default function KakMyOcenivaemPage() {
                 href={PRODUCT_HREF}
                 className="inline-flex items-center justify-center px-8 py-4 bg-[var(--t-surface)] border border-[var(--t-border)] text-[var(--t-text-2)] font-semibold rounded-xl hover:bg-[var(--t-bg)] transition-all text-base w-full sm:w-auto"
               >
-                Получить полный отчёт
+                Оценить объект по адресу
               </Link>
             </div>
             <p className="mt-4 text-xs text-[var(--t-muted)]">

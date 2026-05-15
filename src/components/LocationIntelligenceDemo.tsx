@@ -58,6 +58,11 @@ import {
   readRecentAddressesFromStorage,
   rememberRecentAddress,
 } from '@/lib/location/recent-addresses';
+import {
+  buildDashboardReportRequestHref,
+  PENDING_LOCATION_REPORT_STORAGE_KEY,
+  type PendingLocationReportContext,
+} from '@/lib/location/pending-location-report';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 import {
   buildLocationDemoAnalyzePostBody,
@@ -85,6 +90,20 @@ function getExternalMapUrl(address: string): string {
 
 function isIOS(): boolean {
   return typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function writePendingLocationReportContext(context: PendingLocationReportContext): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PENDING_LOCATION_REPORT_STORAGE_KEY, JSON.stringify(context));
+  } catch {
+    // URL params remain the source of truth if storage is unavailable.
+  }
+}
+
+function optionalMetaString(meta: AnalysisMeta | null, key: string): string | undefined {
+  const value = (meta as Record<string, unknown> | null | undefined)?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 // ── UI-only types ─────────────────────────────────────────────────────────────
@@ -2019,6 +2038,8 @@ function formatFreeEvidenceLine(bullet: FreeLocationReportEvidenceBullet): strin
 function ASIPanel({
   analysis,
   address,
+  lat,
+  lon,
   animated,
   meta,
   locale,
@@ -2028,6 +2049,8 @@ function ASIPanel({
 }: {
   analysis: LocationAnalysis;
   address: string;
+  lat?: number | null;
+  lon?: number | null;
   animated: boolean;
   meta: AnalysisMeta | null;
   locale: LocDemoLocale;
@@ -2124,7 +2147,6 @@ function ASIPanel({
   const [magnetExpanded, setMagnetExpanded] = useState(false);
   const [fullReportBusy, setFullReportBusy] = useState(false);
   const [fullReportErr, setFullReportErr] = useState<string | null>(null);
-  const [fullReportOrder, setFullReportOrder] = useState<{ requestId: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 30);
@@ -2163,6 +2185,21 @@ function ASIPanel({
     if (locale === 'ru' && !publicScoreState.reportCtaEligible) return;
     if (fullReportBusy) return;
     setFullReportErr(null);
+    if (isRuResidentialDemo) {
+      const context: PendingLocationReportContext = {
+        address,
+        ...(typeof lat === 'number' && Number.isFinite(lat) ? { lat } : {}),
+        ...(typeof lon === 'number' && Number.isFinite(lon) ? { lon } : {}),
+        ...(optionalMetaString(meta, 'reportId') ? { freeReportId: optionalMetaString(meta, 'reportId') } : {}),
+        ...(optionalMetaString(meta, 'permalink') ? { freeReportPermalink: optionalMetaString(meta, 'permalink') } : {}),
+        mode: 'residential',
+        createdAt: freeReport?.calculatedAt ?? meta?.updatedAt ?? new Date().toISOString(),
+        status: 'payment_pending',
+      };
+      writePendingLocationReportContext(context);
+      router.push(buildDashboardReportRequestHref(context));
+      return;
+    }
     setFullReportBusy(true);
     try {
       const res = await fetch('/api/location-full-report/request', {
@@ -2180,11 +2217,6 @@ function ASIPanel({
       if (!res.ok || !json?.requestId) throw new Error(json?.error || 'request_failed');
 
       const requestId = String(json.requestId);
-
-      if (locale === 'ru' && mode === 'residential') {
-        setFullReportOrder({ requestId });
-        return;
-      }
 
       // Kick off processing (do not block the UI on the long request).
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -2260,7 +2292,7 @@ function ASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = freeReport?.cta.primaryLabel ?? ctaSurface.reportCtaLabel ?? 'Заказать подробный отчёт';
+  const reportCtaLabelRu = freeReport?.cta.primaryLabel ?? ctaSurface.reportCtaLabel ?? 'Получить подробный отчёт';
   const freeStructureSectionTitle = (sectionId: string, fallback: string) =>
     freeReport?.structure.sections.find(section => section.id === sectionId)?.titleRu ?? fallback;
   const topHelperText = resolveRuDemoTopHelperText({
@@ -2413,20 +2445,15 @@ function ASIPanel({
                   <button
                     type="button"
                     onClick={requestFullReportAsync}
-                    disabled={fullReportBusy || !!fullReportOrder}
+                    disabled={fullReportBusy}
                     className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
                   >
                     {locale === 'ru'
-                      ? (fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu)
+                      ? (fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu)
                       : (fullReportBusy ? 'Generating…' : 'Request report')}
                   </button>
                 </>
               )}
-              {fullReportOrder && locale === 'ru' ? (
-                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[12px] leading-relaxed text-emerald-100">
-                  Заявка сохранена. Мы подтвердим оплату вручную и отправим ссылку на полный отчёт. Номер заявки: {fullReportOrder.requestId}.
-                </div>
-              ) : null}
               {fullReportErr && !showRetryOnlyCta ? (
                 <p className="text-[12px] text-amber-400/90 leading-snug">
                   {locale === 'ru'
@@ -2493,19 +2520,11 @@ function ASIPanel({
           <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-indigo-500/10 p-5">
             <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
             <p className="relative text-[18px] font-semibold text-white">
-              {freeStructureSectionTitle('orderDetailedReportCta', 'Заказать подробный отчёт')}
+              {freeStructureSectionTitle('orderDetailedReportCta', 'Получить подробный отчёт')}
             </p>
             <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
-              {freeReport?.paidReportTeaser}
+              Подробный отчёт доступен в личном кабинете. После оплаты отчёт появится в разделе Мои отчёты.
             </p>
-            <button
-              type="button"
-              onClick={requestFullReportAsync}
-              disabled={fullReportBusy || !!fullReportOrder}
-              className="relative mt-4 inline-flex w-full items-center justify-center rounded-xl bg-white px-5 py-3 text-[14px] font-bold text-slate-900 transition-colors hover:bg-slate-100 disabled:opacity-60 sm:w-auto"
-            >
-              {fullReportOrder ? 'Заявка на отчёт создана' : fullReportBusy ? 'Создаём заявку…' : freeReport?.cta.primaryLabel}
-            </button>
           </div>
         </div>
       </div>
@@ -3181,7 +3200,7 @@ function CommercialASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
+  const reportCtaLabelRu = ctaSurface.reportCtaLabel ?? 'Получить подробный отчёт';
 
   return (
     <div
@@ -3264,13 +3283,13 @@ function CommercialASIPanel({
               disabled={fullReportBusy}
               className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold tracking-wide transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
             >
-              {fullReportBusy ? 'Готовим полный отчёт…' : reportCtaLabelRu}
+              {fullReportBusy ? 'Готовим подробный отчёт…' : reportCtaLabelRu}
             </button>
           </>
         )}
         {fullReportErr && !showRetryOnlyCta ? (
           <p className="mt-1 text-[11px] text-amber-400/90 text-center">
-            Не удалось запустить полный отчёт: {fullReportErr}
+            Не удалось запустить подробный отчёт: {fullReportErr}
           </p>
         ) : null}
       </div>
@@ -3816,6 +3835,8 @@ export function LocationIntelligenceDemo({
                   <ASIPanel
                     analysis={analysis}
                     address={selected?.value ?? ''}
+                    lat={selected?.lat}
+                    lon={selected?.lon}
                     animated={animated}
                     meta={analysisMeta}
                     locale={locale}

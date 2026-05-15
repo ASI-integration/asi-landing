@@ -368,7 +368,7 @@ describe('RU demo: no-data / partial / complete CTA eligibility', () => {
       partialUsableResult: metaHasPartialCartographicWarning(meta),
     });
     expect(surface.showReportCta).toBe(true);
-    expect(surface.reportCtaLabel).toBe('Получить полный отчёт');
+    expect(surface.reportCtaLabel).toBe('Получить подробный отчёт');
     expect(surface.showRetryCta).toBe(false);
     expect(surface.showDemoPermalink).toBe(false);
     expect(resolveRuDemoTopHelperText({

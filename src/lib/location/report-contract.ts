@@ -307,7 +307,7 @@ export function buildFastReportPreview(args: {
     })),
     incomePotentialPreview: incomeFromScore(score),
     fullReportCta: {
-      label: input.locale === 'ru' ? 'Получить полный отчёт' : 'Request full report',
+      label: input.locale === 'ru' ? 'Получить подробный отчёт' : 'Request full report',
       href: args.fullReportHref,
       note: input.locale === 'ru'
         ? 'Полный отчёт глубже: структура спроса, магниты, конкуренция, стратегия и ограничения.'
@@ -524,7 +524,7 @@ export const sampleFullLocationReportRu: FullLocationReport = {
   nextSteps: [
     'Запустить быстрый preview по реальному адресу.',
     'Добавить параметры объекта и ограничения.',
-    'Получить полный отчёт и PDF/печать для партнёров.',
+    'Получить подробный отчёт и PDF/печать для партнёров.',
   ],
   confidence: {
     level: 'medium',

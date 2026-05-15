@@ -86,7 +86,7 @@ export function resolveRuDemoResultCtaSurface(args: {
 
   const reportCtaLabel =
     args.locale === 'ru'
-      ? (args.partialUsableResult ? 'Проверить подробнее' : 'Получить полный отчёт')
+      ? (args.partialUsableResult ? 'Проверить подробнее' : 'Получить подробный отчёт')
       : 'Request report';
 
   return {

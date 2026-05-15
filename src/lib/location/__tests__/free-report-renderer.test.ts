@@ -137,7 +137,7 @@ describe('buildFreeLocationReportViewModel', () => {
       decision: decisionWithEvidence(3),
     });
 
-    expect(report.cta.primaryLabel).toBe('Заказать подробный отчёт');
+    expect(report.cta.primaryLabel).toBe('Получить подробный отчёт');
     expect(report.paidReportTeaser).toContain('аудитория спроса');
     expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('detailedMagnets');
   });

@@ -6,12 +6,10 @@ import { TgIcon } from '@/components/TgIcon';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
-import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 
 const CONNECT_HREF = '/connect';
 /** Публичный ввод адреса и расчёт (демо / экспресс-проверка). */
 const RU_LOCATION_CHECK_HREF = '/ru/location-analysis?mode=residential#location-check';
-const DASHBOARD_LOGIN_HREF = '/login';
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 export default function HomeRu() {
@@ -38,12 +36,9 @@ export default function HomeRu() {
           offerHeadline: 'Ваш объект недвижимости. На автопилоте',
           offerSub:
             'ASI берёт на себя коммуникацию, операционные сценарии и анализ объектов: меньше ручной работы, меньше расходов на персонал и до 99% автоматизации управленческих процессов.',
-          ctaLabel: 'Проверить объект по адресу',
+          ctaLabel: 'Оценить объект по адресу',
           ctaHref: RU_LOCATION_CHECK_HREF,
           ctaExternal: false,
-          ctaSecondaryLabel: 'Перейти к подробному отчёту',
-          ctaSecondaryHref: DASHBOARD_LOGIN_HREF,
-          ctaSecondaryExternal: false,
           ctaSub:
             'Оцените потенциал до покупки, запуска или подключения управления ASI.',
         }} telegramVariant="icon" showTopRow={false} />
@@ -71,12 +66,9 @@ export default function HomeRu() {
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
                   Введите адрес и получите первичную оценку спроса, конкуренции и рисков.
                 </p>
-                <Link
-                  href={RU_LOCATION_CHECK_HREF}
-                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                >
-                  Проверить объект по адресу
-                </Link>
+                <p className="text-sm font-semibold text-[var(--t-text)]">
+                  Начните с оценки объекта по адресу
+                </p>
               </div>
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border border-[var(--t-border)] bg-[var(--t-surface)] min-h-[300px]">
@@ -89,12 +81,9 @@ export default function HomeRu() {
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
                   Отчёт показывает, какой сценарий подходит объекту: посуточная аренда, управление, покупка или дальнейшее сравнение.
                 </p>
-                <Link
-                  href={RU_LOCATION_CHECK_HREF}
-                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                >
-                  Получить общий вывод
-                </Link>
+                <p className="text-sm font-semibold text-[var(--t-text)]">
+                  Получите общий отчёт по локации
+                </p>
               </div>
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
@@ -107,12 +96,9 @@ export default function HomeRu() {
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
                   Используйте отчёт до покупки, запуска или подключения управления, чтобы не действовать вслепую.
                 </p>
-                <Link
-                  href={DASHBOARD_LOGIN_HREF}
-                  className="inline-flex min-h-[56px] items-center justify-center px-6 py-4 rounded-xl bg-[color:var(--t-accent)] text-white font-bold text-base hover:bg-[color:var(--t-accent-hover)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                >
-                  Открыть личный кабинет
-                </Link>
+                <p className="text-sm font-semibold text-[var(--t-text)]">
+                  Подробный отчёт доступен в личном кабинете
+                </p>
               </div>
 
             </div>
@@ -173,8 +159,6 @@ export default function HomeRu() {
             </div>
           </div>
         </section>
-
-        <RuGeneralLocationReportCta id="pricing" primaryHref={RU_LOCATION_CHECK_HREF} secondaryHref={DASHBOARD_LOGIN_HREF} />
 
         {/* ── FAQ ── */}
         <section id="faq" className="scroll-mt-20 py-20 sm:py-24 px-4 sm:px-6 bg-[var(--t-bg)] border-t border-[var(--t-border)]">

@@ -16,8 +16,8 @@ export interface LocationReportStructureCta {
 }
 
 export const FREE_LOCATION_REPORT_CTA: LocationReportStructureCta = {
-  primaryLabel: 'Заказать подробный отчёт',
-  primaryHref: '/login',
+  primaryLabel: 'Получить подробный отчёт',
+  primaryHref: '/dashboard/reports',
 } as const;
 
 export const PAID_LOCATION_REPORT_CTA: LocationReportStructureCta = {
@@ -68,7 +68,7 @@ export const freeLocationReportStructureSections = [
   },
   {
     id: 'orderDetailedReportCta',
-    titleRu: 'Заказать подробный отчёт',
+    titleRu: 'Получить подробный отчёт',
     summaryRu: 'Переход к платному подробному отчёту.',
     scopeSectionIds: ['paidReportTeaser', 'CTA'],
     disclosure: 'cta',

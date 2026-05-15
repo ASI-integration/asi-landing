@@ -145,7 +145,7 @@ export function LocationStandaloneFullReport({
   const reportStructure = report.reportStructure;
   const primaryCtaLabel =
     reportStructure?.cta.primaryLabel ??
-    (isFreePreview ? 'Заказать подробный отчёт' : 'Подключить управление');
+    (isFreePreview ? 'Получить подробный отчёт' : 'Подключить управление');
   const secondaryCtaLabel = reportStructure?.cta.secondaryLabel ?? 'Обсудить объект';
   const summary = pickSection(report, 'summary');
   const businessFit = pickSection(report, 'business_fit');

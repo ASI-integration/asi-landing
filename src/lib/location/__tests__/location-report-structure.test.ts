@@ -18,7 +18,7 @@ describe('location report structure', () => {
       'generalRecommendation',
       'orderDetailedReportCta',
     ]);
-    expect(structure.cta.primaryLabel).toBe('Заказать подробный отчёт');
+    expect(structure.cta.primaryLabel).toBe('Получить подробный отчёт');
     expect(FREE_PAID_REPORT_TEASER_RU).toContain('полные магниты');
   });
 

@@ -13,15 +13,14 @@ export default function RuLocationFullReportPage() {
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт</p>
             <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Отчёт открывается по личной ссылке</h1>
             <p className="mt-3 text-slate-300 leading-relaxed">
-              Сначала введите адрес и получите бесплатный предпросмотр. После заказа и подтверждения оплаты мы
-              сформируем полный отчёт по посуточной аренде и отправим отдельную ссылку.
+              Сначала введите адрес и получите общий отчёт по локации. Подробный отчёт доступен в личном кабинете.
             </p>
             <div className="mt-7 flex flex-col sm:flex-row gap-3">
               <Link
                 href={LOCATION_REPORT_PRODUCT_PATH}
                 className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors"
               >
-                Получить полный отчёт
+                Оценить объект по адресу
               </Link>
               <Link
                 href={LOCATION_REPORT_SAMPLE_PATH}

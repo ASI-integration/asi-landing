@@ -9,6 +9,11 @@ import { productSupportEmail } from '@/config/contact';
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
 
+function safeRedirectPath(value: string | null): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
+  return value;
+}
+
 export default function OnboardingPageContent() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -31,6 +36,10 @@ export default function OnboardingPageContent() {
   const [googleClientId, setGoogleClientId] = useState<string>(() => (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim());
   const gsiButtonHostRef = useRef<HTMLDivElement | null>(null);
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
+  const afterAuthRedirect = useMemo(
+    () => safeRedirectPath(searchParams.get('redirect')),
+    [searchParams],
+  );
   const publicConfigFetchAttemptedRef = useRef(false);
 
   useEffect(() => {
@@ -190,7 +199,7 @@ export default function OnboardingPageContent() {
         setError(msg);
         return;
       }
-      router.push('/dashboard');
+      router.push(afterAuthRedirect);
     } catch {
       setError('Ошибка сети. Попробуйте ещё раз.');
     } finally {
@@ -216,7 +225,7 @@ export default function OnboardingPageContent() {
       // Mode 1: redirect OAuth (requires server-side client secret).
       if (googleOAuthMode === 'redirect') {
         const debug = debugGoogle ? '1' : '0';
-        const url = `/api/auth/google/start?plan=${encodeURIComponent(String(selectedPlanValue))}&debug=${debug}`;
+        const url = `/api/auth/google/start?plan=${encodeURIComponent(String(selectedPlanValue))}&debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
         setGoogleStatus('Открываем Google…');
         window.location.assign(url);
         return;
@@ -374,7 +383,7 @@ export default function OnboardingPageContent() {
         setError(data.error || 'Ошибка входа через Google.');
         return;
       }
-      router.push('/dashboard');
+      router.push(afterAuthRedirect);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg !== 'dismissed') {

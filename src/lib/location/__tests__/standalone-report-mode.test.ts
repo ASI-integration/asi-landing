@@ -39,7 +39,7 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(typeof report.free_brief).toBe('string');
     expect(report.free_brief!.length).toBeGreaterThan(10);
     expect(report.reportStructure?.mode).toBe('free');
-    expect(report.reportStructure?.cta.primaryLabel).toBe('Заказать подробный отчёт');
+    expect(report.reportStructure?.cta.primaryLabel).toBe('Получить подробный отчёт');
     expect(report.unifiedReport).toBeUndefined();
 
     const ids = report.sections.map(s => s.id);

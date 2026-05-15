@@ -4,7 +4,6 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
-import { RuGeneralLocationReportCta } from '@/components/ru/RuGeneralLocationReportCta';
 import {
   PublicBadge,
   PublicInfoCard,
@@ -21,7 +20,6 @@ export const metadata: Metadata = {
 
 const EXPRESS_ASSESSMENT_HREF = '/ru/location-analysis?mode=residential#location-check';
 const METHODOLOGY_HREF = '/ru/kak-my-ocenivaem-dohodnost-obektov';
-const DASHBOARD_LOGIN_HREF = '/login';
 
 const methodologyLinkClassName =
   'text-base font-normal text-[var(--t-text-2)] underline-offset-4 transition-colors hover:text-[var(--t-text)] hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--t-accent)]';
@@ -96,13 +94,7 @@ export default function OtchetPoDohodnostiPage() {
                 базовый потенциал локации, а подробный отчёт в личном кабинете поможет выбрать сценарий монетизации до покупки, запуска или подключения управления.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Проверить объект по адресу</PublicPrimaryCta>
-                <Link
-                  href={DASHBOARD_LOGIN_HREF}
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-semibold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
-                >
-                  Перейти к подробному отчёту
-                </Link>
+                <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Оценить объект по адресу</PublicPrimaryCta>
               </div>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-[var(--t-muted)]">
                 Введите адрес и получите общий вывод. Подробный отчёт открывается через личный кабинет.
@@ -173,8 +165,6 @@ export default function OtchetPoDohodnostiPage() {
           </div>
         </PublicSection>
 
-        <RuGeneralLocationReportCta primaryHref={EXPRESS_ASSESSMENT_HREF} secondaryHref={DASHBOARD_LOGIN_HREF} />
-
         <PublicSection variant="muted">
           <div className="mx-auto max-w-6xl">
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
@@ -204,15 +194,9 @@ export default function OtchetPoDohodnostiPage() {
                 </p>
               }
             />
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-              <PublicPrimaryCta href={EXPRESS_ASSESSMENT_HREF}>Получить общий вывод</PublicPrimaryCta>
-              <Link
-                href={DASHBOARD_LOGIN_HREF}
-                className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[var(--t-border)] px-5 py-3 text-base font-semibold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)]"
-              >
-                Запросить подробный отчёт
-              </Link>
-            </div>
+            <p className="mt-6 text-base font-semibold text-[var(--t-text)]">
+              Начните с бесплатной оценки объекта по адресу.
+            </p>
             <PublicInfoCard className="mx-auto mt-10 max-w-2xl border-[var(--t-border)] bg-[var(--t-surface-2)] text-left">
               <p className="text-base leading-relaxed text-[var(--t-muted)]">
                 Расчёт не обещает гарантированный доход. Итог зависит от качества данных, состояния объекта, сезона,
