@@ -3,6 +3,11 @@
 import Link from 'next/link';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 import {
+  PAID_LOCATION_REPORT_CTA,
+  getLocationReportStructureSection,
+  type PaidLocationReportStructureSectionId,
+} from '@/lib/location/location-report-structure';
+import {
   URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU,
   type FullLocationReport,
   type IncomeEstimate,
@@ -88,6 +93,10 @@ function Section({
       </div>
     </section>
   );
+}
+
+function paidSectionTitle(id: PaidLocationReportStructureSectionId): string {
+  return getLocationReportStructureSection('paid', id).titleRu;
 }
 
 export function LocationReportProductView({ report }: { report: FullLocationReport }) {
@@ -182,7 +191,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </div>
         ) : null}
 
-        <Section id="executive-summary" title="Executive Summary">
+        <Section id="executive-summary" title={paidSectionTitle('fullAddressConclusion')}>
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
               <p className="text-sm font-semibold text-slate-900">Главные факторы спроса</p>
@@ -210,7 +219,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
         </Section>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Section id="score-breakdown" title="Score Breakdown">
+          <Section id="score-breakdown" title="Общий балл / детализация">
             {scoreRows.length ? (
               <div className="space-y-3">
                 {scoreRows.map(([key, value]) => (
@@ -233,7 +242,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             )}
           </Section>
 
-          <Section id="competition" title="Competition Overview">
+          <Section id="competition" title={paidSectionTitle('competition')}>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Видимых конкурентов</p>
@@ -254,7 +263,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </Section>
         </div>
 
-        <Section id="demand-magnets" title="Demand Drivers And Magnets">
+        <Section id="demand-magnets" title={paidSectionTitle('detailedMagnets')}>
           <div className="grid gap-5 lg:grid-cols-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">Demand drivers</p>
@@ -297,7 +306,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
         </Section>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Section id="audience-fit" title="Target Audience Fit">
+          <Section id="audience-fit" title={paidSectionTitle('demandAudiences')}>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Primary audience</p>
               <p className="mt-2 text-xl font-bold capitalize text-slate-950">{report.audienceFit.primaryAudience}</p>
@@ -312,7 +321,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             </ul>
           </Section>
 
-          <Section id="income" title="Income Potential">
+          <Section id="income" title="Цена и стратегия">
             <div className="space-y-2">
               {report.incomePotential.estimates.map(estimate => (
                 <div
@@ -382,7 +391,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </Section>
         ) : null}
 
-        <Section id="risks" title="Risks And Limitations">
+        <Section id="risks" title={paidSectionTitle('risksAndLimits')}>
           <div className="grid gap-3 lg:grid-cols-3">
             {report.risks.map(risk => (
               <div key={risk.title} className={`rounded-lg border p-4 ${severityClass(risk.severity)}`}>
@@ -394,7 +403,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </div>
         </Section>
 
-        <Section id="recommendations" title="Recommended Strategy">
+        <Section id="recommendations" title={paidSectionTitle('packagingPricingChannels')}>
           <div className="grid gap-3 lg:grid-cols-3">
             {report.recommendations.map(item => (
               <div key={item.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -432,7 +441,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </div>
         </Section>
 
-        <Section id="next-steps" title="Next Steps">
+        <Section id="next-steps" title={paidSectionTitle('managementNextStepCta')}>
           <ol className="grid gap-3 sm:grid-cols-3">
             {report.nextSteps.map((step, index) => (
               <li key={step} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -441,6 +450,22 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
               </li>
             ))}
           </ol>
+          <div className="print-hide mt-5 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={PAID_LOCATION_REPORT_CTA.primaryHref}
+              className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-slate-800"
+            >
+              {PAID_LOCATION_REPORT_CTA.primaryLabel}
+            </Link>
+            {PAID_LOCATION_REPORT_CTA.secondaryLabel ? (
+              <Link
+                href={PAID_LOCATION_REPORT_CTA.secondaryHref ?? PAID_LOCATION_REPORT_CTA.primaryHref}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-5 py-3 text-sm font-bold text-slate-800 transition-colors hover:bg-slate-50"
+              >
+                {PAID_LOCATION_REPORT_CTA.secondaryLabel}
+              </Link>
+            ) : null}
+          </div>
         </Section>
       </main>
     </div>

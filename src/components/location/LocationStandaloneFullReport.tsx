@@ -142,6 +142,11 @@ export function LocationStandaloneFullReport({
   report: LocationStandaloneReport;
 }) {
   const isFreePreview = report.reportMode === 'free';
+  const reportStructure = report.reportStructure;
+  const primaryCtaLabel =
+    reportStructure?.cta.primaryLabel ??
+    (isFreePreview ? 'Заказать подробный отчёт' : 'Подключить управление');
+  const secondaryCtaLabel = reportStructure?.cta.secondaryLabel ?? 'Обсудить объект';
   const summary = pickSection(report, 'summary');
   const businessFit = pickSection(report, 'business_fit');
   const magnets = pickSection(report, 'magnets');
@@ -239,7 +244,7 @@ export function LocationStandaloneFullReport({
               href="#next-step"
               className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
             >
-              Получить полный разбор
+              {primaryCtaLabel}
             </a>
             <Link
               href="/ru"
@@ -302,14 +307,26 @@ export function LocationStandaloneFullReport({
               ) : (
                 <div className="rounded-2xl border border-indigo-500/25 bg-indigo-950/15 p-5">
                   <p className="text-[16px] sm:text-[17px] font-semibold text-slate-100 leading-snug">
-                    Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.
+                    {reportStructure?.paidPreviewSections?.length
+                      ? 'Подробный отчёт показывает, что относится к полной платной аналитике.'
+                      : 'Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.'}
                   </p>
+                  {reportStructure?.paidPreviewSections?.length ? (
+                    <ul className="mt-3 space-y-1.5">
+                      {reportStructure.paidPreviewSections.slice(0, 5).map(section => (
+                        <li key={section.id} className="flex gap-2 text-sm leading-snug text-slate-300">
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-300" />
+                          <span>{section.titleRu}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                   <div className="print-hide mt-4">
                     <Link
                       href={LOCATION_REPORT_PRODUCT_PATH}
                       className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
                     >
-                      Получить полный отчёт
+                      {primaryCtaLabel}
                     </Link>
                   </div>
                 </div>
@@ -939,7 +956,7 @@ export function LocationStandaloneFullReport({
                   </p>
                   <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-white">
                     {isFreePreview
-                      ? 'Получить полную аналитику по этой локации'
+                      ? 'Получить подробную аналитику по этой локации'
                       : 'Перевести отчёт в план действий по объекту'}
                   </h3>
                   <p className="mt-3 text-[15px] sm:text-[16px] text-slate-300 leading-relaxed max-w-2xl">
@@ -968,6 +985,20 @@ export function LocationStandaloneFullReport({
                         </li>
                       </ul>
                     </div>
+                  ) : reportStructure?.paidPreviewSections?.length ? (
+                    <div className="mt-5">
+                      <p className="text-xs font-semibold text-slate-200 uppercase tracking-[0.18em]">
+                        В подробный отчёт входит
+                      </p>
+                      <ul className="mt-3 grid gap-2 text-sm text-slate-200 sm:grid-cols-2">
+                        {reportStructure.paidPreviewSections.map(section => (
+                          <li key={section.id} className="flex gap-3">
+                            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
+                            <span>{section.titleRu}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
                 </div>
 
@@ -979,12 +1010,22 @@ export function LocationStandaloneFullReport({
                     </p>
 
                     <div className="print-hide mt-5">
-                      <Link
-                        href={LOCATION_REPORT_PRODUCT_PATH}
-                        className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
-                      >
-                        Получить полный отчёт
-                      </Link>
+                      <div className="grid gap-2">
+                        <Link
+                          href={LOCATION_REPORT_PRODUCT_PATH}
+                          className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
+                        >
+                          {primaryCtaLabel}
+                        </Link>
+                        {!isFreePreview ? (
+                          <Link
+                            href={LOCATION_REPORT_PRODUCT_PATH}
+                            className="inline-flex items-center justify-center w-full px-7 py-3 rounded-xl border border-slate-700 text-slate-100 hover:border-slate-500 transition-colors"
+                          >
+                            {secondaryCtaLabel}
+                          </Link>
+                        ) : null}
+                      </div>
                       {!isFreePreview ? (
                         <p className="mt-3 text-xs text-slate-500 leading-relaxed">
                           Коротко опишите объект — вернёмся с полным отчётом и рекомендациями по модели запуска.

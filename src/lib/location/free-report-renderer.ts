@@ -5,6 +5,12 @@ import {
   forbiddenFreeReportFields,
 } from './report-scope-contract';
 import { publicLocationScore } from './location-score-public';
+import {
+  FREE_LOCATION_REPORT_CTA,
+  FREE_PAID_REPORT_TEASER_RU,
+  buildLocationReportStructureViewModel,
+  type LocationReportStructureViewModel,
+} from './location-report-structure';
 
 export interface FreeLocationReportEvidenceBullet {
   name: string;
@@ -22,6 +28,7 @@ export interface FreeLocationReportCtaViewModel {
 }
 
 export interface FreeLocationReportViewModel {
+  structure: LocationReportStructureViewModel;
   address: string;
   calculatedAt?: string;
   dataFreshness?: string;
@@ -52,11 +59,11 @@ const DEFAULT_SHORT_RECOMMENDATION_RU =
   'Используйте общий вывод как первый фильтр. Перед покупкой, арендой или запуском проверьте конкуренцию, риски и экономику в подробном отчёте.';
 
 const DEFAULT_PAID_REPORT_TEASER_RU =
-  'В подробном отчёте доступны конкуренты, риски, стратегия запуска и прогноз развития района.';
+  FREE_PAID_REPORT_TEASER_RU;
 
 const DEFAULT_CTA: FreeLocationReportCtaViewModel = {
-  primaryLabel: 'Перейти к подробному отчёту',
-  primaryHref: '/login',
+  primaryLabel: FREE_LOCATION_REPORT_CTA.primaryLabel,
+  primaryHref: FREE_LOCATION_REPORT_CTA.primaryHref,
 };
 
 function cleanText(value: unknown): string | undefined {
@@ -179,6 +186,7 @@ export function buildFreeLocationReportViewModel(
     DEFAULT_SHORT_RECOMMENDATION_RU;
 
   const viewModel: FreeLocationReportViewModel = {
+    structure: buildLocationReportStructureViewModel('free'),
     address: cleanText(input.address) ?? cleanText(decision?.inputAddress) ?? '',
     ...(cleanText(input.calculatedAt) ?? cleanText(input.meta?.updatedAt)
       ? { calculatedAt: cleanText(input.calculatedAt) ?? cleanText(input.meta?.updatedAt) }

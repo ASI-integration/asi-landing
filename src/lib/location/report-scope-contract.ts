@@ -1,31 +1,14 @@
+import {
+  getLocationReportScopeSectionIds,
+  type FreeLocationReportScopeSectionId,
+  type PaidLocationReportScopeSectionId,
+} from './location-report-structure';
+
 export type LocationReportScopeMode = 'free' | 'paid';
 
-export type FreeLocationReportSectionId =
-  | 'addressAndCalculatedAt'
-  | 'publicScore'
-  | 'shortVerdict'
-  | 'topEvidenceBullets'
-  | 'shortRecommendation'
-  | 'paidReportTeaser'
-  | 'CTA';
+export type FreeLocationReportSectionId = FreeLocationReportScopeSectionId;
 
-export type PaidLocationReportSectionId =
-  | 'executiveSummary'
-  | 'fullScoreExplanation'
-  | 'magnetsByCategory'
-  | 'transport'
-  | 'medical'
-  | 'business'
-  | 'education'
-  | 'retailAndEvents'
-  | 'competitors'
-  | 'risks'
-  | 'targetAudiences'
-  | 'strategy'
-  | 'urbanDevelopmentForecast'
-  | 'dataFreshness'
-  | 'sourceEvidence'
-  | 'finalRecommendation';
+export type PaidLocationReportSectionId = PaidLocationReportScopeSectionId;
 
 export type PlannedLocationReportSectionId = 'commercialFootTraffic';
 
@@ -63,15 +46,8 @@ export const FREE_TOP_EVIDENCE_BULLETS_LIMIT = {
   max: 5,
 } as const;
 
-export const freeReportSections = [
-  'addressAndCalculatedAt',
-  'publicScore',
-  'shortVerdict',
-  'topEvidenceBullets',
-  'shortRecommendation',
-  'paidReportTeaser',
-  'CTA',
-] as const satisfies readonly FreeLocationReportSectionId[];
+export const freeReportSections =
+  getLocationReportScopeSectionIds('free') as readonly FreeLocationReportSectionId[];
 
 export const forbiddenFreeReportFields = [
   'internalWeights',
@@ -89,24 +65,8 @@ export const forbiddenFreeReportFields = [
   'kernelTrace',
 ] as const satisfies readonly FreeLocationReportForbiddenField[];
 
-export const paidReportSections = [
-  'executiveSummary',
-  'fullScoreExplanation',
-  'magnetsByCategory',
-  'transport',
-  'medical',
-  'business',
-  'education',
-  'retailAndEvents',
-  'competitors',
-  'risks',
-  'targetAudiences',
-  'strategy',
-  'urbanDevelopmentForecast',
-  'dataFreshness',
-  'sourceEvidence',
-  'finalRecommendation',
-] as const satisfies readonly PaidLocationReportSectionId[];
+export const paidReportSections =
+  getLocationReportScopeSectionIds('paid') as readonly PaidLocationReportSectionId[];
 
 export const commercialFootTrafficPlannedSection = {
   id: 'commercialFootTraffic',
@@ -117,34 +77,9 @@ export const commercialFootTrafficPlannedSection = {
     'Reserved for commercial foot traffic once a dedicated data source is connected. Until then it must stay a planned placeholder, not an analytical claim.',
 } as const satisfies PlannedLocationReportSection;
 
-export const freePdfSections = [
-  'addressAndCalculatedAt',
-  'publicScore',
-  'shortVerdict',
-  'topEvidenceBullets',
-  'shortRecommendation',
-  'paidReportTeaser',
-  'CTA',
-] as const satisfies readonly FreeLocationReportSectionId[];
+export const freePdfSections = freeReportSections;
 
-export const paidPdfSections = [
-  'executiveSummary',
-  'fullScoreExplanation',
-  'magnetsByCategory',
-  'transport',
-  'medical',
-  'business',
-  'education',
-  'retailAndEvents',
-  'competitors',
-  'risks',
-  'targetAudiences',
-  'strategy',
-  'urbanDevelopmentForecast',
-  'dataFreshness',
-  'sourceEvidence',
-  'finalRecommendation',
-] as const satisfies readonly PaidLocationReportSectionId[];
+export const paidPdfSections = paidReportSections;
 
 export const locationReportScopeContract = {
   version: 'location-report-scope-contract-v1',

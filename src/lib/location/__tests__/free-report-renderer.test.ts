@@ -70,6 +70,8 @@ describe('buildFreeLocationReportViewModel', () => {
       'Объект 4',
       'Объект 5',
     ]);
+    expect(report.structure.mode).toBe('free');
+    expect(report.structure.sections.map(section => section.id)).toContain('topResultReasons');
   });
 
   it('never returns forbidden free-report fields', () => {
@@ -128,5 +130,15 @@ describe('buildFreeLocationReportViewModel', () => {
         shortReason: 'подтверждает спрос 1',
       },
     ]);
+  });
+
+  it('uses canonical free report CTA and paid teaser copy', () => {
+    const report = buildFreeLocationReportViewModel({
+      decision: decisionWithEvidence(3),
+    });
+
+    expect(report.cta.primaryLabel).toBe('Заказать подробный отчёт');
+    expect(report.paidReportTeaser).toContain('аудитория спроса');
+    expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('detailedMagnets');
   });
 });

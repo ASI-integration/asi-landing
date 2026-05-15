@@ -18,6 +18,10 @@ import {
   type LocationReportResultMetadata,
 } from './report-result-metadata';
 import { enrichAnalysisWithReportProjection } from './location-scoring-projection';
+import {
+  buildLocationReportStructureViewModel,
+  type LocationReportStructureViewModel,
+} from './location-report-structure';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -94,6 +98,8 @@ export type LocationStandaloneReport = {
   metadata?: LocationReportResultMetadata;
   /** Short teaser for `reportMode: 'free'` permalinks (RU copy). */
   free_brief?: string;
+  /** Canonical visible structure for free/paid report formats. */
+  reportStructure?: LocationReportStructureViewModel;
   /** Sellable RU short-term-rental report projection. Present on new paid STR reports. */
   strReport?: StrLocationReportProjection;
   address: string;
@@ -693,6 +699,7 @@ export function buildLocationStandaloneReport(args: {
       reportMode: 'free',
       metadata,
       free_brief,
+      reportStructure: buildLocationReportStructureViewModel('free'),
       address: args.address,
       generated_at_iso: generatedAtIso,
       sections: [
@@ -761,6 +768,7 @@ export function buildLocationStandaloneReport(args: {
     version: 'v1',
     reportMode: 'paid',
     metadata,
+    reportStructure: buildLocationReportStructureViewModel('paid'),
     strReport: buildStrLocationReportProjection(analysis),
     address: args.address,
     generated_at_iso: generatedAtIso,

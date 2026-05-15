@@ -2260,7 +2260,9 @@ function ASIPanel({
     partialUsableResult,
   });
   const showRetryOnlyCta = ctaSurface.showRetryCta;
-  const reportCtaLabelRu = freeReport?.cta.primaryLabel ?? ctaSurface.reportCtaLabel ?? 'Получить полный отчёт';
+  const reportCtaLabelRu = freeReport?.cta.primaryLabel ?? ctaSurface.reportCtaLabel ?? 'Заказать подробный отчёт';
+  const freeStructureSectionTitle = (sectionId: string, fallback: string) =>
+    freeReport?.structure.sections.find(section => section.id === sectionId)?.titleRu ?? fallback;
   const topHelperText = resolveRuDemoTopHelperText({
     locale,
     dataBlocked,
@@ -2466,7 +2468,9 @@ function ASIPanel({
             ) : null}
           </div>
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Подтверждённые факторы</p>
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">
+              {freeStructureSectionTitle('topResultReasons', '3-5 главных причин результата')}
+            </p>
             <ul className="mt-2 space-y-2">
               {freeEvidenceLines.slice(0, 5).map((line, i) => (
                 <li key={i} className="flex gap-2 text-[14px] leading-snug text-slate-300">
@@ -2477,7 +2481,9 @@ function ASIPanel({
             </ul>
           </div>
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">Рекомендация</p>
+            <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">
+              {freeStructureSectionTitle('generalRecommendation', 'Общая рекомендация')}
+            </p>
             <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
               {freeReport?.shortRecommendation}
             </p>
@@ -2486,7 +2492,9 @@ function ASIPanel({
         <div className="border-t border-slate-800/40 p-5">
           <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-indigo-500/10 p-5">
             <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
-            <p className="relative text-[18px] font-semibold text-white">Подробный отчёт</p>
+            <p className="relative text-[18px] font-semibold text-white">
+              {freeStructureSectionTitle('orderDetailedReportCta', 'Заказать подробный отчёт')}
+            </p>
             <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
               {freeReport?.paidReportTeaser}
             </p>

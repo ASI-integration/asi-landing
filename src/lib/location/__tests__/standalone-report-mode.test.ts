@@ -38,6 +38,8 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.metadata?.reportMode).toBe('free');
     expect(typeof report.free_brief).toBe('string');
     expect(report.free_brief!.length).toBeGreaterThan(10);
+    expect(report.reportStructure?.mode).toBe('free');
+    expect(report.reportStructure?.cta.primaryLabel).toBe('Заказать подробный отчёт');
     expect(report.unifiedReport).toBeUndefined();
 
     const ids = report.sections.map(s => s.id);
@@ -82,6 +84,19 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.metadata?.calculatedAt).toBeDefined();
     expect(report.metadata?.reportMode).toBe('paid');
     expect(report.free_brief).toBeUndefined();
+    expect(report.reportStructure?.mode).toBe('paid');
+    expect(report.reportStructure?.sections.map(section => section.id)).toEqual([
+      'fullAddressConclusion',
+      'detailedMagnets',
+      'demandAudiences',
+      'competition',
+      'transportAccessibility',
+      'objectEnvironment',
+      'risksAndLimits',
+      'packagingPricingChannels',
+      'managementNextStepCta',
+    ]);
+    expect(report.reportStructure?.cta.primaryLabel).toBe('Подключить управление');
     expect(report.unifiedReport?.version).toBe('unified-location-potential-report-v1');
     expect(report.unifiedReport?.urbanDevelopmentForecastScore.score).toBe(0);
     expect(report.unifiedReport?.urbanDevelopmentForecastScore.level).toBe('low');

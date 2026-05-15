@@ -32,24 +32,26 @@ describe('location report scope contract', () => {
       'executiveSummary',
       'fullScoreExplanation',
       'magnetsByCategory',
+      'targetAudiences',
+      'business',
+      'competitors',
       'transport',
       'medical',
-      'business',
       'education',
       'retailAndEvents',
-      'competitors',
-      'risks',
-      'targetAudiences',
-      'strategy',
       'urbanDevelopmentForecast',
       'dataFreshness',
       'sourceEvidence',
+      'risks',
+      'strategy',
       'finalRecommendation',
+      'nextStepCTA',
     ]);
   });
 
   it('free topEvidenceBullets are limited to 5', () => {
     expect(freeReportSections).toContain('topEvidenceBullets');
+    expect(freeReportSections).toContain('CTA');
     expect(FREE_TOP_EVIDENCE_BULLETS_LIMIT.max).toBe(5);
   });
 

@@ -72,6 +72,26 @@ export {
   paidReportSections,
   resolveCommercialFootTrafficSectionStatus,
 } from './report-scope-contract';
+export type {
+  FreeLocationReportScopeSectionId,
+  FreeLocationReportStructureSectionId,
+  LocationReportStructureCta,
+  LocationReportStructureMode,
+  LocationReportStructureSection,
+  LocationReportStructureViewModel,
+  PaidLocationReportScopeSectionId,
+  PaidLocationReportStructureSectionId,
+} from './location-report-structure';
+export {
+  FREE_LOCATION_REPORT_CTA,
+  FREE_PAID_REPORT_TEASER_RU,
+  PAID_LOCATION_REPORT_CTA,
+  buildLocationReportStructureViewModel,
+  freeLocationReportStructureSections,
+  getLocationReportScopeSectionIds,
+  getLocationReportStructureSection,
+  paidLocationReportStructureSections,
+} from './location-report-structure';
 export {
   buildLocationReportResultMetadata,
   clientFreshnessPlainTextRu,
