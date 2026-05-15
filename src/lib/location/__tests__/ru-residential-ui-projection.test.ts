@@ -158,15 +158,21 @@ describe('ru-residential-ui-projection', () => {
     expect(ruResidentialDemandSignalsIncludeTouristEvidence(touristWithoutEvidence)).toBe(false);
   });
 
-  it('LocationIntelligenceDemo ASIPanel derives RU residential bullets from publicSummary.publicDrivers', async () => {
+  it('LocationIntelligenceDemo ASIPanel derives RU residential bullets from the free report view model', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
     const demoPath = fileURLToPath(new URL('../../../components/LocationIntelligenceDemo.tsx', import.meta.url));
     const src = readFileSync(demoPath, 'utf8');
-    expect(src).toContain('const residentialUiClaims: LocationPublicClaim[] = (residentialPublicSummary?.publicDrivers ?? []).map(');
+    expect(src).toContain("from '@/lib/location/free-report-renderer'");
+    expect(src).toContain('buildFreeLocationReportViewModel({');
+    expect(src).toContain('const freeEvidenceLines = (freeReport?.topEvidenceBullets ?? []).map(formatFreeEvidenceLine);');
     expect(src).toContain('if (dataBlocked) return [];');
-    expect(src).toContain('residentialUiClaims.slice(0, 2).map(c => c.textRu)');
+    expect(src).toContain('return (freeReport?.topEvidenceBullets ?? []).slice(0, 2).map(formatFreeEvidenceLine);');
+    expect(src).toContain('const mergedClaims = freeEvidenceLines.slice(0, 5);');
     expect(src).toContain('isRuResidentialDemo && !dataBlocked');
+    expect(src).not.toContain('const residentialUiClaims');
+    expect(src).not.toContain('publicDrivers ?? []).map');
+    expect(src).not.toContain('residentialPublicSummary?.headlineRu');
     expect(src).not.toContain('normalizeRuDemoExplanationLines');
     expect(src).not.toContain('buildRuResidentialPublicEvidenceLines');
     expect(src).not.toContain('analysis.locationScore.factors');
