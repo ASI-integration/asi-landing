@@ -24,6 +24,9 @@ describe('RU STR location report flow', () => {
     expect(report.strReport).toBeUndefined();
     expect(report.unifiedReport).toBeUndefined();
     expect(report.sections.map(section => section.id)).toEqual(['summary', 'next_step']);
+    expect(report.reportStructure?.mode).toBe('free');
+    expect(report.reportStructure?.sections.some(section => section.disclosure === 'cta')).toBe(true);
+    expect(report.reportStructure?.paidPreviewSections?.some(section => section.id === 'demandAudiences')).toBe(true);
 
     const html = renderToString(
       React.createElement(LocationStandaloneFullReport, {
@@ -32,10 +35,10 @@ describe('RU STR location report flow', () => {
     );
 
     expect(html).toContain('Бесплатный фрагмент по локации');
-    expect(html).toContain('Подробный отчёт показывает, что относится к полной платной аналитике.');
-    expect(html).toContain('Получить подробный отчёт');
+    expect(html).toContain(report.reportStructure?.cta.primaryLabel);
     expect(html).not.toContain('Отчёт по посуточной аренде');
     expect(html).not.toContain('Вывод по посуточной аренде');
+    expect(html).not.toContain('Кому подходит объект');
   });
 
   it('paid report includes required sellable STR sections', () => {
