@@ -28,7 +28,7 @@ export const PAID_LOCATION_REPORT_CTA: LocationReportStructureCta = {
 } as const;
 
 export const FREE_PAID_REPORT_TEASER_RU =
-  'В подробном отчёте доступны полные магниты, аудитория спроса, конкуренция, транспорт, риски и рекомендации по упаковке, цене и каналам продаж.';
+  'Подробный отчёт покажет больше: спрос, риски, конкурентов, стратегию запуска и рекомендации по использованию объекта.';
 
 export const freeLocationReportStructureSections = [
   {
@@ -68,7 +68,7 @@ export const freeLocationReportStructureSections = [
   },
   {
     id: 'orderDetailedReportCta',
-    titleRu: 'Получить подробный отчёт',
+    titleRu: 'Хотите подробный разбор объекта?',
     summaryRu: 'Переход к платному подробному отчёту.',
     scopeSectionIds: ['paidReportTeaser', 'CTA'],
     disclosure: 'cta',

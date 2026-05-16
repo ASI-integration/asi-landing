@@ -58,7 +58,7 @@ export default function HomeRu() {
                   Проверьте объект
                 </h3>
                 <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Введите адрес и получите общий вывод по локации: спрос, конкуренция, риски и ближайшие сильные объекты.
+                  Введите адрес и получите общий вывод по локации: спрос, риски и ближайшие сильные объекты.
                 </p>
                 <Link
                   href={RU_LOCATION_CHECK_HREF}
@@ -70,16 +70,13 @@ export default function HomeRu() {
 
               <div className="flex flex-col p-7 sm:p-8 rounded-2xl border-2 border-[color:var(--t-accent)] bg-[color-mix(in_srgb,var(--t-accent)_8%,var(--t-surface))] min-h-[300px]">
                 <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[color:var(--t-accent)] text-white text-2xl font-bold mb-5" aria-hidden>
-                  3
+                  2
                 </span>
                 <h3 className="font-bold text-[var(--t-text)] text-lg leading-snug mb-3">
                   Примите решение на данных
                 </h3>
-                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1 mb-6">
-                  Используйте общий вывод до покупки, запуска или подключения управления, чтобы не действовать вслепую.
-                </p>
-                <p className="text-sm font-semibold text-[var(--t-text)]">
-                  Подробный отчёт доступен в личном кабинете
+                <p className="text-[15px] text-[var(--t-text-2)] leading-relaxed flex-1">
+                  Используйте общий вывод, чтобы понять, стоит ли рассматривать объект дальше. Подробный отчёт доступен в личном кабинете.
                 </p>
               </div>
 

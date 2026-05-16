@@ -138,7 +138,7 @@ describe('buildFreeLocationReportViewModel', () => {
     });
 
     expect(report.cta.primaryLabel).toBe('Получить подробный отчёт');
-    expect(report.paidReportTeaser).toContain('аудитория спроса');
+    expect(report.paidReportTeaser).toContain('спрос, риски, конкурентов');
     expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('detailedMagnets');
   });
 });

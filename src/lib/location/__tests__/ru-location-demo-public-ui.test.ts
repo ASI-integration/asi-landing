@@ -38,30 +38,57 @@ const forbiddenReportMarketingCopy = [
 describe('RU /ru/location-analysis public demo UI contract', () => {
   it('RU landing keeps address check CTA inside the first decision step', () => {
     const homeSrc = fs.readFileSync(ruHomePath, 'utf8');
+    const decisionBlock = homeSrc.slice(
+      homeSrc.indexOf('Как ASI помогает принять решение по объекту'),
+      homeSrc.indexOf('{/* ── После проверки локации ── */}'),
+    );
+    const firstCardTitleIndex = decisionBlock.indexOf('Проверьте объект');
+    const secondCardTitleIndex = decisionBlock.indexOf('Примите решение на данных');
+    const addressCtaIndex = decisionBlock.indexOf('Оценить объект по адресу');
 
     expect(homeSrc).not.toContain("ctaLabel: 'Оценить объект по адресу'");
     expect(homeSrc).not.toContain('Оцените потенциал до покупки, запуска или подключения управления ASI.');
     expect(homeSrc).not.toContain('Три шага: проверить адрес');
     expect(homeSrc).not.toContain('Получите вывод по локации');
     expect(homeSrc).not.toContain('Получите общий отчёт по локации');
+    expect(decisionBlock).not.toContain('\n                  3\n');
+    expect(decisionBlock).toContain('1');
+    expect(decisionBlock).toContain('2');
+    expect(firstCardTitleIndex).toBeGreaterThan(-1);
+    expect(secondCardTitleIndex).toBeGreaterThan(firstCardTitleIndex);
+    expect(addressCtaIndex).toBeGreaterThan(firstCardTitleIndex);
+    expect(addressCtaIndex).toBeLessThan(secondCardTitleIndex);
     expect(homeSrc).toContain('Сначала проверьте адрес, затем используйте вывод для решения до вложений.');
     expect(homeSrc).toContain(
-      'Введите адрес и получите общий вывод по локации: спрос, конкуренция, риски и ближайшие сильные объекты.',
+      'Введите адрес и получите общий вывод по локации: спрос, риски и ближайшие сильные объекты.',
     );
     expect(homeSrc).toContain(
-      'Используйте общий вывод до покупки, запуска или подключения управления, чтобы не действовать вслепую.',
+      'Используйте общий вывод, чтобы понять, стоит ли рассматривать объект дальше. Подробный отчёт доступен в личном кабинете.',
     );
-    expect(homeSrc).toContain('Подробный отчёт доступен в личном кабинете');
     expect(homeSrc.match(/Оценить объект по адресу/g)).toHaveLength(1);
     expect(homeSrc).toContain('href={RU_LOCATION_CHECK_HREF}');
+    for (const forbidden of [
+      'Request report',
+      'Generating',
+      'Demo result',
+      'Couldn’t start the report',
+      'Full report',
+    ]) {
+      expect(homeSrc, `RU landing must not expose English copy: ${forbidden}`).not.toContain(forbidden);
+    }
   });
 
   it('page CTA uses new copy and drops legacy headline', () => {
     const pageSrc = fs.readFileSync(ruPagePath, 'utf8');
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
     const combined = `${pageSrc}\n${demoSrc}`;
-    expect(pageSrc).toContain('Хотите понять, как использовать эту локацию?');
+    expect(demoSrc).toContain('Хотите подробный разбор объекта?');
+    expect(demoSrc).toContain(
+      'Подробный отчёт покажет больше: спрос, риски, конкурентов, стратегию запуска и рекомендации по использованию объекта.',
+    );
     expect(combined).not.toContain('Получить подробный разбор');
+    expect(pageSrc).not.toContain('Хотите понять, как использовать эту локацию?');
+    expect(pageSrc).not.toContain('Как устроен отчёт');
     expect(pageSrc).toContain('Оценить объект по адресу');
     expect(pageSrc).not.toContain('Перейти к подробному отчёту');
     expect(pageSrc).not.toContain('Объект выглядит перспективным?');
@@ -99,6 +126,7 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(publicMarketingSrc).toContain('Оценить объект по адресу');
     expect(publicMarketingSrc).not.toContain('Заказать подробный отчёт');
     expect(publicMarketingSrc).not.toContain('Форматы доступны в личном кабинете');
+    expect(publicMarketingSrc).not.toContain('Форматы доступны');
   });
 
   it('public RU report pages use the general report CTA', () => {

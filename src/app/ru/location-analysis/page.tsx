@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo';
 import type { LocationAnalysisMode } from '@/components/LocationIntelligenceDemo';
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
@@ -17,8 +16,6 @@ export const metadata: Metadata = {
   description:
     'Введите адрес и получите общий вывод по потенциалу объекта. Подробный отчёт доступен в личном кабинете ASI.',
 };
-
-const REPORT_PRODUCT_HREF = '/ru/otchet-po-dohodnosti-obektov';
 
 export default async function RuLocationAnalysisPage(
   props: { searchParams: Promise<{ mode?: string }> },
@@ -67,32 +64,6 @@ export default async function RuLocationAnalysisPage(
 
           <section id="location-check" className="scroll-mt-20">
             <LocationIntelligenceDemo locale="ru" initialMode={mode} edgeToHeader />
-          </section>
-
-          <section
-            aria-labelledby="location-analysis-connect-heading"
-            className="border-t border-[var(--t-border)] bg-[var(--t-bg)] px-4 py-14 sm:px-6 sm:py-20"
-          >
-            <div className="mx-auto max-w-3xl text-center">
-              <h2
-                id="location-analysis-connect-heading"
-                className="text-2xl font-bold tracking-tight text-[var(--t-text)] sm:text-3xl"
-              >
-                Хотите понять, как использовать эту локацию?
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-[var(--t-text-2)] sm:text-lg">
-                Мы можем разобрать объект глубже: спрос, гостей, риски, цену, конкурентов и стратегию запуска. Это помогает
-                выбрать сценарий монетизации до покупки, запуска посуточной аренды или подключения управления.
-              </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-                <Link
-                  href={REPORT_PRODUCT_HREF}
-                  className="inline-flex min-w-[min(100%,260px)] items-center justify-center rounded-xl border border-[var(--t-border)] px-6 py-4 text-base font-bold text-[var(--t-text)] transition-colors hover:bg-[var(--t-surface-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--t-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--t-bg)]"
-                >
-                  Как устроен отчёт
-                </Link>
-              </div>
-            </div>
           </section>
         </main>
 

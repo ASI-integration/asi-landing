@@ -19,7 +19,7 @@ describe('location report structure', () => {
       'orderDetailedReportCta',
     ]);
     expect(structure.cta.primaryLabel).toBe('Получить подробный отчёт');
-    expect(FREE_PAID_REPORT_TEASER_RU).toContain('полные магниты');
+    expect(FREE_PAID_REPORT_TEASER_RU).toContain('спрос, риски, конкурентов');
   });
 
   it('defines the canonical paid report format', () => {

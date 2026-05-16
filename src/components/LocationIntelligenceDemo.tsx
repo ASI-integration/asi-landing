@@ -2428,40 +2428,42 @@ function ASIPanel({
                 {ctaSurface.text ?? locationDemoIncompleteUserMessage(locale)}
               </p>
             ) : null}
-            <div className="mt-4 space-y-2">
-              {showRetryOnlyCta ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onRetryAnalysis}
-                    disabled={!onRetryAnalysis}
-                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                  >
-                    {ctaSurface.primaryCta}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={requestFullReportAsync}
-                    disabled={fullReportBusy}
-                    className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-                  >
+            {showRetryOnlyCta || !isRuResidentialDemo ? (
+              <div className="mt-4 space-y-2">
+                {showRetryOnlyCta ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={onRetryAnalysis}
+                      disabled={!onRetryAnalysis}
+                      className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/50 text-white text-[14px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    >
+                      {ctaSurface.primaryCta}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={requestFullReportAsync}
+                      disabled={fullReportBusy}
+                      className="w-full py-3 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-indigo-500/60 text-white text-[14px] font-semibold transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                    >
+                      {locale === 'ru'
+                        ? (fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu)
+                        : (fullReportBusy ? 'Generating…' : 'Request report')}
+                    </button>
+                  </>
+                )}
+                {fullReportErr && !showRetryOnlyCta ? (
+                  <p className="text-[12px] text-amber-400/90 leading-snug">
                     {locale === 'ru'
-                      ? (fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu)
-                      : (fullReportBusy ? 'Generating…' : 'Request report')}
-                  </button>
-                </>
-              )}
-              {fullReportErr && !showRetryOnlyCta ? (
-                <p className="text-[12px] text-amber-400/90 leading-snug">
-                  {locale === 'ru'
-                    ? `Не удалось запустить отчёт: ${fullReportErr}`
-                    : `Couldn’t start the report: ${fullReportErr}`}
-                </p>
-              ) : null}
-            </div>
+                      ? `Не удалось запустить отчёт: ${fullReportErr}`
+                      : `Couldn’t start the report: ${fullReportErr}`}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2520,11 +2522,26 @@ function ASIPanel({
           <div className="relative overflow-hidden rounded-2xl border border-indigo-500/25 bg-indigo-500/10 p-5">
             <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/10 to-transparent" />
             <p className="relative text-[18px] font-semibold text-white">
-              {freeStructureSectionTitle('orderDetailedReportCta', 'Получить подробный отчёт')}
+              {freeStructureSectionTitle('orderDetailedReportCta', 'Хотите подробный разбор объекта?')}
             </p>
             <p className="relative mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-300">
-              Подробный отчёт доступен в личном кабинете. После оплаты отчёт появится в разделе Мои отчёты.
+              {freeReport?.paidReportTeaser ?? 'Подробный отчёт покажет больше: спрос, риски, конкурентов, стратегию запуска и рекомендации по использованию объекта.'}
             </p>
+            <div className="relative mt-5 space-y-2">
+              <button
+                type="button"
+                onClick={requestFullReportAsync}
+                disabled={fullReportBusy}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-500 px-5 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-indigo-400 disabled:bg-indigo-500/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 sm:w-auto"
+              >
+                {fullReportBusy ? 'Создаём заявку…' : reportCtaLabelRu}
+              </button>
+              {fullReportErr ? (
+                <p className="text-[12px] text-amber-400/90 leading-snug">
+                  Не удалось запустить отчёт: {fullReportErr}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
