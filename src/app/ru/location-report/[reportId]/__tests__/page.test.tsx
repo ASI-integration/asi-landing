@@ -84,6 +84,8 @@ describe('/ru/location-report/[reportId]', () => {
     expect(html).toContain('Бесплатный отчёт report-1');
     expect(html).toContain('Невский проспект, 88');
     expect(html).toContain('free');
+    expect(html).not.toContain('ожидает оплаты');
+    expect(html).not.toContain('Ожидает оплаты');
   });
 
   it('renders print page content from the same saved free report data', async () => {

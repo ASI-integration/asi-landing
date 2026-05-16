@@ -22,6 +22,7 @@ const repoRoot = path.join(__dirname, '../../..', '..');
 const dashboardReportsPath = path.join(repoRoot, 'src/app/dashboard/reports/ReportsPageClient.tsx');
 const dashboardReportRoutePath = path.join(repoRoot, 'src/app/dashboard/reports/[reportId]/page.tsx');
 const ruDashboardReportRoutePath = path.join(repoRoot, 'src/app/ru/dashboard/reports/[reportId]/page.tsx');
+const ruLocationReportRoutePath = path.join(repoRoot, 'src/app/ru/location-report/[reportId]/page.tsx');
 const authGuardPath = path.join(repoRoot, 'src/components/DashboardAuthGuard.tsx');
 const onboardingPath = path.join(repoRoot, 'src/components/OnboardingPageContent.tsx');
 
@@ -54,18 +55,37 @@ describe('dashboard report acquisition flow', () => {
 
   it('dashboard reports index shows free and paid report choices by default', () => {
     const html = renderToStaticMarkup(React.createElement(ReportsPageClient));
+    const freeCardHtml = html.split('Подробный платный отчёт')[0] ?? html;
+    const paidCardHtml = html.split('Подробный платный отчёт')[1] ?? '';
 
     expect(html).toContain('Отчёты по объектам');
     expect(html).toContain('Сначала можно получить бесплатный краткий отчёт по адресу');
     expect(html).toContain('Бесплатный отчёт по локации');
     expect(html).toContain('Быстрый общий вывод по адресу');
+    expect(html).toContain('Адрес объекта');
+    expect(html).toContain('Город, улица, дом');
     expect(html).toContain('Получить бесплатный отчёт');
-    expect(html).toContain('/ru/location-analysis?mode=residential#location-check');
+    expect(freeCardHtml).not.toContain('/ru/location-analysis');
     expect(html).toContain('Подробный платный отчёт');
     expect(html).toContain('Расширенный разбор объекта');
     expect(html).toContain('Заказать подробный отчёт');
+    expect(paidCardHtml).toContain('/ru/location-analysis?mode=residential#location-check');
     expect(html).toContain('Мои сохранённые отчёты');
     expect(html).toContain('Пока нет сохранённых отчётов.');
+  });
+
+  it('dashboard free report action creates or opens the canonical free report page', () => {
+    const reportsSrc = fs.readFileSync(dashboardReportsPath, 'utf8');
+    const ruLocationReportRouteSrc = fs.readFileSync(ruLocationReportRoutePath, 'utf8');
+
+    expect(reportsSrc).toContain("fetch('/api/location-report'");
+    expect(reportsSrc).toContain('is_paid: false');
+    expect(reportsSrc).toContain("locale: 'ru'");
+    expect(reportsSrc).toContain("router.push(permalink)");
+    expect(reportsSrc).toContain('/ru/location-report/');
+    expect(reportsSrc).not.toContain("const FREE_REPORT_HREF = '/ru/location-analysis");
+    expect(ruLocationReportRouteSrc).toContain('LocationFreeReportView');
+    expect(ruLocationReportRouteSrc).toContain("entity.report.reportMode === 'free'");
   });
 
   it('dashboard reports index does not show pending payment placeholders by default', () => {
@@ -97,7 +117,7 @@ describe('dashboard report acquisition flow', () => {
     expect(reportsSrc).toContain("router.push(data.loginUrl)");
     expect(reportsSrc).toContain('Заказать подробный отчёт');
     expect(reportsSrc).toContain('Получить бесплатный отчёт');
-    expect(reportsSrc).toContain('/ru/location-analysis?mode=residential#location-check');
+    expect(reportsSrc).toContain("const PAID_REPORT_START_HREF = '/ru/location-analysis?mode=residential#location-check'");
     expect(reportsSrc).toContain('Генерируется');
     expect(reportsSrc).toContain('Готов');
     expect(routeSrc).toContain('ReportPlaceholderClient');

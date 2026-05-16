@@ -51,7 +51,9 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
         <section className="rounded-3xl border border-slate-800/70 bg-slate-900/25 p-7 sm:p-10">
           <p className="text-sm font-semibold text-slate-300">Анализ локации ASI</p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">Краткий обзор локации</h1>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            Бесплатный общий отчёт по локации
+          </h1>
           <p className="mt-4 max-w-3xl text-lg leading-relaxed text-slate-200">{report.verdictSummary}</p>
 
           <div className="mt-7 grid gap-3 sm:grid-cols-3">

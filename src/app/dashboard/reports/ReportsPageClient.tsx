@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PENDING_LOCATION_REPORT_STORAGE_KEY,
@@ -18,7 +18,6 @@ const STATUS_LABELS: Record<PendingLocationReportStatus, string> = {
   failed: 'Ошибка, попробовать снова',
 };
 
-const FREE_REPORT_HREF = '/ru/location-analysis?mode=residential#location-check';
 const PAID_REPORT_START_HREF = '/ru/location-analysis?mode=residential#location-check';
 
 function readStoredPendingReport(): PendingLocationReportContext | null {
@@ -65,13 +64,17 @@ function savedReportHref(report: PendingLocationReportContext): string {
   if (report.paidReportId) return `/dashboard/reports/${encodeURIComponent(report.paidReportId)}`;
   if (report.requestId) return `/dashboard/reports/${encodeURIComponent(report.requestId)}`;
   if (report.freeReportPermalink) return report.freeReportPermalink;
-  return FREE_REPORT_HREF;
+  if (report.freeReportId) return `/ru/location-report/${encodeURIComponent(report.freeReportId)}`;
+  return '/dashboard/reports';
 }
 
 export function ReportsPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [pendingReport, setPendingReport] = useState<PendingLocationReportContext | null>(null);
+  const [freeAddress, setFreeAddress] = useState('');
+  const [freeBusy, setFreeBusy] = useState(false);
+  const [freeError, setFreeError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -87,6 +90,10 @@ export function ReportsPageClient() {
     setPendingReport(normalized);
     writeStoredPendingReport(normalized);
   }, [contextFromUrl]);
+
+  useEffect(() => {
+    if (pendingReport?.address) setFreeAddress(pendingReport.address);
+  }, [pendingReport?.address]);
 
   useEffect(() => {
     const requestId = pendingReport?.requestId;
@@ -163,6 +170,73 @@ export function ReportsPageClient() {
     }
   }
 
+  async function openFreeReport(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (freeBusy) return;
+
+    const existingPermalink = pendingReport?.freeReportPermalink
+      ?? (pendingReport?.freeReportId ? `/ru/location-report/${encodeURIComponent(pendingReport.freeReportId)}` : '');
+    if (existingPermalink) {
+      router.push(existingPermalink);
+      return;
+    }
+
+    const address = (pendingReport?.address ?? freeAddress).trim();
+    if (!address) {
+      setFreeError('Введите адрес объекта.');
+      return;
+    }
+
+    setFreeBusy(true);
+    setFreeError('');
+    try {
+      const res = await fetch('/api/location-report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          is_paid: false,
+          locale: 'ru',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (!data?.reportId && !data?.permalink)) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'request_failed');
+      }
+
+      const reportId = typeof data.reportId === 'string' ? data.reportId : undefined;
+      const permalink = typeof data.permalink === 'string'
+        ? data.permalink
+        : reportId
+          ? `/ru/location-report/${encodeURIComponent(reportId)}`
+          : '';
+      if (!permalink) throw new Error('missing_permalink');
+
+      const next = sanitizePendingLocationReportContext({
+        address: typeof data.address === 'string' ? data.address : address,
+        lat: typeof data.lat === 'number' ? data.lat : pendingReport?.lat,
+        lon: typeof data.lon === 'number' ? data.lon : pendingReport?.lon,
+        freeReportId: reportId,
+        freeReportPermalink: permalink,
+        mode: 'residential',
+        createdAt: new Date().toISOString(),
+        status: 'ready',
+      });
+      if (next) {
+        setPendingReport(next);
+        writeStoredPendingReport(next);
+      }
+      router.push(permalink);
+    } catch {
+      setFreeError('Не удалось создать бесплатный отчёт. Уточните адрес и попробуйте снова.');
+    } finally {
+      setFreeBusy(false);
+    }
+  }
+
+  const freeReportHasContext = Boolean(pendingReport?.address);
+  const freeReportCanOpenExisting = Boolean(pendingReport?.freeReportPermalink || pendingReport?.freeReportId);
+
   return (
     <div className="max-w-6xl space-y-8">
       <div>
@@ -180,12 +254,33 @@ export function ReportsPageClient() {
               Быстрый общий вывод по адресу: спрос, риски, сильные объекты рядом и первичная оценка локации.
             </p>
           </div>
-          <Link
-            href={FREE_REPORT_HREF}
-            className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 sm:w-fit"
-          >
-            Получить бесплатный отчёт
-          </Link>
+          <form onSubmit={openFreeReport} className="mt-6 space-y-3">
+            {freeReportHasContext ? (
+              <p className="text-sm leading-relaxed text-slate-500">
+                {freeReportCanOpenExisting ? 'Готовый бесплатный отчёт:' : 'Создадим бесплатный отчёт для адреса:'}{' '}
+                {pendingReport?.address}
+              </p>
+            ) : (
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">Адрес объекта</span>
+                <input
+                  type="text"
+                  value={freeAddress}
+                  onChange={event => setFreeAddress(event.target.value)}
+                  placeholder="Город, улица, дом"
+                  className="mt-2 min-h-[48px] w-full rounded-lg border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900"
+                />
+              </label>
+            )}
+            {freeError ? <p className="text-sm text-red-600">{freeError}</p> : null}
+            <button
+              type="submit"
+              disabled={freeBusy}
+              className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+            >
+              {freeBusy ? 'Готовим отчёт…' : 'Получить бесплатный отчёт'}
+            </button>
+          </form>
         </article>
 
         <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
