@@ -22,7 +22,7 @@ export { normalizeFreeReportFactors };
 
 export function LocationFreeReportView({ report }: { report: GeneratedFreeLocationReportData }) {
   const reportHref = `/ru/location-report/${encodeURIComponent(report.reportId)}`;
-  const pdfHref = report.pdfUrl ?? `${reportHref}/print`;
+  const pdfHref = report.pdfUrl ?? `/api/location-report/${encodeURIComponent(report.reportId)}/pdf`;
   const content = buildFreeReportInterpretedContent({
     evidenceBullets: report.evidenceBullets,
     score: report.score,
@@ -45,12 +45,6 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
             <p className="mt-1 truncate text-sm text-slate-200" title={report.inputAddress}>{report.inputAddress}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href={pdfHref}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-800/70 px-4 py-2 text-sm text-slate-200 transition-colors hover:border-slate-700 hover:text-white"
-            >
-              Скачать отчёт PDF
-            </Link>
             <Link
               href="/ru"
               className="inline-flex items-center justify-center rounded-lg border border-slate-800/70 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-700 hover:text-white"
@@ -125,12 +119,6 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
               </ul>
             </div>
             <Link
-              href={pdfHref}
-              className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-100"
-            >
-              Скачать отчёт PDF
-            </Link>
-            <Link
               href={detailedReportHref}
               className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-slate-700 px-6 py-3 text-sm font-bold text-white transition-colors hover:border-slate-500"
             >
@@ -168,12 +156,13 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
           <h2 className="text-2xl font-bold text-white">{content.ctaTitleRu}</h2>
           <p className="mt-3 text-sm leading-relaxed text-slate-300">{content.ctaTextRu}</p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-            <Link
+            <a
               href={pdfHref}
+              download={`asi-location-report-${report.reportId}.pdf`}
               className="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-100"
             >
               Скачать отчёт PDF
-            </Link>
+            </a>
             <Link
               href={detailedReportHref}
               className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-6 py-3 text-sm font-bold text-white transition-colors hover:border-slate-500"

@@ -3,10 +3,15 @@ import { getStandaloneReportById } from '@/lib/location/standalone-report-store'
 import { isCanonicalLocationReportPayload } from '@/lib/location/standalone-report';
 import {
   buildGeneratedLocationReportDocument,
-  buildLocationReportPrintHtml,
 } from '@/lib/location/location-report-engine';
+import { buildLocationReportPdf } from '@/lib/location/location-report-pdf';
 
 export const dynamic = 'force-dynamic';
+
+function reportPdfFilename(reportId: string): string {
+  const safeReportId = reportId.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 120) || 'report';
+  return `asi-location-report-${safeReportId}.pdf`;
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ reportId: string }> }) {
   const { reportId } = await ctx.params;
@@ -20,11 +25,13 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ reportId: 
     }
 
     const doc = buildGeneratedLocationReportDocument(entity);
-    const html = buildLocationReportPrintHtml(doc);
-    return new NextResponse(html, {
+    const pdf = await buildLocationReportPdf(doc);
+    const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
+    return new NextResponse(body, {
       status: 200,
       headers: {
-        'content-type': 'text/html; charset=utf-8',
+        'content-type': 'application/pdf',
+        'content-disposition': `attachment; filename="${reportPdfFilename(reportId)}"`,
         'cache-control': 'no-store',
       },
     });

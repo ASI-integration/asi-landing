@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe('GET /api/location-report/[reportId]/pdf', () => {
-  it('returns print-friendly content for an existing saved report', async () => {
+  it('returns a real PDF attachment for an existing saved report', async () => {
     mockGetStandaloneReportById.mockResolvedValue({
       id: 'report-1',
       locale: 'ru',
@@ -55,20 +55,17 @@ describe('GET /api/location-report/[reportId]/pdf', () => {
     const res = await GET(new Request('http://localhost/api/location-report/report-1/pdf') as any, {
       params: Promise.resolve({ reportId: 'report-1' }),
     });
-    const text = await res.text();
+    const body = Buffer.from(await res.arrayBuffer());
+    const bodyAsUtf8 = body.toString('utf8');
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
-    expect(text).toContain('Краткий вывод готов.');
-    expect(text).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
-    expect(text).toContain('Ориентир по карте: около 830–940 м.');
-    expect(text).toContain('Медицинские учреждения рядом: возможен спрос от пациентов, сопровождающих и командировочных.');
-    expect(text).toContain('Подробная конкуренция');
-    expect(text).toContain('Коммерческий и пешеходный потенциал');
-    expect(text).not.toContain('Метро · Метро');
-    expect(text).not.toContain('Станция метро Площадь Мужества · Метро');
-    expect(text).not.toContain('Держите чистоту и тишину');
-    expect(text).not.toContain('unifiedReport');
+    expect(res.headers.get('content-type')).toContain('application/pdf');
+    expect(res.headers.get('content-disposition')).toContain('attachment');
+    expect(res.headers.get('content-disposition')).toContain('filename="asi-location-report-report-1.pdf"');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(body.subarray(0, 4).toString('utf8')).toBe('%PDF');
+    expect(bodyAsUtf8).not.toContain('<html');
+    expect(bodyAsUtf8).not.toContain('<!DOCTYPE');
   });
 
   it('returns a safe not-found response for a missing saved report', async () => {

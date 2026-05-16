@@ -37,10 +37,14 @@ const baseReport: GeneratedFreeLocationReportData = {
 };
 
 describe('LocationFreeReportView', () => {
-  it('shows clear PDF and detailed report actions', () => {
+  it('shows exactly one PDF download action in the CTA block', () => {
     const html = renderToStaticMarkup(<LocationFreeReportView report={baseReport} />);
+    const pdfLabelMatches = html.match(/Скачать отчёт PDF/g) ?? [];
+    const pdfHrefMatches = html.match(/href="\/api\/location-report\/report-1\/pdf"/g) ?? [];
 
-    expect(html).toContain('Скачать отчёт PDF');
+    expect(pdfLabelMatches).toHaveLength(1);
+    expect(pdfHrefMatches).toHaveLength(1);
+    expect(html).toContain('download="asi-location-report-report-1.pdf"');
     expect(html).toContain('Получить подробный отчёт');
   });
 

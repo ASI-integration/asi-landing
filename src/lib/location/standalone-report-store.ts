@@ -10,6 +10,9 @@ export type PersistedStandaloneReportEntity = {
   created_at: string;
 };
 
+const STANDALONE_REPORT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function createStandaloneReport(args: {
   locale: 'ru' | 'en';
   report: PersistableLocationReport;
@@ -78,6 +81,8 @@ function prepareReportForPersistence(
 }
 
 export async function getStandaloneReportById(reportId: string): Promise<PersistedStandaloneReportEntity | null> {
+  if (!STANDALONE_REPORT_UUID_RE.test(reportId)) return null;
+
   const { data, error } = await supabase
     .from('location_standalone_reports')
     .select('id, locale, address, report_version, report, created_at')
