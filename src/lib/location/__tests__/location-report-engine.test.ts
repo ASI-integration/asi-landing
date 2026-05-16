@@ -30,6 +30,25 @@ const freeReport: LocationStandaloneReport = {
     currentLocationAsOfIso: '2026-05-16T10:00:00.000Z',
     summaryRu: 'Данные сохранены на момент расчёта.',
   },
+  metadata: {
+    calculatedAt: '2026-05-16T10:00:00.000Z',
+    inputAddress: 'Невский проспект, 88',
+    normalizedAddress: 'санкт-петербург, невский проспект, 88',
+    reportMode: 'free',
+    dataFreshness: {
+      currentLocationAsOfIso: '2026-05-16T10:00:00.000Z',
+      summaryRu: 'Данные сохранены на момент расчёта.',
+    },
+    sourceStatus: {
+      current_location: 'live',
+      urban_development: 'cache_or_not_connected',
+      procurement: 'official_api_disabled',
+    },
+    clientFreshnessRu: {
+      usedSources: ['Картографический слой.'],
+      preparingSources: ['Градостроительные сигналы подключены частично.'],
+    },
+  },
   address: 'Санкт-Петербург, Невский проспект, 88',
   generated_at_iso: '2026-05-16T10:00:00.000Z',
   freeSummary: {
@@ -63,10 +82,34 @@ describe('location report generation engine', () => {
       status: 'ready',
       pdfStatus: 'ready',
     });
+    expect(doc.freeReport).toMatchObject({
+      reportId: '11111111-1111-4111-8111-111111111111',
+      reportMode: 'free',
+      inputAddress: 'Невский проспект, 88',
+      normalizedAddress: 'санкт-петербург, невский проспект, 88',
+      calculatedAt: '2026-05-16T10:00:00.000Z',
+      score: 72,
+      verdictSummary: 'Локация подходит как первый фильтр.',
+      evidenceBullets: ['Метро рядом', 'Смешанный спрос', 'Сервисы в пешей доступности'],
+      dataFreshness: {
+        currentLocationAsOfIso: '2026-05-16T10:00:00.000Z',
+        summaryRu: 'Данные сохранены на момент расчёта.',
+      },
+      sourceStatus: {
+        current_location: 'live',
+        urban_development: 'cache_or_not_connected',
+        procurement: 'official_api_disabled',
+      },
+    });
     expect(doc.freeSummary.keyFactorsRu).toHaveLength(3);
     expect(doc.paidSections).toBeUndefined();
+    expect(doc.freeReport).not.toHaveProperty('paidSections');
+    expect(doc.freeReport).not.toHaveProperty('unifiedReport');
+    expect(doc.freeReport).not.toHaveProperty('strReport');
+    expect(doc.freeReport).not.toHaveProperty('persistedReport');
     expect(JSON.stringify(doc.freeSummary)).not.toContain('unifiedReport');
     expect(JSON.stringify(doc.freeSummary)).not.toContain('income_rub_month');
+    expect(JSON.stringify(doc.freeReport)).not.toContain('income_rub_month');
   });
 
   it('returns print/PDF-friendly content from saved report data', () => {
@@ -77,7 +120,9 @@ describe('location report generation engine', () => {
     expect(html).toContain('Невский проспект, 88');
     expect(html).toContain('Метро рядом');
     expect(html).toContain('Проверить конкурентов вручную');
+    expect(html).toContain('Оценка: 72 / 100');
     expect(html).not.toContain('unifiedReport');
+    expect(html).not.toContain('Score');
   });
 
   it('exposes paid structure for paid reports', () => {

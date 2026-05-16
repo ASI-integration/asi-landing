@@ -59,4 +59,17 @@ describe('GET /api/location-report/[reportId]/pdf', () => {
     expect(text).toContain('Метро рядом');
     expect(text).not.toContain('unifiedReport');
   });
+
+  it('returns a safe not-found response for a missing saved report', async () => {
+    mockGetStandaloneReportById.mockResolvedValue(null);
+    const { GET } = await import('../route');
+
+    const res = await GET(new Request('http://localhost/api/location-report/missing/pdf') as any, {
+      params: Promise.resolve({ reportId: 'missing' }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(404);
+    expect(body).toEqual({ error: 'not_found' });
+  });
 });

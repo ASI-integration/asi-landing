@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { LocationFreeReportView } from '@/components/location/LocationFreeReportView';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 import { CommercialReportView } from '@/components/location/CommercialReportView';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
+import { buildGeneratedLocationReportDocument } from '@/lib/location/location-report-engine';
 import {
   isCanonicalLocationReportPayload,
   isLocationCommercialReport,
@@ -61,6 +63,11 @@ export default async function RuLocationReportByIdPage(props: { params: Promise<
   }
 
   if (!isLocationStandaloneReportV1(entity.report)) return <MissingReport />;
+  if (entity.report.reportMode === 'free') {
+    const doc = buildGeneratedLocationReportDocument(entity);
+    if (!doc.freeReport) return <MissingReport />;
+    return <LocationFreeReportView report={doc.freeReport} />;
+  }
 
   return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
 }

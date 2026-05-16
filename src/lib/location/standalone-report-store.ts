@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { PersistableLocationReport } from './standalone-report';
+import type { LocationStandaloneReport, PersistableLocationReport } from './standalone-report';
 
 export type PersistedStandaloneReportEntity = {
   id: string;
@@ -15,13 +15,7 @@ export async function createStandaloneReport(args: {
   report: PersistableLocationReport;
 }): Promise<{ reportId: string }> {
   const reportId = crypto.randomUUID();
-  const report = {
-    ...(args.report as any),
-    reportId,
-    status: (args.report as any).status ?? 'ready',
-    pdfStatus: (args.report as any).pdfStatus ?? 'ready',
-    pdfUrl: (args.report as any).pdfUrl ?? `/api/location-report/${encodeURIComponent(reportId)}/pdf`,
-  } as PersistableLocationReport;
+  const report = prepareReportForPersistence(args.report, reportId);
 
   const { data, error } = await supabase
     .from('location_standalone_reports')
@@ -40,6 +34,47 @@ export async function createStandaloneReport(args: {
   }
 
   return { reportId: data.id as string };
+}
+
+function prepareReportForPersistence(
+  input: PersistableLocationReport,
+  reportId: string,
+): PersistableLocationReport {
+  const common = {
+    reportId,
+    status: (input as any).status ?? 'ready',
+    pdfStatus: (input as any).pdfStatus ?? 'ready',
+    pdfUrl: (input as any).pdfUrl ?? `/api/location-report/${encodeURIComponent(reportId)}/pdf`,
+  };
+
+  if (input.version === 'v1' && input.reportMode === 'free') {
+    const freeInput: LocationStandaloneReport = { ...(input as LocationStandaloneReport) };
+    delete (freeInput as any).unifiedReport;
+    delete (freeInput as any).paidSections;
+    delete (freeInput as any).strReport;
+    const sections = freeInput.sections
+      .filter(section => section.id === 'summary' || section.id === 'next_step')
+      .map(section => {
+        if (section.id !== 'summary') return section;
+        return {
+          ...section,
+          income_rub_month: null,
+          recommended_strategy: null,
+        };
+      });
+
+    return {
+      ...freeInput,
+      ...common,
+      reportMode: 'free',
+      sections,
+    } as LocationStandaloneReport;
+  }
+
+  return {
+    ...(input as any),
+    ...common,
+  } as PersistableLocationReport;
 }
 
 export async function getStandaloneReportById(reportId: string): Promise<PersistedStandaloneReportEntity | null> {

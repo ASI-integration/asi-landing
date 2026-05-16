@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
 import { isCanonicalLocationReportPayload } from '@/lib/location/standalone-report';
-import { buildGeneratedLocationReportDocument } from '@/lib/location/location-report-engine';
+import {
+  buildGeneratedLocationReportDocument,
+  type GeneratedLocationReportDocument,
+} from '@/lib/location/location-report-engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +21,35 @@ function formatDateRu(iso: string): string {
   });
 }
 
+function MissingReportPrintFallback() {
+  return (
+    <main className="min-h-screen bg-white px-5 py-8 text-slate-950">
+      <div className="mx-auto max-w-3xl">
+        <h1 className="text-3xl font-bold tracking-tight">Отчёт не найден</h1>
+        <p className="mt-3 text-base leading-relaxed text-slate-700">
+          Ссылка устарела или отчёт был удалён. Запустите анализ заново и откройте новую ссылку на отчёт.
+        </p>
+        <Link
+          href="/ru"
+          className="mt-6 inline-flex rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+        >
+          Вернуться на главную
+        </Link>
+      </div>
+    </main>
+  );
+}
+
+function freeValues(doc: GeneratedLocationReportDocument) {
+  return {
+    verdictSummary: doc.freeReport?.verdictSummary ?? doc.freeSummary.conclusionRu,
+    score: doc.freeReport?.score ?? doc.freeSummary.publicScore,
+    evidenceBullets: doc.freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu,
+    risksAndLimitsRu: doc.freeReport?.risksAndLimitsRu ?? doc.freeSummary.risksAndLimitsRu,
+    recommendationRu: doc.freeReport?.recommendationRu ?? doc.freeSummary.recommendationRu,
+  };
+}
+
 export default async function RuLocationReportPrintPage(
   props: { params: Promise<{ reportId: string }> },
 ) {
@@ -25,9 +57,12 @@ export default async function RuLocationReportPrintPage(
   if (!reportId) notFound();
 
   const entity = await getStandaloneReportById(reportId);
-  if (!entity || entity.locale !== 'ru' || !isCanonicalLocationReportPayload(entity.report)) notFound();
+  if (!entity || entity.locale !== 'ru' || !isCanonicalLocationReportPayload(entity.report)) {
+    return <MissingReportPrintFallback />;
+  }
 
   const doc = buildGeneratedLocationReportDocument(entity);
+  const free = freeValues(doc);
 
   return (
     <main className="min-h-screen bg-white px-5 py-8 text-slate-950 print:px-0 print:py-0">
@@ -59,10 +94,10 @@ export default async function RuLocationReportPrintPage(
 
         <section className="mt-7">
           <h2 className="text-xl font-bold">Вывод</h2>
-          <p className="mt-2 text-base leading-relaxed">{doc.freeSummary.conclusionRu}</p>
-          {doc.freeSummary.publicScore != null ? (
+          <p className="mt-2 text-base leading-relaxed">{free.verdictSummary}</p>
+          {free.score != null ? (
             <p className="mt-3 inline-flex rounded-lg border border-slate-300 px-3 py-1 text-sm font-semibold">
-              Score: {doc.freeSummary.publicScore} / 100
+              Оценка: {free.score} / 100
             </p>
           ) : null}
         </section>
@@ -70,20 +105,20 @@ export default async function RuLocationReportPrintPage(
         <section className="mt-7">
           <h2 className="text-xl font-bold">Ключевые факторы</h2>
           <ul className="mt-3 space-y-2">
-            {doc.freeSummary.keyFactorsRu.map(item => <li key={item}>{item}</li>)}
+            {free.evidenceBullets.map(item => <li key={item}>{item}</li>)}
           </ul>
         </section>
 
         <section className="mt-7">
           <h2 className="text-xl font-bold">Риски и ограничения</h2>
           <ul className="mt-3 space-y-2">
-            {doc.freeSummary.risksAndLimitsRu.map(item => <li key={item}>{item}</li>)}
+            {free.risksAndLimitsRu.map(item => <li key={item}>{item}</li>)}
           </ul>
         </section>
 
         <section className="mt-7">
           <h2 className="text-xl font-bold">Рекомендации</h2>
-          <p className="mt-2 text-base leading-relaxed">{doc.freeSummary.recommendationRu}</p>
+          <p className="mt-2 text-base leading-relaxed">{free.recommendationRu}</p>
         </section>
 
         {doc.reportMode === 'paid' && doc.paidSections?.length ? (

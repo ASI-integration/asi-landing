@@ -56,6 +56,6 @@ export default async function LocationReportByIdPage(props: { params: Promise<{ 
   }
 
   if (!isLocationStandaloneReportV1(entity.report)) return <MissingReport />;
-  return <LocationStandaloneFullReport report={entity.report} />;
+  return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
 }
 
