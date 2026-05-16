@@ -14,13 +14,23 @@ export async function createStandaloneReport(args: {
   locale: 'ru' | 'en';
   report: PersistableLocationReport;
 }): Promise<{ reportId: string }> {
+  const reportId = crypto.randomUUID();
+  const report = {
+    ...(args.report as any),
+    reportId,
+    status: (args.report as any).status ?? 'ready',
+    pdfStatus: (args.report as any).pdfStatus ?? 'ready',
+    pdfUrl: (args.report as any).pdfUrl ?? `/api/location-report/${encodeURIComponent(reportId)}/pdf`,
+  } as PersistableLocationReport;
+
   const { data, error } = await supabase
     .from('location_standalone_reports')
     .insert({
+      id: reportId,
       locale: args.locale,
-      address: args.report.address,
-      report_version: args.report.version,
-      report: args.report as any,
+      address: report.address,
+      report_version: report.version,
+      report: report as any,
     })
     .select('id')
     .single();

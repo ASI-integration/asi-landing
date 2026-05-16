@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createLocationReportRequest } from '@/lib/location/report-request-store';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,23 @@ export async function POST(req: NextRequest) {
     body?.access_tier === 'included' || body?.access_tier === 'paid_required'
       ? body.access_tier
       : 'unknown';
+
+  if (accessTier === 'paid_required') {
+    const redirect = '/dashboard/reports';
+    if (!isSessionSecretConfigured()) {
+      return NextResponse.json(
+        { error: 'auth_required', loginUrl: `/connect?redirect=${encodeURIComponent(redirect)}` },
+        { status: 401 },
+      );
+    }
+    const session = await getSession();
+    if (!session.userId) {
+      return NextResponse.json(
+        { error: 'auth_required', loginUrl: `/connect?redirect=${encodeURIComponent(redirect)}` },
+        { status: 401 },
+      );
+    }
+  }
 
   try {
     const { requestId } = await createLocationReportRequest({

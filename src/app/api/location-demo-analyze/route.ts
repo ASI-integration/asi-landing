@@ -7,6 +7,8 @@ import {
   cloneAnalysisForResidentialDemoPatch,
   applyResidentialDemoPresentationToAnalysis,
   attachLocationDecisionToAnalysis,
+  buildLocationStandaloneReport,
+  buildLocationReportPermalink,
 } from '@/lib/location';
 import type { OSMElement } from '@/lib/location';
 import { patchLegacyLocationAnalysis } from '@/lib/location/foot-traffic';
@@ -26,6 +28,7 @@ import { buildTerritorialScoringSignalsForAnalysis } from '@/lib/location/territ
 import type { AnalysisMeta } from '@/lib/location/types';
 import type { GeocodeResult } from '@/lib/location/providers/types';
 import type { OverpassFetchDiagnostics } from '@/lib/location/overpass';
+import { createStandaloneReport } from '@/lib/location/standalone-report-store';
 
 export const dynamic = 'force-dynamic';
 /** Allow slow Overpass batches on Vercel (default is often 10s). */
@@ -281,6 +284,45 @@ function withDemoSanityPayload(args: {
   };
 }
 
+async function withPersistedFreeReport(args: {
+  payload: ReturnType<typeof withDemoSanityPayload>;
+  locale: 'en' | 'ru';
+  wantSpatial: boolean;
+  inputAddress?: string;
+  address: string;
+  rawOsmElements?: readonly OSMElement[];
+}): Promise<ReturnType<typeof withDemoSanityPayload>> {
+  const { payload, locale, wantSpatial } = args;
+  if (locale !== 'ru' || wantSpatial || !payload.meta.reportCtaEligible) return payload;
+
+  try {
+    const report = buildLocationStandaloneReport({
+      address: args.address,
+      inputAddress: args.inputAddress ?? args.address,
+      ...(args.rawOsmElements ? { rawOsmElements: args.rawOsmElements } : {}),
+      analysis: payload.analysis,
+      verdict: payload.analysis.locationDecision?.publicSummary?.audienceVerdictRu
+        ?? payload.analysis.conclusion
+        ?? 'Предварительный вывод готов.',
+      market: 'RU',
+      reportMode: 'free',
+    });
+    const { reportId } = await createStandaloneReport({ locale, report });
+    return {
+      ...payload,
+      meta: {
+        ...payload.meta,
+        reportId,
+        permalink: buildLocationReportPermalink({ reportId, locale }),
+      } as typeof payload.meta & { reportId: string; permalink: string },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[location-demo-analyze] free_report_persist_failed: ${msg}`);
+    return payload;
+  }
+}
+
 /** Fetch live data, run scoring, store in cache. Never throws — logs instead. */
 async function fetchAndCache(lat: number, lon: number): Promise<void> {
   try {
@@ -421,7 +463,7 @@ export async function POST(req: NextRequest) {
         `cached=true freshness=${cached.freshness}`,
       );
 
-      return NextResponse.json(withDemoSanityPayload({
+      const payload = withDemoSanityPayload({
         analysis: ca,
         elementsCount: cached.entry.elementsCount,
         meta,
@@ -431,6 +473,13 @@ export async function POST(req: NextRequest) {
         lon,
         inputAddress,
         geocodeResult,
+      });
+      return NextResponse.json(await withPersistedFreeReport({
+        payload,
+        locale,
+        wantSpatial,
+        inputAddress,
+        address: geocodeResult?.displayName?.trim() || inputAddress || `${lat}, ${lon}`,
       }));
     }
 
@@ -521,7 +570,7 @@ export async function POST(req: NextRequest) {
         `overpassFailureReason=${meta.overpassFailureReason ?? 'n/a'}`,
     );
 
-    return NextResponse.json(withDemoSanityPayload({
+    const payload = withDemoSanityPayload({
       analysis,
       elementsCount: elements.length,
       meta,
@@ -532,6 +581,14 @@ export async function POST(req: NextRequest) {
       osmElements: elements,
       inputAddress,
       geocodeResult,
+    });
+    return NextResponse.json(await withPersistedFreeReport({
+      payload,
+      locale,
+      wantSpatial,
+      inputAddress,
+      address: geocodeResult?.displayName?.trim() || inputAddress || `${lat}, ${lon}`,
+      rawOsmElements: elements,
     }));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

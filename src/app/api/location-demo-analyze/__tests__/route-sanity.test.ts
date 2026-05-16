@@ -5,6 +5,7 @@ const mockFetchOsmData = vi.fn();
 const mockBuildAnalysis = vi.fn();
 const mockCacheGet = vi.fn();
 const mockCacheSet = vi.fn();
+const mockCreateStandaloneReport = vi.fn();
 
 vi.mock('@/lib/location', async () => {
   const actual = await vi.importActual<typeof import('@/lib/location')>('@/lib/location');
@@ -18,6 +19,10 @@ vi.mock('@/lib/location', async () => {
 vi.mock('@/lib/location/cache', () => ({
   cacheGet: (...args: unknown[]) => mockCacheGet(...args),
   cacheSet: (...args: unknown[]) => mockCacheSet(...args),
+}));
+
+vi.mock('@/lib/location/standalone-report-store', () => ({
+  createStandaloneReport: (...args: unknown[]) => mockCreateStandaloneReport(...args),
 }));
 
 import { POST } from '../route';
@@ -207,6 +212,39 @@ describe('POST /api/location-demo-analyze sanity envelope', () => {
       usedFallbackQuery: false,
     });
     mockBuildAnalysis.mockReturnValue(komendantskyFixture());
+    mockCreateStandaloneReport.mockResolvedValue({ reportId: '22222222-2222-4222-8222-222222222222' });
+  });
+
+  it('creates a saved free reportId for RU residential results', async () => {
+    const req = new Request('http://localhost/api/location-demo-analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: 60.014315,
+        lon: 30.253552,
+        locale: 'ru',
+        inputAddress: 'Санкт-Петербург, Невский проспект, 88',
+        geocodeResult: {
+          lat: 60.014315,
+          lon: 30.253552,
+          displayName: 'Санкт-Петербург, Невский проспект, 88',
+        },
+      }),
+    });
+
+    const res = await POST(req as any);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta.reportId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(body.meta.permalink).toBe('/ru/location-report/22222222-2222-4222-8222-222222222222');
+    expect(mockCreateStandaloneReport).toHaveBeenCalledWith(expect.objectContaining({
+      locale: 'ru',
+      report: expect.objectContaining({
+        reportMode: 'free',
+        freeSummary: expect.any(Object),
+      }),
+    }));
   });
 
   it('returns capped RU demo display fields for weak-office cluster', async () => {

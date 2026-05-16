@@ -15,13 +15,16 @@ import {
 import {
   buildLocationReportResultMetadata,
   normalizeReportAddress,
+  type LocationReportDataFreshness,
   type LocationReportResultMetadata,
 } from './report-result-metadata';
 import { enrichAnalysisWithReportProjection } from './location-scoring-projection';
 import {
   buildLocationReportStructureViewModel,
+  paidLocationReportStructureSections,
   type LocationReportStructureViewModel,
 } from './location-report-structure';
+import { buildFreeLocationReportViewModel } from './free-report-renderer';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -32,6 +35,22 @@ export type LocationStandaloneReportSectionId =
   | 'next_step';
 
 export type LocationStandaloneReportMode = 'free' | 'paid';
+export type LocationGeneratedReportStatus = 'pending' | 'ready' | 'failed';
+export type LocationGeneratedReportPdfStatus = 'pending' | 'ready' | 'failed';
+
+export type LocationFreeReportSummarySnapshot = {
+  conclusionRu: string;
+  publicScore: number | null;
+  keyFactorsRu: string[];
+  risksAndLimitsRu: string[];
+  recommendationRu: string;
+};
+
+export type LocationPaidReportSectionSnapshot = {
+  id: string;
+  titleRu: string;
+  summaryRu: string;
+};
 
 export type StrLocationRecommendation = 'good' | 'conditional' | 'weak';
 export type StrLocationAudience =
@@ -90,12 +109,25 @@ export type StrLocationReportProjection = {
 
 export type LocationStandaloneReport = {
   version: 'v1';
+  /** Filled by persistence layer for saved reports. */
+  reportId?: string;
   /**
    * Persisted tier for permalink payloads. Omitted on older rows — treat as paid/full.
    */
   reportMode?: LocationStandaloneReportMode;
+  inputAddress?: string;
+  normalizedAddress?: string;
+  calculatedAt?: string;
+  status?: LocationGeneratedReportStatus;
+  dataFreshness?: LocationReportDataFreshness;
+  pdfUrl?: string;
+  pdfStatus?: LocationGeneratedReportPdfStatus;
   /** Прозрачность расчёта: время, адрес, режим, свежесть слоёв (без изменения scoring). */
   metadata?: LocationReportResultMetadata;
+  /** Public-only persisted snapshot for free report pages/PDF. */
+  freeSummary?: LocationFreeReportSummarySnapshot;
+  /** Canonical paid report section inventory. */
+  paidSections?: LocationPaidReportSectionSnapshot[];
   /** Short teaser for `reportMode: 'free'` permalinks (RU copy). */
   free_brief?: string;
   /** Canonical visible structure for free/paid report formats. */
@@ -395,6 +427,58 @@ function buildFreeBriefRu(args: { verdict: string }): string {
   return `${args.verdict} Это быстрая предварительная оценка по открытым данным.`.replace(/\s+/g, ' ').trim();
 }
 
+function buildFreeRisksAndLimitsRu(analysis: LocationAnalysis): string[] {
+  const lines: string[] = [];
+  const competition = analysis.gravityExplanation.competitorPressureLevel;
+  const env = analysis.neighborhoodEnvironment;
+
+  if (competition === 'high') {
+    lines.push('Рядом заметная конкуренция: перед решением нужно проверить похожие объекты, цены и загрузку вручную.');
+  } else if (competition === 'medium') {
+    lines.push('Конкуренция есть: итоговая стратегия зависит от качества объекта, цены и каналов продаж.');
+  }
+
+  if (env?.concernLevel === 'high' || env?.concernLevel === 'elevated') {
+    lines.push(env.environmentNarrativeRu || 'Окружение требует ручной проверки: шум, доступ, дом и ближайшая среда могут влиять на спрос.');
+  }
+
+  if (analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
+    lines.push('Данных карты недостаточно для уверенного вывода: лучше повторить расчёт или проверить адрес вручную.');
+  }
+
+  lines.push('Это предварительный общий вывод. Подробная экономика, конкуренция и сценарии запуска доступны только в полном отчёте.');
+
+  return uniqueNonEmpty(lines, 4);
+}
+
+function buildFreeSummarySnapshot(args: {
+  address: string;
+  metadata: LocationReportResultMetadata;
+  analysis: LocationAnalysis;
+}): LocationFreeReportSummarySnapshot {
+  const vm = buildFreeLocationReportViewModel({
+    address: args.address,
+    calculatedAt: args.metadata.calculatedAt,
+    dataFreshness: args.metadata.dataFreshness.summaryRu,
+    analysis: args.analysis,
+    decision: args.analysis.locationDecision ?? null,
+  });
+  const keyFactors = vm.topEvidenceBullets.length
+    ? vm.topEvidenceBullets.map(b => {
+      const reason = b.shortReason ? ` — ${b.shortReason}` : '';
+      return `${b.name} · ${b.category} · ${b.distanceLabel}${reason}`;
+    })
+    : (args.analysis.scoringTrace?.publicBullets ?? []).slice(0, 5);
+
+  return {
+    conclusionRu: vm.shortVerdict,
+    publicScore: vm.publicScore,
+    keyFactorsRu: uniqueNonEmpty(keyFactors, 5),
+    risksAndLimitsRu: buildFreeRisksAndLimitsRu(args.analysis),
+    recommendationRu: vm.shortRecommendation,
+  };
+}
+
 function levelRu(level: 'none' | 'weak' | 'moderate' | 'strong'): string {
   if (level === 'strong') return 'сильный';
   if (level === 'moderate') return 'средний';
@@ -687,6 +771,14 @@ export function buildLocationStandaloneReport(args: {
     calculatedAtIso: generatedAtIso,
     env: args.metadataEnv,
   });
+  const reportEnvelope = {
+    inputAddress: metadata.inputAddress,
+    normalizedAddress: metadata.normalizedAddress,
+    calculatedAt: metadata.calculatedAt,
+    status: 'ready' as const,
+    dataFreshness: metadata.dataFreshness,
+    pdfStatus: 'ready' as const,
+  };
 
   if (reportMode === 'free') {
     const drivers =
@@ -696,8 +788,10 @@ export function buildLocationStandaloneReport(args: {
     const free_brief = buildFreeBriefRu({ verdict: reportVerdict });
     return {
       version: 'v1',
+      ...reportEnvelope,
       reportMode: 'free',
       metadata,
+      freeSummary: buildFreeSummarySnapshot({ address: args.address, metadata, analysis }),
       free_brief,
       reportStructure: buildLocationReportStructureViewModel('free'),
       address: args.address,
@@ -766,8 +860,14 @@ export function buildLocationStandaloneReport(args: {
 
   return {
     version: 'v1',
+    ...reportEnvelope,
     reportMode: 'paid',
     metadata,
+    paidSections: paidLocationReportStructureSections.map(({ id, titleRu, summaryRu }) => ({
+      id,
+      titleRu,
+      summaryRu,
+    })),
     reportStructure: buildLocationReportStructureViewModel('paid'),
     strReport: buildStrLocationReportProjection(analysis),
     address: args.address,

@@ -119,6 +119,10 @@ export function ReportsPageClient() {
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && typeof data?.loginUrl === 'string') {
+        router.push(data.loginUrl);
+        return;
+      }
       if (!res.ok || !data?.requestId) throw new Error('request_failed');
       const requestId = String(data.requestId);
       const next: PendingLocationReportContext = {

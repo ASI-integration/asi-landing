@@ -2303,6 +2303,8 @@ function ASIPanel({
   const freeEvidenceLines = (freeReport?.topEvidenceBullets ?? []).map(formatFreeEvidenceLine);
   const freeReportCalculatedAt = freeReport?.calculatedAt ?? null;
   const freeReportDataFreshness = freeReport?.dataFreshness ?? null;
+  const savedFreeReportId = optionalMetaString(meta, 'reportId');
+  const savedFreeReportPermalink = optionalMetaString(meta, 'permalink');
   const hasFreeReportMeta = Boolean(freeReportCalculatedAt || freeReportDataFreshness);
 
   return (
@@ -2495,6 +2497,11 @@ function ASIPanel({
                 {freeReportDataFreshness ? `Данные: ${freeReportDataFreshness}` : null}
               </p>
             ) : null}
+            {savedFreeReportId ? (
+              <p className="mt-2 text-[12px] leading-snug text-slate-500">
+                Отчёт сохранён: {savedFreeReportId}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
             <p className="text-[12px] uppercase tracking-[0.16em] text-slate-500">
@@ -2540,6 +2547,14 @@ function ASIPanel({
                 <p className="text-[12px] text-amber-400/90 leading-snug">
                   Не удалось запустить отчёт: {fullReportErr}
                 </p>
+              ) : null}
+              {savedFreeReportPermalink ? (
+                <a
+                  href={savedFreeReportPermalink}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-700 px-5 py-3 text-[14px] font-semibold text-slate-100 transition-colors hover:border-slate-500 sm:w-auto"
+                >
+                  Открыть сохранённый отчёт
+                </a>
               ) : null}
             </div>
           </div>

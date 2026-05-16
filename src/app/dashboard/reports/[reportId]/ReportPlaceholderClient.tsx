@@ -163,7 +163,7 @@ export function ReportPlaceholderClient({ reportId }: { reportId: string }) {
         </Link>
         {report?.paidReportId ? (
           <Link
-            href={`/ru/location-report/${encodeURIComponent(report.paidReportId)}`}
+            href={`/dashboard/reports/${encodeURIComponent(report.paidReportId)}`}
             className="inline-flex min-h-[48px] items-center justify-center rounded-lg border border-slate-300 px-5 py-3 text-base font-semibold text-slate-900 transition-colors hover:bg-slate-50"
           >
             Открыть готовый отчёт

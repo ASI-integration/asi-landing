@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { LocationStandaloneReport, LocationStandaloneReportSectionId } from '@/lib/location';
 import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from '@/lib/location/report-contract';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
+import { buildDashboardReportRequestHref } from '@/lib/location/pending-location-report';
 
 function urbanForecastLevelRu(level: 'low' | 'moderate' | 'high' | 'very_high'): string {
   if (level === 'low') return 'низкий';
@@ -138,10 +139,13 @@ function Toc({ items }: { items: Array<{ id: string; label: string }> }) {
 
 export function LocationStandaloneFullReport({
   report,
+  reportId,
 }: {
   report: LocationStandaloneReport;
+  reportId?: string;
 }) {
   const isFreePreview = report.reportMode === 'free';
+  const persistedReportId = reportId ?? report.reportId;
   const reportStructure = report.reportStructure;
   const primaryCtaLabel =
     reportStructure?.cta.primaryLabel ??
@@ -155,6 +159,19 @@ export function LocationStandaloneFullReport({
   const freeBrief = report.free_brief ?? (isFreePreview ? summary?.verdict ?? null : null);
   const strReport = !isFreePreview ? report.strReport : undefined;
   const urbanForecast = !isFreePreview ? report.unifiedReport?.urbanDevelopmentForecastScore : undefined;
+  const detailedReportHref =
+    isFreePreview
+      ? buildDashboardReportRequestHref({
+        address: report.address,
+        ...(persistedReportId ? { freeReportId: persistedReportId } : {}),
+        ...(persistedReportId ? { freeReportPermalink: `/ru/location-report/${encodeURIComponent(persistedReportId)}` } : {}),
+        mode: 'residential',
+        createdAt: report.metadata?.calculatedAt ?? report.generated_at_iso,
+      })
+      : LOCATION_REPORT_PRODUCT_PATH;
+  const printHref = persistedReportId
+    ? `/ru/location-report/${encodeURIComponent(persistedReportId)}/print`
+    : null;
   const urbanForecastNoLiveData =
     urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignals.length === 0;
 
@@ -240,6 +257,14 @@ export function LocationStandaloneFullReport({
             >
               Печать / PDF
             </button>
+            {printHref ? (
+              <Link
+                href={printHref}
+                className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors text-sm"
+              >
+                PDF-версия
+              </Link>
+            ) : null}
             <a
               href="#next-step"
               className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
@@ -307,23 +332,11 @@ export function LocationStandaloneFullReport({
               ) : (
                 <div className="rounded-2xl border border-indigo-500/25 bg-indigo-950/15 p-5">
                   <p className="text-[16px] sm:text-[17px] font-semibold text-slate-100 leading-snug">
-                    {reportStructure?.paidPreviewSections?.length
-                      ? 'Подробный отчёт показывает, что относится к полной платной аналитике.'
-                      : 'Полный отчёт добавляет разбор спроса, конкуренции и сценариев монетизации.'}
+                    Подробный отчёт доступен в личном кабинете.
                   </p>
-                  {reportStructure?.paidPreviewSections?.length ? (
-                    <ul className="mt-3 space-y-1.5">
-                      {reportStructure.paidPreviewSections.slice(0, 5).map(section => (
-                        <li key={section.id} className="flex gap-2 text-sm leading-snug text-slate-300">
-                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-300" />
-                          <span>{section.titleRu}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                   <div className="print-hide mt-4">
                     <Link
-                      href={LOCATION_REPORT_PRODUCT_PATH}
+                      href={detailedReportHref}
                       className="inline-flex items-center justify-center w-full sm:w-auto px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold text-sm transition-colors"
                     >
                       {primaryCtaLabel}
@@ -341,6 +354,9 @@ export function LocationStandaloneFullReport({
                 <p className="tabular-nums text-slate-300">
                   Расчёт: {calculatedAtDisplay ?? '—'}
                 </p>
+                {persistedReportId ? (
+                  <p className="text-xs text-slate-600 leading-snug">Номер отчёта: {persistedReportId}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -391,6 +407,22 @@ export function LocationStandaloneFullReport({
                     <p className="mt-3 text-slate-400">Нет данных по факторам спроса.</p>
                   )}
                 </div>
+
+                {isFreePreview && report.freeSummary?.risksAndLimitsRu?.length ? (
+                  <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                    <p className="text-[17px] sm:text-[18px] font-semibold text-slate-100 leading-snug">
+                      Риски и ограничения
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {report.freeSummary.risksAndLimitsRu.slice(0, 4).map((line, i) => (
+                        <li key={i} className="flex gap-3">
+                          <span className="mt-2 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                          <span className="text-[15px] sm:text-[16px] text-slate-200 leading-relaxed">{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
@@ -985,20 +1017,6 @@ export function LocationStandaloneFullReport({
                         </li>
                       </ul>
                     </div>
-                  ) : reportStructure?.paidPreviewSections?.length ? (
-                    <div className="mt-5">
-                      <p className="text-xs font-semibold text-slate-200 uppercase tracking-[0.18em]">
-                        В подробный отчёт входит
-                      </p>
-                      <ul className="mt-3 grid gap-2 text-sm text-slate-200 sm:grid-cols-2">
-                        {reportStructure.paidPreviewSections.map(section => (
-                          <li key={section.id} className="flex gap-3">
-                            <span className="mt-2 w-1.5 h-1.5 rounded-full bg-white/70 shrink-0" />
-                            <span>{section.titleRu}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
                   ) : null}
                 </div>
 
@@ -1012,7 +1030,7 @@ export function LocationStandaloneFullReport({
                     <div className="print-hide mt-5">
                       <div className="grid gap-2">
                         <Link
-                          href={LOCATION_REPORT_PRODUCT_PATH}
+                          href={detailedReportHref}
                           className="inline-flex items-center justify-center w-full px-7 py-4 rounded-xl bg-white text-slate-900 font-bold hover:bg-slate-100 transition-colors shadow-lg"
                         >
                           {primaryCtaLabel}
