@@ -11,7 +11,7 @@ import {
 
 const STATUS_LABELS: Record<PendingLocationReportStatus, string> = {
   payment_pending: 'Ожидает оплаты',
-  processing: 'Готовим отчёт',
+  processing: 'Генерируется',
   ready: 'Готов',
   failed: 'Ошибка, попробовать снова',
 };

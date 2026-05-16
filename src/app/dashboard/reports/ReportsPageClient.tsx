@@ -13,10 +13,13 @@ import {
 
 const STATUS_LABELS: Record<PendingLocationReportStatus, string> = {
   payment_pending: 'Ожидает оплаты',
-  processing: 'Готовим отчёт',
+  processing: 'Генерируется',
   ready: 'Готов',
   failed: 'Ошибка, попробовать снова',
 };
+
+const FREE_REPORT_HREF = '/ru/location-analysis?mode=residential#location-check';
+const PAID_REPORT_START_HREF = '/ru/location-analysis?mode=residential#location-check';
 
 function readStoredPendingReport(): PendingLocationReportContext | null {
   try {
@@ -47,6 +50,22 @@ function mapApiStatus(status: unknown): PendingLocationReportStatus {
   if (status === 'completed') return 'ready';
   if (status === 'failed') return 'failed';
   return 'payment_pending';
+}
+
+function savedReportType(report: PendingLocationReportContext): 'Бесплатный' | 'Подробный' {
+  return report.requestId || report.paidReportId ? 'Подробный' : 'Бесплатный';
+}
+
+function savedReportStatus(report: PendingLocationReportContext): string {
+  if (!report.requestId && !report.paidReportId) return 'Готов';
+  return STATUS_LABELS[report.status ?? 'payment_pending'];
+}
+
+function savedReportHref(report: PendingLocationReportContext): string {
+  if (report.paidReportId) return `/dashboard/reports/${encodeURIComponent(report.paidReportId)}`;
+  if (report.requestId) return `/dashboard/reports/${encodeURIComponent(report.requestId)}`;
+  if (report.freeReportPermalink) return report.freeReportPermalink;
+  return FREE_REPORT_HREF;
 }
 
 export function ReportsPageClient() {
@@ -145,79 +164,94 @@ export function ReportsPageClient() {
   }
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="max-w-6xl space-y-8">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Мои отчёты</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Отчёты по объектам</h1>
         <p className="mt-2 text-base leading-relaxed text-slate-600">
-          Подробный отчёт доступен в личном кабинете. После оплаты отчёт появится в разделе Мои отчёты.
+          Сначала можно получить бесплатный краткий отчёт по адресу. Подробный отчёт доступен после оплаты и генерации.
         </p>
       </div>
 
-      {pendingReport ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Отчёт по локации</p>
-              <h2 className="mt-2 text-2xl font-bold leading-snug text-slate-900">{pendingReport.address}</h2>
-              <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
-                <span className="rounded-full bg-slate-100 px-3 py-1">Жилая недвижимость</span>
-                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">
-                  {STATUS_LABELS[pendingReport.status ?? 'payment_pending']}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1">
-                  {formatDateRu(pendingReport.createdAt)}
-                </span>
-              </div>
-              <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600">
-                Детальный расчёт появится после оплаты и генерации отчёта. Сейчас мы сохраняем адрес и контекст бесплатной проверки.
-              </p>
-              {pendingReport.requestId ? (
-                <p className="mt-3 text-sm text-slate-500">Номер заявки: {pendingReport.requestId}</p>
-              ) : null}
-              {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-            </div>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-slate-900">Бесплатный отчёт по локации</h2>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">
+              Быстрый общий вывод по адресу: спрос, риски, сильные объекты рядом и первичная оценка локации.
+            </p>
+          </div>
+          <Link
+            href={FREE_REPORT_HREF}
+            className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 sm:w-fit"
+          >
+            Получить бесплатный отчёт
+          </Link>
+        </article>
 
-            <div className="flex w-full flex-col gap-3 sm:w-auto">
-              {!pendingReport.requestId || pendingReport.status === 'failed' ? (
-                <button
-                  type="button"
-                  onClick={orderDetailedReport}
-                  disabled={busy}
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {busy ? 'Создаём заявку…' : 'Заказать подробный отчёт'}
-                </button>
-              ) : (
-                <Link
-                  href={`/dashboard/reports/${encodeURIComponent(pendingReport.requestId)}`}
-                  className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800"
-                >
-                  Открыть отчёт
-                </Link>
-              )}
+        <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-slate-900">Подробный платный отчёт</h2>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">
+              Расширенный разбор объекта: спрос, конкуренция, транспорт, окружение, риски, рекомендации по цене и запуску.
+            </p>
+            {pendingReport && !pendingReport.requestId ? (
+              <p className="mt-4 text-sm leading-relaxed text-slate-500">
+                Можно продолжить с адресом: {pendingReport.address}
+              </p>
+            ) : null}
+            {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+          </div>
+          {pendingReport && (!pendingReport.requestId || pendingReport.status === 'failed') ? (
+            <button
+              type="button"
+              onClick={orderDetailedReport}
+              disabled={busy}
+              className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+            >
+              {busy ? 'Создаём заявку…' : 'Заказать подробный отчёт'}
+            </button>
+          ) : (
+            <Link
+              href={PAID_REPORT_START_HREF}
+              className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 sm:w-fit"
+            >
+              Заказать подробный отчёт
+            </Link>
+          )}
+        </article>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900">Мои сохранённые отчёты</h2>
+        {pendingReport ? (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_140px_150px_auto] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold text-slate-900">{pendingReport.address}</p>
+                <p className="mt-1 text-sm text-slate-500">{formatDateRu(pendingReport.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Тип</p>
+                <p className="mt-1 text-sm font-medium text-slate-900">{savedReportType(pendingReport)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Статус</p>
+                <p className="mt-1 text-sm font-medium text-slate-900">{savedReportStatus(pendingReport)}</p>
+              </div>
               <Link
-                href="/ru/location-analysis?mode=residential#location-check"
+                href={savedReportHref(pendingReport)}
                 className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
               >
-                Оценить другой адрес
+                Открыть
               </Link>
             </div>
           </div>
-        </section>
-      ) : (
-        <section className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-          <h2 className="text-xl font-bold text-slate-900">Здесь появятся ваши отчёты</h2>
-          <p className="mx-auto mt-2 max-w-xl text-base leading-relaxed text-slate-600">
-            Сначала получите общий отчёт по локации, затем запросите подробный отчёт по выбранному адресу.
+        ) : (
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-base text-slate-600">
+            Пока нет сохранённых отчётов.
           </p>
-          <Link
-            href="/ru/location-analysis?mode=residential#location-check"
-            className="mt-6 inline-flex min-h-[48px] items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800"
-          >
-            Оценить объект по адресу
-          </Link>
-        </section>
-      )}
+        )}
+      </section>
     </div>
   );
 }
