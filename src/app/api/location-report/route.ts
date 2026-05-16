@@ -1,9 +1,8 @@
 /**
  * POST /api/location-report
  *
- * Paywalled wrapper around the existing location scoring output.
- * Core calculation is unchanged: we compute the full result and then
- * trim fields for preview mode.
+ * Location report wrapper around the existing location scoring output.
+ * Free mode now persists a generated report and returns a stable reportId.
  *
  * TODO(location-decision-kernel): optionally attach `attachLocationDecisionToAnalysis` on the JSON
  * payload so previews reuse the same Decision spine as `/api/location-demo-analyze`.
@@ -16,7 +15,9 @@
  *     address: string;
  *     lat: number;
  *     lon: number;
- *     report: { is_preview, ... }  // preview or full
+ *     reportId?: string;
+ *     permalink?: string;
+ *     report: { ... }  // saved free report or legacy paid/full payload
  *   }
  */
 
@@ -26,6 +27,7 @@ import type { AddressMarket } from '@/lib/location/address-providers/types';
 import { normalizeAddress, cacheGetByAddress, cacheSet } from '@/lib/location/cache';
 import { fetchOsmData, buildAnalysis, wrapLocationReport, applyLocationDataIntegrityGate } from '@/lib/location';
 import { buildLocationReportResultMetadata } from '@/lib/location/report-result-metadata';
+import { generateFreeLocationReport } from '@/lib/location/location-report-engine';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -56,6 +58,35 @@ export async function POST(req: NextRequest) {
     if (body.locale !== undefined) market = parseMarket(body.locale);
   } catch {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 });
+  }
+
+  if (!isPaid) {
+    try {
+      const generated = await generateFreeLocationReport(rawAddress, {
+        locale: market === 'ru' ? 'ru' : 'en',
+        market,
+      });
+      return NextResponse.json({
+        reportId: generated.reportId,
+        reportMode: 'free',
+        permalink: generated.permalink,
+        address: generated.report.normalizedAddress ?? generated.report.inputAddress,
+        lat: generated.lat,
+        lon: generated.lon,
+        report: generated.report,
+        freeReport: generated.report,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'address_not_found') {
+        return NextResponse.json(
+          { error: 'Адрес не найден. Уточните название или добавьте город.' },
+          { status: 404 },
+        );
+      }
+      console.error(`[location-report] free generation failed address="${rawAddress}": ${msg}`);
+      return NextResponse.json({ error: 'analysis_failed', detail: msg }, { status: 502 });
+    }
   }
 
   // ── Resolve coords ─────────────────────────────────────────────────────────

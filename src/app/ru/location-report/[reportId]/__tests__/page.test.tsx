@@ -86,6 +86,30 @@ describe('/ru/location-report/[reportId]', () => {
     expect(html).toContain('free');
   });
 
+  it('renders print page content from the same saved free report data', async () => {
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'report-1',
+      locale: 'ru',
+      address: freeReport.address,
+      report_version: freeReport.version,
+      report: freeReport,
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    const { default: PrintPage } = await import('../print/page');
+
+    const element = await PrintPage({ params: Promise.resolve({ reportId: 'report-1' }) });
+    const html = renderToStaticMarkup(element);
+
+    expect(mockGetStandaloneReportById).toHaveBeenCalledWith('report-1');
+    expect(html).toContain('Бесплатный отчёт');
+    expect(html).toContain('Невский проспект, 88');
+    expect(html).toContain('Краткий вывод готов.');
+    expect(html).toContain('Метро рядом');
+    expect(html).toContain('Проверить ограничения вручную');
+    expect(html).not.toContain('will appear after payment');
+    expect(html).not.toContain('появится после оплаты');
+  });
+
   it('shows a clean fallback when the saved report is missing', async () => {
     mockGetStandaloneReportById.mockResolvedValue(null);
     const { default: Page } = await import('../page');

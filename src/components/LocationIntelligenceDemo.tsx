@@ -2194,7 +2194,7 @@ function ASIPanel({
         ...(optionalMetaString(meta, 'permalink') ? { freeReportPermalink: optionalMetaString(meta, 'permalink') } : {}),
         mode: 'residential',
         createdAt: freeReport?.calculatedAt ?? meta?.updatedAt ?? new Date().toISOString(),
-        status: 'payment_pending',
+        status: 'ready',
       };
       writePendingLocationReportContext(context);
       router.push(buildDashboardReportRequestHref(context));

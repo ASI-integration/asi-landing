@@ -1,4 +1,12 @@
 import type { PersistedStandaloneReportEntity } from './standalone-report-store';
+import { createStandaloneReport, getStandaloneReportById } from './standalone-report-store';
+import { geocodePlainAddressForMarket } from './address-providers/geocode-pipeline';
+import type { AddressMarket } from './address-providers/types';
+import { applyLocationDataIntegrityGate } from './location-data-integrity';
+import { buildAnalysis } from './gravity-scoring';
+import { buildLocationReportPermalink } from './report-state';
+import { fetchOsmData } from './overpass';
+import { cacheGetByAddress, cacheSet } from './cache';
 import {
   buildLocationReportStructureViewModel,
   paidLocationReportStructureSections,
@@ -17,6 +25,11 @@ import type {
   LocationStandaloneReport,
   PersistableLocationReport,
 } from './standalone-report';
+import { buildLocationStandaloneReport } from './standalone-report';
+
+export type FreeLocationReportNearbyObjectSummary = {
+  summaryRu: string;
+};
 
 export type GeneratedLocationReportMode = 'free' | 'paid';
 
@@ -28,14 +41,28 @@ export type GeneratedFreeLocationReportData = {
   calculatedAt: string;
   status: LocationGeneratedReportStatus;
   score: number | null;
+  publicScore: number | null;
+  shortConclusion: string;
   verdictSummary: string;
+  keyDemandDrivers: string[];
   evidenceBullets: string[];
+  mainRisks: string[];
   risksAndLimitsRu: string[];
+  nearbyStrongObjects: FreeLocationReportNearbyObjectSummary[];
   recommendationRu: string;
   dataFreshness?: LocationReportDataFreshness;
   sourceStatus?: LocationReportSourceStatus;
   pdfUrl?: string;
   pdfStatus: LocationGeneratedReportPdfStatus;
+};
+
+export type GenerateFreeLocationReportResult = {
+  reportId: string;
+  permalink: string;
+  lat: number;
+  lon: number;
+  report: GeneratedFreeLocationReportData;
+  persistedReport: LocationStandaloneReport;
 };
 
 export type GeneratedLocationReportDocument = {
@@ -96,6 +123,97 @@ function commercialSummary(report: LocationCommercialReport): LocationFreeReport
 function reportMode(report: PersistableLocationReport): GeneratedLocationReportMode {
   if (report.version === 'v1') return report.reportMode ?? 'paid';
   return 'paid';
+}
+
+function sourceLabel(usedFallback: boolean | undefined): string {
+  return usedFallback ? 'osm-overpass+fallback' : 'osm-overpass';
+}
+
+function nearbyObjectSummaries(factors: string[]): FreeLocationReportNearbyObjectSummary[] {
+  return factors.slice(0, 5).map(summaryRu => ({ summaryRu }));
+}
+
+export async function generateFreeLocationReport(
+  inputAddress: string,
+  options: { locale?: 'ru' | 'en'; market?: AddressMarket } = {},
+): Promise<GenerateFreeLocationReportResult> {
+  const rawAddress = cleanString(inputAddress);
+  if (!rawAddress) throw new Error('address_required');
+
+  const locale = options.locale ?? 'ru';
+  const market = options.market ?? (locale === 'ru' ? 'ru' : 'en');
+  const cachedByAddr = await cacheGetByAddress(rawAddress);
+  let lat: number | null = cachedByAddr?.entry.lat ?? null;
+  let lon: number | null = cachedByAddr?.entry.lon ?? null;
+  let analysis = cachedByAddr?.entry.analysis ?? null;
+  let rawOsmElements: Awaited<ReturnType<typeof fetchOsmData>>['elements'] | undefined;
+
+  if (lat == null || lon == null) {
+    const { result } = await geocodePlainAddressForMarket(market, rawAddress);
+    if (!result) throw new Error('address_not_found');
+    lat = result.lat;
+    lon = result.lon;
+  }
+
+  if (!analysis) {
+    const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
+    rawOsmElements = elements;
+    analysis = buildAnalysis(elements, lat, lon);
+    applyLocationDataIntegrityGate(analysis, {
+      lat,
+      lon,
+      rawObjectsCount: elements.length,
+      hadProviderFailure,
+      usedFallbackQuery,
+      cacheServed: false,
+    });
+
+    try {
+      if (!analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
+        await cacheSet(lat, lon, analysis, sourceLabel(usedFallbackQuery), elements.length, rawAddress);
+      }
+    } catch {
+      // Cache is best-effort; the saved report is the durable output for this flow.
+    }
+  } else {
+    applyLocationDataIntegrityGate(analysis, {
+      lat,
+      lon,
+      rawObjectsCount: cachedByAddr?.entry.elementsCount ?? 0,
+      hadProviderFailure: false,
+      usedFallbackQuery: cachedByAddr?.entry.source.includes('fallback'),
+      cacheServed: true,
+    });
+  }
+
+  if (!analysis.locationScore) throw new Error('locationScore_unavailable');
+
+  const report = buildLocationStandaloneReport({
+    address: rawAddress,
+    inputAddress: rawAddress,
+    ...(rawOsmElements ? { rawOsmElements } : {}),
+    analysis,
+    verdict:
+      analysis.locationDecision?.publicSummary?.audienceVerdictRu ??
+      analysis.conclusion ??
+      'Предварительный вывод готов.',
+    market: locale === 'ru' ? 'RU' : 'INTERNATIONAL',
+    reportMode: 'free',
+  });
+  const { reportId } = await createStandaloneReport({ locale, report });
+  const entity = await getStandaloneReportById(reportId);
+  if (!entity) throw new Error('saved_report_not_found');
+  const doc = buildGeneratedLocationReportDocument(entity);
+  if (!doc.freeReport) throw new Error('saved_free_report_unavailable');
+
+  return {
+    reportId,
+    permalink: buildLocationReportPermalink({ reportId, locale }),
+    lat,
+    lon,
+    report: doc.freeReport,
+    persistedReport: entity.report as LocationStandaloneReport,
+  };
 }
 
 export function buildGeneratedLocationReportDocument(
@@ -159,6 +277,11 @@ export function buildGeneratedLocationReportDocument(
       ...(sourceStatus ? { sourceStatus } : {}),
       pdfUrl,
       pdfStatus,
+      publicScore: freeSummary.publicScore,
+      shortConclusion: freeSummary.conclusionRu,
+      keyDemandDrivers: freeSummary.keyFactorsRu,
+      mainRisks: freeSummary.risksAndLimitsRu,
+      nearbyStrongObjects: nearbyObjectSummaries(freeSummary.keyFactorsRu),
     }
     : undefined;
 
