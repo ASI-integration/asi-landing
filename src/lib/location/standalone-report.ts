@@ -25,6 +25,7 @@ import {
   type LocationReportStructureViewModel,
 } from './location-report-structure';
 import { buildFreeLocationReportViewModel } from './free-report-renderer';
+import { buildFreeReportInterpretedContent } from './free-report-content';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -427,30 +428,6 @@ function buildFreeBriefRu(args: { verdict: string }): string {
   return `${args.verdict} Это быстрая предварительная оценка по открытым данным.`.replace(/\s+/g, ' ').trim();
 }
 
-function buildFreeRisksAndLimitsRu(analysis: LocationAnalysis): string[] {
-  const lines: string[] = [];
-  const competition = analysis.gravityExplanation.competitorPressureLevel;
-  const env = analysis.neighborhoodEnvironment;
-
-  if (competition === 'high') {
-    lines.push('Рядом заметная конкуренция: перед решением нужно проверить похожие объекты, цены и загрузку вручную.');
-  } else if (competition === 'medium') {
-    lines.push('Конкуренция есть: итоговая стратегия зависит от качества объекта, цены и каналов продаж.');
-  }
-
-  if (env?.concernLevel === 'high' || env?.concernLevel === 'elevated') {
-    lines.push(env.environmentNarrativeRu || 'Окружение требует ручной проверки: шум, доступ, дом и ближайшая среда могут влиять на спрос.');
-  }
-
-  if (analysis.analysisIntegrity?.scoreBlockedDueToIncompleteData) {
-    lines.push('Данных карты недостаточно для уверенного вывода: лучше повторить расчёт или проверить адрес вручную.');
-  }
-
-  lines.push('Это предварительный общий вывод. Подробная экономика, конкуренция и сценарии запуска доступны только в полном отчёте.');
-
-  return uniqueNonEmpty(lines, 4);
-}
-
 function buildFreeSummarySnapshot(args: {
   address: string;
   metadata: LocationReportResultMetadata;
@@ -469,13 +446,17 @@ function buildFreeSummarySnapshot(args: {
       return `${b.name} · ${b.category} · ${b.distanceLabel}${reason}`;
     })
     : (args.analysis.scoringTrace?.publicBullets ?? []).slice(0, 5);
+  const interpreted = buildFreeReportInterpretedContent({
+    evidenceBullets: keyFactors,
+    score: vm.publicScore,
+  });
 
   return {
     conclusionRu: vm.shortVerdict,
     publicScore: vm.publicScore,
-    keyFactorsRu: uniqueNonEmpty(keyFactors, 5),
-    risksAndLimitsRu: buildFreeRisksAndLimitsRu(args.analysis),
-    recommendationRu: vm.shortRecommendation,
+    keyFactorsRu: uniqueNonEmpty(interpreted.demandSignalsRu, 5),
+    risksAndLimitsRu: interpreted.risksAndLimitationsRu,
+    recommendationRu: interpreted.recommendationRu,
   };
 }
 

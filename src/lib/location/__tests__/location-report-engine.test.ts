@@ -90,7 +90,11 @@ describe('location report generation engine', () => {
       calculatedAt: '2026-05-16T10:00:00.000Z',
       score: 72,
       verdictSummary: 'Локация подходит как первый фильтр.',
-      evidenceBullets: ['Метро рядом', 'Смешанный спрос', 'Сервисы в пешей доступности'],
+      evidenceBullets: [
+        'Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.',
+        'Окружение даёт первичные сигналы спроса: адрес стоит проверять вместе с конкуренцией и экономикой.',
+        'Повседневная инфраструктура рядом: гостям проще закрывать бытовые задачи без долгих поездок.',
+      ],
       dataFreshness: {
         currentLocationAsOfIso: '2026-05-16T10:00:00.000Z',
         summaryRu: 'Данные сохранены на момент расчёта.',
@@ -118,8 +122,9 @@ describe('location report generation engine', () => {
 
     expect(html).toContain('Бесплатный общий отчёт');
     expect(html).toContain('Невский проспект, 88');
-    expect(html).toContain('Метро рядом');
-    expect(html).toContain('Проверить конкурентов вручную');
+    expect(html).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
+    expect(html).toContain('Конкуренция рядом не разобрана подробно.');
+    expect(html).toContain('Подробная конкуренция');
     expect(html).toContain('Оценка: 72 / 100');
     expect(html).not.toContain('unifiedReport');
     expect(html).not.toContain('Score');

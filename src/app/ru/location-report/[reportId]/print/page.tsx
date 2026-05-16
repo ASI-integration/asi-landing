@@ -6,6 +6,7 @@ import {
   buildGeneratedLocationReportDocument,
   type GeneratedLocationReportDocument,
 } from '@/lib/location/location-report-engine';
+import { buildFreeReportInterpretedContent } from '@/lib/location/free-report-content';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,12 +42,20 @@ function MissingReportPrintFallback() {
 }
 
 function freeValues(doc: GeneratedLocationReportDocument) {
+  const rawEvidenceBullets = doc.freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu;
+  const score = doc.freeReport?.score ?? doc.freeSummary.publicScore;
+  const content = buildFreeReportInterpretedContent({
+    evidenceBullets: rawEvidenceBullets,
+    score,
+  });
+
   return {
     verdictSummary: doc.freeReport?.verdictSummary ?? doc.freeSummary.conclusionRu,
-    score: doc.freeReport?.score ?? doc.freeSummary.publicScore,
-    evidenceBullets: doc.freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu,
-    risksAndLimitsRu: doc.freeReport?.risksAndLimitsRu ?? doc.freeSummary.risksAndLimitsRu,
-    recommendationRu: doc.freeReport?.recommendationRu ?? doc.freeSummary.recommendationRu,
+    score,
+    evidenceBullets: content.demandSignalsRu,
+    risksAndLimitsRu: content.risksAndLimitationsRu,
+    recommendationRu: content.recommendationRu,
+    content,
   };
 }
 
@@ -95,6 +104,7 @@ export default async function RuLocationReportPrintPage(
         <section className="mt-7">
           <h2 className="text-xl font-bold">Вывод</h2>
           <p className="mt-2 text-base leading-relaxed">{free.verdictSummary}</p>
+          <p className="mt-2 text-base leading-relaxed">{free.content.summaryReasonRu}</p>
           {free.score != null ? (
             <p className="mt-3 inline-flex rounded-lg border border-slate-300 px-3 py-1 text-sm font-semibold">
               Оценка: {free.score} / 100
@@ -103,7 +113,7 @@ export default async function RuLocationReportPrintPage(
         </section>
 
         <section className="mt-7">
-          <h2 className="text-xl font-bold">Ключевые факторы</h2>
+          <h2 className="text-xl font-bold">Сигналы спроса</h2>
           <ul className="mt-3 space-y-2">
             {free.evidenceBullets.map(item => <li key={item}>{item}</li>)}
           </ul>
@@ -117,7 +127,23 @@ export default async function RuLocationReportPrintPage(
         </section>
 
         <section className="mt-7">
-          <h2 className="text-xl font-bold">Рекомендации</h2>
+          <h2 className="text-xl font-bold">Дополнительный потенциал</h2>
+          <p className="mt-2 text-base font-semibold leading-relaxed">{free.content.commercialPreview.leadRu}</p>
+          <ul className="mt-3 space-y-2">
+            {free.content.commercialPreview.itemsRu.map(item => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+
+        <section className="mt-7">
+          <h2 className="text-xl font-bold">Что входит в подробный отчёт</h2>
+          <ul className="mt-3 space-y-2">
+            {free.content.paidPreviewItemsRu.map(item => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+
+        <section className="mt-7">
+          <h2 className="text-xl font-bold">{free.content.ctaTitleRu}</h2>
+          <p className="mt-2 text-base leading-relaxed">{free.content.ctaTextRu}</p>
           <p className="mt-2 text-base leading-relaxed">{free.recommendationRu}</p>
         </section>
 

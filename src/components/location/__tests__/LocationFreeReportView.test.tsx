@@ -47,16 +47,20 @@ describe('LocationFreeReportView', () => {
   it('renders normalized free report factors without duplicated POI/category fragments', () => {
     const html = renderToStaticMarkup(<LocationFreeReportView report={baseReport} />);
 
-    expect(html).toContain('Медицинские учреждения рядом: около 530 м');
-    expect(html).toContain('Метро в пешей доступности: около 830–940 м');
+    expect(html).toContain('Медицинские учреждения рядом: возможен спрос от пациентов, сопровождающих и командировочных.');
+    expect(html).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
+    expect(html).toContain('Ориентир по карте: около 830–940 м.');
     expect(html).not.toContain('Больница святого великомученика Георгия · Больницы и медкластеры');
+    expect(html).not.toContain('Метро · Метро');
     expect(html).not.toMatch(/·[^<]*·[^<]*—[^<]*—/);
   });
 
   it('does not repeat the same POI name or category inside a normalized bullet', () => {
     const bullets = normalizeFreeReportFactors([rawMedicalFactor]);
 
-    expect(bullets).toEqual(['Медицинские учреждения рядом: около 530 м']);
+    expect(bullets).toEqual([
+      'Медицинские учреждения рядом: возможен спрос от пациентов, сопровождающих и командировочных. Ориентир по карте: около 530 м.',
+    ]);
     expect(bullets[0]).not.toContain('Больница святого великомученика Георгия');
     expect(bullets[0]).not.toContain('Больницы и медкластеры');
   });
@@ -66,7 +70,17 @@ describe('LocationFreeReportView', () => {
 
     expect(html).not.toContain('Держите чистоту и тишину');
     expect(html).toContain(
-      'Бесплатный отчёт показывает общий потенциал локации. Подробный отчёт добавит экономику, конкурентов, риски, транспорт, окружение и рекомендации по запуску.',
+      'Для решения по объекту проверьте экономику, конкурентов и сценарий запуска в подробном отчёте.',
     );
+  });
+
+  it('shows paid report preview and commercial potential preview', () => {
+    const html = renderToStaticMarkup(<LocationFreeReportView report={baseReport} />);
+
+    expect(html).toContain('Дополнительный потенциал');
+    expect(html).toContain('Предварительный сигнал коммерческой активности');
+    expect(html).toContain('Подробная конкуренция');
+    expect(html).toContain('Расчёт доходности и цены');
+    expect(html).toContain('Коммерческий и пешеходный потенциал');
   });
 });

@@ -11,6 +11,7 @@ import {
   buildLocationReportStructureViewModel,
   paidLocationReportStructureSections,
 } from './location-report-structure';
+import { buildFreeReportInterpretedContent } from './free-report-content';
 import {
   normalizeReportAddress,
   type LocationReportDataFreshness,
@@ -260,6 +261,15 @@ export function buildGeneratedLocationReportDocument(
     ? (report.pdfUrl ?? `/api/location-report/${encodeURIComponent(entity.id)}/pdf`)
     : `/api/location-report/${encodeURIComponent(entity.id)}/pdf`;
   const pdfStatus = report.version === 'v1' ? (report.pdfStatus ?? 'ready') : 'ready';
+  const interpretedFreeContent = mode === 'free'
+    ? buildFreeReportInterpretedContent({
+      evidenceBullets: freeSummary.keyFactorsRu,
+      score: freeSummary.publicScore,
+    })
+    : null;
+  const publicEvidenceBullets = interpretedFreeContent?.demandSignalsRu ?? freeSummary.keyFactorsRu;
+  const publicRisksAndLimits = interpretedFreeContent?.risksAndLimitationsRu ?? freeSummary.risksAndLimitsRu;
+  const publicRecommendation = interpretedFreeContent?.recommendationRu ?? freeSummary.recommendationRu;
   const freeReport: GeneratedFreeLocationReportData | undefined = mode === 'free'
     ? {
       reportId: entity.id,
@@ -270,18 +280,18 @@ export function buildGeneratedLocationReportDocument(
       status,
       score: freeSummary.publicScore,
       verdictSummary: freeSummary.conclusionRu,
-      evidenceBullets: freeSummary.keyFactorsRu,
-      risksAndLimitsRu: freeSummary.risksAndLimitsRu,
-      recommendationRu: freeSummary.recommendationRu,
+      evidenceBullets: publicEvidenceBullets,
+      risksAndLimitsRu: publicRisksAndLimits,
+      recommendationRu: publicRecommendation,
       ...(dataFreshness ? { dataFreshness } : {}),
       ...(sourceStatus ? { sourceStatus } : {}),
       pdfUrl,
       pdfStatus,
       publicScore: freeSummary.publicScore,
       shortConclusion: freeSummary.conclusionRu,
-      keyDemandDrivers: freeSummary.keyFactorsRu,
-      mainRisks: freeSummary.risksAndLimitsRu,
-      nearbyStrongObjects: nearbyObjectSummaries(freeSummary.keyFactorsRu),
+      keyDemandDrivers: publicEvidenceBullets,
+      mainRisks: publicRisksAndLimits,
+      nearbyStrongObjects: nearbyObjectSummaries(publicEvidenceBullets),
     }
     : undefined;
 
@@ -325,9 +335,14 @@ export function buildLocationReportPrintHtml(doc: GeneratedLocationReportDocumen
   const freeReport = doc.freeReport;
   const verdictSummary = freeReport?.verdictSummary ?? doc.freeSummary.conclusionRu;
   const score = freeReport?.score ?? doc.freeSummary.publicScore;
-  const evidenceBullets = freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu;
-  const risksAndLimitsRu = freeReport?.risksAndLimitsRu ?? doc.freeSummary.risksAndLimitsRu;
-  const recommendationRu = freeReport?.recommendationRu ?? doc.freeSummary.recommendationRu;
+  const rawEvidenceBullets = freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu;
+  const content = buildFreeReportInterpretedContent({
+    evidenceBullets: rawEvidenceBullets,
+    score,
+  });
+  const evidenceBullets = content.demandSignalsRu;
+  const risksAndLimitsRu = content.risksAndLimitationsRu;
+  const recommendationRu = content.recommendationRu;
   const calculatedAt = new Date(doc.calculatedAt);
   const calculatedAtRu = Number.isFinite(calculatedAt.getTime())
     ? calculatedAt.toLocaleString('ru-RU', {
@@ -379,11 +394,12 @@ export function buildLocationReportPrintHtml(doc: GeneratedLocationReportDocumen
     <section>
       <h2>Вывод</h2>
       <p>${escapeHtml(verdictSummary)}</p>
+      <p>${escapeHtml(content.summaryReasonRu)}</p>
       ${score == null ? '' : `<p class="score">Оценка: ${escapeHtml(score)} / 100</p>`}
     </section>
 
     <section>
-      <h2>Ключевые факторы</h2>
+      <h2>Сигналы спроса</h2>
       ${listHtml(evidenceBullets)}
     </section>
 
@@ -393,7 +409,19 @@ export function buildLocationReportPrintHtml(doc: GeneratedLocationReportDocumen
     </section>
 
     <section>
-      <h2>Рекомендации</h2>
+      <h2>Дополнительный потенциал</h2>
+      <p><strong>${escapeHtml(content.commercialPreview.leadRu)}</strong></p>
+      ${listHtml(content.commercialPreview.itemsRu)}
+    </section>
+
+    <section>
+      <h2>Что входит в подробный отчёт</h2>
+      ${listHtml(content.paidPreviewItemsRu)}
+    </section>
+
+    <section>
+      <h2>${escapeHtml(content.ctaTitleRu)}</h2>
+      <p>${escapeHtml(content.ctaTextRu)}</p>
       <p>${escapeHtml(recommendationRu)}</p>
     </section>
 

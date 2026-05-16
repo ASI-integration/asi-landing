@@ -15,9 +15,13 @@ const report: LocationStandaloneReport = {
   freeSummary: {
     conclusionRu: 'Краткий вывод готов.',
     publicScore: 70,
-    keyFactorsRu: ['Метро рядом'],
+    keyFactorsRu: [
+      'Станция метро Площадь Мужества · Метро · 830 м — Станция метро Площадь Мужества — около 830 м',
+      'Станция метро Лесная · Метро · 940 м — Станция метро Лесная — около 940 м',
+      'Клиника рядом · Медицинские учреждения · 430 м',
+    ],
     risksAndLimitsRu: ['Проверить ограничения вручную'],
-    recommendationRu: 'Запросить подробный отчёт.',
+    recommendationRu: 'Держите чистоту и тишину в часы пик у клиник — это напрямую влияет на отзывы гостей.',
   },
   sections: [
     {
@@ -56,7 +60,14 @@ describe('GET /api/location-report/[reportId]/pdf', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     expect(text).toContain('Краткий вывод готов.');
-    expect(text).toContain('Метро рядом');
+    expect(text).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
+    expect(text).toContain('Ориентир по карте: около 830–940 м.');
+    expect(text).toContain('Медицинские учреждения рядом: возможен спрос от пациентов, сопровождающих и командировочных.');
+    expect(text).toContain('Подробная конкуренция');
+    expect(text).toContain('Коммерческий и пешеходный потенциал');
+    expect(text).not.toContain('Метро · Метро');
+    expect(text).not.toContain('Станция метро Площадь Мужества · Метро');
+    expect(text).not.toContain('Держите чистоту и тишину');
     expect(text).not.toContain('unifiedReport');
   });
 

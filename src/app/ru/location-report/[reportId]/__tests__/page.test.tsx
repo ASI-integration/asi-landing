@@ -106,8 +106,9 @@ describe('/ru/location-report/[reportId]', () => {
     expect(html).toContain('Бесплатный отчёт');
     expect(html).toContain('Невский проспект, 88');
     expect(html).toContain('Краткий вывод готов.');
-    expect(html).toContain('Метро рядом');
-    expect(html).toContain('Проверить ограничения вручную');
+    expect(html).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
+    expect(html).toContain('Конкуренция рядом не разобрана подробно.');
+    expect(html).toContain('Подробная конкуренция');
     expect(html).not.toContain('will appear after payment');
     expect(html).not.toContain('появится после оплаты');
   });

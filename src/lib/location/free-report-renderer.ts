@@ -11,6 +11,7 @@ import {
   buildLocationReportStructureViewModel,
   type LocationReportStructureViewModel,
 } from './location-report-structure';
+import { FREE_REPORT_RECOMMENDATION_RU } from './free-report-content';
 
 export interface FreeLocationReportEvidenceBullet {
   name: string;
@@ -56,7 +57,7 @@ const DEFAULT_SHORT_VERDICT_RU =
   'Предварительный вывод готов. Для решения по объекту нужен полный разбор.';
 
 const DEFAULT_SHORT_RECOMMENDATION_RU =
-  'Используйте общий вывод как первый фильтр. Перед покупкой, арендой или запуском проверьте конкуренцию, риски и экономику в подробном отчёте.';
+  FREE_REPORT_RECOMMENDATION_RU;
 
 const DEFAULT_PAID_REPORT_TEASER_RU =
   FREE_PAID_REPORT_TEASER_RU;
@@ -180,10 +181,7 @@ export function buildFreeLocationReportViewModel(
       ? { secondaryHref: cleanText(input.cta?.secondaryHref) }
       : {}),
   };
-  const shortRecommendation =
-    cleanText(input.shortRecommendation) ??
-    cleanText(decision?.publicSummary?.recommendedStrategyBulletsRu?.[0]) ??
-    DEFAULT_SHORT_RECOMMENDATION_RU;
+  const shortRecommendation = DEFAULT_SHORT_RECOMMENDATION_RU;
 
   const viewModel: FreeLocationReportViewModel = {
     structure: buildLocationReportStructureViewModel('free'),

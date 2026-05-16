@@ -28,7 +28,7 @@ export const PAID_LOCATION_REPORT_CTA: LocationReportStructureCta = {
 } as const;
 
 export const FREE_PAID_REPORT_TEASER_RU =
-  'Подробный отчёт покажет больше: спрос, риски, конкурентов, стратегию запуска и рекомендации по использованию объекта.';
+  'Подробный отчёт добавит конкурентов, экономику, цену, риски, транспорт, коммерческий потенциал и рекомендации по запуску.';
 
 export const freeLocationReportStructureSections = [
   {
