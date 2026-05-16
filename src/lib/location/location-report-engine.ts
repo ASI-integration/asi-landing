@@ -6,6 +6,7 @@ import {
 import {
   normalizeReportAddress,
   type LocationReportDataFreshness,
+  type LocationReportSourceStatus,
 } from './report-result-metadata';
 import type {
   LocationCommercialReport,
@@ -19,6 +20,24 @@ import type {
 
 export type GeneratedLocationReportMode = 'free' | 'paid';
 
+export type GeneratedFreeLocationReportData = {
+  reportId: string;
+  reportMode: 'free';
+  inputAddress: string;
+  normalizedAddress?: string;
+  calculatedAt: string;
+  status: LocationGeneratedReportStatus;
+  score: number | null;
+  verdictSummary: string;
+  evidenceBullets: string[];
+  risksAndLimitsRu: string[];
+  recommendationRu: string;
+  dataFreshness?: LocationReportDataFreshness;
+  sourceStatus?: LocationReportSourceStatus;
+  pdfUrl?: string;
+  pdfStatus: LocationGeneratedReportPdfStatus;
+};
+
 export type GeneratedLocationReportDocument = {
   reportId: string;
   reportMode: GeneratedLocationReportMode;
@@ -27,7 +46,9 @@ export type GeneratedLocationReportDocument = {
   calculatedAt: string;
   status: LocationGeneratedReportStatus;
   dataFreshness: LocationReportDataFreshness | null;
+  sourceStatus: LocationReportSourceStatus | null;
   freeSummary: LocationFreeReportSummarySnapshot;
+  freeReport?: GeneratedFreeLocationReportData;
   paidSections?: LocationPaidReportSectionSnapshot[];
   pdfUrl?: string;
   pdfStatus: LocationGeneratedReportPdfStatus;
@@ -99,6 +120,10 @@ export function buildGeneratedLocationReportDocument(
     report.version === 'v1'
       ? (report.dataFreshness ?? meta?.dataFreshness ?? null)
       : null;
+  const sourceStatus =
+    report.version === 'v1'
+      ? (meta?.sourceStatus ?? null)
+      : null;
   const freeSummary = report.version === 'v1'
     ? standaloneSummary(report)
     : commercialSummary(report);
@@ -112,6 +137,30 @@ export function buildGeneratedLocationReportDocument(
           summaryRu,
         }))
       : undefined;
+  const status = report.version === 'v1' ? (report.status ?? 'ready') : 'ready';
+  const pdfUrl = report.version === 'v1'
+    ? (report.pdfUrl ?? `/api/location-report/${encodeURIComponent(entity.id)}/pdf`)
+    : `/api/location-report/${encodeURIComponent(entity.id)}/pdf`;
+  const pdfStatus = report.version === 'v1' ? (report.pdfStatus ?? 'ready') : 'ready';
+  const freeReport: GeneratedFreeLocationReportData | undefined = mode === 'free'
+    ? {
+      reportId: entity.id,
+      reportMode: 'free',
+      inputAddress,
+      ...(normalizedAddress ? { normalizedAddress } : {}),
+      calculatedAt,
+      status,
+      score: freeSummary.publicScore,
+      verdictSummary: freeSummary.conclusionRu,
+      evidenceBullets: freeSummary.keyFactorsRu,
+      risksAndLimitsRu: freeSummary.risksAndLimitsRu,
+      recommendationRu: freeSummary.recommendationRu,
+      ...(dataFreshness ? { dataFreshness } : {}),
+      ...(sourceStatus ? { sourceStatus } : {}),
+      pdfUrl,
+      pdfStatus,
+    }
+    : undefined;
 
   return {
     reportId: entity.id,
@@ -119,14 +168,14 @@ export function buildGeneratedLocationReportDocument(
     inputAddress,
     normalizedAddress,
     calculatedAt,
-    status: report.version === 'v1' ? (report.status ?? 'ready') : 'ready',
+    status,
     dataFreshness,
+    sourceStatus,
     freeSummary,
+    ...(freeReport ? { freeReport } : {}),
     ...(paidSections ? { paidSections } : {}),
-    pdfUrl: report.version === 'v1'
-      ? (report.pdfUrl ?? `/api/location-report/${encodeURIComponent(entity.id)}/pdf`)
-      : `/api/location-report/${encodeURIComponent(entity.id)}/pdf`,
-    pdfStatus: report.version === 'v1' ? (report.pdfStatus ?? 'ready') : 'ready',
+    pdfUrl,
+    pdfStatus,
     persistedReport: report,
   };
 }
@@ -150,6 +199,12 @@ export function buildLocationReportPrintHtml(doc: GeneratedLocationReportDocumen
   const structure = doc.reportMode === 'free'
     ? buildLocationReportStructureViewModel('free')
     : buildLocationReportStructureViewModel('paid');
+  const freeReport = doc.freeReport;
+  const verdictSummary = freeReport?.verdictSummary ?? doc.freeSummary.conclusionRu;
+  const score = freeReport?.score ?? doc.freeSummary.publicScore;
+  const evidenceBullets = freeReport?.evidenceBullets ?? doc.freeSummary.keyFactorsRu;
+  const risksAndLimitsRu = freeReport?.risksAndLimitsRu ?? doc.freeSummary.risksAndLimitsRu;
+  const recommendationRu = freeReport?.recommendationRu ?? doc.freeSummary.recommendationRu;
   const calculatedAt = new Date(doc.calculatedAt);
   const calculatedAtRu = Number.isFinite(calculatedAt.getTime())
     ? calculatedAt.toLocaleString('ru-RU', {
@@ -200,23 +255,23 @@ export function buildLocationReportPrintHtml(doc: GeneratedLocationReportDocumen
 
     <section>
       <h2>Вывод</h2>
-      <p>${escapeHtml(doc.freeSummary.conclusionRu)}</p>
-      ${doc.freeSummary.publicScore == null ? '' : `<p class="score">Score: ${escapeHtml(doc.freeSummary.publicScore)} / 100</p>`}
+      <p>${escapeHtml(verdictSummary)}</p>
+      ${score == null ? '' : `<p class="score">Оценка: ${escapeHtml(score)} / 100</p>`}
     </section>
 
     <section>
       <h2>Ключевые факторы</h2>
-      ${listHtml(doc.freeSummary.keyFactorsRu)}
+      ${listHtml(evidenceBullets)}
     </section>
 
     <section>
       <h2>Риски и ограничения</h2>
-      ${listHtml(doc.freeSummary.risksAndLimitsRu)}
+      ${listHtml(risksAndLimitsRu)}
     </section>
 
     <section>
       <h2>Рекомендации</h2>
-      <p>${escapeHtml(doc.freeSummary.recommendationRu)}</p>
+      <p>${escapeHtml(recommendationRu)}</p>
     </section>
 
     ${paidSectionHtml}
