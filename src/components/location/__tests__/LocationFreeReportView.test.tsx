@@ -44,7 +44,7 @@ describe('LocationFreeReportView', () => {
 
     expect(pdfLabelMatches).toHaveLength(1);
     expect(pdfHrefMatches).toHaveLength(1);
-    expect(html).toContain('download="asi-location-report-report-1.pdf"');
+    expect(html).toContain('download="location-report-report-1.pdf"');
     expect(html).toContain('Получить подробный отчёт');
   });
 

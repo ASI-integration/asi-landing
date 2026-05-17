@@ -158,7 +158,7 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <a
               href={pdfHref}
-              download={`asi-location-report-${report.reportId}.pdf`}
+              download={`location-report-${report.reportId}.pdf`}
               className="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-100"
             >
               Скачать отчёт PDF

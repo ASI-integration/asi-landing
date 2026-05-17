@@ -6,6 +6,13 @@ import type { LocationStandaloneReport, LocationStandaloneReportSectionId } from
 import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from '@/lib/location/report-contract';
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 import { buildDashboardReportRequestHref } from '@/lib/location/pending-location-report';
+import { LocationReportPublicPreview } from '@/components/location/LocationReportPublicPreview';
+import { PremiumPaidReportSections } from '@/components/location/PremiumPaidReportSections';
+import {
+  buildPremiumPaidReportContent,
+  PREMIUM_PAID_SECTION_ANCHORS,
+  PREMIUM_PAID_SECTION_TITLES_RU,
+} from '@/lib/location/premium-paid-report-content';
 
 function urbanForecastLevelRu(level: 'low' | 'moderate' | 'high' | 'very_high'): string {
   if (level === 'low') return 'низкий';
@@ -144,12 +151,16 @@ export function LocationStandaloneFullReport({
   report: LocationStandaloneReport;
   reportId?: string;
 }) {
-  const isFreePreview = report.reportMode === 'free';
+  if (report.reportMode === 'free') {
+    return <LocationReportPublicPreview report={report} reportId={reportId} />;
+  }
+
+  const isFreePreview = false;
   const persistedReportId = reportId ?? report.reportId;
   const reportStructure = report.reportStructure;
   const primaryCtaLabel =
     reportStructure?.cta.primaryLabel ??
-    (isFreePreview ? 'Получить подробный отчёт' : 'Подключить управление');
+    (isFreePreview ? 'Получить полный отчёт' : 'Подключить управление');
   const secondaryCtaLabel = reportStructure?.cta.secondaryLabel ?? 'Обсудить объект';
   const summary = pickSection(report, 'summary');
   const businessFit = pickSection(report, 'business_fit');
@@ -158,6 +169,13 @@ export function LocationStandaloneFullReport({
   const incomeStrategy = pickSection(report, 'income_strategy');
   const freeBrief = report.free_brief ?? (isFreePreview ? summary?.verdict ?? null : null);
   const strReport = !isFreePreview ? report.strReport : undefined;
+  const premiumPaidReport = useMemo(() => {
+    if (isFreePreview || !strReport) return null;
+    return (
+      report.premiumPaidReport ??
+      buildPremiumPaidReportContent({ report, strReport })
+    );
+  }, [isFreePreview, report, strReport]);
   const urbanForecast = !isFreePreview ? report.unifiedReport?.urbanDevelopmentForecastScore : undefined;
   const detailedReportHref =
     isFreePreview
@@ -169,9 +187,12 @@ export function LocationStandaloneFullReport({
         createdAt: report.metadata?.calculatedAt ?? report.generated_at_iso,
       })
       : LOCATION_REPORT_PRODUCT_PATH;
-  const printHref = persistedReportId
-    ? `/ru/location-report/${encodeURIComponent(persistedReportId)}/print`
+  const pdfDownloadHref = persistedReportId
+    ? `/api/location-report/${encodeURIComponent(persistedReportId)}/pdf`
     : null;
+  const pdfDownloadFilename = persistedReportId
+    ? `location-report-${persistedReportId}.pdf`
+    : undefined;
   const urbanForecastNoLiveData =
     urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignals.length === 0;
 
@@ -188,27 +209,44 @@ export function LocationStandaloneFullReport({
         { id: 'next-step', label: 'Полный отчёт' },
       ];
     }
+    const premiumToc = premiumPaidReport
+      ? [
+          { id: PREMIUM_PAID_SECTION_ANCHORS.executiveSummary, label: PREMIUM_PAID_SECTION_TITLES_RU.executiveSummary },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.audienceFit, label: PREMIUM_PAID_SECTION_TITLES_RU.audienceFit },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.primeMagnets, label: PREMIUM_PAID_SECTION_TITLES_RU.primeMagnets },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.competition, label: PREMIUM_PAID_SECTION_TITLES_RU.competition },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.revenueScenarios, label: PREMIUM_PAID_SECTION_TITLES_RU.revenueScenarios },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.futureDevelopment, label: PREMIUM_PAID_SECTION_TITLES_RU.futureDevelopment },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.risks, label: PREMIUM_PAID_SECTION_TITLES_RU.risks },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.launchStrategy, label: PREMIUM_PAID_SECTION_TITLES_RU.launchStrategy },
+          { id: PREMIUM_PAID_SECTION_ANCHORS.finalRecommendation, label: PREMIUM_PAID_SECTION_TITLES_RU.finalRecommendation },
+        ]
+      : [];
+
     const base = [
       { id: 'summary', label: 'Итог' },
+      ...premiumToc,
       { id: 'data-freshness', label: 'Свежесть данных' },
-      { id: 'str-suitability', label: 'Посуточно' },
-      { id: 'audience-fit', label: 'Аудитория' },
-      { id: 'demand-signals', label: 'Спрос' },
-      { id: 'territory-risk', label: 'Риски зоны' },
     ];
     const demandToc =
       demandSignalLines.length > 0 ? [{ id: 'demand-signals-detail', label: 'Факторы спроса' } as const] : [];
+    const legacyDetailToc = premiumPaidReport
+      ? []
+      : [
+          { id: 'magnets', label: 'Магниты' },
+          { id: 'competition', label: 'Конкуренция' },
+          { id: 'income-strategy', label: 'Доход / стратегия' },
+          { id: 'manual-risks', label: 'Проверки' },
+          { id: 'urban-forecast', label: 'Прогноз развития района' },
+        ];
+
     return [
       ...base,
       ...demandToc,
-      { id: 'magnets', label: 'Магниты' },
-      { id: 'competition', label: 'Конкуренция' },
-      { id: 'income-strategy', label: 'Доход / стратегия' },
-      { id: 'manual-risks', label: 'Проверки' },
-      { id: 'urban-forecast', label: 'Прогноз развития района' },
+      ...legacyDetailToc,
       { id: 'next-step', label: 'Следующий шаг' },
     ];
-  }, [isFreePreview, demandSignalLines.length]);
+  }, [isFreePreview, demandSignalLines.length, premiumPaidReport]);
 
   const meta = report.metadata;
 
@@ -245,25 +283,19 @@ export function LocationStandaloneFullReport({
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-              {isFreePreview ? 'Бесплатный фрагмент по локации' : 'Полный отчёт по посуточной аренде'}
+              {isFreePreview ? 'Обзор локации' : 'Отчёт по локации'}
             </p>
             <p className="mt-1 text-sm text-slate-200 truncate" title={report.address}>{report.address}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors text-sm"
-            >
-              Печать / PDF
-            </button>
-            {printHref ? (
-              <Link
-                href={printHref}
-                className="hidden sm:inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors text-sm"
+            {!isFreePreview && pdfDownloadHref ? (
+              <a
+                href={pdfDownloadHref}
+                download={pdfDownloadFilename}
+                className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-slate-800/70 text-slate-200 hover:text-white hover:border-slate-700 transition-colors text-sm"
               >
-                PDF-версия
-              </Link>
+                Скачать PDF
+              </a>
             ) : null}
             <a
               href="#next-step"
@@ -283,13 +315,18 @@ export function LocationStandaloneFullReport({
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
         {/* Hero */}
-        <div className="rounded-3xl border border-slate-800/70 bg-gradient-to-br from-slate-900/40 to-slate-950/20 p-7 sm:p-10">
+        <div className="rounded-3xl border border-slate-800/70 bg-gradient-to-br from-indigo-950/25 via-slate-900/40 to-slate-950/20 p-7 sm:p-10">
           <div className="flex flex-col gap-5">
             <div>
               {!isFreePreview ? (
-                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                  ASI · Анализ локации · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
-                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="inline-flex rounded-full border border-indigo-500/35 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-indigo-200">
+                    Полный отчёт
+                  </span>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    ASI · Анализ локации · {generatedAt ? `сформировано ${generatedAt}` : 'сформировано'}
+                  </p>
+                </div>
               ) : (
                 <p className="text-[15px] sm:text-[17px] font-semibold text-slate-300 tracking-tight">
                   Анализ локации ASI
@@ -297,13 +334,20 @@ export function LocationStandaloneFullReport({
                 </p>
               )}
               <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight leading-tight text-white">
-                {isFreePreview ? 'Краткий обзор локации' : 'Отчёт по посуточной аренде'}
+                {isFreePreview ? 'Краткий обзор локации' : 'Отчёт по локации'}
               </h1>
-              <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
-                {isFreePreview
-                  ? freeBrief
-                  : 'Документ, чтобы выбрать сценарий монетизации, понять вероятный спрос и заранее увидеть риски, которые стоит проверить вручную.'}
-              </p>
+              {!isFreePreview && summary?.verdict ? (
+                <div className="mt-5 rounded-2xl border border-indigo-500/30 bg-indigo-950/30 p-5 sm:p-6">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-200/90">Главный вывод</p>
+                  <p className="mt-2 text-lg font-semibold leading-snug text-white sm:text-xl">{summary.verdict}</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-slate-300 leading-relaxed max-w-3xl">
+                  {isFreePreview
+                    ? freeBrief
+                    : 'Документ, чтобы выбрать сценарий монетизации, понять вероятный спрос и заранее увидеть риски, которые стоит проверить вручную.'}
+                </p>
+              )}
             </div>
 
             <div className={`grid gap-3 ${isFreePreview ? 'sm:grid-cols-1' : 'sm:grid-cols-3'}`}>
@@ -372,21 +416,25 @@ export function LocationStandaloneFullReport({
             lead={
               isFreePreview
                 ? 'Это быстрая предварительная оценка по открытым данным.'
-                : 'Первое, что важно: вердикт и три главных фактора, которые дают основной вклад в спрос и стратегию.'
+                : premiumPaidReport
+                  ? 'Три главных фактора спроса — подробный разбор по разделам ниже.'
+                  : 'Первое, что важно: вердикт и три главных фактора, которые дают основной вклад в спрос и стратегию.'
             }
           >
-            <div className="grid lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2">
-                <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
-                  {!isFreePreview ? (
+            <div className={premiumPaidReport && !isFreePreview ? 'space-y-4' : 'grid lg:grid-cols-3 gap-5'}>
+              <div className={premiumPaidReport && !isFreePreview ? undefined : 'lg:col-span-2'}>
+                {!isFreePreview && !premiumPaidReport ? (
+                  <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Вердикт</p>
-                  ) : null}
-                  <p className={`${isFreePreview ? '' : 'mt-2'} text-lg sm:text-xl font-semibold text-white leading-snug`}>
-                    {summary?.verdict ?? '—'}
-                  </p>
-                </div>
+                    <p className="mt-2 text-lg sm:text-xl font-semibold text-white leading-snug">
+                      {summary?.verdict ?? '—'}
+                    </p>
+                  </div>
+                ) : null}
 
-                <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
+                <div
+                  className={`${!isFreePreview && !premiumPaidReport ? 'mt-4 ' : ''}rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6`}
+                >
                   {!isFreePreview ? (
                     <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Главные факторы спроса</p>
                   ) : (
@@ -425,6 +473,7 @@ export function LocationStandaloneFullReport({
                 ) : null}
               </div>
 
+              {isFreePreview || !premiumPaidReport ? (
               <div className="rounded-2xl border border-slate-800/70 bg-slate-950/30 p-6">
                 {!isFreePreview ? (
                   <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Что делаем с этим</p>
@@ -456,10 +505,15 @@ export function LocationStandaloneFullReport({
                   ) : null}
                 </div>
               </div>
+              ) : null}
             </div>
           </SectionShell>
 
-          {!isFreePreview && strReport ? (
+          {!isFreePreview && premiumPaidReport ? (
+            <PremiumPaidReportSections content={premiumPaidReport} />
+          ) : null}
+
+          {!isFreePreview && strReport && !premiumPaidReport ? (
             <>
               <SectionShell
                 id="str-suitability"
@@ -629,7 +683,7 @@ export function LocationStandaloneFullReport({
           ) : null}
 
           {/* 2) Business-fit */}
-          {!isFreePreview ? (
+          {!isFreePreview && !premiumPaidReport ? (
           <>
           <SectionShell
             id="business-fit"

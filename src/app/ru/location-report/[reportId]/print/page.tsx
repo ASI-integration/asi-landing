@@ -7,6 +7,8 @@ import {
   type GeneratedLocationReportDocument,
 } from '@/lib/location/location-report-engine';
 import { buildFreeReportInterpretedContent } from '@/lib/location/free-report-content';
+import { PremiumLocationReportPdf } from '@/components/location/premium-pdf/PremiumLocationReportPdf';
+import { buildPremiumPdfViewModel } from '@/lib/location/premium-pdf-view-model';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,14 +73,15 @@ export default async function RuLocationReportPrintPage(
   }
 
   const doc = buildGeneratedLocationReportDocument(entity);
-  const free = freeValues(doc);
 
-  return (
-    <main className="min-h-screen bg-white px-5 py-8 text-slate-950 print:px-0 print:py-0">
-      <div className="mx-auto max-w-3xl">
-        <div className="print:hidden mb-6 flex flex-wrap gap-3">
+  if (doc.reportMode === 'paid') {
+    const model = buildPremiumPdfViewModel(doc);
+    return (
+      <main className="premium-location-report-pdf-root min-h-screen bg-slate-100 print:bg-white print:p-0">
+        <div className="print:hidden mx-auto max-w-5xl px-4 py-6 flex flex-wrap gap-3">
           <a
             href={`/api/location-report/${encodeURIComponent(reportId)}/pdf`}
+            download={`location-report-${reportId}.pdf`}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
           >
             Скачать PDF
@@ -90,10 +93,30 @@ export default async function RuLocationReportPrintPage(
             Вернуться к отчёту
           </Link>
         </div>
+        <PremiumLocationReportPdf model={model} />
+      </main>
+    );
+  }
+
+  const free = freeValues(doc);
+  const keyStrength = free.evidenceBullets[0] ?? null;
+  const keyRisk = free.risksAndLimitsRu[0] ?? null;
+
+  return (
+    <main className="min-h-screen bg-white px-5 py-8 text-slate-950 print:px-0 print:py-0">
+      <div className="mx-auto max-w-3xl">
+        <div className="print:hidden mb-6 flex flex-wrap gap-3">
+          <Link
+            href={`/ru/location-report/${encodeURIComponent(reportId)}`}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900"
+          >
+            Вернуться к отчёту
+          </Link>
+        </div>
 
         <header className="border-b border-slate-200 pb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            {doc.reportMode === 'free' ? 'Бесплатный отчёт' : 'Подробный отчёт'}
+            Предпросмотр отчёта
           </p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Отчёт по локации</h1>
           <p className="mt-3 text-base leading-relaxed"><strong>Адрес:</strong> {doc.inputAddress}</p>
@@ -102,65 +125,29 @@ export default async function RuLocationReportPrintPage(
         </header>
 
         <section className="mt-7">
-          <h2 className="text-xl font-bold">Вывод</h2>
+          <h2 className="text-xl font-bold">Общий вывод</h2>
           <p className="mt-2 text-base leading-relaxed">{free.verdictSummary}</p>
-          <p className="mt-2 text-base leading-relaxed">{free.content.summaryReasonRu}</p>
-          {free.score != null ? (
-            <p className="mt-3 inline-flex rounded-lg border border-slate-300 px-3 py-1 text-sm font-semibold">
-              Оценка: {free.score} / 100
-            </p>
-          ) : null}
         </section>
 
-        <section className="mt-7">
-          <h2 className="text-xl font-bold">Сигналы спроса</h2>
-          <ul className="mt-3 space-y-2">
-            {free.evidenceBullets.map(item => <li key={item}>{item}</li>)}
-          </ul>
-        </section>
-
-        <section className="mt-7">
-          <h2 className="text-xl font-bold">Риски и ограничения</h2>
-          <ul className="mt-3 space-y-2">
-            {free.risksAndLimitsRu.map(item => <li key={item}>{item}</li>)}
-          </ul>
-        </section>
-
-        <section className="mt-7">
-          <h2 className="text-xl font-bold">Дополнительный потенциал</h2>
-          <p className="mt-2 text-base font-semibold leading-relaxed">{free.content.commercialPreview.leadRu}</p>
-          <ul className="mt-3 space-y-2">
-            {free.content.commercialPreview.itemsRu.map(item => <li key={item}>{item}</li>)}
-          </ul>
-        </section>
-
-        <section className="mt-7">
-          <h2 className="text-xl font-bold">Что входит в подробный отчёт</h2>
-          <ul className="mt-3 space-y-2">
-            {free.content.paidPreviewItemsRu.map(item => <li key={item}>{item}</li>)}
-          </ul>
-        </section>
-
-        <section className="mt-7">
-          <h2 className="text-xl font-bold">{free.content.ctaTitleRu}</h2>
-          <p className="mt-2 text-base leading-relaxed">{free.content.ctaTextRu}</p>
-          <p className="mt-2 text-base leading-relaxed">{free.recommendationRu}</p>
-        </section>
-
-        {doc.reportMode === 'paid' && doc.paidSections?.length ? (
+        {keyStrength ? (
           <section className="mt-7">
-            <h2 className="text-xl font-bold">Разделы подробного отчёта</h2>
-            <ul className="mt-3 space-y-3">
-              {doc.paidSections.map(section => (
-                <li key={section.id}>
-                  <strong>{section.titleRu}</strong>
-                  <br />
-                  <span className="text-slate-700">{section.summaryRu}</span>
-                </li>
-              ))}
-            </ul>
+            <h2 className="text-xl font-bold">Сильная сторона</h2>
+            <p className="mt-2 text-base leading-relaxed">{keyStrength}</p>
           </section>
         ) : null}
+
+        {keyRisk ? (
+          <section className="mt-7">
+            <h2 className="text-xl font-bold">Главный риск</h2>
+            <p className="mt-2 text-base leading-relaxed">{keyRisk}</p>
+          </section>
+        ) : null}
+
+        <section className="mt-7">
+          <h2 className="text-xl font-bold">Полный отчёт</h2>
+          <p className="mt-2 text-base leading-relaxed">{free.content.ctaTextRu}</p>
+        </section>
+
       </div>
     </main>
   );

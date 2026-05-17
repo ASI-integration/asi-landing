@@ -84,7 +84,7 @@ describe('dashboard report acquisition flow', () => {
     expect(reportsSrc).toContain("router.push(permalink)");
     expect(reportsSrc).toContain('/ru/location-report/');
     expect(reportsSrc).not.toContain("const FREE_REPORT_HREF = '/ru/location-analysis");
-    expect(ruLocationReportRouteSrc).toContain('LocationFreeReportView');
+    expect(ruLocationReportRouteSrc).toContain('LocationReportPublicPreview');
     expect(ruLocationReportRouteSrc).toContain("entity.report.reportMode === 'free'");
   });
 

@@ -79,6 +79,16 @@
   animation: fadeIn 0.8s ease-out forwards;
 }
 
+.premium-location-report-pdf {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.premium-location-report-pdf .premium-pdf-avoid-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
 @media print {
   @page {
     size: A4;
@@ -142,5 +152,33 @@
   .location-report-print [class*="border-amber"],
   .location-report-print [class*="border-rose"] {
     border-color: #cbd5e1 !important;
+  }
+
+  .premium-location-report-pdf {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .premium-location-report-pdf .premium-pdf-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .premium-location-report-pdf .premium-pdf-page {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .premium-location-report-pdf .premium-pdf-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .premium-location-report-pdf .premium-pdf-page-inner {
+    min-height: auto;
+  }
+
+  .premium-location-report-pdf [class*="shadow"] {
+    box-shadow: none !important;
   }
 }

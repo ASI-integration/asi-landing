@@ -64,6 +64,44 @@ pm2 logs asi-landing --lines 20        # нет FATAL/unhandled
 
 В браузере: открыть главную + RU-страницу + проверить локаль.
 
+### Location report PDF (Playwright / Chromium)
+
+Платный PDF (`GET /api/location-report/[reportId]/pdf`) рендерится через **playwright-core** и системный Chromium. На VPS браузер Playwright **не** скачивается автоматически — его нужно установить один раз на сервере.
+
+**Установка Chromium (Debian/Ubuntu, Timeweb VPS):**
+
+```bash
+apt-get update
+apt-get install -y chromium
+# путь обычно /usr/bin/chromium или /usr/bin/chromium-browser
+which chromium || which chromium-browser
+```
+
+Если бинарник не в стандартных путях, задайте в `shared/.env.production.live`:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+```
+
+**Базовый URL для print-страницы** (Next.js открывает её локально при генерации PDF):
+
+```bash
+LOCATION_REPORT_PDF_BASE_URL=https://asi-global.ru
+```
+
+Порядок fallback в коде: `LOCATION_REPORT_PDF_BASE_URL` → `NEXT_PUBLIC_APP_URL` → `NEXT_PUBLIC_URL`. Без явного URL в production используется `http://127.0.0.1:3000` — PDF часто падает; всегда задавайте `LOCATION_REPORT_PDF_BASE_URL` на проде.
+
+**Проверка после деплоя (на сервере, из каталога релиза):**
+
+```bash
+cd /var/www/asi/current
+set -a && source /var/www/asi/shared/.env.production.live && set +a
+npx tsx scripts/check-location-pdf-chromium.ts
+# ok: true и exit 0
+```
+
+При ошибке смотреть `pm2 logs asi-landing` — строки `[location-report-pdf]` с кодом (`chromium_missing`, `chromium_launch_failed`, …). Клиенту уходит короткое сообщение на русском без путей и stack trace.
+
 ---
 
 ## Working PM2 baseline

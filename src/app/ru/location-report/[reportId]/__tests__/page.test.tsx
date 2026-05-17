@@ -15,11 +15,9 @@ vi.mock('@/lib/location/standalone-report-store', () => ({
   getStandaloneReportById: (...args: unknown[]) => mockGetStandaloneReportById(...args),
 }));
 
-vi.mock('@/components/location/LocationFreeReportView', () => ({
-  LocationFreeReportView: ({ report }: { report: { reportId: string; inputAddress: string; reportMode: string } }) => (
-    <div>
-      Бесплатный отчёт {report.reportId} {report.inputAddress} {report.reportMode}
-    </div>
+vi.mock('@/components/location/LocationReportPublicPreview', () => ({
+  LocationReportPublicPreview: ({ reportId }: { reportId?: string }) => (
+    <div>Предпросмотр отчёта {reportId}</div>
   ),
 }));
 
@@ -66,7 +64,7 @@ afterEach(() => {
 });
 
 describe('/ru/location-report/[reportId]', () => {
-  it('renders a saved free report by reportId', async () => {
+  it('renders a saved public preview report by reportId', async () => {
     mockGetStandaloneReportById.mockResolvedValue({
       id: 'report-1',
       locale: 'ru',
@@ -81,9 +79,8 @@ describe('/ru/location-report/[reportId]', () => {
     const html = renderToStaticMarkup(element);
 
     expect(mockGetStandaloneReportById).toHaveBeenCalledWith('report-1');
-    expect(html).toContain('Бесплатный отчёт report-1');
-    expect(html).toContain('Невский проспект, 88');
-    expect(html).toContain('free');
+    expect(html).toContain('Предпросмотр отчёта report-1');
+    expect(html).not.toContain('Бесплатный');
     expect(html).not.toContain('ожидает оплаты');
     expect(html).not.toContain('Ожидает оплаты');
   });
@@ -103,12 +100,12 @@ describe('/ru/location-report/[reportId]', () => {
     const html = renderToStaticMarkup(element);
 
     expect(mockGetStandaloneReportById).toHaveBeenCalledWith('report-1');
-    expect(html).toContain('Бесплатный отчёт');
+    expect(html).toContain('Предпросмотр отчёта');
     expect(html).toContain('Невский проспект, 88');
     expect(html).toContain('Краткий вывод готов.');
-    expect(html).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
-    expect(html).toContain('Конкуренция рядом не разобрана подробно.');
-    expect(html).toContain('Подробная конкуренция');
+    expect(html).toContain('Метро в пешей доступности');
+    expect(html).toContain('Предпросмотр отчёта');
+    expect(html).not.toContain('Скачать PDF');
     expect(html).not.toContain('will appear after payment');
     expect(html).not.toContain('появится после оплаты');
   });

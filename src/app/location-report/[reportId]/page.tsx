@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { LocationReportPublicPreview } from '@/components/location/LocationReportPublicPreview';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 import { CommercialReportView } from '@/components/location/CommercialReportView';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
@@ -56,6 +57,9 @@ export default async function LocationReportByIdPage(props: { params: Promise<{ 
   }
 
   if (!isLocationStandaloneReportV1(entity.report)) return <MissingReport />;
+  if (entity.report.reportMode === 'free') {
+    return <LocationReportPublicPreview report={entity.report} reportId={entity.id} />;
+  }
   return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
 }
 

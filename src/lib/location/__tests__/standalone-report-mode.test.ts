@@ -39,7 +39,7 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(typeof report.free_brief).toBe('string');
     expect(report.free_brief!.length).toBeGreaterThan(10);
     expect(report.reportStructure?.mode).toBe('free');
-    expect(report.reportStructure?.cta.primaryLabel).toBe('Получить подробный отчёт');
+    expect(report.reportStructure?.cta.primaryLabel).toBe('Получить полный отчёт');
     expect(report.unifiedReport).toBeUndefined();
 
     const ids = report.sections.map(s => s.id);
@@ -86,14 +86,17 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.free_brief).toBeUndefined();
     expect(report.reportStructure?.mode).toBe('paid');
     expect(report.reportStructure?.sections.map(section => section.id)).toEqual([
-      'fullAddressConclusion',
-      'detailedMagnets',
-      'demandAudiences',
-      'competition',
+      'executiveSummary',
+      'audienceFit',
+      'primeDemandMagnets',
+      'competitionAnalysis',
+      'revenueScenarios',
+      'futureAreaDevelopment',
+      'risks',
+      'launchStrategy',
+      'finalRecommendation',
       'transportAccessibility',
       'objectEnvironment',
-      'risksAndLimits',
-      'packagingPricingChannels',
       'managementNextStepCta',
     ]);
     expect(report.reportStructure?.cta.primaryLabel).toBe('Подключить управление');

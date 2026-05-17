@@ -16,7 +16,7 @@ export interface LocationReportStructureCta {
 }
 
 export const FREE_LOCATION_REPORT_CTA: LocationReportStructureCta = {
-  primaryLabel: 'Получить подробный отчёт',
+  primaryLabel: 'Получить полный отчёт',
   primaryHref: '/dashboard/reports',
 } as const;
 
@@ -77,31 +77,66 @@ export const freeLocationReportStructureSections = [
 
 export const paidLocationReportStructureSections = [
   {
-    id: 'fullAddressConclusion',
-    titleRu: 'Полный вывод по адресу',
-    summaryRu: 'Подробный вывод по адресу, статусу и причинам результата.',
+    id: 'executiveSummary',
+    titleRu: 'Краткий вывод для владельца',
+    summaryRu: 'Главный ответ по адресу простыми словами.',
     scopeSectionIds: ['executiveSummary', 'fullScoreExplanation'],
     disclosure: 'paid_detail',
   },
   {
-    id: 'detailedMagnets',
-    titleRu: 'Подробные магниты',
-    summaryRu: 'Магниты с названием, типом и дистанцией.',
-    scopeSectionIds: ['magnetsByCategory'],
-    disclosure: 'paid_detail',
-  },
-  {
-    id: 'demandAudiences',
-    titleRu: 'Аудитория спроса',
-    summaryRu: 'Бизнес, командированные, туристы и семьи.',
+    id: 'audienceFit',
+    titleRu: 'Кому подойдёт объект',
+    summaryRu: 'Профиль гостей и сценарии бронирований.',
     scopeSectionIds: ['targetAudiences', 'business'],
     disclosure: 'paid_detail',
   },
   {
-    id: 'competition',
+    id: 'primeDemandMagnets',
+    titleRu: 'Главные магниты спроса',
+    summaryRu: 'Точки притяжения с дистанцией и типом.',
+    scopeSectionIds: ['magnetsByCategory'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'competitionAnalysis',
     titleRu: 'Конкуренция',
-    summaryRu: 'Конкурентное давление и ручные проверки площадок.',
+    summaryRu: 'Давление конкурентов и что проверить на площадках.',
     scopeSectionIds: ['competitors'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'revenueScenarios',
+    titleRu: 'Сценарии дохода',
+    summaryRu: 'Осторожный, базовый и сильный сценарий с условиями.',
+    scopeSectionIds: ['revenueScenarios', 'strategy'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'futureAreaDevelopment',
+    titleRu: 'Как может измениться район',
+    summaryRu: 'ЖК, дороги, инфраструктура, кластеры, транспорт, госзакупки.',
+    scopeSectionIds: ['urbanDevelopmentForecast', 'fullUrbanDevelopmentRadar'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'risks',
+    titleRu: 'Риски',
+    summaryRu: 'Что проверить вручную до вложений.',
+    scopeSectionIds: ['risks'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'launchStrategy',
+    titleRu: 'Как запускать',
+    summaryRu: 'Практические шаги на первые недели.',
+    scopeSectionIds: ['strategy'],
+    disclosure: 'paid_detail',
+  },
+  {
+    id: 'finalRecommendation',
+    titleRu: 'Итоговая рекомендация',
+    summaryRu: 'Делать, отложить или зайти осторожно.',
+    scopeSectionIds: ['finalRecommendation'],
     disclosure: 'paid_detail',
   },
   {
@@ -114,22 +149,8 @@ export const paidLocationReportStructureSections = [
   {
     id: 'objectEnvironment',
     titleRu: 'Среда вокруг объекта',
-    summaryRu: 'Окружение, сервисы, локальные функции и качество данных.',
-    scopeSectionIds: ['medical', 'education', 'retailAndEvents', 'urbanDevelopmentForecast', 'dataFreshness', 'sourceEvidence'],
-    disclosure: 'paid_detail',
-  },
-  {
-    id: 'risksAndLimits',
-    titleRu: 'Риски и ограничения',
-    summaryRu: 'Риски, ограничения и то, что нужно проверить вручную.',
-    scopeSectionIds: ['risks'],
-    disclosure: 'paid_detail',
-  },
-  {
-    id: 'packagingPricingChannels',
-    titleRu: 'Рекомендации по упаковке, цене и каналам продаж',
-    summaryRu: 'Практические рекомендации по запуску, цене и каналам.',
-    scopeSectionIds: ['strategy', 'finalRecommendation'],
+    summaryRu: 'Окружение, сервисы и качество данных.',
+    scopeSectionIds: ['medical', 'education', 'retailAndEvents', 'dataFreshness', 'sourceEvidence'],
     disclosure: 'paid_detail',
   },
   {
@@ -219,7 +240,7 @@ export function buildLocationReportStructureViewModel(
     return {
       version: 'location-report-structure-v1',
       mode: 'free',
-      titleRu: 'Бесплатный общий отчёт',
+      titleRu: 'Предпросмотр отчёта',
       sections: freeLocationReportStructureSections,
       cta: FREE_LOCATION_REPORT_CTA,
       paidPreviewSections: paidLocationReportStructureSections.map(({ id, titleRu, summaryRu }) => ({
@@ -233,7 +254,7 @@ export function buildLocationReportStructureViewModel(
   return {
     version: 'location-report-structure-v1',
     mode: 'paid',
-    titleRu: 'Подробный отчёт',
+      titleRu: 'Отчёт по локации',
     sections: paidLocationReportStructureSections,
     cta: PAID_LOCATION_REPORT_CTA,
   };

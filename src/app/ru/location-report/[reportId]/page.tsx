@@ -1,10 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { LocationFreeReportView } from '@/components/location/LocationFreeReportView';
+import { LocationReportPublicPreview } from '@/components/location/LocationReportPublicPreview';
 import { LocationStandaloneFullReport } from '@/components/location/LocationStandaloneFullReport';
 import { CommercialReportView } from '@/components/location/CommercialReportView';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
-import { buildGeneratedLocationReportDocument } from '@/lib/location/location-report-engine';
 import {
   isCanonicalLocationReportPayload,
   isLocationCommercialReport,
@@ -19,7 +18,7 @@ function MissingReport() {
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
         <div className="rounded-3xl border border-slate-800/70 bg-slate-900/20 p-8 sm:p-10">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полный отчёт</p>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Отчёт по локации</p>
           <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight">Отчёт не найден</h1>
           <p className="mt-3 text-slate-300 leading-relaxed">
             Ссылка устарела или отчёт был удалён. Запустите анализ заново или откройте пример отчёта.
@@ -64,9 +63,7 @@ export default async function RuLocationReportByIdPage(props: { params: Promise<
 
   if (!isLocationStandaloneReportV1(entity.report)) return <MissingReport />;
   if (entity.report.reportMode === 'free') {
-    const doc = buildGeneratedLocationReportDocument(entity);
-    if (!doc.freeReport) return <MissingReport />;
-    return <LocationFreeReportView report={doc.freeReport} />;
+    return <LocationReportPublicPreview report={entity.report} reportId={entity.id} />;
   }
 
   return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;

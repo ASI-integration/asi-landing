@@ -191,7 +191,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </div>
         ) : null}
 
-        <Section id="executive-summary" title={paidSectionTitle('fullAddressConclusion')}>
+        <Section id="executive-summary" title={paidSectionTitle('executiveSummary')}>
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
               <p className="text-sm font-semibold text-slate-900">Главные факторы спроса</p>
@@ -242,7 +242,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             )}
           </Section>
 
-          <Section id="competition" title={paidSectionTitle('competition')}>
+          <Section id="competition" title={paidSectionTitle('competitionAnalysis')}>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Видимых конкурентов</p>
@@ -263,7 +263,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </Section>
         </div>
 
-        <Section id="demand-magnets" title={paidSectionTitle('detailedMagnets')}>
+        <Section id="demand-magnets" title={paidSectionTitle('primeDemandMagnets')}>
           <div className="grid gap-5 lg:grid-cols-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">Demand drivers</p>
@@ -306,7 +306,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
         </Section>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Section id="audience-fit" title={paidSectionTitle('demandAudiences')}>
+          <Section id="audience-fit" title={paidSectionTitle('audienceFit')}>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Primary audience</p>
               <p className="mt-2 text-xl font-bold capitalize text-slate-950">{report.audienceFit.primaryAudience}</p>
@@ -321,7 +321,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             </ul>
           </Section>
 
-          <Section id="income" title="Цена и стратегия">
+          <Section id="income" title={paidSectionTitle('revenueScenarios')}>
             <div className="space-y-2">
               {report.incomePotential.estimates.map(estimate => (
                 <div
@@ -345,7 +345,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
         </div>
 
         {urbanForecast ? (
-          <Section id="urban-development-forecast" title="Прогноз развития района">
+          <Section id="urban-development-forecast" title={paidSectionTitle('futureAreaDevelopment')}>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="grid gap-4 sm:grid-cols-3">
                 <div>
@@ -391,7 +391,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </Section>
         ) : null}
 
-        <Section id="risks" title={paidSectionTitle('risksAndLimits')}>
+        <Section id="risks" title={paidSectionTitle('risks')}>
           <div className="grid gap-3 lg:grid-cols-3">
             {report.risks.map(risk => (
               <div key={risk.title} className={`rounded-lg border p-4 ${severityClass(risk.severity)}`}>
@@ -403,7 +403,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
           </div>
         </Section>
 
-        <Section id="recommendations" title={paidSectionTitle('packagingPricingChannels')}>
+        <Section id="recommendations" title={paidSectionTitle('launchStrategy')}>
           <div className="grid gap-3 lg:grid-cols-3">
             {report.recommendations.map(item => (
               <div key={item.title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">

@@ -26,6 +26,10 @@ import {
 } from './location-report-structure';
 import { buildFreeLocationReportViewModel } from './free-report-renderer';
 import { buildFreeReportInterpretedContent } from './free-report-content';
+import {
+  buildPremiumPaidReportContent,
+  type PremiumPaidReportContent,
+} from './premium-paid-report-content';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -135,6 +139,8 @@ export type LocationStandaloneReport = {
   reportStructure?: LocationReportStructureViewModel;
   /** Sellable RU short-term-rental report projection. Present on new paid STR reports. */
   strReport?: StrLocationReportProjection;
+  /** Commercial paid-only narrative blocks (web + PDF). */
+  premiumPaidReport?: PremiumPaidReportContent;
   address: string;
   generated_at_iso: string;
   unifiedReport?: UnifiedLocationReport;
@@ -839,7 +845,49 @@ export function buildLocationStandaloneReport(args: {
     category_label_ru: m.categoryLabelRu,
   });
 
-  return {
+  const strReport = buildStrLocationReportProjection(analysis);
+  const sections: LocationStandaloneReport['sections'] = [
+    {
+      id: 'summary',
+      verdict: reportVerdict,
+      drivers,
+      income_rub_month: incomeRecommended,
+      recommended_strategy: recommended,
+    },
+    {
+      id: 'business_fit',
+      business_fit_verdict: businessFit.business_fit_verdict,
+      primary_magnets: primaryMagnetRows,
+      note: businessFit.note,
+    },
+    {
+      id: 'magnets',
+      primary: primaryPrime.map(toMagnetRow),
+      secondary: secondaryPrime.map(toMagnetRow),
+      no_magnets_note:
+        primeMagnets.length === 0
+          ? 'В радиусе 1 км не обнаружено prime-магнитов, отвечающих требованиям устойчивого спроса.'
+          : undefined,
+    },
+    {
+      id: 'competition',
+      competitor_count: analysis.competitors.length,
+      pressure_level: analysis.gravityExplanation.competitorPressureLevel,
+    },
+    {
+      id: 'income_strategy',
+      recommended_strategy: recommended,
+      monthly_income_rub: {
+        short_term: score?.estimated_monthly_income.short_term ?? null,
+        hybrid: score?.estimated_monthly_income.hybrid ?? null,
+        mid_term: score?.estimated_monthly_income.mid_term ?? null,
+      },
+      positioning_hint: recommended ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}.` : null,
+    },
+    { id: 'next_step', cta: 'get_full_breakdown' },
+  ];
+
+  const reportBase: LocationStandaloneReport = {
     version: 'v1',
     ...reportEnvelope,
     reportMode: 'paid',
@@ -850,54 +898,24 @@ export function buildLocationStandaloneReport(args: {
       summaryRu,
     })),
     reportStructure: buildLocationReportStructureViewModel('paid'),
-    strReport: buildStrLocationReportProjection(analysis),
+    strReport,
     address: args.address,
     generated_at_iso: generatedAtIso,
     unifiedReport,
-    sections: [
-      {
-        id: 'summary',
-        verdict: reportVerdict,
-        drivers,
-        income_rub_month: incomeRecommended,
-        recommended_strategy: recommended,
-      },
-      {
-        id: 'business_fit',
-        business_fit_verdict: businessFit.business_fit_verdict,
-        primary_magnets: primaryMagnetRows,
-        note: businessFit.note,
-      },
-      {
-        id: 'magnets',
-        primary: primaryPrime.map(toMagnetRow),
-        secondary: secondaryPrime.map(toMagnetRow),
-        no_magnets_note:
-          primeMagnets.length === 0
-            ? 'В радиусе 1 км не обнаружено prime-магнитов, отвечающих требованиям устойчивого спроса.'
-            : undefined,
-      },
-      {
-        id: 'competition',
-        competitor_count: analysis.competitors.length,
-        pressure_level: analysis.gravityExplanation.competitorPressureLevel,
-      },
-      {
-        id: 'income_strategy',
-        recommended_strategy: recommended,
-        monthly_income_rub: {
-          short_term: score?.estimated_monthly_income.short_term ?? null,
-          hybrid: score?.estimated_monthly_income.hybrid ?? null,
-          mid_term: score?.estimated_monthly_income.mid_term ?? null,
-        },
-        positioning_hint: recommended ? `Рекомендуемая стратегия: ${strategyTitleRu(recommended)}.` : null,
-      },
-      { id: 'next_step', cta: 'get_full_breakdown' },
-    ],
+    sections,
+  };
+
+  return {
+    ...reportBase,
+    premiumPaidReport: buildPremiumPaidReportContent({
+      report: reportBase,
+      analysis,
+      strReport,
+    }),
   };
 }
 
-export const sampleStrLocationStandaloneReportRu: LocationStandaloneReport = {
+const sampleStrLocationStandaloneReportRuBase: LocationStandaloneReport = {
   version: 'v1',
   reportMode: 'paid',
   address: 'Санкт-Петербург, Невский проспект, 88',
@@ -1032,5 +1050,13 @@ export const sampleStrLocationStandaloneReportRu: LocationStandaloneReport = {
     },
     { id: 'next_step', cta: 'get_full_breakdown' },
   ],
+};
+
+export const sampleStrLocationStandaloneReportRu: LocationStandaloneReport = {
+  ...sampleStrLocationStandaloneReportRuBase,
+  premiumPaidReport: buildPremiumPaidReportContent({
+    report: sampleStrLocationStandaloneReportRuBase,
+    strReport: sampleStrLocationStandaloneReportRuBase.strReport!,
+  }),
 };
 
