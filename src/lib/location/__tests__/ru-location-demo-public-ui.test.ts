@@ -158,7 +158,7 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(publicReportSrc).toContain('freeReportId');
     expect(publicReportSrc).toContain('freeReportPermalink');
     expect(publicReportSrc).toContain('createdAt');
-    expect(publicReportSrc).toContain('Заказать подробный отчёт');
+    expect(publicReportSrc).toContain('Получить полный отчёт');
     expect(publicReportSrc).toContain('После оплаты отчёт появится в разделе Мои отчёты');
   });
 
