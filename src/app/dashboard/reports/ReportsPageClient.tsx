@@ -51,8 +51,8 @@ function mapApiStatus(status: unknown): PendingLocationReportStatus {
   return 'payment_pending';
 }
 
-function savedReportType(report: PendingLocationReportContext): 'Бесплатный' | 'Подробный' {
-  return report.requestId || report.paidReportId ? 'Подробный' : 'Бесплатный';
+function savedReportType(report: PendingLocationReportContext): 'Превью' | 'Полный отчёт' {
+  return report.requestId || report.paidReportId ? 'Полный отчёт' : 'Превью';
 }
 
 function savedReportStatus(report: PendingLocationReportContext): string {
@@ -228,7 +228,7 @@ export function ReportsPageClient() {
       }
       router.push(permalink);
     } catch {
-      setFreeError('Не удалось создать бесплатный отчёт. Уточните адрес и попробуйте снова.');
+      setFreeError('Не удалось создать превью отчёта. Уточните адрес и попробуйте снова.');
     } finally {
       setFreeBusy(false);
     }
@@ -242,22 +242,22 @@ export function ReportsPageClient() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Отчёты по объектам</h1>
         <p className="mt-2 text-base leading-relaxed text-slate-600">
-          Сначала можно получить бесплатный краткий отчёт по адресу. Подробный отчёт доступен после оплаты и генерации.
+          Сначала покажем короткое превью по адресу: общий вывод, сильная сторона и главный риск. Полный отчёт с доходностью, рисками, развитием района и PDF доступен после оплаты.
         </p>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-slate-900">Бесплатный отчёт по локации</h2>
+            <h2 className="text-xl font-bold text-slate-900">Превью отчёта по локации</h2>
             <p className="mt-3 text-base leading-relaxed text-slate-600">
-              Быстрый общий вывод по адресу: спрос, риски, сильные объекты рядом и первичная оценка локации.
+              Короткий обзор по адресу: общий вывод, сильная сторона и главный риск.
             </p>
           </div>
           <form onSubmit={openFreeReport} className="mt-6 space-y-3">
             {freeReportHasContext ? (
               <p className="text-sm leading-relaxed text-slate-500">
-                {freeReportCanOpenExisting ? 'Готовый бесплатный отчёт:' : 'Создадим бесплатный отчёт для адреса:'}{' '}
+                {freeReportCanOpenExisting ? 'Готовое превью:' : 'Создадим превью для адреса:'}{' '}
                 {pendingReport?.address}
               </p>
             ) : (
@@ -278,16 +278,16 @@ export function ReportsPageClient() {
               disabled={freeBusy}
               className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
             >
-              {freeBusy ? 'Готовим отчёт…' : 'Получить бесплатный отчёт'}
+              {freeBusy ? 'Готовим превью…' : 'Посмотреть превью'}
             </button>
           </form>
         </article>
 
         <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-slate-900">Подробный платный отчёт</h2>
+            <h2 className="text-xl font-bold text-slate-900">Полный отчёт по объекту</h2>
             <p className="mt-3 text-base leading-relaxed text-slate-600">
-              Расширенный разбор объекта: спрос, конкуренция, транспорт, окружение, риски, рекомендации по цене и запуску.
+              Полный разбор: доходность, риски, развитие района, рекомендации по цене и запуску, PDF после оплаты.
             </p>
             {pendingReport && !pendingReport.requestId ? (
               <p className="mt-4 text-sm leading-relaxed text-slate-500">
@@ -303,14 +303,14 @@ export function ReportsPageClient() {
               disabled={busy}
               className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
             >
-              {busy ? 'Создаём заявку…' : 'Заказать подробный отчёт'}
+              {busy ? 'Создаём заявку…' : 'Получить полный отчёт'}
             </button>
           ) : (
             <Link
               href={PAID_REPORT_START_HREF}
               className="mt-6 inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 sm:w-fit"
             >
-              Заказать подробный отчёт
+              Получить полный отчёт
             </Link>
           )}
         </article>

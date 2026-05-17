@@ -17,7 +17,7 @@ export default async function DashboardReportPage(
     if (isLocationCommercialReport(entity.report)) {
       return <CommercialReportView report={entity.report} />;
     }
-    if (isLocationStandaloneReportV1(entity.report) && entity.report.reportMode !== 'free') {
+    if (isLocationStandaloneReportV1(entity.report)) {
       return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
     }
   }

@@ -53,28 +53,39 @@ describe('dashboard report acquisition flow', () => {
     });
   });
 
-  it('dashboard reports index shows free and paid report choices by default', () => {
+  it('dashboard reports index shows preview and paid report choices by default', () => {
     const html = renderToStaticMarkup(React.createElement(ReportsPageClient));
-    const freeCardHtml = html.split('Подробный платный отчёт')[0] ?? html;
-    const paidCardHtml = html.split('Подробный платный отчёт')[1] ?? '';
+    const previewCardHtml = html.split('Полный отчёт по объекту')[0] ?? html;
+    const paidCardHtml = html.split('Полный отчёт по объекту')[1] ?? '';
 
     expect(html).toContain('Отчёты по объектам');
-    expect(html).toContain('Сначала можно получить бесплатный краткий отчёт по адресу');
-    expect(html).toContain('Бесплатный отчёт по локации');
-    expect(html).toContain('Быстрый общий вывод по адресу');
+    expect(html).toContain(
+      'Сначала покажем короткое превью по адресу: общий вывод, сильная сторона и главный риск.',
+    );
+    expect(html).toContain('Полный отчёт с доходностью, рисками, развитием района и PDF доступен после оплаты.');
+    expect(html).toContain('Превью отчёта по локации');
+    expect(html).toContain('Короткий обзор по адресу');
     expect(html).toContain('Адрес объекта');
     expect(html).toContain('Город, улица, дом');
-    expect(html).toContain('Получить бесплатный отчёт');
-    expect(freeCardHtml).not.toContain('/ru/location-analysis');
-    expect(html).toContain('Подробный платный отчёт');
-    expect(html).toContain('Расширенный разбор объекта');
-    expect(html).toContain('Заказать подробный отчёт');
+    expect(html).toContain('Посмотреть превью');
+    expect(html).not.toMatch(/бесплатн/i);
+    expect(previewCardHtml).not.toContain('/ru/location-analysis');
+    expect(html).toContain('Полный отчёт по объекту');
+    expect(html).toContain('Получить полный отчёт');
     expect(paidCardHtml).toContain('/ru/location-analysis?mode=residential#location-check');
     expect(html).toContain('Мои сохранённые отчёты');
     expect(html).toContain('Пока нет сохранённых отчётов.');
   });
 
-  it('dashboard free report action creates or opens the canonical free report page', () => {
+  it('labels saved reports as Превью or Полный отчёт without free-report wording', () => {
+    const reportsSrc = fs.readFileSync(dashboardReportsPath, 'utf8');
+
+    expect(reportsSrc).toContain("'Превью' | 'Полный отчёт'");
+    expect(reportsSrc).toContain("? 'Полный отчёт' : 'Превью'");
+    expect(reportsSrc).not.toMatch(/бесплатн/i);
+  });
+
+  it('dashboard preview action creates or opens the canonical preview report page', () => {
     const reportsSrc = fs.readFileSync(dashboardReportsPath, 'utf8');
     const ruLocationReportRouteSrc = fs.readFileSync(ruLocationReportRoutePath, 'utf8');
 
@@ -115,11 +126,13 @@ describe('dashboard report acquisition flow', () => {
 
     expect(reportsSrc).toContain("fetch('/api/location-full-report/request'");
     expect(reportsSrc).toContain("router.push(data.loginUrl)");
-    expect(reportsSrc).toContain('Заказать подробный отчёт');
-    expect(reportsSrc).toContain('Получить бесплатный отчёт');
+    expect(reportsSrc).toContain('Получить полный отчёт');
+    expect(reportsSrc).toContain('Посмотреть превью');
+    expect(reportsSrc).not.toMatch(/бесплатн/i);
     expect(reportsSrc).toContain("const PAID_REPORT_START_HREF = '/ru/location-analysis?mode=residential#location-check'");
     expect(reportsSrc).toContain('Генерируется');
     expect(reportsSrc).toContain('Готов');
+    expect(routeSrc).toContain('LocationStandaloneFullReport');
     expect(routeSrc).toContain('ReportPlaceholderClient');
     expect(ruRouteSrc).toContain("redirect(`/dashboard/reports/");
     expect(authGuardSrc).toContain('redirect=${encodeURIComponent(redirect)}');
