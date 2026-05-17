@@ -154,7 +154,16 @@ export function LocationStandaloneFullReport({
   if (report.reportMode === 'free') {
     return <LocationReportPublicPreview report={report} reportId={reportId} />;
   }
+  return <LocationStandalonePaidFullReport report={report} reportId={reportId} />;
+}
 
+function LocationStandalonePaidFullReport({
+  report,
+  reportId,
+}: {
+  report: LocationStandaloneReport;
+  reportId?: string;
+}) {
   const isFreePreview = false;
   const persistedReportId = reportId ?? report.reportId;
   const reportStructure = report.reportStructure;
