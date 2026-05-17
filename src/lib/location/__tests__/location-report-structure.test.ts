@@ -9,7 +9,7 @@ describe('location report structure', () => {
   it('defines the canonical free report format', () => {
     const structure = buildLocationReportStructureViewModel('free');
 
-    expect(structure.titleRu).toBe('Бесплатный общий отчёт');
+    expect(structure.titleRu).toBe('Предпросмотр отчёта');
     expect(structure.sections.map(section => section.id)).toEqual([
       'shortAddressConclusion',
       'publicLocationStatus',
@@ -18,23 +18,26 @@ describe('location report structure', () => {
       'generalRecommendation',
       'orderDetailedReportCta',
     ]);
-    expect(structure.cta.primaryLabel).toBe('Получить подробный отчёт');
+    expect(structure.cta.primaryLabel).toBe('Получить полный отчёт');
     expect(FREE_PAID_REPORT_TEASER_RU).toContain('коммерческий потенциал');
   });
 
   it('defines the canonical paid report format', () => {
     const structure = buildLocationReportStructureViewModel('paid');
 
-    expect(structure.titleRu).toBe('Подробный отчёт');
+    expect(structure.titleRu).toBe('Отчёт по локации');
     expect(structure.sections.map(section => section.titleRu)).toEqual([
-      'Полный вывод по адресу',
-      'Подробные магниты',
-      'Аудитория спроса',
+      'Краткий вывод для владельца',
+      'Кому подойдёт объект',
+      'Главные магниты спроса',
       'Конкуренция',
+      'Сценарии дохода',
+      'Как может измениться район',
+      'Риски',
+      'Как запускать',
+      'Итоговая рекомендация',
       'Транспортная доступность',
       'Среда вокруг объекта',
-      'Риски и ограничения',
-      'Рекомендации по упаковке, цене и каналам продаж',
       'Следующий шаг',
     ]);
     expect(structure.cta).toMatchObject({

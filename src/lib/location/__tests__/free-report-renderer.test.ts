@@ -137,11 +137,11 @@ describe('buildFreeLocationReportViewModel', () => {
       decision: decisionWithEvidence(3),
     });
 
-    expect(report.cta.primaryLabel).toBe('Получить подробный отчёт');
+    expect(report.cta.primaryLabel).toBe('Получить полный отчёт');
     expect(report.shortRecommendation).toBe(
       'Для решения по объекту проверьте экономику, конкурентов и сценарий запуска в подробном отчёте.',
     );
     expect(report.paidReportTeaser).toContain('коммерческий потенциал');
-    expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('detailedMagnets');
+    expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('primeDemandMagnets');
   });
 });

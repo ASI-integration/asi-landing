@@ -120,7 +120,7 @@ describe('location report generation engine', () => {
     const doc = buildGeneratedLocationReportDocument(entity(freeReport));
     const html = buildLocationReportPrintHtml(doc);
 
-    expect(html).toContain('Бесплатный общий отчёт');
+    expect(html).toContain('Предпросмотр отчёта');
     expect(html).toContain('Невский проспект, 88');
     expect(html).toContain('Метро в пешей доступности: объект проще продвигать для гостей без автомобиля.');
     expect(html).toContain('Конкуренция рядом не разобрана подробно.');
