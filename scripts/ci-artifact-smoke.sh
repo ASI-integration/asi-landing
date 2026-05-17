@@ -46,6 +46,11 @@ fi
   exit 1
 }
 
+[[ -f scripts/check-location-pdf-chromium.mjs ]] || {
+  echo "ERROR: missing scripts/check-location-pdf-chromium.mjs in artifact" >&2
+  exit 1
+}
+
 echo "Starting Next (production) on 127.0.0.1:${PORT}..."
 SRV_PID=""
 PORT="$PORT" NODE_ENV=production ASI_APP_ROOT="$(pwd)" \

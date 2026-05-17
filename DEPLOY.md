@@ -96,7 +96,7 @@ LOCATION_REPORT_PDF_BASE_URL=https://asi-global.ru
 ```bash
 cd /var/www/asi/current
 set -a && source /var/www/asi/shared/.env.production.live && set +a
-npx tsx scripts/check-location-pdf-chromium.ts
+npm run location-pdf:check-chromium
 # ok: true и exit 0
 ```
 

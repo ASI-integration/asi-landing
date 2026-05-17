@@ -23,7 +23,8 @@
     "test:telegram:live": "node scripts/telegram-live-acceptance.mjs",
     "location:golden": "npx tsx scripts/location-golden-trace.ts",
     "location:golden:assert": "vitest run src/lib/location/__tests__/location-golden-assertions.test.ts",
-    "location-pdf:check-chromium": "npx tsx scripts/check-location-pdf-chromium.ts"
+    "location-pdf:check-chromium": "node scripts/check-location-pdf-chromium.mjs",
+    "location-pdf:verify-production": "node scripts/verify-location-report-pdf-production.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",

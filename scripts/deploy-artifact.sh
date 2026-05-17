@@ -218,6 +218,7 @@ log "Preflight: mandatory artifact paths"
 [[ -f "$STAGING_DIR/release-meta.json" ]] || die "artifact missing release-meta.json"
 [[ -d "$STAGING_DIR/node_modules" ]] || die "artifact missing node_modules/ (artifact must bundle prod deps)"
 [[ -f "$STAGING_DIR/node_modules/next/dist/bin/next" ]] || die "artifact missing Next CLI (node_modules/next/dist/bin/next)"
+[[ -f "$STAGING_DIR/scripts/check-location-pdf-chromium.mjs" ]] || die "artifact missing scripts/check-location-pdf-chromium.mjs"
 
 META_SHA="$(read_git_sha_from_release_dir "$STAGING_DIR")"
 if [[ -z "$META_SHA" ]]; then

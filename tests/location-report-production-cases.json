@@ -1,0 +1,9 @@
+{
+  "baseUrl": "https://asi-global.ru",
+  "freePreviewReportId": "505939b9-f7ae-4fca-8ca6-6c9726b857b0",
+  "paidFullReportId": "db87d911-f5fc-43b6-9b68-821ee624adc2",
+  "notes": {
+    "freePreviewReportId": "Persisted permalink with reportMode free (Supabase location_standalone_reports).",
+    "paidFullReportId": "Legacy full-access report (reportMode undefined, not free). Use until a reportMode paid row exists in production."
+  }
+}
