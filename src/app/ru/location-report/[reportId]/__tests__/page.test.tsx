@@ -17,7 +17,7 @@ vi.mock('@/lib/location/standalone-report-store', () => ({
 
 vi.mock('@/components/location/LocationReportPublicPreview', () => ({
   LocationReportPublicPreview: ({ reportId }: { reportId?: string }) => (
-    <div>Предпросмотр отчёта {reportId}</div>
+    <div>Отчёт по локации {reportId}</div>
   ),
 }));
 
@@ -79,7 +79,7 @@ describe('/ru/location-report/[reportId]', () => {
     const html = renderToStaticMarkup(element);
 
     expect(mockGetStandaloneReportById).toHaveBeenCalledWith('report-1');
-    expect(html).toContain('Предпросмотр отчёта report-1');
+    expect(html).toContain('Отчёт по локации report-1');
     expect(html).not.toContain('Бесплатный');
     expect(html).not.toContain('ожидает оплаты');
     expect(html).not.toContain('Ожидает оплаты');
