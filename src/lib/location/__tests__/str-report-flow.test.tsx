@@ -37,7 +37,7 @@ describe('RU STR location report flow', () => {
       }),
     );
 
-    expect(html).toContain('Предпросмотр отчёта по локации');
+    expect(html).toContain('Отчёт по локации');
     expect(html).toContain('Получить полный отчёт');
     expect(html).not.toContain('Скачать PDF');
     expect(html).not.toContain('Отчёт по посуточной аренде');

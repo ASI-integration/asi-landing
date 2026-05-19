@@ -159,7 +159,7 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(publicReportSrc).toContain('freeReportPermalink');
     expect(publicReportSrc).toContain('createdAt');
     expect(publicReportSrc).toContain('Получить полный отчёт');
-    expect(publicReportSrc).toContain('После оплаты отчёт появится в разделе Мои отчёты');
+    expect(publicReportSrc).toContain('YOOKASSA_PENDING_REVIEW_MESSAGE');
   });
 
   it('public RU route files do not import purchase core or scoring internals', () => {
