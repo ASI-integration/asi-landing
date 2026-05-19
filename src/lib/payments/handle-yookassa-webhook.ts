@@ -6,6 +6,7 @@ import { hasWebhookBeenProcessed, markWebhookProcessed } from '@/lib/payments/ev
 import { supabase } from '@/lib/supabase';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { SessionStatus, transitionSessionStatus } from '@/lib/communication/session-status';
+import { isYooKassaEnabled, YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
 /**
  * Общая обработка уведомлений ЮKassa.
@@ -15,6 +16,15 @@ export async function handleYookassaWebhook(req: Request): Promise<NextResponse>
   try {
     const provider = getProvider('yookassa');
     const bodyText = await req.text();
+
+    if (!isYooKassaEnabled()) {
+      return NextResponse.json({
+        received: true,
+        handled: false,
+        status: 'disabled',
+        message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+      });
+    }
 
     if (!provider.verifyWebhookSignature(bodyText, '')) {
       console.error('[YooKassa Webhook] Origin verification failed');

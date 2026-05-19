@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { sendTelegramMessage } from './telegram';
-import { getYooKassaCredentials } from './payments/yookassa-env';
 
 export async function checkTrialExpiration(): Promise<void> {
   const now = new Date().toISOString();
@@ -15,7 +14,7 @@ export async function checkTrialExpiration(): Promise<void> {
 
   for (const sub of subs) {
     if (sub.payment_method_id) {
-      // Attempt recurring payment via YooKassa
+      // YooKassa recurring payments are disabled until the report product is reviewed.
       const success = await attemptRecurringPayment(sub.user_id, sub.payment_method_id);
       if (success) {
         const periodEnd = new Date();
@@ -44,30 +43,7 @@ export async function checkTrialExpiration(): Promise<void> {
 }
 
 async function attemptRecurringPayment(userId: string, paymentMethodId: string): Promise<boolean> {
-  const creds = getYooKassaCredentials();
-  if (!creds) return false;
-
-  try {
-    const auth = Buffer.from(`${creds.shopId}:${creds.secretKey}`).toString('base64');
-    const res = await fetch('https://api.yookassa.ru/v3/payments', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${auth}`,
-        'Idempotence-Key': `recurring-${userId}-${Date.now()}`,
-      },
-      body: JSON.stringify({
-        amount: { value: '990.00', currency: 'RUB' },
-        payment_method_id: paymentMethodId,
-        capture: true,
-        description: 'ASI subscription renewal',
-      }),
-    });
-
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.status === 'succeeded';
-  } catch {
-    return false;
-  }
+  void userId;
+  void paymentMethodId;
+  return false;
 }

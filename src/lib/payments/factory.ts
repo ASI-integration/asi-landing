@@ -78,6 +78,20 @@ export async function createPaymentRequest(params: CreatePaymentParams): Promise
   };
 
   const provider = getProvider(providerName);
+  if (providerName === 'yookassa' && provider instanceof YookassaProvider) {
+    const disabled = await provider.createPayment(requestForProvider);
+    const record: PaymentRequest = {
+      ...requestForProvider,
+      provider: providerName,
+      providerTransactionId: disabled.transactionId,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await createPaymentRecord(record);
+    return record;
+  }
+
   const { paymentUrl, transactionId } = await provider.createPaymentLink(requestForProvider);
 
   const record: PaymentRequest = {

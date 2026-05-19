@@ -1,53 +1,98 @@
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
+import {
+  isYooKassaEnabled,
+  YOOKASSA_PENDING_REVIEW_MESSAGE,
+} from './yookassa-env';
 
-const YOOKASSA_SECRET = process.env.YOOKASSA_SECRET_KEY || 'test_secret';
-const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID || 'test_shop';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+export type YooKassaDisabledPayment = {
+  provider: 'yookassa';
+  status: 'disabled';
+  paymentUrl: null;
+  transactionId: null;
+  message: string;
+};
 
-export class YookassaProvider implements PaymentProvider {
-  async createPaymentLink(
-    params: Omit<PaymentRequest, 'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'>
-  ): Promise<{ paymentUrl: string; transactionId: string }> {
-    const amountStr = params.amount.toFixed(2);
-    const auth = Buffer.from(`${YOOKASSA_SHOP_ID}:${YOOKASSA_SECRET}`).toString('base64');
-    // Use internal payment ID as idempotency key so retries are safe
-    const idempotencyKey = params.id;
+export type YooKassaPaymentStatus = {
+  provider: 'yookassa';
+  status: 'disabled' | PaymentStatus;
+  transactionId: string | null;
+  message?: string;
+};
 
-    const res = await fetch('https://api.yookassa.ru/v3/payments', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${auth}`,
-        'Idempotence-Key': idempotencyKey,
-      },
-      body: JSON.stringify({
-        amount: { value: amountStr, currency: params.currency || 'RUB' },
-        confirmation: {
-          type: 'redirect',
-          return_url: `${APP_URL}/payments/success?provider=yookassa`,
-        },
-        capture: true,
-        description: params.description || params.serviceType || 'ASI Payment',
-        metadata: {
-          paymentRequestId: params.id,
-          reservationId: params.reservationId || '',
-          propertyId: params.propertyId || '',
-          guestId: params.guestId || '',
-          chatId: params.chatId || '',
-          serviceType: params.serviceType || '',
-        },
-      }),
-    });
+export type YooKassaWebhookResult = {
+  provider: 'yookassa';
+  received: boolean;
+  handled: boolean;
+  status: 'disabled' | PaymentStatus;
+  transactionId: string | null;
+  eventId?: string;
+  message?: string;
+};
 
-    if (!res.ok) {
-      throw new Error(`YooKassa API Error: ${await res.text()}`);
+type YooKassaPaymentInput = Omit<
+  PaymentRequest,
+  'provider' | 'providerTransactionId' | 'status' | 'createdAt' | 'updatedAt' | 'paymentUrl'
+>;
+
+export interface YooKassaProviderSkeleton {
+  createPayment(params: YooKassaPaymentInput): Promise<YooKassaDisabledPayment>;
+  getPaymentStatus(transactionId: string): Promise<YooKassaPaymentStatus>;
+  handleWebhook(payload: string | Buffer, signature?: string): Promise<YooKassaWebhookResult>;
+}
+
+export class YooKassaDisabledError extends Error {
+  constructor() {
+    super(YOOKASSA_PENDING_REVIEW_MESSAGE);
+    this.name = 'YooKassaDisabledError';
+  }
+}
+
+export class YookassaProvider implements PaymentProvider, YooKassaProviderSkeleton {
+  async createPayment(_params: YooKassaPaymentInput): Promise<YooKassaDisabledPayment> {
+    return {
+      provider: 'yookassa',
+      status: 'disabled',
+      paymentUrl: null,
+      transactionId: null,
+      message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+    };
+  }
+
+  async getPaymentStatus(_transactionId: string): Promise<YooKassaPaymentStatus> {
+    return {
+      provider: 'yookassa',
+      status: 'disabled',
+      transactionId: null,
+      message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+    };
+  }
+
+  async handleWebhook(payload: string | Buffer, signature = ''): Promise<YooKassaWebhookResult> {
+    if (!isYooKassaEnabled()) {
+      return {
+        provider: 'yookassa',
+        received: true,
+        handled: false,
+        status: 'disabled',
+        transactionId: null,
+        message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+      };
     }
 
-    const data = await res.json();
+    const event = await this.parseWebhookEvent(payload, signature);
     return {
-      paymentUrl: data.confirmation.confirmation_url,
-      transactionId: data.id,
+      provider: 'yookassa',
+      received: true,
+      handled: false,
+      status: event.status,
+      transactionId: event.transactionId,
+      eventId: event.eventId,
     };
+  }
+
+  async createPaymentLink(params: YooKassaPaymentInput): Promise<{ paymentUrl: string; transactionId: string }> {
+    await this.createPayment(params);
+    throw new YooKassaDisabledError();
   }
 
   verifyWebhookSignature(_payload: string | Buffer, _signature: string): boolean {

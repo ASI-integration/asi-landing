@@ -60,29 +60,32 @@ describe('dashboard report acquisition flow', () => {
 
     expect(html).toContain('Отчёты по объектам');
     expect(html).toContain(
-      'Сначала покажем короткое превью по адресу: общий вывод, сильная сторона и главный риск.',
+      'Сначала покажем короткий отчёт по адресу: общий вывод, сильная сторона и главный риск.',
     );
-    expect(html).toContain('Полный отчёт с доходностью, рисками, развитием района и PDF доступен после оплаты.');
-    expect(html).toContain('Превью отчёта по локации');
+    expect(html).toContain('Полный отчёт с доходностью, рисками, развитием района и PDF будет доступен после финальной проверки.');
+    expect(html).toContain('Короткий отчёт по локации');
     expect(html).toContain('Короткий обзор по адресу');
     expect(html).toContain('Адрес объекта');
     expect(html).toContain('Город, улица, дом');
-    expect(html).toContain('Посмотреть превью');
+    expect(html).toContain('Посмотреть короткий отчёт');
+    expect(html).not.toMatch(/превью/i);
     expect(html).not.toMatch(/бесплатн/i);
     expect(previewCardHtml).not.toContain('/ru/location-analysis');
     expect(html).toContain('Полный отчёт по объекту');
+    expect(html).toContain('Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.');
     expect(html).toContain('Получить полный отчёт');
     expect(paidCardHtml).toContain('/ru/location-analysis?mode=residential#location-check');
     expect(html).toContain('Мои сохранённые отчёты');
     expect(html).toContain('Пока нет сохранённых отчётов.');
   });
 
-  it('labels saved reports as Превью or Полный отчёт without free-report wording', () => {
+  it('labels saved reports as Короткий отчёт or Полный отчёт without free-report wording', () => {
     const reportsSrc = fs.readFileSync(dashboardReportsPath, 'utf8');
 
-    expect(reportsSrc).toContain("'Превью' | 'Полный отчёт'");
-    expect(reportsSrc).toContain("? 'Полный отчёт' : 'Превью'");
+    expect(reportsSrc).toContain("'Короткий отчёт' | 'Полный отчёт'");
+    expect(reportsSrc).toContain("? 'Полный отчёт' : 'Короткий отчёт'");
     expect(reportsSrc).not.toMatch(/бесплатн/i);
+    expect(reportsSrc).not.toMatch(/превью/i);
   });
 
   it('dashboard preview action creates or opens the canonical preview report page', () => {
@@ -99,9 +102,10 @@ describe('dashboard report acquisition flow', () => {
     expect(ruLocationReportRouteSrc).toContain("entity.report.reportMode === 'free'");
   });
 
-  it('dashboard reports index does not show pending payment placeholders by default', () => {
+  it('dashboard reports index shows the pending integration status without a payment link', () => {
     const html = renderToStaticMarkup(React.createElement(ReportsPageClient));
 
+    expect(html).toContain('Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.');
     expect(html).not.toContain('Ожидает оплаты');
     expect(html).not.toContain('Платёжная ссылка');
     expect(html).not.toContain('Закрыто до оплаты и генерации');
@@ -112,10 +116,12 @@ describe('dashboard report acquisition flow', () => {
       React.createElement(ReportPlaceholderClient, { reportId: 'request-1' }),
     );
 
-    expect(html).toContain('Ожидает оплаты');
-    expect(html).toContain('Платёжная ссылка');
-    expect(html).toContain('Закрыто до оплаты и генерации');
-    expect(html).toContain('Скачать PDF');
+    expect(html).toContain('Полный отчёт закрыт');
+    expect(html).toContain('Вот ссылка на отчёт');
+    expect(html).toContain('Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.');
+    expect(html).not.toContain('Платёжная ссылка');
+    expect(html).not.toContain('Детальный расчёт появится после оплаты.');
+    expect(html).not.toContain('Скачать PDF');
   });
 
   it('dashboard report routes preserve paid request and auth-gate behavior', () => {
@@ -127,9 +133,10 @@ describe('dashboard report acquisition flow', () => {
     expect(reportsSrc).toContain("fetch('/api/location-full-report/request'");
     expect(reportsSrc).toContain("router.push(data.loginUrl)");
     expect(reportsSrc).toContain('Получить полный отчёт');
-    expect(reportsSrc).toContain('Посмотреть превью');
+    expect(reportsSrc).toContain('Посмотреть короткий отчёт');
     expect(reportsSrc).not.toMatch(/бесплатн/i);
     expect(reportsSrc).toContain("const PAID_REPORT_START_HREF = '/ru/location-analysis?mode=residential#location-check'");
+    expect(reportsSrc).toContain('YOOKASSA_PENDING_REVIEW_MESSAGE');
     expect(reportsSrc).toContain('Генерируется');
     expect(reportsSrc).toContain('Готов');
     expect(routeSrc).toContain('LocationStandaloneFullReport');

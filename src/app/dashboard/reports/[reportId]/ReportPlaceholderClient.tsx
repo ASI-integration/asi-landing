@@ -8,22 +8,14 @@ import {
   type PendingLocationReportContext,
   type PendingLocationReportStatus,
 } from '@/lib/location/pending-location-report';
+import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
 const STATUS_LABELS: Record<PendingLocationReportStatus, string> = {
-  payment_pending: 'Ожидает оплаты',
+  payment_pending: 'Полный отчёт закрыт',
   processing: 'Генерируется',
   ready: 'Готов',
   failed: 'Ошибка, попробовать снова',
 };
-
-const LOCKED_SECTIONS = [
-  'Полный вывод по адресу',
-  'Спрос рядом',
-  'Конкуренция',
-  'Транспорт и окружение',
-  'Риски',
-  'Рекомендации по цене и запуску',
-] as const;
 
 function readStoredReport(reportId: string): PendingLocationReportContext | null {
   try {
@@ -101,56 +93,45 @@ export function ReportPlaceholderClient({ reportId }: { reportId: string }) {
   }, [reportId]);
 
   const status = report?.status ?? 'payment_pending';
+  const reportLink = report?.freeReportPermalink;
+  const address = report?.address ?? 'Отчёт по выбранной локации';
 
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Подробный отчёт</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-            {report?.address ?? 'Отчёт по выбранной локации'}
-          </h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-600">
-            Подробный расчёт появится после оплаты и генерации. Сейчас это место для будущего полного отчёта.
-          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">{address}</h1>
         </div>
         <span className="inline-flex w-fit rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800">
           {STATUS_LABELS[status]}
         </span>
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900">Оплата</h2>
-        <p className="mt-2 text-base leading-relaxed text-slate-600">
-          Оплата пока не подключена в интерфейсе. После оплаты отчёт появится в разделе Мои отчёты.
-        </p>
-        <div className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5">
-          <p className="text-sm font-semibold text-slate-900">Платёжная ссылка</p>
-          <p className="mt-1 text-sm text-slate-500">Будет доступна здесь.</p>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="bg-gradient-to-br from-slate-950 to-slate-800 p-6 text-white sm:p-8">
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">Ссылка на отчёт</p>
+          <h2 className="mt-3 text-2xl font-bold tracking-tight">Вот ссылка на отчёт</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300">
+            {YOOKASSA_PENDING_REVIEW_MESSAGE}
+          </p>
         </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Разделы полного отчёта</h2>
-            <p className="mt-1 text-sm text-slate-500">Закрыто до оплаты и генерации.</p>
-          </div>
-          <button
-            type="button"
-            disabled
-            className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-400"
-          >
-            Скачать PDF
-          </button>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {LOCKED_SECTIONS.map(section => (
-            <div key={section} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-base font-semibold text-slate-900">{section}</p>
-              <p className="mt-2 text-sm text-slate-500">Детальный расчёт появится после оплаты.</p>
+        <div className="p-6 sm:p-8">
+          {reportLink ? (
+            <Link
+              href={reportLink}
+              className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800"
+            >
+              Открыть текущий отчёт
+            </Link>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5">
+              <p className="text-sm font-semibold text-slate-900">Текущий отчёт</p>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                Ссылка появится здесь после загрузки данных запроса.
+              </p>
             </div>
-          ))}
+          )}
         </div>
       </section>
 

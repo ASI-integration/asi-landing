@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createPaymentRequest, getProvider } from '../factory';
-import { getPaymentByTransactionId, updatePaymentStatus, _resetPaymentDb } from '../db';
+import { getPaymentById, getPaymentByTransactionId, updatePaymentStatus, _resetPaymentDb } from '../db';
 import { _resetEventLogs, hasConfirmationBeenSent, markConfirmationSent } from '../events';
 import { sendPaymentConfirmation } from '../../communication/notifications';
+import { isYooKassaEnabled, YOOKASSA_PENDING_REVIEW_MESSAGE } from '../yookassa-env';
+import { YookassaProvider } from '../yookassa';
 
 // ─── External dependency mocks ────────────────────────────────────────────────
 
@@ -50,6 +52,7 @@ global.fetch = vi.fn().mockResolvedValue({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.YOOKASSA_ENABLED;
   _resetPaymentDb();
   _resetEventLogs();
 });
@@ -57,6 +60,10 @@ beforeEach(() => {
 // ─── Provider routing ─────────────────────────────────────────────────────────
 
 describe('Payment factory — provider routing', () => {
+  it('keeps YooKassa disabled by default', () => {
+    expect(isYooKassaEnabled()).toBe(false);
+  });
+
   it('routes USD to Stripe and persists the record', async () => {
     const payment = await createPaymentRequest({ amount: 100, currency: 'USD', chatId: '12345' });
     expect(payment.provider).toBe('stripe');
@@ -68,11 +75,16 @@ describe('Payment factory — provider routing', () => {
     expect(saved?.status).toBe('pending');
   });
 
-  it('routes RUB to YooKassa and persists the record', async () => {
+  it('routes RUB to the disabled YooKassa skeleton without creating a real payment session', async () => {
     const payment = await createPaymentRequest({ amount: 5000, currency: 'RUB', chatId: '67890' });
     expect(payment.provider).toBe('yookassa');
-    expect(payment.paymentUrl).toContain('yoomoney');
-    expect(payment.providerTransactionId).toBe('2e5b8e96-000f-5000-a000-1c39c811f237');
+    expect(payment.paymentUrl).toBeUndefined();
+    expect(payment.providerTransactionId).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    const saved = await getPaymentById(payment.id);
+    expect(saved?.provider).toBe('yookassa');
+    expect(saved?.providerTransactionId).toBeNull();
   });
 
   it('respects an explicit provider override', async () => {
@@ -153,6 +165,40 @@ describe('Stripe webhook processing', () => {
 describe('YooKassa webhook processing', () => {
   const YK_TX_ID = '2e5b8e96-000f-5000-a000-1c39c811f237';
 
+  it('exposes disabled createPayment/getPaymentStatus/handleWebhook interfaces', async () => {
+    const provider = getProvider('yookassa') as YookassaProvider;
+    const payment = await provider.createPayment({
+      id: 'pay_disabled',
+      amount: 5000,
+      currency: 'RUB',
+    });
+    const status = await provider.getPaymentStatus('provider-id');
+    const webhook = await provider.handleWebhook('{}');
+
+    expect(payment).toMatchObject({
+      provider: 'yookassa',
+      status: 'disabled',
+      paymentUrl: null,
+      transactionId: null,
+      message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+    });
+    expect(status).toMatchObject({
+      provider: 'yookassa',
+      status: 'disabled',
+      transactionId: null,
+      message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+    });
+    expect(webhook).toMatchObject({
+      provider: 'yookassa',
+      received: true,
+      handled: false,
+      status: 'disabled',
+      transactionId: null,
+      message: YOOKASSA_PENDING_REVIEW_MESSAGE,
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('parses a payment.succeeded event', async () => {
     const provider = getProvider('yookassa');
     const payload = JSON.stringify({
@@ -174,14 +220,12 @@ describe('YooKassa webhook processing', () => {
     expect(result.status).toBe('cancelled');
   });
 
-  it('applies status transition idempotently on webhook retry', async () => {
-    await createPaymentRequest({ amount: 5000, currency: 'RUB', chatId: '333' });
+  it('does not create a provider transaction while disabled', async () => {
+    const payment = await createPaymentRequest({ amount: 5000, currency: 'RUB', chatId: '333' });
 
-    const updated1 = await updatePaymentStatus(YK_TX_ID, 'paid');
-    expect(updated1).toBe(true);
-
-    const updated2 = await updatePaymentStatus(YK_TX_ID, 'paid');
-    expect(updated2).toBe(false);
+    expect(payment.providerTransactionId).toBeNull();
+    expect(await getPaymentByTransactionId(YK_TX_ID)).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

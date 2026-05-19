@@ -10,9 +10,10 @@ import {
   type PendingLocationReportContext,
   type PendingLocationReportStatus,
 } from '@/lib/location/pending-location-report';
+import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
 const STATUS_LABELS: Record<PendingLocationReportStatus, string> = {
-  payment_pending: 'Ожидает оплаты',
+  payment_pending: 'Оплата не подключена',
   processing: 'Генерируется',
   ready: 'Готов',
   failed: 'Ошибка, попробовать снова',
@@ -51,8 +52,8 @@ function mapApiStatus(status: unknown): PendingLocationReportStatus {
   return 'payment_pending';
 }
 
-function savedReportType(report: PendingLocationReportContext): 'Превью' | 'Полный отчёт' {
-  return report.requestId || report.paidReportId ? 'Полный отчёт' : 'Превью';
+function savedReportType(report: PendingLocationReportContext): 'Короткий отчёт' | 'Полный отчёт' {
+  return report.requestId || report.paidReportId ? 'Полный отчёт' : 'Короткий отчёт';
 }
 
 function savedReportStatus(report: PendingLocationReportContext): string {
@@ -228,7 +229,7 @@ export function ReportsPageClient() {
       }
       router.push(permalink);
     } catch {
-      setFreeError('Не удалось создать превью отчёта. Уточните адрес и попробуйте снова.');
+      setFreeError('Не удалось создать короткий отчёт. Уточните адрес и попробуйте снова.');
     } finally {
       setFreeBusy(false);
     }
@@ -242,14 +243,14 @@ export function ReportsPageClient() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Отчёты по объектам</h1>
         <p className="mt-2 text-base leading-relaxed text-slate-600">
-          Сначала покажем короткое превью по адресу: общий вывод, сильная сторона и главный риск. Полный отчёт с доходностью, рисками, развитием района и PDF доступен после оплаты.
+          Сначала покажем короткий отчёт по адресу: общий вывод, сильная сторона и главный риск. Полный отчёт с доходностью, рисками, развитием района и PDF будет доступен после финальной проверки.
         </p>
       </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="flex min-h-[260px] flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-slate-900">Превью отчёта по локации</h2>
+            <h2 className="text-xl font-bold text-slate-900">Короткий отчёт по локации</h2>
             <p className="mt-3 text-base leading-relaxed text-slate-600">
               Короткий обзор по адресу: общий вывод, сильная сторона и главный риск.
             </p>
@@ -257,7 +258,7 @@ export function ReportsPageClient() {
           <form onSubmit={openFreeReport} className="mt-6 space-y-3">
             {freeReportHasContext ? (
               <p className="text-sm leading-relaxed text-slate-500">
-                {freeReportCanOpenExisting ? 'Готовое превью:' : 'Создадим превью для адреса:'}{' '}
+                {freeReportCanOpenExisting ? 'Готовый короткий отчёт:' : 'Создадим короткий отчёт для адреса:'}{' '}
                 {pendingReport?.address}
               </p>
             ) : (
@@ -278,7 +279,7 @@ export function ReportsPageClient() {
               disabled={freeBusy}
               className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
             >
-              {freeBusy ? 'Готовим превью…' : 'Посмотреть превью'}
+              {freeBusy ? 'Готовим отчёт…' : 'Посмотреть короткий отчёт'}
             </button>
           </form>
         </article>
@@ -287,8 +288,11 @@ export function ReportsPageClient() {
           <div className="flex-1">
             <h2 className="text-xl font-bold text-slate-900">Полный отчёт по объекту</h2>
             <p className="mt-3 text-base leading-relaxed text-slate-600">
-              Полный разбор: доходность, риски, развитие района, рекомендации по цене и запуску, PDF после оплаты.
+              Полный разбор: доходность, риски, развитие района, рекомендации по цене и запуску, PDF после проверки отчёта.
             </p>
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
+              {YOOKASSA_PENDING_REVIEW_MESSAGE}
+            </div>
             {pendingReport && !pendingReport.requestId ? (
               <p className="mt-4 text-sm leading-relaxed text-slate-500">
                 Можно продолжить с адресом: {pendingReport.address}
