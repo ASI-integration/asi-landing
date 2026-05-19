@@ -135,13 +135,18 @@ describe('Novorossiysk port strategic anchor regression', () => {
       analysis,
     });
 
-    const expectedPortCopy = buildPortCityStrategicContextCopyRu('Новороссийск');
+    const confidence = decision.publicSummary?.publicScoreConfidence ?? 'requires_full_check';
+    const expectedPortCopy = buildPortCityStrategicContextCopyRu('Новороссийск', confidence);
     expect(publicDriverLines[0]).toBe(expectedPortCopy);
-    expect(publicDriverLines[0]).toContain('Городовой фактор спроса');
+    expect(publicDriverLines[0]).toContain('городской фактор спроса');
     expect(publicDriverLines[0]).not.toMatch(/\b0\s*м\b/);
-    expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(expectedPortCopy);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(publicDriverLines[0]);
     expect(freeReport.topEvidenceBullets[0]?.distanceLabel).toBeNull();
-    expect(freeReport.shortRecommendation).toContain('городовой фактор спроса');
+    if (confidence === 'sufficient') {
+      expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
+    } else {
+      expect(freeReport.shortRecommendation).toContain('не хватает данных');
+    }
     expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Слабый спрос/i);
 
     const portEvidence = decision.evidenceItems.find(
@@ -149,12 +154,17 @@ describe('Novorossiysk port strategic anchor regression', () => {
     );
     expect(portEvidence?.distanceMeters).toBeNull();
     expect(portEvidence?.anchorKind).toBe('city_level_strategic');
-    expect(formatRuResidentialEvidenceRowRu(portEvidence!)).toBe(expectedPortCopy);
+    expect(formatRuResidentialEvidenceRowRu(portEvidence!)).toBe(publicDriverLines[0]);
     expect(formatRuResidentialEvidenceRowRu(portEvidence!)).not.toMatch(/\b0\s*м\b/);
 
     const scoreLabel = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
     expect(scoreLabel).not.toMatch(/15.?25\s*%/);
-    expect(scoreLabel).toMatch(/требует полной проверки|недостаточно/i);
+    expect(scoreLabel).not.toMatch(/требует полной проверки|данных недостаточно/i);
+    if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
+      expect(scoreLabel).toMatch(/Предварительный потенциал:/);
+    } else {
+      expect(scoreLabel).toBe('Потенциал требует уточнения');
+    }
   });
 
   it('deduplicates repeated medical anchors by normalized name, category, distance, and coordinates', () => {

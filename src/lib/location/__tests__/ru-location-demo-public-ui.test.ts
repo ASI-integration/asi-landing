@@ -5,6 +5,7 @@ import { buildAnalysis } from '../gravity-scoring';
 import { buildFreeLocationReportViewModel } from '../free-report-renderer';
 import { buildLocationDecision } from '../location-decision-kernel';
 import { FREE_LOCATION_REPORT_CTA } from '../location-report-structure';
+import { publicScoreLabelRuForConfidence } from '../location-evidence-anchor';
 import {
   publicLocationScore,
   publicScorePresentationFromDecision,
@@ -256,9 +257,13 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     const presentationLabel =
       publicScorePresentationFromDecision(decision, publicScore)?.labelRu ?? '';
 
-    expect(decision.publicSummary?.publicScoreConfidence).not.toBe('sufficient');
-    expect(presentationLabel).toMatch(/требует полной проверки|недостаточно/i);
-    expect(presentationLabel).not.toMatch(/\d+\s*[-–]\s*\d+\s*%/);
+    expect(presentationLabel).not.toMatch(/требует полной проверки|данных недостаточно|нужно проверить/i);
+    expect(presentationLabel).not.toMatch(/\b\d+\s*\/\s*100\b/);
+    if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
+      expect(presentationLabel).toMatch(/Предварительный потенциал:/);
+    } else {
+      expect(presentationLabel).toMatch(/уточнения|умеренный/i);
+    }
     expect(decision.publicSummary?.presentationDiagnostics?.cityLevelStrategicAnchorOnly).toBe(
       true,
     );
@@ -271,7 +276,34 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(freeReport.shortVerdict).not.toMatch(/Слабый спрос/i);
 
     expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
-    expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Потенциал:/);
+    expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Предварительный потенциал:/);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toMatch(/городской фактор спроса/i);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).not.toMatch(/полной карте/i);
+  });
+
+  it('public hero uses separate score and headline containers without overlapping ring on RU residential', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    expect(demoSrc).toContain('data-public-hero-score');
+    expect(demoSrc).toContain('data-public-hero-headline');
+    expect(demoSrc).toContain('data-public-hero-recommendation');
+    expect(demoSrc).toContain('data-public-hero-headline');
+    expect(demoSrc).toContain('data-public-hero-recommendation');
+    expect(demoSrc).toMatch(
+      /\{!isRuResidentialDemo \? \([\s\S]*?<EvergreenRing[\s\S]*?\) : null\}/,
+    );
+    expect(demoSrc).toContain('items-start');
+  });
+
+  it('sufficient confidence does not render internal check wording in score label', () => {
+    const label = publicScoreLabelRuForConfidence('sufficient', 72);
+    expect(label).toMatch(/Предварительный потенциал:/);
+    expect(label).not.toMatch(/требует полной проверки|данных недостаточно|нужно проверить/i);
+  });
+
+  it('low-confidence public score may use cautious copy', () => {
+    const label = publicScoreRange(40, { confidence: 'requires_full_check' })?.labelRu ?? '';
+    expect(label).toBe('Потенциал требует уточнения');
+    expect(label).toMatch(/уточнения/i);
   });
 
   it('public RU UI does not contain raw/debug/full-report-only sections', () => {

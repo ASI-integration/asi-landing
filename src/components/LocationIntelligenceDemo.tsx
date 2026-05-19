@@ -2337,11 +2337,11 @@ function ASIPanel({
       {meta && !isRuResidentialDemo ? <ConfidenceWarningsStrip meta={meta} locale={locale} /> : null}
       {/* Main result dashboard — 3 columns on desktop */}
       <div className="p-5 md:p-6">
-        <div className={`grid gap-4 md:gap-5 items-stretch ${dataBlocked ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
+        <div className={`grid gap-4 md:gap-5 items-start ${dataBlocked ? 'grid-cols-1' : 'md:grid-cols-3'}`}>
 
           {/* Left: Score / index */}
           {!dataBlocked ? (
-          <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5">
+          <div className="rounded-2xl border border-slate-800/45 bg-slate-950/35 p-4 md:p-5 min-w-0">
             {!isRuResidentialDemo ? (
               <p className="text-[13px] text-slate-400 font-medium">
                 {locale === 'ru' ? 'Индекс' : 'Index'}
@@ -2349,14 +2349,15 @@ function ASIPanel({
             ) : null}
             {(
               <>
-                <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
-                  <div className="leading-none">
+                <div className={isRuResidentialDemo ? '' : 'mt-2 flex items-end gap-3'}>
+                  <div
+                    className={`min-w-0 ${isRuResidentialDemo ? '' : 'leading-none'}`}
+                    data-public-hero-score={isRuResidentialDemo ? 'true' : undefined}
+                  >
                     {isRuResidentialDemo ? (
-                      <>
-                        <p className={`text-[26px] md:text-[30px] font-extrabold ${band.textColor}`}>
-                          {publicScoreRangeLabel ?? 'Предварительный потенциал: средний'}
-                        </p>
-                      </>
+                      <p className={`text-[22px] md:text-[24px] font-extrabold leading-snug ${band.textColor}`}>
+                        {publicScoreRangeLabel ?? 'Предварительный потенциал: средний'}
+                      </p>
                     ) : (
                       <>
                         <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
@@ -2366,9 +2367,11 @@ function ASIPanel({
                       </>
                     )}
                   </div>
-                  <div className="ml-auto hidden lg:block">
-                    <EvergreenRing index={publicScore} band={band} animated={animated} copy={c} />
-                  </div>
+                  {!isRuResidentialDemo ? (
+                    <div className="ml-auto hidden lg:block shrink-0">
+                      <EvergreenRing index={publicScore} band={band} animated={animated} copy={c} />
+                    </div>
+                  ) : null}
                 </div>
                 {isRuResidentialDemo ? (
                   <>
@@ -2407,8 +2410,11 @@ function ASIPanel({
               </p>
             ) : null}
             {isRuResidentialDemo ? (
-              <p className="mt-1 text-[22px] md:text-[26px] font-semibold text-slate-100 leading-snug">
-                {freeReport?.shortRecommendation}
+              <p
+                className="mt-1 text-[20px] md:text-[22px] font-semibold text-slate-100 leading-snug"
+                data-public-hero-headline="true"
+              >
+                {freeReport?.shortVerdict ?? band.label}
               </p>
             ) : (
               <>
@@ -2437,13 +2443,20 @@ function ASIPanel({
                 {locale === 'ru' ? 'Вердикт' : 'Verdict'}
               </p>
             ) : null}
-            <p className={`${isRuResidentialDemo ? 'mt-1' : 'mt-2'} text-[28px] md:text-[32px] font-bold leading-tight ${dataBlocked ? 'text-slate-400' : band.textColor}`}>
+            <p
+              className={
+                isRuResidentialDemo
+                  ? 'mt-1 text-[15px] md:text-[16px] font-medium leading-relaxed text-slate-200'
+                  : `mt-2 text-[28px] md:text-[32px] font-bold leading-tight ${dataBlocked ? 'text-slate-400' : band.textColor}`
+              }
+              data-public-hero-recommendation={isRuResidentialDemo ? 'true' : undefined}
+            >
               {dataBlocked
                 ? locale === 'ru'
                   ? ctaSurface.title ?? 'Анализ не завершён'
                   : 'Analysis incomplete'
                 : isRuResidentialDemo
-                  ? freeReport?.shortVerdict ?? band.label
+                  ? freeReport?.shortRecommendation
                   : band.label}
             </p>
             {dataBlocked ? (

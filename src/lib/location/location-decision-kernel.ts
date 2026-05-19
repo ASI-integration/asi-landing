@@ -522,7 +522,14 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       row => row.trace.magnetFactId === CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
     )
   ) {
-    const portStrategicCopyRu = buildPortCityStrategicContextCopyRu(cityScaleInference.cityName ?? 'город');
+    const portStrategicCopyRu =
+      publicSummary.publicDrivers.find(
+        row => row.trace.magnetFactId === CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+      )?.textRu ??
+      buildPortCityStrategicContextCopyRu(
+        cityScaleInference.cityName ?? 'город',
+        publicSummary.publicScoreConfidence,
+      );
     const portStrategicFact = portCityStrategicMagnetFact({
       id: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
       cityName: cityScaleInference.cityName ?? 'город',

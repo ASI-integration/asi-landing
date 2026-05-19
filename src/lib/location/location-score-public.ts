@@ -51,7 +51,7 @@ export function publicScoreRange(
       low: 0,
       high: 0,
       label: '',
-      labelRu: 'Предварительный потенциал: требует полной проверки',
+      labelRu: 'Предварительный потенциал: ограниченный',
     };
   }
   return numeric;

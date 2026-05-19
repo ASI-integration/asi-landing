@@ -14,7 +14,8 @@ import {
 import {
   FREE_REPORT_RECOMMENDATION_RU,
   FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU,
-  FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU,
+  FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU,
+  FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_SUFFICIENT_RU,
 } from './free-report-content';
 import { isCityLevelStrategicAnchor } from './location-evidence-anchor';
 import { CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID } from './location-public-summary';
@@ -164,10 +165,27 @@ function toBullet(evidence: LocationEvidenceItem): FreeLocationReportEvidenceBul
   };
 }
 
+function evidenceWithPublicDriverCopy(
+  evidence: LocationEvidenceItem,
+  driverTextByEvidenceId: ReadonlyMap<string, string>,
+): LocationEvidenceItem {
+  const textRu = driverTextByEvidenceId.get(evidence.evidenceId);
+  if (!textRu || !isCityLevelStrategicAnchor(evidence)) return evidence;
+  return { ...evidence, publicExplanationRu: textRu };
+}
+
 function buildEvidenceBullets(decision: LocationDecision | null): FreeLocationReportEvidenceBullet[] {
   if (!decision?.evidenceItems?.length) return [];
 
-  const byEvidenceId = new Map(decision.evidenceItems.map(e => [e.evidenceId, e]));
+  const driverTextByEvidenceId = new Map(
+    (decision.publicSummary?.publicDrivers ?? []).map(row => [row.trace.evidenceId, row.textRu]),
+  );
+  const byEvidenceId = new Map(
+    decision.evidenceItems.map(e => [
+      e.evidenceId,
+      evidenceWithPublicDriverCopy(e, driverTextByEvidenceId),
+    ]),
+  );
   const claimEvidenceIds = [
     ...(decision.publicSummary?.publicDrivers ?? []).map(row => row.trace.evidenceId),
     ...(decision.publicClaims ?? []).map(claim => claim.trace.evidenceId),
@@ -176,7 +194,7 @@ function buildEvidenceBullets(decision: LocationDecision | null): FreeLocationRe
     .map(id => byEvidenceId.get(id))
     .filter((item): item is LocationEvidenceItem => Boolean(item));
 
-  const fallbackEvidence = decision.evidenceItems
+  const fallbackEvidence = [...byEvidenceId.values()]
     .filter(
       item =>
         item.objectName &&
@@ -217,7 +235,10 @@ function recommendationForDecision(decision: LocationDecision | null): string {
       ),
   );
   if (hasCityLevelStrategic) {
-    return FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU;
+    const confidence = decision?.publicSummary?.publicScoreConfidence ?? 'requires_full_check';
+    return confidence === 'sufficient'
+      ? FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_SUFFICIENT_RU
+      : FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU;
   }
   const hasStrongPublicAnchor = Boolean(
     decision?.publicSummary?.publicDrivers?.some(row =>

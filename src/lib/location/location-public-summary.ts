@@ -42,7 +42,7 @@ import {
 } from './level1-magnet-taxonomy';
 import {
   buildPortCityStrategicContextCopyRu,
-  CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU,
+  cityLevelStrategicWeakDemandBlockedRu,
   cityLevelStrategicAnchorOnlyContext,
   hasPortLogisticsMagnet,
   inferPublicScoreConfidence,
@@ -651,12 +651,22 @@ export function applyCityLevelStrategicVerdictGuard(args: {
   strictDrivers: readonly LocationDemandScoredDriver[];
   specialMarketFlags: readonly SpecialMarketFlag[];
   magnets: readonly MagnetItem[];
+  publicScoreConfidence?: LocationPublicScoreConfidence;
 }): string {
-  const { verdict, hasCityLevelStrategicAnchor, strictDrivers, specialMarketFlags, magnets } = args;
+  const {
+    verdict,
+    hasCityLevelStrategicAnchor,
+    strictDrivers,
+    specialMarketFlags,
+    magnets,
+    publicScoreConfidence = 'requires_full_check',
+  } = args;
   if (!hasCityLevelStrategicAnchor) return verdict;
 
+  const blockedCopy = cityLevelStrategicWeakDemandBlockedRu(publicScoreConfidence);
+
   if (/Слабый спрос/i.test(verdict)) {
-    return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
+    return blockedCopy;
   }
 
   const localLevel1 = strictDrivers.some(d => {
@@ -669,7 +679,7 @@ export function applyCityLevelStrategicVerdictGuard(args: {
     portCityStrategicContextActive({ specialMarketFlags, magnets }) &&
     /слаб|ограничен|неоднозначн|требует проверки/i.test(verdict)
   ) {
-    return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
+    return blockedCopy;
   }
   return verdict;
 }
@@ -859,6 +869,7 @@ export function buildLocationPublicSummary(args: {
     strictDrivers,
     specialMarketFlags: kernel.specialMarketFlags,
     magnets,
+    publicScoreConfidence,
   });
   warnings.push(...contradiction.warnings);
 
@@ -878,7 +889,7 @@ export function buildLocationPublicSummary(args: {
   const firstMedicalDriver = medicalSliceDrivers[0] ?? null;
 
   const portCityName = args.inferredCityName?.trim() || 'город';
-  const portStrategicCopyRu = buildPortCityStrategicContextCopyRu(portCityName);
+  const portStrategicCopyRu = buildPortCityStrategicContextCopyRu(portCityName, publicScoreConfidence);
 
   const publicDrivers: LocationPublicDriverRow[] = [];
   if (portFallbackActive) {

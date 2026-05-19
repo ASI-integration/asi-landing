@@ -63,16 +63,38 @@ export function portCityStrategicContextActive(args: {
   );
 }
 
-export function buildPortCityStrategicContextCopyRu(cityName: string): string {
+export type PublicScoreConfidence = 'sufficient' | 'requires_full_check' | 'insufficient_map_data';
+
+export function buildPortCityStrategicContextCopyRu(
+  cityName: string,
+  confidence: PublicScoreConfidence = 'sufficient',
+): string {
   const city = cityName.trim() || 'город';
+  if (confidence === 'sufficient') {
+    return (
+      `Есть городской фактор спроса: ${city} — портово-логистический город. ` +
+      'Это может усиливать деловые и командировочные сценарии. Полный отчёт покажет, какой формат запуска здесь выгоднее.'
+    );
+  }
   return (
-    `Городовой фактор спроса: ${city} — портово-логистический город. ` +
-    'Это может усиливать деловые и командировочные сценарии, но точное влияние на конкретный адрес нужно проверить по полной карте.'
+    'Есть городской фактор спроса, но по этому адресу нужно уточнить локальные условия: ' +
+    'конкуренцию, транспорт и формат запуска.'
   );
 }
 
+/** Legacy export — prefer `cityLevelStrategicWeakDemandBlockedRu(confidence)`. */
 export const CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU =
-  'Есть сильный городовой фактор спроса, но влияние на этот адрес нужно проверить по полной карте: конкуренты, транспорт, формат запуска и риски.';
+  'Есть городской фактор спроса, но по этому адресу нужно уточнить локальные условия: конкуренцию, транспорт и формат запуска.';
+
+export function cityLevelStrategicWeakDemandBlockedRu(confidence: PublicScoreConfidence): string {
+  if (confidence === 'sufficient') {
+    return (
+      'Есть городской фактор спроса — локация может подойти для делового и командировочного сценария. ' +
+      'Полный отчёт покажет, как это влияет на аренду, конкуренцию и формат запуска.'
+    );
+  }
+  return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
+}
 
 const PORT_CITY_STRATEGIC_SUBTYPE = 'port_city_context';
 
@@ -138,8 +160,6 @@ export function cityLevelStrategicAnchorOnlyContext(args: {
   return true;
 }
 
-export type PublicScoreConfidence = 'sufficient' | 'requires_full_check' | 'insufficient_map_data';
-
 export function inferPublicScoreConfidence(args: {
   score: number | null;
   partialCartographicPreview: boolean;
@@ -159,6 +179,9 @@ export function inferPublicScoreConfidence(args: {
     args.classifiedMagnetCount <= 2 ||
     (args.strictPublicDriverCount === 0 && (args.score == null || args.score < 40));
   if (args.cityLevelStrategicOnly && weakMapCoverage) {
+    if (typeof args.score === 'number' && args.score >= 45) {
+      return 'sufficient';
+    }
     return 'requires_full_check';
   }
   if (weakMapCoverage && typeof args.score === 'number' && args.score < 35) {
@@ -172,13 +195,13 @@ export function publicScoreLabelRuForConfidence(
   score: number | null,
 ): string {
   if (confidence === 'insufficient_map_data') {
-    return 'Потенциал не рассчитан точно: данных карты недостаточно';
+    return 'Недостаточно данных для точной оценки';
   }
   if (confidence === 'requires_full_check') {
-    return 'Предварительный потенциал: требует полной проверки';
+    return 'Потенциал требует уточнения';
   }
   const range = publicScoreNumericRange(score);
-  return range?.labelRu ?? 'Предварительный потенциал: требует полной проверки';
+  return range?.labelRu ?? 'Предварительный потенциал: умеренный';
 }
 
 /** Numeric % band — only when confidence is sufficient. */
@@ -197,7 +220,7 @@ export function publicScoreNumericRange(score: number | null | undefined): {
     low,
     high,
     label,
-    labelRu: `Потенциал: ${label}`,
+    labelRu: `Предварительный потенциал: ${label}`,
   };
 }
 

@@ -10,6 +10,7 @@ import {
 import {
   buildPortCityStrategicContextCopyRu,
   CITY_LEVEL_STRATEGIC_ANCHOR_DEFAULTS,
+  inferPublicScoreConfidence,
   portCityStrategicEvidenceItem,
   portCityStrategicMagnetFact,
 } from '../location-evidence-anchor';
@@ -32,7 +33,7 @@ function osmAt(id: number, dLat: number, dLon: number, tags: Record<string, stri
 
 describe('city-level strategic anchor SSOT', () => {
   it('city-level strategic anchor does not render «0 м» in canonical formatters', () => {
-    const copy = buildPortCityStrategicContextCopyRu('Новороссийск');
+    const copy = buildPortCityStrategicContextCopyRu('Новороссийск', 'sufficient');
     const mf = portCityStrategicMagnetFact({
       id: 'mf:test:port_city',
       cityName: 'Новороссийск',
@@ -84,10 +85,15 @@ describe('city-level strategic anchor SSOT', () => {
       analysis,
     });
 
-    const expected = buildPortCityStrategicContextCopyRu('Новороссийск');
+    const confidence = decision.publicSummary?.publicScoreConfidence ?? 'requires_full_check';
+    const expected = buildPortCityStrategicContextCopyRu('Новороссийск', confidence);
     expect(decision.publicSummary?.publicDrivers[0]?.textRu).toBe(expected);
     expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
-    expect(freeReport.shortRecommendation).toContain('городовой фактор спроса');
+    if (confidence === 'sufficient') {
+      expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
+    } else {
+      expect(freeReport.shortRecommendation).toContain('не хватает данных');
+    }
   });
 
   it('weak OSM coverage with city-level port only does not show harsh low % range', () => {
@@ -102,10 +108,11 @@ describe('city-level strategic anchor SSOT', () => {
     });
 
     const label = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
-    expect(label).not.toMatch(/\d+\s*[-–]\s*\d+\s*%/);
-    expect(label).toMatch(/требует полной проверки|недостаточно/i);
+    expect(decision.publicSummary?.publicScoreConfidence).toBe('requires_full_check');
+    expect(label).toBe('Потенциал требует уточнения');
+    expect(label).not.toMatch(/требует полной проверки|данных недостаточно/i);
     expect(publicScoreRange(18, { confidence: 'requires_full_check' })?.labelRu).toBe(
-      'Предварительный потенциал: требует полной проверки',
+      'Потенциал требует уточнения',
     );
   });
 
@@ -116,18 +123,37 @@ describe('city-level strategic anchor SSOT', () => {
       strictDrivers: [],
       specialMarketFlags: ['port_or_logistics_gateway'],
       magnets: [],
+      publicScoreConfidence: 'sufficient',
     });
-    expect(guarded).toContain('городовой фактор спроса');
+    expect(guarded).toContain('городской фактор спроса');
     expect(guarded).not.toMatch(/Слабый спрос/i);
   });
 
+  it('city-level strategic only with strong preliminary score uses sufficient confidence', () => {
+    expect(
+      inferPublicScoreConfidence({
+        score: 70,
+        partialCartographicPreview: false,
+        cityLevelStrategicOnly: true,
+        strictPublicDriverCount: 0,
+        classifiedMagnetCount: 0,
+      }),
+    ).toBe('sufficient');
+    expect(buildPortCityStrategicContextCopyRu('Новороссийск', 'sufficient')).toContain(
+      'Полный отчёт покажет, какой формат запуска',
+    );
+    expect(buildPortCityStrategicContextCopyRu('Новороссийск', 'sufficient')).not.toMatch(
+      /проверить|полной карте/i,
+    );
+  });
+
   it('public score range appears only when confidence is sufficient', () => {
-    expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Потенциал:/);
+    expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Предварительный потенциал:/);
     expect(publicScoreRange(72, { confidence: 'requires_full_check' })?.labelRu).toBe(
-      'Предварительный потенциал: требует полной проверки',
+      'Потенциал требует уточнения',
     );
     expect(publicScoreRange(22, { confidence: 'sufficient' })?.labelRu).toBe(
-      'Предварительный потенциал: требует полной проверки',
+      'Предварительный потенциал: ограниченный',
     );
   });
 

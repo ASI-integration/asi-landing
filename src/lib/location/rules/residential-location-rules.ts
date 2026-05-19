@@ -316,10 +316,10 @@ function buildVerdict(args: {
 }): { label: string; tone: ResidentialDemoVerdictTone } {
   const { headlineScore, tier1Count, displayAudience, capApplied, hasCityLevelStrategicAnchor } = args;
 
-  if (hasCityLevelStrategicAnchor && headlineScore < 60) {
+  if (hasCityLevelStrategicAnchor && headlineScore < 45) {
     return {
       label:
-        'Есть сильный городовой фактор спроса, но влияние на этот адрес нужно проверить по полной карте: конкуренты, транспорт, формат запуска и риски.',
+        'Есть городской фактор спроса, но по этому адресу нужно уточнить локальные условия: конкуренцию, транспорт и формат запуска.',
       tone: 'medium',
     };
   }
