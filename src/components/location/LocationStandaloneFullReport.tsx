@@ -10,9 +10,14 @@ import { LocationReportPublicPreview } from '@/components/location/LocationRepor
 import { PremiumPaidReportSections } from '@/components/location/PremiumPaidReportSections';
 import {
   buildPremiumPaidReportContent,
+  PREMIUM_COMMERCIAL_SECTION_TITLES_RU,
   PREMIUM_PAID_SECTION_ANCHORS,
   PREMIUM_PAID_SECTION_TITLES_RU,
 } from '@/lib/location/premium-paid-report-content';
+import {
+  COMMERCIAL_REPORT_GROUP_TITLE_RU,
+  RESIDENTIAL_REPORT_GROUP_TITLE_RU,
+} from '@/lib/location/location-report-structure';
 
 function urbanForecastLevelRu(level: 'low' | 'moderate' | 'high' | 'very_high'): string {
   if (level === 'low') return 'низкий';
@@ -220,6 +225,7 @@ function LocationStandalonePaidFullReport({
     }
     const premiumToc = premiumPaidReport
       ? [
+          { id: 'segment-residential', label: RESIDENTIAL_REPORT_GROUP_TITLE_RU },
           { id: PREMIUM_PAID_SECTION_ANCHORS.executiveSummary, label: PREMIUM_PAID_SECTION_TITLES_RU.executiveSummary },
           { id: PREMIUM_PAID_SECTION_ANCHORS.audienceFit, label: PREMIUM_PAID_SECTION_TITLES_RU.audienceFit },
           { id: PREMIUM_PAID_SECTION_ANCHORS.primeMagnets, label: PREMIUM_PAID_SECTION_TITLES_RU.primeMagnets },
@@ -229,6 +235,31 @@ function LocationStandalonePaidFullReport({
           { id: PREMIUM_PAID_SECTION_ANCHORS.risks, label: PREMIUM_PAID_SECTION_TITLES_RU.risks },
           { id: PREMIUM_PAID_SECTION_ANCHORS.launchStrategy, label: PREMIUM_PAID_SECTION_TITLES_RU.launchStrategy },
           { id: PREMIUM_PAID_SECTION_ANCHORS.finalRecommendation, label: PREMIUM_PAID_SECTION_TITLES_RU.finalRecommendation },
+          ...(premiumPaidReport.commercialRetail
+            ? [
+                { id: 'segment-commercial', label: COMMERCIAL_REPORT_GROUP_TITLE_RU },
+                {
+                  id: PREMIUM_PAID_SECTION_ANCHORS.commercialPotential,
+                  label: PREMIUM_COMMERCIAL_SECTION_TITLES_RU.commercialPotential,
+                },
+                {
+                  id: PREMIUM_PAID_SECTION_ANCHORS.targetTraffic,
+                  label: PREMIUM_COMMERCIAL_SECTION_TITLES_RU.targetTraffic,
+                },
+                {
+                  id: PREMIUM_PAID_SECTION_ANCHORS.streetFrontage,
+                  label: PREMIUM_COMMERCIAL_SECTION_TITLES_RU.streetFrontage,
+                },
+                {
+                  id: PREMIUM_PAID_SECTION_ANCHORS.businessFormatFit,
+                  label: PREMIUM_COMMERCIAL_SECTION_TITLES_RU.businessFormatFit,
+                },
+                {
+                  id: PREMIUM_PAID_SECTION_ANCHORS.retailConstraints,
+                  label: PREMIUM_COMMERCIAL_SECTION_TITLES_RU.retailConstraints,
+                },
+              ]
+            : []),
         ]
       : [];
 

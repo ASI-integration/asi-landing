@@ -652,7 +652,7 @@ function buildAudienceFit(input: LocationReportInput, analysis?: LocationAnalysi
   }
 
   const formatFit = input.useCase === 'retail_or_service' || input.goal === 'launch'
-    ? buildCommercialFormatFit(analysis)
+    ? buildCommercialFormatFit(analysis, { objectContext: input.objectContext })
     : undefined;
   return {
     status: 'available',

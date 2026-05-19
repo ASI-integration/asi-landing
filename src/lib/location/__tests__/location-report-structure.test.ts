@@ -57,12 +57,17 @@ describe('location report structure', () => {
       'Стройки и новые ЖК',
       'Дороги, развязки, транспортные изменения',
       'Госзакупки и ранние признаки развития территории',
-      'Коммерческий потенциал локации',
       'Горизонт развития до 10 лет',
+      'Коммерческий потенциал локации',
+      'Карта целевого трафика',
+      'H3-гексы целевого потока',
+      'Первая линия и вход',
+      'Подходящие форматы бизнеса',
+      'Ограничения помещения',
       'Итоговое решение: брать / не брать / проверять глубже',
       'Следующий шаг',
     ]);
-    expect(structure.sections.filter(section => section.disclosure === 'paid_detail')).toHaveLength(29);
+    expect(structure.sections.filter(section => section.disclosure === 'paid_detail')).toHaveLength(34);
     expect(JSON.stringify(structure)).toContain(PAID_REPORT_TEN_YEAR_HORIZON_RU);
     expect(PAID_REPORT_TEN_YEAR_HORIZON_RU).toContain('госзакупки');
     expect(structure.cta).toMatchObject({
@@ -77,7 +82,7 @@ describe('location report structure', () => {
       section => section.disclosure === 'paid_detail',
     ).length;
 
-    expect(PUBLIC_PAID_REPORT_GALLERY_SECTION_IDS).toHaveLength(7);
+    expect(PUBLIC_PAID_REPORT_GALLERY_SECTION_IDS).toHaveLength(8);
     expect(free.paidPreviewSections?.map(section => section.id)).toEqual([
       ...PUBLIC_PAID_REPORT_GALLERY_SECTION_IDS,
     ]);

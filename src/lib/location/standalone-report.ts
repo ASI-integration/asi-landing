@@ -324,6 +324,7 @@ function buildCommercialRecommendation(
 export function buildCommercialReport(args: {
   address: string;
   analysis: LocationAnalysis;
+  objectContext?: Record<string, unknown> | null;
 }): LocationCommercialReport {
   const analysis = enrichAnalysisWithReportProjection(args.analysis, { reportMode: 'paid' });
   const generatedAtIso = new Date().toISOString();
@@ -338,7 +339,9 @@ export function buildCommercialReport(args: {
   );
   const ft = analysis.footTraffic;
   const { transitShare, localActiveShare, destinationShare } = ft.transitVsTarget;
-  const formatFit = buildCommercialFormatFit(analysis);
+  const formatFit = buildCommercialFormatFit(analysis, {
+    objectContext: args.objectContext,
+  });
 
   const anchors = (analysis.strongestMagnets ?? []).slice(0, 5).map(m => ({
     categoryId: m.categoryId,

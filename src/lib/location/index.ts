@@ -247,6 +247,25 @@ export type {
   CommercialOverallVerdict,
 } from './commercial-format-fit';
 export { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU, FIT_LEVEL_COLOR } from './commercial-format-fit';
+export type {
+  RetailPremisesAttributes,
+  RetailPremisesFloorClass,
+  StreetRetailSuitabilityResult,
+  TriState,
+} from './street-retail-suitability';
+export {
+  RETAIL_FRONTAGE_METHODOLOGY_RU,
+  RETAIL_FLOOR_LEVEL_METHODOLOGY_RU,
+  RETAIL_TARGET_TRAFFIC_WARNING_RU,
+  MANUAL_CHECK_FRONTAGE_RU,
+  MANUAL_CHECK_FLOOR_AND_FRONTAGE_RU,
+  computeAreaTargetFlowScore,
+  computeFrontageAccessibilityScore,
+  evaluateStreetRetailSuitability,
+  isFrontageDataComplete,
+  parseRetailPremisesFromObjectContext,
+  streetRetailFitCap,
+} from './street-retail-suitability';
 
 export {
   MAGNET_CATEGORIES,

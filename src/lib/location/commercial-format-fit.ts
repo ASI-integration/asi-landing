@@ -5,6 +5,11 @@
  */
 
 import type { LocationAnalysis, DemandType } from './types';
+import {
+  evaluateStreetRetailSuitability,
+  streetRetailFitCap,
+  type StreetRetailSuitabilityResult,
+} from './street-retail-suitability';
 
 export type CommercialFormatType =
   | 'retail'
@@ -35,6 +40,8 @@ export interface CommercialFormatFit {
   overallVerdictLabelRu: string;
   /** Top 1–2 formats worth pursuing first */
   bestFormats: CommercialFormatType[];
+  /** Street-retail gates: area flow vs entrance/frontage (retail format only). */
+  streetRetailSuitability?: StreetRetailSuitabilityResult;
 }
 
 // ── Internal scoring helpers ────────────────────────────────────────────────
@@ -76,7 +83,24 @@ function transportCorridorHeavy(analysis: LocationAnalysis): boolean {
 
 // ── Per-format fit logic ────────────────────────────────────────────────────
 
-function scoreRetail(a: LocationAnalysis): CommercialFormatFitEntry {
+const FIT_RANK: Record<CommercialFormatFitLevel, number> = {
+  poor: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+};
+
+function capFitLevel(
+  level: CommercialFormatFitLevel,
+  cap: CommercialFormatFitLevel,
+): CommercialFormatFitLevel {
+  return FIT_RANK[level] > FIT_RANK[cap] ? cap : level;
+}
+
+function scoreRetail(
+  a: LocationAnalysis,
+  streetRetail?: StreetRetailSuitabilityResult,
+): CommercialFormatFitEntry {
   const { transitShare, destinationShare, localActiveShare } = a.footTraffic.transitVsTarget;
   const idx = a.evergreenIndex;
   const dt: DemandType = a.demandType;
@@ -92,6 +116,16 @@ function scoreRetail(a: LocationAnalysis): CommercialFormatFitEntry {
   let fitLevel: CommercialFormatFitLevel;
 
   if (
+    streetRetail?.areaTargetFlowStrong &&
+    (hasShoppingAnchor || hasBusinessCluster || hasTransit) &&
+    !industrial
+  ) {
+    fitLevel = 'high';
+    supporting.push('Сильный целевой поток в зоне (H3 / проходимость)');
+    if (hasShoppingAnchor) supporting.push('Торговый якорь в зоне');
+    if (hasBusinessCluster) supporting.push('Деловой кластер рядом');
+    if (hasTransit) supporting.push('Транзитный узел усиливает проходимость');
+  } else if (
     idx >= 60 &&
     destinationShare >= 0.40 &&
     (hasShoppingAnchor || hasBusinessCluster || hasTransit) &&
@@ -125,14 +159,54 @@ function scoreRetail(a: LocationAnalysis): CommercialFormatFitEntry {
   if (transitShare > 0.55 && fitLevel !== 'poor') limiting.push('Высокий транзит снижает задерживаемость');
   if (localActiveShare >= 0.35 && fitLevel !== 'poor') supporting.push('Активный локальный поток');
 
+  if (streetRetail) {
+    const cap = streetRetailFitCap(streetRetail);
+    const beforeCap = fitLevel;
+    fitLevel = capFitLevel(fitLevel, cap);
+
+    if (streetRetail.areaTargetFlowStrong && !streetRetail.strongStreetRetailAllowed) {
+      if (beforeCap === 'high' && fitLevel !== 'high') {
+        limiting.push(
+          'Сильный поток в зоне не заменяет первую линию, уличный вход и доступность входной группы',
+        );
+      }
+    }
+
+    if (streetRetail.floorClass === 'below_street') {
+      limiting.push('Цоколь / подвал / ниже уровня улицы — уличный ритейл по проходимости не подтверждается');
+    } else if (streetRetail.floorClass === 'upper_or_interior') {
+      limiting.push('Помещение не на уровне улицы / 1 этажа — уличный ритейл по этой оценке не подтверждается');
+    } else if (streetRetail.firstLine === false) {
+      limiting.push('Не первая линия — поток рядом не гарантирует вход в помещение');
+    }
+
+    for (const w of streetRetail.manualCheckWarningsRu) {
+      if (!limiting.includes(w)) limiting.push(w);
+    }
+
+    if (
+      streetRetail.frontageAccessibilityScore !== null &&
+      streetRetail.strongStreetRetailAllowed
+    ) {
+      supporting.push('Входная группа и фронт подтверждены — поток может дойти до входа');
+      if (streetRetail.frontageAccessibilityScore >= 70) {
+        supporting.push('Хорошая видимость и доступность входа с улицы');
+      }
+    } else if (streetRetail.areaTargetFlowStrong) {
+      supporting.push('В зоне есть целевой поток — нужна проверка входной группы на месте');
+    }
+  }
+
   const explain =
-    fitLevel === 'high'
-      ? 'Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.'
-      : fitLevel === 'medium'
-        ? 'Потенциал есть, но поток смешан или якоря умеренные. Подходит при правильном позиционировании.'
-        : fitLevel === 'low'
-          ? 'Поток в основном транзитный или индекс невысокий. Розница возможна, но с ограниченным охватом.'
-          : 'Локация слишком слабая для розничного формата без серьёзного обоснования.';
+    streetRetail && !streetRetail.strongStreetRetailAllowed && streetRetail.areaTargetFlowStrong
+      ? 'Рядом есть целевой поток, но без подтверждённой первой линии и входной группы ASI не даёт сильную рекомендацию по уличному ритейлу.'
+      : fitLevel === 'high'
+        ? 'Локация формирует устойчивый целевой поток и имеет нужные якоря. Хорошая база для розничного формата.'
+        : fitLevel === 'medium'
+          ? 'Потенциал есть, но поток смешан или якоря умеренные. Подходит при правильном позиционировании.'
+          : fitLevel === 'low'
+            ? 'Поток в основном транзитный или индекс невысокий. Розница возможна, но с ограниченным охватом.'
+            : 'Локация слишком слабая для розничного формата без серьёзного обоснования.';
 
   return {
     format: 'retail',
@@ -542,9 +616,16 @@ function computeOverallVerdict(entries: CommercialFormatFitEntry[]): {
 
 // ── Public builder ────────────────────────────────────────────────────────────
 
-export function buildCommercialFormatFit(analysis: LocationAnalysis): CommercialFormatFit {
+export function buildCommercialFormatFit(
+  analysis: LocationAnalysis,
+  options?: { objectContext?: Record<string, unknown> | null },
+): CommercialFormatFit {
+  const streetRetailSuitability = evaluateStreetRetailSuitability(
+    analysis,
+    options?.objectContext,
+  );
   const entries: CommercialFormatFitEntry[] = [
-    scoreRetail(analysis),
+    scoreRetail(analysis, streetRetailSuitability),
     scoreFoodBeverage(analysis),
     scoreService(analysis),
     scoreConvenience(analysis),
@@ -577,11 +658,21 @@ export function buildCommercialFormatFit(analysis: LocationAnalysis): Commercial
     )
     .slice(0, 2);
 
+  const retailEntry = entries.find(e => e.format === 'retail');
+  if (retailEntry) {
+    for (const note of streetRetailSuitability.methodologyNotesRu) {
+      if (!retailEntry.limitingFactorsRu.includes(note)) {
+        retailEntry.limitingFactorsRu = [...retailEntry.limitingFactorsRu, note];
+      }
+    }
+  }
+
   return {
     entries,
     overallVerdict: verdict,
     overallVerdictLabelRu: labelRu,
     bestFormats,
+    streetRetailSuitability,
   };
 }
 

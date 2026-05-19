@@ -3,6 +3,12 @@ import {
   PREMIUM_PAID_SECTION_ANCHORS,
   PREMIUM_PAID_SECTION_TITLES_RU,
 } from '@/lib/location/premium-paid-report-content';
+import {
+  RESIDENTIAL_REPORT_SEGMENT_BADGE_RU,
+  RESIDENTIAL_REPORT_SEGMENT_INTRO_RU,
+} from '@/lib/location/location-report-structure';
+import { ReportSegmentGroup } from '@/components/location/ReportSegmentGroup';
+import { PremiumCommercialRetailReportSections } from '@/components/location/PremiumCommercialRetailReportSections';
 
 function OwnerHint({ children }: { children: string }) {
   return (
@@ -50,10 +56,16 @@ export function PremiumPaidReportSections({ content }: { content: PremiumPaidRep
     risks,
     launchStrategy,
     finalRecommendation,
+    commercialRetail,
   } = content;
 
   return (
     <>
+      <ReportSegmentGroup
+        id="segment-residential"
+        badgeRu={RESIDENTIAL_REPORT_SEGMENT_BADGE_RU}
+        introRu={RESIDENTIAL_REPORT_SEGMENT_INTRO_RU}
+      >
       <PremiumSectionShell
         id={PREMIUM_PAID_SECTION_ANCHORS.executiveSummary}
         title={PREMIUM_PAID_SECTION_TITLES_RU.executiveSummary}
@@ -191,7 +203,7 @@ export function PremiumPaidReportSections({ content }: { content: PremiumPaidRep
       <PremiumSectionShell
         id={PREMIUM_PAID_SECTION_ANCHORS.futureDevelopment}
         title={PREMIUM_PAID_SECTION_TITLES_RU.futureDevelopment}
-        lead="Что может изменить район на горизонте до 10 лет — важно для покупки жилья, коммерции и аренды помещения."
+        lead="Что может изменить район на горизонте до 10 лет — важно для покупки жилья, аренды и инвестиционной оценки."
       >
         <p className="text-sm text-slate-200 leading-relaxed">{futureAreaDevelopment.summaryRu}</p>
         {futureAreaDevelopment.forecastScore != null ? (
@@ -268,6 +280,9 @@ export function PremiumPaidReportSections({ content }: { content: PremiumPaidRep
         </div>
         <OwnerHint>{finalRecommendation.ownerMeaningRu}</OwnerHint>
       </PremiumSectionShell>
+      </ReportSegmentGroup>
+
+      {commercialRetail ? <PremiumCommercialRetailReportSections commercial={commercialRetail} /> : null}
     </>
   );
 }

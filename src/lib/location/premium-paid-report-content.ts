@@ -4,6 +4,11 @@ import type {
   LocationStandaloneReport,
   StrLocationReportProjection,
 } from './standalone-report';
+import { buildCommercialFormatFit, FIT_LEVEL_LABEL_RU } from './commercial-format-fit';
+import {
+  evaluateStreetRetailSuitability,
+  RETAIL_TARGET_TRAFFIC_WARNING_RU,
+} from './street-retail-suitability';
 
 /** Stable DOM anchors for paid-only premium sections (tests + TOC). */
 export const PREMIUM_PAID_SECTION_ANCHORS = {
@@ -16,6 +21,19 @@ export const PREMIUM_PAID_SECTION_ANCHORS = {
   risks: 'premium-risks',
   launchStrategy: 'premium-launch-strategy',
   finalRecommendation: 'premium-final-recommendation',
+  commercialPotential: 'premium-commercial-potential',
+  targetTraffic: 'premium-target-traffic',
+  streetFrontage: 'premium-street-frontage',
+  businessFormatFit: 'premium-business-format-fit',
+  retailConstraints: 'premium-retail-constraints',
+} as const;
+
+export const PREMIUM_COMMERCIAL_SECTION_TITLES_RU = {
+  commercialPotential: 'Коммерческий потенциал локации',
+  targetTraffic: 'Карта целевого трафика',
+  streetFrontage: 'Первая линия и вход',
+  businessFormatFit: 'Подходящие форматы бизнеса',
+  retailConstraints: 'Ограничения помещения',
 } as const;
 
 export const PREMIUM_PAID_SECTION_TITLES_RU = {
@@ -98,7 +116,85 @@ export type PremiumPaidReportContent = {
     actionRu: string;
     ownerMeaningRu: string;
   };
+  /** Street-retail / first-line blocks — not applicable to housing-only decisions. */
+  commercialRetail: PremiumCommercialRetailContent | null;
 };
+
+export type PremiumCommercialRetailContent = {
+  commercialPotentialRu: string;
+  targetTrafficIndexRu: string;
+  targetTrafficSummaryRu: string;
+  heatmapNoteRu: string;
+  h3NoteRu: string;
+  frontageLinesRu: string[];
+  formatFitLinesRu: Array<{ labelRu: string; fitLabelRu: string; explanationRu: string }>;
+  constraintsRu: string[];
+  retailTrafficWarningRu: string;
+  ownerMeaningRu: string;
+};
+
+function hasFootTrafficLayer(analysis: LocationAnalysis | undefined): analysis is LocationAnalysis {
+  return Boolean(analysis?.footTraffic?.transitVsTarget);
+}
+
+export function buildPremiumCommercialRetailContent(args: {
+  analysis?: LocationAnalysis;
+  objectContext?: Record<string, unknown> | null;
+}): PremiumCommercialRetailContent | null {
+  if (!hasFootTrafficLayer(args.analysis)) return null;
+
+  const analysis = args.analysis;
+  const formatFit = buildCommercialFormatFit(analysis, { objectContext: args.objectContext });
+  const streetRetail = evaluateStreetRetailSuitability(analysis, args.objectContext);
+  const retailEntry = formatFit.entries.find(e => e.format === 'retail');
+  const topFormats = formatFit.entries
+    .filter(e => e.fitLevel === 'high' || e.fitLevel === 'medium')
+    .slice(0, 4);
+
+  const flow = analysis.footTraffic;
+  const idx = streetRetail.areaTargetFlowScore;
+
+  const frontageLinesRu: string[] = [
+    `Индекс целевого трафика в зоне: ${idx} из 100 (оценка потока, без почасового подсчёта).`,
+    streetRetail.frontageDataComplete
+      ? streetRetail.frontageAccessibilityScore != null
+        ? `Доступность входной группы: ${streetRetail.frontageAccessibilityScore} из 100.`
+        : 'Входная группа: требует ручной проверки на месте.'
+      : 'Первая линия и вход с улицы: требует ручной проверки входной группы.',
+    `Характер потока рядом: ${flow.flowCharacter}.`,
+  ];
+
+  const constraintsRu = uniqueLines([
+    ...streetRetail.manualCheckWarningsRu,
+    ...(retailEntry?.limitingFactorsRu ?? []).slice(0, 4),
+    streetRetail.floorClass === 'below_street'
+      ? 'Цоколь / подвал — сильная рекомендация по уличному ритейлу не выставляется.'
+      : null,
+    streetRetail.firstLine === false
+      ? 'Не первая линия — поток рядом не заменяет уличный вход.'
+      : null,
+  ]);
+
+  return {
+    commercialPotentialRu: formatFit.overallVerdictLabelRu,
+    targetTrafficIndexRu: `Индекс целевого трафика: ${idx} / 100`,
+    targetTrafficSummaryRu:
+      'Тепловая карта показывает, где в зоне выше потенциал целевого потока. Это оценка по открытым пространственным сигналам, без подсчёта пешеходов в час.',
+    heatmapNoteRu: `Плотность движения: ${flow.movementDensity}; активность зоны: ${flow.zoneActivity}.`,
+    h3NoteRu:
+      'H3-гексы помогают сравнить соседние ячейки: где поток сильнее для витрины на первой линии, а где слабее.',
+    frontageLinesRu,
+    formatFitLinesRu: topFormats.map(entry => ({
+      labelRu: entry.formatLabelRu,
+      fitLabelRu: FIT_LEVEL_LABEL_RU[entry.fitLevel],
+      explanationRu: entry.explanationRu,
+    })),
+    constraintsRu,
+    retailTrafficWarningRu: RETAIL_TARGET_TRAFFIC_WARNING_RU,
+    ownerMeaningRu:
+      'Этот блок нужен только для коммерческих помещений и street-retail. Для квартиры, посуточной аренды и покупки жилья смотрите раздел «Недвижимость и аренда».',
+  };
+}
 
 function roundRub(n: number): number {
   return Math.max(0, Math.round(n / 500) * 500);
@@ -449,7 +545,7 @@ export function buildPremiumPaidReportContent(args: {
       forecastLevelRu: forecast ? urbanLevelRu(forecast.level) : null,
       slots: futureSlots,
       ownerMeaningRu:
-        'Важно для покупки жилья, покупки коммерческой недвижимости, аренды помещения и выбора стратегии: видно, может ли локация стать сильнее или слабее со временем.',
+        'Важно для покупки жилья, посуточной и среднесрочной аренды: видно, может ли район стать сильнее или слабее для проживания и дохода от жилья.',
     },
     risks: {
       itemsRu: str.risksAndManualChecksRu,
@@ -467,6 +563,9 @@ export function buildPremiumPaidReportContent(args: {
       ownerMeaningRu:
         'Финальный ответ «делать / не делать / делать осторожно» с учётом спроса, конкуренции и рисков.',
     },
+    commercialRetail: buildPremiumCommercialRetailContent({
+      analysis: args.analysis,
+    }),
   };
 }
 
@@ -484,4 +583,14 @@ function uniqueLines(lines: Array<string | null | undefined>): string[] {
 
 export function listPremiumPaidSectionAnchorIds(): string[] {
   return Object.values(PREMIUM_PAID_SECTION_ANCHORS);
+}
+
+export function listPremiumCommercialSectionAnchorIds(): string[] {
+  return [
+    PREMIUM_PAID_SECTION_ANCHORS.commercialPotential,
+    PREMIUM_PAID_SECTION_ANCHORS.targetTraffic,
+    PREMIUM_PAID_SECTION_ANCHORS.streetFrontage,
+    PREMIUM_PAID_SECTION_ANCHORS.businessFormatFit,
+    PREMIUM_PAID_SECTION_ANCHORS.retailConstraints,
+  ];
 }

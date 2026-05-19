@@ -7,6 +7,11 @@ import {
 } from '@/lib/location/free-report-content';
 import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 import { publicScoreRange } from '@/lib/location/location-score-public';
+import {
+  COMMERCIAL_REPORT_SEGMENT_BADGE_RU,
+  PUBLIC_PAID_REPORT_GALLERY_ITEMS,
+  RESIDENTIAL_REPORT_SEGMENT_BADGE_RU,
+} from '@/lib/location/location-report-structure';
 
 export const LOCATION_REPORT_PUBLIC_PREVIEW_CTA_LABEL = 'Получить полный отчёт';
 
@@ -14,7 +19,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'summary',
     title: 'Общий вывод по объекту',
-    answer: 'Показывает, стоит ли рассматривать объект',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'итог',
     footer: 'решение по объекту',
     accent: 'from-emerald-400/40 to-cyan-400/10',
@@ -23,7 +28,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'demand',
     title: 'Спрос и целевая аудитория',
-    answer: 'Показывает, кто может здесь бронировать',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'спрос',
     footer: 'портрет гостей',
     accent: 'from-sky-400/40 to-indigo-400/10',
@@ -32,7 +37,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'competition',
     title: 'Конкуренция рядом',
-    answer: 'Показывает, насколько рядом плотная конкуренция',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'рынок',
     footer: 'позиционирование',
     accent: 'from-rose-400/40 to-orange-400/10',
@@ -41,7 +46,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'transport',
     title: 'Транспорт и магниты спроса',
-    answer: 'Показывает, что приводит гостей к адресу',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'доступность',
     footer: 'точки притяжения',
     accent: 'from-violet-400/40 to-fuchsia-400/10',
@@ -50,7 +55,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'yield',
     title: 'Доходность и сценарии',
-    answer: 'Показывает, как меняется экономика в разных сценариях',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'сценарии',
     footer: 'экономика',
     accent: 'from-amber-300/40 to-lime-400/10',
@@ -59,7 +64,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'risks',
     title: 'Риски и рекомендации',
-    answer: 'Показывает, что проверить до решения',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'проверки',
     footer: 'план действий',
     accent: 'from-red-400/40 to-slate-400/10',
@@ -68,7 +73,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
   {
     id: 'future',
     title: 'Будущее района',
-    answer: 'Показывает, как район может измениться',
+    answer: 'Показывает, подходит ли адрес для аренды, проживания или покупки.',
     signal: 'развитие',
     footer: 'горизонт до 10 лет',
     accent: 'from-teal-300/40 to-blue-400/10',
@@ -323,8 +328,7 @@ export function LocationReportPublicPreview({
           <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полная версия</p>
           <h2 className="mt-2 text-2xl font-bold text-white">Разделы с подробным разбором</h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
-            Ниже показаны примеры страниц полного отчёта.
-            В полной версии больше разделов: экономика, конкуренция, транспорт, якоря спроса, развитие района и горизонт до 10 лет.
+            Ниже — примеры страниц полного отчёта. Блоки для жилья и аренды отделены от коммерции и street-retail.
           </p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {EXAMPLE_REPORT_SLIDES_RU.map(slide => (
@@ -348,7 +352,27 @@ export function LocationReportPublicPreview({
                 </div>
               </div>
             ))}
+            {PUBLIC_PAID_REPORT_GALLERY_ITEMS.filter(item => item.segment === 'commercial_retail').map(
+              item => (
+                <div
+                  key={item.id}
+                  className="group min-h-[320px] overflow-hidden rounded-2xl border border-amber-500/30 bg-amber-950/10 p-4 shadow-2xl shadow-slate-950/20"
+                >
+                  <div className="flex h-full flex-col rounded-xl border border-amber-400/20 bg-gradient-to-br from-amber-400/30 to-orange-400/10 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-amber-200/80">
+                      {COMMERCIAL_REPORT_SEGMENT_BADGE_RU}
+                    </p>
+                    <h3 className="mt-2 text-lg font-bold leading-tight text-white">{item.titleRu}</h3>
+                    <p className="mt-4 text-sm leading-relaxed text-slate-100">{item.summaryRu}</p>
+                    <p className="mt-auto pt-6 text-xs font-semibold text-amber-200/70">коммерция · ритейл</p>
+                  </div>
+                </div>
+              ),
+            )}
           </div>
+          <p className="mt-4 text-xs text-slate-500">
+            {RESIDENTIAL_REPORT_SEGMENT_BADGE_RU} — отдельно от {COMMERCIAL_REPORT_SEGMENT_BADGE_RU.toLowerCase()}.
+          </p>
         </section>
 
         <section className="mt-8 rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
