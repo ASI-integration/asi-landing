@@ -9,6 +9,7 @@ import type {
   LocationPublicClaim,
   MagnetFact,
 } from './location-decision-contract';
+import { isCityLevelStrategicAnchor } from './location-evidence-anchor';
 import { passesRuResidentialWeakTouristPromotionGate } from './location-public-summary';
 import {
   FORBIDDEN_PUBLIC_WORDING_RU,
@@ -110,7 +111,8 @@ export function validatePublicClaimPipeline(input: {
       if (
         mf.evidenceSource === 'classified_magnet' &&
         mf.role !== 'accessibility' &&
-        (!Number.isFinite(mf.distanceMeters) || mf.distanceMeters <= 0)
+        !isCityLevelStrategicAnchor(mf) &&
+        (!Number.isFinite(mf.distanceMeters) || (mf.distanceMeters ?? 0) <= 0)
       ) {
         problems.push(`distance_missing_magnet:${mf.id}`);
       }
@@ -143,7 +145,8 @@ export function lintPublicClaimSurfaceRu(claims: readonly LocationPublicClaim[])
         break;
       }
     }
-    if (!/\d/.test(c.textRu) || !/около/i.test(c.textRu)) {
+    const cityLevel = /городовой фактор спроса/i.test(c.textRu);
+    if (!cityLevel && (!/\d/.test(c.textRu) || !/около/i.test(c.textRu))) {
       problems.push(`distance_token_missing:${c.trace.evidenceId}`);
     }
   }

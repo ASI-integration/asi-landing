@@ -40,11 +40,22 @@ import {
   classifyLevel1Magnet,
   isBackgroundMinorPoi,
 } from './level1-magnet-taxonomy';
+import {
+  buildPortCityStrategicContextCopyRu,
+  CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU,
+  cityLevelStrategicAnchorOnlyContext,
+  hasPortLogisticsMagnet,
+  inferPublicScoreConfidence,
+  portCityStrategicContextActive,
+  publicScoreLabelRuForConfidence,
+} from './location-evidence-anchor';
+import type { LocationPublicScoreConfidence } from './location-decision-contract';
 
 export const CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID = 'mf:canonical:market_context_port';
 export const CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID = 'ev:canonical:market_context_port';
-export const CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU =
-  'В городе есть сильный портово-логистический фактор, но точное влияние на этот адрес требует проверки по полной карте.';
+
+/** @deprecated Prefer {@link buildPortCityStrategicContextCopyRu} with city name from kernel inference. */
+export const CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU = buildPortCityStrategicContextCopyRu('город');
 
 function magnetForDriver(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): MagnetItem | undefined {
   const parts = d.magnetFactId.split(':');
@@ -634,18 +645,33 @@ function compactRuNameList(names: readonly string[]): string {
   return `${cleaned.slice(0, 3).join(', ')} и ещё ${cleaned.length - 3}`;
 }
 
-function hasPortLogisticsMagnet(magnets: readonly MagnetItem[]): boolean {
-  return magnets.some(m => {
-    const classified = classifyLevel1Magnet(m);
-    return (
-      classified.isLevel1 &&
-      classified.groupId === 'transport_logistics' &&
-      (classified.entityType === 'seaport' ||
-        classified.entityType === 'cargo_port' ||
-        classified.entityType === 'river_port' ||
-        classified.entityType === 'logistics_terminal')
-    );
+export function applyCityLevelStrategicVerdictGuard(args: {
+  verdict: string;
+  hasCityLevelStrategicAnchor: boolean;
+  strictDrivers: readonly LocationDemandScoredDriver[];
+  specialMarketFlags: readonly SpecialMarketFlag[];
+  magnets: readonly MagnetItem[];
+}): string {
+  const { verdict, hasCityLevelStrategicAnchor, strictDrivers, specialMarketFlags, magnets } = args;
+  if (!hasCityLevelStrategicAnchor) return verdict;
+
+  if (/Слабый спрос/i.test(verdict)) {
+    return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
+  }
+
+  const localLevel1 = strictDrivers.some(d => {
+    const m = magnetForDriver(d, magnets);
+    return Boolean(m && classifyLevel1Magnet(m).isLevel1);
   });
+  if (localLevel1) return verdict;
+
+  if (
+    portCityStrategicContextActive({ specialMarketFlags, magnets }) &&
+    /слаб|ограничен|неоднозначн|требует проверки/i.test(verdict)
+  ) {
+    return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
+  }
+  return verdict;
 }
 
 export function buildLocationPublicSummary(args: {
@@ -663,6 +689,12 @@ export function buildLocationPublicSummary(args: {
   partialCartographicContext?: boolean;
   /** Seeded by {@link buildLocationDecision}; headline step may set `genericMedicalSuppressed`. */
   presentationDiagnostics?: LocationPublicPresentationDiagnostics;
+  dataIntegrity?: {
+    analysisIncomplete?: boolean;
+    scoreBlockedDueToIncompleteData?: boolean;
+  };
+  classifiedMagnetCount?: number;
+  inferredCityName?: string | null;
 }): LocationPublicSummary {
   const debugTrace: string[] = [];
   const warnings = [...args.baseWarnings];
@@ -758,6 +790,27 @@ export function buildLocationPublicSummary(args: {
   const headlineRu = headline.text;
   debugTrace.push(`headline:${headline.reason}`);
 
+  const portFallbackActive =
+    kernel.specialMarketFlags.includes('port_or_logistics_gateway') && !hasPortLogisticsMagnet(magnets);
+  const cityLevelStrategicOnly = cityLevelStrategicAnchorOnlyContext({
+    specialMarketFlags: kernel.specialMarketFlags,
+    magnets,
+    strictPublicDriverCount: strictDrivers.length,
+    hasCanonicalPortFallback: portFallbackActive,
+  });
+  const hasCityLevelStrategicAnchor = portFallbackActive;
+
+  const publicScoreConfidence: LocationPublicScoreConfidence = inferPublicScoreConfidence({
+    score: finalScore,
+    partialCartographicPreview: partialCartographicContext,
+    analysisIncomplete: args.dataIntegrity?.analysisIncomplete,
+    scoreBlockedDueToIncompleteData: args.dataIntegrity?.scoreBlockedDueToIncompleteData,
+    cityLevelStrategicOnly,
+    strictPublicDriverCount: strictDrivers.length,
+    classifiedMagnetCount: args.classifiedMagnetCount ?? magnets.length,
+  });
+  const publicScoreLabelRu = publicScoreLabelRuForConfidence(publicScoreConfidence, finalScore);
+
   const presentationDiagnostics: LocationPublicPresentationDiagnostics = {
     partialCartographicPreview: diagSeed?.partialCartographicPreview ?? partialCartographicContext,
     partialDataScoreCapApplied: diagSeed?.partialDataScoreCapApplied ?? false,
@@ -771,10 +824,14 @@ export function buildLocationPublicSummary(args: {
     nearbyClusterDetected: diagSeed?.nearbyClusterDetected ?? false,
     conservativeClusterFloorApplied: diagSeed?.conservativeClusterFloorApplied ?? false,
     clusterFloorReason: diagSeed?.clusterFloorReason ?? null,
+    hasCityLevelStrategicAnchor,
+    cityLevelStrategicAnchorOnly: cityLevelStrategicOnly,
   };
 
   const scoreForSanity = finalScore ?? 0;
-  const { sanity } = computeResidentialDemoPresentation(args.analysis, scoreForSanity);
+  const { sanity } = computeResidentialDemoPresentation(args.analysis, scoreForSanity, {
+    hasCityLevelStrategicAnchor: hasCityLevelStrategicAnchor,
+  });
 
   const noClean = strictDrivers.length === 0;
   let audienceVerdictRu = sanity.verdictLabelRu;
@@ -796,7 +853,13 @@ export function buildLocationPublicSummary(args: {
     secondaries,
     strictDrivers,
   });
-  audienceVerdictRu = contradiction.verdict;
+  audienceVerdictRu = applyCityLevelStrategicVerdictGuard({
+    verdict: contradiction.verdict,
+    hasCityLevelStrategicAnchor,
+    strictDrivers,
+    specialMarketFlags: kernel.specialMarketFlags,
+    magnets,
+  });
   warnings.push(...contradiction.warnings);
 
   const supportingContext: string[] = [];
@@ -814,15 +877,18 @@ export function buildLocationPublicSummary(args: {
   const groupedMedicalNames = compactRuNameList(medicalNames);
   const firstMedicalDriver = medicalSliceDrivers[0] ?? null;
 
+  const portCityName = args.inferredCityName?.trim() || 'город';
+  const portStrategicCopyRu = buildPortCityStrategicContextCopyRu(portCityName);
+
   const publicDrivers: LocationPublicDriverRow[] = [];
-  if (kernel.specialMarketFlags.includes('port_or_logistics_gateway') && !hasPortLogisticsMagnet(magnets)) {
+  if (portFallbackActive) {
     publicDrivers.push({
-      textRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
+      textRu: portStrategicCopyRu,
       trace: {
         magnetFactId: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
         evidenceId: CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
         demandSignalId: null,
-        eligibilityReason: 'canonical_market_context:port_or_logistics_gateway_without_osm_port',
+        eligibilityReason: 'canonical_market_context:city_level_strategic_port_without_osm_port',
       },
     });
   }
@@ -887,6 +953,8 @@ export function buildLocationPublicSummary(args: {
     scoreCapReason: kernel.scoreCapReason,
     headlineRu,
     audienceVerdictRu,
+    publicScoreLabelRu,
+    publicScoreConfidence,
     publicDrivers,
     supportingContext,
     rejectedFromPublic: rejectedFromPublic.slice(0, 24),
@@ -927,6 +995,9 @@ export function evidenceItemsFromStrictSummaryDrivers(args: {
       typeRu: mf.category,
       subtypeRu: mf.subtype,
       distanceMeters: mf.distanceMeters,
+      anchorKind: mf.anchorKind ?? 'local_poi',
+      isNearbyPoi: mf.isNearbyPoi ?? true,
+      contributesToLocalDistanceScore: mf.contributesToLocalDistanceScore ?? true,
       publicExplanationRu: formatPublicEvidenceLineRu(patched),
     });
   }

@@ -22,8 +22,12 @@ import {
 import { evaluateRuGeocodeCitySanity } from './address-providers/geocode-city-sanity';
 import { buildDemandSignalsFromKernel, runLocationDemandScoringKernel } from './location-scoring-kernel';
 import {
+  buildPortCityStrategicContextCopyRu,
+  portCityStrategicEvidenceItem,
+  portCityStrategicMagnetFact,
+} from './location-evidence-anchor';
+import {
   CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
-  CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
   CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
   buildLocationPublicSummary,
   evidenceItemsFromStrictSummaryDrivers,
@@ -493,6 +497,9 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     baseWarnings: baseWarningsPreSummary,
     strictDrivers: strictPublicDrivers,
     partialCartographicContext: partialCartographicPreview,
+    dataIntegrity,
+    classifiedMagnetCount: analysis.magnets.length,
+    inferredCityName: cityScaleInference.cityName ?? null,
     presentationDiagnostics: {
       partialCartographicPreview,
       partialDataScoreCapApplied,
@@ -515,33 +522,19 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       row => row.trace.magnetFactId === CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
     )
   ) {
-    decisionMagnetFacts = [
-      ...magnetFacts,
-      {
-        id: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
-        name: 'Портово-логистический фактор города',
-        category: 'Транспорт и логистика',
-        subtype: 'port_context',
-        tier: 'secondary',
-        role: 'transport_anchor',
-        distanceMeters: 0,
-        evidenceSource: 'strategic_hub_layer',
-        includedInScore: false,
-        includedInPublicReport: true,
-        explanationRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
-        explanationEn: 'Port and logistics city context requires full-map verification.',
-      },
-    ];
+    const portStrategicCopyRu = buildPortCityStrategicContextCopyRu(cityScaleInference.cityName ?? 'город');
+    const portStrategicFact = portCityStrategicMagnetFact({
+      id: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+      cityName: cityScaleInference.cityName ?? 'город',
+      explanationRu: portStrategicCopyRu,
+    });
+    decisionMagnetFacts = [...magnetFacts, portStrategicFact];
     evidenceItems = [
-      {
+      portCityStrategicEvidenceItem({
         evidenceId: CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
         factId: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
-        objectName: 'Портово-логистический фактор города',
-        typeRu: 'Транспорт и логистика',
-        subtypeRu: 'port_context',
-        distanceMeters: 0,
-        publicExplanationRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
-      },
+        publicExplanationRu: portStrategicCopyRu,
+      }),
       ...evidenceItems,
     ];
   }

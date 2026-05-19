@@ -54,7 +54,7 @@ import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-pr
 import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
 import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
 import { sanitizeRuFactorList } from '@/lib/location/demo-public-copy';
-import { publicScoreRange } from '@/lib/location/location-score-public';
+import { publicScorePresentationFromDecision } from '@/lib/location/location-score-public';
 import {
   readRecentAddressesFromStorage,
   rememberRecentAddress,
@@ -2032,8 +2032,12 @@ function NeighborhoodEnvironmentPanel({
 // ── ASI results panel ─────────────────────────────────────────────────────────
 
 function formatFreeEvidenceLine(bullet: FreeLocationReportEvidenceBullet): string {
+  if (bullet.isCityLevelStrategic) {
+    return bullet.shortReason ?? bullet.name;
+  }
   const reason = bullet.shortReason ? ` — ${bullet.shortReason}` : '';
-  return `${bullet.name} · ${bullet.category} · ${bullet.distanceLabel}${reason}`;
+  const distance = bullet.distanceLabel ? ` · ${bullet.distanceLabel}` : '';
+  return `${bullet.name} · ${bullet.category}${distance}${reason}`;
 }
 
 function ASIPanel({
@@ -2307,7 +2311,12 @@ function ASIPanel({
   const savedFreeReportId = optionalMetaString(meta, 'reportId');
   const savedFreeReportPermalink = optionalMetaString(meta, 'permalink');
   const hasFreeReportMeta = Boolean(freeReportCalculatedAt || freeReportDataFreshness);
-  const publicScoreRangeLabel = isRuResidentialDemo ? publicScoreRange(publicScore)?.labelRu : null;
+  const publicScoreRangeLabel = isRuResidentialDemo
+    ? publicScorePresentationFromDecision(
+        residentialLocationDecision ?? analysis.locationDecision ?? null,
+        publicScore,
+      )?.labelRu
+    : null;
 
   return (
     <>

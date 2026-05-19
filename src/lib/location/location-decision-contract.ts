@@ -42,6 +42,9 @@ export interface CanonicalLocationFact {
 
 export type MagnetTier = 'primary' | 'secondary' | 'weak' | 'ignored';
 
+/** Local map POI vs city-scale strategic context (no walking distance). */
+export type LocationEvidenceAnchorKind = 'local_poi' | 'city_level_strategic';
+
 export type MagnetRole =
   | 'accessibility'
   | 'business_demand'
@@ -60,7 +63,11 @@ export interface MagnetFact {
   subtype?: string;
   tier: MagnetTier;
   role: MagnetRole;
-  distanceMeters: number;
+  /** Null for city-level strategic anchors — never render as «0 м». */
+  distanceMeters: number | null;
+  anchorKind?: LocationEvidenceAnchorKind;
+  isNearbyPoi?: boolean;
+  contributesToLocalDistanceScore?: boolean;
   evidenceSource: 'classified_magnet' | 'strategic_hub_layer';
   includedInScore: boolean;
   includedInPublicReport: boolean;
@@ -91,7 +98,10 @@ export interface LocationEvidenceItem {
   objectName: string;
   typeRu: string;
   subtypeRu?: string;
-  distanceMeters: number;
+  distanceMeters: number | null;
+  anchorKind?: LocationEvidenceAnchorKind;
+  isNearbyPoi?: boolean;
+  contributesToLocalDistanceScore?: boolean;
   publicExplanationRu: string;
 }
 
@@ -144,6 +154,8 @@ export interface LocationPublicSummaryTrace {
 }
 
 /** RU residential demo / golden harness diagnostics — safe to log; not primary UI copy. */
+export type LocationPublicScoreConfidence = 'sufficient' | 'requires_full_check' | 'insufficient_map_data';
+
 export interface LocationPublicPresentationDiagnostics {
   partialCartographicPreview: boolean;
   partialDataScoreCapApplied: boolean;
@@ -157,6 +169,8 @@ export interface LocationPublicPresentationDiagnostics {
   nearbyClusterDetected?: boolean;
   conservativeClusterFloorApplied?: boolean;
   clusterFloorReason?: string | null;
+  hasCityLevelStrategicAnchor?: boolean;
+  cityLevelStrategicAnchorOnly?: boolean;
 }
 
 export interface LocationPublicSummary {
@@ -172,6 +186,9 @@ export interface LocationPublicSummary {
   scoreCapReason: string | null;
   headlineRu: string;
   audienceVerdictRu: string;
+  /** Canonical RU label for hero / free report score tile — respects confidence gates. */
+  publicScoreLabelRu: string;
+  publicScoreConfidence: LocationPublicScoreConfidence;
   publicDrivers: LocationPublicDriverRow[];
   supportingContext: string[];
   rejectedFromPublic: LocationPublicRejectedRow[];

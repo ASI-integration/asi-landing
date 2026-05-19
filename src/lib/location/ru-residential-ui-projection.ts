@@ -5,23 +5,28 @@
 
 import type { LocationDecision, LocationEvidenceItem } from './location-decision-contract';
 import { formatDistanceRu } from './location-decision-rules';
+import { isCityLevelStrategicAnchor } from './location-evidence-anchor';
 
 export const RU_RESIDENTIAL_NEUTRAL_EVIDENCE_LINE_RU =
   'Подтверждённых сильных магнитов в кратком отчёте не найдено.';
 
 function usableEvidenceItems(items: readonly LocationEvidenceItem[]): LocationEvidenceItem[] {
-  return items.filter(
-    e =>
-      e.objectName.trim().length > 0 &&
-      e.typeRu.trim().length > 0 &&
-      Number.isFinite(e.distanceMeters) &&
-      e.distanceMeters >= 0,
-  );
+  return items.filter(e => {
+    if (!e.objectName.trim().length || !e.typeRu.trim().length) return false;
+    if (isCityLevelStrategicAnchor(e)) return true;
+    return Number.isFinite(e.distanceMeters) && (e.distanceMeters ?? 0) > 0;
+  });
 }
 
 /** One public line: object name · category/type · distance (evidence-backed). */
 export function formatRuResidentialEvidenceRowRu(item: LocationEvidenceItem): string {
+  if (isCityLevelStrategicAnchor(item)) {
+    return item.publicExplanationRu.trim() || item.objectName;
+  }
   const cat = item.subtypeRu ? `${item.typeRu} (${item.subtypeRu})` : item.typeRu;
+  if (item.distanceMeters == null || !Number.isFinite(item.distanceMeters)) {
+    return `${item.objectName} — ${cat}`;
+  }
   const dist = formatDistanceRu(item.distanceMeters);
   return `${item.objectName} — ${cat}, ${dist}`;
 }

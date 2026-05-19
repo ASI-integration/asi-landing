@@ -11,7 +11,9 @@ import {
 import {
   PORT_LOGISTICS_DEMAND_EXPLANATION_RU,
 } from '../strategic-transport-hub';
-import { CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU } from '../location-public-summary';
+import { buildPortCityStrategicContextCopyRu } from '../location-evidence-anchor';
+import { formatRuResidentialEvidenceRowRu } from '../ru-residential-ui-projection';
+import { publicScorePresentationFromDecision } from '../location-score-public';
 
 const subject = { lat: 44.7212, lon: 37.7704 };
 
@@ -133,9 +135,26 @@ describe('Novorossiysk port strategic anchor regression', () => {
       analysis,
     });
 
-    expect(publicDriverLines[0]).toBe(CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU);
-    expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU);
-    expect(freeReport.shortRecommendation).toContain('порт');
+    const expectedPortCopy = buildPortCityStrategicContextCopyRu('Новороссийск');
+    expect(publicDriverLines[0]).toBe(expectedPortCopy);
+    expect(publicDriverLines[0]).toContain('Городовой фактор спроса');
+    expect(publicDriverLines[0]).not.toMatch(/\b0\s*м\b/);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(expectedPortCopy);
+    expect(freeReport.topEvidenceBullets[0]?.distanceLabel).toBeNull();
+    expect(freeReport.shortRecommendation).toContain('городовой фактор спроса');
+    expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Слабый спрос/i);
+
+    const portEvidence = decision.evidenceItems.find(
+      e => e.factId === 'mf:canonical:market_context_port',
+    );
+    expect(portEvidence?.distanceMeters).toBeNull();
+    expect(portEvidence?.anchorKind).toBe('city_level_strategic');
+    expect(formatRuResidentialEvidenceRowRu(portEvidence!)).toBe(expectedPortCopy);
+    expect(formatRuResidentialEvidenceRowRu(portEvidence!)).not.toMatch(/\b0\s*м\b/);
+
+    const scoreLabel = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
+    expect(scoreLabel).not.toMatch(/15.?25\s*%/);
+    expect(scoreLabel).toMatch(/требует полной проверки|недостаточно/i);
   });
 
   it('deduplicates repeated medical anchors by normalized name, category, distance, and coordinates', () => {

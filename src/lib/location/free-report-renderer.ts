@@ -14,14 +14,18 @@ import {
 import {
   FREE_REPORT_RECOMMENDATION_RU,
   FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU,
+  FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU,
 } from './free-report-content';
+import { isCityLevelStrategicAnchor } from './location-evidence-anchor';
+import { CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID } from './location-public-summary';
 
 export interface FreeLocationReportEvidenceBullet {
   name: string;
   category: string;
-  distanceMeters: number;
-  distanceLabel: string;
+  distanceMeters: number | null;
+  distanceLabel: string | null;
   shortReason?: string;
+  isCityLevelStrategic?: boolean;
 }
 
 export interface FreeLocationReportCtaViewModel {
@@ -37,6 +41,7 @@ export interface FreeLocationReportViewModel {
   calculatedAt?: string;
   dataFreshness?: string;
   publicScore: number | null;
+  publicScoreLabelRu?: string | null;
   shortVerdict: string;
   topEvidenceBullets: FreeLocationReportEvidenceBullet[];
   shortRecommendation: string;
@@ -113,6 +118,9 @@ function resolvePublicScore(
 }
 
 function evidenceKey(evidence: LocationEvidenceItem): string {
+  if (isCityLevelStrategicAnchor(evidence)) {
+    return `city-strategic:${evidence.factId}`;
+  }
   const name = (evidence.objectName ?? '')
     .toLowerCase()
     .replace(/(?:^|\s)(?:гбуз|фгбу|фгбуз|гбу|мбуз|ооо|ао|пао)(?=\s|$)/g, ' ')
@@ -120,16 +128,33 @@ function evidenceKey(evidence: LocationEvidenceItem): string {
     .replace(/краев(?:ой|ого)|городск(?:ой|ая|ого)|клиническ(?:ий|ая|ого)/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return `${evidence.typeRu.toLowerCase().trim()}:${name}:${Math.round(evidence.distanceMeters / 100)}`;
+  const distBucket =
+    evidence.distanceMeters != null && Number.isFinite(evidence.distanceMeters)
+      ? Math.round(evidence.distanceMeters / 100)
+      : 'no-distance';
+  return `${evidence.typeRu.toLowerCase().trim()}:${name}:${distBucket}`;
 }
 
 function toBullet(evidence: LocationEvidenceItem): FreeLocationReportEvidenceBullet | null {
   const name = cleanText(evidence.objectName);
   const category = cleanText(evidence.typeRu);
-  const distanceMeters = finiteDistance(evidence.distanceMeters);
-  if (!name || !category || distanceMeters == null) return null;
+  if (!name || !category) return null;
 
   const shortReason = cleanText(evidence.publicExplanationRu);
+  if (isCityLevelStrategicAnchor(evidence)) {
+    return {
+      name,
+      category,
+      distanceMeters: null,
+      distanceLabel: null,
+      isCityLevelStrategic: true,
+      shortReason: shortReason ?? name,
+    };
+  }
+
+  const distanceMeters = finiteDistance(evidence.distanceMeters);
+  if (distanceMeters == null) return null;
+
   return {
     name,
     category,
@@ -152,8 +177,19 @@ function buildEvidenceBullets(decision: LocationDecision | null): FreeLocationRe
     .filter((item): item is LocationEvidenceItem => Boolean(item));
 
   const fallbackEvidence = decision.evidenceItems
-    .filter(item => item.objectName && Number.isFinite(item.distanceMeters))
-    .sort((a, b) => a.distanceMeters - b.distanceMeters);
+    .filter(
+      item =>
+        item.objectName &&
+        (isCityLevelStrategicAnchor(item) ||
+          (Number.isFinite(item.distanceMeters) && (item.distanceMeters ?? 0) > 0)),
+    )
+    .sort((a, b) => {
+      if (isCityLevelStrategicAnchor(a)) return -1;
+      if (isCityLevelStrategicAnchor(b)) return 1;
+      const da = a.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+      const db = b.distanceMeters ?? Number.MAX_SAFE_INTEGER;
+      return da - db;
+    });
 
   const seen = new Set<string>();
   const bullets: FreeLocationReportEvidenceBullet[] = [];
@@ -172,6 +208,16 @@ function buildEvidenceBullets(decision: LocationDecision | null): FreeLocationRe
 function recommendationForDecision(decision: LocationDecision | null): string {
   if (decision?.dataIntegrity?.scoreBlockedDueToIncompleteData || decision?.dataIntegrity?.analysisIncomplete) {
     return FREE_REPORT_RECOMMENDATION_RU;
+  }
+  const hasCityLevelStrategic = Boolean(
+    decision?.publicSummary?.presentationDiagnostics?.hasCityLevelStrategicAnchor ||
+      decision?.evidenceItems?.some(isCityLevelStrategicAnchor) ||
+      decision?.magnetFacts?.some(
+        mf => mf.id === CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID || isCityLevelStrategicAnchor(mf),
+      ),
+  );
+  if (hasCityLevelStrategic) {
+    return FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU;
   }
   const hasStrongPublicAnchor = Boolean(
     decision?.publicSummary?.publicDrivers?.some(row =>
@@ -218,6 +264,7 @@ export function buildFreeLocationReportViewModel(
       ? { dataFreshness: cleanText(input.dataFreshness) ?? metaFreshness(input.meta) }
       : {}),
     publicScore: resolvePublicScore(input.analysis, decision),
+    publicScoreLabelRu: decision?.publicSummary?.publicScoreLabelRu ?? null,
     shortVerdict:
       cleanText(decision?.publicSummary?.audienceVerdictRu) ??
       cleanText(decision?.uiProjection?.heroTitle) ??

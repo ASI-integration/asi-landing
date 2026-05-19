@@ -1,4 +1,11 @@
+import type { LocationDecision } from './location-decision-contract';
 import type { LocationAnalysis, ScoreBand } from './types';
+import {
+  inferPublicScoreConfidence,
+  publicScoreLabelRuForConfidence,
+  publicScoreNumericRange,
+  type PublicScoreConfidence,
+} from './location-evidence-anchor';
 
 /** Single public headline number: frozen trace outcome wired to `locationScore.location_score` when trace exists. */
 export function publicLocationScore(analysis: LocationAnalysis): number {
@@ -22,16 +29,64 @@ export interface PublicScoreRange {
   labelRu: string;
 }
 
-export function publicScoreRange(score: number | null | undefined): PublicScoreRange | null {
-  if (typeof score !== 'number' || !Number.isFinite(score) || score <= 0) return null;
-  const clamped = Math.max(0, Math.min(100, Math.round(score)));
-  const low = Math.max(0, Math.floor((clamped - 5) / 10) * 10 + 5);
-  const high = Math.min(100, low + 10);
-  const label = `${low}–${high}%`;
-  return {
-    low,
-    high,
-    label,
-    labelRu: `Потенциал: ${label}`,
-  };
+export type { PublicScoreConfidence };
+
+export function publicScoreRange(
+  score: number | null | undefined,
+  options?: { confidence?: PublicScoreConfidence },
+): PublicScoreRange | null {
+  const confidence = options?.confidence ?? 'sufficient';
+  if (confidence !== 'sufficient') {
+    return {
+      low: 0,
+      high: 0,
+      label: '',
+      labelRu: publicScoreLabelRuForConfidence(confidence, score ?? null),
+    };
+  }
+  const numeric = publicScoreNumericRange(score);
+  if (!numeric) return null;
+  if (typeof score === 'number' && score < 30) {
+    return {
+      low: 0,
+      high: 0,
+      label: '',
+      labelRu: 'Предварительный потенциал: требует полной проверки',
+    };
+  }
+  return numeric;
+}
+
+export function publicScorePresentationFromDecision(
+  decision: LocationDecision | null,
+  scoreOverride?: number | null,
+): PublicScoreRange | null {
+  if (!decision) return publicScoreRange(scoreOverride ?? null);
+  const summary = decision.publicSummary;
+  if (summary?.publicScoreLabelRu) {
+    return {
+      low: 0,
+      high: 0,
+      label: '',
+      labelRu: summary.publicScoreLabelRu,
+    };
+  }
+  const score =
+    scoreOverride ??
+    summary?.finalScore ??
+    decision.finalScore ??
+    decision.uiProjection?.publicScore ??
+    null;
+  const confidence =
+    summary?.publicScoreConfidence ??
+    inferPublicScoreConfidence({
+      score: typeof score === 'number' ? score : null,
+      partialCartographicPreview: Boolean(summary?.presentationDiagnostics?.partialCartographicPreview),
+      analysisIncomplete: decision.dataIntegrity?.analysisIncomplete,
+      scoreBlockedDueToIncompleteData: decision.dataIntegrity?.scoreBlockedDueToIncompleteData,
+      cityLevelStrategicOnly: Boolean(summary?.presentationDiagnostics?.cityLevelStrategicAnchorOnly),
+      strictPublicDriverCount: summary?.publicDrivers.length ?? 0,
+      classifiedMagnetCount: decision.rawObjectStats?.classifiedMagnetCount ?? 0,
+    });
+  return publicScoreRange(score, { confidence });
 }

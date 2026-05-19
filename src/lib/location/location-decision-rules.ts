@@ -18,6 +18,10 @@ import type {
   MagnetRole,
   MagnetTier,
 } from './location-decision-contract';
+import {
+  isCityLevelStrategicAnchor,
+  LOCAL_POI_ANCHOR_DEFAULTS,
+} from './location-evidence-anchor';
 
 /** Cyrillic-safe (avoid ASCII-only `\b` word boundaries for RU tokens) */
 const RU_STREET_TOKEN =
@@ -214,6 +218,12 @@ function publicEvidenceDisplayNameRu(mf: MagnetFact): string {
 }
 
 export function formatPublicEvidenceLineRu(mf: MagnetFact): string {
+  if (isCityLevelStrategicAnchor(mf)) {
+    return mf.explanationRu.trim() || mf.name;
+  }
+  if (mf.distanceMeters == null || !Number.isFinite(mf.distanceMeters)) {
+    return mf.explanationRu.trim() || mf.name;
+  }
   const dist = formatDistanceRu(mf.distanceMeters);
   if (mf.role === 'transport_anchor' && (mf.subtype === 'port' || mf.subtype === 'river_port')) {
     return `${mf.name} — около ${dist}: ${PORT_LOGISTICS_DEMAND_EXPLANATION_RU}`;
@@ -257,6 +267,7 @@ export function magnetItemToMagnetFact(
     tier,
     role,
     distanceMeters: Math.round(m.distance),
+    ...LOCAL_POI_ANCHOR_DEFAULTS,
     evidenceSource: 'classified_magnet',
     includedInScore: included,
     includedInPublicReport:
@@ -282,7 +293,8 @@ export function isStrongPublicEvidenceMagnetFact(f: MagnetFact): boolean {
     f.role !== 'local_interest' &&
     informativeEvidenceNameRu(f.name, magnetCategoryIdFromFactId(f.id)) &&
     Boolean(f.category?.trim()) &&
-    Number.isFinite(f.distanceMeters)
+    (isCityLevelStrategicAnchor(f) ||
+      (Number.isFinite(f.distanceMeters) && (f.distanceMeters ?? 0) > 0))
   );
 }
 
@@ -389,12 +401,15 @@ export function evidenceItemsFromMagnetFacts(
   const strongPool = base.filter(isStrongPublicEvidenceMagnetFact);
   const ranked = strongPool.length > 0 ? strongPool : base;
 
+  const localDistance = (f: MagnetFact) =>
+    Number.isFinite(f.distanceMeters) ? (f.distanceMeters as number) : Number.MAX_SAFE_INTEGER;
+
   ranked.sort((a, b) => {
     const tierRank = (t: MagnetTier) =>
       t === 'primary' ? 0 : t === 'secondary' ? 1 : t === 'weak' ? 2 : 3;
     const tr = tierRank(a.tier) - tierRank(b.tier);
     if (tr !== 0) return tr;
-    return a.distanceMeters - b.distanceMeters;
+    return localDistance(a) - localDistance(b);
   });
 
   const picked = ranked.slice(0, max);
@@ -405,6 +420,9 @@ export function evidenceItemsFromMagnetFacts(
     typeRu: mf.category,
     subtypeRu: mf.subtype,
     distanceMeters: mf.distanceMeters,
+    anchorKind: mf.anchorKind ?? 'local_poi',
+    isNearbyPoi: mf.isNearbyPoi ?? true,
+    contributesToLocalDistanceScore: mf.contributesToLocalDistanceScore ?? true,
     publicExplanationRu: formatPublicEvidenceLineRu(mf),
   }));
 }

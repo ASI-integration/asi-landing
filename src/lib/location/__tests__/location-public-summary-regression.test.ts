@@ -42,7 +42,7 @@ function medicalDriver(mf: MagnetFact, index: number): LocationDemandScoredDrive
     resolvedTier: 1,
     scaleClass: 'verified_major',
     demandTypeVote: 'medical',
-    distanceMeters: mf.distanceMeters,
+    distanceMeters: mf.distanceMeters ?? 0,
     baseWeight: 1,
     distanceCoefficient: 1,
     scaleCoefficient: 1,

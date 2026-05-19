@@ -6,6 +6,9 @@ export const FREE_REPORT_RECOMMENDATION_RU =
 export const FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU =
   'Есть сильный фактор спроса: транспорт, порт, медицина, бизнес или промышленность. Полный отчёт покажет, как это влияет на аренду, коммерцию и риски.';
 
+export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU =
+  'Есть сильный городовой фактор спроса, но влияние на этот адрес нужно проверить по полной карте: конкуренты, транспорт, формат запуска и риски.';
+
 export const FREE_REPORT_CTA_TITLE_RU = 'Хотите понять, стоит ли заходить в объект?';
 
 export const FREE_REPORT_CTA_TEXT_RU =

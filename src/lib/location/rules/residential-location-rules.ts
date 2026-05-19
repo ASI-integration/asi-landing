@@ -312,8 +312,17 @@ function buildVerdict(args: {
   tier1Count: number;
   displayAudience: ResidentialDemoAudience;
   capApplied: boolean;
+  hasCityLevelStrategicAnchor?: boolean;
 }): { label: string; tone: ResidentialDemoVerdictTone } {
-  const { headlineScore, tier1Count, displayAudience, capApplied } = args;
+  const { headlineScore, tier1Count, displayAudience, capApplied, hasCityLevelStrategicAnchor } = args;
+
+  if (hasCityLevelStrategicAnchor && headlineScore < 60) {
+    return {
+      label:
+        'Есть сильный городовой фактор спроса, но влияние на этот адрес нужно проверить по полной карте: конкуренты, транспорт, формат запуска и риски.',
+      tone: 'medium',
+    };
+  }
 
   // "Сильная" only when at least 2 independent tier-1 magnets confirmed
   // AND no caps fired AND score still strong.
@@ -369,6 +378,7 @@ const FLOOR_REASON_TIER2_CLUSTER =
 export function computeResidentialDemoPresentation(
   analysis: LocationAnalysis,
   headlineBeforeCaps: number,
+  options?: { hasCityLevelStrategicAnchor?: boolean },
 ): { sanity: ResidentialDemoSanity; cappedHeadline: number } {
   const tier1 = detectTier1(analysis);
   const tier1Count = tier1.length;
@@ -498,6 +508,7 @@ export function computeResidentialDemoPresentation(
     tier1Count,
     displayAudience,
     capApplied,
+    hasCityLevelStrategicAnchor: options?.hasCityLevelStrategicAnchor,
   });
 
   const sanity: ResidentialDemoSanity = {
