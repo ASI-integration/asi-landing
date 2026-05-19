@@ -53,13 +53,18 @@ const basePoiElements: OSMElement[] = [
 ];
 
 describe('city gravity layer (deterministic cityScale + populationTier)', () => {
-  it('A: micro/small city without flags — local hospital + local museum + generic plant stay weak', () => {
+  it('A: micro/small city without flags — local hospital can surface only as cautious generic medical context', () => {
     const d = decisionForCity('Лодейное Поле, тестовая улица', basePoiElements);
     const s = d.publicSummary!;
     expect(s.cityScale).toBe('micro_city');
-    expect(s.primaryDemandType === 'medical').toBe(false);
     expect(s.primaryDemandType === 'tourist').toBe(false);
-    expect(['weak/unclear', 'mixed'] as const).toContain(s.primaryDemandType);
+    if (s.primaryDemandType === 'medical') {
+      expect(s.trace.headlineReason).toBe('medical_primary_suppressed_generic_surface');
+      expect(s.headlineRu).toMatch(/обычная жилая локация/i);
+      expect(s.publicDrivers.map(x => x.textRu).join('\n')).toMatch(/недостаточно для сильного вывода/i);
+    } else {
+      expect(['weak/unclear', 'mixed'] as const).toContain(s.primaryDemandType);
+    }
 
     const kernel = d.demandKernelV1!;
     // No tier-1 promotion for weak/local POIs in micro cities.

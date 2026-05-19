@@ -773,17 +773,17 @@ export function buildLocationStandaloneReport(args: {
   };
 
   if (reportMode === 'free') {
-    const drivers =
-      analysis.scoringTrace?.publicBullets?.length
-        ? analysis.scoringTrace.publicBullets.slice(0, 5)
-        : [];
+    const freeSummary = buildFreeSummarySnapshot({ address: args.address, metadata, analysis });
+    const drivers = analysis.locationDecision?.uiProjection?.keyEvidenceBullets?.length
+      ? analysis.locationDecision.uiProjection.keyEvidenceBullets.slice(0, 5)
+      : freeSummary.keyFactorsRu.slice(0, 5);
     const free_brief = buildFreeBriefRu({ verdict: reportVerdict });
     return {
       version: 'v1',
       ...reportEnvelope,
       reportMode: 'free',
       metadata,
-      freeSummary: buildFreeSummarySnapshot({ address: args.address, metadata, analysis }),
+      freeSummary,
       free_brief,
       reportStructure: buildLocationReportStructureViewModel('free'),
       address: args.address,

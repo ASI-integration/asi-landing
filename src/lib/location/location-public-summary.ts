@@ -34,6 +34,17 @@ import {
 } from './signals/location-signal-taxonomy';
 import { magnetRoleForScoredDriver } from './location-scoring-kernel';
 import { medicalPrimaryStrongPublicCopyEligible } from './location-medical-surface-policy';
+import {
+  canonicalLevel1Priority,
+  canonicalMagnetDedupeKey,
+  classifyLevel1Magnet,
+  isBackgroundMinorPoi,
+} from './level1-magnet-taxonomy';
+
+export const CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID = 'mf:canonical:market_context_port';
+export const CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID = 'ev:canonical:market_context_port';
+export const CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU =
+  'В городе есть сильный портово-логистический фактор, но точное влияние на этот адрес требует проверки по полной карте.';
 
 function magnetForDriver(d: LocationDemandScoredDriver, magnets: readonly MagnetItem[]): MagnetItem | undefined {
   const parts = d.magnetFactId.split(':');
@@ -160,7 +171,12 @@ export function selectStrictPublicSummaryDrivers(args: {
   const { kernel, magnets, allowWeakLocalAttractionInResort } = args;
   const demandSignals = args.demandSignals ?? [];
   const specialMarketFlags = kernel.specialMarketFlags;
-  const pool = kernel.scoredDrivers.filter(d => d.publicDisplayEligible);
+  const pool = kernel.scoredDrivers.filter(d => {
+    if (d.publicDisplayEligible) return true;
+    if (!d.accepted || d.driverKind === 'noise' || d.driverKind === 'local_interest') return false;
+    const m = magnetForDriver(d, magnets);
+    return Boolean(m && classifyLevel1Magnet(m).isLevel1 && !isBackgroundMinorPoi(m));
+  });
   const demandAnchors = pool.filter(
     d => d.driverKind === 'real_demand_driver' || d.driverKind === 'unknown_uncapped',
   );
@@ -170,14 +186,26 @@ export function selectStrictPublicSummaryDrivers(args: {
     return m?.categoryId === 'metro' || m?.categoryId === 'railway_station';
   });
 
-  const ranked = [...demandAnchors, ...transit].sort((a, b) => b.finalContribution - a.finalContribution);
+  const prefiltered = [...demandAnchors, ...transit].sort((a, b) => {
+    const aMagnet = magnetForDriver(a, magnets);
+    const bMagnet = magnetForDriver(b, magnets);
+    if (!aMagnet || !bMagnet) return b.finalContribution - a.finalContribution;
+    const aLevel1 = classifyLevel1Magnet(aMagnet).isLevel1;
+    const bLevel1 = classifyLevel1Magnet(bMagnet).isLevel1;
+    if (aLevel1 !== bLevel1) return aLevel1 ? -1 : 1;
+    const canonicalDiff = canonicalLevel1Priority(aMagnet) - canonicalLevel1Priority(bMagnet);
+    if (canonicalDiff !== 0) return canonicalDiff;
+    return b.finalContribution - a.finalContribution;
+  });
 
   const out: LocationDemandScoredDriver[] = [];
-  const seen = new Set<string>();
-  for (const d of ranked) {
-    if (seen.has(d.magnetFactId)) continue;
+  const seenFacts = new Set<string>();
+  const seenCanonicalMagnets = new Set<string>();
+  for (const d of prefiltered) {
+    if (seenFacts.has(d.magnetFactId)) continue;
     const m = magnetForDriver(d, magnets);
     if (!m) continue;
+    if (isBackgroundMinorPoi(m)) continue;
     if (
       !passesResidentialPublicSurfaceGate(d, m, {
         allowWeakLocalAttractionInResort: Boolean(allowWeakLocalAttractionInResort),
@@ -188,10 +216,24 @@ export function selectStrictPublicSummaryDrivers(args: {
     ) {
       continue;
     }
-    seen.add(d.magnetFactId);
+    const canonicalKey = canonicalMagnetDedupeKey(m);
+    if (seenCanonicalMagnets.has(canonicalKey)) continue;
+    seenFacts.add(d.magnetFactId);
+    seenCanonicalMagnets.add(canonicalKey);
     out.push(d);
   }
-  return out;
+
+  return out.sort((a, b) => {
+    const aMagnet = magnetForDriver(a, magnets);
+    const bMagnet = magnetForDriver(b, magnets);
+    if (!aMagnet || !bMagnet) return b.finalContribution - a.finalContribution;
+    const aLevel1 = classifyLevel1Magnet(aMagnet).isLevel1;
+    const bLevel1 = classifyLevel1Magnet(bMagnet).isLevel1;
+    if (aLevel1 !== bLevel1) return aLevel1 ? -1 : 1;
+    const canonicalDiff = canonicalLevel1Priority(aMagnet) - canonicalLevel1Priority(bMagnet);
+    if (canonicalDiff !== 0) return canonicalDiff;
+    return b.finalContribution - a.finalContribution;
+  });
 }
 
 function passesResidentialPublicSurfaceGate(
@@ -592,6 +634,20 @@ function compactRuNameList(names: readonly string[]): string {
   return `${cleaned.slice(0, 3).join(', ')} и ещё ${cleaned.length - 3}`;
 }
 
+function hasPortLogisticsMagnet(magnets: readonly MagnetItem[]): boolean {
+  return magnets.some(m => {
+    const classified = classifyLevel1Magnet(m);
+    return (
+      classified.isLevel1 &&
+      classified.groupId === 'transport_logistics' &&
+      (classified.entityType === 'seaport' ||
+        classified.entityType === 'cargo_port' ||
+        classified.entityType === 'river_port' ||
+        classified.entityType === 'logistics_terminal')
+    );
+  });
+}
+
 export function buildLocationPublicSummary(args: {
   analysis: LocationAnalysis;
   magnets: readonly MagnetItem[];
@@ -759,7 +815,19 @@ export function buildLocationPublicSummary(args: {
   const firstMedicalDriver = medicalSliceDrivers[0] ?? null;
 
   const publicDrivers: LocationPublicDriverRow[] = [];
+  if (kernel.specialMarketFlags.includes('port_or_logistics_gateway') && !hasPortLogisticsMagnet(magnets)) {
+    publicDrivers.push({
+      textRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
+      trace: {
+        magnetFactId: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+        evidenceId: CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
+        demandSignalId: null,
+        eligibilityReason: 'canonical_market_context:port_or_logistics_gateway_without_osm_port',
+      },
+    });
+  }
   for (const d of sliceDrivers) {
+    if (publicDrivers.length >= 5) break;
     const mf = magnetFacts.find(m => m.id === d.magnetFactId);
     if (!mf) continue;
     const role = magnetRoleForScoredDriver(d) ?? mf.role;

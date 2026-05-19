@@ -132,6 +132,50 @@ describe('buildFreeLocationReportViewModel', () => {
     ]);
   });
 
+  it('deduplicates near-identical oncology evidence before public rendering', () => {
+    const decision = decisionWithEvidence(0);
+    decision.evidenceItems = [
+      {
+        evidenceId: 'ev-onco-1',
+        factId: 'mf:1:hospital:220',
+        objectName: 'Онкологический диспансер',
+        typeRu: 'Больницы и медкластеры',
+        distanceMeters: 218,
+        publicExplanationRu: 'Онкологический диспансер — около 220 м: медицинское учреждение поблизости.',
+      },
+      {
+        evidenceId: 'ev-onco-2',
+        factId: 'mf:2:hospital:225',
+        objectName: 'ГБУЗ Онкологический диспансер',
+        typeRu: 'Больницы и медкластеры',
+        distanceMeters: 225,
+        publicExplanationRu: 'ГБУЗ Онкологический диспансер — около 230 м: медицинское учреждение поблизости.',
+      },
+    ];
+    decision.publicSummary!.publicDrivers = decision.evidenceItems.map(item => ({
+      textRu: item.publicExplanationRu,
+      trace: {
+        evidenceId: item.evidenceId,
+        magnetFactId: item.factId,
+        demandSignalId: null,
+        eligibilityReason: 'canonical_level1',
+      },
+    }));
+
+    const report = buildFreeLocationReportViewModel({ decision });
+
+    expect(report.topEvidenceBullets).toHaveLength(1);
+    expect(report.topEvidenceBullets[0]?.name).toBe('Онкологический диспансер');
+  });
+
+  it('uses stronger public recommendation when canonical public evidence has a Level-1 anchor', () => {
+    const report = buildFreeLocationReportViewModel({
+      decision: decisionWithEvidence(1),
+    });
+
+    expect(report.shortRecommendation).toContain('Есть сильный фактор спроса');
+  });
+
   it('uses canonical free report CTA and paid teaser copy', () => {
     const report = buildFreeLocationReportViewModel({
       decision: decisionWithEvidence(3),
@@ -139,7 +183,7 @@ describe('buildFreeLocationReportViewModel', () => {
 
     expect(report.cta.primaryLabel).toBe('Получить полный отчёт');
     expect(report.shortRecommendation).toBe(
-      'Для решения по объекту проверьте экономику, конкурентов и сценарий запуска в подробном отчёте.',
+      'Есть сильный фактор спроса: транспорт, порт, медицина, бизнес или промышленность. Полный отчёт покажет, как это влияет на аренду, коммерцию и риски.',
     );
     expect(report.paidReportTeaser).toContain('коммерческий потенциал');
     expect(report.structure.paidPreviewSections?.map(section => section.id)).toContain('primeDemandMagnets');

@@ -6,6 +6,7 @@ import type { MagnetItem, OSMElement } from './types';
 import { MAGNET_CATEGORIES } from './config';
 import { classifyElement } from './overpass-classify';
 import { looksLikeWeakLocalAttractionPoi } from './signals/location-signal-taxonomy';
+import { PORT_LOGISTICS_DEMAND_EXPLANATION_RU } from './strategic-transport-hub';
 import type {
   AddressIdentity,
   CanonicalLocationFact,
@@ -214,6 +215,9 @@ function publicEvidenceDisplayNameRu(mf: MagnetFact): string {
 
 export function formatPublicEvidenceLineRu(mf: MagnetFact): string {
   const dist = formatDistanceRu(mf.distanceMeters);
+  if (mf.role === 'transport_anchor' && (mf.subtype === 'port' || mf.subtype === 'river_port')) {
+    return `${mf.name} — около ${dist}: ${PORT_LOGISTICS_DEMAND_EXPLANATION_RU}`;
+  }
   const tail = roleTailRu(mf.role);
   const label = publicEvidenceDisplayNameRu(mf);
   return `${label} — около ${dist}: ${tail}.`;

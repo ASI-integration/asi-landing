@@ -125,9 +125,10 @@ describe('POI tag alignment + public display regression (live screenshot scenari
     const officeShown = decision.publicClaims.some(c => /^\s*Офис\s+—/i.test(c.textRu) || c.textRu.includes('Офис — около'));
     expect(officeShown).toBe(false);
 
-    // Current public contract: weak/generic medical evidence may stay internal-only.
-    expect(decision.publicClaims.length).toBe(0);
-    expect(decision.publicSummary?.publicDrivers.length ?? 0).toBe(0);
+    // Current public contract: weak/generic medical evidence may surface only as one cautious grouped claim.
+    expect(decision.publicClaims.length).toBe(1);
+    expect(decision.publicClaims[0]?.textRu).toMatch(/недостаточно для сильного вывода/i);
+    expect(decision.publicSummary?.publicDrivers.length ?? 0).toBe(1);
     const medicalDrivers = decision.demandKernelV1?.scoredDrivers.filter(d => d.demandTypeVote === 'medical') ?? [];
     expect(medicalDrivers.length).toBeGreaterThan(0);
     expect(medicalDrivers.some(d => d.accepted)).toBe(true);

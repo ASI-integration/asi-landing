@@ -54,6 +54,7 @@ import { selectResidentialPrimeMagnetItems } from '@/lib/location/residential-pr
 import { strategicHubFreeBriefRu } from '@/lib/location/strategic-transport-hub';
 import { specializedMedicalFreeBriefRu } from '@/lib/location/specialized-medical-anchor';
 import { sanitizeRuFactorList } from '@/lib/location/demo-public-copy';
+import { publicScoreRange } from '@/lib/location/location-score-public';
 import {
   readRecentAddressesFromStorage,
   rememberRecentAddress,
@@ -2306,6 +2307,7 @@ function ASIPanel({
   const savedFreeReportId = optionalMetaString(meta, 'reportId');
   const savedFreeReportPermalink = optionalMetaString(meta, 'permalink');
   const hasFreeReportMeta = Boolean(freeReportCalculatedAt || freeReportDataFreshness);
+  const publicScoreRangeLabel = isRuResidentialDemo ? publicScoreRange(publicScore)?.labelRu : null;
 
   return (
     <>
@@ -2340,10 +2342,20 @@ function ASIPanel({
               <>
                 <div className={`flex items-end gap-3 ${isRuResidentialDemo ? '' : 'mt-2'}`}>
                   <div className="leading-none">
-                    <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
-                      {publicScore}
-                    </span>
-                    <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
+                    {isRuResidentialDemo ? (
+                      <>
+                        <p className={`text-[26px] md:text-[30px] font-extrabold ${band.textColor}`}>
+                          {publicScoreRangeLabel ?? 'Предварительный потенциал: средний'}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`text-[56px] md:text-[64px] font-extrabold tabular-nums ${band.textColor}`}>
+                          {publicScore}
+                        </span>
+                        <span className="ml-1 text-[18px] md:text-[20px] text-slate-500 font-semibold tabular-nums">/100</span>
+                      </>
+                    )}
                   </div>
                   <div className="ml-auto hidden lg:block">
                     <EvergreenRing index={publicScore} band={band} animated={animated} copy={c} />

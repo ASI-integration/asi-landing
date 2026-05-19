@@ -11,7 +11,10 @@ import {
   buildLocationReportStructureViewModel,
   type LocationReportStructureViewModel,
 } from './location-report-structure';
-import { FREE_REPORT_RECOMMENDATION_RU } from './free-report-content';
+import {
+  FREE_REPORT_RECOMMENDATION_RU,
+  FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU,
+} from './free-report-content';
 
 export interface FreeLocationReportEvidenceBullet {
   name: string;
@@ -110,7 +113,14 @@ function resolvePublicScore(
 }
 
 function evidenceKey(evidence: LocationEvidenceItem): string {
-  return `${evidence.evidenceId}:${evidence.objectName}:${Math.round(evidence.distanceMeters)}`;
+  const name = (evidence.objectName ?? '')
+    .toLowerCase()
+    .replace(/(?:^|\s)(?:гбуз|фгбу|фгбуз|гбу|мбуз|ооо|ао|пао)(?=\s|$)/g, ' ')
+    .replace(/\b(?:ккод|код)\b/g, ' ')
+    .replace(/краев(?:ой|ого)|городск(?:ой|ая|ого)|клиническ(?:ий|ая|ого)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${evidence.typeRu.toLowerCase().trim()}:${name}:${Math.round(evidence.distanceMeters / 100)}`;
 }
 
 function toBullet(evidence: LocationEvidenceItem): FreeLocationReportEvidenceBullet | null {
@@ -159,6 +169,21 @@ function buildEvidenceBullets(decision: LocationDecision | null): FreeLocationRe
   return bullets;
 }
 
+function recommendationForDecision(decision: LocationDecision | null): string {
+  if (decision?.dataIntegrity?.scoreBlockedDueToIncompleteData || decision?.dataIntegrity?.analysisIncomplete) {
+    return FREE_REPORT_RECOMMENDATION_RU;
+  }
+  const hasStrongPublicAnchor = Boolean(
+    decision?.publicSummary?.publicDrivers?.some(row =>
+      /транспорт|порт|логист|медицин|бизнес|делов|промышлен/i.test(row.textRu),
+    ) ||
+      decision?.evidenceItems?.some(item =>
+        /транспорт|порт|логист|медицин|бизнес|делов|промышлен/i.test(`${item.typeRu} ${item.publicExplanationRu}`),
+      ),
+  );
+  return hasStrongPublicAnchor ? FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU : DEFAULT_SHORT_RECOMMENDATION_RU;
+}
+
 function assertNoForbiddenTopLevelFields(viewModel: FreeLocationReportViewModel): void {
   for (const field of forbiddenFreeReportFields) {
     if (Object.prototype.hasOwnProperty.call(viewModel, field)) {
@@ -181,7 +206,7 @@ export function buildFreeLocationReportViewModel(
       ? { secondaryHref: cleanText(input.cta?.secondaryHref) }
       : {}),
   };
-  const shortRecommendation = DEFAULT_SHORT_RECOMMENDATION_RU;
+  const shortRecommendation = recommendationForDecision(decision);
 
   const viewModel: FreeLocationReportViewModel = {
     structure: buildLocationReportStructureViewModel('free'),

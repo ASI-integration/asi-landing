@@ -381,17 +381,53 @@ export function estimateCanonicalLocationWeight(input: CanonicalLocationWeightIn
 export function dedupeCanonicalMagnets<T extends Pick<MagnetItem, 'categoryId' | 'subType' | 'name' | 'distance'>>(magnets: readonly T[]): T[] {
   const byKey = new Map<string, T>();
   for (const m of [...magnets].sort((a, b) => a.distance - b.distance)) {
-    const normalizedName = norm(m.name)
-      .replace(/(?:^|\s)(?:гбуз|фгбу|ооо|ао|пао)(?=\s|$)/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const key = [
-      m.categoryId,
-      norm(m.subType),
-      normalizedName,
-      Math.round(m.distance / 100),
-    ].join('|');
+    const key = canonicalMagnetDedupeKey(m);
     if (!byKey.has(key)) byKey.set(key, m);
   }
   return [...byKey.values()];
+}
+
+export function canonicalMagnetDedupeKey(
+  m: Pick<MagnetItem, 'categoryId' | 'subType' | 'name' | 'distance'>,
+): string {
+  const normalizedName = norm(m.name)
+    .replace(/(?:^|\s)(?:гбуз|фгбу|фгбуз|гбу|гбукк|гбуу?з|мбуз|ооо|ао|пао)(?=\s|$)/g, ' ')
+    .replace(/\b(?:ккод|код)\b/g, ' ')
+    .replace(/краев(?:ой|ого)|городск(?:ой|ая|ого)|клиническ(?:ий|ая|ого)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [
+    m.categoryId,
+    norm(m.subType),
+    normalizedName,
+    Math.round(m.distance / 100),
+  ].join('|');
+}
+
+const LEVEL1_GROUP_PRIORITY: Record<Level1MagnetGroupId, number> = {
+  transport_logistics: 0,
+  industry: 1,
+  business_administration: 2,
+  medicine: 3,
+  education_science: 4,
+  retail_mixed_use: 5,
+  tourism_events: 6,
+};
+
+export function canonicalLevel1Priority(
+  m: Pick<MagnetItem, 'categoryId' | 'subType' | 'name' | 'distance' | 'weight'>,
+): number {
+  const classification = classifyLevel1Magnet(m);
+  if (!classification.isLevel1 || !classification.groupId) return 100;
+  const groupPriority = LEVEL1_GROUP_PRIORITY[classification.groupId] ?? 50;
+  const entityBoost =
+    classification.entityType === 'seaport' ||
+    classification.entityType === 'cargo_port' ||
+    classification.entityType === 'logistics_terminal' ||
+    classification.entityType === 'port_industrial_cluster'
+      ? -0.5
+      : 0;
+  const distancePenalty = Math.min(9, Math.max(0, m.distance) / 1000);
+  const weightBoost = Math.min(2, Math.max(0, m.weight ?? 0) / 10);
+  return groupPriority + entityBoost + distancePenalty * 0.01 - weightBoost * 0.01;
 }

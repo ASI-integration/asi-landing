@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { buildAnalysis } from '../gravity-scoring';
 import type { OSMElement } from '../types';
 import { buildLocationStandaloneReport } from '../standalone-report';
+import { buildLocationDecision } from '../location-decision-kernel';
+import { buildFreeLocationReportViewModel } from '../free-report-renderer';
 import {
   buildFullLocationReport,
   locationReportInputFromLegacy,
 } from '../unified-report';
-import { PORT_LOGISTICS_DEMAND_EXPLANATION_RU } from '../strategic-transport-hub';
+import {
+  PORT_LOGISTICS_DEMAND_EXPLANATION_RU,
+} from '../strategic-transport-hub';
+import { CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU } from '../location-public-summary';
 
 const subject = { lat: 44.7212, lon: 37.7704 };
 
@@ -49,6 +54,21 @@ describe('Novorossiysk port strategic anchor regression', () => {
     ];
 
     const analysis = buildAnalysis(elements, subject.lat, subject.lon);
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Новороссийск, центр рядом с портом',
+      coordinates: subject,
+      rawElements: elements,
+      locale: 'ru',
+    });
+    const publicDriverLines = decision.publicSummary?.publicDrivers.map(row => row.textRu) ?? [];
+    const firstPublicMedicalIndex = publicDriverLines.findIndex(line => /онколог|медицин/i.test(line));
+    const firstPublicPortIndex = publicDriverLines.findIndex(line => /порт|логист/i.test(line));
+
+    expect(firstPublicPortIndex).toBeGreaterThanOrEqual(0);
+    if (firstPublicMedicalIndex >= 0) expect(firstPublicPortIndex).toBeLessThan(firstPublicMedicalIndex);
+    expect(publicDriverLines.join(' ')).toContain('командированных');
+
     const strongestNames = analysis.strongestMagnets.map(m => m.name).join(' ');
 
     expect(strongestNames).toContain('Порт Новороссийск');
@@ -82,6 +102,40 @@ describe('Novorossiysk port strategic anchor regression', () => {
     if (magnets?.id !== 'magnets') throw new Error('magnets section missing');
     expect([...magnets.primary, ...magnets.secondary].some(m => m.name.includes('Порт Новороссийск'))).toBe(true);
     expect(report.strReport?.signalGroups.businessCorporateRu.join(' ')).toContain(PORT_LOGISTICS_DEMAND_EXPLANATION_RU);
+  });
+
+  it('uses explicit canonical port-logistics fallback when OSM misses the port object', () => {
+    const elements: OSMElement[] = [
+      osmAt(21, 0.002, 0.002, {
+        name: 'Онкологический диспансер',
+        amenity: 'hospital',
+        healthcare: 'hospital',
+      }),
+      osmAt(22, 0.00201, 0.00201, {
+        name: 'ГБУЗ Онкологический диспансер',
+        amenity: 'hospital',
+        healthcare: 'hospital',
+      }),
+    ];
+
+    const analysis = buildAnalysis(elements, subject.lat, subject.lon);
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Новороссийск, улица Советов, 10',
+      coordinates: subject,
+      rawElements: elements,
+      locale: 'ru',
+    });
+    const publicDriverLines = decision.publicSummary?.publicDrivers.map(row => row.textRu) ?? [];
+    const freeReport = buildFreeLocationReportViewModel({
+      address: 'Новороссийск, улица Советов, 10',
+      decision,
+      analysis,
+    });
+
+    expect(publicDriverLines[0]).toBe(CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU);
+    expect(freeReport.shortRecommendation).toContain('порт');
   });
 
   it('deduplicates repeated medical anchors by normalized name, category, distance, and coordinates', () => {

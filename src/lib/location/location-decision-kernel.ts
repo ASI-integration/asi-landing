@@ -22,6 +22,9 @@ import {
 import { evaluateRuGeocodeCitySanity } from './address-providers/geocode-city-sanity';
 import { buildDemandSignalsFromKernel, runLocationDemandScoringKernel } from './location-scoring-kernel';
 import {
+  CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
+  CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
+  CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
   buildLocationPublicSummary,
   evidenceItemsFromStrictSummaryDrivers,
   publicSummaryToClaims,
@@ -473,7 +476,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     baseWarningsPreSummary.push(w);
   }
 
-  const evidenceItems = evidenceItemsFromStrictSummaryDrivers({
+  let evidenceItems = evidenceItemsFromStrictSummaryDrivers({
     strictDrivers: strictPublicDrivers,
     magnetFacts,
     magnets: analysis.magnets,
@@ -506,11 +509,48 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
     },
   });
 
+  let decisionMagnetFacts = magnetFacts;
+  if (
+    publicSummary.publicDrivers.some(
+      row => row.trace.magnetFactId === CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+    )
+  ) {
+    decisionMagnetFacts = [
+      ...magnetFacts,
+      {
+        id: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+        name: 'Портово-логистический фактор города',
+        category: 'Транспорт и логистика',
+        subtype: 'port_context',
+        tier: 'secondary',
+        role: 'transport_anchor',
+        distanceMeters: 0,
+        evidenceSource: 'strategic_hub_layer',
+        includedInScore: false,
+        includedInPublicReport: true,
+        explanationRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
+        explanationEn: 'Port and logistics city context requires full-map verification.',
+      },
+    ];
+    evidenceItems = [
+      {
+        evidenceId: CANONICAL_PORT_MARKET_CONTEXT_EVIDENCE_ID,
+        factId: CANONICAL_PORT_MARKET_CONTEXT_MAGNET_FACT_ID,
+        objectName: 'Портово-логистический фактор города',
+        typeRu: 'Транспорт и логистика',
+        subtypeRu: 'port_context',
+        distanceMeters: 0,
+        publicExplanationRu: CANONICAL_PORT_MARKET_CONTEXT_FALLBACK_RU,
+      },
+      ...evidenceItems,
+    ];
+  }
+
   const publicClaims = publicSummaryToClaims(publicSummary.publicDrivers);
   const keyEvidenceBullets = publicClaims.map(c => c.textRu);
 
   const claimProblems = validatePublicClaimPipeline({
-    magnetFacts,
+    magnetFacts: decisionMagnetFacts,
     evidenceItems,
     demandSignals,
     publicClaims,
@@ -568,7 +608,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
       competitorCount: analysis.competitors.length,
     },
     canonicalFacts,
-    magnetFacts,
+    magnetFacts: decisionMagnetFacts,
     demandKernelV1,
     demandSignals,
     scoreTrace: trace,

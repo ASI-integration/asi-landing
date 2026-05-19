@@ -114,7 +114,7 @@ describe('location golden assertions (LocationPublicSummary)', () => {
     expect(s.primaryDemandType).not.toBe('weak/unclear');
   });
 
-  it('Lodeynoye Pole: small-city harness — no medical-primary from municipal hospitals; no tourist secondary from local interest; score capped or naturally low', () => {
+  it('Lodeynoye Pole: small-city harness — generic medical stays cautious; no tourist secondary from local interest; score capped or naturally low', () => {
     const c = byCity.get('lodeynoye_pole')!;
     const decision = locationDecisionFromReplay(c);
     const s = decision.publicSummary!;
@@ -128,8 +128,11 @@ describe('location golden assertions (LocationPublicSummary)', () => {
     if (guard?.applied) {
       expect(s.scoreCapReason).toMatch(/city_gravity_cap:applied/);
     }
-    expect(['weak/unclear', 'mixed'] as const).toContainEqual(s.primaryDemandType);
-    expect(s.primaryDemandType).not.toBe('medical');
+    expect(['weak/unclear', 'mixed', 'medical'] as const).toContainEqual(s.primaryDemandType);
+    if (s.primaryDemandType === 'medical') {
+      expect(s.trace.headlineReason).toMatch(/medical_primary_suppressed_generic/);
+      expect(s.publicDrivers.map(d => d.textRu).join('\n')).toMatch(/недостаточно для сильного вывода/i);
+    }
     expect(s.secondaryDemandTypes.includes('tourist')).toBe(false);
     expect(s.finalScore).not.toBeNull();
     expect(s.finalScore!).toBeLessThanOrEqual(58);
@@ -140,7 +143,8 @@ describe('location golden assertions (LocationPublicSummary)', () => {
 
     expect(
       /ограничен|неустойчив|неоднознач|недостаточн|Смешанный/i.test(s.headlineRu) ||
-        s.trace.headlineReason === 'no_strict_public_drivers_after_surface_gates',
+        s.trace.headlineReason === 'no_strict_public_drivers_after_surface_gates' ||
+        /medical_primary_suppressed_generic/.test(s.trace.headlineReason),
     ).toBe(true);
 
     for (const line of s.publicDrivers.map(d => d.textRu)) {

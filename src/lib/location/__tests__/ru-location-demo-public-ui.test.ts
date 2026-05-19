@@ -211,6 +211,18 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(demoSrc).not.toContain('publicDrivers ?? []).map');
   });
 
+  it('public RU result renders potential range instead of exact score out of 100', () => {
+    const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
+    const residentialScoreBlock = demoSrc.slice(
+      demoSrc.indexOf('publicScoreRangeLabel'),
+      demoSrc.indexOf('<EvergreenRing index={publicScore}'),
+    );
+
+    expect(demoSrc).toContain('publicScoreRange(publicScore)?.labelRu');
+    expect(residentialScoreBlock).toContain('Предварительный потенциал: средний');
+    expect(residentialScoreBlock).toContain('{isRuResidentialDemo ? (');
+  });
+
   it('public RU UI does not contain raw/debug/full-report-only sections', () => {
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
 

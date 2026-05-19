@@ -1,7 +1,10 @@
 const MAX_FREE_REPORT_SIGNALS = 4;
 
 export const FREE_REPORT_RECOMMENDATION_RU =
-  'Для решения по объекту проверьте экономику, конкурентов и сценарий запуска в подробном отчёте.';
+  'Предварительная оценка видит часть факторов. Для решения по объекту нужен полный анализ карты, конкурентов и сценариев запуска.';
+
+export const FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU =
+  'Есть сильный фактор спроса: транспорт, порт, медицина, бизнес или промышленность. Полный отчёт покажет, как это влияет на аренду, коммерцию и риски.';
 
 export const FREE_REPORT_CTA_TITLE_RU = 'Хотите понять, стоит ли заходить в объект?';
 
@@ -88,7 +91,7 @@ function factorKind(value: string): FactorKind {
   const text = value.toLowerCase();
   if (/метро/.test(text)) return 'metro';
   if (/мед|больниц|клиник|госпитал|поликлиник|аптек/.test(text)) return 'medical';
-  if (/транспорт|вокзал|станци|аэропорт|останов|мцд|автобус|ж\/д|железн/.test(text)) return 'transport';
+  if (/транспорт|порт|логист|вокзал|станци|аэропорт|останов|мцд|автобус|ж\/д|железн/.test(text)) return 'transport';
   if (/универс|институт|школ|образован|вуз/.test(text)) return 'education';
   if (/бизнес|офис|делов|промышлен|технопарк/.test(text)) return 'business';
   if (/турис|достопр|музе|театр|парк|событ|досуг/.test(text)) return 'tourism';
@@ -257,6 +260,15 @@ function buildSummaryReason(rawFactors: string[], score: number | null | undefin
   return `Локация имеет ${scorePotentialLabel(score)} потенциал: ${summarySignalLabels(kinds)}, но для точного вывода нужны данные по конкуренции, спросу и сценарию запуска.`;
 }
 
+function hasStrongFreeReportSignal(rawFactors: string[]): boolean {
+  return parsedFactors(rawFactors).some(factor =>
+    factor.kind === 'transport' ||
+    factor.kind === 'medical' ||
+    factor.kind === 'business' ||
+    factor.raw.toLowerCase().includes('портово-логист'),
+  );
+}
+
 function commercialLabel(kind: FactorKind): string | null {
   if (kind === 'services') return 'магазины и повседневные сервисы';
   if (kind === 'business') return 'офисы и деловая инфраструктура';
@@ -293,13 +305,16 @@ export function buildFreeReportInterpretedContent(args: {
   evidenceBullets: string[];
   score?: number | null;
 }): FreeReportInterpretedContent {
+  const recommendationRu = hasStrongFreeReportSignal(args.evidenceBullets)
+    ? FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU
+    : FREE_REPORT_RECOMMENDATION_RU;
   return {
     summaryReasonRu: buildSummaryReason(args.evidenceBullets, args.score),
     demandSignalsRu: normalizeFreeReportFactors(args.evidenceBullets),
     risksAndLimitationsRu: [...FREE_REPORT_LIMITATIONS_RU],
     commercialPreview: buildCommercialPreview(args.evidenceBullets),
     paidPreviewItemsRu: [...FREE_REPORT_PAID_PREVIEW_ITEMS_RU],
-    recommendationRu: FREE_REPORT_RECOMMENDATION_RU,
+    recommendationRu,
     ctaTitleRu: FREE_REPORT_CTA_TITLE_RU,
     ctaTextRu: FREE_REPORT_CTA_TEXT_RU,
   };
