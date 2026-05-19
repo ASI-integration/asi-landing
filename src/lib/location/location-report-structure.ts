@@ -240,7 +240,7 @@ export function buildLocationReportStructureViewModel(
     return {
       version: 'location-report-structure-v1',
       mode: 'free',
-      titleRu: 'Предпросмотр отчёта',
+      titleRu: 'Отчёт по локации',
       sections: freeLocationReportStructureSections,
       cta: FREE_LOCATION_REPORT_CTA,
       paidPreviewSections: paidLocationReportStructureSections.map(({ id, titleRu, summaryRu }) => ({
@@ -254,7 +254,7 @@ export function buildLocationReportStructureViewModel(
   return {
     version: 'location-report-structure-v1',
     mode: 'paid',
-      titleRu: 'Отчёт по локации',
+    titleRu: 'Отчёт по локации',
     sections: paidLocationReportStructureSections,
     cta: PAID_LOCATION_REPORT_CTA,
   };

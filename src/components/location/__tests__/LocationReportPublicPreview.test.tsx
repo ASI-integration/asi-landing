@@ -7,6 +7,7 @@ import {
 } from '../LocationReportPublicPreview';
 import { buildLocationStandaloneReport } from '@/lib/location/standalone-report';
 import { buildAnalysis } from '@/lib/location/gravity-scoring';
+import { isYooKassaEnabled } from '@/lib/payments/yookassa-env';
 
 describe('LocationReportPublicPreview', () => {
   const analysis = buildAnalysis([], 55.75, 37.61, { spatialFoundation: true });
@@ -28,7 +29,9 @@ describe('LocationReportPublicPreview', () => {
     expect(html).toContain('Сильная сторона');
     expect(html).toContain('Главный риск');
     expect(html).toContain('Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.');
+    expect(html.match(/Оплата будет подключена/g) ?? []).toHaveLength(1);
     expect(html).toContain(LOCATION_REPORT_PUBLIC_PREVIEW_CTA_LABEL);
+    expect(html).not.toContain('Детальный расчёт появится после оплаты.');
     expect(html).not.toMatch(/preview/i);
     expect(html).not.toMatch(/превью/i);
   });
@@ -57,8 +60,30 @@ describe('LocationReportPublicPreview', () => {
     expect(html).toContain('Конкуренция рядом');
     expect(html).toContain('Будущее района');
     expect(html).toContain('Доходность и сценарии');
+    expect(html).toContain('Показывает, стоит ли рассматривать объект');
+    expect(html).toContain('Показывает, кто может здесь бронировать');
+    expect(html).toContain('Показывает, насколько рядом плотная конкуренция');
+    expect(html).toContain('Показывает, что приводит гостей к адресу');
+    expect(html).toContain('Показывает, как меняется экономика в разных сценариях');
+    expect(html).toContain('Показывает, что проверить до решения');
+    expect(html).toContain('Показывает, как район может измениться');
     expect(html).not.toContain('blur-[6px]');
     expect(html).not.toContain('Доступно в полном отчёте');
     expect(html).not.toContain('Подробный разбор по этому блоку доступен в полном отчёте.');
+  });
+
+  it('keeps YooKassa disabled during public report review', () => {
+    const previous = process.env.YOOKASSA_ENABLED;
+    delete process.env.YOOKASSA_ENABLED;
+
+    try {
+      expect(isYooKassaEnabled()).toBe(false);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.YOOKASSA_ENABLED;
+      } else {
+        process.env.YOOKASSA_ENABLED = previous;
+      }
+    }
   });
 });

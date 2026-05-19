@@ -9,7 +9,7 @@ describe('location report structure', () => {
   it('defines the canonical free report format', () => {
     const structure = buildLocationReportStructureViewModel('free');
 
-    expect(structure.titleRu).toBe('Предпросмотр отчёта');
+    expect(structure.titleRu).toBe('Отчёт по локации');
     expect(structure.sections.map(section => section.id)).toEqual([
       'shortAddressConclusion',
       'publicLocationStatus',
