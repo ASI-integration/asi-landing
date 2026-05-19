@@ -1,8 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { buildAnalysis } from '../gravity-scoring';
 import { buildFreeLocationReportViewModel } from '../free-report-renderer';
+import { buildLocationDecision } from '../location-decision-kernel';
 import { FREE_LOCATION_REPORT_CTA } from '../location-report-structure';
+import {
+  publicLocationScore,
+  publicScorePresentationFromDecision,
+  publicScoreRange,
+} from '../location-score-public';
+import type { OSMElement } from '../types';
 
 const repoRoot = path.join(__dirname, '../../..', '..');
 const ruHomePath = path.join(repoRoot, 'src/app/ru/page.tsx');
@@ -214,13 +222,56 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
   it('public RU result renders potential range instead of exact score out of 100', () => {
     const demoSrc = fs.readFileSync(demoComponentPath, 'utf8');
     const residentialScoreBlock = demoSrc.slice(
-      demoSrc.indexOf('publicScoreRangeLabel'),
+      demoSrc.indexOf('const publicScoreRangeLabel'),
       demoSrc.indexOf('<EvergreenRing index={publicScore}'),
     );
 
-    expect(demoSrc).toContain('publicScoreRange(publicScore)?.labelRu');
-    expect(residentialScoreBlock).toContain('Предварительный потенциал: средний');
+    expect(demoSrc).toContain(
+      "import { publicScorePresentationFromDecision } from '@/lib/location/location-score-public'",
+    );
+    expect(residentialScoreBlock).toContain('publicScorePresentationFromDecision');
+    expect(residentialScoreBlock).toContain('residentialLocationDecision ?? analysis.locationDecision');
+    expect(residentialScoreBlock).not.toContain('publicScoreRange(publicScore)');
+    expect(residentialScoreBlock).toContain('{publicScoreRangeLabel');
     expect(residentialScoreBlock).toContain('{isRuResidentialDemo ? (');
+    const ruResidentialBranch = residentialScoreBlock.slice(
+      residentialScoreBlock.indexOf('{isRuResidentialDemo ? ('),
+      residentialScoreBlock.indexOf(') : (', residentialScoreBlock.indexOf('{isRuResidentialDemo ? (')),
+    );
+    expect(ruResidentialBranch).toContain('{publicScoreRangeLabel');
+    expect(ruResidentialBranch).not.toContain('/100');
+    expect(ruResidentialBranch).not.toMatch(/\d+\s*[-–]\s*\d+\s*%/);
+
+    const novorossiysk = { lat: 44.7212, lon: 37.7704 };
+    const elements: OSMElement[] = [];
+    const analysis = buildAnalysis(elements, novorossiysk.lat, novorossiysk.lon);
+    const decision = buildLocationDecision({
+      analysis,
+      inputAddress: 'Новороссийск',
+      coordinates: novorossiysk,
+      rawElements: elements,
+      locale: 'ru',
+    });
+    const publicScore = publicLocationScore(analysis);
+    const presentationLabel =
+      publicScorePresentationFromDecision(decision, publicScore)?.labelRu ?? '';
+
+    expect(decision.publicSummary?.publicScoreConfidence).not.toBe('sufficient');
+    expect(presentationLabel).toMatch(/требует полной проверки|недостаточно/i);
+    expect(presentationLabel).not.toMatch(/\d+\s*[-–]\s*\d+\s*%/);
+    expect(decision.publicSummary?.presentationDiagnostics?.cityLevelStrategicAnchorOnly).toBe(
+      true,
+    );
+
+    const freeReport = buildFreeLocationReportViewModel({
+      address: 'Новороссийск',
+      decision,
+      analysis,
+    });
+    expect(freeReport.shortVerdict).not.toMatch(/Слабый спрос/i);
+
+    expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
+    expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Потенциал:/);
   });
 
   it('public RU UI does not contain raw/debug/full-report-only sections', () => {
