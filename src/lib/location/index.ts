@@ -177,6 +177,19 @@ export {
   normalizeUrbanDevelopmentSignals,
   urbanDevelopmentSnapshotFromSignals,
 } from './data-sources/urban-development';
+export type {
+  LocationSourceAccessClass,
+  LocationSourceAdapterContract,
+  LocationSourceAdapterStatus,
+  LocationSourceFreshness,
+  LocationSourceLayer,
+} from './data-sources/source-adapter-registry';
+export {
+  LOCATION_SOURCE_ADAPTER_REGISTRY,
+  SELECTIVE_LOCATION_SOURCE_PARSING_POLICY_RU,
+  listLocationSourceAdaptersByLayer,
+  sourceRegistryHasOnlyCanonicalUiAdapters,
+} from './data-sources/source-adapter-registry';
 export {
   PUBLIC_PROCUREMENT_LIVE_PROBE_ADAPTER_OPTION_KEYS,
   PUBLIC_PROCUREMENT_LIVE_PROBE_ENV_KEY,
@@ -309,6 +322,26 @@ export {
 } from './location-scoring-projection';
 export type { LocationReportPublicMode } from './location-scoring-projection';
 export { LOCATION_SCORING_RUNTIME_EXPORT } from './location-scoring-rules';
+export type {
+  CanonicalCityScale,
+  CanonicalDensityLevel,
+  CanonicalLocationWeight,
+  CanonicalLocationWeightInput,
+  CanonicalRoleStrength,
+  Level1EntityType,
+  Level1MagnetClassification,
+  Level1MagnetGroup,
+  Level1MagnetGroupId,
+} from './level1-magnet-taxonomy';
+export {
+  LEVEL1_MAGNET_RULES_RU,
+  LEVEL1_MAGNET_TAXONOMY,
+  MINOR_POI_BACKGROUND_CATEGORY_IDS,
+  classifyLevel1Magnet,
+  dedupeCanonicalMagnets,
+  estimateCanonicalLocationWeight,
+  isBackgroundMinorPoi,
+} from './level1-magnet-taxonomy';
 
 export {
   buildLocationScoreOutput,

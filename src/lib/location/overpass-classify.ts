@@ -3,6 +3,7 @@ import {
   qualifiesSpecializedMedicalAnchor,
   inferSpecializedMedicalSubType,
 } from './specialized-medical-anchor';
+import { resolveMaritimeHubSubtypeFromTags } from './strategic-transport-hub';
 
 /**
  * Luxury hotel chains: their presence is a quality signal independent of star rating.
@@ -128,17 +129,15 @@ export function classifyElement(el: OSMElement): { categoryId: string; name: str
   if (t.amenity === 'college')
     return { categoryId: 'education_local', name: t.name || 'Колледж' };
 
-  // Ports / ferries — same magnet lineage as rail hubs for baseline scoring within primary radius
-  if (t.amenity === 'ferry_terminal')
-    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
-  if (t.landuse === 'harbour')
-    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
-  if (t.waterway === 'dock')
-    return { categoryId: 'railway_station', name: t.name || 'Речной порт', subType: 'river_port' };
-  if (t.industrial === 'port' || t.industrial === 'logistics')
-    return { categoryId: 'railway_station', name: t.name || 'Порт', subType: 'port' };
-  if (t.harbour === 'yes' && t.name?.trim())
-    return { categoryId: 'railway_station', name: t.name, subType: 'port' };
+  // Ports / ferries / cargo terminals — taxonomy/tag gated, not name-only.
+  const maritimeSubtype = resolveMaritimeHubSubtypeFromTags(t);
+  if (maritimeSubtype) {
+    return {
+      categoryId: 'railway_station',
+      name: t.name || (maritimeSubtype === 'river_port' ? 'Речной порт' : 'Порт'),
+      subType: maritimeSubtype,
+    };
+  }
 
   // Railway stations + major bus hubs (classified AFTER metro)
   if (t.amenity === 'bus_station')

@@ -22,6 +22,34 @@ export type StrategicHubSubType =
 
 export type StrategicReachBand = 'secondary' | 'strategic';
 
+function tagValue(tags: Record<string, string>, key: string): string {
+  return (tags[key] ?? '').toLowerCase().trim();
+}
+
+export function resolveMaritimeHubSubtypeFromTags(
+  tags: Record<string, string>,
+): Extract<StrategicHubSubType, 'port' | 'river_port'> | null {
+  const amenity = tagValue(tags, 'amenity');
+  const landuse = tagValue(tags, 'landuse');
+  const waterway = tagValue(tags, 'waterway');
+  const industrial = tagValue(tags, 'industrial');
+  const harbour = tagValue(tags, 'harbour');
+  const seamarkType = tagValue(tags, 'seamark:type');
+  const port = tagValue(tags, 'port');
+  const cargo = tagValue(tags, 'cargo');
+  const goods = tagValue(tags, 'goods');
+
+  if (waterway === 'dock') return 'river_port';
+  if (amenity === 'ferry_terminal') return 'port';
+  if (landuse === 'harbour' || landuse === 'port') return 'port';
+  if (industrial === 'port') return 'port';
+  if (harbour === 'yes' || port === 'yes') return 'port';
+  if (seamarkType === 'harbour' || seamarkType === 'port' || seamarkType === 'terminal') return 'port';
+  if (cargo || goods === 'container') return 'port';
+
+  return null;
+}
+
 /**
  * Map classified POI + tags to a strategic-hub role, or null when this object
  * must never use the extended strategic fetch radius bucket for scoring.
@@ -39,16 +67,8 @@ export function resolveStrategicHubSubtype(
     if (classified.subType === 'transport_interchange') return 'transport_interchange';
     if (tags.amenity === 'bus_station') return 'bus_station';
     if (tags.railway === 'halt') return null;
-    if (
-      tags.amenity === 'ferry_terminal' ||
-      tags.landuse === 'harbour' ||
-      tags.waterway === 'dock' ||
-      tags.industrial === 'port' ||
-      tags.industrial === 'logistics' ||
-      tags.harbour === 'yes'
-    ) {
-      return tags.waterway === 'dock' ? 'river_port' : 'port';
-    }
+    const maritimeSubtype = resolveMaritimeHubSubtypeFromTags(tags);
+    if (maritimeSubtype) return maritimeSubtype;
     if (tags.railway === 'station') return 'railway_station';
     return null;
   }
@@ -91,6 +111,13 @@ export function strategicHubSubtypeLabelRu(subType: string | undefined): string 
   }
 }
 
+export function isPortHubSubtype(subType: string | undefined): boolean {
+  return subType === 'port' || subType === 'river_port';
+}
+
+export const PORT_LOGISTICS_DEMAND_EXPLANATION_RU =
+  'Портовая и логистическая инфраструктура рядом: возможен спрос от командированных, подрядчиков, экипажей и деловых поездок.';
+
 /** Short free-tier line — strategic band (≈5–8 km) or secondary maritime/logistics ports */
 export function strategicHubFreeBriefRu(
   hubs: Array<{ strategicReachBand?: StrategicReachBand; subType?: string }>,
@@ -122,7 +149,7 @@ export function strategicHubPaidDetailLinesRu(magnets: MagnetItem[]): string[] {
           ? 'Крупный транспортно-логистический узел в зоне доступности'
           : 'Транспортно-логистический узел в транспортной досягаемости';
       lines.push(
-        `${head}: ${kind} — ${m.name} (${distRu}). Поддерживает транспортные коридоры и смежный деловой спрос; это не пеший якорь — рассчитывайте на авто или общественный транспорт.`,
+        `${head}: ${kind} — ${m.name} (${distRu}). ${PORT_LOGISTICS_DEMAND_EXPLANATION_RU} Для гостей важно учитывать путь на авто или общественном транспорте.`,
       );
       continue;
     }
@@ -135,6 +162,28 @@ export function strategicHubPaidDetailLinesRu(magnets: MagnetItem[]): string[] {
         ? ' Полезно для транзитных и командированных гостей, ориентированных на перелёты/межгород.'
         : ' Поддерживает транзитных и командированных гостей, но без эффекта «шаговой» локации.';
     lines.push(`Крупный транспортный узел в зоне транспортной доступности: ${kind} — ${m.name} (${distRu}).${audience}${accessWarn}`);
+  }
+  return lines;
+}
+
+export function portDemandDetailLinesRu(magnets: MagnetItem[]): string[] {
+  const ports = magnets
+    .filter(m =>
+      (m.categoryId === 'railway_station' || m.categoryId === 'strategicTransportHub') &&
+      isPortHubSubtype(m.subType),
+    )
+    .sort((a, b) => a.distance - b.distance);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const m of ports) {
+    const key = `${m.name.toLowerCase().trim()}:${Math.round(m.distance / 100)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const distRu =
+      m.distance < 1000
+        ? `примерно ${Math.round(m.distance / 10) * 10} м`
+        : `примерно ${(m.distance / 1000).toFixed(1)} км`;
+    lines.push(`${PORT_LOGISTICS_DEMAND_EXPLANATION_RU} ${strategicHubSubtypeLabelRu(m.subType)} — ${m.name} (${distRu}).`);
   }
   return lines;
 }

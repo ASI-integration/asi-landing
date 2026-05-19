@@ -6,6 +6,7 @@ import {
   normalizeFreeReportFactors,
 } from '@/lib/location/free-report-content';
 import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
+import { publicScoreRange } from '@/lib/location/location-score-public';
 
 export const LOCATION_REPORT_PUBLIC_PREVIEW_CTA_LABEL = 'Получить полный отчёт';
 
@@ -69,7 +70,7 @@ const EXAMPLE_REPORT_SLIDES_RU = [
     title: 'Будущее района',
     answer: 'Показывает, как район может измениться',
     signal: 'развитие',
-    footer: 'горизонт 2-3 года',
+    footer: 'горизонт до 10 лет',
     accent: 'from-teal-300/40 to-blue-400/10',
     visual: 'timeline',
   },
@@ -114,8 +115,8 @@ function SlideVisual({ slide }: { slide: ExampleReportSlide }) {
     return (
       <div className="grid grid-cols-[92px_1fr] items-center gap-3" aria-hidden>
         <div className="grid aspect-square place-items-center rounded-xl border border-emerald-300/30 bg-emerald-300/10">
-          <div className="grid h-16 w-16 place-items-center rounded-full border-[10px] border-emerald-300/80 border-r-white/10 text-lg font-black text-white">
-            78
+          <div className="grid h-16 w-16 place-items-center rounded-full border-[10px] border-emerald-300/80 border-r-white/10 text-center text-xs font-black leading-tight text-white">
+            75–85%
           </div>
         </div>
         <div className="space-y-2">
@@ -230,6 +231,9 @@ export function LocationReportPublicPreview({
   const keyStrength = pickKeyStrength(report);
   const keyRisk = pickKeyRisk(report);
   const calculatedAt = formatDateRu(report.metadata?.calculatedAt ?? report.generated_at_iso);
+  const scoreRange =
+    publicScoreRange(report.freeSummary?.publicScore ?? null) ??
+    publicScoreRange(78);
   const detailedReportHref = buildDashboardReportRequestHref({
     address: report.address,
     ...(persistedReportId ? { freeReportId: persistedReportId } : {}),
@@ -278,7 +282,7 @@ export function LocationReportPublicPreview({
               <div className="absolute bottom-4 right-5 h-20 w-28 rounded-2xl bg-white/10" />
               <div className="relative">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-100/70">Краткий вывод по адресу</p>
-                <p className="mt-4 text-3xl font-black tabular-nums text-white">7.8</p>
+                <p className="mt-4 text-3xl font-black tabular-nums text-white">{scoreRange?.labelRu ?? 'Потенциал: 75–85%'}</p>
                 <div className="mt-4 space-y-2">
                   <div className="h-3 w-full rounded-full bg-white/10" />
                   <div className="h-3 w-10/12 rounded-full bg-cyan-200/40" />
@@ -319,7 +323,8 @@ export function LocationReportPublicPreview({
           <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полная версия</p>
           <h2 className="mt-2 text-2xl font-bold text-white">Разделы с подробным разбором</h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
-            Примеры страниц показывают, какие вопросы закрывает полный отчёт.
+            Ниже показаны примеры страниц полного отчёта.
+            В полной версии больше разделов: экономика, конкуренция, транспорт, якоря спроса, развитие района и горизонт до 10 лет.
           </p>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {EXAMPLE_REPORT_SLIDES_RU.map(slide => (
@@ -350,6 +355,7 @@ export function LocationReportPublicPreview({
           <h2 className="text-2xl font-bold text-white">Нужен полный разбор?</h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300">
             Полная версия открывает подробные страницы по спросу, конкуренции, доходности, развитию района и рискам.
+            ASI смотрит не только на то, что есть рядом сейчас, но и на горизонт развития до 10 лет: стройки, дороги, транспорт, госзакупки, деловая активность и ранние признаки роста территории.
           </p>
           <div className="mt-5 rounded-xl border border-amber-300/25 bg-amber-400/10 p-4 text-sm leading-relaxed text-amber-100">
             {YOOKASSA_PENDING_REVIEW_MESSAGE}

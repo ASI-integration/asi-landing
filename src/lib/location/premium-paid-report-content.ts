@@ -19,15 +19,15 @@ export const PREMIUM_PAID_SECTION_ANCHORS = {
 } as const;
 
 export const PREMIUM_PAID_SECTION_TITLES_RU = {
-  executiveSummary: 'Краткий вывод для владельца',
+  executiveSummary: 'Общий вывод по объекту',
   audienceFit: 'Кому подойдёт объект',
-  primeMagnets: 'Главные магниты спроса',
-  competition: 'Конкуренция',
-  revenueScenarios: 'Сценарии дохода',
-  futureDevelopment: 'Как может измениться район',
-  risks: 'Риски',
-  launchStrategy: 'Как запускать',
-  finalRecommendation: 'Итоговая рекомендация',
+  primeMagnets: 'Магниты спроса рядом',
+  competition: 'Конкуренция рядом',
+  revenueScenarios: 'Доходность: осторожный / базовый / сильный сценарий',
+  futureDevelopment: 'Будущее района и горизонт до 10 лет',
+  risks: 'Риски объекта',
+  launchStrategy: 'Рекомендации по запуску',
+  finalRecommendation: 'Итоговое решение: брать / не брать / проверять глубже',
 } as const;
 
 export type PremiumRevenueScenarioId = 'cautious' | 'base' | 'strong';
@@ -443,13 +443,13 @@ export function buildPremiumPaidReportContent(args: {
     revenueScenarios,
     futureAreaDevelopment: {
       summaryRu: hasLiveFutureSignals
-        ? 'По открытым сигналам район может меняться — это отдельное преимущество полного отчёта: видеть изменения до того, как они попадут в «очевидные» факты.'
-        : 'Слой развития территории подключён: ниже — блоки, куда будут попадать ЖК, дороги, соцобъекты и ранние закупки по мере появления данных.',
+        ? 'ASI смотрит не только на то, что есть рядом сейчас, но и на горизонт развития до 10 лет: стройки, дороги, транспорт, госзакупки, деловая активность и ранние признаки роста территории.'
+        : 'ASI смотрит не только на то, что есть рядом сейчас, но и на горизонт развития до 10 лет: стройки, дороги, транспорт, госзакупки, деловая активность и ранние признаки роста территории. Ниже — блоки, куда будут попадать ЖК, дороги, соцобъекты и ранние закупки по мере появления данных.',
       forecastScore: forecast?.score ?? null,
       forecastLevelRu: forecast ? urbanLevelRu(forecast.level) : null,
       slots: futureSlots,
       ownerMeaningRu:
-        'Помогает решить, покупать ли сейчас «до роста района» или закладывать риски стройки и новой конкуренции.',
+        'Важно для покупки жилья, покупки коммерческой недвижимости, аренды помещения и выбора стратегии: видно, может ли локация стать сильнее или слабее со временем.',
     },
     risks: {
       itemsRu: str.risksAndManualChecksRu,

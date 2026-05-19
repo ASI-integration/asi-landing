@@ -104,10 +104,13 @@ function buildClauses(
     { filter: '"amenity"="bus_station"',   radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
     { filter: '"amenity"="ferry_terminal"', radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
     { filter: '"landuse"="harbour"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
+    { filter: '"landuse"="port"',          radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
     { filter: '"waterway"="dock"',         radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
     { filter: '"industrial"="port"',       radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: true, allGeometries: true },
     { filter: '"industrial"="logistics"',  radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
     { filter: '"harbour"="yes"',           radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
+    { filter: '"port"="yes"',              radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
+    { filter: '"seamark:type"="harbour"',  radius: STRATEGIC_TRANSPORT_FETCH_RADIUS_M, includeInStrict: false, allGeometries: true, priority: 'extras' },
 
     // Entertainment (city-scale venues)
     { filter: '"amenity"="cinema"',     radius: CATEGORY_RADIUS.entertainment, includeInStrict: true },
@@ -217,8 +220,10 @@ function buildBackfillClauses(lat: number, lon: number): string[] {
     ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"amenity"="bus_station"'),
     ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"amenity"="ferry_terminal"'),
     ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"landuse"="harbour"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"landuse"="port"'),
     ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"waterway"="dock"'),
     ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"industrial"="port"'),
+    ...r(STRATEGIC_TRANSPORT_FETCH_RADIUS_M, '"port"="yes"'),
     // Rail / bus hubs
     ...r(CATEGORY_RADIUS.railway_station, '"railway"="station"'),
     ...r(CATEGORY_RADIUS.railway_station, '"amenity"="bus_station"'),

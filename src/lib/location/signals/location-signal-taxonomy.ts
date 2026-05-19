@@ -1,4 +1,5 @@
 import type { MagnetItem } from '../types';
+import { isPortHubSubtype } from '../strategic-transport-hub';
 
 export type SignalLevel =
   | 'tier1_anchor'
@@ -282,11 +283,12 @@ export function classifyMagnetSignal(m: MagnetItem): MagnetSignalTaxonomy {
   // Strategic hubs beyond ordinary magnet radii — never framed as pedestrian anchors.
   if (m.categoryId === 'strategicTransportHub') {
     const band = m.strategicReachBand ?? 'secondary';
+    const isPort = isPortHubSubtype(m.subType);
     return {
       level: 'tier2_anchor',
       domain: 'transport',
-      publicClaimStrength: band === 'strategic' ? 'weak_context_only' : 'moderate_driver_allowed',
-      allowsBusinessAudience: band !== 'strategic',
+      publicClaimStrength: isPort || band !== 'strategic' ? 'moderate_driver_allowed' : 'weak_context_only',
+      allowsBusinessAudience: isPort || band !== 'strategic',
       isWeakLocalBusinessPoi: false,
     };
   }

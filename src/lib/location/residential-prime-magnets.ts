@@ -13,6 +13,8 @@
  */
 
 import type { MagnetItem } from './types';
+import { classifyLevel1Magnet, isBackgroundMinorPoi } from './level1-magnet-taxonomy';
+import { classifyMagnetSignal } from './signals/location-signal-taxonomy';
 
 // ── Anchor type ───────────────────────────────────────────────────────────────
 
@@ -160,6 +162,29 @@ export function isAllowlistedForResidential(categoryId: string, subType?: string
   return true;
 }
 
+/** Categories that may appear on the residential allowlist but need Level-1 scale gates. */
+const LEVEL1_SCALE_GATED_CATEGORIES = new Set([
+  'business',
+  'civic',
+  'attraction',
+  'shopping_major',
+  'entertainment',
+]);
+
+function passesPrimeMagnetTaxonomyGate(m: MagnetItem): boolean {
+  if (isBackgroundMinorPoi(m)) return false;
+
+  const signal = classifyMagnetSignal(m);
+  if (signal.level === 'weak_local_signal' || signal.level === 'noise') return false;
+  if (signal.publicClaimStrength === 'hidden_from_public_copy') return false;
+
+  if (LEVEL1_SCALE_GATED_CATEGORIES.has(m.categoryId)) {
+    return classifyLevel1Magnet(m).isLevel1;
+  }
+
+  return true;
+}
+
 /**
  * Distance rule (section J of the policy).
  *
@@ -240,6 +265,7 @@ export function filterResidentialPrimeMagnets(
   // Step 1: Allowlist + distance + persistence
   const eligible = magnets.filter(m => {
     if (!isAllowlistedForResidential(m.categoryId, m.subType)) return false;
+    if (!passesPrimeMagnetTaxonomyGate(m)) return false;
     if (!passesResidentialDistanceRule(m.distance, m.categoryId, m.subType)) return false;
     if (!passesResidentialPersistenceRule(m.permanenceType)) return false;
     return true;
@@ -348,6 +374,7 @@ export function selectResidentialPrimeMagnetItems(
   // Step 1: Allowlist + distance + persistence
   const eligible = magnets.filter(m => {
     if (!isAllowlistedForResidential(m.categoryId, m.subType)) return false;
+    if (!passesPrimeMagnetTaxonomyGate(m)) return false;
     if (!passesResidentialDistanceRule(m.distance, m.categoryId, m.subType)) return false;
     if (!passesResidentialPersistenceRule(m.permanenceType)) return false;
     return true;

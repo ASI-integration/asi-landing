@@ -191,7 +191,7 @@ export function PremiumPaidReportSections({ content }: { content: PremiumPaidRep
       <PremiumSectionShell
         id={PREMIUM_PAID_SECTION_ANCHORS.futureDevelopment}
         title={PREMIUM_PAID_SECTION_TITLES_RU.futureDevelopment}
-        lead="Что может изменить район в ближайшие годы — ключевое преимущество полного отчёта."
+        lead="Что может изменить район на горизонте до 10 лет — важно для покупки жилья, коммерции и аренды помещения."
       >
         <p className="text-sm text-slate-200 leading-relaxed">{futureAreaDevelopment.summaryRu}</p>
         {futureAreaDevelopment.forecastScore != null ? (

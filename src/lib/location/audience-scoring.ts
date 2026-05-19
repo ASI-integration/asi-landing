@@ -26,6 +26,11 @@ import type {
   LocationType,
 } from './types';
 import {
+  isPortHubSubtype,
+  PORT_LOGISTICS_DEMAND_EXPLANATION_RU,
+  strategicHubSubtypeLabelRu,
+} from './strategic-transport-hub';
+import {
   classifyMagnetSignal,
   hasCredibleBusinessAnchors,
   isCredibleTouristAnchor,
@@ -77,6 +82,7 @@ function subtypeWeight(subType?: string): number {
 
 /** Russian label for a business sub-type — used in primaryDriverLabel */
 function subtypeLabel(subType?: string): string {
+  if (isPortHubSubtype(subType)) return 'порт / логистика';
   switch (subType) {
     case 'factory':    return 'завод';
     case 'industrial': return 'промзона';
@@ -284,12 +290,23 @@ function buildPrimaryDriverLabel(
     // primaryMagnets that may have edged ahead by relevance score.
     const surfacing = allMagnets
       .filter(m =>
-        (m.categoryId === 'railway_station' || m.categoryId === 'airport') &&
-        classifyMagnetSignal(m).level === 'tier1_anchor',
+        (
+          m.categoryId === 'railway_station' ||
+          m.categoryId === 'airport' ||
+          (m.categoryId === 'strategicTransportHub' && isPortHubSubtype(m.subType))
+        ) &&
+        (classifyMagnetSignal(m).level === 'tier1_anchor' || isPortHubSubtype(m.subType)),
       )
-      .sort((a, b) => a.distance - b.distance);
+      .sort((a, b) => {
+        const portDiff = Number(isPortHubSubtype(b.subType)) - Number(isPortHubSubtype(a.subType));
+        if (portDiff !== 0) return portDiff;
+        return a.distance - b.distance;
+      });
     const transportTop = surfacing[0];
     if (transportTop) {
+      if (isPortHubSubtype(transportTop.subType)) {
+        return `${PORT_LOGISTICS_DEMAND_EXPLANATION_RU} ${transportTop.name} (${distRu(transportTop.distance)}, ${strategicHubSubtypeLabelRu(transportTop.subType).toLowerCase()}).`;
+      }
       const role = transportTop.categoryId === 'airport' ? 'аэропорт' : 'ж/д вокзал';
       return `Ключевой транспортный узел: ${transportTop.name} (${distRu(transportTop.distance)}, ${role})`;
     }

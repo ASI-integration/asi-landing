@@ -5,6 +5,7 @@ import {
   buildFreeReportInterpretedContent,
   normalizeFreeReportFactors,
 } from '@/lib/location/free-report-content';
+import { publicScoreRange } from '@/lib/location/location-score-public';
 
 function formatDateRu(iso: string): string {
   const d = new Date(iso);
@@ -28,6 +29,7 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
     score: report.score,
   });
   const evidenceBullets = content.demandSignalsRu;
+  const scoreRange = publicScoreRange(report.score ?? report.publicScore ?? null);
   const detailedReportHref = buildDashboardReportRequestHref({
     address: report.inputAddress,
     freeReportId: report.reportId,
@@ -72,8 +74,7 @@ export function LocationFreeReportView({ report }: { report: GeneratedFreeLocati
             <div className="rounded-2xl border border-slate-800/70 bg-slate-950/35 p-5">
               <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Оценка</p>
               <p className="mt-2 text-3xl font-bold tabular-nums text-white">
-                {report.score ?? '—'}
-                {report.score == null ? null : <span className="text-base font-medium text-slate-500"> / 100</span>}
+                {scoreRange?.labelRu ?? '—'}
               </p>
             </div>
           </div>

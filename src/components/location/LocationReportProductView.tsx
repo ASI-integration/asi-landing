@@ -7,6 +7,7 @@ import {
   getLocationReportStructureSection,
   type PaidLocationReportStructureSectionId,
 } from '@/lib/location/location-report-structure';
+import { publicScoreRange } from '@/lib/location/location-score-public';
 import {
   URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU,
   type FullLocationReport,
@@ -104,6 +105,7 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
     ? Object.entries(report.scoreBreakdown).filter(([, value]) => typeof value === 'number')
     : [];
   const urbanForecast = report.urbanDevelopmentForecast;
+  const overallScoreRange = publicScoreRange(report.overallScore);
   const urbanForecastNoLiveData =
     urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignalCount === 0;
 
@@ -152,10 +154,9 @@ export function LocationReportProductView({ report }: { report: FullLocationRepo
             </div>
             <div className="grid min-w-[260px] grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Score</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Потенциал</p>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-slate-950">
-                  {report.overallScore ?? '—'}
-                  <span className="text-base font-medium text-slate-500"> / 100</span>
+                  {overallScoreRange?.label ?? '—'}
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

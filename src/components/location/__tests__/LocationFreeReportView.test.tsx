@@ -87,4 +87,11 @@ describe('LocationFreeReportView', () => {
     expect(html).toContain('Расчёт доходности и цены');
     expect(html).toContain('Коммерческий и пешеходный потенциал');
   });
+
+  it('renders the public score as a range instead of a precise number', () => {
+    const html = renderToStaticMarkup(<LocationFreeReportView report={baseReport} />);
+
+    expect(html).toContain('Потенциал: 65–75%');
+    expect(html).not.toContain('74 / 100');
+  });
 });

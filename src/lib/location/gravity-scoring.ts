@@ -37,6 +37,7 @@ import { buildResidentialAnalysis } from './residential-analysis';
 import {
   STRATEGIC_TRANSPORT_FETCH_RADIUS_M,
   STRATEGIC_TRANSPORT_PRIMARY_RADIUS_M,
+  isPortHubSubtype,
   resolveStrategicHubSubtype,
   strategicHubWeightTierMultiplier,
   strategicReachBandFromDistance,
@@ -268,6 +269,12 @@ function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['
   const airportRaw   = bestByCategory(magnets, 'airport');
   const airport      = isMaterialAirportMagnet(airportRaw) ? airportRaw : null;
   const metroBest    = bestByCategory(magnets, 'metro');
+  const port         = [...magnets]
+    .filter(m =>
+      (m.categoryId === 'railway_station' || m.categoryId === 'strategicTransportHub') &&
+      isPortHubSubtype(m.subType),
+    )
+    .sort((a, b) => b.attractionScore - a.attractionScore)[0] ?? null;
   const hospital     = bestByCategory(magnets, 'hospital');
   const majorHotel   = bestByCategory(magnets, 'major_hotel');
   const rail         = bestByCategory(magnets, 'railway_station');
@@ -292,6 +299,7 @@ function pickMainMagnets(magnets: MagnetItem[], demandType: GravityExplanation['
   }
 
   // 2) Strategic category coverage (order: high-value anchors first)
+  add(port);
   add(hospital);
   add(majorHotel);
   add(business);
@@ -479,6 +487,42 @@ function dedupeAccessibilityStops(stops: AccessibilityStopItem[]): Accessibility
     out.push(s);
   }
   return out;
+}
+
+function normalizeMagnetName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[«»"()№.,]/g, ' ')
+    .replace(/(?:^|\s)(?:гбуз|гкуз|фгбу|ооо|ао|пао)(?=\s|$)/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function magnetDedupeKey(m: MagnetItem): string {
+  const name = normalizeMagnetName(m.name);
+  const distanceBucket = Math.round(m.distance / 75);
+  const latBucket = Math.round(m.lat * 10000);
+  const lonBucket = Math.round(m.lon * 10000);
+  return [
+    m.categoryId,
+    m.subType ?? '',
+    name,
+    distanceBucket,
+    latBucket,
+    lonBucket,
+  ].join('|');
+}
+
+function dedupeMagnets(items: MagnetItem[]): MagnetItem[] {
+  const byKey = new Map<string, MagnetItem>();
+  for (const item of [...items].sort((a, b) => a.distance - b.distance)) {
+    const key = magnetDedupeKey(item);
+    const prev = byKey.get(key);
+    if (!prev || item.attractionScore > prev.attractionScore) {
+      byKey.set(key, item);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => a.distance - b.distance);
 }
 
 /** Build the full LocationAnalysis from raw OSM elements + subject coordinates */
@@ -705,13 +749,14 @@ export function buildAnalysis(
   const magnetCountByCategory: Record<string, number> = {};
 
   for (const cat of MAGNET_CATEGORIES) {
-    const items = (byCategory[cat.id] ?? []).sort((a, b) => a.distance - b.distance);
+    const items = dedupeMagnets(byCategory[cat.id] ?? []);
+    byCategory[cat.id] = items;
     magnetCountByCategory[cat.id] = items.length;
     magnets.push(...items.slice(0, CATEGORY_MAX_SHOW[cat.id] ?? 3));
   }
 
   for (const cat of MAGNET_CATEGORIES) {
-    const items = (byCategory[cat.id] ?? []).sort((a, b) => a.distance - b.distance);
+    const items = byCategory[cat.id] ?? [];
     const maxShow = CATEGORY_MAX_SHOW[cat.id] ?? 3;
     if (items.length <= maxShow) continue;
     for (const m of items.slice(maxShow)) {

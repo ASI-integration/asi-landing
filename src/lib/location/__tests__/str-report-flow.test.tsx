@@ -71,13 +71,13 @@ describe('RU STR location report flow', () => {
 
     expect(html).toContain('Отчёт по локации');
     expect(html).toContain('Итог');
-    expect(html).toContain('Краткий вывод для владельца');
+    expect(html).toContain('Общий вывод по объекту');
     expect(html).toContain('Кому подойдёт объект');
-    expect(html).toContain('Главные магниты спроса');
-    expect(html).toContain('Сценарии дохода');
-    expect(html).toContain('Как может измениться район');
+    expect(html).toContain('Магниты спроса рядом');
+    expect(html).toContain('Доходность: осторожный / базовый / сильный сценарий');
+    expect(html).toContain('Будущее района и горизонт до 10 лет');
     expect(html).toContain('Строящиеся ЖК');
-    expect(html).toContain('Итоговая рекомендация');
+    expect(html).toContain('Итоговое решение: брать / не брать / проверять глубже');
     expect(html).not.toContain('Доход / стратегия');
     expect(html).toContain('Следующий шаг');
   });

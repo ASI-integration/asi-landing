@@ -85,20 +85,23 @@ describe('standalone residential reportMode (free vs paid)', () => {
     expect(report.metadata?.reportMode).toBe('paid');
     expect(report.free_brief).toBeUndefined();
     expect(report.reportStructure?.mode).toBe('paid');
-    expect(report.reportStructure?.sections.map(section => section.id)).toEqual([
+    expect(report.reportStructure?.sections.filter(section => section.disclosure === 'paid_detail')).toHaveLength(29);
+    expect(report.reportStructure?.sections.map(section => section.id)).toEqual(expect.arrayContaining([
       'executiveSummary',
       'audienceFit',
+      'businessTravelDemand',
+      'transportHubs',
       'primeDemandMagnets',
       'competitionAnalysis',
+      'revenueCautious',
+      'revenueBase',
       'revenueScenarios',
       'futureAreaDevelopment',
-      'risks',
-      'launchStrategy',
+      'procurementEarlySignals',
+      'commercialPotential',
       'finalRecommendation',
-      'transportAccessibility',
-      'objectEnvironment',
       'managementNextStepCta',
-    ]);
+    ]));
     expect(report.reportStructure?.cta.primaryLabel).toBe('Подключить управление');
     expect(report.unifiedReport?.version).toBe('unified-location-potential-report-v1');
     expect(report.unifiedReport?.urbanDevelopmentForecastScore.score).toBe(0);

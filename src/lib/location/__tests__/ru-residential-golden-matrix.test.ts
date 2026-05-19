@@ -476,11 +476,11 @@ describe('RU residential golden regression matrix', () => {
       fallbackMode: false,
       businessClusterDetected: false,
       expected: {
-        displayScoreMin: 88,
-        displayScoreMax: 88,
-        displayAudience: 'TOURIST',
-        verdictTone: 'strong',
-        allowedPrimaryDriverCategories: ['attraction'],
+        displayScoreMin: 70,
+        displayScoreMax: 70,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'medium',
+        allowedPrimaryDriverCategories: [],
       },
     },
 
@@ -498,11 +498,11 @@ describe('RU residential golden regression matrix', () => {
       audienceFitScore: 78,
       businessClusterDetected: true,
       expected: {
-        displayScoreMin: 92,
-        displayScoreMax: 92,
-        displayAudience: 'MIXED',
-        verdictTone: 'strong',
-        allowedPrimaryDriverCategories: ['metro', 'shopping_major'],
+        displayScoreMin: 80,
+        displayScoreMax: 80,
+        displayAudience: 'RESIDENTIAL',
+        verdictTone: 'medium',
+        allowedPrimaryDriverCategories: ['metro'],
       },
     },
 

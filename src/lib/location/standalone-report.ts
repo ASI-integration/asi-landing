@@ -30,6 +30,7 @@ import {
   buildPremiumPaidReportContent,
   type PremiumPaidReportContent,
 } from './premium-paid-report-content';
+import { portDemandDetailLinesRu } from './strategic-transport-hub';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -563,6 +564,7 @@ export function buildStrLocationReportProjection(analysis: LocationAnalysis): St
       .map(magnetLine);
   const businessCorporateRu = uniqueNonEmpty(
     [
+      ...portDemandDetailLinesRu(analysis.magnets ?? []),
       ...byCat(['business', 'convention', 'major_hotel']),
       ...(analysis.locationDecision?.demandSignals ?? [])
         .filter(s => s.type.includes('business') || s.publicLabelRu.toLowerCase().includes('делов'))

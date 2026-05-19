@@ -27,7 +27,7 @@ import {
   computeUrbanDevelopmentForecastScore,
   type UrbanDevelopmentForecastScore,
 } from './data-sources/urban-development-forecast-score';
-import { strategicHubPaidDetailLinesRu } from './strategic-transport-hub';
+import { portDemandDetailLinesRu, strategicHubPaidDetailLinesRu } from './strategic-transport-hub';
 import { specializedMedicalPaidDetailLinesRu } from './specialized-medical-anchor';
 
 export type {
@@ -354,11 +354,12 @@ function buildDemand(input: LocationReportInput, analysis?: LocationAnalysis): D
     demandScore: score?.breakdown.demand_score ?? analysis.evergreenIndex,
     guestDemandDrivers: (() => {
       const hubLines = strategicHubPaidDetailLinesRu(analysis.strategicTransportHubMagnets ?? []);
+      const portLines = portDemandDetailLinesRu(analysis.magnets ?? []);
       const medLines = specializedMedicalPaidDetailLinesRu(analysis.magnets ?? []);
       const factorLines = score?.top_positive_factors ?? [];
       const premiumLines = residential?.premiumComfortSignals ?? [];
       // Strategic / specialized anchors must not be displaced by score-factor filler or premium copy.
-      return [...hubLines, ...medLines, ...factorLines, ...premiumLines].slice(0, 12);
+      return [...new Set([...portLines, ...hubLines, ...medLines, ...factorLines, ...premiumLines])].slice(0, 12);
     })(),
     shortTermRentalPotential: score?.recommended_strategy ?? null,
     stayTypeStrategy: residential?.strategyRationaleRu ?? null,

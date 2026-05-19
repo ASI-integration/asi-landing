@@ -14,3 +14,24 @@ export function scoreBandFromPublicScore(score: number): ScoreBand {
   if (score > 0) return 'weak';
   return 'none';
 }
+
+export interface PublicScoreRange {
+  low: number;
+  high: number;
+  label: string;
+  labelRu: string;
+}
+
+export function publicScoreRange(score: number | null | undefined): PublicScoreRange | null {
+  if (typeof score !== 'number' || !Number.isFinite(score) || score <= 0) return null;
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const low = Math.max(0, Math.floor((clamped - 5) / 10) * 10 + 5);
+  const high = Math.min(100, low + 10);
+  const label = `${low}–${high}%`;
+  return {
+    low,
+    high,
+    label,
+    labelRu: `Потенциал: ${label}`,
+  };
+}

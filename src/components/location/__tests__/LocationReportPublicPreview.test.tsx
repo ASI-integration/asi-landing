@@ -47,6 +47,9 @@ describe('LocationReportPublicPreview', () => {
     expect(html).not.toContain('premium-future-development');
     expect(html).not.toContain('Осторожный');
     expect(html).not.toContain('Строящиеся ЖК');
+    expect(html).not.toContain('Медицинские и образовательные якоря');
+    expect(html).not.toContain('Госзакупки и ранние признаки развития территории');
+    expect(html).not.toContain('Итоговое решение: брать / не брать / проверять глубже');
     expect(html).not.toContain('Для владельца:');
     expect(html).not.toContain('Бесплатный');
     expect(html).not.toContain('бесплатн');
@@ -59,6 +62,10 @@ describe('LocationReportPublicPreview', () => {
     expect(html).toContain('Спрос и целевая аудитория');
     expect(html).toContain('Конкуренция рядом');
     expect(html).toContain('Будущее района');
+    expect(html).toContain('Ниже показаны примеры страниц полного отчёта.');
+    expect(html).toContain('В полной версии больше разделов: экономика, конкуренция, транспорт, якоря спроса, развитие района и горизонт до 10 лет.');
+    expect(html).toContain('ASI смотрит не только на то, что есть рядом сейчас, но и на горизонт развития до 10 лет');
+    expect(html).toContain('госзакупки');
     expect(html).toContain('Доходность и сценарии');
     expect(html).toContain('Показывает, стоит ли рассматривать объект');
     expect(html).toContain('Показывает, кто может здесь бронировать');
@@ -70,6 +77,10 @@ describe('LocationReportPublicPreview', () => {
     expect(html).not.toContain('blur-[6px]');
     expect(html).not.toContain('Доступно в полном отчёте');
     expect(html).not.toContain('Подробный разбор по этому блоку доступен в полном отчёте.');
+    expect(html).not.toContain('предпросмотр');
+    expect(html).toContain('Потенциал:');
+    expect(html).toContain('75–85%');
+    expect(html).not.toContain('7.8');
   });
 
   it('keeps YooKassa disabled during public report review', () => {
