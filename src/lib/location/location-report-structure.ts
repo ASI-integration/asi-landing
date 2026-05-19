@@ -2,6 +2,21 @@ export type LocationReportStructureMode = 'free' | 'paid';
 
 /** Customer-facing report chapters: housing / STR vs street-retail commercial. */
 export type LocationReportSegmentId = 'residential_investment' | 'commercial_retail';
+export type PublicPaidReportFeatureGroupId =
+  | 'real_estate_rentals'
+  | 'commercial_retail'
+  | 'future_10_years';
+export type PublicPaidReportFeatureVisualKind =
+  | 'score'
+  | 'audience'
+  | 'map'
+  | 'bars'
+  | 'income'
+  | 'risk'
+  | 'plan'
+  | 'timeline'
+  | 'traffic'
+  | 'storefront';
 
 export const RESIDENTIAL_REPORT_SEGMENT_BADGE_RU = 'Подходит для недвижимости';
 export const COMMERCIAL_REPORT_SEGMENT_BADGE_RU = 'Подходит для коммерции и ритейла';
@@ -14,6 +29,29 @@ export const COMMERCIAL_REPORT_SEGMENT_INTRO_RU =
 
 export const RESIDENTIAL_REPORT_GROUP_TITLE_RU = 'Недвижимость и аренда';
 export const COMMERCIAL_REPORT_GROUP_TITLE_RU = 'Коммерция и ритейл';
+export const FUTURE_REPORT_GROUP_TITLE_RU = 'Будущее района до 10 лет';
+
+export const PUBLIC_PAID_REPORT_FEATURE_GROUPS: readonly {
+  id: PublicPaidReportFeatureGroupId;
+  titleRu: string;
+  introRu: string;
+}[] = [
+  {
+    id: 'real_estate_rentals',
+    titleRu: RESIDENTIAL_REPORT_GROUP_TITLE_RU,
+    introRu: 'Спрос на проживание, аудитории, доходность, конкуренция, риски и рекомендации.',
+  },
+  {
+    id: 'commercial_retail',
+    titleRu: COMMERCIAL_REPORT_GROUP_TITLE_RU,
+    introRu: 'Коммерческий потенциал, целевой трафик, первая линия, вход и подходящие форматы бизнеса.',
+  },
+  {
+    id: 'future_10_years',
+    titleRu: FUTURE_REPORT_GROUP_TITLE_RU,
+    introRu: 'Стройки, дороги, транспорт, госзакупки и ранние признаки роста территории.',
+  },
+] as const;
 
 export interface LocationReportStructureSegmentGroup {
   id: LocationReportSegmentId;
@@ -49,6 +87,11 @@ export interface LocationReportStructureSection<ScopeSectionId extends string = 
   disclosure: 'public_summary' | 'paid_detail' | 'cta';
   /** Paid inventory only — separates housing/STR from street-retail blocks. */
   segment?: LocationReportSegmentId;
+  /** Public paid-inventory card metadata. Describes value without exposing paid data. */
+  publicFeatureTitle?: string;
+  publicFeatureDescription?: string;
+  publicFeatureGroup?: PublicPaidReportFeatureGroupId;
+  visualKind?: PublicPaidReportFeatureVisualKind;
 }
 
 export interface LocationReportStructureCta {
@@ -199,6 +242,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Главный ответ по адресу простыми словами.',
     scopeSectionIds: ['executiveSummary', 'fullScoreExplanation'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает главный ответ: стоит ли рассматривать объект дальше и какой сценарий выглядит сильнее.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'score',
   },
   {
     id: 'audienceFit',
@@ -207,6 +253,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Профиль гостей и сценарии бронирований.',
     scopeSectionIds: ['targetAudiences', 'business'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, под какую аудиторию готовить объект: гостей, арендаторов, семьи или деловые поездки.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'audience',
   },
   {
     id: 'businessTravelDemand',
@@ -215,6 +264,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Командировки, подрядчики, деловые поездки и корпоративный спрос.',
     scopeSectionIds: ['business'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, есть ли рядом источники стабильных поездок: БЦ, порты, вокзалы, промышленные и административные зоны.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'audience',
   },
   {
     id: 'touristDemand',
@@ -223,6 +275,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Туристические и событийные сценарии спроса.',
     scopeSectionIds: ['retailAndEvents'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, может ли объект получать спрос от туристов, событий и мест притяжения рядом.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'familyDemand',
@@ -231,6 +286,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Сценарии семейных поездок, длительности проживания и инфраструктуры.',
     scopeSectionIds: ['education', 'medical'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, подходит ли район для семейных поездок, лечения, учёбы и спокойного проживания.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'audience',
   },
   {
     id: 'midTermRental',
@@ -239,6 +297,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Когда объект может работать на сроках от нескольких недель до нескольких месяцев.',
     scopeSectionIds: ['targetAudiences', 'strategy', 'business'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, есть ли смысл запускать объект не только посуточно, но и на несколько недель или месяцев.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'bars',
   },
   {
     id: 'transportAccessibility',
@@ -247,6 +308,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Транспортные сигналы и удобство доступа.',
     scopeSectionIds: ['transport'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, насколько удобно добираться до объекта и влияет ли это на спрос.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'transportHubs',
@@ -255,6 +319,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Крупные транспортные и логистические точки, влияющие на спрос.',
     scopeSectionIds: ['transport', 'business'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, дают ли крупные транспортные узлы поток гостей, подрядчиков и командировок.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'primeDemandMagnets',
@@ -263,6 +330,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Точки притяжения с дистанцией и типом.',
     scopeSectionIds: ['magnetsByCategory'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Точки спроса рядом',
+    publicFeatureDescription: 'Показывает, какие места рядом могут регулярно приводить гостей и арендаторов.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'medicalEducationAnchors',
@@ -271,6 +342,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Крупная медицина, университеты, кампусы и научные центры как устойчивые причины спроса.',
     scopeSectionIds: ['medical', 'education', 'magnetsByCategory'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Медицина и образование рядом',
+    publicFeatureDescription: 'Показывает, поддерживают ли спрос больницы, университеты, кампусы и учебные центры.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'businessAdminAnchors',
@@ -279,6 +354,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Бизнес-центры, деловые районы, выставочные площадки и административные кластеры.',
     scopeSectionIds: ['business', 'magnetsByCategory'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Деловые точки спроса',
+    publicFeatureDescription: 'Показывает, есть ли рядом офисы, выставки, деловые районы и учреждения, которые дают будничный спрос.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'audience',
   },
   {
     id: 'industrialLogisticsAnchors',
@@ -287,6 +366,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Заводы, промышленные парки, портовые и логистические кластеры с устойчивым деловым спросом.',
     scopeSectionIds: ['business', 'transport', 'magnetsByCategory'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Промышленные и логистические точки спроса',
+    publicFeatureDescription: 'Показывает, может ли объект получать спрос от сотрудников, подрядчиков и логистики рядом.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'audience',
   },
   {
     id: 'competitionAnalysis',
@@ -295,6 +378,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Давление конкурентов и что проверить на площадках.',
     scopeSectionIds: ['competitors'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, насколько плотный рынок вокруг объекта и что важно проверить перед запуском.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'bars',
   },
   {
     id: 'competitorMap',
@@ -303,6 +389,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Как конкуренты распределены вокруг объекта.',
     scopeSectionIds: ['competitors', 'fullUrbanDevelopmentRadar'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, где вокруг объекта сосредоточены альтернативы и как это влияет на позиционирование.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'map',
   },
   {
     id: 'marketSaturation',
@@ -311,6 +400,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Насколько плотная конкуренция и где может быть место для объекта.',
     scopeSectionIds: ['competitors'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, есть ли место для нового объекта или рынок уже требует сильного отличия.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'bars',
   },
   {
     id: 'revenueCautious',
@@ -319,6 +411,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Нижняя планка для слабого старта или неполной загрузки.',
     scopeSectionIds: ['revenueScenarios'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает нижнюю планку, чтобы не принимать решение только по оптимистичным ожиданиям.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'income',
   },
   {
     id: 'revenueBase',
@@ -327,6 +422,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Рабочий ориентир при нормальной упаковке и цене.',
     scopeSectionIds: ['revenueScenarios'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает реалистичный сценарий дохода без завышенных ожиданий.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'income',
   },
   {
     id: 'revenueScenarios',
@@ -335,6 +433,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Верхняя граница при удачном запуске и сильной упаковке.',
     scopeSectionIds: ['revenueScenarios', 'strategy'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает верхнюю границу, если объект хорошо упакован и попадает в сильный спрос.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'income',
   },
   {
     id: 'risks',
@@ -343,6 +444,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Что проверить вручную до вложений.',
     scopeSectionIds: ['risks'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, какие ограничения и слабые места стоит проверить до сделки или запуска.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'risk',
   },
   {
     id: 'launchStrategy',
@@ -351,6 +455,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Практические шаги на первые недели.',
     scopeSectionIds: ['strategy'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, с каких действий начать, чтобы тестировать объект не вслепую.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'plan',
   },
   {
     id: 'listingPositioning',
@@ -359,6 +466,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Как описывать объект под нужную аудиторию и спрос.',
     scopeSectionIds: ['strategy', 'targetAudiences'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, как подать объект под нужную аудиторию, а не просто перечислить характеристики.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'plan',
   },
   {
     id: 'objectImprovements',
@@ -367,6 +477,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Какие доработки могут повысить привлекательность и доходность.',
     scopeSectionIds: ['strategy', 'risks'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, какие улучшения могут усилить привлекательность до запуска или покупки.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'plan',
   },
   {
     id: 'futureAreaDevelopment',
@@ -375,6 +488,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: PAID_REPORT_TEN_YEAR_HORIZON_RU,
     scopeSectionIds: ['urbanDevelopmentForecast', 'fullUrbanDevelopmentRadar'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, может ли территория стать сильнее за счёт строек, дорог, транспорта и госзакупок.',
+    publicFeatureGroup: 'future_10_years',
+    visualKind: 'timeline',
   },
   {
     id: 'newResidentialProjects',
@@ -383,6 +499,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Новые дома, кварталы и стройки, которые могут изменить спрос и конкуренцию.',
     scopeSectionIds: ['urbanDevelopmentForecast'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, какие стройки могут добавить спрос, конкуренцию или изменить окружение.',
+    publicFeatureGroup: 'future_10_years',
+    visualKind: 'timeline',
   },
   {
     id: 'roadTransportChanges',
@@ -391,6 +510,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Транспортные изменения, которые могут усилить или ослабить точку.',
     scopeSectionIds: ['urbanDevelopmentForecast', 'transport'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, какие дороги, развязки и транспортные планы могут изменить удобство района.',
+    publicFeatureGroup: 'future_10_years',
+    visualKind: 'timeline',
   },
   {
     id: 'procurementEarlySignals',
@@ -399,6 +521,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Ранние сигналы проектов, планов и деловой активности.',
     scopeSectionIds: ['urbanDevelopmentForecast', 'sourceEvidence'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Госзакупки и ранние сигналы роста',
+    publicFeatureDescription: 'Показывает ранние признаки будущих изменений, пока они ещё не видны на карте района.',
+    publicFeatureGroup: 'future_10_years',
+    visualKind: 'timeline',
   },
   {
     id: 'tenYearDevelopmentHorizon',
@@ -407,6 +533,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: PAID_REPORT_TEN_YEAR_HORIZON_RU,
     scopeSectionIds: ['urbanDevelopmentForecast', 'fullUrbanDevelopmentRadar', 'sourceEvidence'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает долгий контекст: что может усилить или ослабить объект в ближайшие годы.',
+    publicFeatureGroup: 'future_10_years',
+    visualKind: 'timeline',
   },
   {
     id: 'commercialPotential',
@@ -415,6 +544,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Оценка потенциала для коммерческих помещений и street-retail — отдельно от жилья и посуточной аренды.',
     scopeSectionIds: ['business', 'retailAndEvents'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, есть ли у места потенциал для коммерции отдельно от жилья и посуточной аренды.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'traffic',
   },
   {
     id: 'targetTrafficHeatmap',
@@ -423,6 +555,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Тепловая карта и индекс целевого трафика в зоне объекта — оценка потока, не точный подсчёт людей.',
     scopeSectionIds: ['retailAndEvents'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, где рядом с объектом выше вероятность целевого потока для бизнеса.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'traffic',
   },
   {
     id: 'h3TrafficHexes',
@@ -431,6 +566,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Разбивка зоны на гексы: где потенциал выше и где слабее — для коммерции на первой линии.',
     scopeSectionIds: ['retailAndEvents'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Зоны целевого потока',
+    publicFeatureDescription: 'Показывает соседние зоны вокруг объекта: где поток сильнее, а где слабее.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'traffic',
   },
   {
     id: 'streetFrontageEntrance',
@@ -439,6 +578,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Первая линия, вход с улицы, видимость вывески и доступность — требует ручной проверки входной группы.',
     scopeSectionIds: ['retailAndEvents'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, насколько важны первая линия, вход с улицы, видимость и удобство подхода.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'storefront',
   },
   {
     id: 'businessFormatFit',
@@ -447,6 +589,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Какие форматы (ритейл, HoReCa, сервис) лучше сочетаются с потоком и ограничениями помещения.',
     scopeSectionIds: ['retailAndEvents', 'business'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, какие форматы бизнеса лучше подходят под поток, окружение и помещение.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'storefront',
   },
   {
     id: 'retailPremisesConstraints',
@@ -455,6 +600,9 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Этаж, цоколь, ступеньки, видимость и барьеры — что может снизить потенциал street-retail.',
     scopeSectionIds: ['retailAndEvents', 'risks'],
     disclosure: 'paid_detail',
+    publicFeatureDescription: 'Показывает, что может снизить потенциал: этаж, цоколь, ступеньки, вход и видимость.',
+    publicFeatureGroup: 'commercial_retail',
+    visualKind: 'risk',
   },
   {
     id: 'finalRecommendation',
@@ -463,6 +611,10 @@ export const paidLocationReportStructureSections = [
     summaryRu: 'Финальный ответ с учётом спроса, конкуренции, экономики, рисков и горизонта развития.',
     scopeSectionIds: ['finalRecommendation'],
     disclosure: 'paid_detail',
+    publicFeatureTitle: 'Итоговое решение по объекту',
+    publicFeatureDescription: 'Показывает итоговую логику решения: покупать, запускать, менять формат или проверять глубже.',
+    publicFeatureGroup: 'real_estate_rentals',
+    visualKind: 'score',
   },
   {
     id: 'managementNextStepCta',
@@ -489,6 +641,14 @@ export type LocationReportPaidPreviewSection = Pick<
   segment?: LocationReportSegmentId;
 };
 
+export type PublicPaidReportFeature = {
+  id: string;
+  titleRu: string;
+  descriptionRu: string;
+  group: PublicPaidReportFeatureGroupId;
+  visualKind: PublicPaidReportFeatureVisualKind;
+};
+
 export interface LocationReportStructureViewModel {
   version: 'location-report-structure-v1';
   mode: LocationReportStructureMode;
@@ -499,10 +659,42 @@ export interface LocationReportStructureViewModel {
   segmentGroups?: readonly LocationReportStructureSegmentGroup[];
 }
 
-function paidSectionSegment(
-  section: (typeof paidLocationReportStructureSections)[number],
-): LocationReportSegmentId | undefined {
+type PaidStructureSection = (typeof paidLocationReportStructureSections)[number];
+
+function paidSectionSegment(section: PaidStructureSection): LocationReportSegmentId | undefined {
   return 'segment' in section ? section.segment : undefined;
+}
+
+function publicFeatureGroupForSection(
+  section: LocationReportStructureSection,
+): PublicPaidReportFeatureGroupId {
+  if (section.publicFeatureGroup) return section.publicFeatureGroup;
+  return section.segment === 'commercial_retail' ? 'commercial_retail' : 'real_estate_rentals';
+}
+
+function publicFeatureVisualKindForSection(
+  section: LocationReportStructureSection,
+): PublicPaidReportFeatureVisualKind {
+  if (section.visualKind) return section.visualKind;
+  return publicFeatureGroupForSection(section) === 'future_10_years' ? 'timeline' : 'score';
+}
+
+function toPublicPaidReportFeature(section: PaidStructureSection): PublicPaidReportFeature | null {
+  if (section.disclosure !== 'paid_detail') return null;
+  const meta: LocationReportStructureSection = section;
+  return {
+    id: section.id,
+    titleRu: meta.publicFeatureTitle ?? meta.titleRu,
+    descriptionRu: meta.publicFeatureDescription ?? meta.summaryRu,
+    group: publicFeatureGroupForSection(meta),
+    visualKind: publicFeatureVisualKindForSection(meta),
+  };
+}
+
+export function getPublicPaidReportFeatureInventory(): PublicPaidReportFeature[] {
+  return paidLocationReportStructureSections
+    .map(toPublicPaidReportFeature)
+    .filter((item): item is PublicPaidReportFeature => item !== null);
 }
 
 export function buildLocationReportSegmentGroups(): LocationReportStructureSegmentGroup[] {

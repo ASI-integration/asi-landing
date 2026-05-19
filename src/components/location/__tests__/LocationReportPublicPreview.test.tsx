@@ -8,6 +8,10 @@ import {
 import { buildLocationStandaloneReport } from '@/lib/location/standalone-report';
 import { buildAnalysis } from '@/lib/location/gravity-scoring';
 import { isYooKassaEnabled } from '@/lib/payments/yookassa-env';
+import {
+  getPublicPaidReportFeatureInventory,
+  paidLocationReportStructureSections,
+} from '@/lib/location/location-report-structure';
 
 describe('LocationReportPublicPreview', () => {
   const analysis = buildAnalysis([], 55.75, 37.61, { spatialFoundation: true });
@@ -34,25 +38,36 @@ describe('LocationReportPublicPreview', () => {
     expect(html).not.toContain('Детальный расчёт появится после оплаты.');
     expect(html).not.toMatch(/preview/i);
     expect(html).not.toMatch(/превью/i);
+    expect(html).not.toContain('предпросмотр');
   });
 
-  it('does not expose paid-only sections or PDF download', () => {
+  it('does not expose paid report data, internal summaries, or PDF download', () => {
     const html = renderToStaticMarkup(
       <LocationReportPublicPreview report={report} reportId="report-1" />,
     );
+    const inventory = getPublicPaidReportFeatureInventory();
 
     expect(html).not.toContain('Скачать PDF');
     expect(html).not.toContain('/api/location-report/report-1/pdf');
     expect(html).not.toContain('premium-revenue-scenarios');
     expect(html).not.toContain('premium-future-development');
-    expect(html).not.toContain('Осторожный');
-    expect(html).not.toContain('Строящиеся ЖК');
-    expect(html).not.toContain('Медицинские и образовательные якоря');
-    expect(html).not.toContain('Госзакупки и ранние признаки развития территории');
-    expect(html).not.toContain('Итоговое решение: брать / не брать / проверять глубже');
     expect(html).not.toContain('Для владельца:');
     expect(html).not.toContain('Бесплатный');
     expect(html).not.toContain('бесплатн');
+    expect(html).not.toContain('₽');
+    expect(html).not.toContain('/ мес');
+    expect(html).not.toContain('premium-');
+    expect(html).not.toContain('H3-гексы');
+    expect(html).not.toContain('Медицинские и образовательные якоря');
+    expect(html).not.toContain('Госзакупки и ранние признаки развития территории');
+    expect(html).not.toContain('Итоговое решение: брать / не брать / проверять глубже');
+    expect(html).toContain('Медицина и образование рядом');
+    expect(html).toContain('Госзакупки и ранние сигналы роста');
+    expect(html).toContain('Итоговое решение по объекту');
+    expect(html).toContain('Показывает, может ли территория стать сильнее');
+    expect(html).not.toContain('Новые дома, кварталы и стройки, которые могут изменить');
+    expect(html).not.toContain('Командировки, подрядчики, деловые поездки');
+    expect(inventory.every(item => item.descriptionRu.startsWith('Показывает'))).toBe(true);
   });
 
   it('shows a premium example slide gallery instead of repeated locked placeholders', () => {
@@ -78,6 +93,33 @@ describe('LocationReportPublicPreview', () => {
     expect(html).toContain('Потенциал:');
     expect(html).toContain('75–85%');
     expect(html).not.toContain('7.8');
+  });
+
+  it('renders the full public paid value inventory from the canonical paid report sections', () => {
+    const html = renderToStaticMarkup(<LocationReportPublicPreview report={report} />);
+    const inventory = getPublicPaidReportFeatureInventory();
+    const canonicalPaidDetailIds = paidLocationReportStructureSections
+      .filter(section => section.disclosure === 'paid_detail')
+      .map(section => section.id);
+
+    expect(html).toContain('Что входит в полный отчёт');
+    expect(html).toContain('В полной версии не 2–3 общих вывода');
+    expect(html).toContain('горизонте до 10 лет');
+    expect(html).toContain('Вы видите не весь расчёт, а карту того, что будет внутри.');
+    expect(html).toContain('Недвижимость и аренда');
+    expect(html).toContain('Коммерция и ритейл');
+    expect(html).toContain('Будущее района до 10 лет');
+    expect(html.match(/data-public-paid-feature-card="true"/g) ?? []).toHaveLength(inventory.length);
+    expect(inventory.map(item => item.id)).toEqual(canonicalPaidDetailIds);
+    expect(inventory).toHaveLength(34);
+    expect(html).toContain('Деловой и командировочный спрос');
+    expect(html).toContain('Доходность: базовый сценарий');
+    expect(html).toContain('Будущее района');
+    expect(html).toContain('Первая линия и вход');
+    expect(html).toContain('Итоговое решение по объекту');
+    expect(html).not.toMatch(/preview/i);
+    expect(html).not.toContain('предпросмотр');
+    expect(html.match(/Детальный расчёт появится после оплаты/g) ?? []).toHaveLength(0);
   });
 
   it('keeps YooKassa disabled during public report review', () => {

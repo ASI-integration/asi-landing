@@ -9,6 +9,8 @@ import { YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 import { publicScoreRange } from '@/lib/location/location-score-public';
 import {
   COMMERCIAL_REPORT_SEGMENT_BADGE_RU,
+  getPublicPaidReportFeatureInventory,
+  PUBLIC_PAID_REPORT_FEATURE_GROUPS,
   PUBLIC_PAID_REPORT_GALLERY_ITEMS,
   RESIDENTIAL_REPORT_SEGMENT_BADGE_RU,
 } from '@/lib/location/location-report-structure';
@@ -223,6 +225,83 @@ function SlideVisual({ slide }: { slide: ExampleReportSlide }) {
   );
 }
 
+type PublicPaidReportFeatureCard = ReturnType<typeof getPublicPaidReportFeatureInventory>[number];
+
+function featureAccentClass(group: PublicPaidReportFeatureCard['group']): string {
+  if (group === 'commercial_retail') {
+    return 'border-amber-300/25 bg-gradient-to-br from-amber-300/20 via-orange-300/10 to-slate-900/35';
+  }
+  if (group === 'future_10_years') {
+    return 'border-teal-300/25 bg-gradient-to-br from-teal-300/20 via-cyan-300/10 to-slate-900/35';
+  }
+  return 'border-indigo-300/25 bg-gradient-to-br from-indigo-300/20 via-sky-300/10 to-slate-900/35';
+}
+
+function PublicFeatureMiniVisual({ feature }: { feature: PublicPaidReportFeatureCard }) {
+  if (feature.visualKind === 'map' || feature.visualKind === 'traffic') {
+    return (
+      <div className="relative h-12 overflow-hidden rounded-lg bg-white/10" aria-hidden>
+        <div className="absolute left-3 top-3 h-6 w-6 rounded-full border border-white/20" />
+        <div className="absolute right-4 top-2 h-8 w-8 rounded-full border border-white/15" />
+        <div className="absolute left-[44%] top-[35%] h-3 w-3 rounded-full bg-cyan-200" />
+        <div className="absolute bottom-2 right-6 h-2.5 w-2.5 rounded-full bg-amber-200" />
+      </div>
+    );
+  }
+
+  if (feature.visualKind === 'income' || feature.visualKind === 'bars') {
+    return (
+      <div className="flex h-12 items-end gap-1.5" aria-hidden>
+        <div className="h-5 flex-1 rounded-t bg-white/20" />
+        <div className="h-9 flex-1 rounded-t bg-emerald-200/55" />
+        <div className="h-7 flex-1 rounded-t bg-cyan-200/40" />
+        <div className="h-11 flex-1 rounded-t bg-amber-200/45" />
+      </div>
+    );
+  }
+
+  if (feature.visualKind === 'timeline' || feature.visualKind === 'plan') {
+    return (
+      <div className="relative h-12 rounded-lg bg-white/10 px-3" aria-hidden>
+        <div className="absolute left-4 right-4 top-1/2 h-px bg-white/25" />
+        <div className="relative flex h-full items-center justify-between">
+          <span className="h-2.5 w-2.5 rounded-full bg-teal-200" />
+          <span className="h-3 w-3 rounded-full bg-cyan-200" />
+          <span className="h-3.5 w-3.5 rounded-full bg-white/55" />
+        </div>
+      </div>
+    );
+  }
+
+  if (feature.visualKind === 'risk') {
+    return (
+      <div className="space-y-1.5" aria-hidden>
+        <div className="h-2 rounded-full bg-rose-200/60" />
+        <div className="h-2 w-10/12 rounded-full bg-amber-200/45" />
+        <div className="h-2 w-7/12 rounded-full bg-white/20" />
+      </div>
+    );
+  }
+
+  if (feature.visualKind === 'storefront') {
+    return (
+      <div className="grid h-12 grid-cols-[1fr_18px_1fr] gap-1.5" aria-hidden>
+        <div className="rounded-t-lg bg-amber-200/35" />
+        <div className="rounded-t bg-white/35" />
+        <div className="rounded-t-lg bg-orange-200/30" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2" aria-hidden>
+      <div className="h-2 rounded-full bg-white/20" />
+      <div className="h-2 w-10/12 rounded-full bg-cyan-200/45" />
+      <div className="h-2 w-7/12 rounded-full bg-emerald-200/45" />
+    </div>
+  );
+}
+
 export function LocationReportPublicPreview({
   report,
   reportId,
@@ -239,6 +318,7 @@ export function LocationReportPublicPreview({
   const scoreRange =
     publicScoreRange(report.freeSummary?.publicScore ?? null) ??
     publicScoreRange(78);
+  const publicPaidFeatures = getPublicPaidReportFeatureInventory();
   const detailedReportHref = buildDashboardReportRequestHref({
     address: report.address,
     ...(persistedReportId ? { freeReportId: persistedReportId } : {}),
@@ -373,6 +453,67 @@ export function LocationReportPublicPreview({
           <p className="mt-4 text-xs text-slate-500">
             {RESIDENTIAL_REPORT_SEGMENT_BADGE_RU} — отдельно от {COMMERCIAL_REPORT_SEGMENT_BADGE_RU.toLowerCase()}.
           </p>
+        </section>
+
+        <section
+          className="mt-10"
+          data-public-paid-feature-source="canonical-paid-report-structure"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Полная версия</p>
+              <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Что входит в полный отчёт</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-300">
+                В полной версии не 2–3 общих вывода, а подробный разбор объекта: спрос, доходность, конкуренция, коммерческий потенциал, риски и развитие района на горизонте до 10 лет.
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-white">
+              {publicPaidFeatures.length} раздела
+            </div>
+          </div>
+
+          <p className="mt-5 max-w-3xl rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-5 text-sm leading-relaxed text-cyan-50">
+            Вы видите не весь расчёт, а карту того, что будет внутри. Полный отчёт помогает понять, стоит ли брать объект, под какой формат его запускать и какие риски проверить до сделки.
+          </p>
+
+          <div className="mt-6 space-y-7">
+            {PUBLIC_PAID_REPORT_FEATURE_GROUPS.map(group => {
+              const items = publicPaidFeatures.filter(feature => feature.group === group.id);
+              if (!items.length) return null;
+
+              return (
+                <div key={group.id}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-white">{group.titleRu}</h3>
+                      <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-400">{group.introRu}</p>
+                    </div>
+                    <p className="text-xs font-semibold text-slate-500">{items.length} разделов</p>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {items.map(feature => (
+                      <article
+                        key={feature.id}
+                        data-public-paid-feature-card="true"
+                        className={`min-h-[206px] rounded-2xl border p-4 ${featureAccentClass(feature.group)}`}
+                      >
+                        <div className="flex h-full flex-col">
+                          <div className="flex items-start justify-between gap-3">
+                            <h4 className="text-base font-bold leading-tight text-white">{feature.titleRu}</h4>
+                            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-white/60" aria-hidden />
+                          </div>
+                          <p className="mt-3 text-sm leading-relaxed text-slate-200">{feature.descriptionRu}</p>
+                          <div className="mt-auto pt-5">
+                            <PublicFeatureMiniVisual feature={feature} />
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
         <section className="mt-8 rounded-2xl border border-indigo-500/30 bg-indigo-950/20 p-7 sm:p-8">
