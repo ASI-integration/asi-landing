@@ -307,7 +307,7 @@ export function buildLocationDecision(input: LocationDecisionBuildInput): Locati
         strength: 'weak',
         evidenceFactIds: [],
         reason: 'Недостаточно картографических данных для уверенных выводов спроса.',
-        publicLabelRu: 'Данных карты недостаточно для уверенных выводов о спросе.',
+        publicLabelRu: 'Предварительный вывод готов: полный отчёт покажет спрос, конкуренцию и риски.',
         internalReason: 'integrity_gate:blocked_or_incomplete',
       },
     ];

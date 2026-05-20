@@ -1,7 +1,7 @@
 const MAX_FREE_REPORT_SIGNALS = 4;
 
 export const FREE_REPORT_RECOMMENDATION_RU =
-  'Предварительная оценка видит часть факторов. Для решения по объекту нужен полный анализ карты, конкурентов и сценариев запуска.';
+  'Полный отчёт разложит локацию по деньгам, конкуренции, транспорту, коммерческому потенциалу и рискам.';
 
 export const FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU =
   'Есть сильный фактор спроса: транспорт, порт, медицина, бизнес или промышленность. Полный отчёт покажет, как это влияет на аренду, коммерцию и риски.';
@@ -10,7 +10,7 @@ export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_SUFFICIENT_RU =
   'Локация выглядит перспективной для сценария с деловым и командировочным спросом. В полном отчёте будет видно, как это влияет на аренду, конкуренцию, коммерческий потенциал и риски.';
 
 export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU =
-  'По адресу не хватает данных для уверенного вывода. Полный отчёт уточнит локальные факторы: транспорт, конкурентов, формат запуска и риски.';
+  'Полный отчёт покажет, какой сценарий запускать: посуточную аренду, среднесрок, корпоративный спрос или коммерческий формат.';
 
 /** @deprecated Use sufficient/insufficient variants via `free-report-renderer`. */
 export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU = FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU;
@@ -150,7 +150,7 @@ function demandSignalText(kind: FactorKind, distances: number[]): string {
     return `Повседневная инфраструктура рядом: гостям проще закрывать бытовые задачи без долгих поездок.${distancePart}`;
   }
   if (kind === 'residential') {
-    return `Жилая среда рядом: подходит для спокойного размещения, но нужно проверить конкуренцию.${distancePart}`;
+    return `Жилая среда рядом: подходит для спокойного размещения. Конкуренцию и формат запуска покажет полный отчёт.${distancePart}`;
   }
   return `Окружение даёт первичные сигналы спроса: адрес стоит проверять вместе с конкуренцией и экономикой.${distancePart}`;
 }

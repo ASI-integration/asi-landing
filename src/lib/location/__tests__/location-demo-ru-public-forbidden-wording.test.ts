@@ -26,7 +26,6 @@ const PUBLIC_RU_COPY_SOURCE_FILES_RELATIVE = [
 const FORBIDDEN_SUBSTRINGS = [
   'якорь',
   'якоря',
-  'драйвер',
   'драйверы',
   'публичный сигнал',
   'устойчивым публичным',

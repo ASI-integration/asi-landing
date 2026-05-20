@@ -138,16 +138,18 @@ describe('Novorossiysk port strategic anchor regression', () => {
     const confidence = decision.publicSummary?.publicScoreConfidence ?? 'requires_full_check';
     const expectedPortCopy = buildPortCityStrategicContextCopyRu('Новороссийск', confidence);
     expect(publicDriverLines[0]).toBe(expectedPortCopy);
-    expect(publicDriverLines[0]).toContain('городской фактор спроса');
+    expect(publicDriverLines[0]).toContain('городской драйвер спроса');
     expect(publicDriverLines[0]).not.toMatch(/\b0\s*м\b/);
     expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(publicDriverLines[0]);
     expect(freeReport.topEvidenceBullets[0]?.distanceLabel).toBeNull();
     if (confidence === 'sufficient') {
       expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
     } else {
-      expect(freeReport.shortRecommendation).toContain('не хватает данных');
+      expect(freeReport.shortRecommendation).toContain('какой сценарий запускать');
     }
     expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Слабый спрос/i);
+    expect(decision.publicSummary?.headlineRu).toBe('Есть городской драйвер спроса');
+    expect(decision.publicSummary?.headlineRu).not.toMatch(/Обычная жилая локация/i);
 
     const portEvidence = decision.evidenceItems.find(
       e => e.factId === 'mf:canonical:market_context_port',
@@ -159,11 +161,11 @@ describe('Novorossiysk port strategic anchor regression', () => {
 
     const scoreLabel = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
     expect(scoreLabel).not.toMatch(/15.?25\s*%/);
-    expect(scoreLabel).not.toMatch(/требует полной проверки|данных недостаточно/i);
+    expect(scoreLabel).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно/i);
     if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
       expect(scoreLabel).toMatch(/Предварительный потенциал:/);
     } else {
-      expect(scoreLabel).toBe('Потенциал требует уточнения');
+      expect(scoreLabel).toBe('Предварительный вывод: есть факторы спроса');
     }
   });
 

@@ -455,10 +455,10 @@ function buildHeadlineRu(args: {
     demandSignals: args.demandSignals,
     specialMarketFlags: args.specialMarketFlags,
   });
-  const mixedUnstable = 'Данных пока недостаточно для уверенного вывода';
+  const preliminaryDemandSignal = 'Предварительный вывод: есть факторы спроса';
 
   if (strictDrivers.length === 0) {
-    return { text: mixedUnstable, reason: 'no_strict_public_drivers_after_surface_gates' };
+    return { text: preliminaryDemandSignal, reason: 'no_strict_public_drivers_after_surface_gates' };
   }
 
   if (primary === 'tourist' && anchors.length === 0) {
@@ -492,7 +492,7 @@ function buildHeadlineRu(args: {
   switch (primary) {
     case 'weak/unclear':
       return {
-        text: 'Профиль спроса пока выглядит ограниченно — сильные точки спроса рядом не подтверждены.',
+        text: preliminaryDemandSignal,
         reason: 'primary_weak_unclear',
       };
     case 'medical': {
@@ -504,8 +504,8 @@ function buildHeadlineRu(args: {
       if (!eligible) {
         return {
           text: partialCartographicContext
-            ? 'Предварительно: рядом есть медицинские объекты, нужна проверка карты'
-            : 'Обычная жилая локация с отдельными медицинскими объектами поблизости',
+            ? 'Есть медицинские объекты рядом'
+            : 'Жилая локация с медицинскими объектами поблизости',
           reason: partialCartographicContext
             ? 'medical_primary_suppressed_generic_partial_map'
             : 'medical_primary_suppressed_generic_surface',
@@ -536,7 +536,7 @@ function buildHeadlineRu(args: {
       }
       return { text: 'Предварительная оценка: спрос выглядит неоднозначным', reason: 'primary_mixed' };
     default:
-      return { text: mixedUnstable, reason: 'fallback' };
+      return { text: preliminaryDemandSignal, reason: 'fallback' };
   }
 }
 
@@ -615,7 +615,7 @@ export function applyVerdictContradictionGuards(args: {
       warnings.push('contradiction_guard:commander_verdict_without_strong_travel_evidence');
       verdict =
         primary === 'medical'
-          ? 'Предварительно: рядом есть медицинские объекты, нужна проверка карты'
+          ? 'Есть медицинские объекты рядом'
           : 'Хорошая локация с неоднозначным профилем спроса';
     }
   }
@@ -626,7 +626,7 @@ export function applyVerdictContradictionGuards(args: {
 function cautiousVerdictFromScore(score: number): string {
   if (score >= 60) return 'Потенциал есть, но точки спроса рядом неоднозначны — нужен детальный разбор';
   if (score >= 45) return 'Осторожный вывод: явных сильных точек спроса мало';
-  return 'Предварительная оценка слабая — для точного вывода нужен полный расчёт';
+  return 'Предварительный вывод готов — полный отчёт покажет лучший сценарий запуска';
 }
 
 function compactRuNameList(names: readonly string[]): string {
@@ -797,7 +797,7 @@ export function buildLocationPublicSummary(args: {
     partialCartographicContext,
   });
 
-  const headlineRu = headline.text;
+  let headlineRu = headline.text;
   debugTrace.push(`headline:${headline.reason}`);
 
   const portFallbackActive =
@@ -809,6 +809,10 @@ export function buildLocationPublicSummary(args: {
     hasCanonicalPortFallback: portFallbackActive,
   });
   const hasCityLevelStrategicAnchor = portFallbackActive;
+  if (hasCityLevelStrategicAnchor) {
+    headlineRu = 'Есть городской драйвер спроса';
+    debugTrace.push('headline:city_level_strategic_anchor');
+  }
 
   const publicScoreConfidence: LocationPublicScoreConfidence = inferPublicScoreConfidence({
     score: finalScore,

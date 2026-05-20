@@ -60,7 +60,7 @@ describe('city gravity layer (deterministic cityScale + populationTier)', () => 
     expect(s.primaryDemandType === 'tourist').toBe(false);
     if (s.primaryDemandType === 'medical') {
       expect(s.trace.headlineReason).toBe('medical_primary_suppressed_generic_surface');
-      expect(s.headlineRu).toMatch(/обычная жилая локация/i);
+      expect(s.headlineRu).toBe('Жилая локация с медицинскими объектами поблизости');
       expect(s.publicDrivers.map(x => x.textRu).join('\n')).toMatch(/недостаточно для сильного вывода/i);
     } else {
       expect(['weak/unclear', 'mixed'] as const).toContain(s.primaryDemandType);

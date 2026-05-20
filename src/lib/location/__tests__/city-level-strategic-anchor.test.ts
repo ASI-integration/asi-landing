@@ -92,7 +92,7 @@ describe('city-level strategic anchor SSOT', () => {
     if (confidence === 'sufficient') {
       expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
     } else {
-      expect(freeReport.shortRecommendation).toContain('не хватает данных');
+      expect(freeReport.shortRecommendation).toContain('какой сценарий запускать');
     }
   });
 
@@ -109,10 +109,10 @@ describe('city-level strategic anchor SSOT', () => {
 
     const label = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
     expect(decision.publicSummary?.publicScoreConfidence).toBe('requires_full_check');
-    expect(label).toBe('Потенциал требует уточнения');
-    expect(label).not.toMatch(/требует полной проверки|данных недостаточно/i);
+    expect(label).toBe('Предварительный вывод: есть факторы спроса');
+    expect(label).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно/i);
     expect(publicScoreRange(18, { confidence: 'requires_full_check' })?.labelRu).toBe(
-      'Потенциал требует уточнения',
+      'Предварительный вывод: есть факторы спроса',
     );
   });
 
@@ -125,7 +125,7 @@ describe('city-level strategic anchor SSOT', () => {
       magnets: [],
       publicScoreConfidence: 'sufficient',
     });
-    expect(guarded).toContain('городской фактор спроса');
+    expect(guarded).toContain('городской драйвер спроса');
     expect(guarded).not.toMatch(/Слабый спрос/i);
   });
 
@@ -143,17 +143,17 @@ describe('city-level strategic anchor SSOT', () => {
       'Полный отчёт покажет, какой формат запуска',
     );
     expect(buildPortCityStrategicContextCopyRu('Новороссийск', 'sufficient')).not.toMatch(
-      /проверить|полной карте/i,
+      /проверить|полной карте|уточнить/i,
     );
   });
 
   it('public score range appears only when confidence is sufficient', () => {
     expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Предварительный потенциал:/);
     expect(publicScoreRange(72, { confidence: 'requires_full_check' })?.labelRu).toBe(
-      'Потенциал требует уточнения',
+      'Предварительный вывод: есть факторы спроса',
     );
     expect(publicScoreRange(22, { confidence: 'sufficient' })?.labelRu).toBe(
-      'Предварительный потенциал: ограниченный',
+      'Предварительный вывод: есть факторы спроса',
     );
   });
 

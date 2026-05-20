@@ -51,7 +51,7 @@ export function publicScoreRange(
       low: 0,
       high: 0,
       label: '',
-      labelRu: 'Предварительный потенциал: ограниченный',
+      labelRu: 'Предварительный вывод: есть факторы спроса',
     };
   }
   return numeric;

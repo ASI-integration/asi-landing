@@ -257,16 +257,18 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     const presentationLabel =
       publicScorePresentationFromDecision(decision, publicScore)?.labelRu ?? '';
 
-    expect(presentationLabel).not.toMatch(/требует полной проверки|данных недостаточно|нужно проверить/i);
+    expect(presentationLabel).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно|нужно проверить/i);
     expect(presentationLabel).not.toMatch(/\b\d+\s*\/\s*100\b/);
     if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
       expect(presentationLabel).toMatch(/Предварительный потенциал:/);
     } else {
-      expect(presentationLabel).toMatch(/уточнения|умеренный/i);
+      expect(presentationLabel).toBe('Предварительный вывод: есть факторы спроса');
     }
     expect(decision.publicSummary?.presentationDiagnostics?.cityLevelStrategicAnchorOnly).toBe(
       true,
     );
+    expect(decision.publicSummary?.headlineRu).toBe('Есть городской драйвер спроса');
+    expect(decision.publicSummary?.headlineRu).not.toMatch(/Обычная жилая локация/i);
 
     const freeReport = buildFreeLocationReportViewModel({
       address: 'Новороссийск',
@@ -274,10 +276,22 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
       analysis,
     });
     expect(freeReport.shortVerdict).not.toMatch(/Слабый спрос/i);
+    expect(freeReport.shortRecommendation).not.toMatch(/не хватает данных|данных недостаточно/i);
+    expect(freeReport.shortRecommendation).toMatch(/Полный отчёт/);
+    const publicHeroCopy = [
+      presentationLabel,
+      decision.publicSummary?.headlineRu ?? '',
+      freeReport.shortRecommendation,
+    ].join(' ');
+    expect(publicHeroCopy).toContain('городской драйвер спроса');
+    expect(publicHeroCopy).toContain('Полный отчёт');
+    expect(publicHeroCopy).not.toMatch(
+      /Потенциал требует уточнения|не хватает данных|данных недостаточно|нужно уточнить|нужно проверить|требует полной проверки|Обычная жилая локация|Слабый спрос|\b\d+\s*\/\s*100\b/i,
+    );
 
     expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
     expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Предварительный потенциал:/);
-    expect(freeReport.topEvidenceBullets[0]?.shortReason).toMatch(/городской фактор спроса/i);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toMatch(/городской драйвер спроса/i);
     expect(freeReport.topEvidenceBullets[0]?.shortReason).not.toMatch(/полной карте/i);
   });
 
@@ -300,10 +314,10 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(label).not.toMatch(/требует полной проверки|данных недостаточно|нужно проверить/i);
   });
 
-  it('low-confidence public score may use cautious copy', () => {
+  it('low-confidence public score keeps sales tone without exact range', () => {
     const label = publicScoreRange(40, { confidence: 'requires_full_check' })?.labelRu ?? '';
-    expect(label).toBe('Потенциал требует уточнения');
-    expect(label).toMatch(/уточнения/i);
+    expect(label).toBe('Предварительный вывод: есть факторы спроса');
+    expect(label).not.toMatch(/Потенциал требует уточнения|данных недостаточно|не хватает данных|\d+\s*[-–]\s*\d+\s*%/i);
   });
 
   it('public RU UI does not contain raw/debug/full-report-only sections', () => {

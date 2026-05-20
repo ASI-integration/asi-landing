@@ -70,29 +70,20 @@ export function buildPortCityStrategicContextCopyRu(
   confidence: PublicScoreConfidence = 'sufficient',
 ): string {
   const city = cityName.trim() || 'город';
-  if (confidence === 'sufficient') {
-    return (
-      `Есть городской фактор спроса: ${city} — портово-логистический город. ` +
-      'Это может усиливать деловые и командировочные сценарии. Полный отчёт покажет, какой формат запуска здесь выгоднее.'
-    );
-  }
+  void confidence;
   return (
-    'Есть городской фактор спроса, но по этому адресу нужно уточнить локальные условия: ' +
-    'конкуренцию, транспорт и формат запуска.'
+    `Есть городской драйвер спроса: ${city} даёт портово-логистический спрос. ` +
+    'Портово-логистический профиль города может усиливать деловые и командировочные сценарии. ' +
+    'Полный отчёт покажет, какой формат запуска здесь выгоднее.'
   );
 }
 
 /** Legacy export — prefer `cityLevelStrategicWeakDemandBlockedRu(confidence)`. */
 export const CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU =
-  'Есть городской фактор спроса, но по этому адресу нужно уточнить локальные условия: конкуренцию, транспорт и формат запуска.';
+  'Есть городской драйвер спроса — локация может подойти для делового и командировочного сценария. Полный отчёт покажет, как это влияет на аренду, конкуренцию и формат запуска.';
 
 export function cityLevelStrategicWeakDemandBlockedRu(confidence: PublicScoreConfidence): string {
-  if (confidence === 'sufficient') {
-    return (
-      'Есть городской фактор спроса — локация может подойти для делового и командировочного сценария. ' +
-      'Полный отчёт покажет, как это влияет на аренду, конкуренцию и формат запуска.'
-    );
-  }
+  void confidence;
   return CITY_LEVEL_STRATEGIC_WEAK_DEMAND_BLOCKED_RU;
 }
 
@@ -194,11 +185,8 @@ export function publicScoreLabelRuForConfidence(
   confidence: PublicScoreConfidence,
   score: number | null,
 ): string {
-  if (confidence === 'insufficient_map_data') {
-    return 'Недостаточно данных для точной оценки';
-  }
-  if (confidence === 'requires_full_check') {
-    return 'Потенциал требует уточнения';
+  if (confidence !== 'sufficient') {
+    return 'Предварительный вывод: есть факторы спроса';
   }
   const range = publicScoreNumericRange(score);
   return range?.labelRu ?? 'Предварительный потенциал: умеренный';
@@ -216,11 +204,17 @@ export function publicScoreNumericRange(score: number | null | undefined): {
   const low = Math.max(0, Math.floor((clamped - 5) / 10) * 10 + 5);
   const high = Math.min(100, low + 10);
   const label = `${low}–${high}%`;
+  const labelRu =
+    clamped >= 75
+      ? 'Предварительный потенциал: высокий'
+      : clamped >= 45
+        ? 'Предварительный потенциал: умеренный'
+        : 'Предварительный вывод: есть факторы спроса';
   return {
     low,
     high,
     label,
-    labelRu: `Предварительный потенциал: ${label}`,
+    labelRu,
   };
 }
 
