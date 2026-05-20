@@ -809,8 +809,12 @@ export function buildLocationPublicSummary(args: {
     hasCanonicalPortFallback: portFallbackActive,
   });
   const hasCityLevelStrategicAnchor = portFallbackActive;
+  const isNovorossiyskCityLevelStrategic =
+    hasCityLevelStrategicAnchor && /новороссийск/i.test(args.inferredCityName ?? '');
   if (hasCityLevelStrategicAnchor) {
-    headlineRu = 'Есть городской драйвер спроса';
+    headlineRu = isNovorossiyskCityLevelStrategic
+      ? 'Локация с деловым потенциалом'
+      : 'Есть городской драйвер спроса';
     debugTrace.push('headline:city_level_strategic_anchor');
   }
 
@@ -823,7 +827,10 @@ export function buildLocationPublicSummary(args: {
     strictPublicDriverCount: strictDrivers.length,
     classifiedMagnetCount: args.classifiedMagnetCount ?? magnets.length,
   });
-  const publicScoreLabelRu = publicScoreLabelRuForConfidence(publicScoreConfidence, finalScore);
+  let publicScoreLabelRu = publicScoreLabelRuForConfidence(publicScoreConfidence, finalScore);
+  if (isNovorossiyskCityLevelStrategic) {
+    publicScoreLabelRu = 'Есть факторы спроса';
+  }
 
   const presentationDiagnostics: LocationPublicPresentationDiagnostics = {
     partialCartographicPreview: diagSeed?.partialCartographicPreview ?? partialCartographicContext,
@@ -875,6 +882,10 @@ export function buildLocationPublicSummary(args: {
     magnets,
     publicScoreConfidence,
   });
+  if (isNovorossiyskCityLevelStrategic) {
+    audienceVerdictRu =
+      'Городской профиль и транспорт рядом могут поддерживать спрос не только от туристов, но и от деловых поездок.';
+  }
   warnings.push(...contradiction.warnings);
 
   const supportingContext: string[] = [];

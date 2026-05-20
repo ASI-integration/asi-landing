@@ -7,10 +7,10 @@ export const FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU =
   'Есть сильный фактор спроса: транспорт, порт, медицина, бизнес или промышленность. Полный отчёт покажет, как это влияет на аренду, коммерцию и риски.';
 
 export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_SUFFICIENT_RU =
-  'Локация выглядит перспективной для сценария с деловым и командировочным спросом. В полном отчёте будет видно, как это влияет на аренду, конкуренцию, коммерческий потенциал и риски.';
+  'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.';
 
 export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU =
-  'Полный отчёт покажет, какой сценарий запускать: посуточную аренду, среднесрок, корпоративный спрос или коммерческий формат.';
+  'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.';
 
 /** @deprecated Use sufficient/insufficient variants via `free-report-renderer`. */
 export const FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_RU = FREE_REPORT_CITY_STRATEGIC_RECOMMENDATION_INSUFFICIENT_RU;

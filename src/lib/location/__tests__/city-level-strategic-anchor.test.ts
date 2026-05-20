@@ -89,11 +89,28 @@ describe('city-level strategic anchor SSOT', () => {
     const expected = buildPortCityStrategicContextCopyRu('Новороссийск', confidence);
     expect(decision.publicSummary?.publicDrivers[0]?.textRu).toBe(expected);
     expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
-    if (confidence === 'sufficient') {
-      expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
-    } else {
-      expect(freeReport.shortRecommendation).toContain('какой сценарий запускать');
-    }
+    expect(decision.publicSummary?.publicScoreLabelRu).toBe('Есть факторы спроса');
+    expect(decision.publicSummary?.headlineRu).toBe('Локация с деловым потенциалом');
+    expect(decision.publicSummary?.audienceVerdictRu).toBe(
+      'Городской профиль и транспорт рядом могут поддерживать спрос не только от туристов, но и от деловых поездок.',
+    );
+    expect(freeReport.shortRecommendation).toBe(
+      'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.',
+    );
+    expect(freeReport.heroContractRu?.card1.title).toBe('Есть факторы спроса');
+    expect(freeReport.heroContractRu?.card1.bullets).toEqual([
+      'Новороссийск даёт портово-логистический спрос.',
+      'Рядом есть транспортный узел.',
+      'Это может работать для командировок, среднесрока и деловых поездок.',
+    ]);
+    expect(freeReport.heroContractRu?.card2.title).toBe('Локация с деловым потенциалом');
+    expect(freeReport.heroContractRu?.card2.text).toBe(
+      'Городской профиль и транспорт рядом могут поддерживать спрос не только от туристов, но и от деловых поездок.',
+    );
+    expect(freeReport.heroContractRu?.card3.title).toBe('Полный отчёт покажет лучший формат запуска');
+    expect(freeReport.heroContractRu?.card3.text).toBe(
+      'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.',
+    );
   });
 
   it('weak OSM coverage with city-level port only does not show harsh low % range', () => {
@@ -109,7 +126,7 @@ describe('city-level strategic anchor SSOT', () => {
 
     const label = publicScorePresentationFromDecision(decision)?.labelRu ?? '';
     expect(decision.publicSummary?.publicScoreConfidence).toBe('requires_full_check');
-    expect(label).toBe('Предварительный вывод: есть факторы спроса');
+    expect(label).toBe('Есть факторы спроса');
     expect(label).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно/i);
     expect(publicScoreRange(18, { confidence: 'requires_full_check' })?.labelRu).toBe(
       'Предварительный вывод: есть факторы спроса',

@@ -2269,6 +2269,10 @@ function ASIPanel({
   const dashboardBullets: string[] = (() => {
     if (dataBlocked) return [];
     if (isRuResidentialDemo) {
+      const contractBullets = freeReport?.heroContractRu?.card1.bullets ?? [];
+      if (contractBullets.length > 0) {
+        return contractBullets.slice(0, 3);
+      }
       return (freeReport?.topEvidenceBullets ?? []).slice(0, 2).map(formatFreeEvidenceLine);
     }
     const ls = analysis.locationScore;
@@ -2317,6 +2321,7 @@ function ASIPanel({
         publicScore,
       )?.labelRu
     : null;
+  const ruHeroContract = isRuResidentialDemo ? freeReport?.heroContractRu : undefined;
 
   return (
     <>
@@ -2356,7 +2361,7 @@ function ASIPanel({
                   >
                     {isRuResidentialDemo ? (
                       <p className={`text-[22px] md:text-[24px] font-extrabold leading-snug ${band.textColor}`}>
-                        {publicScoreRangeLabel ?? 'Предварительный потенциал: средний'}
+                        {ruHeroContract?.card1.title ?? publicScoreRangeLabel ?? 'Предварительный потенциал: средний'}
                       </p>
                     ) : (
                       <>
@@ -2410,12 +2415,19 @@ function ASIPanel({
               </p>
             ) : null}
             {isRuResidentialDemo ? (
-              <p
-                className="mt-1 text-[20px] md:text-[22px] font-semibold text-slate-100 leading-snug"
-                data-public-hero-headline="true"
-              >
-                {freeReport?.shortVerdict ?? band.label}
-              </p>
+              <>
+                <p
+                  className="mt-1 text-[20px] md:text-[22px] font-semibold text-slate-100 leading-snug"
+                  data-public-hero-headline="true"
+                >
+                  {ruHeroContract?.card2.title ?? freeReport?.shortVerdict ?? band.label}
+                </p>
+                {ruHeroContract?.card2.text ? (
+                  <p className="mt-2 text-[15px] leading-relaxed text-slate-300">
+                    {ruHeroContract.card2.text}
+                  </p>
+                ) : null}
+              </>
             ) : (
               <>
                 <p className="mt-2 text-[28px] md:text-[32px] font-bold text-slate-100 leading-tight">
@@ -2456,9 +2468,14 @@ function ASIPanel({
                   ? ctaSurface.title ?? 'Анализ не завершён'
                   : 'Analysis incomplete'
                 : isRuResidentialDemo
-                  ? freeReport?.shortRecommendation
+                  ? ruHeroContract?.card3.title ?? freeReport?.shortRecommendation
                   : band.label}
             </p>
+            {isRuResidentialDemo && ruHeroContract?.card3.text ? (
+              <p className="mt-2 text-[15px] leading-relaxed text-slate-300">
+                {ruHeroContract.card3.text}
+              </p>
+            ) : null}
             {dataBlocked ? (
               <p className="mt-3 text-[15px] leading-relaxed text-slate-300">
                 {ctaSurface.text ?? locationDemoIncompleteUserMessage(locale)}

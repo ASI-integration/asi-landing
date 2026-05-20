@@ -101,7 +101,7 @@ describe('partial cartographic preview + generic medical public surface', () => 
     expect(decision.finalScore).not.toBeNull();
     expect(decision.finalScore!).toBeLessThan(70);
     expect(decision.finalScore!).toBeLessThanOrEqual(69);
-    expect(decision.publicSummary?.headlineRu).toBe('Есть городской драйвер спроса');
+    expect(decision.publicSummary?.headlineRu).toBe('Локация с деловым потенциалом');
     expect(decision.publicSummary?.headlineRu).not.toMatch(/Обычная жилая локация/i);
     expect(decision.warnings).toEqual(expect.arrayContaining([expect.stringContaining('medical_primary_high_score_cap')]));
   });

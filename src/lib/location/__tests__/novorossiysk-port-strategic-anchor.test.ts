@@ -142,13 +142,14 @@ describe('Novorossiysk port strategic anchor regression', () => {
     expect(publicDriverLines[0]).not.toMatch(/\b0\s*м\b/);
     expect(freeReport.topEvidenceBullets[0]?.shortReason).toBe(publicDriverLines[0]);
     expect(freeReport.topEvidenceBullets[0]?.distanceLabel).toBeNull();
-    if (confidence === 'sufficient') {
-      expect(freeReport.shortRecommendation).toContain('деловым и командировочным спросом');
-    } else {
-      expect(freeReport.shortRecommendation).toContain('какой сценарий запускать');
-    }
+    expect(freeReport.shortRecommendation).toBe(
+      'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.',
+    );
+    expect(freeReport.heroContractRu?.card1.title).toBe('Есть факторы спроса');
+    expect(freeReport.heroContractRu?.card2.title).toBe('Локация с деловым потенциалом');
+    expect(freeReport.heroContractRu?.card3.title).toBe('Полный отчёт покажет лучший формат запуска');
     expect(decision.publicSummary?.audienceVerdictRu).not.toMatch(/Слабый спрос/i);
-    expect(decision.publicSummary?.headlineRu).toBe('Есть городской драйвер спроса');
+    expect(decision.publicSummary?.headlineRu).toBe('Локация с деловым потенциалом');
     expect(decision.publicSummary?.headlineRu).not.toMatch(/Обычная жилая локация/i);
 
     const portEvidence = decision.evidenceItems.find(
@@ -163,9 +164,9 @@ describe('Novorossiysk port strategic anchor regression', () => {
     expect(scoreLabel).not.toMatch(/15.?25\s*%/);
     expect(scoreLabel).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно/i);
     if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
-      expect(scoreLabel).toMatch(/Предварительный потенциал:/);
+      expect(scoreLabel).toBe('Есть факторы спроса');
     } else {
-      expect(scoreLabel).toBe('Предварительный вывод: есть факторы спроса');
+      expect(scoreLabel).toBe('Есть факторы спроса');
     }
   });
 

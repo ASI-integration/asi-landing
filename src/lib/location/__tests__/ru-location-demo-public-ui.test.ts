@@ -233,13 +233,13 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(residentialScoreBlock).toContain('publicScorePresentationFromDecision');
     expect(residentialScoreBlock).toContain('residentialLocationDecision ?? analysis.locationDecision');
     expect(residentialScoreBlock).not.toContain('publicScoreRange(publicScore)');
-    expect(residentialScoreBlock).toContain('{publicScoreRangeLabel');
+    expect(residentialScoreBlock).toContain('{ruHeroContract?.card1.title ?? publicScoreRangeLabel');
     expect(residentialScoreBlock).toContain('{isRuResidentialDemo ? (');
     const ruResidentialBranch = residentialScoreBlock.slice(
       residentialScoreBlock.indexOf('{isRuResidentialDemo ? ('),
       residentialScoreBlock.indexOf(') : (', residentialScoreBlock.indexOf('{isRuResidentialDemo ? (')),
     );
-    expect(ruResidentialBranch).toContain('{publicScoreRangeLabel');
+    expect(ruResidentialBranch).toContain('{ruHeroContract?.card1.title ?? publicScoreRangeLabel');
     expect(ruResidentialBranch).not.toContain('/100');
     expect(ruResidentialBranch).not.toMatch(/\d+\s*[-–]\s*\d+\s*%/);
 
@@ -260,14 +260,14 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     expect(presentationLabel).not.toMatch(/Потенциал требует уточнения|требует полной проверки|данных недостаточно|нужно проверить/i);
     expect(presentationLabel).not.toMatch(/\b\d+\s*\/\s*100\b/);
     if (decision.publicSummary?.publicScoreConfidence === 'sufficient') {
-      expect(presentationLabel).toMatch(/Предварительный потенциал:/);
+      expect(presentationLabel).toBe('Есть факторы спроса');
     } else {
-      expect(presentationLabel).toBe('Предварительный вывод: есть факторы спроса');
+      expect(presentationLabel).toBe('Есть факторы спроса');
     }
     expect(decision.publicSummary?.presentationDiagnostics?.cityLevelStrategicAnchorOnly).toBe(
       true,
     );
-    expect(decision.publicSummary?.headlineRu).toBe('Есть городской драйвер спроса');
+    expect(decision.publicSummary?.headlineRu).toBe('Локация с деловым потенциалом');
     expect(decision.publicSummary?.headlineRu).not.toMatch(/Обычная жилая локация/i);
 
     const freeReport = buildFreeLocationReportViewModel({
@@ -277,22 +277,32 @@ describe('RU /ru/location-analysis public demo UI contract', () => {
     });
     expect(freeReport.shortVerdict).not.toMatch(/Слабый спрос/i);
     expect(freeReport.shortRecommendation).not.toMatch(/не хватает данных|данных недостаточно/i);
-    expect(freeReport.shortRecommendation).toMatch(/Полный отчёт/);
+    expect(freeReport.shortRecommendation).toBe(
+      'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.',
+    );
     const publicHeroCopy = [
       presentationLabel,
       decision.publicSummary?.headlineRu ?? '',
+      freeReport.heroContractRu?.card3.title ?? '',
       freeReport.shortRecommendation,
     ].join(' ');
-    expect(publicHeroCopy).toContain('городской драйвер спроса');
+    expect(publicHeroCopy).toContain('Есть факторы спроса');
+    expect(publicHeroCopy).toContain('Локация с деловым потенциалом');
     expect(publicHeroCopy).toContain('Полный отчёт');
     expect(publicHeroCopy).not.toMatch(
-      /Потенциал требует уточнения|не хватает данных|данных недостаточно|нужно уточнить|нужно проверить|требует полной проверки|Обычная жилая локация|Слабый спрос|\b\d+\s*\/\s*100\b/i,
+      /данных не хватает|недостаточно данных|требует уточнения|нужно проверить|требует полной проверки|Обычная жилая локация|Слабый спрос|\b\d+\s*\/\s*100\b/i,
     );
 
     expect(freeReport.topEvidenceBullets[0]?.isCityLevelStrategic).toBe(true);
     expect(publicScoreRange(72, { confidence: 'sufficient' })?.labelRu).toMatch(/Предварительный потенциал:/);
-    expect(freeReport.topEvidenceBullets[0]?.shortReason).toMatch(/городской драйвер спроса/i);
+    expect(freeReport.topEvidenceBullets[0]?.shortReason).toMatch(/портово-логистический спрос/i);
     expect(freeReport.topEvidenceBullets[0]?.shortReason).not.toMatch(/полной карте/i);
+    expect(freeReport.heroContractRu?.card1.bullets).toEqual([
+      'Новороссийск даёт портово-логистический спрос.',
+      'Рядом есть транспортный узел.',
+      'Это может работать для командировок, среднесрока и деловых поездок.',
+    ]);
+    expect(freeReport.heroContractRu?.card3.title).toBe('Полный отчёт покажет лучший формат запуска');
   });
 
   it('public hero uses separate score and headline containers without overlapping ring on RU residential', () => {

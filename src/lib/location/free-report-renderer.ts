@@ -36,6 +36,22 @@ export interface FreeLocationReportCtaViewModel {
   secondaryHref?: string;
 }
 
+export interface FreeLocationHeroCardOneRu {
+  title: string;
+  bullets: string[];
+}
+
+export interface FreeLocationHeroCardRu {
+  title: string;
+  text: string;
+}
+
+export interface FreeLocationHeroContractRu {
+  card1: FreeLocationHeroCardOneRu;
+  card2: FreeLocationHeroCardRu;
+  card3: FreeLocationHeroCardRu;
+}
+
 export interface FreeLocationReportViewModel {
   structure: LocationReportStructureViewModel;
   address: string;
@@ -48,6 +64,7 @@ export interface FreeLocationReportViewModel {
   shortRecommendation: string;
   paidReportTeaser: string;
   cta: FreeLocationReportCtaViewModel;
+  heroContractRu?: FreeLocationHeroContractRu;
 }
 
 export interface BuildFreeLocationReportViewModelInput {
@@ -251,6 +268,72 @@ function recommendationForDecision(decision: LocationDecision | null): string {
   return hasStrongPublicAnchor ? FREE_REPORT_STRONG_ANCHOR_RECOMMENDATION_RU : DEFAULT_SHORT_RECOMMENDATION_RU;
 }
 
+function isNovorossiyskCityLevelStrategic(decision: LocationDecision | null, address: string): boolean {
+  if (!decision) return false;
+  const hasCityLevelStrategic = Boolean(
+    decision.publicSummary?.presentationDiagnostics?.hasCityLevelStrategicAnchor ||
+      decision.evidenceItems?.some(isCityLevelStrategicAnchor),
+  );
+  if (!hasCityLevelStrategic) return false;
+  const citySignals = [
+    address,
+    decision.inputAddress ?? '',
+    ...(decision.publicSummary?.publicDrivers ?? []).map(row => row.textRu),
+  ].join(' ');
+  return /новороссийск/i.test(citySignals);
+}
+
+function buildHeroContractRu(args: {
+  decision: LocationDecision | null;
+  address: string;
+  shortVerdict: string;
+  shortRecommendation: string;
+  topEvidenceBullets: FreeLocationReportEvidenceBullet[];
+  publicScoreLabelRu: string;
+}): FreeLocationHeroContractRu | undefined {
+  if (isNovorossiyskCityLevelStrategic(args.decision, args.address)) {
+    return {
+      card1: {
+        title: 'Есть факторы спроса',
+        bullets: [
+          'Новороссийск даёт портово-логистический спрос.',
+          'Рядом есть транспортный узел.',
+          'Это может работать для командировок, среднесрока и деловых поездок.',
+        ],
+      },
+      card2: {
+        title: 'Локация с деловым потенциалом',
+        text:
+          'Городской профиль и транспорт рядом могут поддерживать спрос не только от туристов, но и от деловых поездок.',
+      },
+      card3: {
+        title: 'Полный отчёт покажет лучший формат запуска',
+        text: 'Сравним посуточную аренду, среднесрок, корпоративный спрос и коммерческий сценарий.',
+      },
+    };
+  }
+
+  const card1Bullets = args.topEvidenceBullets
+    .slice(0, 3)
+    .map(bullet => bullet.shortReason ?? bullet.name)
+    .filter((line): line is string => Boolean(cleanText(line)));
+
+  return {
+    card1: {
+      title: args.publicScoreLabelRu,
+      bullets: card1Bullets,
+    },
+    card2: {
+      title: args.shortVerdict,
+      text: args.shortVerdict,
+    },
+    card3: {
+      title: args.shortRecommendation,
+      text: args.shortRecommendation,
+    },
+  };
+}
+
 function assertNoForbiddenTopLevelFields(viewModel: FreeLocationReportViewModel): void {
   for (const field of forbiddenFreeReportFields) {
     if (Object.prototype.hasOwnProperty.call(viewModel, field)) {
@@ -263,6 +346,7 @@ export function buildFreeLocationReportViewModel(
   input: BuildFreeLocationReportViewModelInput,
 ): FreeLocationReportViewModel {
   const decision = resolveDecision(input);
+  const resolvedAddress = cleanText(input.address) ?? cleanText(decision?.inputAddress) ?? '';
   const cta: FreeLocationReportCtaViewModel = {
     primaryLabel: cleanText(input.cta?.primaryLabel) ?? DEFAULT_CTA.primaryLabel,
     primaryHref: cleanText(input.cta?.primaryHref) ?? DEFAULT_CTA.primaryHref,
@@ -274,10 +358,25 @@ export function buildFreeLocationReportViewModel(
       : {}),
   };
   const shortRecommendation = recommendationForDecision(decision);
+  const shortVerdict =
+    cleanText(decision?.publicSummary?.audienceVerdictRu) ??
+    cleanText(decision?.uiProjection?.heroTitle) ??
+    cleanText((input.analysis as LocationAnalysis | null | undefined)?.conclusion) ??
+    DEFAULT_SHORT_VERDICT_RU;
+  const topEvidenceBullets = buildEvidenceBullets(decision);
+  const publicScoreLabelRu = decision?.publicSummary?.publicScoreLabelRu ?? 'Предварительный потенциал: средний';
+  const heroContractRu = buildHeroContractRu({
+    decision,
+    address: resolvedAddress,
+    shortVerdict,
+    shortRecommendation,
+    topEvidenceBullets,
+    publicScoreLabelRu,
+  });
 
   const viewModel: FreeLocationReportViewModel = {
     structure: buildLocationReportStructureViewModel('free'),
-    address: cleanText(input.address) ?? cleanText(decision?.inputAddress) ?? '',
+    address: resolvedAddress,
     ...(cleanText(input.calculatedAt) ?? cleanText(input.meta?.updatedAt)
       ? { calculatedAt: cleanText(input.calculatedAt) ?? cleanText(input.meta?.updatedAt) }
       : {}),
@@ -286,15 +385,12 @@ export function buildFreeLocationReportViewModel(
       : {}),
     publicScore: resolvePublicScore(input.analysis, decision),
     publicScoreLabelRu: decision?.publicSummary?.publicScoreLabelRu ?? null,
-    shortVerdict:
-      cleanText(decision?.publicSummary?.audienceVerdictRu) ??
-      cleanText(decision?.uiProjection?.heroTitle) ??
-      cleanText((input.analysis as LocationAnalysis | null | undefined)?.conclusion) ??
-      DEFAULT_SHORT_VERDICT_RU,
-    topEvidenceBullets: buildEvidenceBullets(decision),
+    shortVerdict,
+    topEvidenceBullets,
     shortRecommendation,
     paidReportTeaser: cleanText(input.paidReportTeaser) ?? DEFAULT_PAID_REPORT_TEASER_RU,
     cta,
+    heroContractRu,
   };
 
   assertNoForbiddenTopLevelFields(viewModel);
