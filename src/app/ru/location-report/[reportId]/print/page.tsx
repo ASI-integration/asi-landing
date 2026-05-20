@@ -9,6 +9,7 @@ import {
 import { buildFreeReportInterpretedContent } from '@/lib/location/free-report-content';
 import { PremiumLocationReportPdf } from '@/components/location/premium-pdf/PremiumLocationReportPdf';
 import { buildPremiumPdfViewModel } from '@/lib/location/premium-pdf-view-model';
+import { canExposePaidLocationReport } from '@/lib/location/report-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +76,9 @@ export default async function RuLocationReportPrintPage(
   const doc = buildGeneratedLocationReportDocument(entity);
 
   if (doc.reportMode === 'paid') {
+    if (!canExposePaidLocationReport(entity.report)) {
+      return <MissingReportPrintFallback />;
+    }
     const model = buildPremiumPdfViewModel(doc);
     return (
       <main className="premium-location-report-pdf-root min-h-screen bg-slate-100 print:bg-white print:p-0">

@@ -75,6 +75,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       requestId,
       status: 'queued',
+      paymentStatus: accessTier === 'paid_required'
+        ? 'pending_payment'
+        : accessTier === 'included'
+          ? 'paid_unlocked'
+          : 'created',
       note: locale === 'ru'
         ? 'Полный отчёт рассчитывается асинхронно. В плотных городских локациях расчёт может занять до ~1 минуты.'
         : 'The full report runs asynchronously. Dense urban areas may take up to ~1 minute.',

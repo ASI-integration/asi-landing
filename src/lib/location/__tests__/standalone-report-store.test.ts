@@ -65,6 +65,7 @@ describe('createStandaloneReport free report persistence contract', () => {
     const saved = inserted.report as LocationStandaloneReport;
     expect(saved.reportId).toBe('33333333-3333-4333-8333-333333333333');
     expect(saved.reportMode).toBe('free');
+    expect(saved.accessStatus).toBe('created');
     expect(saved.pdfStatus).toBe('ready');
     expect(saved.pdfUrl).toBe('/api/location-report/33333333-3333-4333-8333-333333333333/pdf');
     expect(saved).not.toHaveProperty('paidSections');

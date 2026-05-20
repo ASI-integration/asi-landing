@@ -62,7 +62,11 @@ describe('POST /api/location-full-report/request', () => {
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json).toMatchObject({ requestId: 'request-1', status: 'queued' });
+    expect(json).toMatchObject({
+      requestId: 'request-1',
+      status: 'queued',
+      paymentStatus: 'pending_payment',
+    });
     expect(mockCreateLocationReportRequest).toHaveBeenCalledWith(expect.objectContaining({
       locale: 'ru',
       mode: 'residential',

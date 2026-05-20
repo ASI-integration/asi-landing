@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createStandaloneReport } from '@/lib/location/standalone-report-store';
-import { isCanonicalLocationReportPayload } from '@/lib/location/standalone-report';
+import {
+  isCanonicalLocationReportPayload,
+  isLocationStandaloneReportV1,
+} from '@/lib/location/standalone-report';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -22,6 +25,9 @@ export async function POST(req: NextRequest) {
 
   if (!isCanonicalLocationReportPayload(report)) {
     return NextResponse.json({ error: 'invalid_report' }, { status: 400 });
+  }
+  if (!(isLocationStandaloneReportV1(report) && report.reportMode === 'free')) {
+    return NextResponse.json({ error: 'paid_report_creation_not_public' }, { status: 403 });
   }
 
   try {

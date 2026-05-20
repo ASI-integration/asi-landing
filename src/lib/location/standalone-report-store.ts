@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { LocationStandaloneReport, PersistableLocationReport } from './standalone-report';
+import { locationReportAccessStatusForPersistence } from './report-access';
 
 export type PersistedStandaloneReportEntity = {
   id: string;
@@ -43,11 +44,13 @@ function prepareReportForPersistence(
   input: PersistableLocationReport,
   reportId: string,
 ): PersistableLocationReport {
+  const accessStatus = locationReportAccessStatusForPersistence(input);
   const common = {
     reportId,
     status: (input as any).status ?? 'ready',
     pdfStatus: (input as any).pdfStatus ?? 'ready',
     pdfUrl: (input as any).pdfUrl ?? `/api/location-report/${encodeURIComponent(reportId)}/pdf`,
+    accessStatus,
   };
 
   if (input.version === 'v1' && input.reportMode === 'free') {

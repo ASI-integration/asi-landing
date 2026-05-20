@@ -4,6 +4,7 @@ import {
   isCanonicalLocationReportPayload,
   isLocationStandaloneReportV1,
 } from '@/lib/location/standalone-report';
+import { canExposePaidLocationReport } from '@/lib/location/report-access';
 import {
   clientMessageForLocationReportPdfError,
   locationReportPdfFilename,
@@ -26,6 +27,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ reportId: 
     }
     if (isLocationStandaloneReportV1(entity.report) && entity.report.reportMode === 'free') {
       return NextResponse.json({ error: 'preview_only' }, { status: 403 });
+    }
+    if (!canExposePaidLocationReport(entity.report)) {
+      return NextResponse.json({ error: 'locked' }, { status: 403 });
     }
 
     const pdf = await renderLocationReportPdfFromPrintRoute(reportId);

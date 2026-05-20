@@ -58,6 +58,33 @@ const freeReport: LocationStandaloneReport = {
   ],
 };
 
+const paidReport: LocationStandaloneReport = {
+  ...freeReport,
+  reportMode: 'paid',
+  accessStatus: 'paid_unlocked',
+  paidSections: [{ id: 'income', titleRu: 'Доходность', summaryRu: 'Полный раздел.' }],
+  sections: [
+    {
+      id: 'summary',
+      verdict: 'Полный отчёт готов.',
+      drivers: ['Метро рядом'],
+      income_rub_month: 150000,
+      recommended_strategy: 'short_term',
+    },
+    {
+      id: 'income_strategy',
+      recommended_strategy: 'short_term',
+      monthly_income_rub: {
+        short_term: 150000,
+        hybrid: 130000,
+        mid_term: 100000,
+      },
+      positioning_hint: 'Рекомендуемая стратегия: посуточная аренда.',
+    },
+    { id: 'next_step', cta: 'get_full_breakdown' },
+  ],
+};
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.resetModules();
@@ -83,6 +110,41 @@ describe('/ru/location-report/[reportId]', () => {
     expect(html).not.toContain('Бесплатный');
     expect(html).not.toContain('ожидает оплаты');
     expect(html).not.toContain('Ожидает оплаты');
+  });
+
+  it('renders the full report only when the saved report is unlocked', async () => {
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'paid-1',
+      locale: 'ru',
+      address: paidReport.address,
+      report_version: paidReport.version,
+      report: paidReport,
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    const { default: Page } = await import('../page');
+
+    const element = await Page({ params: Promise.resolve({ reportId: 'paid-1' }) });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain('Подробный отчёт paid-1');
+  });
+
+  it('does not unlock a paid report from the permalink unless access is persisted', async () => {
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'paid-locked',
+      locale: 'ru',
+      address: paidReport.address,
+      report_version: paidReport.version,
+      report: { ...paidReport, accessStatus: 'pending_payment' },
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    const { default: Page } = await import('../page');
+
+    const element = await Page({ params: Promise.resolve({ reportId: 'paid-locked' }) });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain('Отчёт не найден');
+    expect(html).not.toContain('Подробный отчёт paid-locked');
   });
 
   it('renders print page content from the same saved free report data', async () => {

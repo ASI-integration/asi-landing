@@ -7,6 +7,7 @@ import {
   isLocationCommercialReport,
   isLocationStandaloneReportV1,
 } from '@/lib/location/standalone-report';
+import { canExposePaidLocationReport } from '@/lib/location/report-access';
 
 export default async function DashboardReportPage(
   props: { params: Promise<{ reportId: string }> },
@@ -15,10 +16,14 @@ export default async function DashboardReportPage(
   const entity = await getStandaloneReportById(reportId);
   if (entity && isCanonicalLocationReportPayload(entity.report)) {
     if (isLocationCommercialReport(entity.report)) {
-      return <CommercialReportView report={entity.report} />;
+      if (canExposePaidLocationReport(entity.report)) {
+        return <CommercialReportView report={entity.report} />;
+      }
     }
     if (isLocationStandaloneReportV1(entity.report)) {
-      return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
+      if (entity.report.reportMode === 'free' || canExposePaidLocationReport(entity.report)) {
+        return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
+      }
     }
   }
 

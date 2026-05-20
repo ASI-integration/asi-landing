@@ -14,6 +14,7 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ requestId: st
     return NextResponse.json({
       requestId: entity.id,
       status: entity.status,
+      paymentStatus: entity.payment_status,
       reportId: entity.report_id,
       address: entity.address,
       lat: entity.lat,

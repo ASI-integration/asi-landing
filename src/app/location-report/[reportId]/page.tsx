@@ -9,6 +9,7 @@ import {
   isLocationCommercialReport,
   isLocationStandaloneReportV1,
 } from '@/lib/location/standalone-report';
+import { canExposePaidLocationReport } from '@/lib/location/report-access';
 import { LOCATION_REPORT_SAMPLE_PATH } from '@/lib/location/report-state';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +54,7 @@ export default async function LocationReportByIdPage(props: { params: Promise<{ 
   if (!isCanonicalLocationReportPayload(entity.report)) return <MissingReport />;
 
   if (isLocationCommercialReport(entity.report)) {
+    if (!canExposePaidLocationReport(entity.report)) return <MissingReport />;
     return <CommercialReportView report={entity.report} />;
   }
 
@@ -60,6 +62,7 @@ export default async function LocationReportByIdPage(props: { params: Promise<{ 
   if (entity.report.reportMode === 'free') {
     return <LocationReportPublicPreview report={entity.report} reportId={entity.id} />;
   }
+  if (!canExposePaidLocationReport(entity.report)) return <MissingReport />;
   return <LocationStandaloneFullReport report={entity.report} reportId={entity.id} />;
 }
 

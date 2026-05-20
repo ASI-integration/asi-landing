@@ -22,6 +22,7 @@ vi.mock('@/lib/location/location-report-print-pdf', async (importOriginal) => {
 const report: LocationStandaloneReport = {
   version: 'v1',
   reportMode: 'paid',
+  accessStatus: 'paid_unlocked',
   address: 'Санкт-Петербург, Невский проспект, 88',
   generated_at_iso: '2026-05-16T10:00:00.000Z',
   freeSummary: {
@@ -96,6 +97,27 @@ describe('GET /api/location-report/[reportId]/pdf', () => {
 
     expect(res.status).toBe(403);
     expect(body).toEqual({ error: 'preview_only' });
+    expect(mockRenderLocationReportPdfFromPrintRoute).not.toHaveBeenCalled();
+  });
+
+  it('returns forbidden for a paid report that is not unlocked', async () => {
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'locked-1',
+      locale: 'ru',
+      address: report.address,
+      report_version: report.version,
+      report: { ...report, accessStatus: 'pending_payment' },
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    const { GET } = await import('../route');
+
+    const res = await GET(new Request('http://localhost/api/location-report/locked-1/pdf') as any, {
+      params: Promise.resolve({ reportId: 'locked-1' }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body).toEqual({ error: 'locked' });
     expect(mockRenderLocationReportPdfFromPrintRoute).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@ import { buildLocationStandaloneReport, buildCommercialReport } from '@/lib/loca
 import { createStandaloneReport } from '@/lib/location/standalone-report-store';
 import {
   getLocationReportRequestById,
+  markLocationReportRequestPaymentUnlocked,
   markLocationReportRequestCompleted,
   markLocationReportRequestFailed,
   markLocationReportRequestProcessing,
@@ -39,10 +40,14 @@ export async function POST(req: NextRequest) {
   const entity = await getLocationReportRequestById(requestId);
   if (!entity) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  if (entity.access_tier === 'paid_required' && !hasManualConfirmation(req)) {
+  const paymentUnlocked = entity.payment_status === 'paid_unlocked';
+  const manuallyConfirmed = hasManualConfirmation(req);
+
+  if (entity.access_tier === 'paid_required' && !paymentUnlocked && !manuallyConfirmed) {
     return NextResponse.json(
       {
         status: entity.status,
+        paymentStatus: entity.payment_status,
         error: 'manual_confirmation_required',
         note: entity.locale === 'ru'
           ? 'Полный отчёт формируется после оплаты или ручного подтверждения заказа.'
@@ -50,6 +55,10 @@ export async function POST(req: NextRequest) {
       },
       { status: 403 },
     );
+  }
+
+  if (entity.access_tier === 'paid_required' && manuallyConfirmed && !paymentUnlocked) {
+    await markLocationReportRequestPaymentUnlocked(requestId);
   }
 
   // Idempotency: if already done, return the result.

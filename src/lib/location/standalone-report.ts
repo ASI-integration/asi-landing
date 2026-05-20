@@ -31,6 +31,7 @@ import {
   type PremiumPaidReportContent,
 } from './premium-paid-report-content';
 import { portDemandDetailLinesRu } from './strategic-transport-hub';
+import type { LocationPaidReportAccessStatus } from './report-access';
 
 export type LocationStandaloneReportSectionId =
   | 'summary'
@@ -128,6 +129,8 @@ export type LocationStandaloneReport = {
   dataFreshness?: LocationReportDataFreshness;
   pdfUrl?: string;
   pdfStatus?: LocationGeneratedReportPdfStatus;
+  /** Paid report access is persisted; browser storage must not unlock full content. */
+  accessStatus?: LocationPaidReportAccessStatus;
   /** Прозрачность расчёта: время, адрес, режим, свежесть слоёв (без изменения scoring). */
   metadata?: LocationReportResultMetadata;
   /** Public-only persisted snapshot for free report pages/PDF. */
@@ -246,6 +249,8 @@ export type LocationCommercialReport = {
     pressure_level: 'low' | 'medium' | 'high';
   };
   recommendation: string;
+  /** Paid report access is persisted; browser storage must not unlock full content. */
+  accessStatus?: LocationPaidReportAccessStatus;
 };
 
 export type PersistableLocationReport = LocationStandaloneReport | LocationCommercialReport;
@@ -354,6 +359,7 @@ export function buildCommercialReport(args: {
 
   return {
     version: 'v2-commercial',
+    accessStatus: 'paid_unlocked',
     address: args.address,
     generated_at_iso: generatedAtIso,
     unifiedReport,
@@ -770,6 +776,7 @@ export function buildLocationStandaloneReport(args: {
     status: 'ready' as const,
     dataFreshness: metadata.dataFreshness,
     pdfStatus: 'ready' as const,
+    accessStatus: reportMode === 'free' ? ('created' as const) : ('paid_unlocked' as const),
   };
 
   if (reportMode === 'free') {
@@ -923,6 +930,7 @@ export function buildLocationStandaloneReport(args: {
 const sampleStrLocationStandaloneReportRuBase: LocationStandaloneReport = {
   version: 'v1',
   reportMode: 'paid',
+  accessStatus: 'paid_unlocked',
   address: 'Санкт-Петербург, Невский проспект, 88',
   generated_at_iso: '2026-05-10T10:00:00.000Z',
   strReport: {
