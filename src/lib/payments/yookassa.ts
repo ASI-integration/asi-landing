@@ -1,5 +1,7 @@
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 import {
+  getYooKassaCredentials,
+  getYooKassaReturnUrl,
   isYooKassaEnabled,
   YOOKASSA_PENDING_REVIEW_MESSAGE,
 } from './yookassa-env';
@@ -91,8 +93,51 @@ export class YookassaProvider implements PaymentProvider, YooKassaProviderSkelet
   }
 
   async createPaymentLink(params: YooKassaPaymentInput): Promise<{ paymentUrl: string; transactionId: string }> {
-    await this.createPayment(params);
-    throw new YooKassaDisabledError();
+    const credentials = getYooKassaCredentials();
+    if (!credentials) {
+      await this.createPayment(params);
+      throw new YooKassaDisabledError();
+    }
+
+    const response = await fetch('https://api.yookassa.ru/v3/payments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${credentials.shopId}:${credentials.secretKey}`).toString('base64')}`,
+        'Content-Type': 'application/json',
+        'Idempotence-Key': params.id,
+      },
+      body: JSON.stringify({
+        amount: {
+          value: (params.amount / 100).toFixed(2),
+          currency: params.currency,
+        },
+        capture: true,
+        confirmation: {
+          type: 'redirect',
+          return_url: getYooKassaReturnUrl(params.reservationId ?? params.id),
+        },
+        ...(params.description ? { description: params.description } : {}),
+        metadata: {
+          payment_id: params.id,
+          ...(params.reservationId ? { request_id: params.reservationId } : {}),
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('YooKassa payment creation failed');
+    }
+
+    const payment = await response.json() as {
+      id?: string;
+      confirmation?: { confirmation_url?: string };
+    };
+    const paymentUrl = payment.confirmation?.confirmation_url;
+    if (!payment.id || !paymentUrl) {
+      throw new Error('YooKassa payment response is incomplete');
+    }
+
+    return { paymentUrl, transactionId: payment.id };
   }
 
   verifyWebhookSignature(_payload: string | Buffer, _signature: string): boolean {

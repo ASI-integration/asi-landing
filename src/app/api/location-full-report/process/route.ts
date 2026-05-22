@@ -1,29 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geocodePlainAddressForMarket } from '@/lib/location/address-providers/geocode-pipeline';
-import type { AddressMarket } from '@/lib/location/address-providers/types';
-import { fetchOsmData, buildAnalysis } from '@/lib/location';
-import { buildLocationStandaloneReport, buildCommercialReport } from '@/lib/location/standalone-report';
-import { createStandaloneReport } from '@/lib/location/standalone-report-store';
 import {
   getLocationReportRequestById,
   markLocationReportRequestPaymentUnlocked,
-  markLocationReportRequestCompleted,
-  markLocationReportRequestFailed,
-  markLocationReportRequestProcessing,
 } from '@/lib/location/report-request-store';
+import { REPORT_ARTIFACT_STATUS } from '@/lib/location/report-artifact';
+import { processPaidReportRequest } from '@/lib/location/paid-report-orchestration';
+import { buildLocationReportStatusHref } from '@/lib/location/report-status-flow';
+import { ReportPipelineNotReadyError } from '@/lib/location/report-pipeline-not-ready-error';
+import { toReportPipelineNotReadyPayload } from '@/lib/location/report-pipeline-readiness';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 10;
 
 function hasManualConfirmation(req: NextRequest): boolean {
   const configured = process.env.LOCATION_REPORT_MANUAL_CONFIRM_KEY?.trim();
   if (!configured) return false;
   const supplied = req.headers.get('x-location-report-confirmation')?.trim();
   return supplied === configured;
-}
-
-function parseMarket(locale: 'ru' | 'en'): AddressMarket {
-  return locale === 'ru' ? 'ru' : 'en';
 }
 
 export async function POST(req: NextRequest) {
@@ -61,57 +54,27 @@ export async function POST(req: NextRequest) {
     await markLocationReportRequestPaymentUnlocked(requestId);
   }
 
-  // Idempotency: if already done, return the result.
-  if (entity.status === 'completed' && entity.report_id) {
-    return NextResponse.json({ status: 'completed', reportId: entity.report_id });
-  }
-  if (entity.status === 'processing') {
-    return NextResponse.json({ status: 'processing' }, { status: 202 });
-  }
-
-  await markLocationReportRequestProcessing(requestId);
-
   try {
-    const locale = entity.locale;
-    const market = parseMarket(locale);
-    let lat = entity.lat;
-    let lon = entity.lon;
-
-    if (lat == null || lon == null) {
-      const { result } = await geocodePlainAddressForMarket(market, entity.address);
-      if (!result) {
-        await markLocationReportRequestFailed({ requestId, errorMessage: 'address_not_found' });
-        return NextResponse.json({ status: 'failed', error: 'address_not_found' }, { status: 404 });
-      }
-      lat = result.lat;
-      lon = result.lon;
-    }
-
-    // Full calculation (may be slow for dense cities).
-    // We deliberately enable spatial foundation here: preview stays fast, report can be deeper.
-    const { elements } = await fetchOsmData(lat, lon);
-    const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
-
-    const report =
-      entity.mode === 'commercial'
-        ? buildCommercialReport({ address: entity.address, analysis })
-        : buildLocationStandaloneReport({
-          address: entity.address,
-          analysis,
-          verdict: locale === 'ru'
-            ? 'Полный отчёт: расчёт выполнен.'
-            : 'Full report: calculation completed.',
-          market: locale === 'ru' ? 'RU' : 'INTERNATIONAL',
-          reportMode: 'paid',
-        });
-
-    const { reportId } = await createStandaloneReport({ locale, report: report as any });
-    await markLocationReportRequestCompleted({ requestId, reportId });
-
-    return NextResponse.json({ status: 'completed', reportId });
+    const reportArtifact = await processPaidReportRequest(requestId);
+    return NextResponse.json({
+      status: reportArtifact.status,
+      report_artifact: reportArtifact,
+      paymentStatus: 'paid_unlocked',
+    });
   } catch (err) {
+    if (err instanceof ReportPipelineNotReadyError) {
+      return NextResponse.json(
+        {
+          requestId,
+          status: REPORT_ARTIFACT_STATUS.reportForming,
+          paymentStatus: 'paid_unlocked',
+          next: buildLocationReportStatusHref(undefined, requestId),
+          ...toReportPipelineNotReadyPayload(err.readiness),
+        },
+        { status: 503 },
+      );
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    await markLocationReportRequestFailed({ requestId, errorMessage: msg });
     return NextResponse.json({ status: 'failed', error: msg }, { status: 502 });
   }
 }

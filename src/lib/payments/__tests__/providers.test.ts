@@ -53,6 +53,10 @@ global.fetch = vi.fn().mockResolvedValue({
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.YOOKASSA_ENABLED;
+  delete process.env.YOOKASSA_SHOP_ID;
+  delete process.env.YOOKASSA_SECRET_KEY;
+  delete process.env.NEXT_PUBLIC_APP_URL;
+  delete process.env.NEXT_PUBLIC_URL;
   _resetPaymentDb();
   _resetEventLogs();
 });
@@ -85,6 +89,34 @@ describe('Payment factory — provider routing', () => {
     const saved = await getPaymentById(payment.id);
     expect(saved?.provider).toBe('yookassa');
     expect(saved?.providerTransactionId).toBeNull();
+  });
+
+  it('creates a YooKassa checkout with a paid report status return URL', async () => {
+    process.env.YOOKASSA_ENABLED = 'true';
+    process.env.YOOKASSA_SHOP_ID = 'shop-1';
+    process.env.YOOKASSA_SECRET_KEY = 'secret-1';
+    process.env.NEXT_PUBLIC_APP_URL = 'https://asi.example';
+
+    const payment = await createPaymentRequest({
+      amount: 99000,
+      currency: 'RUB',
+      reservationId: 'request-1',
+      provider: 'yookassa',
+    });
+    const fetchCall = vi.mocked(global.fetch).mock.calls[0];
+    expect(fetchCall).toBeDefined();
+    const [, init] = fetchCall!;
+    const payload = JSON.parse(String(init?.body));
+
+    expect(payment.provider).toBe('yookassa');
+    expect(payment.paymentUrl).toContain('yoomoney.ru/checkout');
+    expect(payload.confirmation).toMatchObject({
+      type: 'redirect',
+      return_url: 'https://asi.example/ru/location-report/status?requestId=request-1',
+    });
+    expect(payload.metadata).toMatchObject({
+      request_id: 'request-1',
+    });
   });
 
   it('respects an explicit provider override', async () => {

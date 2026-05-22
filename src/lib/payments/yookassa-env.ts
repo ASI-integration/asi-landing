@@ -1,6 +1,10 @@
 export const YOOKASSA_PENDING_REVIEW_MESSAGE =
   'Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.';
 
+function getAppBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
 export function isYooKassaEnabled(): boolean {
   return process.env.YOOKASSA_ENABLED === 'true';
 }
@@ -14,9 +18,9 @@ export function getYooKassaCredentials(): { shopId: string; secretKey: string } 
   return { shopId, secretKey };
 }
 
-export function getYooKassaReturnUrl(): string {
-  const explicit = process.env.YOOKASSA_RETURN_URL?.trim();
-  if (explicit) return explicit;
-  const app = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
-  return `${app}/dashboard?payment=success`;
+export function getYooKassaReturnUrl(requestId?: string): string {
+  const app = getAppBaseUrl();
+  const params = new URLSearchParams();
+  if (requestId) params.set('requestId', requestId);
+  return `${app}/ru/location-report/status${params.toString() ? `?${params.toString()}` : ''}`;
 }

@@ -28,7 +28,43 @@ export {
   createReportStateRecord,
   LOCATION_REPORT_PRODUCT_PATH,
   LOCATION_REPORT_SAMPLE_PATH,
+  LOCATION_REPORT_STATUS_PATH,
 } from './report-state';
+export {
+  REPORT_ARTIFACT_STATUS,
+  REPORT_ARTIFACT_STATUSES,
+  buildReportArtifactUrls,
+  isReportArtifactStatus,
+  normalizeReportArtifactStatus,
+  reportArtifactWithSampleUrls,
+  type ReportArtifact,
+  type ReportArtifactMetadata,
+  type ReportArtifactStatus,
+} from './report-artifact';
+export {
+  buildCanonicalReportDocument,
+  buildCanonicalReportDocumentFromArtifact,
+  isCanonicalReportDocument,
+  type CanonicalReportDocument,
+  type CanonicalReportLayer,
+} from './canonical-report-document';
+export {
+  canonicalDocumentToPdfViewModel,
+  canonicalDocumentToWebViewModel,
+  getCanonicalReportDocumentFromMetadata,
+  resolveReportSectionsFromArtifact,
+  type CanonicalReportPdfViewModel,
+  type CanonicalReportWebViewModel,
+} from './report-document-render';
+export {
+  buildLocationReportStatusHref,
+  LOCATION_REPORT_STATUS_ACTIONS,
+  LOCATION_REPORT_ARTIFACT_INITIAL_STATUS,
+  LOCATION_REPORT_STATUS_INITIAL_STAGE,
+  LOCATION_REPORT_STATUS_STAGE_CONFIG,
+  LOCATION_REPORT_STATUS_STAGE_SEQUENCE,
+  type LocationReportStatusStage,
+} from './report-status-flow';
 
 export {
   haversineMeters,

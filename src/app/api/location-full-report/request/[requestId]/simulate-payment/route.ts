@@ -3,6 +3,13 @@ import {
   getLocationReportRequestById,
   markLocationReportRequestPaymentUnlocked,
 } from '@/lib/location/report-request-store';
+import {
+  buildLocationReportStatusHref,
+} from '@/lib/location/report-status-flow';
+import { REPORT_ARTIFACT_STATUS } from '@/lib/location/report-artifact';
+import { processPaidReportRequest } from '@/lib/location/paid-report-orchestration';
+import { ReportPipelineNotReadyError } from '@/lib/location/report-pipeline-not-ready-error';
+import { toReportPipelineNotReadyPayload } from '@/lib/location/report-pipeline-readiness';
 import { isYooKassaEnabled, YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
 export const dynamic = 'force-dynamic';
@@ -36,22 +43,33 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ requestId
     if (entity.payment_status !== 'paid_unlocked') {
       await markLocationReportRequestPaymentUnlocked(requestId);
     }
+    const reportArtifact = await processPaidReportRequest(requestId);
 
     return NextResponse.json({
       requestId,
-      status: entity.status,
+      status: reportArtifact.status,
       paymentStatus: 'paid_unlocked',
+      report_artifact: reportArtifact,
       reportId: entity.report_id,
       yookassa: 'disabled',
-      next: `/dashboard/reports/${encodeURIComponent(entity.report_id ?? requestId)}`,
-      process: {
-        method: 'POST',
-        url: '/api/location-full-report/process',
-        body: { requestId },
-      },
+      next: buildLocationReportStatusHref(undefined, requestId),
+      process: { triggered: true },
     });
   } catch (err) {
+    if (err instanceof ReportPipelineNotReadyError) {
+      return NextResponse.json(
+        {
+          requestId,
+          status: REPORT_ARTIFACT_STATUS.reportForming,
+          paymentStatus: 'paid_unlocked',
+          next: buildLocationReportStatusHref(undefined, requestId),
+          process: { triggered: false },
+          ...toReportPipelineNotReadyPayload(err.readiness),
+        },
+        { status: 503 },
+      );
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: 'simulation_failed', detail: msg }, { status: 502 });
+    return NextResponse.json({ error: 'simulation_failed' }, { status: 502 });
   }
 }

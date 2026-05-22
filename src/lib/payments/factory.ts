@@ -2,6 +2,7 @@ import { StripeProvider } from './stripe';
 import { YookassaProvider } from './yookassa';
 import { PaymentProvider, PaymentProviderType, PaymentRequest } from './types';
 import { createPaymentRecord, getActivePaymentForContext } from './db';
+import { isYooKassaEnabled } from './yookassa-env';
 
 const providers: Record<PaymentProviderType, PaymentProvider> = {
   stripe: new StripeProvider(),
@@ -78,7 +79,7 @@ export async function createPaymentRequest(params: CreatePaymentParams): Promise
   };
 
   const provider = getProvider(providerName);
-  if (providerName === 'yookassa' && provider instanceof YookassaProvider) {
+  if (providerName === 'yookassa' && provider instanceof YookassaProvider && !isYooKassaEnabled()) {
     const disabled = await provider.createPayment(requestForProvider);
     const record: PaymentRequest = {
       ...requestForProvider,
