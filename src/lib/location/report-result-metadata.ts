@@ -27,6 +27,26 @@ export type LocationReportDataFreshness = {
 
 export type LocationReportMapDisplay = 'available' | 'unavailable';
 
+/** Internal provider warning codes (safe for client bundles — used in metadata only). */
+export const PAID_REPORT_DEGRADED_MAP_DATA_WARNING = 'paid_report_degraded_map_data';
+export const PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING = 'paid_report_geocode_unavailable';
+export const PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU =
+  'Карта временно недоступна, расчёт сохранён.';
+
+export function mapPaidReportProviderWarningsRu(
+  providerWarnings: readonly string[],
+  mapDisplay: LocationReportMapDisplay,
+): string[] {
+  if (
+    mapDisplay === 'unavailable'
+    || providerWarnings.includes(PAID_REPORT_DEGRADED_MAP_DATA_WARNING)
+    || providerWarnings.includes(PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING)
+  ) {
+    return [PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU];
+  }
+  return [];
+}
+
 export type LocationReportResultMetadata = {
   calculatedAt: string;
   inputAddress: string;

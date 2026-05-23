@@ -1,5 +1,5 @@
 import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from './report-contract';
-import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from './location-report-engine';
+import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from './report-result-metadata';
 import type { GeneratedLocationReportDocument } from './location-report-engine';
 import type { LocationStandaloneReport, StrLocationReportProjection } from './standalone-report';
 import type { LocationScoreBreakdown } from './types';

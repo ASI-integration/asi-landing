@@ -8,7 +8,7 @@ import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 import { buildDashboardReportRequestHref } from '@/lib/location/pending-location-report';
 import { LocationReportPublicPreview } from '@/components/location/LocationReportPublicPreview';
 import { LocationReportMapPanel } from '@/components/location/LocationReportMapPanel';
-import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from '@/lib/location/location-report-engine';
+import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from '@/lib/location/report-result-metadata';
 import { PremiumPaidReportSections } from '@/components/location/PremiumPaidReportSections';
 import {
   buildPremiumPaidReportContent,
