@@ -46,21 +46,27 @@ export const LOCATION_REPORT_STATUS_STAGE_CONFIG: Record<LocationReportStatusSta
   },
   [REPORT_ARTIFACT_STATUS.finalReady]: {
     label: 'Полная веб-версия готова',
-    detail: 'Полная веб-версия отчёта доступна по ссылке.',
+    detail: 'Отчёт доступен по ссылке — откройте веб-версию и проверьте все разделы.',
   },
   [REPORT_ARTIFACT_STATUS.pdfReady]: {
     label: 'PDF готов',
-    detail: 'PDF можно открыть или скачать. Ссылка появится в личном кабинете и придёт на e-mail.',
+    detail: 'Можно открыть файл или скачать его на устройство.',
   },
 };
 
 export const LOCATION_REPORT_STATUS_DELIVERY_HINT =
   'Ссылка появится в личном кабинете и придёт на e-mail.';
 
+export const LOCATION_REPORT_STATUS_INVALID_REQUEST_MESSAGE =
+  'Не удалось найти заявку на отчёт. Вернитесь к форме и попробуйте ещё раз.';
+
+export const LOCATION_REPORT_STATUS_POLL_ERROR_MESSAGE =
+  'Не удалось обновить статус. Попробуем ещё раз.';
+
 export const LOCATION_REPORT_STATUS_ACTIONS: readonly LocationReportStatusAction[] = [
   {
     id: 'preliminary_report',
-    label: 'Открыть предварительный отчёт',
+    label: 'Открыть отчёт',
     href: 'preliminary_report_url',
     fallbackHref: `${LOCATION_REPORT_SAMPLE_PATH}?view=preliminary`,
     availableFrom: REPORT_ARTIFACT_STATUS.preliminaryReady,
@@ -68,21 +74,36 @@ export const LOCATION_REPORT_STATUS_ACTIONS: readonly LocationReportStatusAction
   },
   {
     id: 'final_report',
-    label: 'Открыть финальный отчёт',
+    label: 'Открыть отчёт',
     href: 'final_report_url',
     fallbackHref: LOCATION_REPORT_SAMPLE_PATH,
     availableFrom: REPORT_ARTIFACT_STATUS.finalReady,
-    tone: 'secondary',
+    tone: 'primary',
   },
   {
     id: 'pdf_report',
-    label: 'Открыть PDF',
+    label: 'Скачать PDF',
     href: 'pdf_url',
     fallbackHref: LOCATION_REPORT_SAMPLE_PDF_PATH,
     availableFrom: REPORT_ARTIFACT_STATUS.pdfReady,
-    tone: 'primary',
+    tone: 'secondary',
   },
 ];
+
+export function isValidLocationReportRequestId(value: string | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 4 || trimmed.length > 128) return false;
+  return /^[a-zA-Z0-9_-]+$/.test(trimmed);
+}
+
+export function resolveLocationReportStatusActionHref(
+  action: LocationReportStatusAction,
+  artifact: Pick<ReportArtifact, LocationReportStatusAction['href']> | null,
+): string | null {
+  const url = artifact?.[action.href];
+  return typeof url === 'string' && url.trim().length > 0 ? url.trim() : null;
+}
 
 export function isLocationReportStatusStage(value: unknown): value is LocationReportStatusStage {
   return typeof value === 'string' && LOCATION_REPORT_STATUS_STAGE_SEQUENCE.includes(value as LocationReportStatusStage);
