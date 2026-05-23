@@ -16,6 +16,7 @@ import {
   buildLocationReportResultMetadata,
   normalizeReportAddress,
   type LocationReportDataFreshness,
+  type LocationReportMapDisplay,
   type LocationReportResultMetadata,
 } from './report-result-metadata';
 import { enrichAnalysisWithReportProjection } from './location-scoring-projection';
@@ -749,6 +750,9 @@ export function buildLocationStandaloneReport(args: {
   market?: ResidentialMarketMode;
   /** Defaults to paid (full permalink payload including unifiedReport). */
   reportMode?: LocationStandaloneReportMode;
+  coordinates?: { lat: number; lon: number };
+  mapDisplay?: LocationReportMapDisplay;
+  providerWarningsRu?: string[];
 }): LocationStandaloneReport {
   const reportMode = args.reportMode ?? 'paid';
   const market = args.market ?? 'RU';
@@ -768,6 +772,9 @@ export function buildLocationStandaloneReport(args: {
     reportMode,
     calculatedAtIso: generatedAtIso,
     env: args.metadataEnv,
+    ...(args.coordinates ? { coordinates: args.coordinates } : {}),
+    ...(args.mapDisplay ? { mapDisplay: args.mapDisplay } : {}),
+    ...(args.providerWarningsRu?.length ? { providerWarningsRu: args.providerWarningsRu } : {}),
   });
   const reportEnvelope = {
     inputAddress: metadata.inputAddress,

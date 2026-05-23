@@ -1,4 +1,5 @@
 import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from './report-contract';
+import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from './location-report-engine';
 import type { GeneratedLocationReportDocument } from './location-report-engine';
 import type { LocationStandaloneReport, StrLocationReportProjection } from './standalone-report';
 import type { LocationScoreBreakdown } from './types';
@@ -67,6 +68,10 @@ export type PremiumPdfViewModel = {
   revenueScenarios: PremiumRevenueScenario[];
   futureDevelopmentSlots: PremiumFutureDevelopmentSlot[];
   finalRecommendation: PremiumPdfTextField;
+  location: {
+    coordinatesLabel: PremiumPdfTextField | null;
+    mapUnavailableNotice: PremiumPdfTextField | null;
+  };
 };
 
 function textField(value: string | null | undefined, placeholder: string): PremiumPdfTextField {
@@ -222,6 +227,16 @@ export function buildPremiumPdfViewModel(doc: GeneratedLocationReportDocument): 
       ? buildPremiumPaidReportContent({ report: standalone, strReport: str })
       : null);
 
+  const reportMeta = standalone?.metadata;
+  const coordinates = reportMeta?.coordinates;
+  const coordinatesLabel =
+    coordinates && Number.isFinite(coordinates.lat) && Number.isFinite(coordinates.lon)
+      ? `${coordinates.lat.toFixed(5)}, ${coordinates.lon.toFixed(5)}`
+      : null;
+  const mapUnavailable =
+    reportMeta?.mapDisplay === 'unavailable'
+    || (reportMeta?.providerWarningsRu?.length ?? 0) > 0;
+
   return {
     reportId: doc.reportId,
     reportMode: doc.reportMode,
@@ -311,5 +326,16 @@ export function buildPremiumPdfViewModel(doc: GeneratedLocationReportDocument): 
       premiumPaid?.finalRecommendation.actionRu ?? launchRecommendation,
       'Сначала подтвердите спрос и конкуренцию, затем выберите сценарий запуска.',
     ),
+    location: {
+      coordinatesLabel: coordinatesLabel
+        ? textField(coordinatesLabel, '—')
+        : null,
+      mapUnavailableNotice: mapUnavailable
+        ? textField(
+            reportMeta?.providerWarningsRu?.[0] ?? PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU,
+            PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU,
+          )
+        : null,
+    },
   };
 }

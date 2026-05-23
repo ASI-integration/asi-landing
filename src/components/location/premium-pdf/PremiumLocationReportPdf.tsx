@@ -178,7 +178,23 @@ export function PremiumLocationReportPdf({ model }: { model: PremiumPdfViewModel
           <div className="relative z-10 mt-auto grid gap-4 sm:grid-cols-2">
             <CoverMetaCard label="Адрес" value={model.address} />
             <CoverMetaCard label="Дата расчёта" value={model.calculatedAtRu} />
+            {model.location.coordinatesLabel ? (
+              <CoverMetaCard
+                label="Координаты"
+                value={model.location.coordinatesLabel.value}
+                className="sm:col-span-2"
+              />
+            ) : null}
             <CoverMetaCard label="Номер отчёта" value={model.reportId} className="sm:col-span-2" />
+            {model.location.mapUnavailableNotice ? (
+              <div className="sm:col-span-2 rounded-2xl border border-amber-200/40 bg-amber-500/15 p-4">
+                <PdfText
+                  field={model.location.mapUnavailableNotice}
+                  className="text-sm font-medium leading-relaxed text-amber-50"
+                  as="p"
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </section>

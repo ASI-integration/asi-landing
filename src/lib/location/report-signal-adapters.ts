@@ -43,6 +43,8 @@ export type PaidReportCalculationContext = {
   score: number | null;
   magnets: Array<{ id: string; label: string; value: string }>;
   transport: Array<{ id: string; label: string; value: string }>;
+  providerWarnings?: string[];
+  mapDisplayAvailable?: boolean;
 };
 
 export type ReportSignalAdapterSummary = {
@@ -99,10 +101,17 @@ function calculationBackedAdapter(args: {
     layer: args.layer,
     enabled: true,
     async collect(request) {
+      const warnings =
+        args.id === 'base_location'
+          ? [
+              ...(context.providerWarnings ?? []),
+              ...(context.mapDisplayAvailable === false ? ['map_display_unavailable'] : []),
+            ]
+          : [];
       return {
         status: 'success',
         signals: args.collectSignals(context),
-        warnings: [],
+        warnings,
         source_meta: {
           adapter_id: args.id,
           layer: args.layer,

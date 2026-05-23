@@ -71,6 +71,42 @@ describe('POST /api/location-full-report/request/[requestId]/simulate-payment', 
     });
   });
 
+  it('continues processing when the request is already paid_unlocked and report_forming', async () => {
+    mockIsYooKassaEnabled.mockReturnValue(false);
+    mockGetLocationReportRequestById.mockResolvedValue({
+      id: 'request-forming',
+      access_tier: 'paid_required',
+      payment_status: 'paid_unlocked',
+      status: 'processing',
+      report_id: 'report-forming',
+    });
+    mockProcessPaidReportRequest.mockResolvedValue({
+      request_id: 'request-forming',
+      status: 'preliminary_ready',
+      preliminary_report_url: '/ru/location-report/report-forming?view=preliminary',
+      final_report_url: null,
+      pdf_url: null,
+      generated_at: null,
+      updated_at: '2026-05-20T10:00:00.000Z',
+    });
+    const { POST } = await import('../route');
+
+    const res = await POST(new Request('http://localhost') as any, {
+      params: Promise.resolve({ requestId: 'request-forming' }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(mockMarkLocationReportRequestPaymentUnlocked).not.toHaveBeenCalled();
+    expect(mockProcessPaidReportRequest).toHaveBeenCalledWith('request-forming');
+    expect(body).toMatchObject({
+      requestId: 'request-forming',
+      status: 'preliminary_ready',
+      paymentStatus: 'paid_unlocked',
+      process: { triggered: true },
+    });
+  });
+
   it('returns a user-safe 503 when the report pipeline is not ready', async () => {
     const { ReportPipelineNotReadyError } = await import('@/lib/location/report-pipeline-not-ready-error');
     mockIsYooKassaEnabled.mockReturnValue(false);

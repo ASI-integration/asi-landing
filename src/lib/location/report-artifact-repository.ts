@@ -51,6 +51,31 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function isTransientSupabaseFetchError(message: string): boolean {
+  return /fetch failed|network|terminated|econnreset|etimedout|socket/i.test(message);
+}
+
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withSupabaseFetchRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!isTransientSupabaseFetchError(message) || attempt === 2) {
+        throw err instanceof Error ? err : new Error(message);
+      }
+      lastError = err instanceof Error ? err : new Error(message);
+      await sleepMs(400 * (attempt + 1));
+    }
+  }
+  throw lastError ?? new Error('supabase_fetch_failed');
+}
+
 function normalizeArtifactMetadata(value: unknown): ReportArtifactMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as ReportArtifactMetadata;
@@ -78,17 +103,23 @@ export class SupabaseReportArtifactRepository implements ReportArtifactRepositor
   constructor(private readonly client: SupabaseArtifactClient = supabase) {}
 
   async getByRequestId(requestId: string): Promise<ReportArtifact | null> {
-    const { data, error } = await this.client
-      .from(ARTIFACT_TABLE)
-      .select(ARTIFACT_COLUMNS)
-      .eq('request_id', requestId)
-      .maybeSingle();
+    return withSupabaseFetchRetry(async () => {
+      const { data, error } = await this.client
+        .from(ARTIFACT_TABLE)
+        .select(ARTIFACT_COLUMNS)
+        .eq('request_id', requestId)
+        .maybeSingle();
 
-    if (error) throw new Error(error.message);
-    return data ? normalizeArtifactRow(data) : null;
+      if (error) throw new Error(error.message);
+      return data ? normalizeArtifactRow(data) : null;
+    });
   }
 
   async upsert(requestId: string, patch: ReportArtifactPatch): Promise<ReportArtifact> {
+    return withSupabaseFetchRetry(async () => this.upsertWithoutRetry(requestId, patch));
+  }
+
+  private async upsertWithoutRetry(requestId: string, patch: ReportArtifactPatch): Promise<ReportArtifact> {
     const existing = await this.getByRequestId(requestId);
     const updatedAt = patch.updated_at ?? nowIso();
     const base = existing ?? createReportArtifact({
@@ -117,6 +148,11 @@ export class SupabaseReportArtifactRepository implements ReportArtifactRepositor
     if (error) throw new Error(error.message);
     if (!data) throw new Error('failed_to_upsert_report_artifact');
     return normalizeArtifactRow(data);
+  }
+
+  /** @internal Used by tests that need a single-attempt upsert. */
+  async upsertOnce(requestId: string, patch: ReportArtifactPatch): Promise<ReportArtifact> {
+    return this.upsertWithoutRetry(requestId, patch);
   }
 }
 

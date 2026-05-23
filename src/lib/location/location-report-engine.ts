@@ -1,7 +1,10 @@
 import type { PersistedStandaloneReportEntity } from './standalone-report-store';
 import { createStandaloneReport, getStandaloneReportById } from './standalone-report-store';
 import { geocodePlainAddressForMarket } from './address-providers/geocode-pipeline';
+import { resolveRuAddressSearchProfiles } from './address-providers/ru-address-search-profile';
+import { normalizeRuAddressQuery } from './address-providers/ru-normalize';
 import type { AddressMarket } from './address-providers/types';
+import type { LocationReportMapDisplay } from './report-result-metadata';
 import { applyLocationDataIntegrityGate } from './location-data-integrity';
 import { buildAnalysis } from './gravity-scoring';
 import { buildLocationReportPermalink } from './report-state';
@@ -34,6 +37,201 @@ import {
 } from './report-request-store';
 import type { LocationAnalysis } from './types';
 import type { PaidReportCalculationContext } from './report-signal-adapters';
+
+const PAID_REPORT_GEOCODE_TIMEOUT_MS = 12_000;
+const PAID_REPORT_OSM_WALL_CLOCK_MS = 26_000;
+const PAID_REPORT_OSM_REQUEST_TIMEOUT_MS = 6_000;
+
+export const PAID_REPORT_DEGRADED_MAP_DATA_WARNING = 'paid_report_degraded_map_data';
+export const PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING = 'paid_report_geocode_unavailable';
+export const PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU =
+  'Карта временно недоступна, расчёт сохранён.';
+
+export type PaidReportCoordinateResolution = {
+  lat: number;
+  lon: number;
+  providerWarnings: string[];
+  mapDisplay: LocationReportMapDisplay;
+};
+
+const RU_DEFAULT_CENTER = { lat: 55.75, lon: 37.62 } as const;
+
+export function isPaidReportRecoverableProcessingError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /geocode_timeout|overpass|osm|network|aborted|timeout|terminated|fetch failed|econnreset|enotfound|socket/i.test(msg);
+}
+
+async function geocodePlainAddressForPaidReport(
+  market: AddressMarket,
+  address: string,
+): Promise<Awaited<ReturnType<typeof geocodePlainAddressForMarket>>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      geocodePlainAddressForMarket(market, address, { maxVariants: 2 }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('geocode_timeout')), PAID_REPORT_GEOCODE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    return { result: null, winner: null, attempts: [] };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Bounded Overpass fetch for paid report MVP — avoids multi-minute full-profile retries. */
+export async function fetchOsmDataForPaidReport(
+  lat: number,
+  lon: number,
+): Promise<Awaited<ReturnType<typeof fetchOsmData>>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PAID_REPORT_OSM_WALL_CLOCK_MS);
+  try {
+    return await fetchOsmData(lat, lon, {
+      signal: controller.signal,
+      fastDemo: true,
+      requestTimeoutMs: PAID_REPORT_OSM_REQUEST_TIMEOUT_MS,
+      fastDemoPrimaryTimeoutMs: 12_000,
+      fastDemoFallbackTimeoutMs: 10_000,
+      allowBroadFallback: false,
+      maxEndpointAttempts: 2,
+    });
+  } catch {
+    return { elements: [], hadProviderFailure: true, usedFallbackQuery: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function resolveCityCenterFallback(
+  market: AddressMarket,
+  address: string,
+): { lat: number; lon: number } | null {
+  if (market !== 'ru') return null;
+  const { normalized } = normalizeRuAddressQuery(address);
+  const resolution = resolveRuAddressSearchProfiles({
+    normalizedQuery: normalized,
+    contextCity: null,
+    biasLat: null,
+    biasLon: null,
+  });
+  const center = resolution.profiles[0]?.biasCenter;
+  return center ?? RU_DEFAULT_CENTER;
+}
+
+export function mapPaidReportProviderWarningsRu(
+  providerWarnings: readonly string[],
+  mapDisplay: LocationReportMapDisplay,
+): string[] {
+  if (
+    mapDisplay === 'unavailable'
+    || providerWarnings.includes(PAID_REPORT_DEGRADED_MAP_DATA_WARNING)
+    || providerWarnings.includes(PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING)
+  ) {
+    return [PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU];
+  }
+  return [];
+}
+
+export async function resolvePaidReportCoordinates(
+  entity: LocationReportRequestEntity,
+): Promise<PaidReportCoordinateResolution> {
+  const market = parseMarketFromLocale(entity.locale);
+  const rawAddress = cleanString(entity.address);
+  if (!rawAddress) throw new Error('address_required');
+
+  const providerWarnings: string[] = [];
+  let mapDisplay: LocationReportMapDisplay = 'available';
+
+  if (entity.lat != null && entity.lon != null) {
+    return { lat: entity.lat, lon: entity.lon, providerWarnings, mapDisplay };
+  }
+
+  const { result } = await geocodePlainAddressForPaidReport(market, rawAddress);
+  if (result) {
+    return { lat: result.lat, lon: result.lon, providerWarnings, mapDisplay };
+  }
+
+  const fallback = resolveCityCenterFallback(market, rawAddress);
+  if (!fallback) {
+    throw new Error('address_not_found');
+  }
+
+  providerWarnings.push(PAID_REPORT_GEOCODE_UNAVAILABLE_WARNING);
+  mapDisplay = 'unavailable';
+  return { ...fallback, providerWarnings, mapDisplay };
+}
+
+function applyPaidReportMapDataIntegrity(
+  analysis: LocationAnalysis,
+  args: {
+    lat: number;
+    lon: number;
+    rawObjectsCount: number;
+    hadProviderFailure: boolean;
+    usedFallbackQuery?: boolean;
+    cacheServed?: boolean;
+  },
+): string[] {
+  const degraded = args.rawObjectsCount === 0 || args.hadProviderFailure;
+  if (!degraded) {
+    applyLocationDataIntegrityGate(analysis, args);
+    return [];
+  }
+
+  analysis.analysisIntegrity = {
+    analysisIncomplete: true,
+    scoreBlockedDueToIncompleteData: false,
+    reasons: [PAID_REPORT_DEGRADED_MAP_DATA_WARNING],
+  };
+  return [PAID_REPORT_DEGRADED_MAP_DATA_WARNING];
+}
+
+function isTransientFetchError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /fetch failed|network|econnreset|etimedout|socket/i.test(msg);
+}
+
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function createStandaloneReportWithRetry(
+  args: Parameters<typeof createStandaloneReport>[0],
+): Promise<{ reportId: string }> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await createStandaloneReport(args);
+    } catch (err) {
+      lastError = err;
+      if (!isTransientFetchError(err) || attempt === 2) break;
+      await sleepMs(400 * (attempt + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function buildPaidLocationAnalysis(
+  lat: number,
+  lon: number,
+  osm: Awaited<ReturnType<typeof fetchOsmData>>,
+): { analysis: LocationAnalysis; integrityWarnings: string[] } {
+  const analysis = buildAnalysis(osm.elements, lat, lon, { spatialFoundation: true });
+  const integrityWarnings = applyPaidReportMapDataIntegrity(analysis, {
+    lat,
+    lon,
+    rawObjectsCount: osm.elements.length,
+    hadProviderFailure: osm.hadProviderFailure,
+    usedFallbackQuery: osm.usedFallbackQuery,
+    cacheServed: false,
+  });
+  if (!analysis.locationScore) {
+    throw new Error('locationScore_unavailable');
+  }
+  return { analysis, integrityWarnings };
+}
 
 export type FreeLocationReportNearbyObjectSummary = {
   summaryRu: string;
@@ -159,6 +357,8 @@ function buildPaidReportCalculationContext(args: {
   lon: number;
   analysis: LocationAnalysis;
   verdict: string;
+  providerWarnings?: string[];
+  mapDisplayAvailable?: boolean;
 }): PaidReportCalculationContext {
   const score = args.analysis.locationScore;
   const magnets = (args.analysis.strongestMagnets.length
@@ -185,6 +385,8 @@ function buildPaidReportCalculationContext(args: {
       label: stop.name,
       value: `${stop.name} (${Math.round(stop.distance)} м)`,
     })),
+    providerWarnings: args.providerWarnings ?? [],
+    mapDisplayAvailable: args.mapDisplayAvailable ?? true,
   };
 }
 
@@ -195,27 +397,18 @@ async function buildPaidLocationReportFromRequest(
   const rawAddress = cleanString(entity.address);
   if (!rawAddress) throw new Error('address_required');
 
-  let lat = entity.lat;
-  let lon = entity.lon;
-  if (lat == null || lon == null) {
-    const { result } = await geocodePlainAddressForMarket(market, rawAddress);
-    if (!result) throw new Error('address_not_found');
-    lat = result.lat;
-    lon = result.lon;
+  const coords = await resolvePaidReportCoordinates(entity);
+  const { lat, lon } = coords;
+  const providerWarnings = [...coords.providerWarnings];
+  let mapDisplay = coords.mapDisplay;
+
+  const osm = await fetchOsmDataForPaidReport(lat, lon);
+  const { analysis, integrityWarnings } = buildPaidLocationAnalysis(lat, lon, osm);
+  if (integrityWarnings.length > 0) {
+    providerWarnings.push(...integrityWarnings);
+    mapDisplay = 'unavailable';
   }
-
-  const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
-  const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
-  applyLocationDataIntegrityGate(analysis, {
-    lat,
-    lon,
-    rawObjectsCount: elements.length,
-    hadProviderFailure,
-    usedFallbackQuery,
-    cacheServed: false,
-  });
-
-  if (!analysis.locationScore) throw new Error('locationScore_unavailable');
+  const providerWarningsRu = mapPaidReportProviderWarningsRu(providerWarnings, mapDisplay);
 
   const verdict =
     analysis.locationDecision?.publicSummary?.audienceVerdictRu ??
@@ -230,20 +423,37 @@ async function buildPaidLocationReportFromRequest(
       : buildLocationStandaloneReport({
         address: rawAddress,
         inputAddress: rawAddress,
-        rawOsmElements: elements,
+        rawOsmElements: osm.elements,
         analysis,
         verdict,
         market: entity.locale === 'ru' ? 'RU' : 'INTERNATIONAL',
         reportMode: 'paid',
+        coordinates: { lat, lon },
+        mapDisplay,
+        providerWarningsRu,
       });
 
-  const { reportId } = await createStandaloneReport({ locale: entity.locale, report: report as any });
-  await linkLocationReportRequestReport({
-    requestId: entity.id,
-    reportId,
-    lat,
-    lon,
-  });
+  let reportId = entity.report_id ?? entity.id;
+  try {
+    const created = await createStandaloneReportWithRetry({ locale: entity.locale, report: report as any });
+    reportId = created.reportId;
+    await linkLocationReportRequestReport({
+      requestId: entity.id,
+      reportId,
+      lat,
+      lon,
+    });
+  } catch (persistErr) {
+    await linkLocationReportRequestReport({
+      requestId: entity.id,
+      reportId,
+      lat,
+      lon,
+    }).catch(() => undefined);
+    if (!isTransientFetchError(persistErr)) {
+      throw persistErr;
+    }
+  }
 
   return {
     reportId,
@@ -256,6 +466,8 @@ async function buildPaidLocationReportFromRequest(
       lon,
       analysis,
       verdict,
+      providerWarnings,
+      mapDisplayAvailable: mapDisplay === 'available',
     }),
   };
 }
@@ -263,16 +475,8 @@ async function buildPaidLocationReportFromRequest(
 async function resolvePaidRequestCoordinates(
   entity: LocationReportRequestEntity,
 ): Promise<{ lat: number; lon: number }> {
-  if (entity.lat != null && entity.lon != null) {
-    return { lat: entity.lat, lon: entity.lon };
-  }
-
-  const market = parseMarketFromLocale(entity.locale);
-  const rawAddress = cleanString(entity.address);
-  if (!rawAddress) throw new Error('address_required');
-  const { result } = await geocodePlainAddressForMarket(market, rawAddress);
-  if (!result) throw new Error('address_not_found');
-  return { lat: result.lat, lon: result.lon };
+  const resolved = await resolvePaidReportCoordinates(entity);
+  return { lat: resolved.lat, lon: resolved.lon };
 }
 
 async function resolveOrComputePaidAnalysis(
@@ -285,24 +489,16 @@ async function resolveOrComputePaidAnalysis(
     return cachedByAddr.entry.analysis;
   }
 
-  const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
-  const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
-  applyLocationDataIntegrityGate(analysis, {
-    lat,
-    lon,
-    rawObjectsCount: elements.length,
-    hadProviderFailure,
-    usedFallbackQuery,
-    cacheServed: false,
-  });
-  if (!analysis.locationScore) throw new Error('locationScore_unavailable');
+  const osm = await fetchOsmDataForPaidReport(lat, lon);
+  const { analysis } = buildPaidLocationAnalysis(lat, lon, osm);
   return analysis;
 }
 
 export async function ensurePaidLocationReportForRequest(
   requestId: string,
+  options: { entity?: LocationReportRequestEntity } = {},
 ): Promise<PaidLocationReportCalculationResult> {
-  const entity = await getLocationReportRequestById(requestId);
+  const entity = options.entity ?? await getLocationReportRequestById(requestId);
   if (!entity) throw new Error('request_not_found');
 
   if (entity.report_id) {

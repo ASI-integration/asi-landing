@@ -52,6 +52,29 @@ afterEach(() => {
 });
 
 describe('GET /api/location-report/[reportId]/pdf', () => {
+  it('returns PDF without requiring Yandex map env keys', { timeout: 15_000 }, async () => {
+    delete process.env.YANDEX_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY;
+
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'report-yandex-free',
+      locale: 'ru',
+      address: report.address,
+      report_version: report.version,
+      report,
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    mockRenderLocationReportPdfFromPrintRoute.mockResolvedValue(mockPdfBody);
+    const { GET } = await import('../route');
+
+    const res = await GET(new Request('http://localhost/api/location-report/report-yandex-free/pdf') as any, {
+      params: Promise.resolve({ reportId: 'report-yandex-free' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRenderLocationReportPdfFromPrintRoute).toHaveBeenCalledWith('report-yandex-free');
+  });
+
   it('returns a real PDF attachment rendered from the print route', { timeout: 15_000 }, async () => {
     mockGetStandaloneReportById.mockResolvedValue({
       id: 'report-1',

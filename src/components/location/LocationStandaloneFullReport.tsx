@@ -7,6 +7,8 @@ import { URBAN_DEVELOPMENT_LIVE_SOURCES_DISCLAIMER_RU } from '@/lib/location/rep
 import { LOCATION_REPORT_PRODUCT_PATH } from '@/lib/location/report-state';
 import { buildDashboardReportRequestHref } from '@/lib/location/pending-location-report';
 import { LocationReportPublicPreview } from '@/components/location/LocationReportPublicPreview';
+import { LocationReportMapPanel } from '@/components/location/LocationReportMapPanel';
+import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from '@/lib/location/location-report-engine';
 import { PremiumPaidReportSections } from '@/components/location/PremiumPaidReportSections';
 import {
   buildPremiumPaidReportContent,
@@ -209,6 +211,12 @@ function LocationStandalonePaidFullReport({
     : undefined;
   const urbanForecastNoLiveData =
     urbanForecast != null && urbanForecast.score === 0 && urbanForecast.contributingSignals.length === 0;
+  const meta = report.metadata;
+  const mapUnavailable =
+    meta?.mapDisplay === 'unavailable'
+    || (meta?.providerWarningsRu?.length ?? 0) > 0;
+  const mapUnavailableMessageRu =
+    meta?.providerWarningsRu?.[0] ?? PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU;
 
   const demandSignalLines = useMemo(() => {
     if (isFreePreview || !report.unifiedReport?.sections) return [];
@@ -287,8 +295,6 @@ function LocationStandalonePaidFullReport({
       { id: 'next-step', label: 'Следующий шаг' },
     ];
   }, [isFreePreview, demandSignalLines.length, premiumPaidReport]);
-
-  const meta = report.metadata;
 
   const generatedAt = useMemo(() => {
     const d = new Date(report.generated_at_iso);
@@ -446,6 +452,15 @@ function LocationStandalonePaidFullReport({
 
             <Toc items={tocItems} />
           </div>
+        </div>
+
+        <div className="mt-6">
+          <LocationReportMapPanel
+            address={report.address}
+            coordinates={meta?.coordinates ?? null}
+            mapUnavailable={mapUnavailable}
+            unavailableMessageRu={mapUnavailableMessageRu}
+          />
         </div>
 
         <div className="mt-10 sm:mt-12 space-y-6">

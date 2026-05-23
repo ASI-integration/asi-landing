@@ -65,13 +65,14 @@ function uniqueGeocodeAttempts(addresses: string[]): string[] {
 export async function geocodePlainAddressForMarket(
   market: AddressMarket,
   address: string,
+  options?: { maxVariants?: number },
 ): Promise<{
   result: GeocodeResult | null;
   winner: string | null;
   attempts: GeocodeAttemptStatus[];
 }> {
   const trimmed = address.trim();
-  const variantList =
+  const variantListRaw =
     market === 'ru'
       ? uniqueGeocodeAttempts([
           trimmed,
@@ -86,6 +87,10 @@ export async function geocodePlainAddressForMarket(
           ),
         ])
       : [trimmed];
+  const variantList =
+    options?.maxVariants != null
+      ? variantListRaw.slice(0, Math.max(1, options.maxVariants))
+      : variantListRaw;
 
   const allAttempts: GeocodeAttemptStatus[] = [];
   let lastWinner: string | null = null;

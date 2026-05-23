@@ -22,7 +22,12 @@ vi.mock('@/components/location/LocationReportPublicPreview', () => ({
 }));
 
 vi.mock('@/components/location/LocationStandaloneFullReport', () => ({
-  LocationStandaloneFullReport: ({ reportId }: { reportId?: string }) => <div>Подробный отчёт {reportId}</div>,
+  LocationStandaloneFullReport: ({ reportId, report }: { reportId?: string; report?: { metadata?: { providerWarningsRu?: string[] } } }) => (
+    <div>
+      Подробный отчёт {reportId}
+      {report?.metadata?.providerWarningsRu?.[0] ?? null}
+    </div>
+  ),
 }));
 
 vi.mock('@/components/location/CommercialReportView', () => ({
@@ -127,6 +132,48 @@ describe('/ru/location-report/[reportId]', () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain('Подробный отчёт paid-1');
+  });
+
+  it('renders paid report page without Yandex env keys', async () => {
+    delete process.env.YANDEX_MAPS_API_KEY;
+    delete process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY;
+
+    mockGetStandaloneReportById.mockResolvedValue({
+      id: 'paid-map',
+      locale: 'ru',
+      address: paidReport.address,
+      report_version: paidReport.version,
+      report: {
+        ...paidReport,
+        metadata: {
+          calculatedAt: '2026-05-16T10:00:00.000Z',
+          inputAddress: paidReport.address,
+          normalizedAddress: paidReport.address.toLowerCase(),
+          reportMode: 'paid',
+          dataFreshness: {
+            currentLocationAsOfIso: '2026-05-16T10:00:00.000Z',
+            summaryRu: 'Тест',
+          },
+          sourceStatus: {
+            current_location: 'live',
+            urban_development: 'cache_or_not_connected',
+            procurement: 'official_api_disabled',
+          },
+          coordinates: { lat: 59.93, lon: 30.33 },
+          mapDisplay: 'unavailable',
+          providerWarningsRu: ['Карта временно недоступна, расчёт сохранён.'],
+          clientFreshnessRu: { usedSources: [], preparingSources: [] },
+        },
+      },
+      created_at: '2026-05-16T10:00:00.000Z',
+    });
+    const { default: Page } = await import('../page');
+
+    const element = await Page({ params: Promise.resolve({ reportId: 'paid-map' }) });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain('Подробный отчёт paid-map');
+    expect(html).toContain('Карта временно недоступна, расчёт сохранён.');
   });
 
   it('does not unlock a paid report from the permalink unless access is persisted', async () => {

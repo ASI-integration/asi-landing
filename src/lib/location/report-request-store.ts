@@ -68,18 +68,39 @@ export async function createLocationReportRequest(args: {
   return { requestId: data.id as string };
 }
 
+function isTransientSupabaseFetchError(message: string): boolean {
+  return /fetch failed|network|terminated|econnreset|etimedout|socket/i.test(message);
+}
+
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function getLocationReportRequestById(
   requestId: string,
 ): Promise<LocationReportRequestEntity | null> {
-  const { data, error } = await supabase
-    .from('location_report_requests')
-    .select('id, locale, mode, address, lat, lon, delivery_channel, delivery_target, access_tier, payment_status, status, report_id, error, created_at, updated_at')
-    .eq('id', requestId)
-    .maybeSingle();
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const { data, error } = await supabase
+        .from('location_report_requests')
+        .select('id, locale, mode, address, lat, lon, delivery_channel, delivery_target, access_tier, payment_status, status, report_id, error, created_at, updated_at')
+        .eq('id', requestId)
+        .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-  return data as any;
+      if (error) throw new Error(error.message);
+      if (!data) return null;
+      return data as LocationReportRequestEntity;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!isTransientSupabaseFetchError(message) || attempt === 2) {
+        throw err instanceof Error ? err : new Error(message);
+      }
+      lastError = err instanceof Error ? err : new Error(message);
+      await sleepMs(400 * (attempt + 1));
+    }
+  }
+  throw lastError ?? new Error('request_read_failed');
 }
 
 export async function markLocationReportRequestPaymentUnlocked(requestId: string): Promise<void> {

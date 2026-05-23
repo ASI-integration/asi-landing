@@ -73,7 +73,12 @@ async function persistProducerSnapshot(
     artifactStatus: artifactStatusForReportLayer(args.reportLayer),
   });
   if (!snapshotInput) return;
-  const snapshot = await repository.createSnapshot(snapshotInput);
+  let snapshot;
+  try {
+    snapshot = await repository.createSnapshot(snapshotInput);
+  } catch {
+    return;
+  }
   void auditReportEvent({
     request_id: args.requestId,
     report_id: snapshot.report_id ?? args.requestId,

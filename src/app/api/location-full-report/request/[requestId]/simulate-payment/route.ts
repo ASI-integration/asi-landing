@@ -8,11 +8,13 @@ import {
 } from '@/lib/location/report-status-flow';
 import { REPORT_ARTIFACT_STATUS } from '@/lib/location/report-artifact';
 import { processPaidReportRequest } from '@/lib/location/paid-report-orchestration';
+import { isPaidReportRecoverableProcessingError } from '@/lib/location/location-report-engine';
 import { ReportPipelineNotReadyError } from '@/lib/location/report-pipeline-not-ready-error';
 import { toReportPipelineNotReadyPayload } from '@/lib/location/report-pipeline-readiness';
 import { isYooKassaEnabled, YOOKASSA_PENDING_REVIEW_MESSAGE } from '@/lib/payments/yookassa-env';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 90;
 
 function isPaymentSimulationAllowed(): boolean {
   if (isYooKassaEnabled()) return false;
@@ -69,7 +71,20 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ requestId
         { status: 503 },
       );
     }
-    const msg = err instanceof Error ? err.message : String(err);
+    if (isPaidReportRecoverableProcessingError(err)) {
+      return NextResponse.json(
+        {
+          requestId,
+          status: REPORT_ARTIFACT_STATUS.reportForming,
+          paymentStatus: 'paid_unlocked',
+          error: 'report_processing_deferred',
+          retryable: true,
+          next: buildLocationReportStatusHref(undefined, requestId),
+          process: { triggered: false },
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ error: 'simulation_failed' }, { status: 502 });
   }
 }

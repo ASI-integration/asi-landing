@@ -320,6 +320,8 @@ type FetchOverpassQueryOptions = {
   queryMode?: OverpassQueryMode;
   /** Approximate max radius represented by this query. */
   queryRadiusM?: number;
+  /** Stop after this many live endpoint attempts (paid-report MVP budgets). */
+  maxEndpointAttempts?: number;
 };
 
 export type OverpassQueryMode = 'full' | 'light_fallback';
@@ -536,9 +538,17 @@ async function fetchOverpassQuery(
 
   // Prefer endpoints that are not on cooldown.
   const ordered = [...OVERPASS_ENDPOINTS].sort((a, b) => getEndpointHealth(a).nextAvailableAt - getEndpointHealth(b).nextAvailableAt);
+  let endpointAttempts = 0;
 
   for (const endpoint of ordered) {
     if (options?.signal?.aborted) break;
+    if (
+      options?.maxEndpointAttempts != null
+      && endpointAttempts >= options.maxEndpointAttempts
+    ) {
+      hadProviderFailure = true;
+      break;
+    }
 
     const h = getEndpointHealth(endpoint);
     if (!options?.ignoreEndpointCooldown && h.nextAvailableAt > Date.now()) {
@@ -560,6 +570,7 @@ async function fetchOverpassQuery(
       continue;
     }
 
+    endpointAttempts += 1;
     const r = await fetchFromEndpoint(endpoint, query, options);
     if (r.ok) return { elements: r.elements, hadProviderFailure };
 
@@ -869,6 +880,8 @@ export type FetchOsmDataOptions = {
   signal?: AbortSignal;
   /** Hard timeout per endpoint request (ms). Default 20000. */
   requestTimeoutMs?: number;
+  /** Stop each Overpass query after this many live endpoint attempts. */
+  maxEndpointAttempts?: number;
   /** Fast public demo profile: bounded primary query, then one light fallback. */
   fastDemo?: boolean;
   /** Max wall-clock time for the fast-demo primary query. */

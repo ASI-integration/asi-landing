@@ -25,6 +25,8 @@ export type LocationReportDataFreshness = {
   summaryRu: string;
 };
 
+export type LocationReportMapDisplay = 'available' | 'unavailable';
+
 export type LocationReportResultMetadata = {
   calculatedAt: string;
   inputAddress: string;
@@ -32,6 +34,12 @@ export type LocationReportResultMetadata = {
   reportMode: 'free' | 'paid';
   dataFreshness: LocationReportDataFreshness;
   sourceStatus: LocationReportSourceStatus;
+  /** Координаты расчёта — для отображения без внешней картографии */
+  coordinates?: { lat: number; lon: number };
+  /** Интерактивная карта не обязательна для просмотра отчёта */
+  mapDisplay?: LocationReportMapDisplay;
+  /** Предупреждения для UI (без технических кодов) */
+  providerWarningsRu?: string[];
   /** Короткие формулировки для платного UI */
   clientFreshnessRu: {
     usedSources: string[];
@@ -58,6 +66,9 @@ export function buildLocationReportResultMetadata(init: {
   reportMode: 'free' | 'paid';
   calculatedAtIso: string;
   env?: MetadataEnv;
+  coordinates?: { lat: number; lon: number };
+  mapDisplay?: LocationReportMapDisplay;
+  providerWarningsRu?: string[];
 }): LocationReportResultMetadata {
   const normalizedAddress = init.normalizedAddress ?? normalizeReportAddress(init.inputAddress);
   const procurement = resolveProcurementSourceDisclosureStatus(init.env);
@@ -84,6 +95,9 @@ export function buildLocationReportResultMetadata(init: {
     reportMode: init.reportMode,
     dataFreshness,
     sourceStatus,
+    ...(init.coordinates ? { coordinates: init.coordinates } : {}),
+    ...(init.mapDisplay ? { mapDisplay: init.mapDisplay } : {}),
+    ...(init.providerWarningsRu?.length ? { providerWarningsRu: init.providerWarningsRu } : {}),
     clientFreshnessRu,
   };
 }
