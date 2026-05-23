@@ -39,7 +39,7 @@ export default function HomeRu() {
 
         {/* ── Воронка: проверка → решение ── */}
         <section
-          className="scroll-mt-20 py-12 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)] border-t-2 border-[color:var(--t-accent)]"
+          className="scroll-mt-20 py-12 sm:py-16 px-4 sm:px-6 bg-[var(--t-bg)]"
         >
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-bold text-[var(--t-text)] mb-2">
