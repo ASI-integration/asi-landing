@@ -12,11 +12,12 @@ import {
   reportArtifactRepository,
   type ReportArtifactRepository,
 } from './report-artifact-repository';
+import { ensurePaidLocationReportForRequest } from './location-report-engine';
 import {
   createPaidReportProducers,
-  paidReportProducers,
   type PaidReportProducer,
 } from './report-producers';
+import { createPaidReportCalculationAdapterRegistry } from './report-signal-adapters';
 import type { ReportSnapshotRepository } from './report-snapshot-repository';
 import { reportSnapshotRepository } from './report-snapshot-repository';
 import { ensureEntitlementsAfterFinalSnapshot } from './report-access-entitlement-orchestration';
@@ -75,18 +76,13 @@ export async function processPaidReportRequest(
     throw new Error('paid_unlock_required');
   }
 
-  const producers = options.producers ?? (
-    options.snapshotRepository
-      ? createPaidReportProducers({ snapshotRepository: options.snapshotRepository })
-      : paidReportProducers
-  );
   const artifacts = options.artifactRepository ?? reportArtifactRepository;
   const snapshots = options.snapshotRepository ?? reportSnapshotRepository;
   const deliveries = options.deliveryRepository ?? reportDeliveryRepository;
   const entitlements = options.entitlementRepository ?? reportAccessEntitlementRepository;
   const audit = options.auditRepository ?? reportAuditRepository;
   const auditOptions = { repository: audit };
-  const reportId = entity.report_id ?? requestId;
+  let reportId = entity.report_id ?? requestId;
   const existingArtifact = await artifacts.getByRequestId(requestId);
   if (existingArtifact?.status === REPORT_ARTIFACT_STATUS.pdfReady) {
     return existingArtifact;
@@ -113,6 +109,15 @@ export async function processPaidReportRequest(
     });
     throw new ReportPipelineNotReadyError(readiness);
   }
+
+  const calculation = await ensurePaidLocationReportForRequest(requestId);
+  reportId = calculation.reportId;
+  const producerOptions = {
+    reportId,
+    adapterRegistry: createPaidReportCalculationAdapterRegistry(calculation.context),
+    snapshotRepository: options.snapshotRepository,
+  };
+  const producers = options.producers ?? createPaidReportProducers(producerOptions);
 
   await markLocationReportRequestProcessing(requestId);
   await artifacts.upsert(requestId, {
@@ -186,7 +191,7 @@ export async function processPaidReportRequest(
 
     await markLocationReportRequestCompleted({
       requestId,
-      reportId: entity.report_id ?? requestId,
+      reportId: calculation.reportId,
     });
     await auditReportEvent({
       request_id: requestId,

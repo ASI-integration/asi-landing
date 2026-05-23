@@ -32,6 +32,19 @@ export type ReportSignalAdapter = {
 
 export type ReportSignalAdapterRegistry = readonly ReportSignalAdapter[];
 
+export type PaidReportCalculationContext = {
+  requestId: string;
+  reportId: string;
+  address: string;
+  lat: number;
+  lon: number;
+  verdict: string;
+  recommendation: string | null;
+  score: number | null;
+  magnets: Array<{ id: string; label: string; value: string }>;
+  transport: Array<{ id: string; label: string; value: string }>;
+};
+
 export type ReportSignalAdapterSummary = {
   id: string;
   label: string;
@@ -72,6 +85,82 @@ function placeholderAdapter(args: {
       };
     },
   };
+}
+
+function calculationBackedAdapter(args: {
+  id: string;
+  label: string;
+  layer: ReportSignalLayer;
+  collectSignals: (context: PaidReportCalculationContext) => ReportSignal[];
+}): (context: PaidReportCalculationContext) => ReportSignalAdapter {
+  return context => ({
+    id: args.id,
+    label: args.label,
+    layer: args.layer,
+    enabled: true,
+    async collect(request) {
+      return {
+        status: 'success',
+        signals: args.collectSignals(context),
+        warnings: [],
+        source_meta: {
+          adapter_id: args.id,
+          layer: args.layer,
+          request_id: request.requestId,
+          stage: request.stage,
+          source: 'location_calculation',
+        },
+      };
+    },
+  });
+}
+
+export function createPaidReportCalculationAdapterRegistry(
+  context: PaidReportCalculationContext,
+): ReportSignalAdapterRegistry {
+  const enabled = [
+    calculationBackedAdapter({
+      id: 'base_location',
+      label: 'Base location',
+      layer: 'fast',
+      collectSignals: () => [
+        { id: 'address', label: 'Адрес', value: context.address },
+        { id: 'coordinates', label: 'Координаты', value: { lat: context.lat, lon: context.lon } },
+        ...(context.score == null
+          ? []
+          : [{ id: 'score', label: 'Оценка', value: context.score }]),
+        ...(context.recommendation
+          ? [{ id: 'recommendation', label: 'Стратегия', value: context.recommendation }]
+          : []),
+        ...(context.verdict
+          ? [{ id: 'verdict', label: 'Вывод', value: context.verdict }]
+          : []),
+      ],
+    })(context),
+    calculationBackedAdapter({
+      id: 'prime_magnets',
+      label: 'Prime magnets',
+      layer: 'fast',
+      collectSignals: () => context.magnets.map(item => ({
+        id: item.id,
+        label: item.label,
+        value: item.value,
+      })),
+    })(context),
+    calculationBackedAdapter({
+      id: 'transport',
+      label: 'Transport',
+      layer: 'fast',
+      collectSignals: () => context.transport.map(item => ({
+        id: item.id,
+        label: item.label,
+        value: item.value,
+      })),
+    })(context),
+  ];
+
+  const disabled = REPORT_SIGNAL_ADAPTER_REGISTRY.filter(adapter => !adapter.enabled);
+  return [...enabled, ...disabled];
 }
 
 export const REPORT_SIGNAL_ADAPTER_REGISTRY = [

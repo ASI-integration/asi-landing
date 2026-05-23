@@ -1,10 +1,7 @@
 import { buildCanonicalRenderOutputsForDocument } from './canonical-report-render-pipeline';
 import { buildCanonicalReportDocument } from './canonical-report-document';
 import {
-  LOCATION_REPORT_SAMPLE_PATH,
-  LOCATION_REPORT_SAMPLE_PDF_PATH,
-} from './report-state';
-import {
+  buildReportArtifactUrls,
   REPORT_ARTIFACT_STATUS,
   type ReportArtifact,
 } from './report-artifact';
@@ -46,6 +43,7 @@ export type PaidReportProducer = {
 };
 
 export type PaidReportProducerOptions = {
+  reportId?: string;
   adapterRegistry?: ReportSignalAdapterRegistry;
   snapshotRepository?: ReportSnapshotRepository;
   materializedRepository?: MaterializedReportRepository;
@@ -101,20 +99,20 @@ async function persistProducerSnapshot(
   });
 }
 
-function requestQuery(requestId: string): string {
-  return new URLSearchParams({ requestId }).toString();
+function resolvePaidReportArtifactUrls(
+  options: PaidReportProducerOptions,
+  requestId: string,
+): Pick<ReportArtifact, 'preliminary_report_url' | 'final_report_url' | 'pdf_url'> {
+  const reportId = options.reportId ?? requestId;
+  return buildReportArtifactUrls(reportId);
 }
 
-export function buildStaticPaidReportArtifactUrls(requestId: string): Pick<
+/** @deprecated Use buildReportArtifactUrls(reportId) for paid artifacts. */
+export function buildStaticPaidReportArtifactUrls(reportId: string): Pick<
   ReportArtifact,
   'preliminary_report_url' | 'final_report_url' | 'pdf_url'
 > {
-  const query = requestQuery(requestId);
-  return {
-    preliminary_report_url: `${LOCATION_REPORT_SAMPLE_PATH}?${query}&view=preliminary`,
-    final_report_url: `${LOCATION_REPORT_SAMPLE_PATH}?${query}`,
-    pdf_url: `${LOCATION_REPORT_SAMPLE_PDF_PATH}?${query}`,
-  };
+  return buildReportArtifactUrls(reportId);
 }
 
 export function createPreliminaryReportProducer(
@@ -132,7 +130,7 @@ export function createPreliminaryReportProducer(
       const generatedAt = new Date().toISOString();
 
       const update: ArtifactUpdate = {
-        preliminary_report_url: buildStaticPaidReportArtifactUrls(requestId).preliminary_report_url,
+        preliminary_report_url: resolvePaidReportArtifactUrls(options, requestId).preliminary_report_url,
         metadata: {
           adapter_summary: adapterSummary,
           report_sections,
@@ -189,7 +187,7 @@ export function createFinalReportProducer(
       );
 
       const update: ArtifactUpdate = {
-        final_report_url: buildStaticPaidReportArtifactUrls(requestId).final_report_url,
+        final_report_url: resolvePaidReportArtifactUrls(options, requestId).final_report_url,
         metadata: {
           adapter_summary: adapterSummary,
           report_sections,
@@ -207,21 +205,25 @@ export function createFinalReportProducer(
   };
 }
 
-export const pdfReportProducer: PaidReportProducer = {
-  kind: 'pdf',
-  async generate(requestId) {
-    return {
-      pdf_url: buildStaticPaidReportArtifactUrls(requestId).pdf_url,
-      generated_at: new Date().toISOString(),
-    };
-  },
-};
+export function createPdfReportProducer(options: PaidReportProducerOptions = {}): PaidReportProducer {
+  return {
+    kind: 'pdf',
+    async generate(requestId) {
+      return {
+        pdf_url: resolvePaidReportArtifactUrls(options, requestId).pdf_url,
+        generated_at: new Date().toISOString(),
+      };
+    },
+  };
+}
+
+export const pdfReportProducer = createPdfReportProducer();
 
 export function createPaidReportProducers(options: PaidReportProducerOptions = {}) {
   return {
     preliminary: createPreliminaryReportProducer(options),
     final: createFinalReportProducer(options),
-    pdf: pdfReportProducer,
+    pdf: createPdfReportProducer(options),
   } satisfies Record<PaidReportProducerKind, PaidReportProducer>;
 }
 

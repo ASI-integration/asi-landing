@@ -26,7 +26,14 @@ import type {
   LocationStandaloneReport,
   PersistableLocationReport,
 } from './standalone-report';
-import { buildLocationStandaloneReport } from './standalone-report';
+import { buildCommercialReport, buildLocationStandaloneReport } from './standalone-report';
+import {
+  getLocationReportRequestById,
+  linkLocationReportRequestReport,
+  type LocationReportRequestEntity,
+} from './report-request-store';
+import type { LocationAnalysis } from './types';
+import type { PaidReportCalculationContext } from './report-signal-adapters';
 
 export type FreeLocationReportNearbyObjectSummary = {
   summaryRu: string;
@@ -132,6 +139,209 @@ function sourceLabel(usedFallback: boolean | undefined): string {
 
 function nearbyObjectSummaries(factors: string[]): FreeLocationReportNearbyObjectSummary[] {
   return factors.slice(0, 5).map(summaryRu => ({ summaryRu }));
+}
+
+export type PaidLocationReportCalculationResult = {
+  reportId: string;
+  context: PaidReportCalculationContext;
+  analysis: LocationAnalysis;
+};
+
+function parseMarketFromLocale(locale: 'ru' | 'en'): AddressMarket {
+  return locale === 'ru' ? 'ru' : 'en';
+}
+
+function buildPaidReportCalculationContext(args: {
+  requestId: string;
+  reportId: string;
+  address: string;
+  lat: number;
+  lon: number;
+  analysis: LocationAnalysis;
+  verdict: string;
+}): PaidReportCalculationContext {
+  const score = args.analysis.locationScore;
+  const magnets = (args.analysis.strongestMagnets.length
+    ? args.analysis.strongestMagnets
+    : args.analysis.magnets
+  ).slice(0, 5);
+
+  return {
+    requestId: args.requestId,
+    reportId: args.reportId,
+    address: args.address,
+    lat: args.lat,
+    lon: args.lon,
+    verdict: args.verdict,
+    recommendation: score?.recommended_strategy ?? null,
+    score: score?.location_score ?? null,
+    magnets: magnets.map((magnet, index) => ({
+      id: `magnet_${index + 1}`,
+      label: magnet.name,
+      value: `${magnet.name} (${Math.round(magnet.distance)} м)`,
+    })),
+    transport: args.analysis.accessibilityStops.slice(0, 5).map((stop, index) => ({
+      id: `transport_${index + 1}`,
+      label: stop.name,
+      value: `${stop.name} (${Math.round(stop.distance)} м)`,
+    })),
+  };
+}
+
+async function buildPaidLocationReportFromRequest(
+  entity: LocationReportRequestEntity,
+): Promise<PaidLocationReportCalculationResult> {
+  const market = parseMarketFromLocale(entity.locale);
+  const rawAddress = cleanString(entity.address);
+  if (!rawAddress) throw new Error('address_required');
+
+  let lat = entity.lat;
+  let lon = entity.lon;
+  if (lat == null || lon == null) {
+    const { result } = await geocodePlainAddressForMarket(market, rawAddress);
+    if (!result) throw new Error('address_not_found');
+    lat = result.lat;
+    lon = result.lon;
+  }
+
+  const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
+  const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
+  applyLocationDataIntegrityGate(analysis, {
+    lat,
+    lon,
+    rawObjectsCount: elements.length,
+    hadProviderFailure,
+    usedFallbackQuery,
+    cacheServed: false,
+  });
+
+  if (!analysis.locationScore) throw new Error('locationScore_unavailable');
+
+  const verdict =
+    analysis.locationDecision?.publicSummary?.audienceVerdictRu ??
+    analysis.conclusion ??
+    (entity.locale === 'ru'
+      ? 'Полный отчёт: расчёт выполнен.'
+      : 'Full report: calculation completed.');
+
+  const report =
+    entity.mode === 'commercial'
+      ? buildCommercialReport({ address: rawAddress, analysis })
+      : buildLocationStandaloneReport({
+        address: rawAddress,
+        inputAddress: rawAddress,
+        rawOsmElements: elements,
+        analysis,
+        verdict,
+        market: entity.locale === 'ru' ? 'RU' : 'INTERNATIONAL',
+        reportMode: 'paid',
+      });
+
+  const { reportId } = await createStandaloneReport({ locale: entity.locale, report: report as any });
+  await linkLocationReportRequestReport({
+    requestId: entity.id,
+    reportId,
+    lat,
+    lon,
+  });
+
+  return {
+    reportId,
+    analysis,
+    context: buildPaidReportCalculationContext({
+      requestId: entity.id,
+      reportId,
+      address: rawAddress,
+      lat,
+      lon,
+      analysis,
+      verdict,
+    }),
+  };
+}
+
+async function resolvePaidRequestCoordinates(
+  entity: LocationReportRequestEntity,
+): Promise<{ lat: number; lon: number }> {
+  if (entity.lat != null && entity.lon != null) {
+    return { lat: entity.lat, lon: entity.lon };
+  }
+
+  const market = parseMarketFromLocale(entity.locale);
+  const rawAddress = cleanString(entity.address);
+  if (!rawAddress) throw new Error('address_required');
+  const { result } = await geocodePlainAddressForMarket(market, rawAddress);
+  if (!result) throw new Error('address_not_found');
+  return { lat: result.lat, lon: result.lon };
+}
+
+async function resolveOrComputePaidAnalysis(
+  address: string,
+  lat: number,
+  lon: number,
+): Promise<LocationAnalysis> {
+  const cachedByAddr = await cacheGetByAddress(address);
+  if (cachedByAddr?.entry.analysis?.locationScore) {
+    return cachedByAddr.entry.analysis;
+  }
+
+  const { elements, hadProviderFailure, usedFallbackQuery } = await fetchOsmData(lat, lon);
+  const analysis = buildAnalysis(elements, lat, lon, { spatialFoundation: true });
+  applyLocationDataIntegrityGate(analysis, {
+    lat,
+    lon,
+    rawObjectsCount: elements.length,
+    hadProviderFailure,
+    usedFallbackQuery,
+    cacheServed: false,
+  });
+  if (!analysis.locationScore) throw new Error('locationScore_unavailable');
+  return analysis;
+}
+
+export async function ensurePaidLocationReportForRequest(
+  requestId: string,
+): Promise<PaidLocationReportCalculationResult> {
+  const entity = await getLocationReportRequestById(requestId);
+  if (!entity) throw new Error('request_not_found');
+
+  if (entity.report_id) {
+    const existing = await getStandaloneReportById(entity.report_id);
+    if (existing?.report.version === 'v1') {
+      const report = existing.report;
+      const address =
+        cleanString(report.inputAddress) ??
+        cleanString(report.address) ??
+        entity.address;
+      const { lat, lon } = await resolvePaidRequestCoordinates(entity);
+      const analysis = await resolveOrComputePaidAnalysis(address, lat, lon);
+      const verdict =
+        analysis.locationDecision?.publicSummary?.audienceVerdictRu ??
+        analysis.conclusion ??
+        (entity.locale === 'ru' ? 'Полный отчёт готов.' : 'Full report is ready.');
+      await linkLocationReportRequestReport({
+        requestId: entity.id,
+        reportId: entity.report_id,
+        lat,
+        lon,
+      });
+      return {
+        reportId: entity.report_id,
+        analysis,
+        context: buildPaidReportCalculationContext({
+          requestId: entity.id,
+          reportId: entity.report_id,
+          address,
+          lat,
+          lon,
+          analysis,
+          verdict,
+        }),
+      };
+    }
+  }
+
+  return buildPaidLocationReportFromRequest(entity);
 }
 
 export async function generateFreeLocationReport(

@@ -110,6 +110,23 @@ export async function markLocationReportRequestProcessing(requestId: string): Pr
   if (error) throw new Error(error.message);
 }
 
+export async function linkLocationReportRequestReport(args: {
+  requestId: string;
+  reportId: string;
+  lat?: number;
+  lon?: number;
+}): Promise<void> {
+  const patch: Record<string, string | number> = { report_id: args.reportId };
+  if (typeof args.lat === 'number' && Number.isFinite(args.lat)) patch.lat = args.lat;
+  if (typeof args.lon === 'number' && Number.isFinite(args.lon)) patch.lon = args.lon;
+
+  const { error } = await supabase
+    .from('location_report_requests')
+    .update(patch)
+    .eq('id', args.requestId);
+  if (error) throw new Error(error.message);
+}
+
 export async function markLocationReportRequestCompleted(args: { requestId: string; reportId: string }): Promise<void> {
   const { error } = await supabase
     .from('location_report_requests')
