@@ -35,5 +35,5 @@ export function locationReportAccessStatusForPersistence(
 
 export function canExposePaidLocationReport(report: PersistableLocationReport): boolean {
   if (report.version === 'v1' && report.reportMode === 'free') return false;
-  return normalizeLocationReportAccessStatus((report as any).accessStatus) === LOCATION_REPORT_UNLOCKED_STATUS;
+  return locationReportAccessStatusForPersistence(report) === LOCATION_REPORT_UNLOCKED_STATUS;
 }
