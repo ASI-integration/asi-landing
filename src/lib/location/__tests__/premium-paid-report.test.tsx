@@ -92,8 +92,12 @@ describe('premium paid location report', () => {
     expect(model.finalRecommendation.isPlaceholder).toBe(false);
 
     const pdfHtml = renderToStaticMarkup(<PremiumLocationReportPdf model={model} />);
+    expect(pdfHtml).toContain('Итог по объекту');
+    expect(pdfHtml).toContain('Транспорт и выезд');
+    expect(pdfHtml).toContain('Магниты рядом');
     expect(pdfHtml).toContain('Сценарии дохода');
     expect(pdfHtml).toContain('Строящиеся ЖК');
     expect(pdfHtml).toContain('Осторожный');
+    expect(pdfHtml).toContain('итоговый балл');
   });
 });

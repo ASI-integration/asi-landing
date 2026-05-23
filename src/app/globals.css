@@ -176,9 +176,19 @@
 
   .premium-location-report-pdf .premium-pdf-page-inner {
     min-height: auto;
+    padding-bottom: 4mm;
+  }
+
+  .premium-location-report-pdf .premium-pdf-cover .premium-pdf-page-inner {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .premium-location-report-pdf [class*="shadow"] {
     box-shadow: none !important;
+  }
+
+  .premium-location-report-pdf .premium-pdf-page + .premium-pdf-page {
+    margin-top: 0;
   }
 }

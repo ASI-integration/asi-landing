@@ -3,7 +3,7 @@ import { PAID_REPORT_MAP_UNAVAILABLE_WARNING_RU } from './report-result-metadata
 import type { GeneratedLocationReportDocument } from './location-report-engine';
 import type { LocationStandaloneReport, StrLocationReportProjection } from './standalone-report';
 import type { LocationScoreBreakdown } from './types';
-import { PREMIUM_PDF_SCORE_DIMENSION_LABELS } from './premium-pdf-copy';
+import { PREMIUM_PDF_COVER, PREMIUM_PDF_SCORE_DIMENSION_LABELS } from './premium-pdf-copy';
 import type { PremiumFutureDevelopmentSlot, PremiumRevenueScenario } from './premium-paid-report-content';
 import { buildPremiumPaidReportContent } from './premium-paid-report-content';
 
@@ -33,6 +33,36 @@ export type PremiumPdfViewModel = {
     title: string;
     subtitle: string;
     reportKindLabel: string;
+    disclaimerRu: string;
+    score: PremiumPdfNumberField;
+    recommendationLabel: PremiumPdfTextField;
+  };
+  summary: {
+    conclusion: PremiumPdfTextField;
+    strengths: PremiumPdfTextField[];
+    mainRisks: PremiumPdfTextField[];
+    audienceSummary: PremiumPdfTextField;
+    suitableFor: PremiumPdfTextField[];
+  };
+  transport: {
+    lines: PremiumPdfTextField[];
+    balanceNote: PremiumPdfTextField | null;
+  };
+  magnets: {
+    primary: PremiumPdfTextField[];
+    secondary: PremiumPdfTextField[];
+    insight: PremiumPdfTextField | null;
+  };
+  demand: {
+    explanation: PremiumPdfTextField;
+    suitableFor: PremiumPdfTextField[];
+    monthlyIncomeLabel: PremiumPdfTextField;
+    strategyLabel: PremiumPdfTextField;
+  };
+  recommendations: {
+    verdict: PremiumPdfTextField;
+    action: PremiumPdfTextField;
+    steps: PremiumPdfTextField[];
   };
   verdict: {
     headline: PremiumPdfTextField;
@@ -237,15 +267,115 @@ export function buildPremiumPdfViewModel(doc: GeneratedLocationReportDocument): 
     reportMeta?.mapDisplay === 'unavailable'
     || (reportMeta?.providerWarningsRu?.length ?? 0) > 0;
 
+  const accessibilityStopCount = unified?.signals?.transportInfrastructure?.accessibilityStopsCount;
+  const transportLines = listField(
+    [
+      ...(str?.signalGroups.transportRu ?? []),
+      ...(accessibilityStopCount != null && accessibilityStopCount > 0
+        ? [`Остановок общественного транспорта в зоне: ${accessibilityStopCount}`]
+        : []),
+    ],
+    ['Метро или остановки в пешей доступности', 'Удобный выезд к ключевым узлам города'],
+  ).slice(0, 6);
+
+  const magnetPrimary = listField(
+    premiumPaid?.primeDemandMagnets.primaryLinesRu,
+    ['Рядом есть точки, которые притягивают гостей'],
+  ).slice(0, 5);
+  const magnetSecondary = listField(premiumPaid?.primeDemandMagnets.secondaryLinesRu, []).slice(0, 4);
+
+  const riskItems = listField(str?.risksAndManualChecksRu ?? doc.freeSummary.risksAndLimitsRu, [
+    'Сравнить цены и загрузку похожих объектов на площадках бронирования',
+    'Проверить правила дома, шум и подъезд для гостей',
+    'Оценить сезонность и запасной сценарий на низкий сезон',
+  ]);
+
+  const summaryStrengths = listField(
+    premiumPaid?.executiveSummary.bulletsRu ?? summary?.drivers ?? doc.freeSummary.keyFactorsRu,
+    [
+      'Рядом есть транспорт или удобный выезд',
+      'Смешанный спрос: гости разных сценариев',
+      'Инфраструктура поддерживает краткосрочное размещение',
+    ],
+  ).slice(0, 4);
+
   return {
     reportId: doc.reportId,
     reportMode: doc.reportMode,
     address: doc.inputAddress,
     calculatedAtRu: formatDateRu(doc.calculatedAt),
     cover: {
-      title: 'Отчёт по посуточной аренде',
-      subtitle: 'Аналитика локации для решения о запуске',
+      title: PREMIUM_PDF_COVER.title,
+      subtitle: PREMIUM_PDF_COVER.subtitle,
       reportKindLabel: doc.reportMode === 'paid' ? 'Полный отчёт' : 'Краткий обзор',
+      disclaimerRu: PREMIUM_PDF_COVER.disclaimerRu,
+      score: numberField(overallScore, 0),
+      recommendationLabel: textField(
+        str?.recommendationLabelRu ?? premiumPaid?.executiveSummary.headlineRu ?? null,
+        'Предварительная оценка — уточните после проверки объекта',
+      ),
+    },
+    summary: {
+      conclusion: textField(
+        str?.executiveConclusionRu ?? summary?.verdict ?? doc.freeSummary.conclusionRu,
+        'Здесь будет главный вывод по локации после полного расчёта.',
+      ),
+      strengths: summaryStrengths,
+      mainRisks: riskItems.slice(0, 3),
+      audienceSummary: textField(
+        premiumPaid?.audienceFit.explanationRu ?? str?.audienceFit.explanationRu ?? null,
+        'Аудитория и сценарии гостей будут показаны на следующих страницах.',
+      ),
+      suitableFor: listField(
+        premiumPaid?.audienceFit.suitableForRu ?? str?.audienceFit.suitableForRu,
+        ['Командированные', 'Туристы', 'Семьи'],
+      ).slice(0, 4),
+    },
+    transport: {
+      lines: transportLines,
+      balanceNote: str?.territorialInterpretation?.transportBalanceRu
+        ? textField(str.territorialInterpretation.transportBalanceRu, '—')
+        : null,
+    },
+    magnets: {
+      primary: magnetPrimary,
+      secondary: magnetSecondary,
+      insight: premiumPaid?.primeDemandMagnets.ownerMeaningRu
+        ? textField(premiumPaid.primeDemandMagnets.ownerMeaningRu, '—')
+        : null,
+    },
+    demand: {
+      explanation: textField(
+        premiumPaid?.audienceFit.explanationRu ?? str?.audienceFit.explanationRu ?? null,
+        'Аудитория и сценарии гостей будут показаны здесь.',
+      ),
+      suitableFor: listField(
+        premiumPaid?.audienceFit.suitableForRu ?? str?.audienceFit.suitableForRu,
+        ['Командированные', 'Туристы', 'Семьи'],
+      ).slice(0, 5),
+      monthlyIncomeLabel: textField(monthlyIncomeLabel, 'Диапазон дохода появится после расчёта'),
+      strategyLabel: textField(
+        strategyLabelRu(summary?.recommended_strategy ?? str?.monetization.strategy ?? null),
+        'Сценарий монетизации уточняется',
+      ),
+    },
+    recommendations: {
+      verdict: textField(
+        premiumPaid?.finalRecommendation.verdictRu ?? launchRecommendation,
+        'Сначала подтвердите спрос и конкуренцию, затем выберите сценарий запуска.',
+      ),
+      action: textField(
+        premiumPaid?.finalRecommendation.actionRu ?? null,
+        'Проверьте риски из списка и зафиксируйте тестовый период 4–6 недель.',
+      ),
+      steps: listField(
+        premiumPaid?.launchStrategy.stepsRu ?? launchStepsFromStr(str),
+        [
+          'Собрать 3–5 конкурентов и зафиксировать цену входа',
+          'Подготовить фото, описание и правила для гостей',
+          'Запустить тестовый период и сверить факт с прогнозом',
+        ],
+      ).slice(0, 4),
     },
     verdict: {
       headline: textField(
@@ -301,11 +431,7 @@ export function buildPremiumPdfViewModel(doc: GeneratedLocationReportDocument): 
       showLiveSourcesDisclaimer: urbanNoLiveData,
     },
     risks: {
-      items: listField(str?.risksAndManualChecksRu ?? doc.freeSummary.risksAndLimitsRu, [
-        'Сравнить цены и загрузку похожих объектов на площадках бронирования',
-        'Проверить правила дома, шум и подъезд для гостей',
-        'Оценить сезонность и запасной сценарий на низкий сезон',
-      ]).slice(0, 5),
+      items: riskItems.slice(0, 5),
       launchRecommendation: textField(
         launchRecommendation,
         'Сначала подтвердите спрос и конкуренцию, затем выберите сценарий запуска и тестовый период на 4–6 недель.',
