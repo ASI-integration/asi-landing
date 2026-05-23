@@ -11,6 +11,10 @@ import {
   logLocationReportPdfFailure,
   renderLocationReportPdfFromPrintRoute,
 } from '@/lib/location/location-report-print-pdf';
+import {
+  clearLocationReportPdfRenderEntity,
+  primeLocationReportPdfRenderEntity,
+} from '@/lib/location/location-report-pdf-render-cache';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -32,7 +36,13 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ reportId: 
       return NextResponse.json({ error: 'locked' }, { status: 403 });
     }
 
-    const pdf = await renderLocationReportPdfFromPrintRoute(reportId);
+    primeLocationReportPdfRenderEntity(entity);
+    let pdf: Buffer;
+    try {
+      pdf = await renderLocationReportPdfFromPrintRoute(reportId);
+    } finally {
+      clearLocationReportPdfRenderEntity(reportId);
+    }
     const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
     return new NextResponse(body, {
       status: 200,

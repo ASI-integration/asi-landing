@@ -11,6 +11,7 @@ export type ReportPermalinkSurface = 'public' | 'ru-public' | 'dashboard';
 
 export const LOCATION_REPORT_PRODUCT_PATH = '/ru/otchet-po-dohodnosti-obektov' as const;
 export const LOCATION_REPORT_SAMPLE_PATH = '/ru/location-report/sample' as const;
+export const LOCATION_REPORT_SAMPLE_PRINT_PATH = '/ru/location-report/sample/print' as const;
 export const LOCATION_REPORT_SAMPLE_PDF_PATH = '/ru/location-report/sample/pdf' as const;
 export const LOCATION_REPORT_STATUS_PATH = '/ru/location-report/status' as const;
 export const LEGACY_REPORT_REDIRECT_PATH = LOCATION_REPORT_SAMPLE_PATH;

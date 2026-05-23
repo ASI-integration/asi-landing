@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getStandaloneReportById } from '@/lib/location/standalone-report-store';
+import { takeLocationReportPdfRenderEntity } from '@/lib/location/location-report-pdf-render-cache';
 import { isCanonicalLocationReportPayload } from '@/lib/location/standalone-report';
 import {
   buildGeneratedLocationReportDocument,
@@ -68,7 +69,7 @@ export default async function RuLocationReportPrintPage(
   const { reportId } = await props.params;
   if (!reportId) notFound();
 
-  const entity = await getStandaloneReportById(reportId);
+  const entity = takeLocationReportPdfRenderEntity(reportId) ?? await getStandaloneReportById(reportId);
   if (!entity || entity.locale !== 'ru' || !isCanonicalLocationReportPayload(entity.report)) {
     return <MissingReportPrintFallback />;
   }

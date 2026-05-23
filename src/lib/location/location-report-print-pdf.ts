@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
+import { LOCATION_REPORT_SAMPLE_PRINT_PATH } from './report-state';
 
 export type LocationReportPdfErrorCode =
   | 'chromium_missing'
@@ -24,6 +25,20 @@ const LINUX_CHROMIUM_CANDIDATES = [
   '/usr/bin/google-chrome',
 ] as const;
 
+function windowsChromiumCandidates(): string[] {
+  if (process.platform !== 'win32') return [];
+  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
+  const localAppData = process.env.LOCALAPPDATA ?? '';
+  return [
+    `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
+    localAppData ? `${localAppData}\\Google\\Chrome\\Application\\chrome.exe` : null,
+    `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    localAppData ? `${localAppData}\\Microsoft\\Edge\\Application\\msedge.exe` : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
 const CHROMIUM_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox'] as const;
 
 export function resolveChromiumExecutablePath(): string | undefined {
@@ -31,7 +46,7 @@ export function resolveChromiumExecutablePath(): string | undefined {
   if (fromEnv) {
     return fs.existsSync(fromEnv) ? fromEnv : undefined;
   }
-  for (const candidate of LINUX_CHROMIUM_CANDIDATES) {
+  for (const candidate of [...LINUX_CHROMIUM_CANDIDATES, ...windowsChromiumCandidates()]) {
     if (fs.existsSync(candidate)) return candidate;
   }
   return undefined;
@@ -61,9 +76,17 @@ export function buildLocationReportPrintPageUrl(reportId: string, baseUrl = reso
   return `${baseUrl}/ru/location-report/${encodeURIComponent(reportId)}/print`;
 }
 
+export function buildLocationReportSamplePrintPageUrl(baseUrl = resolveLocationReportAppBaseUrl()): string {
+  return `${baseUrl}${LOCATION_REPORT_SAMPLE_PRINT_PATH}`;
+}
+
 export function locationReportPdfFilename(reportId: string): string {
   const safeReportId = reportId.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 120) || 'report';
   return `location-report-${safeReportId}.pdf`;
+}
+
+export function locationReportSamplePdfFilename(): string {
+  return 'location-report-sample.pdf';
 }
 
 function warnIfPdfBaseUrlLooksLocal(baseUrl: string): void {
@@ -125,10 +148,7 @@ export async function checkLocationReportPdfChromium(): Promise<LocationReportPd
   }
 }
 
-export async function renderLocationReportPdfFromPrintRoute(reportId: string): Promise<Buffer> {
-  const baseUrl = resolveLocationReportAppBaseUrl();
-  warnIfPdfBaseUrlLooksLocal(baseUrl);
-  const printUrl = buildLocationReportPrintPageUrl(reportId, baseUrl);
+export async function renderLocationReportPdfFromPrintUrl(printUrl: string): Promise<Buffer> {
   const executablePath = assertChromiumExecutable();
 
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
@@ -149,7 +169,11 @@ export async function renderLocationReportPdfFromPrintRoute(reportId: string): P
   try {
     const page = await browser.newPage();
     try {
-      await page.goto(printUrl, { waitUntil: 'networkidle', timeout: 60_000 });
+      await page.goto(printUrl, { waitUntil: 'load', timeout: 90_000 });
+      await page.waitForSelector('.premium-location-report-pdf, .premium-location-report-pdf-root', {
+        timeout: 30_000,
+        state: 'attached',
+      });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       throw new LocationReportPdfError(
@@ -174,6 +198,18 @@ export async function renderLocationReportPdfFromPrintRoute(reportId: string): P
   } finally {
     await browser.close();
   }
+}
+
+export async function renderLocationReportPdfFromPrintRoute(reportId: string): Promise<Buffer> {
+  const baseUrl = resolveLocationReportAppBaseUrl();
+  warnIfPdfBaseUrlLooksLocal(baseUrl);
+  return renderLocationReportPdfFromPrintUrl(buildLocationReportPrintPageUrl(reportId, baseUrl));
+}
+
+export async function renderLocationReportSamplePdfFromPrintRoute(): Promise<Buffer> {
+  const baseUrl = resolveLocationReportAppBaseUrl();
+  warnIfPdfBaseUrlLooksLocal(baseUrl);
+  return renderLocationReportPdfFromPrintUrl(buildLocationReportSamplePrintPageUrl(baseUrl));
 }
 
 export const LOCATION_REPORT_PDF_CLIENT_MESSAGES_RU: Record<LocationReportPdfErrorCode | 'unknown', string> = {

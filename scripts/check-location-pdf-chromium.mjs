@@ -13,6 +13,20 @@ const LINUX_CHROMIUM_CANDIDATES = [
   '/usr/bin/google-chrome',
 ];
 
+function windowsChromiumCandidates() {
+  if (process.platform !== 'win32') return [];
+  const programFiles = process.env.ProgramFiles ?? 'C:\\Program Files';
+  const programFilesX86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
+  const localAppData = process.env.LOCALAPPDATA ?? '';
+  return [
+    `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
+    localAppData ? `${localAppData}\\Google\\Chrome\\Application\\chrome.exe` : null,
+    `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    localAppData ? `${localAppData}\\Microsoft\\Edge\\Application\\msedge.exe` : null,
+  ].filter(Boolean);
+}
+
 const CHROMIUM_LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox'];
 
 function resolveChromiumExecutablePath() {
@@ -20,7 +34,7 @@ function resolveChromiumExecutablePath() {
   if (fromEnv) {
     return fs.existsSync(fromEnv) ? fromEnv : undefined;
   }
-  for (const candidate of LINUX_CHROMIUM_CANDIDATES) {
+  for (const candidate of [...LINUX_CHROMIUM_CANDIDATES, ...windowsChromiumCandidates()]) {
     if (fs.existsSync(candidate)) return candidate;
   }
   return undefined;
