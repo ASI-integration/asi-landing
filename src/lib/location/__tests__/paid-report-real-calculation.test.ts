@@ -224,7 +224,17 @@ describe('paid report real calculation wiring', () => {
       auditRepository: { async createAuditEvent() { return {} as any; } } as any,
     });
 
-    expect(mockEnsurePaidLocationReportForRequest).toHaveBeenCalledWith('request-1');
+    expect(mockEnsurePaidLocationReportForRequest).toHaveBeenCalledWith(
+      'request-1',
+      expect.objectContaining({
+        entity: expect.objectContaining({
+          id: 'request-1',
+          access_tier: 'paid_required',
+          payment_status: 'paid_unlocked',
+          status: 'queued',
+        }),
+      }),
+    );
     expect(artifact.status).toBe(REPORT_ARTIFACT_STATUS.pdfReady);
     expect(artifact.pdf_url).toBe('/api/location-report/report-paid-1/pdf');
     expect(artifact.final_report_url).toBe('/ru/location-report/report-paid-1');
