@@ -113,10 +113,12 @@ export default function DashboardPage() {
 
       {/* Block 2 — Источник данных */}
       <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-2xl font-bold text-slate-900">Подключить менеджер каналов</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Подключения каналов</h2>
         <p className="mt-2 text-base text-slate-600 max-w-2xl leading-relaxed">
-          Подключите систему, через которую вы уже управляете бронированиями, доступностью и
-          тарифами. ASI будет использовать её как основной источник данных.
+          Подключите менеджер каналов, чтобы ASI видел брони, даты, цены и занятость.
+        </p>
+        <p className="mt-2 text-sm text-slate-500 max-w-2xl leading-relaxed">
+          Сначала поддерживаем российские менеджеры каналов: RealtyCalendar, Bnovo, TravelLine
         </p>
 
         <div className="mt-6 flex flex-col gap-3">
@@ -173,15 +175,15 @@ export default function DashboardPage() {
       <section className="bg-slate-900 rounded-xl p-7">
         <p className="text-sm font-medium text-slate-400 uppercase tracking-widest">Следующий шаг</p>
         <h2 className="mt-2 text-2xl font-bold text-white">
-          Подключить менеджер каналов
+          Подключения каналов
         </h2>
         <p className="mt-2 text-base text-slate-300 leading-relaxed max-w-lg">
-          Это первое действие, которое откроет остальные разделы системы. Пока источник данных не
+          Это первое действие, которое откроет остальные разделы системы. Пока менеджер каналов не
           подключён, объекты, бронирования и автоматизация недоступны.
         </p>
         <div className="mt-6">
           <Link
-            href="/dashboard/data-source"
+            href="/dashboard/channel-connections"
             className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-slate-900 text-base font-semibold hover:bg-slate-100 transition-colors"
           >
             Перейти к подключению

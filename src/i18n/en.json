@@ -580,6 +580,7 @@
     "sidebar": {
       "overview": "Overview",
       "reports": "My reports",
+      "channelConnections": "Channel connections",
       "dataSource": "Data Source",
       "properties": "Properties",
       "communication": "Communication",

@@ -580,6 +580,7 @@
     "sidebar": {
       "overview": "Обзор",
       "reports": "Мои отчёты",
+      "channelConnections": "Подключения каналов",
       "dataSource": "Источник данных",
       "properties": "Объекты",
       "communication": "Коммуникация",
@@ -591,6 +592,7 @@
     "propertiesSubtitle": "Управление объектами",
     "automationsSubtitle": "Настройка автоматизаций",
     "settingsSubtitle": "Аккаунт и настройки",
+    "channelConnectionsSubtitle": "Менеджеры каналов и импорт данных",
     "dataSourceSubtitle": "Подключение источника данных",
     "communicationSubtitle": "Коммуникация с гостями",
     "bookingsSubtitle": "Бронирования и размещение",
