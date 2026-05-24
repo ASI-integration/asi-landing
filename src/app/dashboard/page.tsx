@@ -26,44 +26,32 @@ function subscriptionStatusLabel(status: string | null | undefined) {
   return '—';
 }
 
-const pmsItems = [
-  { name: 'RealtyCalendar', status: 'soon' as const },
-  { name: 'Bnovo', status: 'soon' as const },
-  { name: 'TravelLine', status: 'soon' as const },
-  { name: 'Другая система', status: 'request' as const },
+const modules = [
+  {
+    title: 'Коммуникации',
+    href: '/dashboard/communication',
+    status: 'настройка',
+    description: 'Сообщения гостей, заявки и ответы оператора в одном месте.',
+  },
+  {
+    title: 'Операции',
+    href: '/dashboard/operations',
+    status: 'в кабинете',
+    description: 'Заезды, задачи, уборка и готовность объектов к заселению.',
+  },
+  {
+    title: 'Подключения каналов',
+    href: '/dashboard/channel-connections',
+    status: 'первый шаг',
+    description: 'Свяжите ASI с RealtyCalendar, Bnovo, TravelLine или другой системой.',
+  },
+  {
+    title: 'Аналитика локации',
+    href: '/dashboard/reports',
+    status: 'в подписке',
+    description: 'Оценка адресов и сохранённые выводы по объектам внутри ASI.',
+  },
 ] as const;
-
-const contours = [
-  { label: 'Коммуникация', status: 'requires' as const },
-  { label: 'Данные / бронирования', status: 'requires' as const },
-  { label: 'Автоматизация', status: 'soon' as const },
-  { label: 'Платежи', status: 'soon' as const },
-] as const;
-
-function ContourStatus({ status }: { status: 'active' | 'requires' | 'soon' }) {
-  if (status === 'active') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-        активно
-      </span>
-    );
-  }
-  if (status === 'requires') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-sm text-amber-700">
-        <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-        требует настройки
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm text-slate-500">
-      <span className="w-2 h-2 rounded-full bg-slate-300 inline-block" />
-      скоро
-    </span>
-  );
-}
 
 export default function DashboardPage() {
   const { session } = useSession();
@@ -73,12 +61,14 @@ export default function DashboardPage() {
   const subStatus = subscriptionStatusLabel(account?.subscription_status);
 
   return (
-    <div className="space-y-8 max-w-4xl">
+    <div className="space-y-8 max-w-6xl">
 
       {/* Block 1 — Состояние аккаунта */}
       <section>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Обзор</h1>
-        <p className="mt-1.5 text-lg text-slate-500">Состояние системы и следующий шаг</p>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">ASI-кабинет</h1>
+        <p className="mt-1.5 max-w-3xl text-lg text-slate-500">
+          Один центр для управления объектами: сообщения, операции, каналы бронирования и аналитика локации.
+        </p>
 
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -88,7 +78,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Тариф</p>
+            <p className="text-sm text-slate-500">Подписка</p>
             <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
               {planLabel(account?.plan_code)}
             </p>
@@ -105,69 +95,73 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <p className="text-sm text-slate-500">Статус системы</p>
             <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
-              Начальная настройка
+              Единый кабинет
             </p>
           </div>
         </div>
       </section>
 
-      {/* Block 2 — Источник данных */}
+      {/* Block 2 — Модули */}
       <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-2xl font-bold text-slate-900">Подключения каналов</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Модули ASI</h2>
         <p className="mt-2 text-base text-slate-600 max-w-2xl leading-relaxed">
-          Подключите менеджер каналов, чтобы ASI видел брони, даты, цены и занятость.
-        </p>
-        <p className="mt-2 text-sm text-slate-500 max-w-2xl leading-relaxed">
-          Сначала поддерживаем российские менеджеры каналов: RealtyCalendar, Bnovo, TravelLine
+          Все разделы входят в рабочий кабинет по подписке. Подключите объекты и ведите ежедневную работу из ASI.
         </p>
 
-        <div className="mt-6 flex flex-col gap-3">
-          {pmsItems.map((item) =>
-            item.status === 'request' ? (
-              <a
-                key={item.name}
-                href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Запрос на подключение PMS / Channel Manager')}`}
-                className="group flex items-center justify-between rounded-xl border border-slate-200 px-6 py-4 hover:border-slate-300 hover:bg-slate-50 transition-all"
-              >
-                <span className="text-lg font-medium text-slate-900">{item.name}</span>
-                <span className="text-sm px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 group-hover:bg-blue-100 transition-colors">
-                  По запросу — написать нам
-                </span>
-              </a>
-            ) : (
-              <div
-                key={item.name}
-                className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-6 py-4 cursor-default"
-              >
-                <span className="text-lg font-medium text-slate-500">{item.name}</span>
-                <span className="text-sm px-3 py-1 rounded-full bg-slate-100 text-slate-400 border border-slate-200">
-                  Скоро
-                </span>
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {modules.map((module) => (
+            <Link
+              key={module.title}
+              href={module.href}
+              className="group flex min-h-[168px] flex-col justify-between rounded-xl border border-slate-200 bg-slate-50 p-5 transition-colors hover:border-slate-300 hover:bg-white"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-xl font-bold text-slate-900">{module.title}</h3>
+                  <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-600">
+                    {module.status}
+                  </span>
+                </div>
+                <p className="mt-3 text-base leading-relaxed text-slate-600">{module.description}</p>
               </div>
-            )
-          )}
+              <span className="mt-5 text-sm font-semibold text-slate-900 group-hover:text-blue-700">
+                Открыть раздел
+              </span>
+            </Link>
+          ))}
         </div>
 
-        <p className="mt-5 text-sm text-slate-400 leading-relaxed">
-          После подключения система сможет подтянуть объекты и данные бронирований автоматически.
+        <p className="mt-5 text-sm text-slate-500 leading-relaxed">
+          Аналитика локации здесь — часть кабинета для работы с объектами, а не отдельный публичный продукт.
         </p>
       </section>
 
-      {/* Block 3 — Статус контуров */}
+      {/* Block 3 — Как это связано */}
       <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-xl font-bold text-slate-900">Статус контуров</h2>
-        <p className="mt-1 text-sm text-slate-500">Что сейчас работает и что ещё предстоит настроить</p>
+        <h2 className="text-xl font-bold text-slate-900">Как работает кабинет</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          ASI собирает данные по объектам и помогает быстрее принимать решения в ежедневной работе.
+        </p>
 
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {contours.map(({ label, status }) => (
-            <div
-              key={label}
-              className="flex items-center justify-between rounded-lg border border-slate-100 px-5 py-4 bg-slate-50"
-            >
-              <span className="text-base font-medium text-slate-700">{label}</span>
-              <ContourStatus status={status} />
-            </div>
-          ))}
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+            <p className="text-base font-semibold text-slate-900">1. Подключите каналы</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              ASI увидит объекты, брони, даты и занятость.
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+            <p className="text-base font-semibold text-slate-900">2. Ведите работу</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Сообщения, задачи и операционные события остаются в одном кабинете.
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+            <p className="text-base font-semibold text-slate-900">3. Смотрите аналитику</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Проверяйте адреса и храните выводы по объектам внутри подписки.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -175,11 +169,11 @@ export default function DashboardPage() {
       <section className="bg-slate-900 rounded-xl p-7">
         <p className="text-sm font-medium text-slate-400 uppercase tracking-widest">Следующий шаг</p>
         <h2 className="mt-2 text-2xl font-bold text-white">
-          Подключения каналов
+          Подключите каналы бронирования
         </h2>
         <p className="mt-2 text-base text-slate-300 leading-relaxed max-w-lg">
-          Это первое действие, которое откроет остальные разделы системы. Пока менеджер каналов не
-          подключён, объекты, бронирования и автоматизация недоступны.
+          Это поможет ASI подтянуть объекты и бронирования. После этого кабинет станет рабочим центром для сообщений,
+          операций, каналов и аналитики локации.
         </p>
         <div className="mt-6">
           <Link
