@@ -3,6 +3,7 @@
 import { productSupportEmail } from '@/config/contact';
 import {
   CHANNEL_CONNECTIONS_FUTURE_PROVIDER_HINT,
+  CHANNEL_CONNECTIONS_LOCATION_ANALYTICS_NOTE,
   CHANNEL_CONNECTIONS_MANUAL_IMPORT_HINT,
   CHANNEL_CONNECTIONS_PAGE_LEAD,
   CHANNEL_CONNECTIONS_PAGE_TITLE,
@@ -24,12 +25,15 @@ export function ChannelConnectionsPanel() {
         <p className="mt-3 text-sm text-slate-500 leading-relaxed max-w-2xl">
           {CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE}
         </p>
+        <p className="mt-2 text-sm text-slate-500 leading-relaxed max-w-2xl">
+          {CHANNEL_CONNECTIONS_LOCATION_ANALYTICS_NOTE}
+        </p>
       </header>
 
       <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-xl font-bold text-slate-900">Провайдеры</h2>
+        <h2 className="text-xl font-bold text-slate-900">Менеджеры каналов</h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          Интеграции подключаются поэтапно. Учётные данные API пока не запрашиваются.
+          Подключения включаем поэтапно. Сейчас не просим доступы к вашим системам.
         </p>
 
         <div className="mt-6 flex flex-col gap-3">
@@ -74,7 +78,7 @@ export function ChannelConnectionsPanel() {
                   {isManual ? (
                     <p className="mt-0.5 text-sm text-slate-500">{CHANNEL_CONNECTIONS_MANUAL_IMPORT_HINT}</p>
                   ) : (
-                    <p className="mt-0.5 text-sm text-slate-400">Интеграция в разработке</p>
+                    <p className="mt-0.5 text-sm text-slate-400">Подключение в разработке</p>
                   )}
                 </div>
                 <span className="shrink-0 ml-4 text-sm px-3 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200">

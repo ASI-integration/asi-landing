@@ -6,7 +6,10 @@ export const CHANNEL_CONNECTIONS_PAGE_LEAD =
   'Подключите менеджер каналов, чтобы ASI видел брони, даты, цены и занятость';
 
 export const CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE =
-  'Сначала поддерживаем российские менеджеры каналов: RealtyCalendar, Bnovo, TravelLine';
+  'Сначала подключаем российские менеджеры каналов: RealtyCalendar, Bnovo, TravelLine';
+
+export const CHANNEL_CONNECTIONS_LOCATION_ANALYTICS_NOTE =
+  'Аналитика локации уже входит в подписку ASI и доступна прямо в кабинете.';
 
 export const CHANNEL_CONNECTIONS_MANUAL_IMPORT_HINT =
   'Пока интеграция не готова — можно загрузить данные вручную (скоро в кабинете)';
