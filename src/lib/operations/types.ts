@@ -2,6 +2,27 @@ import type { CommunicationChannel } from '@/lib/communication/types';
 
 export type OperationsSourceChannel = CommunicationChannel | 'direct' | 'manual' | 'demo';
 
+export type OperationEntityType =
+  | 'booking_intake'
+  | 'check_in'
+  | 'cleaning'
+  | 'maintenance'
+  | 'guest_issue'
+  | 'owner_operator_task';
+
+export type OperationStatus = 'new' | 'in_progress' | 'waiting' | 'done' | 'escalated';
+
+export interface OperationFoundationItem {
+  id: string;
+  type: OperationEntityType;
+  status: OperationStatus;
+  title: string;
+  propertyLabel: string;
+  owner: string;
+  dueLabel: string;
+  sourceLabel: string;
+}
+
 export type OperationsWorkflowStage =
   | 'new_inquiry'
   | 'booking_intake'
