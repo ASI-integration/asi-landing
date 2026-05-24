@@ -105,8 +105,16 @@ function channelLabel(channel: Channel): string {
   if (channel === 'vk') return 'VK';
   if (channel === 'email') return 'Email';
   if (channel === 'max') return 'MAX';
-  if (channel === 'phone') return 'Phone';
+  if (channel === 'phone') return 'Телефон';
   return channel;
+}
+
+function statusLabel(status: ReviewStatus): string {
+  if (status === 'pending') return 'Ждёт оператора';
+  if (status === 'acknowledged') return 'Взято в работу';
+  if (status === 'approved') return 'Черновик принят';
+  if (status === 'replied') return 'Ответ отправлен';
+  return 'Закрыто';
 }
 
 function phoneSource(review: EscalationReview): PhoneReviewSource | null {
@@ -117,15 +125,21 @@ function phoneSource(review: EscalationReview): PhoneReviewSource | null {
 }
 
 function phoneStatusLabel(source: PhoneReviewSource | null): string {
-  const status = String(source?.callStatus ?? source?.eventType ?? '').replace(/^call_/, '').replace(/_/g, ' ');
-  return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Phone call';
+  const status = String(source?.callStatus ?? source?.eventType ?? '');
+  if (status === 'call_escalated_to_operator') return 'передан оператору';
+  if (status === 'call_completed') return 'завершён';
+  if (status === 'call_missed') return 'пропущен';
+  if (status === 'call_failed') return 'ошибка звонка';
+  if (status === 'call_started') return 'начат';
+  const fallback = status.replace(/^call_/, '').replace(/_/g, ' ');
+  return fallback || 'звонок';
 }
 
 function formatDuration(seconds: number | null | undefined): string {
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return 'n/a';
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return 'нет данных';
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  return mins > 0 ? `${mins} мин ${secs} с` : `${secs} с`;
 }
 
 function transcriptSnippet(source: PhoneReviewSource | null): string | null {
@@ -143,11 +157,11 @@ function statusBadgeClass(status: ReviewStatus): string {
 }
 
 function modeLabel(review: EscalationReview): string {
-  if (isClosedReview(review)) return 'AI autopilot';
-  if (isManualMode(review)) return 'Manual mode';
-  if (review.status === 'pending') return 'Escalated';
-  if (review.status === 'replied') return 'Waiting for guest';
-  return 'Escalated';
+  if (isClosedReview(review)) return 'ASI отвечает сам';
+  if (isManualMode(review)) return 'Ручной режим';
+  if (review.status === 'pending') return 'Передано оператору';
+  if (review.status === 'replied') return 'Ждём гостя';
+  return 'Передано оператору';
 }
 
 function matchQuickFilter(review: EscalationReview, quickFilter: QuickFilter): boolean {
@@ -191,7 +205,7 @@ function timelineEvents(review: EscalationReview): Array<{ label: string; detail
   const phone = phoneSource(review);
   const events: Array<{ label: string; detail?: string; ts: string; tone: 'normal' | 'warn' }> = [
     {
-      label: 'Escalated to operator',
+      label: 'Передано оператору',
       detail: review.escalationReason,
       ts: review.createdAt,
       tone: isUrgentReview(review) ? 'warn' : 'normal',
@@ -199,19 +213,19 @@ function timelineEvents(review: EscalationReview): Array<{ label: string; detail
   ];
   if (phone) {
     events.push({
-      label: `Phone ${phoneStatusLabel(phone)}`,
+      label: `Звонок: ${phoneStatusLabel(phone)}`,
       detail: [
-        phone.callerPhoneNumber ? `Caller: ${phone.callerPhoneNumber}` : null,
-        phone.calledNumber ? `Called: ${phone.calledNumber}` : null,
-        phone.durationSeconds !== null && phone.durationSeconds !== undefined ? `Duration: ${formatDuration(phone.durationSeconds)}` : null,
-        phone.recordingUrl ? 'Recording attached' : null,
+        phone.callerPhoneNumber ? `Гость: ${phone.callerPhoneNumber}` : null,
+        phone.calledNumber ? `Номер объекта: ${phone.calledNumber}` : null,
+        phone.durationSeconds !== null && phone.durationSeconds !== undefined ? `Длительность: ${formatDuration(phone.durationSeconds)}` : null,
+        phone.recordingUrl ? 'Есть запись звонка' : null,
       ].filter(Boolean).join(' | '),
       ts: phone.timestamp ?? review.createdAt,
       tone: isUrgentReview(review) ? 'warn' : 'normal',
     });
     if (phone.transcriptText) {
       events.push({
-        label: phone.transcriptProcessed ? 'Transcript routed through shared canon' : 'Transcript received',
+        label: phone.transcriptProcessed ? 'Текст звонка обработан' : 'Текст звонка получен',
         detail: transcriptSnippet(phone) ?? undefined,
         ts: review.updatedAt,
         tone: 'normal',
@@ -220,29 +234,29 @@ function timelineEvents(review: EscalationReview): Array<{ label: string; detail
   }
   for (const msg of review.latestMessages) {
     if (msg.direction === 'inbound') {
-      events.push({ label: 'Message received', detail: msg.content, ts: msg.createdAt, tone: 'normal' });
+      events.push({ label: 'Сообщение гостя получено', detail: msg.content, ts: msg.createdAt, tone: 'normal' });
     } else {
-      events.push({ label: 'AI replied / operator reply sent', detail: msg.content, ts: msg.createdAt, tone: 'normal' });
+      events.push({ label: 'Ответ отправлен гостю', detail: msg.content, ts: msg.createdAt, tone: 'normal' });
     }
   }
   if (review.status === 'acknowledged') {
-    events.push({ label: 'Operator acknowledged', ts: review.updatedAt, tone: 'normal' });
+    events.push({ label: 'Оператор взял диалог', ts: review.updatedAt, tone: 'normal' });
   }
   if (review.status === 'approved') {
-    events.push({ label: 'AI draft approved', ts: review.updatedAt, tone: 'normal' });
+    events.push({ label: 'Черновик ASI принят', ts: review.updatedAt, tone: 'normal' });
   }
   if (review.status === 'replied') {
-    events.push({ label: 'Manual reply sent', ts: review.updatedAt, tone: 'normal' });
+    events.push({ label: 'Ручной ответ отправлен', ts: review.updatedAt, tone: 'normal' });
   }
   if (review.status === 'closed') {
-    events.push({ label: 'Closed / resolved', ts: review.updatedAt, tone: 'normal' });
-    events.push({ label: 'Returned to AI autopilot', ts: review.updatedAt, tone: 'normal' });
+    events.push({ label: 'Диалог закрыт', ts: review.updatedAt, tone: 'normal' });
+    events.push({ label: 'ASI снова отвечает сам', ts: review.updatedAt, tone: 'normal' });
   }
   const reason = review.escalationReason.toLowerCase();
   if (reason.includes('duplicate') || reason.includes('anti-loop')) {
     events.push({
-      label: 'Anti-loop prevented repeated reply',
-      detail: 'System idempotency guard blocked duplicate outbound action.',
+      label: 'Повторный ответ остановлен',
+      detail: 'Система не отправила гостю один и тот же ответ повторно.',
       ts: review.updatedAt,
       tone: 'warn',
     });
@@ -269,13 +283,13 @@ export default function CommunicationPage() {
     setError(null);
     try {
       const res = await fetch('/api/operator/escalation-reviews?limit=200', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`Failed to load inbox (${res.status})`);
+      if (!res.ok) throw new Error(`Не удалось загрузить диалоги (${res.status})`);
       const data = (await res.json()) as ListResponse;
       const list = Array.isArray(data.reviews) ? data.reviews : [];
       setReviews(list);
       setSelectedId((prev) => (prev && list.some((r) => r.reviewId === prev) ? prev : list[0]?.reviewId ?? null));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load');
+      setError(err instanceof Error ? err.message : 'Не удалось загрузить диалоги');
     } finally {
       setLoading(false);
     }
@@ -326,11 +340,11 @@ export default function CommunicationPage() {
     if (!selected) return;
     if (action === 'send_reply' && !replyDraft.trim()) return;
     if (action === 'close') {
-      const confirmed = window.confirm('Close this conversation as resolved?');
+      const confirmed = window.confirm('Закрыть диалог как решённый?');
       if (!confirmed) return;
     }
     if (action === 'return_to_ai') {
-      const confirmed = window.confirm('Return this conversation to AI autopilot?');
+      const confirmed = window.confirm('Вернуть диалог ASI?');
       if (!confirmed) return;
     }
 
@@ -351,24 +365,24 @@ export default function CommunicationPage() {
         }),
       });
       const payload = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !payload.ok) throw new Error(payload.error ?? 'Action failed');
+      if (!res.ok || !payload.ok) throw new Error(payload.error ?? 'Действие не выполнено');
 
       if (actionToSend === 'send_reply') {
         setReplyState('saved');
-        setActionMessage('Manual reply sent.');
+        setActionMessage('Ответ отправлен гостю.');
       } else if (actionToSend === 'approve') {
-        setActionMessage('AI draft approved.');
+        setActionMessage('Черновик ASI принят.');
       } else if (actionToSend === 'acknowledge') {
-        setActionMessage('Conversation acknowledged.');
+        setActionMessage('Диалог взят в работу.');
       } else if (actionToSend === 'return_to_ai') {
-        setActionMessage('Conversation returned to AI autopilot.');
+        setActionMessage('Диалог возвращён ASI.');
       } else if (actionToSend === 'close') {
-        setActionMessage('Conversation closed as resolved.');
+        setActionMessage('Диалог закрыт как решённый.');
       }
 
       await loadReviews();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Action failed';
+      const msg = err instanceof Error ? err.message : 'Действие не выполнено';
       setError(msg);
       if (actionToSend === 'send_reply') setReplyState('error');
     } finally {
@@ -389,18 +403,18 @@ export default function CommunicationPage() {
   }, [selected]);
 
   const quickFilterButtons: Array<{ key: QuickFilter; label: string; count: number }> = [
-    { key: 'all', label: 'All conversations', count: summaryCounts.all },
-    { key: 'requires_operator', label: 'Requires operator', count: summaryCounts.requiresOperator },
-    { key: 'urgent', label: 'Urgent', count: summaryCounts.urgent },
-    { key: 'waiting_for_guest', label: 'Waiting for guest', count: summaryCounts.waitingForGuest },
-    { key: 'ai_autopilot', label: 'AI autopilot active', count: summaryCounts.autopilot },
-    { key: 'manual', label: 'Manual mode', count: summaryCounts.manual },
+    { key: 'all', label: 'Все диалоги', count: summaryCounts.all },
+    { key: 'requires_operator', label: 'Нужен оператор', count: summaryCounts.requiresOperator },
+    { key: 'urgent', label: 'Срочно', count: summaryCounts.urgent },
+    { key: 'waiting_for_guest', label: 'Ждём гостя', count: summaryCounts.waitingForGuest },
+    { key: 'ai_autopilot', label: 'ASI отвечает сам', count: summaryCounts.autopilot },
+    { key: 'manual', label: 'Ручной режим', count: summaryCounts.manual },
     { key: 'telegram', label: 'Telegram', count: summaryCounts.telegram },
     { key: 'vk', label: 'VK', count: summaryCounts.vk },
     { key: 'email', label: 'Email', count: summaryCounts.email },
     { key: 'max', label: 'MAX', count: summaryCounts.max },
-    { key: 'phone', label: 'Phone', count: summaryCounts.phone },
-    { key: 'closed', label: 'Closed / resolved', count: summaryCounts.closed },
+    { key: 'phone', label: 'Телефон', count: summaryCounts.phone },
+    { key: 'closed', label: 'Закрыто', count: summaryCounts.closed },
   ];
 
   const filterChipClass =
@@ -413,48 +427,48 @@ export default function CommunicationPage() {
   return (
     <div className="space-y-5">
       <header className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Communications Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Коммуникация с гостями</h1>
         <p className="text-sm text-slate-600">
-          Unified operator console for Telegram, VK, Email, MAX, and Phone with shared orchestration, escalation, and audit control.
+          Рабочий экран для сообщений гостей: канал, объект, бронь, передача оператору и срочные ситуации в одном месте.
         </p>
       </header>
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
         <div className="grid gap-3 xl:grid-cols-[2fr_1fr_1fr]">
           <label className="text-sm text-slate-700">
-            Search
+            Поиск
             <input
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-              placeholder="Search guest / message / booking / object / session / channel / escalation reason"
+              placeholder="Гость, сообщение, бронь, объект, канал или причина передачи"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
           <label className="text-sm text-slate-700">
-            Status
+            Статус
             <select
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as FilterStatus)}
             >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="acknowledged">Acknowledged</option>
-              <option value="approved">Approved</option>
-              <option value="replied">Replied</option>
-              <option value="closed">Closed</option>
+              <option value="all">Все</option>
+              <option value="pending">{statusLabel('pending')}</option>
+              <option value="acknowledged">{statusLabel('acknowledged')}</option>
+              <option value="approved">{statusLabel('approved')}</option>
+              <option value="replied">{statusLabel('replied')}</option>
+              <option value="closed">{statusLabel('closed')}</option>
             </select>
           </label>
           <label className="text-sm text-slate-700">
-            Urgency
+            Срочность
             <select
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm"
               value={urgencyFilter}
               onChange={(e) => setUrgencyFilter(e.target.value as FilterUrgency)}
             >
-              <option value="all">All</option>
-              <option value="urgent">Urgent</option>
-              <option value="normal">Normal</option>
+              <option value="all">Все</option>
+              <option value="urgent">Срочно</option>
+              <option value="normal">Обычный</option>
             </select>
           </label>
         </div>
@@ -484,16 +498,16 @@ export default function CommunicationPage() {
 
         <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-4">
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-            Escalation queue: <span className="font-semibold text-amber-800">{escalationQueue.length}</span>
+            Очередь оператора: <span className="font-semibold text-amber-800">{escalationQueue.length}</span>
           </div>
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2">
-            Urgent: <span className="font-semibold text-rose-700">{summaryCounts.urgent}</span>
+            Срочно: <span className="font-semibold text-rose-700">{summaryCounts.urgent}</span>
           </div>
           <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2">
-            Manual mode: <span className="font-semibold text-indigo-700">{summaryCounts.manual}</span>
+            Ручной режим: <span className="font-semibold text-indigo-700">{summaryCounts.manual}</span>
           </div>
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-            AI autopilot inferred: <span className="font-semibold text-emerald-700">{summaryCounts.autopilot}</span>
+            ASI отвечает сам: <span className="font-semibold text-emerald-700">{summaryCounts.autopilot}</span>
           </div>
         </div>
       </section>
@@ -505,14 +519,14 @@ export default function CommunicationPage() {
 
       <section className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <aside className="rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-900">Unified Inbox</div>
+          <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold text-slate-900">Входящие от гостей</div>
           <div className="max-h-[75vh] overflow-y-auto">
             {loading ? (
-              <div className="px-4 py-6 text-sm text-slate-500">Loading conversations...</div>
+              <div className="px-4 py-6 text-sm text-slate-500">Загружаем диалоги...</div>
             ) : reviews.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">No conversations yet.</div>
+              <div className="px-4 py-6 text-sm text-slate-500">Диалогов пока нет.</div>
             ) : filtered.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-slate-500">No matching filters or search query.</div>
+              <div className="px-4 py-6 text-sm text-slate-500">По этим фильтрам ничего не найдено.</div>
             ) : (
               filtered.map((review) => {
                 const active = review.reviewId === selectedId;
@@ -521,10 +535,10 @@ export default function CommunicationPage() {
                 const closed = isClosedReview(review);
                 const phone = phoneSource(review);
                 const preview = phone
-                  ? `${phoneStatusLabel(phone)}${phone.callerPhoneNumber ? ` from ${phone.callerPhoneNumber}` : ''}${
+                  ? `Звонок ${phoneStatusLabel(phone)}${phone.callerPhoneNumber ? ` от ${phone.callerPhoneNumber}` : ''}${
                       transcriptSnippet(phone) ? `: ${transcriptSnippet(phone)}` : ''
                     }`
-                  : lastInbound?.content ?? 'No inbound message in snapshot';
+                  : lastInbound?.content ?? 'Нет входящего сообщения';
                 return (
                   <button
                     key={review.reviewId}
@@ -537,7 +551,7 @@ export default function CommunicationPage() {
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs uppercase tracking-wide text-slate-500">{channelLabel(review.channel)}</span>
                       <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${statusBadgeClass(review.status)}`}>
-                        {review.status}
+                        {statusLabel(review.status)}
                       </span>
                     </div>
                     <p className={`mt-1 line-clamp-2 text-sm ${closed ? 'text-slate-500' : 'text-slate-800'}`}>
@@ -545,7 +559,7 @@ export default function CommunicationPage() {
                     </p>
                     <div className="mt-1 flex items-center justify-between text-xs">
                       <span className={urgent ? 'font-semibold text-rose-600' : 'text-slate-500'}>
-                        {urgent ? 'Urgent escalation' : modeLabel(review)}
+                        {urgent ? 'Срочная передача' : modeLabel(review)}
                       </span>
                       <span className="text-slate-500">{shortTs(review.updatedAt)}</span>
                     </div>
@@ -559,104 +573,104 @@ export default function CommunicationPage() {
         <div className="space-y-4">
           {!selected ? (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
-              No conversation selected. Pick one from the inbox to view details and actions.
+              Выберите диалог слева, чтобы увидеть контекст и действия.
             </div>
           ) : !selectedVisible ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
-              Selected conversation is hidden by current filters. Adjust filters to bring it back into the inbox list.
+              Выбранный диалог скрыт фильтрами. Измените фильтры, чтобы вернуть его в список.
             </div>
           ) : (
             <>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <h2 className="text-base font-semibold text-slate-900">Conversation Detail</h2>
+                <h2 className="text-base font-semibold text-slate-900">Контекст диалога</h2>
                 <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
                   <div>
-                    <span className="text-slate-500">Channel:</span> {channelLabel(selected.channel)}
+                    <span className="text-slate-500">Канал:</span> {channelLabel(selected.channel)}
                   </div>
                   <div>
-                    <span className="text-slate-500">Guest identifier:</span> {selected.targetId}
+                    <span className="text-slate-500">Гость:</span> {selected.targetId}
                   </div>
                   {selectedPhone ? (
                     <>
                       <div>
-                        <span className="text-slate-500">Caller phone:</span> {selectedPhone.callerPhoneNumber ?? selected.targetId}
+                        <span className="text-slate-500">Телефон гостя:</span> {selectedPhone.callerPhoneNumber ?? selected.targetId}
                       </div>
                       <div>
-                        <span className="text-slate-500">Called number:</span> {selectedPhone.calledNumber ?? 'n/a'}
+                        <span className="text-slate-500">Номер объекта:</span> {selectedPhone.calledNumber ?? 'нет данных'}
                       </div>
                       <div>
-                        <span className="text-slate-500">Call status:</span> {phoneStatusLabel(selectedPhone)}
+                        <span className="text-slate-500">Статус звонка:</span> {phoneStatusLabel(selectedPhone)}
                       </div>
                       <div>
-                        <span className="text-slate-500">Duration:</span> {formatDuration(selectedPhone.durationSeconds)}
+                        <span className="text-slate-500">Длительность:</span> {formatDuration(selectedPhone.durationSeconds)}
                       </div>
                       <div>
-                        <span className="text-slate-500">Provider call ID:</span> {selectedPhone.providerCallId ?? 'n/a'}
+                        <span className="text-slate-500">ID звонка:</span> {selectedPhone.providerCallId ?? 'нет данных'}
                       </div>
                       <div>
-                        <span className="text-slate-500">Provider:</span> {selectedPhone.provider ?? 'generic'}
+                        <span className="text-slate-500">Провайдер:</span> {selectedPhone.provider ?? 'нет данных'}
                       </div>
                     </>
                   ) : null}
                   <div>
-                    <span className="text-slate-500">Session ID:</span> {selected.sessionId}
+                    <span className="text-slate-500">ID сессии:</span> {selected.sessionId}
                   </div>
                   <div>
-                    <span className="text-slate-500">Mode:</span> {modeLabel(selected)}
+                    <span className="text-slate-500">Режим:</span> {modeLabel(selected)}
                   </div>
                   <div>
-                    <span className="text-slate-500">Booking context:</span> {selected.reservationId ?? 'n/a'}
+                    <span className="text-slate-500">Бронь:</span> {selected.reservationId ?? 'нет данных'}
                   </div>
                   <div>
-                    <span className="text-slate-500">Object/property:</span> {selected.propertyId ?? 'n/a'}
+                    <span className="text-slate-500">Объект:</span> {selected.propertyId ?? 'нет данных'}
                   </div>
                   <div>
-                    <span className="text-slate-500">Lead:</span> {selected.leadId ?? 'n/a'}
+                    <span className="text-slate-500">Заявка:</span> {selected.leadId ?? 'нет данных'}
                   </div>
                   <div>
-                    <span className="text-slate-500">Urgency:</span> {isUrgentReview(selected) ? 'Urgent' : 'Normal'}
+                    <span className="text-slate-500">Срочность:</span> {isUrgentReview(selected) ? 'Срочно' : 'Обычная'}
                   </div>
                   <div className="md:col-span-2">
-                    <span className="text-slate-500">Escalation reason:</span> {selected.escalationReason}
+                    <span className="text-slate-500">Почему передано оператору:</span> {selected.escalationReason}
                   </div>
                   <div className="md:col-span-2">
-                    <span className="text-slate-500">Last message:</span> {lastMessage?.content ?? 'No recent message'}
+                    <span className="text-slate-500">Последнее сообщение:</span> {lastMessage?.content ?? 'Сообщений пока нет'}
                   </div>
                   {selectedPhone ? (
                     <>
                       <div className="md:col-span-2">
-                        <span className="text-slate-500">Transcript:</span> {transcriptSnippet(selectedPhone) ?? 'n/a'}
+                        <span className="text-slate-500">Текст звонка:</span> {transcriptSnippet(selectedPhone) ?? 'нет данных'}
                       </div>
                       <div className="md:col-span-2">
-                        <span className="text-slate-500">Recording:</span>{' '}
+                        <span className="text-slate-500">Запись звонка:</span>{' '}
                         {selectedPhone.recordingUrl ? (
                           <a className="text-indigo-700 underline" href={selectedPhone.recordingUrl} target="_blank" rel="noreferrer">
-                            Open recording
+                            Открыть запись
                           </a>
                         ) : (
-                          'n/a'
+                          'нет данных'
                         )}
                       </div>
                     </>
                   ) : null}
                   <div>
-                    <span className="text-slate-500">Created:</span> {shortTs(selected.createdAt)}
+                    <span className="text-slate-500">Создано:</span> {shortTs(selected.createdAt)}
                   </div>
                   <div>
-                    <span className="text-slate-500">Updated:</span> {shortTs(selected.updatedAt)}
+                    <span className="text-slate-500">Обновлено:</span> {shortTs(selected.updatedAt)}
                   </div>
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <h3 className="text-sm font-semibold text-slate-900">Operator Action Panel</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Действия оператора</h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Use manual controls for escalations, then hand back to AI autopilot when safe.
+                  Ответьте гостю вручную, закройте срочный вопрос или верните диалог ASI.
                 </p>
 
                 {selected.suggestedReply ? (
                   <div className="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">AI Draft</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Черновик ASI</div>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-indigo-900">{selected.suggestedReply}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2.5">
                       <button
@@ -664,7 +678,7 @@ export default function CommunicationPage() {
                         onClick={() => setReplyDraft(selected.suggestedReply ?? '')}
                         className={`${secondaryActionClass} border-indigo-300 bg-white text-indigo-700 hover:bg-indigo-100`}
                       >
-                        Use draft in editor
+                        Вставить в ответ
                       </button>
                       <button
                         type="button"
@@ -672,35 +686,35 @@ export default function CommunicationPage() {
                         disabled={busyAction !== null}
                         className={`${primaryActionClass} border border-indigo-200 bg-indigo-100 text-indigo-800 hover:bg-indigo-200 disabled:text-slate-500 disabled:bg-slate-100`}
                       >
-                        Approve AI Draft
+                        Принять черновик
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                    No AI draft is currently attached to this escalation.
+                    Для этого диалога пока нет черновика ASI.
                   </div>
                 )}
 
                 <label className="mt-4 block text-sm font-medium text-slate-800">
-                  Manual reply
+                  Ответ гостю
                   <textarea
                     value={replyDraft}
                     onChange={(e) => setReplyDraft(e.target.value)}
                     disabled={!selected || busyAction !== null}
-                    placeholder="Type operator reply or edit AI draft before sending"
+                    placeholder="Напишите ответ или отредактируйте черновик ASI"
                     className="mt-2 min-h-32 w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-slate-100"
                   />
                 </label>
 
                 <div className="mt-2 text-xs text-slate-500">
                   {replyState === 'sending'
-                    ? 'Sending...'
+                    ? 'Отправляем...'
                     : replyState === 'saved'
-                      ? 'Saved and sent.'
+                      ? 'Ответ отправлен.'
                       : replyState === 'error'
-                        ? 'Error while sending.'
-                        : 'Ready to send.'}
+                        ? 'Не удалось отправить.'
+                        : 'Готово к отправке.'}
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -710,7 +724,7 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null}
                     className={`${secondaryActionClass} border-slate-300 text-slate-700 hover:bg-slate-50`}
                   >
-                    Acknowledge
+                    Взять в работу
                   </button>
                   <button
                     type="button"
@@ -718,7 +732,7 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null}
                     className={`${secondaryActionClass} border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
-                    Take over manually
+                    Перейти в ручной режим
                   </button>
                   <button
                     type="button"
@@ -726,7 +740,7 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null || !replyDraft.trim()}
                     className={`${primaryActionClass} border border-slate-900 bg-slate-900 text-white shadow-sm hover:bg-slate-800 disabled:shadow-none`}
                   >
-                    Send manual reply
+                    Отправить ответ
                   </button>
                   <button
                     type="button"
@@ -734,7 +748,7 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null}
                     className={`${primaryActionClass} border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
-                    Return to AI autopilot
+                    Вернуть ASI
                   </button>
                   <button
                     type="button"
@@ -742,13 +756,13 @@ export default function CommunicationPage() {
                     disabled={!selected || busyAction !== null}
                     className={`${primaryActionClass} border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:text-slate-500 disabled:bg-slate-100`}
                   >
-                    Close / resolved
+                    Закрыть
                   </button>
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <h3 className="text-sm font-semibold text-slate-900">Audit Timeline</h3>
+                <h3 className="text-sm font-semibold text-slate-900">История диалога</h3>
                 <ol className="mt-3 space-y-2 text-sm">
                   {selectedTimeline.map((event, idx) => (
                     <li
