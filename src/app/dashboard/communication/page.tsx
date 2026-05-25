@@ -66,6 +66,17 @@ type ListResponse = {
 type FilterStatus = 'all' | ReviewStatus;
 type FilterUrgency = 'all' | 'urgent' | 'normal';
 
+type ChannelReadinessCard = {
+  channel: 'telegram' | 'email' | 'phone';
+  title: string;
+  badge: string;
+  summary: string;
+  points: string[];
+  countLabel: string;
+  count: number;
+  tone: 'primary' | 'foundation' | 'planned';
+};
+
 function isUrgentReview(review: EscalationReview): boolean {
   const reason = review.escalationReason.toLowerCase();
   const phone = phoneSource(review);
@@ -410,9 +421,7 @@ export default function CommunicationPage() {
     { key: 'ai_autopilot', label: 'ASI отвечает сам', count: summaryCounts.autopilot },
     { key: 'manual', label: 'Ручной режим', count: summaryCounts.manual },
     { key: 'telegram', label: 'Telegram', count: summaryCounts.telegram },
-    { key: 'vk', label: 'VK', count: summaryCounts.vk },
     { key: 'email', label: 'Email', count: summaryCounts.email },
-    { key: 'max', label: 'MAX', count: summaryCounts.max },
     { key: 'phone', label: 'Телефон', count: summaryCounts.phone },
     { key: 'closed', label: 'Закрыто', count: summaryCounts.closed },
   ];
@@ -424,14 +433,93 @@ export default function CommunicationPage() {
   const primaryActionClass =
     'inline-flex min-h-12 items-center justify-center rounded-md px-5 py-3 text-sm font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:text-slate-500 disabled:border-slate-200 disabled:bg-slate-100';
 
+  const channelReadinessCards: ChannelReadinessCard[] = [
+    {
+      channel: 'telegram',
+      title: 'Telegram',
+      badge: 'Основной канал сейчас',
+      summary: 'Рабочий канал для сообщений гостей, срочных вопросов и передачи оператору.',
+      points: ['сообщения гостей', 'передача оператору', 'срочный доступ', 'контекст объекта и брони'],
+      countLabel: 'диалогов',
+      count: summaryCounts.telegram,
+      tone: 'primary',
+    },
+    {
+      channel: 'email',
+      title: 'Email',
+      badge: 'Базовый канал',
+      summary: 'Фундамент для заявок гостей с привязкой к брони и объекту.',
+      points: ['заявки гостей', 'контекст брони', 'контекст объекта', 'ручная или полуавто обработка'],
+      countLabel: 'диалогов',
+      count: summaryCounts.email,
+      tone: 'foundation',
+    },
+    {
+      channel: 'phone',
+      title: 'Телефон',
+      badge: 'Подключение по заявке',
+      summary: 'Плановый голосовой контур для срочных звонков и задач оператору.',
+      points: ['будущая обработка звонков', 'срочный доступ', 'текст звонка в задачу', 'передача оператору'],
+      countLabel: 'звонков',
+      count: summaryCounts.phone,
+      tone: 'planned',
+    },
+  ];
+
+  const channelToneClass: Record<ChannelReadinessCard['tone'], string> = {
+    primary: 'border-slate-900 bg-slate-950 text-white',
+    foundation: 'border-slate-200 bg-white text-slate-900',
+    planned: 'border-dashed border-slate-300 bg-slate-50 text-slate-900',
+  };
+
+  const channelBadgeClass: Record<ChannelReadinessCard['tone'], string> = {
+    primary: 'bg-white/15 text-white ring-1 ring-white/20',
+    foundation: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+    planned: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  };
+
   return (
     <div className="space-y-5">
       <header className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Коммуникация с гостями</h1>
         <p className="text-sm text-slate-600">
-          Рабочий экран для сообщений гостей: канал, объект, бронь, передача оператору и срочные ситуации в одном месте.
+          Рабочий экран для сообщений гостей: Telegram уже основной, Email даёт базовый контур, телефон подключается следующим этапом.
         </p>
       </header>
+
+      <section className="grid gap-3 lg:grid-cols-3">
+        {channelReadinessCards.map((card) => {
+          const isPrimary = card.tone === 'primary';
+          return (
+            <article key={card.channel} className={`rounded-xl border p-4 shadow-sm ${channelToneClass[card.tone]}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className={`text-lg font-semibold ${isPrimary ? 'text-white' : 'text-slate-900'}`}>{card.title}</h2>
+                  <p className={`mt-1 text-sm ${isPrimary ? 'text-slate-200' : 'text-slate-600'}`}>{card.summary}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${channelBadgeClass[card.tone]}`}>
+                  {card.badge}
+                </span>
+              </div>
+              <ul className={`mt-4 grid gap-2 text-sm ${isPrimary ? 'text-slate-100' : 'text-slate-700'}`}>
+                {card.points.map((point) => (
+                  <li key={point} className="flex gap-2">
+                    <span className={isPrimary ? 'text-slate-400' : 'text-slate-400'}>•</span>
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+              <div
+                className={`mt-4 rounded-md px-3 py-2 text-sm ${
+                  isPrimary ? 'bg-white/10 text-slate-100' : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                Сейчас в очереди: <span className="font-semibold">{card.count}</span> {card.countLabel}
+              </div>
+            </article>
+          );
+        })}
+      </section>
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
         <div className="grid gap-3 xl:grid-cols-[2fr_1fr_1fr]">
