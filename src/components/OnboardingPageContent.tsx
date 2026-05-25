@@ -166,12 +166,6 @@ export default function OnboardingPageContent() {
     return 'Крупный портфель';
   }, [selectedPlanValue]);
 
-  const planAfterTrial = useMemo(() => {
-    if (selectedPlanValue === 'small') return '12 900 ₽ / объект / месяц';
-    if (selectedPlanValue === 'growth') return '8 900 ₽ / объект / месяц';
-    return '6 900 ₽ / объект / месяц';
-  }, [selectedPlanValue]);
-
   const googleReady = googleOAuthConfigured && !googleConfigLoading;
   const demoMailto = useMemo(
     () =>
@@ -425,7 +419,7 @@ export default function OnboardingPageContent() {
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <p className="text-sm font-medium text-slate-900">После теста</p>
-              <p className="mt-1 text-sm text-slate-600">{planAfterTrial}</p>
+              <p className="mt-1 text-sm text-slate-600">Выберите формат в личном кабинете</p>
             </div>
           </div>
 
