@@ -136,6 +136,13 @@ Safety setup:
 
 ## B. Text Message Scenarios
 
+Autopilot MVP helper checks:
+
+- `заселение`, `как попасть`, `адрес`, `инструкция`, `Wi-Fi`, `выезд`, `ранний заезд`, and `поздний выезд` return `auto_reply` only when the needed booking/object context is present.
+- Missing booking/object fields return `needs_context`; the helper must not invent address, access code, Wi-Fi, or checkout time.
+- Access failures such as `код не работает`, `замок не открывается`, or `не могу попасть` return `escalate` with explicit reason `urgent_access_problem`.
+- Phone remains planned-only: use helper metadata for audit checks, but do not treat it as connected telephony.
+
 1. Simple guest question
    - Send: `Hi, what is the Wi-Fi password?`
    - Expect: one text reply, no operator review.
