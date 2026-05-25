@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import {
+  COMMUNICATION_CHANNEL_FOUNDATION,
+  getCommunicationChannelFoundation,
+} from '@/lib/communication/channel-foundation';
 
 type ReviewStatus = 'pending' | 'acknowledged' | 'approved' | 'replied' | 'closed';
 type Channel = 'telegram' | 'vk' | 'email' | 'max' | 'phone' | string;
@@ -119,11 +123,12 @@ function shortTs(iso: string): string {
 }
 
 function channelLabel(channel: Channel): string {
+  const foundation = getCommunicationChannelFoundation(channel);
+  if (foundation) return foundation.labelRu;
   if (channel === 'telegram') return 'Telegram';
   if (channel === 'vk') return 'VK';
   if (channel === 'email') return 'Email';
   if (channel === 'max') return 'MAX';
-  if (channel === 'phone') return 'Телефон';
   return channel;
 }
 
@@ -440,38 +445,16 @@ export default function CommunicationPage() {
   const primaryActionClass =
     'inline-flex min-h-12 items-center justify-center rounded-md px-5 py-3 text-sm font-semibold leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:text-slate-500 disabled:border-slate-200 disabled:bg-slate-100';
 
-  const channelReadinessCards: ChannelReadinessCard[] = [
-    {
-      channel: 'telegram',
-      title: 'Telegram',
-      badge: 'Основной канал сейчас',
-      summary: 'Рабочий канал для сообщений гостей, срочного доступа и передачи оператору.',
-      points: ['сообщения гостей', 'роль и сессия', 'объект и бронь', 'передача оператору'],
-      countLabel: 'диалогов',
-      count: summaryCounts.telegram,
-      tone: 'primary',
-    },
-    {
-      channel: 'email',
-      title: 'Email',
-      badge: 'Фундамент / полуавто',
-      summary: 'Базовый контур для заявок гостей с ручной или полуавто обработкой.',
-      points: ['заявки гостей', 'контекст брони', 'контекст объекта', 'без полного автопилота'],
-      countLabel: 'диалогов',
-      count: summaryCounts.email,
-      tone: 'foundation',
-    },
-    {
-      channel: 'phone',
-      title: 'Телефон',
-      badge: 'Подключение по заявке',
-      summary: 'Плановый голосовой контур. Реальная телефония здесь не заявлена как активная.',
-      points: ['будущий входящий звонок', 'срочный доступ', 'текст звонка в задачу', 'передача оператору'],
-      countLabel: 'звонков',
-      count: summaryCounts.phone,
-      tone: 'planned',
-    },
-  ];
+  const channelReadinessCards: ChannelReadinessCard[] = COMMUNICATION_CHANNEL_FOUNDATION.map((item) => ({
+    channel: item.channel,
+    title: item.labelRu,
+    badge: item.dashboardBadgeRu,
+    summary: item.summaryRu,
+    points: item.pointsRu,
+    countLabel: item.countLabelRu,
+    count: summaryCounts[item.channel],
+    tone: item.readiness === 'active' ? 'primary' : item.readiness === 'foundation' ? 'foundation' : 'planned',
+  }));
 
   const communicationPaths: CommunicationPathCard[] = [
     {
@@ -500,7 +483,7 @@ export default function CommunicationPage() {
     {
       title: 'Телефон',
       badge: 'План',
-      summary: 'Телефон показан как следующий этап: сценарии видны в контуре, но реальная телефония не считается подключенной.',
+      summary: 'Телефон показан как следующий этап: голосовые звонки видны в контуре, но реальная телефония не считается подключенной.',
       steps: [
         'будущий входящий звонок',
         'текст звонка в задачу',

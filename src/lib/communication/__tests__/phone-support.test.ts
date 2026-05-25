@@ -24,6 +24,7 @@ vi.mock('../identity-binding', () => ({
 }));
 
 import { normalizePhoneWebhookPayload } from '../channels/phone';
+import { getCommunicationChannelFoundation } from '../channel-foundation';
 import { processPhoneCallEvent } from '../phone-support';
 import { _resetForTesting as resetIdempotency } from '../idempotency';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
@@ -140,16 +141,25 @@ describe('Phone support Phase 1 processing', () => {
   });
 
   it('presents communication MVP readiness without claiming live phone integration', () => {
+    const telegram = getCommunicationChannelFoundation('telegram');
+    const email = getCommunicationChannelFoundation('email');
+    const phone = getCommunicationChannelFoundation('phone');
     const pageSource = readFileSync(join(process.cwd(), 'src/app/dashboard/communication/page.tsx'), 'utf8');
 
-    expect(pageSource).toContain('Основной канал сейчас');
-    expect(pageSource).toContain('роль и сессия');
-    expect(pageSource).toContain('объект и бронь');
-    expect(pageSource).toContain('срочный доступ и передача оператору');
-    expect(pageSource).toContain('Фундамент / полуавто');
-    expect(pageSource).toContain('без полного автопилота');
-    expect(pageSource).toContain('Подключение по заявке');
-    expect(pageSource).toContain('Реальная телефония здесь не заявлена как активная');
+    expect(telegram).toEqual(expect.objectContaining({ readiness: 'active', dashboardBadgeRu: 'Основной канал сейчас' }));
+    expect(telegram?.pointsRu).toEqual(expect.arrayContaining(['роль и сессия', 'объект и бронь']));
+    expect(email).toEqual(expect.objectContaining({ readiness: 'foundation', dashboardBadgeRu: 'Фундамент / полуавто' }));
+    expect(email?.pointsRu).toContain('без полного автопилота');
+    expect(phone).toEqual(
+      expect.objectContaining({
+        labelRu: 'Телефон',
+        modeRu: 'Голосовые звонки',
+        dashboardBadgeRu: 'Следующий этап: подключение телефонии',
+        readiness: 'planned',
+        providerStatus: 'not_connected',
+      }),
+    );
+    expect(phone?.summaryRu).toContain('Реальная телефония пока не подключена');
     expect(pageSource).toContain('передача оператору без обещания живой интеграции');
   });
 });

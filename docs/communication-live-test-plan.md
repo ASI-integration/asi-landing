@@ -1,6 +1,6 @@
-# Communication Live Test Plan
+# Communication Readiness And Live Test Plan
 
-Controlled live checks for Communication, Telegram voice, and operator handoff.
+Controlled checks for Communication readiness, Telegram, Email, Phone-ready foundation, and operator handoff.
 
 This plan is intentionally test-only. Do not run it against production guest chats, payment flows, report intake, location scoring, deployment scripts, or Operations pages.
 
@@ -11,14 +11,41 @@ Open `/dashboard/communication` in a local or staging environment with test data
 - Header says that Telegram is the current main channel, Email is the base contour, and Phone is the next stage.
 - Telegram card is marked as the main active channel and mentions guest messages, session/role context, object/booking context, urgent access, and operator handoff.
 - Email card is marked as foundation / semi-auto and does not claim full autopilot.
-- Phone card is marked as planned / подключение по заявке and does not claim that live telephony is connected.
+- Phone card is marked as planned with `Телефон`, `Голосовые звонки`, and `Следующий этап: подключение телефонии`.
+- Phone does not claim that live telephony is connected.
 - A Telegram test dialog shows channel, guest, session, booking/object if known, urgency, reason for operator handoff, latest message, operator actions, and dialog history.
 - An Email test dialog shows guest request, object/booking context if known, and manual or semi-auto handling.
 - A Phone test item, if present from synthetic data, is treated as planned intake: call text to task/operator escalation, urgent access scenario, and no claim of active external phone integration.
 
+## Channel Readiness Checklist
+
+### Telegram
+
+- Channel type: `telegram`.
+- Dashboard state: active main channel.
+- Provider state: Telegram adapter/webhook path can be tested with a dedicated test bot.
+- Must still show correctly in filters, readiness cards, and dialog details.
+
+### Email
+
+- Channel type: `email`.
+- Dashboard state: foundation / semi-auto.
+- Provider state: email adapter is present, but UI must not promise full autopilot.
+- Must still show correctly in filters, readiness cards, and dialog details.
+
+### Phone-ready
+
+- Channel type: `phone`.
+- Dashboard state: planned / coming soon.
+- Provider state: placeholder only; no real telephony provider is connected.
+- Required RU copy: `Телефон`, `Голосовые звонки`, `Следующий этап: подключение телефонии`.
+- Synthetic phone items may be used to verify transcript-to-task/operator handling, but the UI must not promise live calling.
+
 ## Current Implementation Notes
 
 - Telegram text messages enter `src/app/api/telegram/webhook/route.ts` and then `processUpdate`.
+- Email and Phone are represented as first-class communication channel types for shared handling.
+- Phone is phone-ready only: `src/lib/communication/channels/phone.ts` and `src/app/api/phone/webhook/route.ts` provide a generic foundation, but no real telephony provider is wired.
 - On this branch, Telegram `voice` and `audio` webhook messages still use the fallback-only path in `src/app/api/telegram/webhook/route.ts`.
 - `src/lib/communication/telegram-voice-inbound.ts` is also fallback-only on this branch.
 - `src/lib/communication/voice-transcription.ts` and `src/lib/communication/voice/stt.ts` contain Telegram file download and STT plumbing, but production Telegram webhook routing must be wired before true live voice STT can pass.
@@ -280,6 +307,6 @@ Do not test on production:
 Run before and after live testing:
 
 ```bash
-npm test -- src/lib/communication src/app/api/telegram
+npx vitest run src/lib/communication/__tests__/channels.test.ts src/lib/communication/__tests__/phone-support.test.ts
 npm run typecheck
 ```
