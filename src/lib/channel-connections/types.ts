@@ -6,7 +6,13 @@
 export type ChannelManagerProviderCode =
   | 'realtycalendar'
   | 'bnovo'
-  | 'travelline'
+  | 'sutochno'
+  | 'yandex_travel'
+  | 'ozon_travel'
+  | 'avito'
+  | 'cian'
+  | 'hotels_101'
+  | 'otello'
   | 'manual_import'
   | 'future';
 
@@ -31,7 +37,19 @@ export type ReservationImportStatus =
   | 'complete'
   | 'failed';
 
-export type ChannelManagerProviderAvailability = 'coming_soon' | 'manual' | 'on_request';
+export type ChannelManagerProviderAvailability =
+  | 'available'
+  | 'foundation'
+  | 'manual'
+  | 'on_request'
+  | 'planned';
+
+export type ChannelManagerProviderKind =
+  | 'channel_manager'
+  | 'ota_adapter'
+  | 'marketplace_adapter'
+  | 'manual'
+  | 'custom';
 
 export type ChannelManagerProvider = {
   code: ChannelManagerProviderCode;
@@ -39,6 +57,8 @@ export type ChannelManagerProvider = {
   /** Primary market focus for rollout ordering */
   primaryMarket: 'ru';
   availability: ChannelManagerProviderAvailability;
+  kind: ChannelManagerProviderKind;
+  description: string;
 };
 
 export type ConnectedProperty = {

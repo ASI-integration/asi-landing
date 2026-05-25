@@ -13,7 +13,13 @@ describe('channel-connections foundation', () => {
     expect(codes).toEqual([
       'realtycalendar',
       'bnovo',
-      'travelline',
+      'sutochno',
+      'yandex_travel',
+      'ozon_travel',
+      'avito',
+      'cian',
+      'hotels_101',
+      'otello',
       'manual_import',
       'future',
     ]);
@@ -24,7 +30,7 @@ describe('channel-connections foundation', () => {
     const snapshot = buildChannelConnectionsFoundationSnapshot('acc_test');
     expect(snapshot.accountId).toBe('acc_test');
     expect(snapshot.connections).toEqual([]);
-    expect(snapshot.providers.length).toBe(5);
+    expect(snapshot.providers.length).toBe(11);
   });
 
   it('builds neutral placeholder connection', () => {
@@ -40,6 +46,7 @@ describe('channel-connections foundation', () => {
   it('exposes required Russian UI copy', () => {
     expect(CHANNEL_CONNECTIONS_PAGE_TITLE).toBe('Подключения каналов');
     expect(CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE).toContain('RealtyCalendar');
-    expect(CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE).toContain('TravelLine');
+    expect(CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE).toContain('Яндекс.Путешествия');
+    expect(CHANNEL_CONNECTIONS_RU_PROVIDERS_NOTE).toContain('Авито');
   });
 });

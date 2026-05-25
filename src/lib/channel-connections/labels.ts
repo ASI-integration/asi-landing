@@ -29,7 +29,7 @@ export function syncStatusLabelRu(status: ChannelSyncStatus): string {
     case 'idle':
       return 'Ожидание';
     case 'syncing':
-      return 'Синхронизация…';
+      return 'Синхронизация...';
     case 'succeeded':
       return 'Успешно';
     case 'failed':
@@ -48,7 +48,7 @@ export function reservationImportStatusLabelRu(status: ReservationImportStatus):
     case 'partial':
       return 'Частичный импорт';
     case 'complete':
-      return 'Импорт завершён';
+      return 'Импорт завершен';
     case 'failed':
       return 'Ошибка импорта';
     default:
@@ -60,12 +60,16 @@ export function providerAvailabilityLabelRu(
   availability: ChannelManagerProviderAvailability,
 ): string {
   switch (availability) {
-    case 'coming_soon':
-      return 'Скоро';
+    case 'available':
+      return 'Доступно';
+    case 'foundation':
+      return 'Foundation';
     case 'manual':
       return 'Вручную';
     case 'on_request':
-      return 'По запросу';
+      return 'По заявке';
+    case 'planned':
+      return 'Планируется';
     default:
       return availability;
   }
