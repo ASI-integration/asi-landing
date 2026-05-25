@@ -129,11 +129,14 @@ describe('processUpdate', () => {
     expect(mockReplyToTelegram).toHaveBeenCalled();
   });
 
-  it('sends the LLM reply when LLM succeeds on an issue', async () => {
+  it('sends the LLM reply path does not handle urgent lock issues', async () => {
     mockLLM.mockResolvedValue('LLM: issue acknowledged');
     const result = await processUpdate(makeUpdate('problem with the lock'));
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(mockSendMessage).toHaveBeenCalledWith('42', 'LLM: issue acknowledged');
+    expect(result.escalation?.reason).toBe(EscalationReason.RequiresOperator);
+    expect(mockLLM).not.toHaveBeenCalled();
+    const [, sentText] = mockSendMessage.mock.calls[0];
+    expect(String(sentText)).toMatch(/operator|team|access|доступ|оператор/i);
   });
 
   it('injects session context into LLM prompt', async () => {

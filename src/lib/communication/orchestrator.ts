@@ -34,6 +34,7 @@ import {
   ProcessOutcome,
   ProcessResult,
   EscalationReason,
+  CommunicationContext,
   InboundMessageEnvelope,
   IntentCategory,
   Lang,
@@ -111,6 +112,10 @@ import {
   normalizeGuestMessageForCanon,
   type CommunicationCanonNormalization,
 } from './communication-normalizer';
+import {
+  decideCommunicationAutopilotResponse,
+  type CommunicationAutopilotContext,
+} from './autopilot';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -318,6 +323,105 @@ function buildOutboundTransportMetadata(params: {
   }
 
   return undefined;
+}
+
+function firstUsefulText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (!text) continue;
+    if (/^(information unavailable|unavailable|unknown|null)$/i.test(text)) continue;
+    return text;
+  }
+  return undefined;
+}
+
+function boolOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function parseWifiInstruction(value: unknown): { name?: string; password?: string } {
+  const text = String(value ?? '').trim();
+  if (!text || /^information unavailable\.?$/i.test(text)) return {};
+
+  const name =
+    text.match(/(?:network|ssid|wi-?fi)\s*:\s*([^,\n.;]+)/i)?.[1]?.trim() ??
+    text.match(/(?:сеть|wi-?fi)\s*:\s*([^,\n.;]+)/i)?.[1]?.trim();
+  const password =
+    text.match(/(?:pass(?:word)?|пароль)\s*:\s*([^,\n.;]+)/i)?.[1]?.trim();
+
+  return {
+    name: firstUsefulText(name),
+    password: firstUsefulText(password),
+  };
+}
+
+function mergeAutopilotContext(
+  base: CommunicationAutopilotContext,
+  override: unknown,
+): CommunicationAutopilotContext {
+  if (!override || typeof override !== 'object') return base;
+  const source = override as CommunicationAutopilotContext;
+  return {
+    session: { ...(base.session ?? {}), ...(source.session ?? {}) },
+    booking: { ...(base.booking ?? {}), ...(source.booking ?? {}) },
+    object: { ...(base.object ?? {}), ...(source.object ?? {}) },
+  };
+}
+
+function buildAutopilotContext(params: {
+  chatId: number;
+  envelope: InboundMessageEnvelope;
+  identity: Awaited<ReturnType<typeof bindIdentity>>;
+  commContext: CommunicationContext;
+  templates: Awaited<ReturnType<typeof getPropertyTemplates>> | null;
+  lang: Lang;
+}): CommunicationAutopilotContext {
+  const wifi = parseWifiInstruction(params.commContext.knowledge?.wifiInstructions);
+  const memory = params.commContext.memory as unknown as Record<string, unknown>;
+  const reservation = params.commContext.reservation as unknown as Record<string, unknown>;
+  const metadataContext = (params.envelope.metadata as Record<string, unknown> | undefined)?.autopilotContext;
+
+  const context: CommunicationAutopilotContext = {
+    session: {
+      id: String(params.chatId),
+      guestName: firstUsefulText(
+        params.identity.guestId,
+        params.commContext.reservation.guestName,
+        memory.guestName,
+      ),
+      language: params.lang,
+    },
+    booking: {
+      id: firstUsefulText(
+        params.commContext.reservation.reservationId,
+        params.identity.reservationId,
+        memory.reservationId,
+        memory.bookingReference,
+      ),
+      checkInDate: firstUsefulText((reservation as any).checkIn, (reservation as any).check_in, memory.checkInDate),
+      checkInTime: firstUsefulText((reservation as any).checkInTime, (reservation as any).check_in_time),
+      checkoutTime: firstUsefulText((reservation as any).checkoutTime, (reservation as any).checkout_time),
+      earlyCheckInAvailable: boolOrUndefined((reservation as any).earlyCheckInAvailable),
+      lateCheckoutAvailable: boolOrUndefined((reservation as any).lateCheckoutAvailable),
+    },
+    object: {
+      id: firstUsefulText(
+        params.commContext.reservation.propertyId,
+        params.identity.propertyId,
+        memory.propertyId,
+      ),
+      name: firstUsefulText(memory.propertyLocation, params.commContext.reservation.propertyId, params.identity.propertyId),
+      address: firstUsefulText(memory.propertyLocation),
+      accessInstructions: firstUsefulText(
+        params.templates?.pre_checkin_template,
+        params.commContext.knowledge?.checkInInstructions,
+      ),
+      wifiName: wifi.name,
+      wifiPassword: wifi.password,
+    },
+  };
+
+  return mergeAutopilotContext(context, metadataContext);
 }
 
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
@@ -1057,6 +1161,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     let usedPath:
       | 'deterministic'
       | 'llm'
+      | 'communication_autopilot'
       | 'telegram_meta_deterministic'
       | 'telegram_operational_intake'
       | 'reply_composer' = 'deterministic';
@@ -1115,6 +1220,167 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;
+
+    if (
+      !replyText &&
+      !escalationSafetyGate &&
+      (envelope.channel === 'telegram' || envelope.channel === 'email') &&
+      text.trim()
+    ) {
+      const autopilotContext = buildAutopilotContext({
+        chatId,
+        envelope,
+        identity,
+        commContext,
+        templates,
+        lang: classification.lang,
+      });
+      const autopilotDecision = decideCommunicationAutopilotResponse({
+        channel: envelope.channel,
+        messageText: text,
+        context: autopilotContext,
+      });
+
+      auditAutonomousDecision({
+        chat_id: chatId,
+        update_id,
+        detail: JSON.stringify({
+          route: 'communication_autopilot',
+          action: autopilotDecision.action,
+          intent: autopilotDecision.metadata.intent,
+          confidence: autopilotDecision.confidence,
+          missingContext: autopilotDecision.metadata.missingContext,
+          channelMode: autopilotDecision.metadata.channelMode,
+          urgent: autopilotDecision.metadata.urgent,
+        }),
+      });
+
+      if (autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
+        replyText = adapter.formatResponse(autopilotDecision.replyText, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        usedPath = 'communication_autopilot';
+        convSession = transitionConversationSessionState(
+          convSession,
+          'resolved',
+          `communication_autopilot:${autopilotDecision.metadata.intent}`,
+        );
+        auditDecision({
+          type: 'reply',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:auto_reply intent=${autopilotDecision.metadata.intent}`,
+        });
+      } else if (autopilotDecision.action === 'escalate' && autopilotDecision.metadata.urgent) {
+        const urgent = autopilotDecision.metadata.urgent;
+        escalation = createEscalationEvent({
+          reason: urgent ? EscalationReason.UrgentIssue : EscalationReason.RequiresOperator,
+          chat_id: chatId,
+          update_id,
+          classification,
+          summary: `communication_autopilot:${autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent}`,
+        });
+        const baseReply =
+          canonicalUrgentAccessEscalationText({
+            channel: envelope.channel,
+            lang: classification.lang,
+            scenarioFamily: autopilotDecision.metadata.intent === 'urgent_access_problem' ? 'ACCESS_KEY_ISSUE' : undefined,
+            action: 'escalate',
+          }) ??
+          (classification.lang === 'ru'
+            ? 'Срочно передаю оператору, чтобы помочь с доступом.'
+            : 'I am escalating this to an operator now so we can help with access.');
+        replyText = adapter.formatResponse(baseReply, commContext as unknown as Record<string, unknown>);
+        llmSucceeded = true;
+        usedPath = 'communication_autopilot';
+        persistEscalationReview({
+          reason: String(escalation.reason),
+          escalationSummary: escalation.summary,
+          confidence: autopilotDecision.confidence,
+          source: {
+            route: 'communication_autopilot',
+            channel: envelope.channel,
+            intent: autopilotDecision.metadata.intent,
+            missing_context: autopilotDecision.metadata.missingContext,
+            urgent,
+            ...(voiceSourceBase ?? {}),
+          },
+          suggestedReply: replyText,
+          detail: JSON.stringify({
+            intent: autopilotDecision.metadata.intent,
+            matchedSignals: autopilotDecision.metadata.matchedSignals,
+            missingContext: autopilotDecision.metadata.missingContext,
+            urgent,
+          }),
+        });
+        auditEscalation({
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:${autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent}`,
+        });
+        auditDecision({
+          type: 'escalate',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:escalate intent=${autopilotDecision.metadata.intent} urgent=${urgent}`,
+        });
+        await withAwaitCheckpoint(
+          'session.transition.operator_review_required_autopilot',
+          () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+          { chat_id: chatId },
+          15_000,
+        );
+        runInBackground(
+          {
+            correlationId: corrId,
+            module: 'orchestrator',
+            taskName: 'createOpsTask_CommunicationAutopilot',
+            triggerId: String(chatId),
+          },
+          async () => {
+            const { task_id } = await createOpsTask({
+              property_id: commContext.reservation.propertyId ?? 'unknown',
+              reservation_id: commContext.reservation.reservationId ?? null,
+              chat_id: chatId,
+              task_type: OpsTaskType.GuestIssue,
+              title: urgent
+                ? 'Communication autopilot: urgent access problem'
+                : `Communication autopilot: ${autopilotDecision.metadata.intent}`,
+              description: `Deterministic autopilot escalation. Intent: ${autopilotDecision.metadata.intent}.`,
+              priority: urgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+              source_event: 'communication_autopilot',
+              trigger_reason: autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent,
+            });
+            if (task_id) {
+              await appendTimelineEvent(identity.guestId ?? String(chatId), {
+                type: 'ops_task_created',
+                task_type: OpsTaskType.GuestIssue,
+                task_id,
+                ts: new Date(),
+              });
+            }
+          },
+        );
+        convSession = transitionConversationSessionState(
+          convSession,
+          'escalated',
+          `communication_autopilot:${autopilotDecision.metadata.intent}`,
+        );
+      } else if (autopilotDecision.action === 'escalate') {
+        auditDecision({
+          type: 'ignore',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:fallthrough_escalate intent=${autopilotDecision.metadata.intent} reason=${autopilotDecision.escalationReason ?? 'n/a'}`,
+        });
+      } else if (autopilotDecision.action === 'needs_context') {
+        auditDecision({
+          type: 'ignore',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
+        });
+      }
+    }
 
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (!replyText && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {
