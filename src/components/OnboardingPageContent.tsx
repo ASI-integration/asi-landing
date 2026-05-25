@@ -4,7 +4,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
+import { readResponseJson } from '@/lib/safeResponseJson';
 import { productSupportEmail } from '@/config/contact';
+
+type PublicConfigResponse = {
+  googleClientId?: string;
+  googleOAuthConfigured?: boolean;
+  googleOAuthEnv?: string;
+  googleOAuthMode?: 'redirect' | 'gis' | 'disabled';
+};
+
+const emptyPublicConfig: PublicConfigResponse = {};
 
 type PricingPlan = 'small' | 'growth' | 'enterprise';
 const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
@@ -68,12 +78,7 @@ export default function OnboardingPageContent() {
         } finally {
           window.clearTimeout(timeoutId);
         }
-        const data = (await res.json()) as {
-          googleClientId?: string;
-          googleOAuthConfigured?: boolean;
-          googleOAuthEnv?: string;
-          googleOAuthMode?: 'redirect' | 'gis' | 'disabled';
-        };
+        const data = await readResponseJson(res, emptyPublicConfig);
         const clientId = (data.googleClientId || '').trim();
         const configured = Boolean(data.googleOAuthConfigured);
         const envHint = typeof data.googleOAuthEnv === 'string' ? data.googleOAuthEnv : '';
@@ -190,7 +195,7 @@ export default function OnboardingPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password, plan: selectedPlanValue, debug: debugGoogle }),
       });
-      const data = await res.json();
+      const data = await readResponseJson(res, {} as { error?: string; message?: string });
       if (!res.ok) {
         const msg =
           (data && typeof data.message === 'string' && data.message.trim()) ||
@@ -244,7 +249,7 @@ export default function OnboardingPageContent() {
           } finally {
             window.clearTimeout(timeoutId);
           }
-          const data = (await res.json()) as { googleClientId?: string };
+          const data = await readResponseJson(res, emptyPublicConfig);
           const clientId = (data.googleClientId || '').trim();
           setGoogleClientId(clientId);
           if (debugGoogle) {
@@ -374,7 +379,7 @@ export default function OnboardingPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, plan: selectedPlanValue, debug: debugGoogle }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res, {} as { error?: string });
       if (!res.ok) {
         if (debugGoogle) {
           // eslint-disable-next-line no-console

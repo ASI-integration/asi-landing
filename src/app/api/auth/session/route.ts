@@ -1,11 +1,24 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { getSession } from '@/lib/auth';
+import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+
+const emptySessionPayload = { user: null, subscription: null, account: null };
 
 export async function GET() {
   const cookieHeader = headers().get('cookie') || '';
-  const session = await getSession();
+  if (!isSessionSecretConfigured()) {
+    console.warn('[Session] SESSION_SECRET is not configured; returning empty session');
+    return NextResponse.json(emptySessionPayload);
+  }
+
+  let session: Awaited<ReturnType<typeof getSession>>;
+  try {
+    session = await getSession();
+  } catch (e) {
+    console.warn('[Session] getSession failed; returning empty session', e);
+    return NextResponse.json(emptySessionPayload);
+  }
   console.info('[Session] request', {
     hasCookieHeader: Boolean(cookieHeader),
     cookieLen: cookieHeader.length,

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
+import { readResponseJson } from '@/lib/safeResponseJson';
 
 export default function ConnectGooglePage() {
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +19,7 @@ export default function ConnectGooglePage() {
     (async () => {
       try {
         const res = await fetch('/api/public-config', { method: 'GET' });
-        const data = (await res.json()) as { googleClientId?: string };
+        const data = await readResponseJson(res, { googleClientId: '' });
         const clientId = (data.googleClientId || '').trim();
         if (!clientId) {
           setError('Google авторизация не настроена.');

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { readResponseJson } from '@/lib/safeResponseJson';
 
 type Session = {
   user: { id: string; email: string };
@@ -26,11 +27,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const res = await fetch('/api/auth/session');
-    const data = await res.json();
-    if (data.user) {
-      setSession({ user: data.user, subscription: data.subscription, account: data.account ?? null });
-    } else {
+    try {
+      const res = await fetch('/api/auth/session');
+      const data = await readResponseJson(res, {
+        user: null as Session['user'] | null,
+        subscription: null as Session['subscription'] | null,
+        account: null as Session['account'] | null,
+      });
+      if (data.user) {
+        setSession({ user: data.user, subscription: data.subscription, account: data.account ?? null });
+      } else {
+        setSession(null);
+      }
+    } catch {
       setSession(null);
     }
   }, []);
