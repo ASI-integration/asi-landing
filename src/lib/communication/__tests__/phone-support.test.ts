@@ -133,9 +133,23 @@ describe('Phone support Phase 1 processing', () => {
   it('includes phone as a communication dashboard channel filter', () => {
     const pageSource = readFileSync(join(process.cwd(), 'src/app/dashboard/communication/page.tsx'), 'utf8');
 
-    expect(pageSource).toContain("{ key: 'phone', label: 'Phone'");
+    expect(pageSource).toContain("{ key: 'phone', label: 'Телефон'");
     expect(pageSource).toContain("review.channel === 'phone'");
-    expect(pageSource).toContain('Caller phone');
-    expect(pageSource).toContain('Open recording');
+    expect(pageSource).toContain('Телефон гостя');
+    expect(pageSource).toContain('Открыть запись');
+  });
+
+  it('presents communication MVP readiness without claiming live phone integration', () => {
+    const pageSource = readFileSync(join(process.cwd(), 'src/app/dashboard/communication/page.tsx'), 'utf8');
+
+    expect(pageSource).toContain('Основной канал сейчас');
+    expect(pageSource).toContain('роль и сессия');
+    expect(pageSource).toContain('объект и бронь');
+    expect(pageSource).toContain('срочный доступ и передача оператору');
+    expect(pageSource).toContain('Фундамент / полуавто');
+    expect(pageSource).toContain('без полного автопилота');
+    expect(pageSource).toContain('Подключение по заявке');
+    expect(pageSource).toContain('Реальная телефония здесь не заявлена как активная');
+    expect(pageSource).toContain('передача оператору без обещания живой интеграции');
   });
 });

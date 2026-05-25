@@ -77,6 +77,13 @@ type ChannelReadinessCard = {
   tone: 'primary' | 'foundation' | 'planned';
 };
 
+type CommunicationPathCard = {
+  title: string;
+  badge: string;
+  summary: string;
+  steps: string[];
+};
+
 function isUrgentReview(review: EscalationReview): boolean {
   const reason = review.escalationReason.toLowerCase();
   const phone = phoneSource(review);
@@ -438,8 +445,8 @@ export default function CommunicationPage() {
       channel: 'telegram',
       title: 'Telegram',
       badge: 'Основной канал сейчас',
-      summary: 'Рабочий канал для сообщений гостей, срочных вопросов и передачи оператору.',
-      points: ['сообщения гостей', 'передача оператору', 'срочный доступ', 'контекст объекта и брони'],
+      summary: 'Рабочий канал для сообщений гостей, срочного доступа и передачи оператору.',
+      points: ['сообщения гостей', 'роль и сессия', 'объект и бронь', 'передача оператору'],
       countLabel: 'диалогов',
       count: summaryCounts.telegram,
       tone: 'primary',
@@ -447,9 +454,9 @@ export default function CommunicationPage() {
     {
       channel: 'email',
       title: 'Email',
-      badge: 'Базовый канал',
-      summary: 'Фундамент для заявок гостей с привязкой к брони и объекту.',
-      points: ['заявки гостей', 'контекст брони', 'контекст объекта', 'ручная или полуавто обработка'],
+      badge: 'Фундамент / полуавто',
+      summary: 'Базовый контур для заявок гостей с ручной или полуавто обработкой.',
+      points: ['заявки гостей', 'контекст брони', 'контекст объекта', 'без полного автопилота'],
       countLabel: 'диалогов',
       count: summaryCounts.email,
       tone: 'foundation',
@@ -458,11 +465,48 @@ export default function CommunicationPage() {
       channel: 'phone',
       title: 'Телефон',
       badge: 'Подключение по заявке',
-      summary: 'Плановый голосовой контур для срочных звонков и задач оператору.',
-      points: ['будущая обработка звонков', 'срочный доступ', 'текст звонка в задачу', 'передача оператору'],
+      summary: 'Плановый голосовой контур. Реальная телефония здесь не заявлена как активная.',
+      points: ['будущий входящий звонок', 'срочный доступ', 'текст звонка в задачу', 'передача оператору'],
       countLabel: 'звонков',
       count: summaryCounts.phone,
       tone: 'planned',
+    },
+  ];
+
+  const communicationPaths: CommunicationPathCard[] = [
+    {
+      title: 'Telegram',
+      badge: 'Рабочий путь',
+      summary: 'Основной маршрут MVP: входящее сообщение гостя проходит через контекст и при риске уходит оператору.',
+      steps: [
+        'входящее сообщение гостя',
+        'роль, сессия и история диалога',
+        'объект, бронь или запрос уточнения',
+        'срочный доступ и передача оператору',
+        'история действий в карточке диалога',
+      ],
+    },
+    {
+      title: 'Email',
+      badge: 'Полуавто',
+      summary: 'Email используется честно: заявки гостей попадают в общий контур, но требуют ручной проверки там, где нет уверенного контекста.',
+      steps: [
+        'заявка гостя из письма',
+        'объект или бронь из данных письма',
+        'черновик ответа, если хватает контекста',
+        'ручная или полуавто обработка оператором',
+      ],
+    },
+    {
+      title: 'Телефон',
+      badge: 'План',
+      summary: 'Телефон показан как следующий этап: сценарии видны в контуре, но реальная телефония не считается подключенной.',
+      steps: [
+        'будущий входящий звонок',
+        'текст звонка в задачу',
+        'срочный доступ по звонку',
+        'передача оператору без обещания живой интеграции',
+      ],
     },
   ];
 
@@ -519,6 +563,41 @@ export default function CommunicationPage() {
             </article>
           );
         })}
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Рабочие маршруты</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Что уже является основным путем, что работает как фундамент, а что остается следующим этапом.
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">MVP readiness</span>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {communicationPaths.map((path) => (
+            <article key={path.title} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-sm font-semibold text-slate-900">{path.title}</h3>
+                <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                  {path.badge}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">{path.summary}</p>
+              <ol className="mt-3 space-y-1.5 text-sm text-slate-700">
+                {path.steps.map((step, idx) => (
+                  <li key={step} className="flex gap-2">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                      {idx + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">

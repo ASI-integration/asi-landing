@@ -4,6 +4,18 @@ Controlled live checks for Communication, Telegram voice, and operator handoff.
 
 This plan is intentionally test-only. Do not run it against production guest chats, payment flows, report intake, location scoring, deployment scripts, or Operations pages.
 
+## Manual Smoke Checklist: Dashboard MVP Readiness
+
+Open `/dashboard/communication` in a local or staging environment with test data only.
+
+- Header says that Telegram is the current main channel, Email is the base contour, and Phone is the next stage.
+- Telegram card is marked as the main active channel and mentions guest messages, session/role context, object/booking context, urgent access, and operator handoff.
+- Email card is marked as foundation / semi-auto and does not claim full autopilot.
+- Phone card is marked as planned / подключение по заявке and does not claim that live telephony is connected.
+- A Telegram test dialog shows channel, guest, session, booking/object if known, urgency, reason for operator handoff, latest message, operator actions, and dialog history.
+- An Email test dialog shows guest request, object/booking context if known, and manual or semi-auto handling.
+- A Phone test item, if present from synthetic data, is treated as planned intake: call text to task/operator escalation, urgent access scenario, and no claim of active external phone integration.
+
 ## Current Implementation Notes
 
 - Telegram text messages enter `src/app/api/telegram/webhook/route.ts` and then `processUpdate`.
