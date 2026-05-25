@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { ensureAccountForUser } from '@/lib/accounts';
+import { readRequestJson } from '@/lib/safeRequestJson';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +12,14 @@ export async function POST(req: Request) {
   let createdUserId: string | null = null;
   let debug = false;
   try {
-    const body = (await req.json()) as { email?: string; password?: string; plan?: unknown; debug?: boolean };
+    const parsed = await readRequestJson<{ email?: string; password?: string; plan?: unknown; debug?: boolean }>(req);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: 'INVALID_BODY', message: 'Некорректное тело запроса.' },
+        { status: 400 }
+      );
+    }
+    const body = parsed.data;
     const { email, password, plan } = body;
     debug = Boolean(body?.debug);
     if (!email?.trim() || !password) {

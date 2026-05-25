@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
+import { readRequestJson } from '@/lib/safeRequestJson';
 
 function randomPassword(): string {
   return crypto.randomBytes(24).toString('base64').replace(/[+/=]/g, '').slice(0, 24);
@@ -15,7 +16,11 @@ export const runtime = 'nodejs';
 export async function POST(req: Request) {
   let debug = false;
   try {
-    const body = (await req.json()) as { idToken?: string; plan?: unknown; debug?: boolean };
+    const parsed = await readRequestJson<{ idToken?: string; plan?: unknown; debug?: boolean }>(req);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+    const body = parsed.data;
     const { idToken, plan } = body;
     debug = Boolean(body?.debug);
     if (!idToken) {

@@ -3,10 +3,15 @@ import bcrypt from 'bcryptjs';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
+import { readRequestJson } from '@/lib/safeRequestJson';
 
 export async function POST(req: Request) {
   try {
-    const { email, password, plan } = await req.json();
+    const parsed = await readRequestJson<{ email?: string; password?: string; plan?: unknown }>(req);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+    const { email, password, plan } = parsed.data;
     if (!email?.trim() || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
     }
