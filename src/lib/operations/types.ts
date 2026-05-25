@@ -10,17 +10,26 @@ export type OperationEntityType =
   | 'guest_issue'
   | 'owner_operator_task';
 
-export type OperationStatus = 'new' | 'in_progress' | 'waiting' | 'done' | 'escalated';
+export type OperationStatus =
+  | 'new'
+  | 'in_progress'
+  | 'waiting_guest'
+  | 'waiting_executor'
+  | 'done'
+  | 'escalated';
 
 export interface OperationFoundationItem {
   id: string;
   type: OperationEntityType;
   status: OperationStatus;
   title: string;
+  description: string;
   propertyLabel: string;
   owner: string;
   dueLabel: string;
   sourceLabel: string;
+  nextStep: string;
+  communicationLinked: boolean;
 }
 
 export type OperationsWorkflowStage =
