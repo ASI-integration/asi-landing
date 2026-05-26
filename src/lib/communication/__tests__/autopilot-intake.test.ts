@@ -171,6 +171,10 @@ import { __resetConversationSessionEngineForTests } from '../conversation-sessio
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
 import { COMMUNICATION_CHANNEL_FOUNDATION, getCommunicationChannelFoundation } from '../channel-foundation';
 import { decideCommunicationAutopilotResponse } from '../autopilot';
+import {
+  __listCommunicationOperationsActionsForTests,
+  __resetCommunicationOperationsActionsForTests,
+} from '../operations-action';
 import { processMessage, processUpdate } from '../orchestrator';
 
 const fullContext = {
@@ -242,6 +246,7 @@ describe('communication autopilot intake wiring', () => {
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
     __resetEscalationReviewStoreForTests();
+    __resetCommunicationOperationsActionsForTests();
     mockSendMessage.mockClear();
     mockCallLLM.mockClear();
     mockCreateOpsTask.mockClear();
@@ -311,7 +316,59 @@ describe('communication autopilot intake wiring', () => {
         trigger_reason: 'urgent_access_problem',
       }),
     );
+    expect(__listCommunicationOperationsActionsForTests()).toEqual([
+      expect.objectContaining({
+        id: 'comm-op-action-1',
+        sourceChannel: 'telegram',
+        category: 'operator_access_support',
+        priority: 'high',
+        status: 'open',
+        reference: expect.objectContaining({
+          sessionId: '42',
+          bookingId: 'booking-1',
+          objectId: 'object-1',
+          chatId: 42,
+        }),
+        reason: 'urgent_access_problem',
+      }),
+    ]);
     expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('reuses an open urgent access action for repeated messages in the same session', async () => {
+    await processMessage(
+      envelope({
+        channel: 'telegram',
+        text: "Urgent, the door code doesn't work and I cannot enter",
+        providerMessageId: 'tg-urgent-access-repeat-1',
+        autopilotContext: fullContext,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const repeated = await processMessage(
+      envelope({
+        channel: 'telegram',
+        text: "Still outside, the code doesn't work and I cannot enter",
+        providerMessageId: 'tg-urgent-access-repeat-2',
+        autopilotContext: fullContext,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(repeated.outcome).toBe('replied');
+    expect(mockCreateOpsTask).toHaveBeenCalledTimes(1);
+    expect(__listCommunicationOperationsActionsForTests()).toEqual([
+      expect.objectContaining({
+        id: 'comm-op-action-1',
+        category: 'operator_access_support',
+        status: 'open',
+        dedupeCount: 1,
+        reason: 'urgent_access_problem',
+      }),
+    ]);
   });
 
   it('creates a cleaning operations action for Telegram cleaning issues with context', async () => {
@@ -340,6 +397,15 @@ describe('communication autopilot intake wiring', () => {
         trigger_reason: 'cleaning_issue',
       }),
     );
+    expect(__listCommunicationOperationsActionsForTests()).toEqual([
+      expect.objectContaining({
+        sourceChannel: 'telegram',
+        category: 'cleaning',
+        priority: 'normal',
+        status: 'open',
+        reason: 'cleaning_issue',
+      }),
+    ]);
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 
@@ -369,6 +435,15 @@ describe('communication autopilot intake wiring', () => {
         trigger_reason: 'maintenance_issue',
       }),
     );
+    expect(__listCommunicationOperationsActionsForTests()).toEqual([
+      expect.objectContaining({
+        sourceChannel: 'email',
+        category: 'maintenance',
+        priority: 'normal',
+        status: 'open',
+        reason: 'maintenance_issue',
+      }),
+    ]);
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 

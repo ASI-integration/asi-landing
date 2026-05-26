@@ -14,10 +14,10 @@ export type CommunicationAutopilotIntent =
   | 'unknown';
 
 export type CommunicationAutopilotOperationsAction = {
-  department: 'operator_access_support' | 'cleaning' | 'maintenance';
-  priority: 'urgent' | 'normal';
+  category: 'operator_access_support' | 'cleaning' | 'maintenance';
+  priority: 'high' | 'normal';
   title: string;
-  triggerReason: string;
+  shortReason: string;
 };
 
 export type CommunicationAutopilotChannel = Extract<
@@ -362,24 +362,24 @@ function buildOperationsAction(
   switch (intent) {
     case 'urgent_access_problem':
       return {
-        department: 'operator_access_support',
-        priority: 'urgent',
+        category: 'operator_access_support',
+        priority: 'high',
         title: 'Communication autopilot: urgent access support',
-        triggerReason: 'urgent_access_problem',
+        shortReason: 'urgent_access_problem',
       };
     case 'cleaning_issue':
       return {
-        department: 'cleaning',
+        category: 'cleaning',
         priority: 'normal',
         title: 'Communication autopilot: cleaning issue',
-        triggerReason: 'cleaning_issue',
+        shortReason: 'cleaning_issue',
       };
     case 'maintenance_issue':
       return {
-        department: 'maintenance',
+        category: 'maintenance',
         priority: 'normal',
         title: 'Communication autopilot: maintenance issue',
-        triggerReason: 'maintenance_issue',
+        shortReason: 'maintenance_issue',
       };
     default:
       return undefined;

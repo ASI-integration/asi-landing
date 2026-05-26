@@ -122,6 +122,13 @@ describe('communication autopilot MVP', () => {
         urgent: true,
       }),
     );
+    expect(decision.metadata.operationsAction).toEqual(
+      expect.objectContaining({
+        category: 'operator_access_support',
+        priority: 'high',
+        shortReason: 'urgent_access_problem',
+      }),
+    );
   });
 
   it('classifies cleaning issues as operations handoff with cleaning assignment metadata', () => {
@@ -136,9 +143,9 @@ describe('communication autopilot MVP', () => {
     expect(decision.metadata.intent).toBe('cleaning_issue');
     expect(decision.metadata.operationsAction).toEqual(
       expect.objectContaining({
-        department: 'cleaning',
+        category: 'cleaning',
         priority: 'normal',
-        triggerReason: 'cleaning_issue',
+        shortReason: 'cleaning_issue',
       }),
     );
   });
@@ -155,9 +162,9 @@ describe('communication autopilot MVP', () => {
     expect(decision.metadata.intent).toBe('maintenance_issue');
     expect(decision.metadata.operationsAction).toEqual(
       expect.objectContaining({
-        department: 'maintenance',
+        category: 'maintenance',
         priority: 'normal',
-        triggerReason: 'maintenance_issue',
+        shortReason: 'maintenance_issue',
       }),
     );
   });

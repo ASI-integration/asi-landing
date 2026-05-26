@@ -117,6 +117,11 @@ import {
   type CommunicationAutopilotDecision,
   type CommunicationAutopilotContext,
 } from './autopilot';
+import {
+  upsertCommunicationOperationsAction,
+  type CommunicationOperationsAction,
+  type CommunicationOperationsActionSourceChannel,
+} from './operations-action';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -431,6 +436,12 @@ function isLiveAutopilotInboundChannel(
   return channel === 'telegram' || channel === 'email';
 }
 
+function toAutopilotOperationsSourceChannel(
+  channel: InboundMessageEnvelope['channel'],
+): CommunicationOperationsActionSourceChannel {
+  return channel === 'phone' ? 'phone-placeholder' : channel === 'email' ? 'email' : 'telegram';
+}
+
 function composeAutopilotContextClarifier(params: {
   decision: CommunicationAutopilotDecision;
   lang: Lang;
@@ -488,21 +499,42 @@ function hasAutopilotOperationsContext(context: CommunicationAutopilotContext): 
 function resolveAutopilotOpsTask(params: {
   decision: CommunicationAutopilotDecision;
   context: CommunicationAutopilotContext;
+  envelope: InboundMessageEnvelope;
   fallbackPropertyId?: string | null;
   fallbackReservationId?: string | null;
   chatId: number;
-}) {
+  updateId?: number;
+}): { task: Parameters<typeof createOpsTask>[0]; action: CommunicationOperationsAction; lifecycle: 'created' | 'deduped' } | null {
   const action = params.decision.metadata.operationsAction;
   if (!action || !hasAutopilotOperationsContext(params.context)) return null;
 
   const propertyId = firstUsefulText(params.context.object?.id, params.fallbackPropertyId, 'unknown')!;
   const reservationId = firstUsefulText(params.context.booking?.id, params.fallbackReservationId) ?? null;
   const taskType =
-    action.department === 'cleaning'
+    action.category === 'cleaning'
       ? OpsTaskType.Turnover
       : OpsTaskType.GuestIssue;
+  const providerMessageId = firstUsefulText(
+    params.envelope.metadata?.providerMessageId,
+    params.envelope.metadata?.externalMessageId,
+  );
+  const lifecycle = upsertCommunicationOperationsAction({
+    sourceChannel: toAutopilotOperationsSourceChannel(params.envelope.channel),
+    category: action.category,
+    priority: action.priority,
+    reason: action.shortReason,
+    reference: {
+      guestId: firstUsefulText(params.context.session?.guestName, params.envelope.externalUserId),
+      sessionId: firstUsefulText(params.context.session?.id),
+      bookingId: reservationId ?? undefined,
+      objectId: propertyId,
+      chatId: params.chatId,
+      updateId: params.updateId,
+      providerMessageId,
+    },
+  });
 
-  return {
+  const task = {
     property_id: propertyId,
     reservation_id: reservationId,
     chat_id: params.chatId,
@@ -511,19 +543,23 @@ function resolveAutopilotOpsTask(params: {
     description: [
       `Deterministic autopilot operations action.`,
       `Intent: ${params.decision.metadata.intent}.`,
-      `Department: ${action.department}.`,
+      `Action ID: ${lifecycle.action.id}.`,
+      `Category: ${action.category}.`,
     ].join(' '),
-    priority: action.priority === 'urgent' ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
-    assigned_to: action.department,
+    priority: action.priority === 'high' ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+    assigned_to: action.category,
     source_event: 'communication_autopilot',
-    trigger_reason: action.triggerReason,
+    trigger_reason: action.shortReason,
     dedup_key: [
       'communication_autopilot',
-      action.department,
+      lifecycle.action.id,
+      action.category,
       params.decision.metadata.intent,
       reservationId ?? `chat:${params.chatId}`,
     ].join(':'),
   };
+
+  return { task, action: lifecycle.action, lifecycle: lifecycle.lifecycle };
 }
 
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
@@ -1276,7 +1312,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       : null;
 
     if (
-      !escalationSafetyGate &&
       isLiveAutopilotInboundChannel(envelope.channel) &&
       text.trim()
     ) {
@@ -1309,7 +1344,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }),
       });
 
-      if (autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
+      if (!escalationSafetyGate && autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
         replyText = adapter.formatResponse(autopilotDecision.replyText, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
         usedPath = 'communication_autopilot';
@@ -1324,7 +1359,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           detail: `communication_autopilot:auto_reply intent=${autopilotDecision.metadata.intent}`,
         });
-      } else if (autopilotDecision.action === 'needs_context') {
+      } else if (!escalationSafetyGate && autopilotDecision.action === 'needs_context') {
         replyText = adapter.formatResponse(
           composeAutopilotContextClarifier({ decision: autopilotDecision, lang: classification.lang }),
           commContext as unknown as Record<string, unknown>,
@@ -1342,7 +1377,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
         });
-      } else if (autopilotDecision.action === 'escalate') {
+      } else if (
+        autopilotDecision.action === 'escalate' &&
+        (!escalationSafetyGate || autopilotDecision.metadata.operationsAction)
+      ) {
         const urgent = autopilotDecision.metadata.urgent;
         escalation = createEscalationEvent({
           reason: urgent ? EscalationReason.UrgentIssue : EscalationReason.RequiresOperator,
@@ -1401,30 +1439,41 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         const autopilotOpsTask = resolveAutopilotOpsTask({
           decision: autopilotDecision,
           context: autopilotContext,
+          envelope,
           fallbackPropertyId: commContext.reservation.propertyId,
           fallbackReservationId: commContext.reservation.reservationId,
           chatId,
+          updateId: update_id,
         });
         if (autopilotOpsTask) {
-          runInBackground(
-            {
-              correlationId: corrId,
-              module: 'orchestrator',
-              taskName: 'createOpsTask_CommunicationAutopilot',
-              triggerId: String(chatId),
-            },
-            async () => {
-              const { task_id } = await createOpsTask(autopilotOpsTask);
-              if (task_id) {
-                await appendTimelineEvent(identity.guestId ?? String(chatId), {
-                  type: 'ops_task_created',
-                  task_type: autopilotOpsTask.task_type,
-                  task_id,
-                  ts: new Date(),
-                });
-              }
-            },
-          );
+          if (autopilotOpsTask.lifecycle === 'created') {
+            runInBackground(
+              {
+                correlationId: corrId,
+                module: 'orchestrator',
+                taskName: 'createOpsTask_CommunicationAutopilot',
+                triggerId: String(chatId),
+              },
+              async () => {
+                const { task_id } = await createOpsTask(autopilotOpsTask.task);
+                if (task_id) {
+                  await appendTimelineEvent(identity.guestId ?? String(chatId), {
+                    type: 'ops_task_created',
+                    task_type: autopilotOpsTask.task.task_type,
+                    task_id,
+                    ts: new Date(),
+                  });
+                }
+              },
+            );
+          } else {
+            auditDecision({
+              type: 'escalate',
+              chat_id: chatId,
+              update_id,
+              detail: `communication_autopilot:ops_action_reused action_id=${autopilotOpsTask.action.id} intent=${autopilotDecision.metadata.intent}`,
+            });
+          }
         } else {
           auditDecision({
             type: 'escalate',

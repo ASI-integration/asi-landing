@@ -438,6 +438,8 @@ export enum AuditEventType {
   LLMCalled         = 'LLM_CALLED',
   LLMFallback       = 'LLM_FALLBACK',
   EscalationCreated = 'ESCALATION_CREATED',
+  OperationsActionCreated = 'OPERATIONS_ACTION_CREATED',
+  OperationsActionDeduped = 'OPERATIONS_ACTION_DEDUPED',
   AutonomousDecision = 'AUTONOMOUS_DECISION',
   IdentityDecision  = 'IDENTITY_DECISION',
   PersistError      = 'PERSIST_ERROR',
