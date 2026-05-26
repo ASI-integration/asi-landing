@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { InboundMessageEnvelope } from '../types';
 
 const mockSendMessage = vi.fn().mockResolvedValue(true);
@@ -164,6 +166,8 @@ import { _resetForTesting as resetIdempotency } from '../idempotency';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
+import { COMMUNICATION_CHANNEL_FOUNDATION, getCommunicationChannelFoundation } from '../channel-foundation';
+import { decideCommunicationAutopilotResponse } from '../autopilot';
 import { processMessage } from '../orchestrator';
 
 const fullContext = {
@@ -184,16 +188,22 @@ const fullContext = {
 };
 
 function envelope(params: {
-  channel: 'telegram' | 'email';
+  channel: 'telegram' | 'email' | 'phone';
   text: string;
   providerMessageId: string;
   autopilotContext?: unknown;
 }): InboundMessageEnvelope {
   return {
     channel: params.channel,
-    externalUserId: params.channel === 'telegram' ? '42' : 'guest@example.com',
+    externalUserId:
+      params.channel === 'telegram'
+        ? '42'
+        : params.channel === 'phone'
+          ? '+15550004444'
+          : 'guest@example.com',
     chatId: params.channel === 'telegram' ? '42' : undefined,
     email: params.channel === 'email' ? 'guest@example.com' : undefined,
+    phoneNumber: params.channel === 'phone' ? '+15550004444' : undefined,
     subject: params.channel === 'email' ? 'Guest question' : undefined,
     messageText: params.text,
     receivedAt: new Date('2026-05-25T10:00:00.000Z'),
@@ -285,5 +295,94 @@ describe('communication autopilot intake wiring', () => {
       expect.objectContaining({ subject: 'Re: Guest question' }),
     );
     expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('smoke-routes live intake and keeps Telegram, Email, and Phone channel foundations explicit', async () => {
+    const liveResult = await processMessage(
+      envelope({
+        channel: 'telegram',
+        text: 'Wi-Fi password please',
+        providerMessageId: 'tg-live-autopilot-smoke-1',
+        autopilotContext: fullContext,
+      }),
+    );
+
+    expect(liveResult.outcome).toBe('replied');
+    expect(liveResult.reply).toContain('ASI Guest');
+    expect(liveResult.reply).toContain('welcome24');
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '42',
+      expect.stringContaining('welcome24'),
+      expect.objectContaining({
+        reply_handler: expect.stringContaining('communication_autopilot'),
+      }),
+    );
+
+    const supportedFoundations = COMMUNICATION_CHANNEL_FOUNDATION.map((item) => item.channel);
+    expect(supportedFoundations).toEqual(['telegram', 'email', 'phone']);
+
+    const classifiedByChannel = supportedFoundations.map((channel) => {
+      const foundation = getCommunicationChannelFoundation(channel);
+      const decision = decideCommunicationAutopilotResponse({
+        channel,
+        messageText: 'Wi-Fi password please',
+        context: fullContext,
+      });
+
+      return {
+        channel,
+        provider: foundation?.provider,
+        providerStatus: foundation?.providerStatus,
+        readiness: foundation?.readiness,
+        intent: decision.metadata.intent,
+        channelMode: decision.metadata.channelMode,
+        action: decision.action,
+      };
+    });
+
+    expect(classifiedByChannel).toEqual([
+      expect.objectContaining({
+        channel: 'telegram',
+        provider: 'telegram',
+        providerStatus: 'connected',
+        readiness: 'active',
+        intent: 'wifi',
+        channelMode: 'active',
+        action: 'auto_reply',
+      }),
+      expect.objectContaining({
+        channel: 'email',
+        provider: 'email',
+        providerStatus: 'foundation',
+        readiness: 'foundation',
+        intent: 'wifi',
+        channelMode: 'foundation',
+        action: 'auto_reply',
+      }),
+      expect.objectContaining({
+        channel: 'phone',
+        provider: 'phone_telephony_placeholder',
+        providerStatus: 'not_connected',
+        readiness: 'planned',
+        intent: 'wifi',
+        channelMode: 'planned',
+        action: 'auto_reply',
+      }),
+    ]);
+
+    const handoffDecision = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'РЎСЂРѕС‡РЅРѕ, РєРѕРґ РЅРµ СЂР°Р±РѕС‚Р°РµС‚, СЏ РЅР° СѓР»РёС†Рµ Рё РЅРµ РјРѕРіСѓ РїРѕРїР°СЃС‚СЊ',
+      context: fullContext,
+    });
+
+    expect(handoffDecision.action).toBe('escalate');
+    expect(handoffDecision.escalationReason).toBe('unknown_guest_question');
+
+    const dashboardSource = readFileSync(join(process.cwd(), 'src/app/dashboard/communication/page.tsx'), 'utf8');
+    expect(dashboardSource).toContain("'take_over_manual'");
+    expect(dashboardSource).toContain('Действия оператора');
+    expect(dashboardSource).not.toContain("from '@/lib/communication/orchestrator'");
+    expect(dashboardSource).not.toContain('processMessage(');
   });
 });
