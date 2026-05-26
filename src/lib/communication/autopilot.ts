@@ -73,6 +73,9 @@ const INTENT_RULES: readonly IntentRule[] = [
       /(не\s+могу|невозможно|не\s+получается)\s+(попасть|зайти|войти|открыть)/i,
       /(код|замок|дверь|ключ).{0,28}(не\s+работает|не\s+подходит|не\s+открывает|сломал[асо]?ь|заклинил[ао]?)/i,
       /(срочно|экстренно|на\s+улице|застрял[аи]?|застряли).{0,40}(доступ|замок|дверь|код|ключ)/i,
+      /(can(?:not|'t)|unable|cannot)\s+(enter|get\s+in|open|access)/i,
+      /(door|lock|key|code).{0,28}(does\s+not\s+work|doesn't\s+work|not\s+working|broken|stuck|wrong)/i,
+      /(urgent|emergency|outside|stuck).{0,40}(access|door|lock|key|code|enter|get\s+in)/i,
     ],
   },
   {
@@ -83,6 +86,7 @@ const INTENT_RULES: readonly IntentRule[] = [
       /поздн(?:ий|его|ему|им)?\s+выезд/i,
       /(заехать|заселиться)\s+(раньше|пораньше|до)/i,
       /(выехать|выезд)\s+(позже|попозже|после)/i,
+      /(early\s+check[\s-]?in|late\s+check[\s-]?out)/i,
     ],
   },
   {
@@ -92,12 +96,15 @@ const INTENT_RULES: readonly IntentRule[] = [
       /(заселени[еяю]|заезд)/i,
       /как\s+(попасть|зайти|войти|заселиться)/i,
       /(код|ключи|инструкция)\s+(для\s+)?(входа|заселения|доступа)/i,
+      /(check[\s-]?in|arrival|access|door\s+code|entry\s+code|key\s+instructions)/i,
+      /how\s+(do|can)\s+i\s+(enter|get\s+in|check\s+in|access)/i,
     ],
   },
   {
     intent: 'address_instruction',
     confidence: 0.84,
     patterns: [
+      /(address|location|directions|where\s+is|how\s+to\s+get\s+there)/i,
       /(адрес|локаци[яию]|геолокаци[яию])/i,
       /(где\s+находится|куда\s+ехать|как\s+добраться)/i,
       /инструкци[яию]/i,

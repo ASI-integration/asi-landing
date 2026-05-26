@@ -97,7 +97,7 @@ vi.mock('../context', () => ({
       universalPolicy: 'Never invent details.',
       checkInInstructions: 'Information unavailable.',
       checkOutInstructions: 'Information unavailable.',
-      wifiInstructions: 'Information unavailable.',
+      wifiInstructions: 'Wi-Fi: ASI Guest, password: welcome24.',
     },
     recentMessages: [],
   }),
@@ -168,7 +168,7 @@ import { __resetConversationSessionEngineForTests } from '../conversation-sessio
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
 import { COMMUNICATION_CHANNEL_FOUNDATION, getCommunicationChannelFoundation } from '../channel-foundation';
 import { decideCommunicationAutopilotResponse } from '../autopilot';
-import { processMessage } from '../orchestrator';
+import { processMessage, processUpdate } from '../orchestrator';
 
 const fullContext = {
   booking: {
@@ -212,6 +212,23 @@ function envelope(params: {
       providerMessageId: params.providerMessageId,
       externalMessageId: params.providerMessageId,
       autopilotContext: params.autopilotContext,
+    },
+  };
+}
+
+function telegramUpdate(params: {
+  text: string;
+  updateId: number;
+  messageId: number;
+  chatId?: number;
+}) {
+  return {
+    update_id: params.updateId,
+    message: {
+      message_id: params.messageId,
+      chat: { id: params.chatId ?? 42 },
+      from: { language_code: 'en' },
+      text: params.text,
     },
   };
 }
@@ -384,5 +401,61 @@ describe('communication autopilot intake wiring', () => {
     expect(dashboardSource).toContain('Действия оператора');
     expect(dashboardSource).not.toContain("from '@/lib/communication/orchestrator'");
     expect(dashboardSource).not.toContain('processMessage(');
+  });
+
+  it('uses autopilot from real Telegram update intake before LLM fallback', async () => {
+    const result = await processUpdate(
+      telegramUpdate({
+        text: 'Wi-Fi password please',
+        updateId: 7001,
+        messageId: 701,
+        chatId: 4201,
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(result.reply).toContain('ASI Guest');
+    expect(result.reply).toContain('welcome24');
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      '4201',
+      expect.stringContaining('welcome24'),
+      expect.objectContaining({
+        reply_handler: expect.stringContaining('communication_autopilot'),
+      }),
+    );
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('escalates urgent Telegram access from real update intake through autopilot', async () => {
+    const result = await processUpdate(
+      telegramUpdate({
+        text: "Urgent, the door code doesn't work and I cannot enter",
+        updateId: 7002,
+        messageId: 702,
+        chatId: 4202,
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(result.escalation?.reason).toBe('URGENT_ISSUE');
+    expect(result.reply).toMatch(/operator|access/i);
+    expect(listEscalationReviews()).toHaveLength(1);
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('hands off unknown Email intake without inventing or calling the LLM', async () => {
+    const result = await processMessage(
+      envelope({
+        channel: 'email',
+        text: 'Which museum nearby is open latest tonight?',
+        providerMessageId: 'email-unknown-live-1',
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(result.escalation?.reason).toBe('REQUIRES_OPERATOR');
+    expect(result.reply).toMatch(/operator|verified booking or property context/i);
+    expect(String(mockSendMessage.mock.calls[0][1])).not.toMatch(/museum|open latest/i);
+    expect(mockCallLLM).not.toHaveBeenCalled();
   });
 });

@@ -114,6 +114,7 @@ import {
 } from './communication-normalizer';
 import {
   decideCommunicationAutopilotResponse,
+  type CommunicationAutopilotDecision,
   type CommunicationAutopilotContext,
 } from './autopilot';
 
@@ -422,6 +423,57 @@ function buildAutopilotContext(params: {
   };
 
   return mergeAutopilotContext(context, metadataContext);
+}
+
+function isLiveAutopilotInboundChannel(
+  channel: InboundMessageEnvelope['channel'],
+): channel is 'telegram' | 'email' {
+  return channel === 'telegram' || channel === 'email';
+}
+
+function composeAutopilotContextClarifier(params: {
+  decision: CommunicationAutopilotDecision;
+  lang: Lang;
+}): string {
+  const missing = params.decision.metadata.missingContext;
+  if (params.lang === 'ru') {
+    if (missing.some((field) => field.startsWith('object.'))) {
+      return '\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u0435, \u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0431\u044a\u0435\u043a\u0442 \u0438\u043b\u0438 \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438, \u0438 \u044f \u043f\u0440\u043e\u0432\u0435\u0440\u044e \u0442\u043e\u0447\u043d\u044b\u0435 \u0434\u0435\u0442\u0430\u043b\u0438.';
+    }
+    return '\u041d\u0443\u0436\u043d\u043e \u0443\u0442\u043e\u0447\u043d\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043f\u043e \u0431\u0440\u043e\u043d\u0438 \u0438\u043b\u0438 \u043e\u0431\u044a\u0435\u043a\u0442\u0443. \u041f\u0440\u0438\u0448\u043b\u0438\u0442\u0435, \u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438 \u0438\u043b\u0438 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043e\u0431\u044a\u0435\u043a\u0442\u0430.';
+  }
+
+  if (missing.some((field) => field.startsWith('object.'))) {
+    return 'Please send the property or booking number, and I will check the exact details.';
+  }
+  return 'I need one more booking or property detail before answering safely. Please send the booking number or property name.';
+}
+
+function composeAutopilotHandoffReply(params: {
+  decision: CommunicationAutopilotDecision;
+  channel: InboundMessageEnvelope['channel'];
+  lang: Lang;
+}): string {
+  const canonical =
+    params.decision.metadata.urgent
+      ? canonicalUrgentAccessEscalationText({
+          channel: params.channel,
+          lang: params.lang,
+          scenarioFamily: params.decision.metadata.intent === 'urgent_access_problem' ? 'ACCESS_KEY_ISSUE' : undefined,
+          action: 'escalate',
+        })
+      : null;
+  if (canonical) return canonical;
+
+  if (params.lang === 'ru') {
+    return params.decision.metadata.urgent
+      ? '\u0421\u0440\u043e\u0447\u043d\u043e \u043f\u0435\u0440\u0435\u0434\u0430\u044e \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u043c\u043e\u0447\u044c \u0441 \u0434\u043e\u0441\u0442\u0443\u043f\u043e\u043c.'
+      : '\u041f\u0435\u0440\u0435\u0434\u0430\u044e \u0432\u043e\u043f\u0440\u043e\u0441 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443, \u0447\u0442\u043e\u0431\u044b \u043d\u0435 \u043e\u0442\u0432\u0435\u0447\u0430\u0442\u044c \u0431\u0435\u0437 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u043e\u0433\u043e \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u0430.';
+  }
+
+  return params.decision.metadata.urgent
+    ? 'I am escalating this to an operator now so we can help with access.'
+    : 'I am passing this to an operator so we do not answer without verified booking or property context.';
 }
 
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
@@ -1108,55 +1160,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
 
-    // Action Policy Guard
-    cp('action_selection.start', { chat_id: chatId });
-    const safety = evaluateActionSafety(commContext, text);
-    cp('action_selection.done', { chat_id: chatId, safe: safety.safe, action: safety.action });
-    if (pipeDebug) {
-      console.log('[comm:pipeline] action.selected', {
-        corr_id: corrId,
-        update_id,
-        chat_id: chatId,
-        safe: safety.safe,
-        action: safety.action,
-        reason: safety.reason ?? null,
-        escalation_reason: safety.escalationReason ?? null,
-      });
-    }
-
-    // ── Scenario engine + reservation-aware decision layer ────────────────────
-    // Deterministic-first: decide next action BEFORE generating any freeform LLM reply.
-    cp('scenario_engine.start', { chat_id: chatId });
-    const entityResolution = resolveEntities({ text, identity, context: commContext });
-    const { decision, plan } = buildDecisionAndPlan({
-      text,
-      classification,
-      intent: intentResult,
-      identity,
-      context: commContext,
-      entityResolution,
-    });
-    const cq = decision.nextAction === 'ask_clarifying_question'
-      ? pickSingleBestClarifyingQuestion({ decision, lang: classification.lang })
-      : null;
-    if (cq) plan.clarifyingQuestion = cq;
-    cp('scenario_engine.done', { chat_id: chatId, scenario: decision.scenario, next_action: decision.nextAction, entity_status: decision.entityResolution.status });
-    auditAutonomousDecision({
-      chat_id: chatId,
-      update_id,
-      detail: JSON.stringify({
-        scenario: decision.scenario,
-        confidence: decision.confidence,
-        nextAction: decision.nextAction,
-        missingFacts: decision.missingFacts,
-        entityStatus: decision.entityResolution.status,
-        evidence: decision.entityResolution.evidence?.slice(0, 8),
-        candidates: decision.entityResolution.candidates?.slice(0, 5),
-      }),
-    });
-
-    let replyText = '';
-    let llmSucceeded = false;
+    let replyText: string = '';
+    let llmSucceeded: boolean = false;
     const replyComposeStartedAt = Date.now();
     let usedPath:
       | 'deterministic'
@@ -1166,20 +1171,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       | 'telegram_operational_intake'
       | 'reply_composer' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
-    /** When set, pre-rule “low confidence / identity” escalation must not clobber this turn. */
-    let telegramOperationalIntakeConsumed = false;
+    let telegramOperationalIntakeConsumed: boolean = false;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
     const escalationSafetyGate = blockNormalAutomationBecauseEscalated;
-
+    /** When set, pre-rule low confidence / identity escalation must not clobber this turn. */
     const persistEscalationReview = (params: {
       reason: string;
       escalationSummary: string;
       confidence?: number;
       suggestedReply?: string;
       detail?: string;
-    source?: Record<string, unknown>;
+      source?: Record<string, unknown>;
     }) => {
       const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
       if (!targetIdRaw) return;
@@ -1194,7 +1198,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         leadId: identity.leadId,
         escalationReason: params.reason,
         confidence: params.confidence,
-      source: params.source,
+        source: params.source,
         latestMessages: convSession.memory.lastMessages,
         suggestedReply: params.suggestedReply,
         detail: params.detail ?? params.escalationSummary,
@@ -1222,9 +1226,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       : null;
 
     if (
-      !replyText &&
       !escalationSafetyGate &&
-      (envelope.channel === 'telegram' || envelope.channel === 'email') &&
+      isLiveAutopilotInboundChannel(envelope.channel) &&
       text.trim()
     ) {
       const autopilotContext = buildAutopilotContext({
@@ -1246,6 +1249,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         update_id,
         detail: JSON.stringify({
           route: 'communication_autopilot',
+          stage: 'pre_scenario',
           action: autopilotDecision.action,
           intent: autopilotDecision.metadata.intent,
           confidence: autopilotDecision.confidence,
@@ -1270,7 +1274,25 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           detail: `communication_autopilot:auto_reply intent=${autopilotDecision.metadata.intent}`,
         });
-      } else if (autopilotDecision.action === 'escalate' && autopilotDecision.metadata.urgent) {
+      } else if (autopilotDecision.action === 'needs_context') {
+        replyText = adapter.formatResponse(
+          composeAutopilotContextClarifier({ decision: autopilotDecision, lang: classification.lang }),
+          commContext as unknown as Record<string, unknown>,
+        );
+        llmSucceeded = true;
+        usedPath = 'communication_autopilot';
+        convSession = transitionConversationSessionState(
+          convSession,
+          'awaiting_input',
+          `communication_autopilot:needs_context:${autopilotDecision.metadata.intent}`,
+        );
+        auditDecision({
+          type: 'reply',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
+        });
+      } else if (autopilotDecision.action === 'escalate') {
         const urgent = autopilotDecision.metadata.urgent;
         escalation = createEscalationEvent({
           reason: urgent ? EscalationReason.UrgentIssue : EscalationReason.RequiresOperator,
@@ -1279,17 +1301,14 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           classification,
           summary: `communication_autopilot:${autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent}`,
         });
-        const baseReply =
-          canonicalUrgentAccessEscalationText({
+        replyText = adapter.formatResponse(
+          composeAutopilotHandoffReply({
+            decision: autopilotDecision,
             channel: envelope.channel,
             lang: classification.lang,
-            scenarioFamily: autopilotDecision.metadata.intent === 'urgent_access_problem' ? 'ACCESS_KEY_ISSUE' : undefined,
-            action: 'escalate',
-          }) ??
-          (classification.lang === 'ru'
-            ? 'Срочно передаю оператору, чтобы помочь с доступом.'
-            : 'I am escalating this to an operator now so we can help with access.');
-        replyText = adapter.formatResponse(baseReply, commContext as unknown as Record<string, unknown>);
+          }),
+          commContext as unknown as Record<string, unknown>,
+        );
         llmSucceeded = true;
         usedPath = 'communication_autopilot';
         persistEscalationReview({
@@ -1365,22 +1384,55 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           'escalated',
           `communication_autopilot:${autopilotDecision.metadata.intent}`,
         );
-      } else if (autopilotDecision.action === 'escalate') {
-        auditDecision({
-          type: 'ignore',
-          chat_id: chatId,
-          update_id,
-          detail: `communication_autopilot:fallthrough_escalate intent=${autopilotDecision.metadata.intent} reason=${autopilotDecision.escalationReason ?? 'n/a'}`,
-        });
-      } else if (autopilotDecision.action === 'needs_context') {
-        auditDecision({
-          type: 'ignore',
-          chat_id: chatId,
-          update_id,
-          detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
-        });
       }
     }
+
+    // Action Policy Guard
+    cp('action_selection.start', { chat_id: chatId });
+    const safety = evaluateActionSafety(commContext, text);
+    cp('action_selection.done', { chat_id: chatId, safe: safety.safe, action: safety.action });
+    if (pipeDebug) {
+      console.log('[comm:pipeline] action.selected', {
+        corr_id: corrId,
+        update_id,
+        chat_id: chatId,
+        safe: safety.safe,
+        action: safety.action,
+        reason: safety.reason ?? null,
+        escalation_reason: safety.escalationReason ?? null,
+      });
+    }
+
+    // ── Scenario engine + reservation-aware decision layer ────────────────────
+    // Deterministic-first: decide next action BEFORE generating any freeform LLM reply.
+    cp('scenario_engine.start', { chat_id: chatId });
+    const entityResolution = resolveEntities({ text, identity, context: commContext });
+    const { decision, plan } = buildDecisionAndPlan({
+      text,
+      classification,
+      intent: intentResult,
+      identity,
+      context: commContext,
+      entityResolution,
+    });
+    const cq = decision.nextAction === 'ask_clarifying_question'
+      ? pickSingleBestClarifyingQuestion({ decision, lang: classification.lang })
+      : null;
+    if (cq) plan.clarifyingQuestion = cq;
+    cp('scenario_engine.done', { chat_id: chatId, scenario: decision.scenario, next_action: decision.nextAction, entity_status: decision.entityResolution.status });
+    auditAutonomousDecision({
+      chat_id: chatId,
+      update_id,
+      detail: JSON.stringify({
+        scenario: decision.scenario,
+        confidence: decision.confidence,
+        nextAction: decision.nextAction,
+        missingFacts: decision.missingFacts,
+        entityStatus: decision.entityResolution.status,
+        evidence: decision.entityResolution.evidence?.slice(0, 8),
+        candidates: decision.entityResolution.candidates?.slice(0, 5),
+      }),
+    });
 
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (!replyText && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {
