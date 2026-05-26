@@ -124,6 +124,62 @@ describe('communication autopilot MVP', () => {
     );
   });
 
+  it('classifies cleaning issues as operations handoff with cleaning assignment metadata', () => {
+    const decision = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'В квартире грязно и нет полотенец',
+      context: fullContext,
+    });
+
+    expect(decision.action).toBe('escalate');
+    expect(decision.escalationReason).toBe('cleaning_issue');
+    expect(decision.metadata.intent).toBe('cleaning_issue');
+    expect(decision.metadata.operationsAction).toEqual(
+      expect.objectContaining({
+        department: 'cleaning',
+        priority: 'normal',
+        triggerReason: 'cleaning_issue',
+      }),
+    );
+  });
+
+  it('classifies maintenance issues as operations handoff with maintenance metadata', () => {
+    const decision = decideCommunicationAutopilotResponse({
+      channel: 'email',
+      messageText: 'Протекает душ и не работает свет',
+      context: fullContext,
+    });
+
+    expect(decision.action).toBe('escalate');
+    expect(decision.escalationReason).toBe('maintenance_issue');
+    expect(decision.metadata.intent).toBe('maintenance_issue');
+    expect(decision.metadata.operationsAction).toEqual(
+      expect.objectContaining({
+        department: 'maintenance',
+        priority: 'normal',
+        triggerReason: 'maintenance_issue',
+      }),
+    );
+  });
+
+  it('asks for context before creating cleaning or maintenance actions without booking/object context', () => {
+    const cleaning = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'Не убрано, грязно',
+      context: {},
+    });
+    const maintenance = decideCommunicationAutopilotResponse({
+      channel: 'email',
+      messageText: 'Broken shower',
+      context: {},
+    });
+
+    expect(cleaning.action).toBe('needs_context');
+    expect(cleaning.metadata.missingContext).toContain('object.id');
+    expect(maintenance.action).toBe('needs_context');
+    expect(maintenance.metadata.missingContext).toContain('object.id');
+  });
+
   it('keeps phone planned only while still returning audit metadata', () => {
     const decision = decideCommunicationAutopilotResponse({
       channel: 'phone',

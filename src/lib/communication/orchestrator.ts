@@ -476,6 +476,56 @@ function composeAutopilotHandoffReply(params: {
     : 'I am passing this to an operator so we do not answer without verified booking or property context.';
 }
 
+function hasAutopilotOperationsContext(context: CommunicationAutopilotContext): boolean {
+  return Boolean(
+    context.booking?.id ||
+      context.object?.id ||
+      context.object?.name ||
+      context.object?.address,
+  );
+}
+
+function resolveAutopilotOpsTask(params: {
+  decision: CommunicationAutopilotDecision;
+  context: CommunicationAutopilotContext;
+  fallbackPropertyId?: string | null;
+  fallbackReservationId?: string | null;
+  chatId: number;
+}) {
+  const action = params.decision.metadata.operationsAction;
+  if (!action || !hasAutopilotOperationsContext(params.context)) return null;
+
+  const propertyId = firstUsefulText(params.context.object?.id, params.fallbackPropertyId, 'unknown')!;
+  const reservationId = firstUsefulText(params.context.booking?.id, params.fallbackReservationId) ?? null;
+  const taskType =
+    action.department === 'cleaning'
+      ? OpsTaskType.Turnover
+      : OpsTaskType.GuestIssue;
+
+  return {
+    property_id: propertyId,
+    reservation_id: reservationId,
+    chat_id: params.chatId,
+    task_type: taskType,
+    title: action.title,
+    description: [
+      `Deterministic autopilot operations action.`,
+      `Intent: ${params.decision.metadata.intent}.`,
+      `Department: ${action.department}.`,
+    ].join(' '),
+    priority: action.priority === 'urgent' ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
+    assigned_to: action.department,
+    source_event: 'communication_autopilot',
+    trigger_reason: action.triggerReason,
+    dedup_key: [
+      'communication_autopilot',
+      action.department,
+      params.decision.metadata.intent,
+      reservationId ?? `chat:${params.chatId}`,
+    ].join(':'),
+  };
+}
+
 function safeLogJson(tag: string, payload: Record<string, unknown>): void {
   try {
     console.log(tag, payload);
@@ -1348,37 +1398,41 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           { chat_id: chatId },
           15_000,
         );
-        runInBackground(
-          {
-            correlationId: corrId,
-            module: 'orchestrator',
-            taskName: 'createOpsTask_CommunicationAutopilot',
-            triggerId: String(chatId),
-          },
-          async () => {
-            const { task_id } = await createOpsTask({
-              property_id: commContext.reservation.propertyId ?? 'unknown',
-              reservation_id: commContext.reservation.reservationId ?? null,
-              chat_id: chatId,
-              task_type: OpsTaskType.GuestIssue,
-              title: urgent
-                ? 'Communication autopilot: urgent access problem'
-                : `Communication autopilot: ${autopilotDecision.metadata.intent}`,
-              description: `Deterministic autopilot escalation. Intent: ${autopilotDecision.metadata.intent}.`,
-              priority: urgent ? OpsTaskPriority.Urgent : OpsTaskPriority.Normal,
-              source_event: 'communication_autopilot',
-              trigger_reason: autopilotDecision.escalationReason ?? autopilotDecision.metadata.intent,
-            });
-            if (task_id) {
-              await appendTimelineEvent(identity.guestId ?? String(chatId), {
-                type: 'ops_task_created',
-                task_type: OpsTaskType.GuestIssue,
-                task_id,
-                ts: new Date(),
-              });
-            }
-          },
-        );
+        const autopilotOpsTask = resolveAutopilotOpsTask({
+          decision: autopilotDecision,
+          context: autopilotContext,
+          fallbackPropertyId: commContext.reservation.propertyId,
+          fallbackReservationId: commContext.reservation.reservationId,
+          chatId,
+        });
+        if (autopilotOpsTask) {
+          runInBackground(
+            {
+              correlationId: corrId,
+              module: 'orchestrator',
+              taskName: 'createOpsTask_CommunicationAutopilot',
+              triggerId: String(chatId),
+            },
+            async () => {
+              const { task_id } = await createOpsTask(autopilotOpsTask);
+              if (task_id) {
+                await appendTimelineEvent(identity.guestId ?? String(chatId), {
+                  type: 'ops_task_created',
+                  task_type: autopilotOpsTask.task_type,
+                  task_id,
+                  ts: new Date(),
+                });
+              }
+            },
+          );
+        } else {
+          auditDecision({
+            type: 'escalate',
+            chat_id: chatId,
+            update_id,
+            detail: `communication_autopilot:ops_task_skipped intent=${autopilotDecision.metadata.intent} reason=missing_operations_context`,
+          });
+        }
         convSession = transitionConversationSessionState(
           convSession,
           'escalated',

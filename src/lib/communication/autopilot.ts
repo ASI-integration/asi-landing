@@ -9,7 +9,16 @@ export type CommunicationAutopilotIntent =
   | 'checkout'
   | 'early_checkin_late_checkout'
   | 'urgent_access_problem'
+  | 'cleaning_issue'
+  | 'maintenance_issue'
   | 'unknown';
+
+export type CommunicationAutopilotOperationsAction = {
+  department: 'operator_access_support' | 'cleaning' | 'maintenance';
+  priority: 'urgent' | 'normal';
+  title: string;
+  triggerReason: string;
+};
 
 export type CommunicationAutopilotChannel = Extract<
   CommunicationChannel,
@@ -48,6 +57,7 @@ export type CommunicationAutopilotMetadata = {
   contextKeys: string[];
   channelMode: 'active' | 'foundation' | 'planned';
   urgent: boolean;
+  operationsAction?: CommunicationAutopilotOperationsAction;
   policy: 'deterministic_mvp_v1';
 };
 
@@ -70,9 +80,6 @@ const INTENT_RULES: readonly IntentRule[] = [
     intent: 'urgent_access_problem',
     confidence: 0.94,
     patterns: [
-      /(не\s+могу|невозможно|не\s+получается)\s+(попасть|зайти|войти|открыть)/i,
-      /(код|замок|дверь|ключ).{0,28}(не\s+работает|не\s+подходит|не\s+открывает|сломал[асо]?ь|заклинил[ао]?)/i,
-      /(срочно|экстренно|на\s+улице|застрял[аи]?|застряли).{0,40}(доступ|замок|дверь|код|ключ)/i,
       /(can(?:not|'t)|unable|cannot)\s+(enter|get\s+in|open|access)/i,
       /(door|lock|key|code).{0,28}(does\s+not\s+work|doesn't\s+work|not\s+working|broken|stuck|wrong)/i,
       /(urgent|emergency|outside|stuck).{0,40}(access|door|lock|key|code|enter|get\s+in)/i,
@@ -87,6 +94,24 @@ const INTENT_RULES: readonly IntentRule[] = [
       /(заехать|заселиться)\s+(раньше|пораньше|до)/i,
       /(выехать|выезд)\s+(позже|попозже|после)/i,
       /(early\s+check[\s-]?in|late\s+check[\s-]?out)/i,
+    ],
+  },
+  {
+    intent: 'cleaning_issue',
+    confidence: 0.9,
+    patterns: [
+      /(грязно|грязн(?:ая|ый|ое|ые)|не\s+убрано|не\s+убрали|плохо\s+убрано|уборк[аи])/i,
+      /(нет|не\s+хватает|закончились).{0,28}(полотенц|туалетн(?:ой|ая)\s+бумаг|бель[ея])/i,
+      /(dirty|not\s+cleaned|unclean|messy|no\s+towels?|missing\s+towels?|needs?\s+cleaning)/i,
+    ],
+  },
+  {
+    intent: 'maintenance_issue',
+    confidence: 0.9,
+    patterns: [
+      /(сломал(?:ось|ся|ась|и)|сломано|поломка|не\s+работает|перестал[ао]?\s+работать|протекает|теч[её]т)/i,
+      /(свет|душ|кран|вода|раковин|унитаз|замок|дверь|отоплен|кондиционер|розетк).{0,36}(не\s+работает|сломал(?:ось|ся|ась|и)|протекает|теч[её]т|не\s+открывается)/i,
+      /(broken|does\s+not\s+work|doesn't\s+work|not\s+working|leaking|leak|no\s+light|shower|lock|maintenance)/i,
     ],
   },
   {
@@ -171,9 +196,14 @@ export function decideCommunicationAutopilotResponse(input: {
   }
 
   return {
-    action: 'auto_reply',
+    action: isOperationsIntent(classification.intent) ? 'escalate' : 'auto_reply',
     confidence: classification.confidence,
-    replyText: composeRuReply(classification.intent, input.context),
+    replyText: isOperationsIntent(classification.intent)
+      ? undefined
+      : composeRuReply(classification.intent, input.context),
+    escalationReason: isOperationsIntent(classification.intent)
+      ? classification.intent
+      : undefined,
     metadata: baseMetadata,
   };
 }
@@ -183,6 +213,22 @@ function classifyIntent(normalizedText: string): {
   confidence: number;
   matchedSignals: string[];
 } {
+  const urgentAccessSignals = [
+    /(\u043d\u0435\s+\u043c\u043e\u0433\u0443|\u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e|\u043d\u0435\s+\u043f\u043e\u043b\u0443\u0447\u0430\u0435\u0442\u0441\u044f)\s+(\u043f\u043e\u043f\u0430\u0441\u0442\u044c|\u0437\u0430\u0439\u0442\u0438|\u0432\u043e\u0439\u0442\u0438|\u043e\u0442\u043a\u0440\u044b\u0442\u044c)/i,
+    /(\u043a\u043e\u0434|\u0437\u0430\u043c\u043e\u043a|\u0434\u0432\u0435\u0440\u044c|\u043a\u043b\u044e\u0447).{0,28}(\u043d\u0435\s+\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442|\u043d\u0435\s+\u043f\u043e\u0434\u0445\u043e\u0434\u0438\u0442|\u043d\u0435\s+\u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442|\u043d\u0435\s+\u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442\u0441\u044f|\u0441\u043b\u043e\u043c\u0430\u043b[\u0430\u043e]?\u0441[\u044c\u044f]|\u0437\u0430\u043a\u043b\u0438\u043d\u0438\u043b[\u0430\u043e]?)/i,
+    /(\u0441\u0440\u043e\u0447\u043d\u043e|\u044d\u043a\u0441\u0442\u0440\u0435\u043d\u043d\u043e|\u043d\u0430\s+\u0443\u043b\u0438\u0446\u0435|\u0437\u0430\u0441\u0442\u0440\u044f\u043b[\u0430\u0438]?|\u0437\u0430\u0441\u0442\u0440\u044f\u043b\u0438).{0,40}(\u0434\u043e\u0441\u0442\u0443\u043f|\u0437\u0430\u043c\u043e\u043a|\u0434\u0432\u0435\u0440\u044c|\u043a\u043e\u0434|\u043a\u043b\u044e\u0447|\u0432\u043e\u0439\u0442\u0438|\u043f\u043e\u043f\u0430\u0441\u0442\u044c)/i,
+  ];
+  const urgentMatches = urgentAccessSignals
+    .filter((pattern) => pattern.test(normalizedText))
+    .map((pattern) => pattern.source);
+  if (urgentMatches.length > 0) {
+    return {
+      intent: 'urgent_access_problem',
+      confidence: 0.94,
+      matchedSignals: urgentMatches,
+    };
+  }
+
   for (const rule of INTENT_RULES) {
     const matchedSignals = rule.patterns
       .filter((pattern) => pattern.test(normalizedText))
@@ -228,14 +274,31 @@ function getMissingContext(
         ['booking.earlyCheckInAvailable', context?.booking?.earlyCheckInAvailable],
         ['booking.lateCheckoutAvailable', context?.booking?.lateCheckoutAvailable],
       ]);
+    case 'cleaning_issue':
+    case 'maintenance_issue':
+      return missingOperationalContext(context);
     case 'urgent_access_problem':
+      return missingOperationalContext(context);
     case 'unknown':
       return [];
   }
 }
 
+function missingOperationalContext(context: CommunicationAutopilotContext | undefined): string[] {
+  if (context?.booking?.id || context?.object?.id || context?.object?.name || context?.object?.address) {
+    return [];
+  }
+  return ['object.id'];
+}
+
+function isOperationsIntent(
+  intent: CommunicationAutopilotIntent,
+): intent is 'cleaning_issue' | 'maintenance_issue' {
+  return intent === 'cleaning_issue' || intent === 'maintenance_issue';
+}
+
 function composeRuReply(
-  intent: Exclude<CommunicationAutopilotIntent, 'urgent_access_problem' | 'unknown'>,
+  intent: Exclude<CommunicationAutopilotIntent, 'urgent_access_problem' | 'cleaning_issue' | 'maintenance_issue' | 'unknown'>,
   context: CommunicationAutopilotContext | undefined,
 ): string {
   switch (intent) {
@@ -288,8 +351,39 @@ function buildMetadata(input: {
     contextKeys: collectContextKeys(input.context),
     channelMode: CHANNEL_MODE[input.channel],
     urgent: input.intent === 'urgent_access_problem',
+    operationsAction: buildOperationsAction(input.intent),
     policy: 'deterministic_mvp_v1',
   };
+}
+
+function buildOperationsAction(
+  intent: CommunicationAutopilotIntent,
+): CommunicationAutopilotOperationsAction | undefined {
+  switch (intent) {
+    case 'urgent_access_problem':
+      return {
+        department: 'operator_access_support',
+        priority: 'urgent',
+        title: 'Communication autopilot: urgent access support',
+        triggerReason: 'urgent_access_problem',
+      };
+    case 'cleaning_issue':
+      return {
+        department: 'cleaning',
+        priority: 'normal',
+        title: 'Communication autopilot: cleaning issue',
+        triggerReason: 'cleaning_issue',
+      };
+    case 'maintenance_issue':
+      return {
+        department: 'maintenance',
+        priority: 'normal',
+        title: 'Communication autopilot: maintenance issue',
+        triggerReason: 'maintenance_issue',
+      };
+    default:
+      return undefined;
+  }
 }
 
 function collectContextKeys(context: CommunicationAutopilotContext | undefined): string[] {

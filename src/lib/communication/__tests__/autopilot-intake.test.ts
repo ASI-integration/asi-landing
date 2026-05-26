@@ -5,6 +5,7 @@ import type { InboundMessageEnvelope } from '../types';
 
 const mockSendMessage = vi.fn().mockResolvedValue(true);
 const mockCallLLM = vi.fn().mockResolvedValue('LLM should not be used');
+const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: null });
 
 function supabaseQuery() {
   const query: any = {
@@ -141,7 +142,9 @@ vi.mock('../templates', () => ({
 }));
 
 vi.mock('../background', () => ({
-  runInBackground: () => undefined,
+  runInBackground: (_meta: unknown, fn: () => unknown) => {
+    void fn();
+  },
 }));
 
 vi.mock('@/lib/ops/checkin-gate', () => ({
@@ -149,9 +152,9 @@ vi.mock('@/lib/ops/checkin-gate', () => ({
 }));
 
 vi.mock('@/lib/ops/tasks', () => ({
-  OpsTaskType: { GuestIssue: 'guest_issue', Checkout: 'checkout', CheckinReady: 'checkin_ready' },
+  OpsTaskType: { GuestIssue: 'guest_issue', Checkout: 'checkout', CheckinReady: 'checkin_ready', Turnover: 'turnover' },
   OpsTaskPriority: { Normal: 'normal', Urgent: 'urgent' },
-  createOpsTask: async () => ({ task_id: 'task-1', error: null }),
+  createOpsTask: (...args: unknown[]) => mockCreateOpsTask(...args),
 }));
 
 vi.mock('@/lib/payments/factory', () => ({
@@ -241,6 +244,8 @@ describe('communication autopilot intake wiring', () => {
     __resetEscalationReviewStoreForTests();
     mockSendMessage.mockClear();
     mockCallLLM.mockClear();
+    mockCreateOpsTask.mockClear();
+    mockCreateOpsTask.mockResolvedValue({ task_id: 'task-1', error: null });
   });
 
   it('auto-replies to routine Telegram guest questions when context is available', async () => {
@@ -292,6 +297,99 @@ describe('communication autopilot intake wiring', () => {
     expect(result.escalation?.reason).toBe('URGENT_ISSUE');
     expect(String(mockSendMessage.mock.calls[0][1])).toMatch(/Срочно|оператор|доступ/i);
     expect(listEscalationReviews().length).toBe(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockCreateOpsTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property_id: 'object-1',
+        reservation_id: 'booking-1',
+        chat_id: 42,
+        task_type: 'guest_issue',
+        priority: 'urgent',
+        assigned_to: 'operator_access_support',
+        source_event: 'communication_autopilot',
+        trigger_reason: 'urgent_access_problem',
+      }),
+    );
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('creates a cleaning operations action for Telegram cleaning issues with context', async () => {
+    const result = await processMessage(
+      envelope({
+        channel: 'telegram',
+        text: 'В квартире грязно и нет полотенец',
+        providerMessageId: 'tg-cleaning-action-1',
+        autopilotContext: fullContext,
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(result.escalation).toBeTruthy();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockCreateOpsTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property_id: 'object-1',
+        reservation_id: 'booking-1',
+        chat_id: 42,
+        task_type: 'turnover',
+        priority: 'normal',
+        assigned_to: 'cleaning',
+        source_event: 'communication_autopilot',
+        trigger_reason: 'cleaning_issue',
+      }),
+    );
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('creates a maintenance operations action for Email maintenance issues with context', async () => {
+    const result = await processMessage(
+      envelope({
+        channel: 'email',
+        text: 'Broken shower and leaking sink',
+        providerMessageId: 'email-maintenance-action-1',
+        autopilotContext: fullContext,
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(result.escalation).toBeTruthy();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockCreateOpsTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property_id: 'object-1',
+        reservation_id: 'booking-1',
+        chat_id: expect.any(Number),
+        task_type: 'guest_issue',
+        priority: 'normal',
+        assigned_to: 'maintenance',
+        source_event: 'communication_autopilot',
+        trigger_reason: 'maintenance_issue',
+      }),
+    );
+    expect(mockCallLLM).not.toHaveBeenCalled();
+  });
+
+  it('does not create operations action when issue context is missing', async () => {
+    const result = await processMessage(
+      envelope({
+        channel: 'telegram',
+        text: 'В квартире грязно и нет полотенец',
+        providerMessageId: 'tg-cleaning-missing-context-1',
+        autopilotContext: {
+          booking: { id: '' },
+          object: { id: '', name: '', address: '', accessInstructions: '', wifiName: '', wifiPassword: '' },
+        },
+      }),
+    );
+
+    expect(result.outcome).toBe('replied');
+    expect(String(mockSendMessage.mock.calls[0][1])).toMatch(/объект|брони|РѕР±СЉРµРєС‚/i);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockCreateOpsTask).not.toHaveBeenCalled();
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 
