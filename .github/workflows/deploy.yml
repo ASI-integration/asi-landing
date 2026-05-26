@@ -14,6 +14,9 @@ concurrency:
   group: deploy-main
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build_release:
     runs-on: ubuntu-latest
