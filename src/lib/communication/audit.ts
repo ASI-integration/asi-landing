@@ -136,6 +136,32 @@ export function auditLLM(params: {
   });
 }
 
+export function auditLlmRouter(params: {
+  chat_id: number;
+  update_id?: number;
+  marker: keyof typeof LLM_ROUTER_AUDIT_TYPES;
+  detail?: string;
+}): void {
+  auditLog({
+    type: LLM_ROUTER_AUDIT_TYPES[params.marker],
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
+const LLM_ROUTER_AUDIT_TYPES = {
+  LLM_ROUTER_CANON_HIGH_CONFIDENCE: AuditEventType.LLMRouterCanonHighConfidence,
+  LLM_ROUTER_PRIMARY_USED: AuditEventType.LLMRouterPrimaryUsed,
+  LLM_ROUTER_PRIMARY_FAILED: AuditEventType.LLMRouterPrimaryFailed,
+  LLM_ROUTER_SECONDARY_USED: AuditEventType.LLMRouterSecondaryUsed,
+  LLM_ROUTER_PREMIUM_USED: AuditEventType.LLMRouterPremiumUsed,
+  LLM_ROUTER_VALIDATION_FAILED: AuditEventType.LLMRouterValidationFailed,
+  LLM_ROUTER_SAFE_FALLBACK_USED: AuditEventType.LLMRouterSafeFallbackUsed,
+  LLM_ROUTER_STICKY_PROVIDER_SET: AuditEventType.LLMRouterStickyProviderSet,
+  LLM_ROUTER_STICKY_PROVIDER_USED: AuditEventType.LLMRouterStickyProviderUsed,
+} as const;
+
 export function auditEscalation(params: {
   chat_id: number;
   update_id?: number;

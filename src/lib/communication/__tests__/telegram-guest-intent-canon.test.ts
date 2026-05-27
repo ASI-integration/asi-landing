@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { decideCommunicationAutopilotResponse } from '../autopilot';
 import {
+  TELEGRAM_GUEST_INTENT_CANON_V1,
   resolveTelegramGuestIntentCanon,
   type TelegramGuestCanonActionType,
   type TelegramGuestCanonIntent,
   type TelegramGuestCanonReplyType,
 } from '../telegram-guest-intent-canon';
+
+const MOJIBAKE_PATTERN = /(?:Ð|Ñ|�|вЂ|Р[°±µ¶·»¼½їёѕјџҐґ]|С[‚ѓ„…†‡€ЃЌЏ‘’“”•–—™љњќћџ])/;
+
+function expectReadableRussian(text: string): void {
+  expect(text).not.toMatch(MOJIBAKE_PATTERN);
+}
 
 type CanonCase = {
   text: string;
@@ -122,6 +129,20 @@ const cases: CanonCase[] = [
   ),
   ...casesFor(
     [
+      'если есть номер брони, я смогу получить код?',
+      'можно получить код по номеру брони?',
+      'как получить одноразовый код?',
+      'где взять код для заселения?',
+      'у меня есть бронь, дайте код',
+      'у меня номер брони, пришлёте код?',
+      'можно по телефону найти бронь и получить код?',
+      'код для заселения дадите?',
+      'если есть номер брони, я смогу получить одноразовый код для заселения?',
+    ],
+    { intent: 'checkin_code_request', replyType: 'clarify', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
       'сломался душ',
       'сломался кран',
       'сломался унитаз',
@@ -227,9 +248,20 @@ const cases: CanonCase[] = [
 ];
 
 describe('Telegram Russian guest intent canon v1', () => {
+  it('keeps canon examples and guest replies readable Russian', () => {
+    for (const rule of TELEGRAM_GUEST_INTENT_CANON_V1) {
+      expectReadableRussian(rule.reply);
+      for (const example of rule.examples) {
+        expectReadableRussian(example);
+      }
+    }
+  });
+
   it.each(cases)('maps "$text" to stable canon output', (item) => {
     const match = resolveTelegramGuestIntentCanon(item.text);
 
+    expectReadableRussian(item.text);
+    expectReadableRussian(match.reply);
     expect(match.intent).toBe(item.intent);
     expect(match.replyType).toBe(item.replyType);
     expect(match.actionType).toBe(item.actionType);
@@ -247,6 +279,7 @@ describe('Telegram Russian guest intent canon v1', () => {
         'greeting',
         'thanks_ok',
         'access_urgent',
+        'checkin_code_request',
         'checkin_info',
         'maintenance',
         'cleaning_housekeeping',
@@ -302,6 +335,16 @@ describe('Telegram Russian guest intent canon v1', () => {
     expect(resolveTelegramGuestIntentCanon('у меня бронь, но я не помню номер').reply).toMatch(
       /имя гостя|телефон|дату заезда|адрес объекта/,
     );
+
+    expect(resolveTelegramGuestIntentCanon('если есть номер брони, я смогу получить одноразовый код для заселения?')).toMatchObject({
+      intent: 'checkin_code_request',
+      actionType: 'none',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('если есть номер брони, я смогу получить одноразовый код для заселения?').reply).toBe(
+      'Да, помогу. Пришлите номер брони или телефон, указанный при бронировании, и я проверю данные для заселения.',
+    );
   });
 
   it('maps operational canon hits into Telegram autopilot decisions', () => {
@@ -340,5 +383,17 @@ describe('Telegram Russian guest intent canon v1', () => {
     expect(booking.action).toBe('needs_context');
     expect(booking.metadata.operationsAction).toBeUndefined();
     expect(booking.replyText).toMatch(/имя гостя|телефон|дату заезда|адрес объекта/);
+
+    const checkinCode = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'если есть номер брони, я смогу получить одноразовый код для заселения?',
+      context: {},
+    });
+    expect(checkinCode.action).toBe('needs_context');
+    expect(checkinCode.metadata.intent).toBe('checkin_code_request');
+    expect(checkinCode.metadata.operationsAction).toBeUndefined();
+    expect(checkinCode.replyText).toBe(
+      'Да, помогу. Пришлите номер брони или телефон, указанный при бронировании, и я проверю данные для заселения.',
+    );
   });
 });

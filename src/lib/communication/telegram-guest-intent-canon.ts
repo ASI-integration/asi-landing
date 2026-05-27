@@ -4,6 +4,7 @@ export type TelegramGuestCanonIntent =
   | 'greeting'
   | 'thanks_ok'
   | 'access_urgent'
+  | 'checkin_code_request'
   | 'checkin_info'
   | 'maintenance'
   | 'cleaning_housekeeping'
@@ -88,6 +89,24 @@ export const TELEGRAM_GUEST_INTENT_CANON_V1: readonly TelegramGuestCanonRule[] =
     escalate: true,
     reply:
       'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+  },
+  {
+    intent: 'checkin_code_request',
+    examples: [
+      'если есть номер брони, я смогу получить код?',
+      'можно получить код по номеру брони?',
+      'как получить одноразовый код?',
+      'где взять код для заселения?',
+      'у меня есть бронь, дайте код',
+      'у меня номер брони, пришлёте код?',
+      'можно по телефону найти бронь и получить код?',
+      'код для заселения дадите?',
+    ],
+    replyType: 'clarify',
+    actionType: 'none',
+    escalate: false,
+    reply:
+      'Да, помогу. Пришлите номер брони или телефон, указанный при бронировании, и я проверю данные для заселения.',
   },
   {
     intent: 'checkin_info',
@@ -214,6 +233,12 @@ const CHECKIN_PATTERNS = [
   /инструкц[а-яё]*\s+для\s+(входа|доступа)/,
 ];
 
+const CHECKIN_CODE_REQUEST_PATTERNS = [
+  /(одноразов[а-яё]*\s+)?код.{0,36}(заселен|заезд|вход|доступ|брон|пришл|получ|дайте|дадите|взять)/,
+  /(брон|номер\s+брони|телефон).{0,48}(код).{0,32}(заселен|заезд|вход|доступ|получ|пришл)/,
+  /(получ|пришл|дайте|дадите|взять).{0,32}(одноразов[а-яё]*\s+)?код/,
+];
+
 const MAINTENANCE_PATTERNS = [
   /сломал[ао]?с[ья]?\s+(душ|замок|кондиционер|кран|унитаз|бойлер|телевизор)/,
   /нет\s+(горячей\s+воды|воды|света|электричества|отопления)/,
@@ -228,8 +253,9 @@ const CLEANING_PATTERNS = [
 ];
 
 const BOOKING_MISSING_PATTERNS = [
-  /(у\s+меня\s+(бронь|бронирование)|бронь\s+есть|я\s+забронировал|я\s+забронировала)/,
+  /(у\s+меня\s+(есть\s+)?(бронь|бронирование)|бронь\s+есть|я\s+забронировал|я\s+забронировала)/,
   /(не\s+помню|не\s+знаю|нет).{0,24}(номер\s+брони|номера\s+брони|бронь)/,
+  /(номер\s+брони|номера\s+брони).{0,24}(не\s+помню|не\s+знаю|нет)/,
   /бронь\s+есть.{0,24}номер[а]?\s+нет/,
 ];
 
@@ -265,6 +291,7 @@ export function resolveTelegramGuestIntentCanon(text: string): TelegramGuestCano
   if (hasAny(normalized, THANKS_PATTERNS)) return { ...canonRule('thanks_ok'), replyCount: 1 };
 
   if (hasAny(normalized, ACCESS_PATTERNS)) return { ...canonRule('access_urgent'), replyCount: 1 };
+  if (hasAny(normalized, CHECKIN_CODE_REQUEST_PATTERNS)) return { ...canonRule('checkin_code_request'), replyCount: 1 };
   if (hasAny(normalized, MAINTENANCE_PATTERNS)) return { ...canonRule('maintenance'), replyCount: 1 };
   if (hasAny(normalized, CLEANING_PATTERNS)) return { ...canonRule('cleaning_housekeeping'), replyCount: 1 };
   if (hasAny(normalized, BOOKING_MISSING_PATTERNS)) return { ...canonRule('booking_missing_details'), replyCount: 1 };

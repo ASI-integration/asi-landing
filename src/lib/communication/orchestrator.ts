@@ -9,6 +9,7 @@ import {
   auditError,
   auditInbound,
   auditLLM,
+  auditLlmRouter,
   auditOutbound,
   auditRetryAttempt,
   auditFailureEnqueued,
@@ -117,7 +118,7 @@ import {
   type CommunicationCanonNormalization,
 } from './communication-normalizer';
 import {
-  decideCommunicationAutopilotResponse,
+  decideCommunicationAutopilotResponseWithLlmRouter,
   type CommunicationAutopilotDecision,
   type CommunicationAutopilotContext,
 } from './autopilot';
@@ -1375,7 +1376,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         templates,
         lang: classification.lang,
       });
-      const autopilotDecision = decideCommunicationAutopilotResponse({
+      const autopilotDecision = await decideCommunicationAutopilotResponseWithLlmRouter({
         channel: envelope.channel,
         messageText: text,
         context: autopilotContext,
@@ -1393,8 +1394,58 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           missingContext: autopilotDecision.metadata.missingContext,
           channelMode: autopilotDecision.metadata.channelMode,
           urgent: autopilotDecision.metadata.urgent,
+          llmRouter: autopilotDecision.metadata.llmRouter
+            ? {
+                used: true,
+                provider: autopilotDecision.metadata.llmRouter.provider,
+                intent: autopilotDecision.metadata.llmRouter.intent,
+                validation: autopilotDecision.metadata.llmRouter.validation,
+                reason: autopilotDecision.metadata.llmRouter.reason,
+              }
+            : undefined,
         }),
       });
+
+      if (autopilotDecision.metadata.llmRouter?.used) {
+        auditLLM({ chat_id: chatId, update_id, used_fallback: true });
+        for (const attempt of autopilotDecision.metadata.llmRouter.attempts ?? []) {
+          auditLlmRouter({
+            chat_id: chatId,
+            update_id,
+            marker: attempt.marker,
+            detail: JSON.stringify({
+              provider: attempt.provider,
+              modelName: attempt.modelName,
+              latencyMs: attempt.latencyMs,
+              failureReason: attempt.failureReason,
+              normalizedIntent: attempt.normalizedIntent,
+              confidence: attempt.confidence,
+              validation: attempt.validation,
+              fallbackPath: attempt.fallbackPath,
+              finalActionType: attempt.finalActionType,
+              finalShouldEscalate: attempt.finalShouldEscalate,
+            }),
+          });
+        }
+        auditDecision({
+          type: 'reply',
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:llm_router provider=${autopilotDecision.metadata.llmRouter.provider} intent=${autopilotDecision.metadata.llmRouter.intent} validation=${autopilotDecision.metadata.llmRouter.validation}`,
+        });
+      } else if (autopilotDecision.confidence >= 0.7 && autopilotDecision.metadata.intent !== 'unknown') {
+        auditLlmRouter({
+          chat_id: chatId,
+          update_id,
+          marker: 'LLM_ROUTER_CANON_HIGH_CONFIDENCE',
+          detail: JSON.stringify({
+            normalizedIntent: autopilotDecision.metadata.intent,
+            confidence: autopilotDecision.confidence,
+            finalActionType: autopilotDecision.metadata.operationsAction?.category ?? 'guest_reply_only',
+            finalShouldEscalate: autopilotDecision.action === 'escalate',
+          }),
+        });
+      }
 
       const autopilotOperation = autopilotDecision.metadata.operationsAction
         ? upsertCommunicationOperationsAction({

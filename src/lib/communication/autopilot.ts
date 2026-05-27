@@ -1,4 +1,11 @@
 import type { CommunicationChannel } from './types';
+import { classifyWithConfiguredLlmRouter } from './llm-router/provider';
+import {
+  safeCheckinCodeRequestReply,
+  safeLlmRouterFallbackReply,
+  validateLlmRouterDecision,
+} from './llm-router/validate-llm-router-decision';
+import type { LlmRouterAttemptAudit, LlmRouterDecision, LlmRouterProvider } from './llm-router/types';
 import { resolveTelegramGuestIntentCanon } from './telegram-guest-intent-canon';
 
 export type CommunicationAutopilotAction = 'auto_reply' | 'escalate' | 'needs_context';
@@ -10,6 +17,7 @@ export type CommunicationAutopilotIntent =
   | 'checkout'
   | 'early_checkin_late_checkout'
   | 'booking_lookup_missing_details'
+  | 'checkin_code_request'
   | 'urgent_access_problem'
   | 'cleaning_issue'
   | 'maintenance_issue'
@@ -61,7 +69,16 @@ export type CommunicationAutopilotMetadata = {
   channelMode: 'active' | 'foundation' | 'planned';
   urgent: boolean;
   operationsAction?: CommunicationAutopilotOperationsAction;
-  policy: 'deterministic_mvp_v1';
+  policy: 'deterministic_mvp_v1' | 'deterministic_mvp_v1_llm_router_fallback';
+  llmRouter?: {
+    used: boolean;
+    provider: string;
+    intent: string;
+    validation: 'accepted' | 'rejected' | 'provider_failed' | 'low_confidence';
+    reason?: string;
+    modelName?: string;
+    attempts?: LlmRouterAttemptAudit[];
+  };
 };
 
 export type CommunicationAutopilotDecision = {
@@ -248,6 +265,108 @@ export function decideCommunicationAutopilotResponse(input: {
   };
 }
 
+export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
+  channel: CommunicationAutopilotChannel;
+  messageText: string;
+  context?: CommunicationAutopilotContext;
+  llmRouterProvider?: LlmRouterProvider;
+}): Promise<CommunicationAutopilotDecision> {
+  const deterministic = decideCommunicationAutopilotResponse(input);
+  if (!shouldUseLlmRouterFallback(input.channel, input.messageText, deterministic)) {
+    return deterministic;
+  }
+
+  if (input.llmRouterProvider) {
+    return decideWithSingleInjectedProvider(input, deterministic);
+  }
+
+  const forceStrongerProvider = detectsMisunderstanding(input.messageText);
+  const result = await classifyWithConfiguredLlmRouter({
+    messageText: input.messageText,
+    lang: input.context?.session?.language ?? 'ru',
+    bookingId: input.context?.booking?.id,
+    conversationId: input.context?.session?.id,
+    sessionId: input.context?.session?.id,
+    canonIntent: deterministic.metadata.intent,
+    canonConfidence: deterministic.confidence,
+    forceStrongerProvider,
+  });
+
+  if (!result.ok) {
+    return withLlmRouterMetadata(buildSafeClarificationDecision(deterministic), {
+      provider: 'disabled',
+      intent: 'unknown',
+      validation: 'provider_failed',
+      reason: result.reason,
+      attempts: result.attempts,
+    });
+  }
+
+  return mapLlmRouterDecisionToAutopilotDecision(
+    deterministic,
+    result.decision,
+    result.provider,
+    result.modelName,
+    result.attempts,
+  );
+}
+
+async function decideWithSingleInjectedProvider(
+  input: {
+    channel: CommunicationAutopilotChannel;
+    messageText: string;
+    context?: CommunicationAutopilotContext;
+    llmRouterProvider?: LlmRouterProvider;
+  },
+  deterministic: CommunicationAutopilotDecision,
+): Promise<CommunicationAutopilotDecision> {
+  const provider = input.llmRouterProvider!;
+  try {
+    const rawDecision = await provider.classifyGuestMessage({
+      messageText: input.messageText,
+      lang: input.context?.session?.language ?? 'ru',
+      bookingId: input.context?.booking?.id,
+      conversationId: input.context?.session?.id,
+      sessionId: input.context?.session?.id,
+      canonIntent: deterministic.metadata.intent,
+      canonConfidence: deterministic.confidence,
+      forceStrongerProvider: detectsMisunderstanding(input.messageText),
+    });
+    const validated = validateLlmRouterDecision(rawDecision);
+    if (!validated.ok) {
+      return withLlmRouterMetadata(deterministic, {
+        provider: provider.name,
+        modelName: provider.modelName,
+        intent: 'unknown',
+        validation: 'rejected',
+        reason: validated.reason,
+      });
+    }
+    if (validated.decision.confidence < 0.7) {
+      return withLlmRouterMetadata(buildSafeClarificationDecision(deterministic), {
+        provider: provider.name,
+        modelName: provider.modelName,
+        intent: validated.decision.intent,
+        validation: 'low_confidence',
+      });
+    }
+    return mapLlmRouterDecisionToAutopilotDecision(
+      deterministic,
+      validated.decision,
+      provider.name,
+      provider.modelName,
+    );
+  } catch (error) {
+    return withLlmRouterMetadata(deterministic, {
+      provider: provider.name,
+      modelName: provider.modelName,
+      intent: 'unknown',
+      validation: 'provider_failed',
+      reason: error instanceof Error ? error.message.slice(0, 80) : 'unknown',
+    });
+  }
+}
+
 export function composeCommunicationAutopilotContextReply(input: {
   decision: CommunicationAutopilotDecision;
   lang: 'ru' | 'en' | string;
@@ -260,6 +379,8 @@ export function composeCommunicationAutopilotContextReply(input: {
         return 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?';
       case 'booking_lookup_missing_details':
         return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
+      case 'checkin_code_request':
+        return safeCheckinCodeRequestReply();
       case 'cleaning_issue':
         return 'Принял, вопрос по уборке зарегистрирован. Напишите, пожалуйста, объект или номер брони.';
       case 'maintenance_issue':
@@ -288,6 +409,8 @@ function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntent
       return { intent: 'urgent_access_problem', confidence: 0.98, matchedSignals };
     case 'checkin_info':
       return { intent: 'check_in_access', confidence: 0.94, matchedSignals };
+    case 'checkin_code_request':
+      return { intent: 'checkin_code_request', confidence: 0.96, matchedSignals };
     case 'maintenance':
       return { intent: 'maintenance_issue', confidence: 0.96, matchedSignals };
     case 'cleaning_housekeeping':
@@ -368,6 +491,7 @@ function getMissingContext(
         ['booking.lateCheckoutAvailable', context?.booking?.lateCheckoutAvailable],
       ]);
     case 'booking_lookup_missing_details':
+    case 'checkin_code_request':
       return ['booking.lookup_details'];
     case 'booking_payment_support':
       return ['booking.lookup_details'];
@@ -432,6 +556,7 @@ function composeRuReply(
       return `${early} ${late} Если планы изменятся, напишите - проверим еще раз.`;
     }
     case 'booking_lookup_missing_details':
+    case 'checkin_code_request':
       return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
   }
   return 'Понял вопрос по брони или оплате. Пришлите номер брони, имя гостя или телефон в брони.';
@@ -461,6 +586,170 @@ function buildMetadata(input: {
     operationsAction: buildOperationsAction(input.intent),
     policy: 'deterministic_mvp_v1',
   };
+}
+
+function shouldUseLlmRouterFallback(
+  channel: CommunicationAutopilotChannel,
+  text: string,
+  decision: CommunicationAutopilotDecision,
+): boolean {
+  if (channel !== 'telegram') return false;
+  if (!text.trim()) return false;
+  if (decision.metadata.intent === 'unknown') return true;
+  if (decision.confidence < 0.7) return true;
+  return decision.metadata.matchedSignals.length === 0 && text.trim().length > 80;
+}
+
+function withLlmRouterMetadata(
+  decision: CommunicationAutopilotDecision,
+  marker: Omit<NonNullable<CommunicationAutopilotMetadata['llmRouter']>, 'used'>,
+): CommunicationAutopilotDecision {
+  return {
+    ...decision,
+    metadata: {
+      ...decision.metadata,
+      policy: 'deterministic_mvp_v1_llm_router_fallback',
+      llmRouter: {
+        used: true,
+        ...marker,
+      },
+    },
+  };
+}
+
+function buildSafeClarificationDecision(base: CommunicationAutopilotDecision): CommunicationAutopilotDecision {
+  return {
+    ...base,
+    action: 'needs_context',
+    confidence: Math.min(base.confidence, 0.69),
+    replyText: safeLlmRouterFallbackReply(),
+    escalationReason: undefined,
+    metadata: {
+      ...base.metadata,
+      intent: 'unknown',
+      missingContext: [],
+      urgent: false,
+      operationsAction: undefined,
+    },
+  };
+}
+
+function mapLlmRouterDecisionToAutopilotDecision(
+  base: CommunicationAutopilotDecision,
+  decision: LlmRouterDecision,
+  provider: string,
+  modelName?: string,
+  attempts?: LlmRouterAttemptAudit[],
+): CommunicationAutopilotDecision {
+  const marker = {
+    provider,
+    modelName,
+    intent: decision.intent,
+    validation: 'accepted' as const,
+    attempts,
+  };
+
+  if (decision.intent === 'checkin_code_request') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: safeCheckinCodeRequestReply(),
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'checkin_code_request',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['booking.lookup_details'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'access_problem' && decision.shouldEscalate && decision.actionType === 'access_support') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'escalate',
+        confidence: decision.confidence,
+        replyText:
+          'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+        escalationReason: 'urgent_access_problem',
+        metadata: {
+          ...base.metadata,
+          intent: 'urgent_access_problem',
+          matchedSignals: ['llm_router', decision.intent],
+          urgent: true,
+          operationsAction: {
+            category: 'operator_access_support',
+            priority: 'high',
+            title: 'Communication autopilot: urgent access support',
+            shortReason: 'urgent_access_problem',
+          },
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'booking_lookup') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.',
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'booking_lookup_missing_details',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: ['booking.lookup_details'],
+          urgent: false,
+          operationsAction: undefined,
+        },
+      },
+      marker,
+    );
+  }
+
+  if (decision.intent === 'cleaning_issue') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: 'Принял, вопрос по уборке зарегистрирован. Напишите, пожалуйста, объект или номер брони.',
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'cleaning_issue',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: base.metadata.missingContext,
+          urgent: false,
+          operationsAction: {
+            category: 'cleaning',
+            priority: 'normal',
+            title: 'Communication autopilot: cleaning issue',
+            shortReason: 'cleaning_issue',
+          },
+        },
+      },
+      marker,
+    );
+  }
+
+  return withLlmRouterMetadata(buildSafeClarificationDecision(base), marker);
+}
+
+function detectsMisunderstanding(text: string): boolean {
+  return /(ты\s+не\s+понял|вы\s+не\s+поняли|я\s+уже\s+сказал|я\s+уже\s+сказала|нет\s+не\s+это|я\s+про\s+другое|при\s+ч[её]м\s+тут\s+уборка|мне\s+нужен\s+код|я\s+спрашиваю\s+про\s+бронь)/i.test(
+    text.toLocaleLowerCase('ru-RU'),
+  );
 }
 
 function buildOperationsAction(
