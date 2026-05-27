@@ -5,8 +5,7 @@ This repository is the **only production frontend** for the StayAutomated landin
 | Context | Value |
 |--------|--------|
 | Cursor workspace root (this machine) | `C:\projects\asi-landing` |
-| Vercel connected Git repository | `ASI-integration/asi-landing` |
-| Vercel **Root Directory** | Repository root (`.`) |
+| Production deploy | VPS/Timeweb only |
 
 Next.js App Router lives under `src/app/`. Route inventory: `docs/ROUTES.md`.
 

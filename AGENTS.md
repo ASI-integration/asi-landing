@@ -36,3 +36,5 @@ Task instructions override this file when they are more specific.
 
 ## Out Of Scope
 - Do not use, inspect, configure, or mention Vexp. It is not part of this project.
+
+- Do not use, inspect, configure, deploy to, or mention Vercel. Production deploy is VPS/Timeweb only.
