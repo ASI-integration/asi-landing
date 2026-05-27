@@ -93,6 +93,10 @@ import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
+import {
+  isNoActionTelegramGuestCanonIntent,
+  resolveTelegramGuestIntentCanon,
+} from './telegram-guest-intent-canon';
 import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
 import {
@@ -446,6 +450,8 @@ function composeAutopilotContextClarifier(params: {
   decision: CommunicationAutopilotDecision;
   lang: Lang;
 }): string {
+  if (params.decision.replyText) return params.decision.replyText;
+
   const missing = params.decision.metadata.missingContext;
   if (params.lang === 'ru') {
     if (params.decision.metadata.intent === 'unknown') {
@@ -497,6 +503,8 @@ function composeAutopilotHandoffReply(params: {
   channel: InboundMessageEnvelope['channel'];
   lang: Lang;
 }): string {
+  if (params.decision.replyText) return params.decision.replyText;
+
   const canonical =
     params.decision.metadata.urgent
       ? canonicalUrgentAccessEscalationText({
@@ -3084,6 +3092,35 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
   // If message has attachments but no text, synthesise a description so the
   // orchestrator can still classify and create an ops task.
   const messageText = baseText || textHint || '';
+
+  const guestCanon =
+    message.chat?.id && baseText
+      ? resolveTelegramGuestIntentCanon(baseText)
+      : null;
+
+  if (guestCanon && isNoActionTelegramGuestCanonIntent(guestCanon.intent)) {
+    const outboundKey = sha256Base64Url(
+      [
+        'tg_guest_intent_canon_v1',
+        String(message.chat.id),
+        String(message.message_id),
+        guestCanon.reply,
+      ].join('|'),
+    );
+    if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: update.update_id, chatId: message.chat.id } })) {
+      await replyToTelegram(message.chat.id, guestCanon.reply, {
+        handler: `telegram_guest_intent_canon_v1/${guestCanon.intent}`,
+        update_id: update.update_id,
+      });
+    }
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      category: MessageCategory.LanguageCheck,
+      reply: guestCanon.reply,
+    };
+  }
 
   // Deterministic Telegram-only social/meta lines (must not touch LLM / scenario engine).
   const meta =

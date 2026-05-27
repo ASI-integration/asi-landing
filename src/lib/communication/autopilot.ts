@@ -1,4 +1,5 @@
 import type { CommunicationChannel } from './types';
+import { resolveTelegramGuestIntentCanon } from './telegram-guest-intent-canon';
 
 export type CommunicationAutopilotAction = 'auto_reply' | 'escalate' | 'needs_context';
 
@@ -12,6 +13,7 @@ export type CommunicationAutopilotIntent =
   | 'urgent_access_problem'
   | 'cleaning_issue'
   | 'maintenance_issue'
+  | 'booking_payment_support'
   | 'unknown';
 
 export type CommunicationAutopilotOperationsAction = {
@@ -169,7 +171,11 @@ export function decideCommunicationAutopilotResponse(input: {
   context?: CommunicationAutopilotContext;
 }): CommunicationAutopilotDecision {
   const normalizedText = normalizeText(input.messageText);
-  const classification = classifyIntent(normalizedText);
+  const canon = input.channel === 'telegram' ? resolveTelegramGuestIntentCanon(input.messageText) : null;
+  const classification =
+    canon && canon.intent !== 'unknown'
+      ? classifyCanonIntent(canon)
+      : classifyIntent(normalizedText);
   const missingContext = getMissingContext(classification.intent, input.context);
   const baseMetadata = buildMetadata({
     channel: input.channel,
@@ -178,6 +184,25 @@ export function decideCommunicationAutopilotResponse(input: {
     matchedSignals: classification.matchedSignals,
     missingContext,
   });
+
+  if (canon?.intent === 'access_urgent') {
+    return {
+      action: missingContext.length === 0 ? 'auto_reply' : 'escalate',
+      confidence: classification.confidence,
+      replyText: canon.reply,
+      escalationReason: missingContext.length === 0 ? undefined : 'urgent_access_problem',
+      metadata: baseMetadata,
+    };
+  }
+
+  if (canon?.intent === 'payment_booking') {
+    return {
+      action: 'needs_context',
+      confidence: Math.min(classification.confidence, 0.72),
+      replyText: canon.reply,
+      metadata: baseMetadata,
+    };
+  }
 
   if (classification.intent === 'urgent_access_problem') {
     if (missingContext.length === 0) {
@@ -208,6 +233,7 @@ export function decideCommunicationAutopilotResponse(input: {
     return {
       action: 'needs_context',
       confidence: Math.min(classification.confidence, 0.72),
+      replyText: canon?.reply,
       metadata: baseMetadata,
     };
   }
@@ -226,6 +252,8 @@ export function composeCommunicationAutopilotContextReply(input: {
   decision: CommunicationAutopilotDecision;
   lang: 'ru' | 'en' | string;
 }): string {
+  if (input.decision.replyText) return input.decision.replyText;
+
   if (input.lang === 'ru') {
     switch (input.decision.metadata.intent) {
       case 'unknown':
@@ -247,6 +275,30 @@ export function composeCommunicationAutopilotContextReply(input: {
     return 'Please clarify what happened: check-in, access, cleaning, maintenance, or booking question?';
   }
   return 'Please send the property or booking number, and I will check the exact details.';
+}
+
+function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntentCanon>): {
+  intent: CommunicationAutopilotIntent;
+  confidence: number;
+  matchedSignals: string[];
+} {
+  const matchedSignals = [canon.intent, canon.matchedExample ?? 'telegram_guest_intent_canon_v1'];
+  switch (canon.intent) {
+    case 'access_urgent':
+      return { intent: 'urgent_access_problem', confidence: 0.98, matchedSignals };
+    case 'checkin_info':
+      return { intent: 'check_in_access', confidence: 0.94, matchedSignals };
+    case 'maintenance':
+      return { intent: 'maintenance_issue', confidence: 0.96, matchedSignals };
+    case 'cleaning_housekeeping':
+      return { intent: 'cleaning_issue', confidence: 0.96, matchedSignals };
+    case 'booking_missing_details':
+      return { intent: 'booking_lookup_missing_details', confidence: 0.94, matchedSignals };
+    case 'payment_booking':
+      return { intent: 'booking_payment_support', confidence: 0.9, matchedSignals };
+    default:
+      return { intent: 'unknown', confidence: 0.38, matchedSignals };
+  }
 }
 
 function classifyIntent(normalizedText: string): {
@@ -317,6 +369,8 @@ function getMissingContext(
       ]);
     case 'booking_lookup_missing_details':
       return ['booking.lookup_details'];
+    case 'booking_payment_support':
+      return ['booking.lookup_details'];
     case 'cleaning_issue':
     case 'maintenance_issue':
       return missingOperationalContext(context);
@@ -380,6 +434,7 @@ function composeRuReply(
     case 'booking_lookup_missing_details':
       return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
   }
+  return 'Понял вопрос по брони или оплате. Пришлите номер брони, имя гостя или телефон в брони.';
 }
 
 function composeRuOperationsReply(intent: 'cleaning_issue' | 'maintenance_issue'): string {
@@ -412,13 +467,6 @@ function buildOperationsAction(
   intent: CommunicationAutopilotIntent,
 ): CommunicationAutopilotOperationsAction | undefined {
   switch (intent) {
-    case 'check_in_access':
-      return {
-        category: 'operator_access_support',
-        priority: 'normal',
-        title: 'Communication autopilot: access support',
-        shortReason: 'check_in_access',
-      };
     case 'urgent_access_problem':
       return {
         category: 'operator_access_support',

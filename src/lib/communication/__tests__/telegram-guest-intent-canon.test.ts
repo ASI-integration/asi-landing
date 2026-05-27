@@ -1,0 +1,344 @@
+import { describe, expect, it } from 'vitest';
+import { decideCommunicationAutopilotResponse } from '../autopilot';
+import {
+  resolveTelegramGuestIntentCanon,
+  type TelegramGuestCanonActionType,
+  type TelegramGuestCanonIntent,
+  type TelegramGuestCanonReplyType,
+} from '../telegram-guest-intent-canon';
+
+type CanonCase = {
+  text: string;
+  intent: TelegramGuestCanonIntent;
+  replyType: TelegramGuestCanonReplyType;
+  actionType: TelegramGuestCanonActionType;
+  escalate: boolean;
+};
+
+function casesFor(
+  phrases: string[],
+  expected: Omit<CanonCase, 'text'>,
+): CanonCase[] {
+  return phrases.map((text) => ({ text, ...expected }));
+}
+
+const cases: CanonCase[] = [
+  ...casesFor(
+    [
+      'ты бот?',
+      'а ты бот?',
+      'ты робот?',
+      'вы бот?',
+      'вы робот?',
+      'ты человек?',
+      'это бот?',
+      'тут бот?',
+      'кто ты?',
+      'кто вы?',
+      'ты умный бот?',
+      'ты официальный бот?',
+      'с кем я общаюсь?',
+    ],
+    { intent: 'identity_meta', replyType: 'fixed', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'тест',
+      'проверка',
+      'тест связи',
+      'проверка связи',
+      'бот на связи?',
+      'бот на связи',
+      'проверка, ответьте',
+      'тест, работаете?',
+      'проверка бота',
+      'бот работает?',
+    ],
+    { intent: 'ping_test', replyType: 'fixed', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'привет',
+      'здравствуйте',
+      'добрый день',
+      'добрый вечер',
+      'доброе утро',
+      'доброго дня',
+      'приветствую',
+      'здравствуй',
+      'доброй ночи',
+      'добрый день вам',
+    ],
+    { intent: 'greeting', replyType: 'clarify', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'спасибо',
+      'спс',
+      'благодарю',
+      'ок',
+      'окей',
+      'понял',
+      'поняла',
+      'понятно',
+      'хорошо',
+      'ясно',
+      'ладно',
+      'спасибо вам',
+    ],
+    { intent: 'thanks_ok', replyType: 'fixed', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'не могу попасть',
+      'не могу попасть, код не работает',
+      'не могу войти',
+      'не могу зайти',
+      'не могу открыть дверь',
+      'код не работает',
+      'ключ не подходит',
+      'замок не открывается',
+      'дверь не открывается',
+      'стоим у двери, код не работает',
+      'застряли снаружи',
+      'код сломался',
+    ],
+    { intent: 'access_urgent', replyType: 'handoff', actionType: 'access_support', escalate: true },
+  ),
+  ...casesFor(
+    [
+      'как заселиться',
+      'где ключ',
+      'где ключи',
+      'как попасть в квартиру',
+      'как войти',
+      'как зайти',
+      'когда заезд',
+      'инструкция по заселению',
+      'инструкция для входа',
+      'инструкция для доступа',
+    ],
+    { intent: 'checkin_info', replyType: 'clarify', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'сломался душ',
+      'сломался кран',
+      'сломался унитаз',
+      'сломался бойлер',
+      'сломался телевизор',
+      'нет горячей воды',
+      'нет воды',
+      'нет света',
+      'нет электричества',
+      'нет отопления',
+      'не работает wifi',
+      'не работает вайфай',
+      'не работает интернет',
+      'не работает отопление',
+      'не работает кондиционер',
+      'не работает розетка',
+      'течет кран',
+      'протекает',
+      'потекло',
+      'залило ванную',
+    ],
+    { intent: 'maintenance', replyType: 'action_ack', actionType: 'maintenance', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'грязно',
+      'грязно, нет полотенец',
+      'не убрано',
+      'не убрали',
+      'плохо убрано',
+      'грязная ванная',
+      'грязная кухня',
+      'грязный пол',
+      'нет полотенец',
+      'нет белья',
+      'нет туалетной бумаги',
+      'нет мыла',
+      'мусор',
+      'грязное белье',
+      'грязные полотенца',
+    ],
+    {
+      intent: 'cleaning_housekeeping',
+      replyType: 'action_ack',
+      actionType: 'cleaning_housekeeping',
+      escalate: false,
+    },
+  ),
+  ...casesFor(
+    [
+      'у меня бронь',
+      'у меня бронь, но я не помню номер',
+      'бронь есть',
+      'бронь есть, номера нет',
+      'я забронировал',
+      'я забронировала',
+      'не помню номер брони',
+      'не знаю номер брони',
+      'нет номера брони',
+      'у меня бронирование',
+    ],
+    { intent: 'booking_missing_details', replyType: 'clarify', actionType: 'none', escalate: false },
+  ),
+  ...casesFor(
+    [
+      'оплатил',
+      'оплатила',
+      'оплата прошла?',
+      'не прошла оплата',
+      'платеж не прошел',
+      'верните деньги',
+      'возврат денег',
+      'отмена брони',
+      'отменить бронь',
+      'отменил бронь',
+      'отменила бронь',
+      'продлить проживание',
+      'продлить бронь',
+      'хочу продлить',
+    ],
+    {
+      intent: 'payment_booking',
+      replyType: 'clarify',
+      actionType: 'booking_payment_support',
+      escalate: false,
+    },
+  ),
+  ...casesFor(
+    [
+      'какая сегодня погода',
+      'посоветуйте кафе рядом',
+      'можно ли заказать такси',
+      'у вас есть скидки',
+      'что посмотреть в городе',
+      'где купить продукты',
+      'можно музыку погромче',
+      'как дела',
+      'расскажите анекдот',
+      'я уже приехал и гуляю',
+    ],
+    { intent: 'unknown', replyType: 'clarify', actionType: 'none', escalate: false },
+  ),
+];
+
+describe('Telegram Russian guest intent canon v1', () => {
+  it.each(cases)('maps "$text" to stable canon output', (item) => {
+    const match = resolveTelegramGuestIntentCanon(item.text);
+
+    expect(match.intent).toBe(item.intent);
+    expect(match.replyType).toBe(item.replyType);
+    expect(match.actionType).toBe(item.actionType);
+    expect(match.escalate).toBe(item.escalate);
+    expect(match.replyCount).toBe(1);
+    expect(match.reply.trim().length).toBeGreaterThan(0);
+  });
+
+  it('covers at least 100 Russian phrase variants across all required groups', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(100);
+    expect(new Set(cases.map((item) => item.intent))).toEqual(
+      new Set<TelegramGuestCanonIntent>([
+        'identity_meta',
+        'ping_test',
+        'greeting',
+        'thanks_ok',
+        'access_urgent',
+        'checkin_info',
+        'maintenance',
+        'cleaning_housekeeping',
+        'booking_missing_details',
+        'payment_booking',
+        'unknown',
+      ]),
+    );
+  });
+
+  it('handles explicit MVP acceptance examples', () => {
+    expect(resolveTelegramGuestIntentCanon('ты бот?')).toMatchObject({
+      intent: 'identity_meta',
+      replyType: 'fixed',
+      actionType: 'none',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('ты бот?').reply).toContain('официальный ассистент ASI');
+
+    expect(resolveTelegramGuestIntentCanon('ты умный бот?')).toMatchObject({
+      intent: 'identity_meta',
+      replyType: 'fixed',
+      actionType: 'none',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('ты умный бот?').reply).toContain('официальный ассистент ASI');
+
+    expect(resolveTelegramGuestIntentCanon('не могу попасть, код не работает')).toMatchObject({
+      intent: 'access_urgent',
+      replyType: 'handoff',
+      actionType: 'access_support',
+      escalate: true,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('сломался душ')).toMatchObject({
+      intent: 'maintenance',
+      actionType: 'maintenance',
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('грязно, нет полотенец')).toMatchObject({
+      intent: 'cleaning_housekeeping',
+      actionType: 'cleaning_housekeeping',
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('у меня бронь, но я не помню номер')).toMatchObject({
+      intent: 'booking_missing_details',
+      actionType: 'none',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('у меня бронь, но я не помню номер').reply).toMatch(
+      /имя гостя|телефон|дату заезда|адрес объекта/,
+    );
+  });
+
+  it('maps operational canon hits into Telegram autopilot decisions', () => {
+    const access = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'не могу попасть, код не работает',
+      context: {},
+    });
+    expect(access.action).toBe('escalate');
+    expect(access.metadata.operationsAction?.category).toBe('operator_access_support');
+    expect(access.replyText).toBe(
+      'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+    );
+
+    const cleaning = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'грязно, нет полотенец',
+      context: {},
+    });
+    expect(cleaning.metadata.operationsAction?.category).toBe('cleaning');
+    expect(cleaning.replyText).toContain('уборке');
+
+    const maintenance = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'сломался душ',
+      context: {},
+    });
+    expect(maintenance.metadata.operationsAction?.category).toBe('maintenance');
+    expect(maintenance.replyText).toContain('поломку');
+
+    const booking = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'у меня бронь, но я не помню номер',
+      context: {},
+    });
+    expect(booking.action).toBe('needs_context');
+    expect(booking.metadata.operationsAction).toBeUndefined();
+    expect(booking.replyText).toMatch(/имя гостя|телефон|дату заезда|адрес объекта/);
+  });
+});
