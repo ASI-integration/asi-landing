@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { processUpdate } from '@/lib/communication/orchestrator';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 import type { TelegramUpdate } from '@/lib/communication/types';
-import { replyToTelegram } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
 // Production Telegram webhook entrypoint. The active production bot is determined only by runtime TELEGRAM_BOT_TOKEN;
@@ -18,9 +17,6 @@ function preview(text: string, max = 120): string {
   const t = String(text ?? '');
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
-
-const TELEGRAM_SLOW_ACK_THRESHOLD_MS = 3500;
-const TELEGRAM_SLOW_ACK_TEXT = 'Понял, уже разбираюсь с запросом. Вернусь с ответом через пару секунд.';
 
 export async function POST(req: Request): Promise<Response> {
   const webhookStartedAt = Date.now();
@@ -95,27 +91,7 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)
-    const processPromise = processUpdate(update);
-    let processingSettled = false;
-    processPromise.finally(() => {
-      processingSettled = true;
-    });
-
-    let slowAckTimer: ReturnType<typeof setTimeout> | undefined;
-    let slowAckSent = false;
-    if (chatId && hasText) {
-      slowAckTimer = setTimeout(() => {
-        if (processingSettled || slowAckSent) return;
-        slowAckSent = true;
-        void replyToTelegram(chatId, TELEGRAM_SLOW_ACK_TEXT, {
-          handler: 'telegram_webhook:slow_ack',
-          update_id: update?.update_id,
-        });
-      }, TELEGRAM_SLOW_ACK_THRESHOLD_MS);
-    }
-
-    const result = await processPromise;
-    if (slowAckTimer) clearTimeout(slowAckTimer);
+    const result = await processUpdate(update);
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {
         outcome: result.outcome,

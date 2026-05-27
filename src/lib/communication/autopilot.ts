@@ -8,6 +8,7 @@ export type CommunicationAutopilotIntent =
   | 'wifi'
   | 'checkout'
   | 'early_checkin_late_checkout'
+  | 'booking_lookup_missing_details'
   | 'urgent_access_problem'
   | 'cleaning_issue'
   | 'maintenance_issue'
@@ -83,6 +84,15 @@ const INTENT_RULES: readonly IntentRule[] = [
       /(can(?:not|'t)|unable|cannot)\s+(enter|get\s+in|open|access)/i,
       /(door|lock|key|code).{0,28}(does\s+not\s+work|doesn't\s+work|not\s+working|broken|stuck|wrong)/i,
       /(urgent|emergency|outside|stuck).{0,40}(access|door|lock|key|code|enter|get\s+in)/i,
+    ],
+  },
+  {
+    intent: 'booking_lookup_missing_details',
+    confidence: 0.82,
+    patterns: [
+      /(есть|у\s+меня|моя|моё|мое).{0,24}(бронь|бронирован)/i,
+      /(бронь|бронирован).{0,32}(не\s+знаю|нет|без).{0,18}(номер|номера)/i,
+      /(booking|reservation).{0,32}(no\s+number|without\s+number|do\s+not\s+know)/i,
     ],
   },
   {
@@ -170,6 +180,14 @@ export function decideCommunicationAutopilotResponse(input: {
   });
 
   if (classification.intent === 'urgent_access_problem') {
+    if (missingContext.length === 0) {
+      return {
+        action: 'auto_reply',
+        confidence: classification.confidence,
+        replyText: 'Понял, доступом занимаемся срочно. Передаю команде.',
+        metadata: baseMetadata,
+      };
+    }
     return {
       action: 'escalate',
       confidence: classification.confidence,
@@ -180,9 +198,8 @@ export function decideCommunicationAutopilotResponse(input: {
 
   if (classification.intent === 'unknown') {
     return {
-      action: 'escalate',
+      action: 'needs_context',
       confidence: 0.42,
-      escalationReason: 'unknown_guest_question',
       metadata: baseMetadata,
     };
   }
@@ -196,16 +213,40 @@ export function decideCommunicationAutopilotResponse(input: {
   }
 
   return {
-    action: isOperationsIntent(classification.intent) ? 'escalate' : 'auto_reply',
+    action: 'auto_reply',
     confidence: classification.confidence,
     replyText: isOperationsIntent(classification.intent)
-      ? undefined
+      ? composeRuOperationsReply(classification.intent)
       : composeRuReply(classification.intent, input.context),
-    escalationReason: isOperationsIntent(classification.intent)
-      ? classification.intent
-      : undefined,
     metadata: baseMetadata,
   };
+}
+
+export function composeCommunicationAutopilotContextReply(input: {
+  decision: CommunicationAutopilotDecision;
+  lang: 'ru' | 'en' | string;
+}): string {
+  if (input.lang === 'ru') {
+    switch (input.decision.metadata.intent) {
+      case 'unknown':
+        return 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?';
+      case 'booking_lookup_missing_details':
+        return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
+      case 'cleaning_issue':
+        return 'Принял, вопрос по уборке зарегистрирован. Напишите, пожалуйста, объект или номер брони.';
+      case 'maintenance_issue':
+        return 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.';
+      case 'check_in_access':
+        return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+      default:
+        return 'Уточните, пожалуйста, объект или номер брони, и я проверю точные детали.';
+    }
+  }
+
+  if (input.decision.metadata.intent === 'unknown') {
+    return 'Please clarify what happened: check-in, access, cleaning, maintenance, or booking question?';
+  }
+  return 'Please send the property or booking number, and I will check the exact details.';
 }
 
 function classifyIntent(normalizedText: string): {
@@ -274,6 +315,8 @@ function getMissingContext(
         ['booking.earlyCheckInAvailable', context?.booking?.earlyCheckInAvailable],
         ['booking.lateCheckoutAvailable', context?.booking?.lateCheckoutAvailable],
       ]);
+    case 'booking_lookup_missing_details':
+      return ['booking.lookup_details'];
     case 'cleaning_issue':
     case 'maintenance_issue':
       return missingOperationalContext(context);
@@ -334,7 +377,16 @@ function composeRuReply(
 
       return `${early} ${late} Если планы изменятся, напишите - проверим еще раз.`;
     }
+    case 'booking_lookup_missing_details':
+      return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
   }
+}
+
+function composeRuOperationsReply(intent: 'cleaning_issue' | 'maintenance_issue'): string {
+  if (intent === 'cleaning_issue') {
+    return 'Принял, вопрос по уборке зарегистрирован. Передаю команде.';
+  }
+  return 'Принял, поломку зарегистрировал. Передаю команде.';
 }
 
 function buildMetadata(input: {
@@ -360,6 +412,13 @@ function buildOperationsAction(
   intent: CommunicationAutopilotIntent,
 ): CommunicationAutopilotOperationsAction | undefined {
   switch (intent) {
+    case 'check_in_access':
+      return {
+        category: 'operator_access_support',
+        priority: 'normal',
+        title: 'Communication autopilot: access support',
+        shortReason: 'check_in_access',
+      };
     case 'urgent_access_problem':
       return {
         category: 'operator_access_support',

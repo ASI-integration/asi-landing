@@ -84,7 +84,7 @@ describe('Telegram webhook route', () => {
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
   });
 
-  it('sends slow-processing acknowledgement after threshold while waiting for final processing', async () => {
+  it('does not send an extra slow acknowledgement while waiting for final processing', async () => {
     vi.useFakeTimers();
     const update = tgTextUpdate({ chat_id: 444, update_id: 9004, message_id: 45, text: 'Need check-in details' });
     let resolveProcess!: (value: { outcome: string; update_id: number; chat_id: number }) => void;
@@ -98,12 +98,7 @@ describe('Telegram webhook route', () => {
     const responsePromise = POST(telegramRequest(update));
     await vi.advanceTimersByTimeAsync(3600);
 
-    expect(mockReplyToTelegram).toHaveBeenCalledTimes(1);
-    expect(mockReplyToTelegram).toHaveBeenCalledWith(
-      444,
-      'Понял, уже разбираюсь с запросом. Вернусь с ответом через пару секунд.',
-      { handler: 'telegram_webhook:slow_ack', update_id: 9004 },
-    );
+    expect(mockReplyToTelegram).toHaveBeenCalledTimes(0);
 
     resolveProcess({ outcome: 'replied', update_id: 9004, chat_id: 444 });
     const res = await responsePromise;

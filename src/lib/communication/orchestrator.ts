@@ -448,6 +448,21 @@ function composeAutopilotContextClarifier(params: {
 }): string {
   const missing = params.decision.metadata.missingContext;
   if (params.lang === 'ru') {
+    if (params.decision.metadata.intent === 'unknown') {
+      return 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?';
+    }
+    if (params.decision.metadata.intent === 'booking_lookup_missing_details') {
+      return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
+    }
+    if (params.decision.metadata.intent === 'cleaning_issue') {
+      return 'Принял, вопрос по уборке зарегистрирован. Напишите, пожалуйста, объект или номер брони.';
+    }
+    if (params.decision.metadata.intent === 'maintenance_issue') {
+      return 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.';
+    }
+    if (params.decision.metadata.intent === 'check_in_access') {
+      return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+    }
     if (missing.some((field) => field.startsWith('object.'))) {
       return '\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u0435, \u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0431\u044a\u0435\u043a\u0442 \u0438\u043b\u0438 \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438, \u0438 \u044f \u043f\u0440\u043e\u0432\u0435\u0440\u044e \u0442\u043e\u0447\u043d\u044b\u0435 \u0434\u0435\u0442\u0430\u043b\u0438.';
     }
@@ -458,6 +473,23 @@ function composeAutopilotContextClarifier(params: {
     return 'Please send the property or booking number, and I will check the exact details.';
   }
   return 'I need one more booking or property detail before answering safely. Please send the booking number or property name.';
+}
+
+function composeAutopilotOperationsRegisteredReply(params: {
+  decision: CommunicationAutopilotDecision;
+  lang: Lang;
+}): string | null {
+  if (params.lang !== 'ru') return null;
+  switch (params.decision.metadata.intent) {
+    case 'cleaning_issue':
+      return 'Принял, вопрос по уборке зарегистрирован. Передаю команде.';
+    case 'maintenance_issue':
+      return 'Принял, поломку зарегистрировал. Передаю команде.';
+    case 'check_in_access':
+      return 'Понял, помогаю с заселением и доступом. Проверяю детали.';
+    default:
+      return null;
+  }
 }
 
 function composeAutopilotHandoffReply(params: {
@@ -504,6 +536,7 @@ function resolveAutopilotOpsTask(params: {
   fallbackReservationId?: string | null;
   chatId: number;
   updateId?: number;
+  operationsLifecycle?: { action: CommunicationOperationsAction; lifecycle: 'created' | 'deduped' } | null;
 }): { task: Parameters<typeof createOpsTask>[0]; action: CommunicationOperationsAction; lifecycle: 'created' | 'deduped' } | null {
   const action = params.decision.metadata.operationsAction;
   if (!action || !hasAutopilotOperationsContext(params.context)) return null;
@@ -518,21 +551,23 @@ function resolveAutopilotOpsTask(params: {
     params.envelope.metadata?.providerMessageId,
     params.envelope.metadata?.externalMessageId,
   );
-  const lifecycle = upsertCommunicationOperationsAction({
-    sourceChannel: toAutopilotOperationsSourceChannel(params.envelope.channel),
-    category: action.category,
-    priority: action.priority,
-    reason: action.shortReason,
-    reference: {
-      guestId: firstUsefulText(params.context.session?.guestName, params.envelope.externalUserId),
-      sessionId: firstUsefulText(params.context.session?.id),
-      bookingId: reservationId ?? undefined,
-      objectId: propertyId,
-      chatId: params.chatId,
-      updateId: params.updateId,
-      providerMessageId,
-    },
-  });
+  const lifecycle =
+    params.operationsLifecycle ??
+    upsertCommunicationOperationsAction({
+      sourceChannel: toAutopilotOperationsSourceChannel(params.envelope.channel),
+      category: action.category,
+      priority: action.priority,
+      reason: action.shortReason,
+      reference: {
+        guestId: firstUsefulText(params.context.session?.guestName, params.envelope.externalUserId),
+        sessionId: firstUsefulText(params.context.session?.id),
+        bookingId: reservationId ?? undefined,
+        objectId: propertyId,
+        chatId: params.chatId,
+        updateId: params.updateId,
+        providerMessageId,
+      },
+    });
 
   const task = {
     property_id: propertyId,
@@ -1321,6 +1356,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (
       !replyText &&
       isLiveAutopilotInboundChannel(envelope.channel) &&
+      classification.lang === 'ru' &&
       text.trim()
     ) {
       const autopilotContext = buildAutopilotContext({
@@ -1352,8 +1388,33 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }),
       });
 
+      const autopilotOperation = autopilotDecision.metadata.operationsAction
+        ? upsertCommunicationOperationsAction({
+            sourceChannel: toAutopilotOperationsSourceChannel(envelope.channel),
+            category: autopilotDecision.metadata.operationsAction.category,
+            priority: autopilotDecision.metadata.operationsAction.priority,
+            reason: autopilotDecision.metadata.operationsAction.shortReason,
+            reference: {
+              guestId: firstUsefulText(autopilotContext.session?.guestName, envelope.externalUserId),
+              sessionId: firstUsefulText(autopilotContext.session?.id),
+              bookingId: firstUsefulText(autopilotContext.booking?.id, commContext.reservation.reservationId),
+              objectId: firstUsefulText(autopilotContext.object?.id, commContext.reservation.propertyId),
+              chatId,
+              updateId: update_id,
+              providerMessageId: firstUsefulText(
+                envelope.metadata?.providerMessageId,
+                envelope.metadata?.externalMessageId,
+              ),
+            },
+          })
+        : null;
+
       if (!escalationSafetyGate && autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
-        replyText = adapter.formatResponse(autopilotDecision.replyText, commContext as unknown as Record<string, unknown>);
+        const operationsReply = composeAutopilotOperationsRegisteredReply({
+          decision: autopilotDecision,
+          lang: classification.lang,
+        });
+        replyText = adapter.formatResponse(operationsReply ?? autopilotDecision.replyText, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
         usedPath = 'communication_autopilot';
         convSession = transitionConversationSessionState(
@@ -1452,6 +1513,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           fallbackReservationId: commContext.reservation.reservationId,
           chatId,
           updateId: update_id,
+          operationsLifecycle: autopilotOperation,
         });
         if (autopilotOpsTask) {
           if (autopilotOpsTask.lifecycle === 'created') {
