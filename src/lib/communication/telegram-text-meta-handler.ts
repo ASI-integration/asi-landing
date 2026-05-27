@@ -7,7 +7,7 @@ import { MessageCategory, type ClassifyResult } from './types';
  * depend on scattered keyword lists or the LLM branch.
  */
 
-export type TelegramTextMetaKind = 'start' | 'greeting' | 'language_check' | 'es_locale_meta';
+export type TelegramTextMetaKind = 'start' | 'greeting' | 'language_check' | 'es_locale_meta' | 'smalltalk';
 
 export type TelegramTextMetaMatch = {
   handler: 'telegram_text_meta_deterministic';
@@ -36,6 +36,52 @@ function isSpanishTelegramMeta(normalized: string): boolean {
     normalized === 'hablas espanol' ||
     normalized.includes('hablas espanol') ||
     normalized.includes('hablas español')
+  );
+}
+
+function isNeutralSmalltalkMeta(normalized: string): boolean {
+  const exact = new Set([
+    'а ты умный бот',
+    'ты умный бот',
+    'ты бот',
+    'вы бот',
+    'а ты бот',
+    'а вы бот',
+    'ты робот',
+    'вы робот',
+    'кто ты',
+    'кто вы',
+    'кто ты такой',
+    'кто вы такие',
+    'ты живой',
+    'вы живые',
+    'спасибо',
+    'спасибо большое',
+    'благодарю',
+    'спс',
+    'ок',
+    'окей',
+    'ок спасибо',
+    'хорошо',
+    'понял',
+    'поняла',
+    'ясно',
+    'are you a bot',
+    'r u a bot',
+    'who are you',
+    'are you alive',
+    'thanks',
+    'thank you',
+    'ok',
+    'okay',
+    'got it',
+  ]);
+
+  return (
+    exact.has(normalized) ||
+    /^(а\s+)?(ты|вы)\s+(умн(ый|ая|ые)\s+)?(бот|робот)$/i.test(normalized) ||
+    /^(а\s+)?(ты|вы)\s+жив(ой|ая|ые)$/i.test(normalized) ||
+    /^кто\s+(ты|вы)(\s+так(ой|ая|ие))?$/i.test(normalized)
   );
 }
 
@@ -107,6 +153,30 @@ function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
   return 'Hi! Send a guest message, issue, or check-in details.';
 }
 
+function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): string {
+  const normalized = normalizeForMetaMatch(rawText);
+  const isAck =
+    /^(спасибо|спасибо большое|благодарю|спс|ок|окей|ок спасибо|хорошо|понял|поняла|ясно)$/i.test(normalized) ||
+    /^(thanks|thank you|ok|okay|got it)$/i.test(normalized);
+
+  if (surface === 'ru') {
+    if (isAck) {
+      return 'Пожалуйста! Если появится запрос гостя или вопрос по объекту, пришлите сюда.';
+    }
+    return 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.';
+  }
+  if (surface === 'es') {
+    if (isAck) {
+      return 'Con gusto. Si aparece una solicitud del huésped o una pregunta sobre el alojamiento, envíela aquí.';
+    }
+    return 'Sí, soy el bot de ASI. Ayudo con mensajes de huéspedes, check-in y problemas del alojamiento.';
+  }
+  if (isAck) {
+    return 'You’re welcome. Send any guest request or property question here when it comes up.';
+  }
+  return 'Yes, I’m the ASI bot. I help with guest messages, check-in questions, and property issues.';
+}
+
 function hasSubstantiveOperationalContent(rawText: string): boolean {
   const raw = String(rawText ?? '');
   const normalized = normalizeForMetaMatch(raw);
@@ -135,6 +205,9 @@ function buildTelegramMetaReply(
   const surface: MetaSurfaceLang =
     process.env.RU_TELEGRAM_FORCE_RU === '1' ? 'ru' : inferMetaSurfaceLang(rawText, telegramLangCode);
 
+  if (kind === 'smalltalk') {
+    return telegramMetaSmalltalkReply(rawText, surface);
+  }
   if (working.category === MessageCategory.LanguageCheck || kind === 'es_locale_meta') {
     return unifiedLanguageCapabilityReply(surface);
   }
@@ -177,6 +250,19 @@ export function resolveTelegramTextMeta(params: {
       handler: 'telegram_text_meta_deterministic',
       kind: 'es_locale_meta',
       reply: buildTelegramMetaReply('es_locale_meta', raw, params.telegramLangCode, patched),
+      category: MessageCategory.LanguageCheck,
+      classification: patchClassificationLang(patched, surface),
+    };
+  }
+
+  if (isNeutralSmalltalkMeta(spanishKey) && !hasSubstantiveOperationalContent(raw)) {
+    const classification = classify(raw);
+    const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
+    return {
+      handler: 'telegram_text_meta_deterministic',
+      kind: 'smalltalk',
+      reply: buildTelegramMetaReply('smalltalk', raw, params.telegramLangCode, patched),
       category: MessageCategory.LanguageCheck,
       classification: patchClassificationLang(patched, surface),
     };

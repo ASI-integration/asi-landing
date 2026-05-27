@@ -59,6 +59,48 @@ describe('telegram dry-run', () => {
     expect(out.escalated).toBe(true);
   });
 
+  it('returns no operational actions for bot/meta smalltalk', async () => {
+    mockProcessMessage.mockResolvedValueOnce({
+      outcome: 'replied',
+      reply: 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.',
+    });
+
+    const out = await runTelegramDryRun({
+      text: 'А ты умный бот?',
+      chatId: 'test-chat',
+    });
+
+    expect(out.replyText).toMatch(/бот ASI/i);
+    expect(out.detectedIntents).toEqual([]);
+    expect(out.actions).toEqual([]);
+    expect(out.escalated).toBe(false);
+    expect(out.finalReplied).toBe(true);
+
+    const botQuestion = await runTelegramDryRun({
+      text: 'ты бот?',
+      chatId: 'test-chat',
+    });
+
+    expect(botQuestion.detectedIntents).toEqual([]);
+    expect(botQuestion.actions).toEqual([]);
+    expect(botQuestion.escalated).toBe(false);
+  });
+
+  it('returns no operational actions for short thanks', async () => {
+    mockProcessMessage.mockResolvedValueOnce({
+      outcome: 'replied',
+      reply: 'Пожалуйста! Если появится запрос гостя или вопрос по объекту, пришлите сюда.',
+    });
+
+    const out = await runTelegramDryRun({
+      text: 'спасибо',
+      chatId: 'test-chat',
+    });
+
+    expect(out.actions).toEqual([]);
+    expect(out.escalated).toBe(false);
+  });
+
   it('asks clarification for unknown object context', async () => {
     const out = await runTelegramDryRun({
       text: 'Где wifi и можно поздний выезд до 13:00?',

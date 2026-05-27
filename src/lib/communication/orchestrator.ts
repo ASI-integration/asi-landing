@@ -1311,7 +1311,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
       : null;
 
+    if (envelope.channel === 'telegram' && telegramMetaStoredReply) {
+      cp('branch.telegram_text_meta_deterministic.pre_operational', { chat_id: chatId, kind: telegramMetaRouteKind });
+      replyText = adapter.formatResponse(telegramMetaStoredReply, commContext as unknown as Record<string, unknown>);
+      llmSucceeded = true;
+      usedPath = 'telegram_meta_deterministic';
+    }
+
     if (
+      !replyText &&
       isLiveAutopilotInboundChannel(envelope.channel) &&
       text.trim()
     ) {
@@ -1536,6 +1544,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         candidates: decision.entityResolution.candidates?.slice(0, 5),
       }),
     });
+
 
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (!replyText && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {

@@ -42,4 +42,21 @@ describe('resolveTelegramTextMeta', () => {
       'Sí, entiendo mensajes en inglés y ruso. Envíe su solicitud por texto, por favor.',
     );
   });
+
+  it('routes neutral bot/meta smalltalk without operational context', () => {
+    const smartBot = resolveTelegramTextMeta({ baseText: 'А ты умный бот?', telegramLangCode: 'ru' });
+    expect(smartBot?.kind).toBe('smalltalk');
+    expect(smartBot?.reply).toMatch(/бот ASI/i);
+
+    const bot = resolveTelegramTextMeta({ baseText: 'ты бот?', telegramLangCode: 'ru' });
+    expect(bot?.kind).toBe('smalltalk');
+
+    const thanks = resolveTelegramTextMeta({ baseText: 'спасибо', telegramLangCode: 'ru' });
+    expect(thanks?.kind).toBe('smalltalk');
+    expect(thanks?.reply).toMatch(/Пожалуйста/i);
+  });
+
+  it('does not steal operational context from short acknowledgement words', () => {
+    expect(resolveTelegramTextMeta({ baseText: 'ок, код двери не работает', telegramLangCode: 'ru' })).toBeNull();
+  });
 });

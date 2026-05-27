@@ -1,5 +1,6 @@
 import { processMessage } from './orchestrator';
 import { executeTelegramOperationalPolicyMultiIntent } from './telegram-operational-policy-executor';
+import { resolveTelegramTextMeta } from './telegram-text-meta-handler';
 import type { InboundMessageEnvelope, ProcessResult } from './types';
 
 export type TelegramDryRunInput = {
@@ -43,6 +44,7 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   const chatId = String(input.chatId ?? '').trim();
   const objectName = String(input.objectName ?? '').trim();
   const bookingId = String(input.bookingId ?? '').trim();
+  const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' });
 
   const policyInput = {
     messageText: text,
@@ -64,9 +66,9 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
     },
   } as const;
 
-  const multiIntent = executeTelegramOperationalPolicyMultiIntent(policyInput);
-  const detectedIntents = multiIntent.intents.map((intent) => scenarioToIntent(intent.scenarioFamily));
-  const actions = multiIntent.intents.map((intent) => toOperationalAction(intent.action));
+  const multiIntent = meta ? null : executeTelegramOperationalPolicyMultiIntent(policyInput);
+  const detectedIntents = multiIntent?.intents.map((intent) => scenarioToIntent(intent.scenarioFamily)) ?? [];
+  const actions = multiIntent?.intents.map((intent) => toOperationalAction(intent.action)) ?? [];
 
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
@@ -86,6 +88,7 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   const replyText = result.reply ?? '';
   const escalatedByPolicy = actions.includes('escalate_operator') || actions.includes('escalate_urgent');
   const hasFinalPolicyAction = actions.some((action) => action === 'reply' || action === 'clarify' || action.startsWith('escalate'));
+  const hasFinalMetaReply = Boolean(meta && replyText.length > 0);
 
   return {
     detectedIntents,
@@ -93,6 +96,6 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
     actions,
     escalated: Boolean(result.escalation) || escalatedByPolicy,
     slowAckSent: actions.includes('slow_ack') && !hasFinalPolicyAction,
-    finalReplied: result.outcome === 'replied' && replyText.length > 0 && hasFinalPolicyAction,
+    finalReplied: result.outcome === 'replied' && replyText.length > 0 && (hasFinalPolicyAction || hasFinalMetaReply),
   };
 }
