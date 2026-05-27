@@ -116,4 +116,22 @@ describe('Telegram webhook route', () => {
     await vi.advanceTimersByTimeAsync(3600);
     expect(mockReplyToTelegram).toHaveBeenCalledTimes(0);
   });
+
+  it('does not send a separate acknowledgement for urgent access updates', async () => {
+    vi.useFakeTimers();
+    const update = tgTextUpdate({
+      chat_id: 556,
+      update_id: 9006,
+      message_id: 47,
+      text: 'не могу попасть, код не работает',
+    });
+    mockProcessUpdate.mockResolvedValue({ outcome: 'replied', update_id: 9006, chat_id: 556 });
+    mockReplyToTelegram.mockResolvedValue(true);
+
+    const res = await POST(telegramRequest(update));
+    expect(res.status).toBe(200);
+    await vi.advanceTimersByTimeAsync(3600);
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(1);
+    expect(mockReplyToTelegram).toHaveBeenCalledTimes(0);
+  });
 });

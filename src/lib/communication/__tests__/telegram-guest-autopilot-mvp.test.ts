@@ -4,6 +4,7 @@ import {
   decideCommunicationAutopilotResponse,
   type CommunicationAutopilotDecision,
 } from '../autopilot';
+import { canonicalUrgentAccessEscalationText } from '../communication-canon';
 import {
   __listCommunicationOperationsActionsForTests,
   __resetCommunicationOperationsActionsForTests,
@@ -38,8 +39,17 @@ describe('Telegram guest autopilot MVP', () => {
 
   it('answers smalltalk without operations action', () => {
     const meta = resolveTelegramTextMeta({ baseText: 'ты бот?', telegramLangCode: 'ru' });
-    expect(meta?.kind).toBe('smalltalk');
-    expect(meta?.reply).toMatch(/бот ASI/i);
+    expect(meta?.kind).toBe('identity');
+    expect(meta?.reply).toMatch(/официальный ассистент ASI/i);
+    expect(__listCommunicationOperationsActionsForTests()).toEqual([]);
+  });
+
+  it('answers smart bot identity without operations action', () => {
+    const meta = resolveTelegramTextMeta({ baseText: 'ты умный бот?', telegramLangCode: 'ru' });
+    expect(meta?.kind).toBe('identity');
+    expect(meta?.reply).toBe(
+      'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.',
+    );
     expect(__listCommunicationOperationsActionsForTests()).toEqual([]);
   });
 
@@ -56,8 +66,22 @@ describe('Telegram guest autopilot MVP', () => {
     registerOperation(d);
     const actions = __listCommunicationOperationsActionsForTests();
     expect(d.metadata.intent).toBe('urgent_access_problem');
+    expect(d.action).toBe('escalate');
     expect(actions).toHaveLength(1);
     expect(actions[0]?.category).toBe('operator_access_support');
+  });
+
+  it('uses one combined Telegram urgent access escalation reply', () => {
+    expect(
+      canonicalUrgentAccessEscalationText({
+        channel: 'telegram',
+        lang: 'ru',
+        category: 'access_issue',
+        action: 'escalate_urgent',
+      }),
+    ).toBe(
+      'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+    );
   });
 
   it('creates a maintenance action for maintenance issues', () => {

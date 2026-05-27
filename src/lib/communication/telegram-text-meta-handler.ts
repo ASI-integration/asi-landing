@@ -12,6 +12,7 @@ export type TelegramTextMetaKind =
   | 'greeting'
   | 'language_check'
   | 'es_locale_meta'
+  | 'identity'
   | 'smalltalk'
   | 'test_ping';
 
@@ -87,6 +88,38 @@ function isNeutralSmalltalkMeta(normalized: string): boolean {
     exact.has(normalized) ||
     /^(а\s+)?(ты|вы)\s+(умн(ый|ая|ые)\s+)?(бот|робот)$/i.test(normalized) ||
     /^(а\s+)?(ты|вы)\s+жив(ой|ая|ые)$/i.test(normalized) ||
+    /^кто\s+(ты|вы)(\s+так(ой|ая|ие))?$/i.test(normalized)
+  );
+}
+
+function isIdentityMeta(normalized: string): boolean {
+  const exact = new Set([
+    'ты бот',
+    'а ты бот',
+    'вы бот',
+    'а вы бот',
+    'это бот',
+    'ты робот',
+    'вы робот',
+    'это робот',
+    'ты человек',
+    'вы человек',
+    'ты умный бот',
+    'а ты умный бот',
+    'вы умный бот',
+    'вы умные бот',
+    'кто ты',
+    'кто вы',
+    'кто ты такой',
+    'кто вы такие',
+    'are you a bot',
+    'r u a bot',
+    'who are you',
+  ]);
+
+  return (
+    exact.has(normalized) ||
+    /^(а\s+)?(ты|вы|это)\s+(умн(ый|ая|ые)\s+)?(бот|робот|человек)$/i.test(normalized) ||
     /^кто\s+(ты|вы)(\s+так(ой|ая|ие))?$/i.test(normalized)
   );
 }
@@ -189,6 +222,16 @@ function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): 
   return 'Yes, I’m the ASI bot. I help with guest messages, check-in questions, and property issues.';
 }
 
+function telegramMetaIdentityReply(surface: MetaSurfaceLang): string {
+  if (surface === 'ru') {
+    return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
+  }
+  if (surface === 'es') {
+    return 'Sí, soy el asistente oficial de ASI. Ayudo con check-in, acceso, reservas, limpieza y averías. Escriba qué pasó y revisaré la solicitud o la pasaré a un operador si necesita una persona.';
+  }
+  return 'Yes, I am the official ASI assistant. I help with check-in, access, bookings, cleaning, and maintenance. Send what happened and I will handle it or pass it to an operator if a person is needed.';
+}
+
 function telegramMetaTestPingReply(surface: MetaSurfaceLang): string {
   if (surface === 'ru') return 'Бот на связи.';
   return 'Bot is online.';
@@ -224,6 +267,9 @@ function buildTelegramMetaReply(
 
   if (kind === 'smalltalk') {
     return telegramMetaSmalltalkReply(rawText, surface);
+  }
+  if (kind === 'identity') {
+    return telegramMetaIdentityReply(surface);
   }
   if (kind === 'test_ping') {
     return telegramMetaTestPingReply(surface);
@@ -283,6 +329,19 @@ export function resolveTelegramTextMeta(params: {
       handler: 'telegram_text_meta_deterministic',
       kind: 'es_locale_meta',
       reply: buildTelegramMetaReply('es_locale_meta', raw, params.telegramLangCode, patched),
+      category: MessageCategory.LanguageCheck,
+      classification: patchClassificationLang(patched, surface),
+    };
+  }
+
+  if (isIdentityMeta(spanishKey) && !hasSubstantiveOperationalContent(raw)) {
+    const classification = classify(raw);
+    const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
+    return {
+      handler: 'telegram_text_meta_deterministic',
+      kind: 'identity',
+      reply: buildTelegramMetaReply('identity', raw, params.telegramLangCode, patched),
       category: MessageCategory.LanguageCheck,
       classification: patchClassificationLang(patched, surface),
     };

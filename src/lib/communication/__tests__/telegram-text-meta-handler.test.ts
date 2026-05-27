@@ -45,11 +45,11 @@ describe('resolveTelegramTextMeta', () => {
 
   it('routes neutral bot/meta smalltalk without operational context', () => {
     const smartBot = resolveTelegramTextMeta({ baseText: 'А ты умный бот?', telegramLangCode: 'ru' });
-    expect(smartBot?.kind).toBe('smalltalk');
-    expect(smartBot?.reply).toMatch(/бот ASI/i);
+    expect(smartBot?.kind).toBe('identity');
+    expect(smartBot?.reply).toMatch(/официальный ассистент ASI/i);
 
     const bot = resolveTelegramTextMeta({ baseText: 'ты бот?', telegramLangCode: 'ru' });
-    expect(bot?.kind).toBe('smalltalk');
+    expect(bot?.kind).toBe('identity');
 
     const thanks = resolveTelegramTextMeta({ baseText: 'спасибо', telegramLangCode: 'ru' });
     expect(thanks?.kind).toBe('smalltalk');
