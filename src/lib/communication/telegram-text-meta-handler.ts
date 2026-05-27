@@ -7,7 +7,13 @@ import { MessageCategory, type ClassifyResult } from './types';
  * depend on scattered keyword lists or the LLM branch.
  */
 
-export type TelegramTextMetaKind = 'start' | 'greeting' | 'language_check' | 'es_locale_meta' | 'smalltalk';
+export type TelegramTextMetaKind =
+  | 'start'
+  | 'greeting'
+  | 'language_check'
+  | 'es_locale_meta'
+  | 'smalltalk'
+  | 'test_ping';
 
 export type TelegramTextMetaMatch = {
   handler: 'telegram_text_meta_deterministic';
@@ -83,6 +89,12 @@ function isNeutralSmalltalkMeta(normalized: string): boolean {
     /^(а\s+)?(ты|вы)\s+жив(ой|ая|ые)$/i.test(normalized) ||
     /^кто\s+(ты|вы)(\s+так(ой|ая|ие))?$/i.test(normalized)
   );
+}
+
+function isTelegramTestPingMeta(normalized: string): boolean {
+  if (/^(ping|test|тест|проверка)$/.test(normalized)) return true;
+  if (/^(test|тест)\s+/.test(normalized)) return true;
+  return false;
 }
 
 type MetaSurfaceLang = 'en' | 'ru' | 'es';
@@ -177,6 +189,11 @@ function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): 
   return 'Yes, I’m the ASI bot. I help with guest messages, check-in questions, and property issues.';
 }
 
+function telegramMetaTestPingReply(surface: MetaSurfaceLang): string {
+  if (surface === 'ru') return 'Бот на связи.';
+  return 'Bot is online.';
+}
+
 function hasSubstantiveOperationalContent(rawText: string): boolean {
   const raw = String(rawText ?? '');
   const normalized = normalizeForMetaMatch(raw);
@@ -207,6 +224,9 @@ function buildTelegramMetaReply(
 
   if (kind === 'smalltalk') {
     return telegramMetaSmalltalkReply(rawText, surface);
+  }
+  if (kind === 'test_ping') {
+    return telegramMetaTestPingReply(surface);
   }
   if (working.category === MessageCategory.LanguageCheck || kind === 'es_locale_meta') {
     return unifiedLanguageCapabilityReply(surface);
@@ -242,6 +262,19 @@ export function resolveTelegramTextMeta(params: {
   // Text-first `lang`; do not pass Telegram `language_code` into `classify` or it
   // overrides Cyrillic/Latin detection and biases capability replies to the UI locale.
   const spanishKey = normalizeForMetaMatch(raw);
+  if (isTelegramTestPingMeta(spanishKey) && !hasSubstantiveOperationalContent(raw)) {
+    const classification = classify(raw);
+    const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };
+    const surface = inferMetaSurfaceLang(raw, params.telegramLangCode);
+    return {
+      handler: 'telegram_text_meta_deterministic',
+      kind: 'test_ping',
+      reply: buildTelegramMetaReply('test_ping', raw, params.telegramLangCode, patched),
+      category: MessageCategory.LanguageCheck,
+      classification: patchClassificationLang(patched, surface),
+    };
+  }
+
   if (isSpanishTelegramMeta(spanishKey)) {
     const classification = classify(raw);
     const patched: ClassifyResult = { ...classification, category: MessageCategory.LanguageCheck };

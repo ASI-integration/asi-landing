@@ -56,6 +56,22 @@ describe('resolveTelegramTextMeta', () => {
     expect(thanks?.reply).toMatch(/Пожалуйста/i);
   });
 
+  it('routes Telegram ping/test probes to a short bot-online reply', () => {
+    for (const text of ['тест', 'проверка', 'ping', 'test', 'тест один ответ 1629']) {
+      const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' });
+
+      expect(meta?.kind).toBe('test_ping');
+      expect(meta?.reply).toMatch(/бот на связи|bot is online/i);
+      expect(meta?.category).toBe('language-check');
+    }
+  });
+
+  it('does not steal real support messages', () => {
+    for (const text of ['код двери не работает', 'сломался душ', 'не убрано']) {
+      expect(resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' })).toBeNull();
+    }
+  });
+
   it('does not steal operational context from short acknowledgement words', () => {
     expect(resolveTelegramTextMeta({ baseText: 'ок, код двери не работает', telegramLangCode: 'ru' })).toBeNull();
   });

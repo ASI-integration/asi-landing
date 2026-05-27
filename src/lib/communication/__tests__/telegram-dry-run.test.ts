@@ -101,6 +101,24 @@ describe('telegram dry-run', () => {
     expect(out.escalated).toBe(false);
   });
 
+  it('returns no operational actions or escalation for Telegram test probes', async () => {
+    mockProcessMessage.mockResolvedValueOnce({
+      outcome: 'replied',
+      reply: 'Бот на связи.',
+    });
+
+    const out = await runTelegramDryRun({
+      text: 'тест один ответ 1629',
+      chatId: 'test-chat',
+    });
+
+    expect(out.replyText).toMatch(/бот на связи/i);
+    expect(out.detectedIntents).toEqual([]);
+    expect(out.actions).toEqual([]);
+    expect(out.escalated).toBe(false);
+    expect(out.finalReplied).toBe(true);
+  });
+
   it('asks clarification for unknown object context', async () => {
     const out = await runTelegramDryRun({
       text: 'Где wifi и можно поздний выезд до 13:00?',
