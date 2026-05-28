@@ -317,13 +317,11 @@ function resolveOutboundTargetId(
   identityGuestId?: string,
 ): string | undefined {
   if (envelope.channel === 'telegram') {
-    return metadataString(envelope.metadata, ['telegram_chat_id', 'chat_id', 'telegramChatId']) ??
+    return (String(envelope.chatId ?? '').trim() || undefined) ??
+      metadataString(envelope.metadata, ['telegram_chat_id', 'chat_id', 'telegramChatId']) ??
       metadataString((envelope.metadata as any)?.message, ['chat_id']) ??
       metadataString((envelope.metadata as any)?.message?.chat, ['id']) ??
-      metadataString((envelope.metadata as any)?.chat, ['id']) ??
-      (String(envelope.externalUserId ?? '').trim() || undefined) ??
-      (String(envelope.chatId ?? '').trim() || undefined) ??
-      identityGuestId;
+      metadataString((envelope.metadata as any)?.chat, ['id']);
   }
 
   return (String(envelope.chatId ?? '').trim() || undefined) ??

@@ -139,22 +139,26 @@ describe('processUpdate', () => {
     expect(String(sentText)).toMatch(/operator|team|access|доступ|оператор/i);
   });
 
-  it('sends Telegram outbound replies to external Telegram chat id, not internal session id', async () => {
+  it('sends Telegram outbound replies to the real chat id, not resolved identity id', async () => {
     const result = await processMessage({
       channel: 'telegram',
-      externalUserId: '931919812',
-      chatId: '567508',
+      externalUserId: '567508',
+      chatId: '93119812',
       messageText: 'what time is check-in?',
       receivedAt: new Date(),
       update_id: nextUpdateId++,
       metadata: {
         providerMessageId: 'tg-msg-external-target',
+        actorId: '567508',
+        guestId: '567508',
+        identityGuestId: '567508',
+        userId: '567508',
       },
     });
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(mockSendMessage).toHaveBeenCalled();
-    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('931919812');
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('93119812');
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('567508');
   });
 
