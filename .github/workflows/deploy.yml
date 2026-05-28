@@ -1,10 +1,15 @@
 name: Deploy to VPS
 
 on:
-  push:
-    branches: [main]
+  # Production deploy is manual only.
+  # Pushes to main must not deploy production.
+  # Staging deploy uses separate staging scripts/config, not this workflow.
   workflow_dispatch:
     inputs:
+      confirm_production_deploy:
+        description: Type DEPLOY_PRODUCTION to deploy production
+        required: true
+        type: string
       sha:
         description: Commit SHA or ref to build+deploy (defaults to the triggering SHA)
         required: false
@@ -18,8 +23,21 @@ permissions:
   contents: read
 
 jobs:
+  confirm_production_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit production confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_production_deploy }}" != "DEPLOY_PRODUCTION" ]; then
+            echo "Production deploy is manual only. Set confirm_production_deploy to DEPLOY_PRODUCTION."
+            exit 1
+          fi
+
   build_release:
     runs-on: ubuntu-latest
+    needs: [confirm_production_deploy]
     outputs:
       sha: ${{ steps.build_meta.outputs.sha }}
       artifact_name: ${{ steps.build_meta.outputs.artifact_name }}
@@ -172,6 +190,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [build_release, artifact_smoke]
+    environment: production
     env:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}

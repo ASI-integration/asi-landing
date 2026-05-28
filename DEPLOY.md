@@ -2,7 +2,16 @@
 
 ## Production-only warning
 
-The current artifact deploy is production-only. A push to `main` triggers `.github/workflows/deploy.yml` and deploys to `/var/www/asi`, PM2 process `asi-landing`, and port `3000`.
+The artifact deploy is production-only and manual-only. Pushing to `main` does not deploy production automatically.
+
+Production deploys must be launched manually from GitHub Actions:
+
+1. Open `.github/workflows/deploy.yml` / "Deploy to VPS".
+2. Use `Run workflow`.
+3. Set `confirm_production_deploy` to exactly `DEPLOY_PRODUCTION`.
+4. Optionally set `sha` to the commit SHA or ref to build and deploy.
+
+The workflow deploys to `/var/www/asi`, PM2 process `asi-landing`, and port `3000`.
 
 Do not use the production artifact deploy for staging. Staging must use separate staging scripts/config:
 
@@ -22,7 +31,7 @@ Do not use the production artifact deploy for staging. Staging must use separate
 ```bash
 git add -p                     # проверить что коммитишь
 git commit -m "feat/fix: ..."
-git push origin main
+git push origin main           # does not deploy production automatically
 ```
 
 ---
@@ -31,8 +40,9 @@ git push origin main
 
 ```bash
 ssh root@<server>
-# Canonical production deploy: push to `main` → GitHub Actions builds the artifact and runs
-# `scripts/deploy-artifact.sh` on the VPS. Do not run `deploy.sh` (retired).
+# Canonical production deploy: manually run GitHub Actions workflow "Deploy to VPS"
+# with confirm_production_deploy=DEPLOY_PRODUCTION. GitHub Actions builds the artifact
+# and runs `scripts/deploy-artifact.sh` on the VPS. Do not run `deploy.sh` (retired).
 #
 # See: `.github/workflows/deploy.yml` + `scripts/deploy-artifact.sh`
 ```
@@ -138,7 +148,7 @@ npm run location-pdf:check-chromium
 - **Не запускать `pm2 delete` / `pm2 kill`** в продакшне без rollback-плана
 - **Не деплоить при failed build** — если build упал, чинить локально и пушить снова
 - **Не запускать два деплоя параллельно** — один агент/сессия за раз
-- **Не редактировать файлы напрямую на сервере** — только через git push + CI deploy
+- **Не редактировать файлы напрямую на сервере** — только через git push + manual GitHub Actions deploy
 - **Не делать `git reset --hard` на сервере** вручную — использовать `scripts/rollback-artifact.sh`
 
 ---
