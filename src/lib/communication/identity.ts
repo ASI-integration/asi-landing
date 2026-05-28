@@ -113,6 +113,7 @@ function lookupInCache(envelope: InboundMessageEnvelope): UnifiedGuestIdentity |
 async function resolveFromDB(
   envelope: InboundMessageEnvelope,
 ): Promise<UnifiedGuestIdentity | null> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return null;
   try {
     // VK: look up by vk_id column (added in migration 20260410000001)
     if (envelope.channel === 'vk' && envelope.externalUserId) {
@@ -163,6 +164,7 @@ async function persistContact(
   identity: UnifiedGuestIdentity,
   envelope: InboundMessageEnvelope,
 ): Promise<void> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
   try {
     const record: Record<string, unknown> = {
       id:         identity.guestId,
@@ -192,6 +194,7 @@ async function mergeAndPersist(
   setInCache(merged);
 
   // Update Supabase with any newly-seen identifiers (best-effort)
+  if (process.env.TELEGRAM_DRY_RUN === '1') return merged;
   try {
     const patch: Record<string, string | null> = { updated_at: new Date().toISOString() };
     if (envelope.channel === 'vk') {

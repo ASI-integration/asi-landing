@@ -28,6 +28,7 @@ function truncateContent(text: string): string {
  * updated_at on subsequent messages.
  */
 export async function upsertSession(chatId: number): Promise<void> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
   try {
     const now = new Date().toISOString();
     const { error } = await supabase
@@ -57,6 +58,7 @@ export async function upsertSession(chatId: number): Promise<void> {
  * Load an existing session, or return null if not found.
  */
 export async function loadSession(chatId: number): Promise<TelegramConversationSessionRow | null> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return null;
   try {
     const { data, error } = await supabase
       .from('tg_conversation_sessions')
@@ -78,6 +80,7 @@ export async function loadSession(chatId: number): Promise<TelegramConversationS
  * Content is truncated to MAX_CONTENT_LENGTH before storage.
  */
 export async function saveTurn(turn: Omit<MessageTurn, 'created_at'>): Promise<void> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
   try {
     const now = new Date().toISOString();
     const { error } = await supabase

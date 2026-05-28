@@ -86,6 +86,7 @@ export function getSessionStatusSync(chatId: number): SessionStatus {
 export async function getSessionStatus(chatId: number): Promise<SessionStatus> {
   const cached = sessionStore.get(chatId);
   if (cached) return cached.status;
+  if (process.env.TELEGRAM_DRY_RUN === '1') return SessionStatus.Inquiry;
 
   try {
     const { data } = await supabase
@@ -146,6 +147,8 @@ export async function transitionSessionStatus(
   console.log(`[SessionStatus] chatId=${chatId} ${current} → ${newStatus}`);
 
   // Best-effort Supabase write — gracefully ignores missing column.
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
+
   runInBackground({
       correlationId: String(chatId),
       module: 'session-status',

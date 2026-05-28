@@ -244,8 +244,18 @@ function preventRepeatedCommunicationReply(params: {
   replyText: string;
   lang: Lang;
   memory: any;
+  eligible?: boolean;
 }): { replyText: string; signature: string; repeatedCount: number; prevented: boolean; escalated: boolean } {
   const currentSignature = replySignature(params.replyText);
+  if (!params.eligible) {
+    return {
+      replyText: params.replyText,
+      signature: currentSignature,
+      repeatedCount: 0,
+      prevented: false,
+      escalated: false,
+    };
+  }
   const previousSignature = String(params.memory?.communicationSemanticMemory?.lastReplySignature ?? '');
   const previousCount = Number(params.memory?.communicationSemanticMemory?.repeatedReplyCount ?? 0);
   const repeated =
@@ -273,6 +283,17 @@ function preventRepeatedCommunicationReply(params: {
     prevented: true,
     escalated,
   };
+}
+
+export const __preventRepeatedCommunicationReplyForTests = preventRepeatedCommunicationReply;
+
+function isSafeAutopilotSelfServiceIntent(intent: string | null | undefined): boolean {
+  return [
+    'checkin_code_request',
+    'booking_lookup_missing_details',
+    'cleaning_issue',
+    'maintenance_issue',
+  ].includes(String(intent ?? ''));
 }
 
 function replySubject(subject: unknown): string {
@@ -1302,6 +1323,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       | 'reply_composer' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     let telegramOperationalIntakeConsumed: boolean = false;
+    let currentAutopilotIntent: string | null = null;
+    let antiLoopEligible = false;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
@@ -1381,6 +1404,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         messageText: text,
         context: autopilotContext,
       });
+      currentAutopilotIntent = autopilotDecision.metadata.intent;
 
       auditAutonomousDecision({
         chat_id: chatId,
@@ -1468,7 +1492,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           })
         : null;
 
-      if (!escalationSafetyGate && autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
+      const allowSafeAutopilotReplyDuringHandoff =
+        escalationSafetyGate &&
+        isSafeAutopilotSelfServiceIntent(autopilotDecision.metadata.intent) &&
+        !autopilotDecision.metadata.urgent;
+      const canUseAutopilotReply = !escalationSafetyGate || allowSafeAutopilotReplyDuringHandoff;
+
+      if (canUseAutopilotReply && autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
         const operationsReply = composeAutopilotOperationsRegisteredReply({
           decision: autopilotDecision,
           lang: classification.lang,
@@ -1487,7 +1517,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           detail: `communication_autopilot:auto_reply intent=${autopilotDecision.metadata.intent}`,
         });
-      } else if (!escalationSafetyGate && autopilotDecision.action === 'needs_context') {
+      } else if (canUseAutopilotReply && autopilotDecision.action === 'needs_context') {
         replyText = adapter.formatResponse(
           composeAutopilotContextClarifier({ decision: autopilotDecision, lang: classification.lang }),
           commContext as unknown as Record<string, unknown>,
@@ -1505,6 +1535,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           update_id,
           detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
         });
+        antiLoopEligible = autopilotDecision.metadata.intent === 'unknown';
       } else if (
         autopilotDecision.action === 'escalate' &&
         (!escalationSafetyGate || autopilotDecision.metadata.operationsAction)
@@ -2310,6 +2341,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (
       !telegramOperationalIntakeConsumed &&
       !escalationSafetyGate &&
+      !replyText &&
       classification.category !== 'start' &&
       classification.category !== 'greeting'
     ) {
@@ -2319,6 +2351,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         confidence: intentResult?.confidence,
         identity,
         reservationResolutionStatus: commContext?.reservation?.status,
+        intent: currentAutopilotIntent,
       });
       if (preEsc.escalate) {
         escalation = createEscalationEvent({
@@ -2874,6 +2907,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText,
       lang: classification.lang,
       memory: antiLoopMemory,
+      eligible: antiLoopEligible,
     });
     if (antiLoop.prevented) {
       const rawAntiLoopReply = antiLoop.replyText;

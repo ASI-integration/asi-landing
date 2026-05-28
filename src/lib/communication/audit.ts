@@ -15,6 +15,7 @@ import { AuditEvent, AuditEventType } from './types';
 export function auditLog(event: Omit<AuditEvent, 'ts'>): void {
   const record: AuditEvent = {
     ...event,
+    chat_id: maskChatId(event.chat_id),
     ts: new Date().toISOString(),
   };
   // Single-line JSON — safe for structured log pipelines.
@@ -34,7 +35,7 @@ export function auditInbound(params: {
     type: AuditEventType.InboundReceived,
     chat_id: params.chat_id,
     update_id: params.update_id,
-    message_preview: truncate(params.text, 100),
+    message_preview: maskedPreview(params.text, 100),
     category: params.category,
     lang: params.lang,
   });
@@ -224,4 +225,29 @@ export function auditError(params: {
 function truncate(text: string | undefined, max: number): string | undefined {
   if (!text) return undefined;
   return text.length <= max ? text : text.slice(0, max) + '…';
+}
+export function maskedPreview(text: string | undefined, max = 100): string | undefined {
+  if (!text) return undefined;
+  const masked = text
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, '[phone]')
+    .replace(/\b(?:booking|бронь|бронирование|номер брони|reservation|res)[\s:#№-]*[a-z0-9-]{4,}\b/giu, '[booking]')
+    .replace(/\b(?=[a-z0-9-]*\d)[a-z0-9]{2,}(?:-[a-z0-9]{2,}){1,}\b/giu, '[code]')
+    .replace(/\b(?=[a-z0-9]*\d)[a-z0-9]{7,}\b/giu, '[code]')
+    .replace(/\b\d{4,6}\b/g, '[code]');
+  return truncate(masked, max);
+}
+
+function maskChatId(chatId: number | undefined): number | undefined {
+  if (typeof chatId !== 'number' || !Number.isFinite(chatId)) return chatId;
+  const sign = chatId < 0 ? -1 : 1;
+  return sign * (Math.abs(hashNumber(String(chatId))) % 1_000_000);
+}
+
+function hashNumber(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash | 0;
 }

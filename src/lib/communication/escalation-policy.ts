@@ -107,6 +107,7 @@ export function shouldEscalateByRules(params: {
   confidence?: number;
   identity?: IdentityResolution;
   reservationResolutionStatus?: 'matched' | 'ambiguous' | 'unmatched';
+  intent?: string | null;
 }): EscalationDecision {
   const cfg = getEscalationConfig();
   const conf = typeof params.confidence === 'number' ? params.confidence : undefined;
@@ -154,8 +155,22 @@ export function shouldEscalateByRules(params: {
     };
   }
 
-  // Identity / reservation ambiguity that remained unresolved
-  if (operationalCategories.has(String(category)) && params.identity?.status && params.identity.status !== 'resolved') {
+  const isSafeSelfServiceIntent = [
+    'checkin_code_request',
+    'booking_lookup_missing_details',
+    'cleaning_issue',
+    'maintenance_issue',
+  ].includes(String(params.intent ?? ''));
+
+  // Identity / reservation ambiguity that remained unresolved.
+  // Safe non-urgent self-service replies can collect context or register ops first;
+  // they must not imply verified booking/code data until a later lookup succeeds.
+  if (
+    !isSafeSelfServiceIntent &&
+    operationalCategories.has(String(category)) &&
+    params.identity?.status &&
+    params.identity.status !== 'resolved'
+  ) {
     return {
       escalate: true,
       reason: EscalationReason.RequiresOperator,
@@ -164,7 +179,12 @@ export function shouldEscalateByRules(params: {
     };
   }
 
-  if (operationalCategories.has(String(category)) && params.reservationResolutionStatus && params.reservationResolutionStatus !== 'matched') {
+  if (
+    !isSafeSelfServiceIntent &&
+    operationalCategories.has(String(category)) &&
+    params.reservationResolutionStatus &&
+    params.reservationResolutionStatus !== 'matched'
+  ) {
     return {
       escalate: true,
       reason: EscalationReason.RequiresOperator,
