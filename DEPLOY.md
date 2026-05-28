@@ -1,5 +1,15 @@
 # DEPLOY RUNBOOK — asi-landing
 
+## Production-only warning
+
+The current artifact deploy is production-only. A push to `main` triggers `.github/workflows/deploy.yml` and deploys to `/var/www/asi`, PM2 process `asi-landing`, and port `3000`.
+
+Do not use the production artifact deploy for staging. Staging must use separate staging scripts/config:
+
+- `scripts/deploy-artifact-staging.sh`
+- `scripts/rollback-artifact-staging.sh`
+- `docs/staging-deploy.md`
+
 ## PRE-DEPLOY CHECKLIST
 - [ ] локальный билд чистый: `npm run build` без ошибок
 - [ ] все изменения закоммичены и запушены в `main`
