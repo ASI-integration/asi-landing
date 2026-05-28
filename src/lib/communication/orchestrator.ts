@@ -307,8 +307,29 @@ function metadataString(metadata: Record<string, unknown> | undefined, keys: str
   for (const key of keys) {
     const value = metadata?.[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   }
   return undefined;
+}
+
+function resolveOutboundTargetId(
+  envelope: InboundMessageEnvelope,
+  identityGuestId?: string,
+): string | undefined {
+  if (envelope.channel === 'telegram') {
+    return metadataString(envelope.metadata, ['telegram_chat_id', 'chat_id', 'telegramChatId']) ??
+      metadataString((envelope.metadata as any)?.message, ['chat_id']) ??
+      metadataString((envelope.metadata as any)?.message?.chat, ['id']) ??
+      metadataString((envelope.metadata as any)?.chat, ['id']) ??
+      (String(envelope.externalUserId ?? '').trim() || undefined) ??
+      (String(envelope.chatId ?? '').trim() || undefined) ??
+      identityGuestId;
+  }
+
+  return (String(envelope.chatId ?? '').trim() || undefined) ??
+    (String(envelope.email ?? '').trim() || undefined) ??
+    (String(envelope.phoneNumber ?? '').trim() || undefined) ??
+    identityGuestId;
 }
 
 function buildOutboundTransportMetadata(params: {
@@ -695,6 +716,14 @@ function pipelineDebugEnabled(envelope?: InboundMessageEnvelope): boolean {
 }
 
 function stableNumericChatId(envelope: InboundMessageEnvelope, guestId?: string): number {
+  if (envelope.channel === 'telegram') {
+    const target = resolveOutboundTargetId(envelope, guestId);
+    if (target) {
+      const n = Number(target);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
   // Prefer a real numeric chatId when available.
   if (envelope.chatId) {
     const n = Number(envelope.chatId);
@@ -1338,7 +1367,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       detail?: string;
       source?: Record<string, unknown>;
     }) => {
-      const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+      const targetIdRaw = resolveOutboundTargetId(envelope, identity.guestId);
       if (!targetIdRaw) return;
       createOrUpdateEscalationReview({
         sessionId: convSession.sessionId,
@@ -2942,7 +2971,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     } as any);
 
     // Send the response abstractly
-    const targetIdRaw = envelope.chatId || envelope.email || envelope.phoneNumber || identity.guestId;
+    const targetIdRaw = resolveOutboundTargetId(envelope, identity.guestId);
     if (!targetIdRaw) throw new Error('No outbound target id');
     const targetId = String(targetIdRaw);
 

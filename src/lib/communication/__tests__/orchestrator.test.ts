@@ -23,7 +23,7 @@ vi.mock('../channels', () => ({
     normalizeInbound: async () => {
       throw new Error('normalizeInbound not used in orchestrator unit tests');
     },
-    sendMessage: (to: string, content: string) => mockSendMessage(to, content),
+    sendMessage: (to: string, content: string, metadata?: Record<string, unknown>) => mockSendMessage(to, content, metadata),
     formatResponse: (rawMessage: string) => rawMessage,
   }),
 }));
@@ -69,7 +69,7 @@ vi.mock('../reservation', () => ({
 }));
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
-import { processUpdate } from '../orchestrator';
+import { processMessage, processUpdate } from '../orchestrator';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
@@ -137,6 +137,25 @@ describe('processUpdate', () => {
     expect(mockLLM).not.toHaveBeenCalled();
     const [, sentText] = mockSendMessage.mock.calls[0];
     expect(String(sentText)).toMatch(/operator|team|access|доступ|оператор/i);
+  });
+
+  it('sends Telegram outbound replies to external Telegram chat id, not internal session id', async () => {
+    const result = await processMessage({
+      channel: 'telegram',
+      externalUserId: '931919812',
+      chatId: '567508',
+      messageText: 'what time is check-in?',
+      receivedAt: new Date(),
+      update_id: nextUpdateId++,
+      metadata: {
+        providerMessageId: 'tg-msg-external-target',
+      },
+    });
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('931919812');
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('567508');
   });
 
   it('injects session context into LLM prompt', async () => {
