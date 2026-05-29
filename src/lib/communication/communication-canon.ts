@@ -31,7 +31,7 @@ export function canonicalUrgentAccessEscalationText(params: {
   const isEscalation = params.action === 'escalate' || params.action === 'escalate_urgent';
   if (!isAccess || !isEscalation) return null;
   if (params.lang === 'ru' && params.channel === 'telegram') {
-    return 'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.';
+    return 'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.';
   }
   if (params.lang === 'ru') {
     return 'Срочно передаю оператору, чтобы помочь с доступом.';

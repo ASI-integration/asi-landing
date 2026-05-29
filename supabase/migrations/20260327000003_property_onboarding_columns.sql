@@ -11,6 +11,12 @@
 
 -- ─── tg_property_knowledge additions ─────────────────────────────────────────
 
+CREATE TABLE IF NOT EXISTS tg_property_knowledge (
+  property_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE tg_property_knowledge
   ADD COLUMN IF NOT EXISTS location        TEXT,
   ADD COLUMN IF NOT EXISTS check_in_time   TEXT,
@@ -20,6 +26,19 @@ ALTER TABLE tg_property_knowledge
   ADD COLUMN IF NOT EXISTS active          BOOLEAN NOT NULL DEFAULT true;
 
 -- ─── tg_guest_reservations additions ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS tg_guest_reservations (
+  id TEXT PRIMARY KEY,
+  property_id TEXT,
+  guest_id TEXT,
+  guest_name TEXT,
+  chat_id BIGINT,
+  check_in TIMESTAMPTZ,
+  check_out TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'confirmed',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 ALTER TABLE tg_guest_reservations
   ADD COLUMN IF NOT EXISTS guest_count  INT,

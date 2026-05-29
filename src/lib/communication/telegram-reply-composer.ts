@@ -10,6 +10,7 @@ import {
   type CheckinTimeBucket,
   type TelegramOperationalScenarioFamily,
 } from './telegram-communication-canon';
+import { canRevealTelegramAccessDetails } from './telegram-guest-memory';
 
 export type ReplyComposerAction = TelegramOperationalFinalAction;
 
@@ -211,7 +212,8 @@ function shortHoldSentence(lang: Lang, topicEn: string, topicRu: string, topicEs
 function maybeGreetRu(input: ReplyComposerInput, lang: Lang, text: string): string {
   if (lang !== 'ru' || !input.shouldGreet) return text;
   if (/^\s*здравствуйте[!.]/i.test(text)) return text;
-  return text.replace(/^\s*Понял\.\s*/i, 'Здравствуйте! ');
+  const withoutDryAck = text.replace(/^\s*Понял\.\s*/i, '');
+  return `Здравствуйте! ${withoutDryAck}`;
 }
 
 function factString(input: ReplyComposerInput, key: string): string | null {
@@ -228,6 +230,10 @@ function extractTimeHintFromText(text: string): string | null {
     return null;
   }
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function canRevealAccessDetails(input: ReplyComposerInput): boolean {
+  return canRevealTelegramAccessDetails((input.extractedFacts as any)?.guest_identity ?? null);
 }
 
 function knownObjectOrBookingForCheckin(input: ReplyComposerInput): boolean {
@@ -543,7 +549,7 @@ function replyTextForCategory(input: ReplyComposerInput): { template_key: string
   if (input.action === 'escalate_urgent') {
     const k = extractPropertyKnowledge(input);
     let opsAppend = '';
-    if (k) {
+    if (k && canRevealAccessDetails(input)) {
       if (cat === 'access_issue') {
         const snip = accessSnippet(k);
         if (snip) opsAppend = lang === 'ru' ? ` [доступ: ${snip}]` : ` [access: ${snip}]`;
@@ -779,7 +785,9 @@ function enforceTelegramMultilineStyle(text: string, maxLen = 1200): string {
 export function composeTelegramOperationalReply(input: ReplyComposerInput): ReplyComposerOutput {
   const language = replyLang(input);
   const { template_key, text } = replyTextForCategory({ ...input, lang: language });
-  const out: ReplyComposerOutput = { text: enforceTelegramStyle(applyToneStyle(text, language, input.normalization)), template_key, language };
+  const toned = applyToneStyle(text, language, input.normalization);
+  const greeted = maybeGreetRu(input, language, toned);
+  const out: ReplyComposerOutput = { text: enforceTelegramStyle(greeted), template_key, language };
 
   try {
     console.log(

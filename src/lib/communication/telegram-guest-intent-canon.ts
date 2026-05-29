@@ -88,7 +88,7 @@ export const TELEGRAM_GUEST_INTENT_CANON_V1: readonly TelegramGuestCanonRule[] =
     actionType: 'access_support',
     escalate: true,
     reply:
-      'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+      'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
   },
   {
     intent: 'checkin_code_request',

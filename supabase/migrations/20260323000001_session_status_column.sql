@@ -5,6 +5,14 @@
 -- Run via:  supabase db push  (with linked project)
 -- Or paste directly into: Supabase Dashboard → SQL Editor
 
+CREATE TABLE IF NOT EXISTS tg_conversation_sessions (
+  chat_id BIGINT PRIMARY KEY,
+  guest_id TEXT,
+  property_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE tg_conversation_sessions
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'inquiry',
   ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;

@@ -11,6 +11,12 @@ import { matchTelegramOperationalEntitiesV1 } from './telegram-operational-match
 import { loadTelegramPropertyKnowledgeV1, logTelegramPropertyKnowledgeLookup } from './telegram-property-knowledge';
 import { composeTelegramOperationalReply } from './telegram-reply-composer';
 import type { CommunicationCanonNormalization } from './communication-normalizer';
+import {
+  buildUnverifiedAccessReplyRu,
+  canRevealTelegramAccessDetails,
+  resolveTelegramGuestIdentityV1,
+  type TelegramGuestIdentityResolutionV1,
+} from './telegram-guest-memory';
 
 type SurfaceLang = 'en' | 'ru';
 
@@ -37,6 +43,7 @@ type SupabaseLike = { from: (table: string) => any };
 type TelegramConversationContextV1 = {
   current_object?: { property_id?: string | null; property_label?: string | null; source?: string | null } | null;
   current_booking?: { reservation_id?: string | null; booking_reference?: string | null; source?: string | null } | null;
+  guest_identity?: TelegramGuestIdentityResolutionV1 | null;
   pending_clarification?: { question?: string | null; missing_facts?: string[] | null } | null;
   last_checkin_question?: string | null;
   operational_case?: TelegramOperationalSessionCaseV1 | null;
@@ -78,6 +85,10 @@ function buildConversationContextV1(operationalCase: TelegramOperationalSessionC
   const propertyId = concreteFact(facts, ['matched_property_id']);
   const reservationId = concreteFact(facts, ['matched_reservation_id', 'reservation_id']);
   const bookingRef = concreteFact(facts, ['booking_reference', 'reservation_reference']);
+  const guestIdentity =
+    (facts as any)?.guest_identity && typeof (facts as any).guest_identity === 'object'
+      ? safeJsonClone((facts as any).guest_identity as TelegramGuestIdentityResolutionV1)
+      : null;
   const pendingClarification =
     operationalCase.status === 'clarifying' || (operationalCase.missing_facts ?? []).length > 0
       ? {
@@ -103,10 +114,32 @@ function buildConversationContextV1(operationalCase: TelegramOperationalSessionC
             source: reservationId ? 'matched_reservation' : 'message_or_session_hint',
           }
         : null,
+    guest_identity: guestIdentity,
     pending_clarification: pendingClarification,
     last_checkin_question: isCheckinCategory ? (operationalCase.last_question_asked ?? null) : null,
     operational_case: safeJsonClone(operationalCase),
     updated_at: nowIso(),
+  };
+}
+
+function buildGuestHistoryContextV1(operationalCase: TelegramOperationalSessionCaseV1): Record<string, unknown> | null {
+  const facts = (operationalCase.extracted_facts ?? {}) as Record<string, unknown>;
+  const identity = (facts as any)?.guest_identity as TelegramGuestIdentityResolutionV1 | null | undefined;
+  if (!identity || typeof identity !== 'object') return null;
+
+  return {
+    version: 1,
+    telegram_chat_id: identity.telegram_chat_id,
+    guest_id: identity.guest_id,
+    phone: identity.phone,
+    booking_id: identity.booking_id,
+    identity_status: identity.status,
+    identity_confidence: identity.confidence,
+    current_reservation: identity.current_reservation,
+    returning_guest_profile: identity.returning_guest_profile,
+    suspicious: identity.suspicious,
+    reason: identity.reason,
+    last_seen_at: nowIso(),
   };
 }
 
@@ -123,18 +156,25 @@ async function persistOperationalCase(params: {
   });
   const db = (params.db ?? (supabase as unknown as SupabaseLike)) as SupabaseLike;
   const context = buildConversationContextV1(params.operationalCase);
+  const guestHistory = buildGuestHistoryContextV1(params.operationalCase);
   try {
     const now = nowIso();
+    const payload: Record<string, unknown> = {
+      chat_id: params.chatId,
+      updated_at: now,
+      conversation_context_v1: context,
+    };
+    if (guestHistory) payload.guest_history_context_v1 = guestHistory;
     const table = db.from('tg_conversation_sessions');
     if (typeof table?.upsert === 'function') {
       await table.upsert(
-        { chat_id: params.chatId, updated_at: now, conversation_context_v1: context },
+        payload,
         { onConflict: 'chat_id', ignoreDuplicates: false },
       );
       return;
     }
     if (typeof table?.update === 'function') {
-      await table.update({ updated_at: now, conversation_context_v1: context }).eq('chat_id', params.chatId);
+      await table.update(payload).eq('chat_id', params.chatId);
     }
   } catch {
     // best-effort durable persistence; never break operational reply
@@ -583,11 +623,20 @@ function defaultReplyForCategory(category: string, ru: boolean): string {
     : 'Understood. I’ve logged the request; the team will check and update you shortly.';
 }
 
+function accessReplyForVerification(identity: TelegramGuestIdentityResolutionV1 | null | undefined, ru: boolean): string | null {
+  if (!ru || canRevealTelegramAccessDetails(identity)) return null;
+  return buildUnverifiedAccessReplyRu();
+}
+
 function resolvedReplyForCase(
   operationalCase: TelegramOperationalSessionCaseV1,
   ru: boolean,
   update_id: number,
 ): string {
+  if (String(operationalCase.category ?? '') === 'access_issue') {
+    const guarded = accessReplyForVerification((operationalCase.extracted_facts as any)?.guest_identity ?? null, ru);
+    if (guarded) return guarded;
+  }
   const checkinReply = checkinReplyForCase(operationalCase, 'reply', ru, update_id);
   if (checkinReply) return checkinReply;
   return defaultReplyForCategory(String(operationalCase.category ?? ''), ru);
@@ -852,6 +901,35 @@ export async function processTelegramOperationalIntakeWithSessionMemory(params: 
   // If we got a fresh deterministic hit, decide whether to start new case or merge.
   if (hit) {
     const previous_state = prevCase ? safeJsonClone(prevCase) : null;
+    const guestIdentity = await resolveTelegramGuestIdentityV1({
+      telegram_chat_id: params.chatId,
+      text: params.text,
+      db: params.db,
+    });
+    (hit.extractedFacts as any).guest_identity = guestIdentity;
+    (hit.extractedFacts as any).guest_identity_status = guestIdentity.status;
+    (hit.extractedFacts as any).guest_identity_confidence = guestIdentity.confidence;
+    (hit.extractedFacts as any).guest_id = guestIdentity.guest_id;
+    if (guestIdentity.booking_id) {
+      (hit.extractedFacts as any).booking_reference = guestIdentity.booking_id;
+      (hit.extractedFacts as any).reservation_reference = guestIdentity.booking_id;
+    }
+    if (guestIdentity.current_reservation?.reservation_id) {
+      (hit.extractedFacts as any).matched_reservation_id =
+        (hit.extractedFacts as any).matched_reservation_id ?? guestIdentity.current_reservation.reservation_id;
+    }
+    if (guestIdentity.current_reservation?.property_id) {
+      (hit.extractedFacts as any).matched_property_id =
+        (hit.extractedFacts as any).matched_property_id ?? guestIdentity.current_reservation.property_id;
+    }
+    if (hit.category === 'access_issue') {
+      const guarded = accessReplyForVerification(guestIdentity, ru);
+      if (guarded) {
+        hit.reply = guarded;
+        hit.finalAction = 'escalate_urgent';
+        hit.actionReason = `${hit.actionReason}; access_details_blocked_until_verified:${guestIdentity.status}`;
+      }
+    }
     // If the message already contains an explicit property/address clue, never ask "which property" again.
     // This is critical for RU live Telegram flows like "в Невском 24".
     const propSnippet = extractPropertySnippet(params.text);

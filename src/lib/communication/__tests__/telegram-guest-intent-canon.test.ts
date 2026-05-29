@@ -356,7 +356,7 @@ describe('Telegram Russian guest intent canon v1', () => {
     expect(access.action).toBe('escalate');
     expect(access.metadata.operationsAction?.category).toBe('operator_access_support');
     expect(access.replyText).toBe(
-      'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+      'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
     );
 
     const cleaning = decideCommunicationAutopilotResponse({

@@ -677,7 +677,7 @@ function mapLlmRouterDecisionToAutopilotDecision(
         action: 'escalate',
         confidence: decision.confidence,
         replyText:
-          'Понял, это срочно. Передаю оператору по доступу. Если есть номер брони, адрес или телефон в брони, пришлите сюда.',
+          'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
         escalationReason: 'urgent_access_problem',
         metadata: {
           ...base.metadata,

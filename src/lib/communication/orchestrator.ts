@@ -2732,7 +2732,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       const base =
         classification.lang === 'ru'
-          ? 'Запрос уже передан оператору. Мы вернёмся с ответом.'
+          ? 'Понял, оператор уже подключён. Спасибо, мы проверяем детали и вернёмся с ответом.'
           : 'This conversation is already escalated to a human operator. We will follow up shortly.';
       replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
