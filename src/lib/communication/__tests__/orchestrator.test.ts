@@ -227,6 +227,27 @@ describe('processUpdate', () => {
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
+  it('processes edited_message separately from the original message and deduplicates the same edit', async () => {
+    const original = makeUpdate('check-in at 3pm');
+    const first = await processUpdate(original);
+    expect(first.outcome).toBe(ProcessOutcome.Replied);
+
+    const edited: TelegramUpdate = {
+      update_id: original.update_id + 1,
+      edited_message: {
+        ...original.message!,
+        edit_date: 1_779_999_000,
+        text: 'check-out at 11am',
+      },
+    };
+    const editedResult = await processUpdate(edited);
+    expect(editedResult.outcome).toBe(ProcessOutcome.Replied);
+
+    const duplicateEdit = await processUpdate(edited);
+    expect(duplicateEdit.outcome).toBe(ProcessOutcome.Duplicate);
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+  });
+
   it('prevents duplicate outbound send when same reply is attempted twice', async () => {
     const update = makeUpdate('hello');
     await processUpdate(update);

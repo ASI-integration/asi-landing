@@ -892,6 +892,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
   const providerMessageId = String((envelope.metadata as any)?.providerMessageId ?? '').trim();
   const externalMessageId = String((envelope.metadata as any)?.externalMessageId ?? '').trim();
+  const explicitInboundKey = String((envelope.metadata as any)?.inboundIdempotencyKey ?? '').trim();
+  const inboundAlreadyMarked = (envelope.metadata as any)?.inboundIdempotencyAlreadyMarked === true;
   const actorKey = String(envelope.externalUserId ?? envelope.chatId ?? envelope.email ?? envelope.phoneNumber ?? '').trim();
   const inboundFallback = sha256Base64Url(
     [
@@ -907,13 +909,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     ].join('|'),
   );
   // Prefer provider ids (stable across redelivery). Only fall back to update_id-based hash when unavailable.
-  const inboundStableKey =
-    providerMessageId || externalMessageId
+  const inboundStableKey = explicitInboundKey ||
+    (providerMessageId || externalMessageId
       ? `${envelope.channel}:${actorKey}:${providerMessageId || externalMessageId}`
-      : `${envelope.channel}:${actorKey}:${String(update_id)}:${inboundFallback}`;
+      : `${envelope.channel}:${actorKey}:${String(update_id)}:${inboundFallback}`);
 
   cp('idempotency.inbound.check.start', { inbound_key: inboundStableKey });
-  if (checkAndMarkKey({ scope: 'inbound', key: inboundStableKey, meta: { update_id } })) {
+  if (!inboundAlreadyMarked && checkAndMarkKey({ scope: 'inbound', key: inboundStableKey, meta: { update_id } })) {
     cp('idempotency.inbound.duplicate.returning', { inbound_key: inboundStableKey });
     auditDuplicate({ chat_id: 0, update_id });
     auditDecision({
@@ -924,7 +926,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     });
     return { outcome: ProcessOutcome.Duplicate, update_id };
   }
-  cp('idempotency.inbound.check.done', { inbound_key: inboundStableKey });
+  cp('idempotency.inbound.check.done', { inbound_key: inboundStableKey, already_marked: inboundAlreadyMarked });
 
   // Resolve identity + bind to business entities (reservation/property/lead/unknown)
   const identity = await withAwaitCheckpoint('identity.resolve', () => bindIdentity(envelope), {
@@ -3186,14 +3188,75 @@ function extractAttachments(message: NonNullable<TelegramUpdate['message']>): {
   return { textHint: parts.join(' '), refs };
 }
 
+function getTelegramUpdateEvent(update: TelegramUpdate): {
+  type: 'message' | 'edited_message';
+  message?: TelegramUpdate['message'];
+} {
+  if (update.edited_message) return { type: 'edited_message', message: update.edited_message };
+  if (update.message) return { type: 'message', message: update.message };
+  return { type: 'message' };
+}
+
+function telegramEventOccurrenceId(update: TelegramUpdate, message: NonNullable<TelegramUpdate['message']>, eventType: 'message' | 'edited_message'): string {
+  if (eventType === 'edited_message') {
+    return String(message.edit_date ?? update.update_id);
+  }
+  return 'original';
+}
+
+function telegramInboundIdempotencyKey(update: TelegramUpdate, message: NonNullable<TelegramUpdate['message']>, eventType: 'message' | 'edited_message'): string {
+  return [
+    'telegram',
+    eventType,
+    String(message.chat.id),
+    String(message.message_id),
+    telegramEventOccurrenceId(update, message, eventType),
+  ].join(':');
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
-  const message = update.message ?? update.edited_message;
+  const event = getTelegramUpdateEvent(update);
+  const message = event.message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
+  const eventOccurrenceId = telegramEventOccurrenceId(update, message, event.type);
+  const inboundKey = telegramInboundIdempotencyKey(update, message, event.type);
+
+  if (checkAndMarkKey({
+    scope: 'inbound',
+    key: inboundKey,
+    meta: {
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    },
+  })) {
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      outcome: 'duplicate',
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      message_id: message.message_id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    auditDuplicate({ chat_id: message.chat.id, update_id: update.update_id });
+    auditDecision({
+      type: 'ignore',
+      chat_id: message.chat.id,
+      update_id: update.update_id,
+      detail: `duplicate_inbound key=${inboundKey}`,
+    });
+    return { outcome: ProcessOutcome.Duplicate, update_id: update.update_id, chat_id: message.chat.id };
+  }
 
   console.info('[comm:routing]', {
     path: 'telegram_text',
     update_id: update.update_id,
     chat_id: message.chat.id,
+    telegram_event_type: event.type,
+    telegram_event_occurrence_id: eventOccurrenceId,
     has_text: Boolean(message.text ?? message.caption),
     has_photo: Boolean(message.photo && message.photo.length > 0),
     has_document: Boolean(message.document),
@@ -3214,8 +3277,10 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     const outboundKey = sha256Base64Url(
       [
         'tg_guest_intent_canon_v1',
+        event.type,
         String(message.chat.id),
         String(message.message_id),
+        eventOccurrenceId,
         guestCanon.reply,
       ].join('|'),
     );
@@ -3225,13 +3290,22 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
         update_id: update.update_id,
       });
     }
-    return {
+    const result = {
       outcome: ProcessOutcome.Replied,
       update_id: update.update_id,
       chat_id: message.chat.id,
       category: MessageCategory.LanguageCheck,
       reply: guestCanon.reply,
     };
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      outcome: event.type === 'edited_message' ? 'edited_message_processed' : 'replied',
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    return result;
   }
 
   // Deterministic Telegram-only social/meta lines (must not touch LLM / scenario engine).
@@ -3255,8 +3329,10 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     const outboundKey = sha256Base64Url(
       [
         'tg_text_meta',
+        event.type,
         String(message.chat.id),
         String(message.message_id),
+        eventOccurrenceId,
         meta.reply,
       ].join('|'),
     );
@@ -3266,13 +3342,22 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
         update_id: update.update_id,
       });
     }
-    return {
+    const result = {
       outcome: ProcessOutcome.Replied,
       update_id: update.update_id,
       chat_id: message.chat.id,
       category: meta.category,
       reply: meta.reply,
     };
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      outcome: event.type === 'edited_message' ? 'edited_message_processed' : 'replied',
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    return result;
   }
 
   const envelope: InboundMessageEnvelope = {
@@ -3284,13 +3369,25 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     update_id: update.update_id,
     metadata: {
       ...(refs.length > 0 ? { attachments: refs } : {}),
-      providerMessageId: String(message.message_id),
-      externalMessageId: String(message.message_id),
+      providerMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
+      externalMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
+      inboundIdempotencyKey: inboundKey,
+      inboundIdempotencyAlreadyMarked: true,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
       telegram_user_language_code: message.from?.language_code,
     },
   };
 
   const result = await processMessage(envelope);
+  console.info('[comm:routing]', {
+    path: 'telegram_text',
+    outcome: event.type === 'edited_message' && result.outcome === ProcessOutcome.Replied ? 'edited_message_processed' : result.outcome,
+    update_id: update.update_id,
+    chat_id: message.chat.id,
+    telegram_event_type: event.type,
+    telegram_event_occurrence_id: eventOccurrenceId,
+  });
 
   // If there were attachments, append them to the most recently created ops task
   // for this chat so the operator can see what was sent on the leads page.

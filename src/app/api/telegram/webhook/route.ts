@@ -42,7 +42,8 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true, ignored: 'invalid_json' }, { status: 200 });
   }
 
-  const message = update?.message ?? update?.edited_message;
+  const telegramEventType = update?.edited_message ? 'edited_message' : update?.message ? 'message' : 'unknown';
+  const message = update?.edited_message ?? update?.message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
   const hasVoice = Boolean(message?.voice);
@@ -52,6 +53,8 @@ export async function POST(req: Request): Promise<Response> {
   console.info('[tg:webhook] recv', {
     update_id: update?.update_id,
     chat_id: chatId,
+    telegram_event_type: telegramEventType,
+    has_edited_message: Boolean(update?.edited_message),
     has_voice: hasVoice,
     has_audio: hasAudio,
     has_text: hasText,
@@ -67,6 +70,7 @@ export async function POST(req: Request): Promise<Response> {
     console.log('[tg:webhook] inbound', {
       update_id: update?.update_id,
       chat_id: chatId,
+      telegram_event_type: telegramEventType,
       text_preview: preview(text),
       has_message: Boolean(message),
       has_voice: Boolean(voice),
@@ -83,6 +87,7 @@ export async function POST(req: Request): Promise<Response> {
         path: 'telegram_voice',
         update_id: update.update_id,
         chat_id: chatId,
+        telegram_event_type: telegramEventType,
         has_voice: hasVoice,
         has_audio: hasAudio,
       });
@@ -97,6 +102,7 @@ export async function POST(req: Request): Promise<Response> {
         outcome: result.outcome,
         update_id: result.update_id,
         chat_id: (result as any).chat_id,
+        telegram_event_type: telegramEventType,
       });
     }
   } catch (e) {
