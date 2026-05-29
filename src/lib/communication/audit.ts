@@ -151,6 +151,32 @@ export function auditLlmRouter(params: {
   });
 }
 
+export function auditPromptInjectionBlocked(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.PromptInjectionBlocked,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
+export function auditPromptInjectionRepeat(params: {
+  chat_id: number;
+  update_id?: number;
+  detail: string;
+}): void {
+  auditLog({
+    type: AuditEventType.PromptInjectionRepeat,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: params.detail,
+  });
+}
+
 const LLM_ROUTER_AUDIT_TYPES = {
   LLM_ROUTER_CANON_HIGH_CONFIDENCE: AuditEventType.LLMRouterCanonHighConfidence,
   LLM_ROUTER_PRIMARY_USED: AuditEventType.LLMRouterPrimaryUsed,

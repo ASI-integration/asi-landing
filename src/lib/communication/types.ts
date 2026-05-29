@@ -447,6 +447,8 @@ export enum AuditEventType {
   LLMRouterSafeFallbackUsed = 'LLM_ROUTER_SAFE_FALLBACK_USED',
   LLMRouterStickyProviderSet = 'LLM_ROUTER_STICKY_PROVIDER_SET',
   LLMRouterStickyProviderUsed = 'LLM_ROUTER_STICKY_PROVIDER_USED',
+  PromptInjectionBlocked = 'PROMPT_INJECTION_BLOCKED',
+  PromptInjectionRepeat = 'PROMPT_INJECTION_REPEAT',
   EscalationCreated = 'ESCALATION_CREATED',
   OperationsActionCreated = 'OPERATIONS_ACTION_CREATED',
   OperationsActionDeduped = 'OPERATIONS_ACTION_DEDUPED',

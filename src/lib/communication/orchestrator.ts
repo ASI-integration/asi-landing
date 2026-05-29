@@ -11,6 +11,8 @@ import {
   auditLLM,
   auditLlmRouter,
   auditOutbound,
+  auditPromptInjectionBlocked,
+  auditPromptInjectionRepeat,
   auditRetryAttempt,
   auditFailureEnqueued,
 } from './audit';
@@ -93,6 +95,11 @@ import { retry, sha256Base64Url } from './reliability';
 import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { replyToTelegram } from '@/lib/telegram';
+import {
+  evaluateTelegramPromptInjectionGuard,
+  TELEGRAM_PROMPT_INJECTION_BLOCKED_REPLY,
+  TELEGRAM_PROMPT_INJECTION_FIRST_REPLY,
+} from './telegram-prompt-injection-guard';
 import { resolveTelegramTextMeta, type TelegramTextMetaKind } from './telegram-text-meta-handler';
 import {
   isNoActionTelegramGuestCanonIntent,
@@ -3214,6 +3221,97 @@ function telegramInboundIdempotencyKey(update: TelegramUpdate, message: NonNulla
   ].join(':');
 }
 
+async function handleTelegramPromptInjectionGuard(params: {
+  update: TelegramUpdate;
+  message: NonNullable<TelegramUpdate['message']>;
+  eventType: 'message' | 'edited_message';
+  eventOccurrenceId: string;
+  baseText: string;
+}): Promise<ProcessResult | null> {
+  if (!params.baseText.trim()) return null;
+
+  const guard = evaluateTelegramPromptInjectionGuard({
+    chatId: params.message.chat.id,
+    text: params.baseText,
+  });
+
+  if (guard.action === 'allow') return null;
+
+  const replyText =
+    guard.action === 'block_first'
+      ? TELEGRAM_PROMPT_INJECTION_FIRST_REPLY
+      : TELEGRAM_PROMPT_INJECTION_BLOCKED_REPLY;
+  const outboundKey = sha256Base64Url(
+    [
+      'tg_prompt_injection_guard',
+      params.eventType,
+      String(params.message.chat.id),
+      String(params.message.message_id),
+      params.eventOccurrenceId,
+      replyText,
+    ].join('|'),
+  );
+
+  if (guard.action === 'block_repeat') {
+    auditPromptInjectionRepeat({
+      chat_id: params.message.chat.id,
+      update_id: params.update.update_id,
+      detail: `reason=${guard.reason} violation_count=${guard.violationCount} blocked_until=${guard.blockedUntil}`,
+    });
+    auditDecision({
+      type: 'escalate',
+      chat_id: params.message.chat.id,
+      update_id: params.update.update_id,
+      detail: `PROMPT_INJECTION_REPEAT reason=${guard.reason}`,
+    });
+    createOrUpdateEscalationReview({
+      sessionId: `telegram:${params.message.chat.id}:prompt_injection`,
+      channel: 'telegram',
+      targetId: String(params.message.chat.id),
+      actorId: String(params.message.chat.id),
+      role: 'guest',
+      escalationReason: 'PROMPT_INJECTION_REPEAT',
+      confidence: 1,
+      source: {
+        event: 'PROMPT_INJECTION_REPEAT',
+        update_id: params.update.update_id,
+      },
+      suggestedReply: replyText,
+      detail: 'PROMPT_INJECTION_REPEAT',
+    });
+  } else {
+    auditPromptInjectionBlocked({
+      chat_id: params.message.chat.id,
+      update_id: params.update.update_id,
+      detail:
+        guard.action === 'block_first'
+          ? `reason=${guard.reason} blocked_until=${guard.blockedUntil}`
+          : `active_block blocked_until=${guard.blockedUntil}`,
+    });
+    auditDecision({
+      type: 'reply',
+      chat_id: params.message.chat.id,
+      update_id: params.update.update_id,
+      detail: guard.action === 'block_first' ? `PROMPT_INJECTION_BLOCKED reason=${guard.reason}` : 'PROMPT_INJECTION_ACTIVE_BLOCK',
+    });
+  }
+
+  if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: params.update.update_id, chatId: params.message.chat.id } })) {
+    await replyToTelegram(params.message.chat.id, replyText, {
+      handler: `telegram_prompt_injection_guard/${guard.action}`,
+      update_id: params.update.update_id,
+    });
+  }
+
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: params.update.update_id,
+    chat_id: params.message.chat.id,
+    category: MessageCategory.Fallback,
+    reply: replyText,
+  };
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
   const event = getTelegramUpdateEvent(update);
   const message = event.message;
@@ -3264,6 +3362,25 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
 
   const { textHint, refs } = extractAttachments(message);
   const baseText = message.text ?? message.caption ?? '';
+  const promptInjectionGuardResult = await handleTelegramPromptInjectionGuard({
+    update,
+    message,
+    eventType: event.type,
+    eventOccurrenceId,
+    baseText,
+  });
+  if (promptInjectionGuardResult) {
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      route: 'telegram_prompt_injection_guard',
+      outcome: promptInjectionGuardResult.outcome,
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    return promptInjectionGuardResult;
+  }
   // If message has attachments but no text, synthesise a description so the
   // orchestrator can still classify and create an ops task.
   const messageText = baseText || textHint || '';
