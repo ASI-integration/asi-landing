@@ -319,16 +319,37 @@ function metadataString(metadata: Record<string, unknown> | undefined, keys: str
   return undefined;
 }
 
+function telegramOutboundTargetId(envelope: InboundMessageEnvelope): string | undefined {
+  const metadata = envelope.metadata;
+  const explicit =
+    metadataString(metadata, ['telegram_chat_id', 'telegramChatId', 'telegram_chatId']) ??
+    metadataString((metadata as any)?.telegram, ['chat_id', 'chatId', 'id']) ??
+    metadataString((metadata as any)?.message?.chat, ['id']) ??
+    metadataString((metadata as any)?.message, ['telegram_chat_id', 'chat_id', 'telegramChatId']) ??
+    metadataString((metadata as any)?.chat, ['id']);
+
+  if (explicit) return explicit;
+
+  const fallback = String(envelope.chatId ?? '').trim() || undefined;
+  if (!fallback) return undefined;
+
+  const internalIds = [
+    metadataString(metadata, ['guestId', 'identityGuestId', 'sessionId', 'userId', 'identityId', 'actorId']),
+    metadataString((metadata as any)?.identity, ['id', 'guestId', 'userId']),
+    metadataString((metadata as any)?.session, ['id', 'sessionId']),
+  ].filter((value): value is string => Boolean(value));
+
+  if (internalIds.includes(fallback)) return undefined;
+
+  return fallback;
+}
+
 function resolveOutboundTargetId(
   envelope: InboundMessageEnvelope,
   identityGuestId?: string,
 ): string | undefined {
   if (envelope.channel === 'telegram') {
-    return (String(envelope.chatId ?? '').trim() || undefined) ??
-      metadataString(envelope.metadata, ['telegram_chat_id', 'chat_id', 'telegramChatId']) ??
-      metadataString((envelope.metadata as any)?.message, ['chat_id']) ??
-      metadataString((envelope.metadata as any)?.message?.chat, ['id']) ??
-      metadataString((envelope.metadata as any)?.chat, ['id']);
+    return telegramOutboundTargetId(envelope);
   }
 
   return (String(envelope.chatId ?? '').trim() || undefined) ??
@@ -3486,6 +3507,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     update_id: update.update_id,
     metadata: {
       ...(refs.length > 0 ? { attachments: refs } : {}),
+      telegram_chat_id: message.chat.id.toString(),
       providerMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
       externalMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
       inboundIdempotencyKey: inboundKey,
