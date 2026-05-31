@@ -129,6 +129,24 @@ const cases: CanonCase[] = [
   ),
   ...casesFor(
     [
+      'как добраться до квартиры',
+      'как доехать до квартиры',
+      'где адрес квартиры',
+      'где находится квартира',
+      'адрес квартиры',
+      'как добраться от метро',
+      'как доехать от аэропорта',
+      'маршрут до квартиры',
+    ],
+    {
+      intent: 'property_directions',
+      replyType: 'action_ack',
+      actionType: 'property_directions_support',
+      escalate: false,
+    },
+  ),
+  ...casesFor(
+    [
       'если есть номер брони, я смогу получить код?',
       'можно получить код по номеру брони?',
       'как получить одноразовый код?',
@@ -281,6 +299,7 @@ describe('Telegram Russian guest intent canon v1', () => {
         'access_urgent',
         'checkin_code_request',
         'checkin_info',
+        'property_directions',
         'maintenance',
         'cleaning_housekeeping',
         'booking_missing_details',
@@ -345,6 +364,97 @@ describe('Telegram Russian guest intent canon v1', () => {
     expect(resolveTelegramGuestIntentCanon('если есть номер брони, я смогу получить одноразовый код для заселения?').reply).toBe(
       'Да, помогу. Пришлите номер брони или телефон, указанный при бронировании, и я проверю данные для заселения.',
     );
+
+    expect(resolveTelegramGuestIntentCanon('я не очень понимаю что дальше делать')).toMatchObject({
+      intent: 'unknown',
+      replyType: 'clarify',
+      actionType: 'none',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('я не очень понимаю что дальше делать').reply).toBe(
+      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+    );
+
+    expect(
+      resolveTelegramGuestIntentCanon(
+        'хочу уточнить, квартира готова? и нужен ключ доступа',
+      ),
+    ).toMatchObject({
+      intent: 'checkin_info',
+      matchedExample: 'checkin_readiness_access',
+      replyType: 'action_ack',
+      actionType: 'access_support',
+      escalate: false,
+      replyCount: 1,
+    });
+    expect(
+      resolveTelegramGuestIntentCanon(
+        'хочу уточнить, квартира готова? и нужен ключ доступа',
+      ).reply,
+    ).toBe(
+      'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.',
+    );
+  });
+
+  it('detects property directions and keeps access routing unchanged', () => {
+    expect(resolveTelegramGuestIntentCanon('а как добраться до квартиры в Шереметьево?')).toMatchObject({
+      intent: 'property_directions',
+      replyType: 'action_ack',
+      actionType: 'route_to_property',
+      matchedExample: 'route_to_property',
+      replyCount: 1,
+    });
+    expect(resolveTelegramGuestIntentCanon('а как добраться до квартиры в Шереметьево?').reply).toBe(
+      'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.',
+    );
+
+    expect(resolveTelegramGuestIntentCanon('как доехать до квартиры?')).toMatchObject({
+      intent: 'property_directions',
+      actionType: 'property_directions_support',
+      replyCount: 1,
+    });
+
+    expect(resolveTelegramGuestIntentCanon('где адрес квартиры?')).toMatchObject({
+      intent: 'property_directions',
+      actionType: 'property_directions_support',
+      replyCount: 1,
+    });
+
+    expect(resolveTelegramGuestIntentCanon('не могу попасть, код не работает')).toMatchObject({
+      intent: 'access_urgent',
+      replyType: 'handoff',
+      actionType: 'access_support',
+      escalate: true,
+      replyCount: 1,
+    });
+  });
+
+  it('maps property directions into autopilot with context-aware replies', () => {
+    const missingContext = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'а как добраться до квартиры из Шереметьево?',
+      context: {},
+    });
+    expect(missingContext.metadata.intent).toBe('address_instruction');
+    expect(missingContext.action).toBe('needs_context');
+    expect(missingContext.replyText).toBe(
+      'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.',
+    );
+    expect(missingContext.replyText).not.toMatch(/заселение, оплату, доступ/i);
+
+    const withContext = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: 'как доехать до квартиры?',
+      context: {
+        booking: { id: 'BR-123' },
+        object: { address: 'Невский проспект 24' },
+      },
+    });
+    expect(withContext.metadata.intent).toBe('address_instruction');
+    expect(withContext.action).toBe('auto_reply');
+    expect(withContext.replyText).toBe('Сейчас посмотрю адрес объекта и подскажу маршрут.');
+    expect(withContext.replyText).not.toMatch(/номер бронирования/i);
   });
 
   it('maps operational canon hits into Telegram autopilot decisions', () => {

@@ -116,12 +116,26 @@ describe('Telegram guest autopilot MVP', () => {
     expect(actions[0]?.category).toBe('cleaning');
   });
 
+  it('recognizes apartment readiness and access key requests without generic clarification', () => {
+    const text = 'ну например хочу уточнить что квартира готова, и еще нужен ключ доступа';
+    const d = decision(text);
+    expect(d.metadata.intent).toBe('check_in_access');
+    expect(d.action).toBe('needs_context');
+    expect(d.confidence).toBeGreaterThanOrEqual(0.7);
+    expect(d.metadata.operationsAction?.category).toBe('operator_access_support');
+    const reply = composeCommunicationAutopilotContextReply({ decision: d, lang: 'ru' });
+    expect(reply).toBe(
+      'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.',
+    );
+    expect(reply).not.toMatch(/что случилось: заселение, доступ, уборка/i);
+  });
+
   it('asks a category question for unknown messages without immediate escalation', () => {
-    const d = decision('что-то непонятное');
+    const d = decision('я не очень понимаю что дальше делать');
     expect(d.metadata.intent).toBe('unknown');
     expect(d.action).toBe('needs_context');
     expect(composeCommunicationAutopilotContextReply({ decision: d, lang: 'ru' })).toBe(
-      'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?',
+      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
     );
     expect(d.metadata.operationsAction).toBeUndefined();
   });

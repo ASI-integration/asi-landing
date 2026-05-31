@@ -6,7 +6,18 @@ import {
   validateLlmRouterDecision,
 } from './llm-router/validate-llm-router-decision';
 import type { LlmRouterAttemptAudit, LlmRouterDecision, LlmRouterProvider } from './llm-router/types';
-import { resolveTelegramGuestIntentCanon } from './telegram-guest-intent-canon';
+import {
+  decideTelegramGuestAgentTurn,
+  mapAgentDecisionToAutopilot,
+} from './telegram-guest-agent';
+import {
+  CHECKIN_READINESS_ACCESS_REPLY,
+  hasPropertyDirectionsContext,
+  PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY,
+  PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY,
+  resolvePropertyDirectionsReply,
+  resolveTelegramGuestIntentCanon,
+} from './telegram-guest-intent-canon';
 
 export type CommunicationAutopilotAction = 'auto_reply' | 'escalate' | 'needs_context';
 
@@ -149,7 +160,11 @@ const INTENT_RULES: readonly IntentRule[] = [
     patterns: [
       /(заселени[еяю]|заезд)/i,
       /как\s+(попасть|зайти|войти|заселиться)/i,
-      /(код|ключи|инструкция)\s+(для\s+)?(входа|заселения|доступа)/i,
+      /(код|ключ[иа]?|инструкция)\s+(для\s+)?(входа|заселения|доступа)/i,
+      /(ключ|код).{0,20}(доступ|вход|заселен)/i,
+      /(квартир|объект|номер|апартамент).{0,24}(готов|готовности|готова)/i,
+      /готовност[ьи].{0,24}(квартир|объекта|номера|объект)/i,
+      /(нужен|нужна|нужно|дайте|хочу).{0,28}(ключ|код).{0,28}(доступ|вход)/i,
       /(check[\s-]?in|arrival|access|door\s+code|entry\s+code|key\s+instructions)/i,
       /how\s+(do|can)\s+i\s+(enter|get\s+in|check\s+in|access)/i,
     ],
@@ -221,6 +236,19 @@ export function decideCommunicationAutopilotResponse(input: {
     };
   }
 
+  if (canon?.intent === 'property_directions') {
+    const hasContext = hasPropertyDirectionsContext(input.context);
+    return {
+      action: hasContext ? 'auto_reply' : 'needs_context',
+      confidence: classification.confidence,
+      replyText: resolvePropertyDirectionsReply(hasContext),
+      metadata: {
+        ...baseMetadata,
+        missingContext: hasContext ? [] : ['object.address'],
+      },
+    };
+  }
+
   if (classification.intent === 'urgent_access_problem') {
     if (missingContext.length === 0) {
       return {
@@ -272,6 +300,17 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
   llmRouterProvider?: LlmRouterProvider;
 }): Promise<CommunicationAutopilotDecision> {
   const deterministic = decideCommunicationAutopilotResponse(input);
+
+  if (input.channel === 'telegram') {
+    const agentDecision = await decideTelegramGuestAgentTurn({
+      messageText: input.messageText,
+      context: input.context,
+      deterministic,
+      llmRouterProvider: input.llmRouterProvider,
+    });
+    return mapAgentDecisionToAutopilot(agentDecision, deterministic);
+  }
+
   if (!shouldUseLlmRouterFallback(input.channel, input.messageText, deterministic)) {
     return deterministic;
   }
@@ -376,7 +415,7 @@ export function composeCommunicationAutopilotContextReply(input: {
   if (input.lang === 'ru') {
     switch (input.decision.metadata.intent) {
       case 'unknown':
-        return 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?';
+        return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
       case 'booking_lookup_missing_details':
         return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
       case 'checkin_code_request':
@@ -387,6 +426,8 @@ export function composeCommunicationAutopilotContextReply(input: {
         return 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.';
       case 'check_in_access':
         return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+      case 'address_instruction':
+        return PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
       default:
         return 'Уточните, пожалуйста, объект или номер брони, и я проверю точные детали.';
     }
@@ -408,9 +449,15 @@ function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntent
     case 'access_urgent':
       return { intent: 'urgent_access_problem', confidence: 0.98, matchedSignals };
     case 'checkin_info':
-      return { intent: 'check_in_access', confidence: 0.94, matchedSignals };
+      return {
+        intent: 'check_in_access',
+        confidence: canon.matchedExample === 'checkin_readiness_access' ? 0.96 : 0.94,
+        matchedSignals,
+      };
     case 'checkin_code_request':
       return { intent: 'checkin_code_request', confidence: 0.96, matchedSignals };
+    case 'property_directions':
+      return { intent: 'address_instruction', confidence: 0.95, matchedSignals };
     case 'maintenance':
       return { intent: 'maintenance_issue', confidence: 0.96, matchedSignals };
     case 'cleaning_housekeeping':
@@ -477,7 +524,7 @@ function getMissingContext(
         ['object.accessInstructions', context?.object?.accessInstructions],
       ]);
     case 'address_instruction':
-      return missingFields([['object.address', context?.object?.address]]);
+      return missingPropertyDirectionsContext(context);
     case 'wifi':
       return missingFields([
         ['object.wifiName', context?.object?.wifiName],
@@ -503,6 +550,13 @@ function getMissingContext(
     case 'unknown':
       return [];
   }
+}
+
+function missingPropertyDirectionsContext(context: CommunicationAutopilotContext | undefined): string[] {
+  if (hasPropertyDirectionsContext(context)) {
+    return [];
+  }
+  return ['object.address'];
 }
 
 function missingOperationalContext(context: CommunicationAutopilotContext | undefined): string[] {
@@ -540,7 +594,9 @@ function composeRuReply(
       return parts.join(' ');
     }
     case 'address_instruction':
-      return `Адрес: ${context?.object?.address}. Если будет сложно найти вход, напишите сюда - поможем.`;
+      return hasPropertyDirectionsContext(context)
+        ? PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY
+        : PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
     case 'wifi':
       return `Wi-Fi: ${context?.object?.wifiName}. Пароль: ${context?.object?.wifiPassword}.`;
     case 'checkout':
@@ -583,7 +639,7 @@ function buildMetadata(input: {
     contextKeys: collectContextKeys(input.context),
     channelMode: CHANNEL_MODE[input.channel],
     urgent: input.intent === 'urgent_access_problem',
-    operationsAction: buildOperationsAction(input.intent),
+    operationsAction: buildOperationsAction(input.intent, input.matchedSignals),
     policy: 'deterministic_mvp_v1',
   };
 }
@@ -595,6 +651,10 @@ function shouldUseLlmRouterFallback(
 ): boolean {
   if (channel !== 'telegram') return false;
   if (!text.trim()) return false;
+  if (decision.metadata.intent === 'address_instruction') return false;
+  if (decision.metadata.matchedSignals.some((signal) => signal === 'property_directions' || signal === 'route_to_property')) {
+    return false;
+  }
   if (decision.metadata.intent === 'unknown') return true;
   if (decision.confidence < 0.7) return true;
   return decision.metadata.matchedSignals.length === 0 && text.trim().length > 80;
@@ -648,6 +708,40 @@ function mapLlmRouterDecisionToAutopilotDecision(
     validation: 'accepted' as const,
     attempts,
   };
+
+  if (
+    base.metadata.intent === 'address_instruction' ||
+    base.metadata.intent === 'urgent_access_problem' ||
+    base.metadata.matchedSignals.includes('property_directions')
+  ) {
+    return withLlmRouterMetadata(base, marker);
+  }
+
+  if (decision.intent === 'checkin_info_request') {
+    return withLlmRouterMetadata(
+      {
+        ...base,
+        action: 'needs_context',
+        confidence: decision.confidence,
+        replyText: CHECKIN_READINESS_ACCESS_REPLY,
+        escalationReason: undefined,
+        metadata: {
+          ...base.metadata,
+          intent: 'check_in_access',
+          matchedSignals: ['llm_router', decision.intent],
+          missingContext: base.metadata.missingContext,
+          urgent: false,
+          operationsAction: {
+            category: 'operator_access_support',
+            priority: 'normal',
+            title: 'Communication autopilot: check-in readiness and access',
+            shortReason: 'check_in_access',
+          },
+        },
+      },
+      marker,
+    );
+  }
 
   if (decision.intent === 'checkin_code_request') {
     return withLlmRouterMetadata(
@@ -754,7 +848,20 @@ function detectsMisunderstanding(text: string): boolean {
 
 function buildOperationsAction(
   intent: CommunicationAutopilotIntent,
+  matchedSignals: string[] = [],
 ): CommunicationAutopilotOperationsAction | undefined {
+  if (
+    intent === 'check_in_access' &&
+    matchedSignals.some((signal) => signal === 'checkin_readiness_access' || signal.includes('checkin_readiness'))
+  ) {
+    return {
+      category: 'operator_access_support',
+      priority: 'normal',
+      title: 'Communication autopilot: check-in readiness and access',
+      shortReason: 'check_in_access',
+    };
+  }
+
   switch (intent) {
     case 'urgent_access_problem':
       return {

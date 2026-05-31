@@ -524,7 +524,7 @@ function composeAutopilotContextClarifier(params: {
   const missing = params.decision.metadata.missingContext;
   if (params.lang === 'ru') {
     if (params.decision.metadata.intent === 'unknown') {
-      return 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?';
+      return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
     }
     if (params.decision.metadata.intent === 'booking_lookup_missing_details') {
       return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
@@ -536,7 +536,13 @@ function composeAutopilotContextClarifier(params: {
       return 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.';
     }
     if (params.decision.metadata.intent === 'check_in_access') {
+      if (params.decision.metadata.matchedSignals.some((signal) => signal === 'checkin_readiness_access')) {
+        return 'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.';
+      }
       return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+    }
+    if (params.decision.metadata.intent === 'address_instruction') {
+      return 'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.';
     }
     if (missing.some((field) => field.startsWith('object.'))) {
       return '\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u0435, \u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0431\u044a\u0435\u043a\u0442 \u0438\u043b\u0438 \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438, \u0438 \u044f \u043f\u0440\u043e\u0432\u0435\u0440\u044e \u0442\u043e\u0447\u043d\u044b\u0435 \u0434\u0435\u0442\u0430\u043b\u0438.';
@@ -1380,6 +1386,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       | 'reply_composer' = 'deterministic';
     let escalation: ReturnType<typeof createEscalationEvent> | undefined = undefined;
     let telegramOperationalIntakeConsumed: boolean = false;
+    let telegramGuestAgentLlmUsed = false;
     let currentAutopilotIntent: string | null = null;
     let antiLoopEligible = false;
     const adapter = getChannelAdapter(envelope.channel);
@@ -1462,6 +1469,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         context: autopilotContext,
       });
       currentAutopilotIntent = autopilotDecision.metadata.intent;
+      telegramGuestAgentLlmUsed =
+        envelope.channel === 'telegram' &&
+        Boolean(autopilotDecision.metadata.llmRouter?.used || autopilotDecision.metadata.policy.includes('llm_router'));
 
       auditAutonomousDecision({
         chat_id: chatId,
@@ -1756,7 +1766,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
 
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
-    if (!replyText && isCanonicalGuestCommunicationChannel(envelope.channel) && text.trim()) {
+    if (
+      !replyText &&
+      !telegramGuestAgentLlmUsed &&
+      isCanonicalGuestCommunicationChannel(envelope.channel) &&
+      text.trim()
+    ) {
       const opIntakeResult = await processTelegramOperationalIntakeWithSessionMemory({
         chatId,
         channel: envelope.channel,
@@ -2723,7 +2738,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(telegramMetaStoredReply, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;
       usedPath = 'telegram_meta_deterministic';
-    } else if (!replyText && !escalationSafetyGate) {
+    } else if (
+      !replyText &&
+      !escalationSafetyGate &&
+      !(envelope.channel === 'telegram' && classification.lang === 'ru')
+    ) {
       cp('branch.llm.start', { chat_id: chatId });
       const followupHint = templates?.followup_template
         ? `Follow-up template (use when context is post-stay or follow-up): ${templates.followup_template}`
@@ -2750,6 +2769,20 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       replyText = adapter.formatResponse(rawFallback, commContext as unknown as Record<string, unknown>);
       auditLLM({ chat_id: chatId, update_id, used_fallback: !llmSucceeded });
       cp('branch.llm.done', { chat_id: chatId, llm_succeeded: llmSucceeded });
+    } else if (
+      !replyText &&
+      !escalationSafetyGate &&
+      envelope.channel === 'telegram' &&
+      classification.lang === 'ru' &&
+      text.trim()
+    ) {
+      cp('branch.telegram_guest_agent.safe_fallback', { chat_id: chatId });
+      replyText = adapter.formatResponse(
+        'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+        commContext as unknown as Record<string, unknown>,
+      );
+      llmSucceeded = true;
+      usedPath = 'communication_autopilot';
     }
 
     // Final safety ack: if session is escalated, do not run normal automation.

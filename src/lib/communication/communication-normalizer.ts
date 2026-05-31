@@ -167,6 +167,16 @@ const ACCESS_FAILURE_PATTERNS = [
   /не\s+попада(ю|ем)|не\s+попасть/i,
 ];
 
+const CHECKIN_READINESS_ACCESS_PATTERNS = [
+  /квартир[аыуе].{0,32}(готов|готовности|готова)/i,
+  /(объект|номер|апартамент).{0,24}(готов|готовности|готова)/i,
+  /готовност[ьи].{0,24}(квартир|объекта|номера|объект)/i,
+  /(хочу|нужно|можно|надо).{0,40}(уточнить|проверить|узнать).{0,40}(готов|готовности)/i,
+  /(нужен|нужна|нужно|дайте|пришлите|хочу).{0,28}(ключ|код).{0,28}(доступ|вход)/i,
+  /(ключ|код).{0,20}(доступ|вход|заселен)/i,
+  /доступ.{0,16}(ключ|код)/i,
+];
+
 const ACCESS_INSTRUCTION_PATTERNS = [
   /как\s+(заселиться|попасть|войти|найти\s+вход)/i,
   /как\s+открыть/i,
@@ -178,6 +188,7 @@ const ACCESS_INSTRUCTION_PATTERNS = [
   /\bcan\s+u\s+send\s+(checkin|check\s+in)\b/i,
   /\bsend\s+(checkin|check\s+in)\b/i,
   /\bhow\s+(to\s+)?(get\s+in|enter|check\s+in)\b/i,
+  ...CHECKIN_READINESS_ACCESS_PATTERNS,
 ];
 
 const LATE_CHECKOUT_PATTERNS = [

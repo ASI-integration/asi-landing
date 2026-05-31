@@ -6,6 +6,7 @@ export type TelegramGuestCanonIntent =
   | 'access_urgent'
   | 'checkin_code_request'
   | 'checkin_info'
+  | 'property_directions'
   | 'maintenance'
   | 'cleaning_housekeeping'
   | 'booking_missing_details'
@@ -15,6 +16,8 @@ export type TelegramGuestCanonIntent =
 export type TelegramGuestCanonActionType =
   | 'none'
   | 'access_support'
+  | 'property_directions_support'
+  | 'route_to_property'
   | 'maintenance'
   | 'cleaning_housekeeping'
   | 'booking_payment_support';
@@ -117,6 +120,24 @@ export const TELEGRAM_GUEST_INTENT_CANON_V1: readonly TelegramGuestCanonRule[] =
     reply: 'Помогу с заселением. Пришлите номер брони, адрес или телефон в брони.',
   },
   {
+    intent: 'property_directions',
+    examples: [
+      'как добраться до квартиры',
+      'как доехать до квартиры',
+      'где адрес квартиры',
+      'где находится квартира',
+      'адрес квартиры',
+      'как добраться от метро',
+      'как доехать от аэропорта',
+      'маршрут до квартиры',
+    ],
+    replyType: 'action_ack',
+    actionType: 'property_directions_support',
+    escalate: false,
+    reply:
+      'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.',
+  },
+  {
     intent: 'maintenance',
     examples: [
       'сломался душ',
@@ -165,7 +186,7 @@ export const TELEGRAM_GUEST_INTENT_CANON_V1: readonly TelegramGuestCanonRule[] =
     replyType: 'clarify',
     actionType: 'none',
     escalate: false,
-    reply: 'Уточните, пожалуйста, что случилось: заселение, доступ, уборка, поломка или вопрос по брони?',
+    reply: 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
   },
 ] as const;
 
@@ -225,6 +246,37 @@ const ACCESS_PATTERNS = [
   /(?:застрял|застряли|стоим).{0,32}(у\s+двери|снаружи|на\s+улице)/,
 ];
 
+export const CHECKIN_READINESS_ACCESS_REPLY =
+  'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.';
+
+export const PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY =
+  'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.';
+
+export const PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY = 'Сейчас посмотрю адрес объекта и подскажу маршрут.';
+
+export function hasPropertyDirectionsContext(context?: {
+  booking?: { id?: string };
+  object?: { id?: string; name?: string; address?: string };
+}): boolean {
+  return Boolean(
+    context?.booking?.id || context?.object?.id || context?.object?.name || context?.object?.address,
+  );
+}
+
+export function resolvePropertyDirectionsReply(hasContext: boolean): string {
+  return hasContext ? PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY : PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
+}
+
+const CHECKIN_READINESS_ACCESS_PATTERNS = [
+  /квартир[аыуе].{0,32}(готов|готовности|готова)/,
+  /(объект|номер|апартамент).{0,24}(готов|готовности|готова)/,
+  /готовност[ьи].{0,24}(квартир|объекта|номера|объект)/,
+  /(хочу|нужно|можно|надо).{0,40}(уточнить|проверить|узнать).{0,40}(готов|готовности)/,
+  /(нужен|нужна|нужно|дайте|пришлите|хочу).{0,28}(ключ|код).{0,28}(доступ|вход)/,
+  /(ключ|код).{0,20}(доступ|вход|заселен)/,
+  /доступ.{0,16}(ключ|код)/,
+];
+
 const CHECKIN_PATTERNS = [
   /как\s+(заселиться|попасть\s+в\s+квартиру|войти|зайти)/,
   /где\s+(ключ|ключи)/,
@@ -266,6 +318,29 @@ const PAYMENT_BOOKING_PATTERNS = [
   /(продлить\s+проживание|продлить\s+бронь|хочу\s+продлить)/,
 ];
 
+const DIRECTIONS_ORIGIN_PATTERNS = [
+  /шереметьев/,
+  /внуков/,
+  /домодед/,
+  /пулков/,
+  /аэропорт/,
+  /вокзал/,
+  /от\s+метро/,
+];
+
+const DIRECTIONS_PATTERNS = [
+  /как\s+добраться/,
+  /как\s+доехать/,
+  /маршрут/,
+  /где\s+находится.{0,24}(квартир|объект|апартамент|номер)/,
+  /(где|какой)\s+адрес.{0,16}(квартир|объекта|апартамент|объект)?/,
+  /адрес.{0,16}(квартир|объекта|апартамент|объект)/,
+  /от\s+метро/,
+  /от\s+аэропорт/,
+  /(до|к)\s+(квартир|объект|апартамент|номер).{0,32}(шереметьев|внуков|домодед|пулков|аэропорт|вокзал|метро)/,
+  /(шереметьев|внуков|домодед|пулков|аэропорт|вокзал|метро).{0,32}(до|к\s+)?(квартир|объект|апартамент|номер|адрес)/,
+];
+
 export function resolveTelegramGuestIntentCanon(text: string): TelegramGuestCanonMatch {
   const normalized = normalizeTelegramGuestCanonText(text);
 
@@ -292,10 +367,29 @@ export function resolveTelegramGuestIntentCanon(text: string): TelegramGuestCano
 
   if (hasAny(normalized, ACCESS_PATTERNS)) return { ...canonRule('access_urgent'), replyCount: 1 };
   if (hasAny(normalized, CHECKIN_CODE_REQUEST_PATTERNS)) return { ...canonRule('checkin_code_request'), replyCount: 1 };
+  if (hasAny(normalized, CHECKIN_READINESS_ACCESS_PATTERNS)) {
+    return {
+      ...canonRule('checkin_info'),
+      matchedExample: 'checkin_readiness_access',
+      replyType: 'action_ack',
+      actionType: 'access_support',
+      reply: CHECKIN_READINESS_ACCESS_REPLY,
+      replyCount: 1,
+    };
+  }
   if (hasAny(normalized, MAINTENANCE_PATTERNS)) return { ...canonRule('maintenance'), replyCount: 1 };
   if (hasAny(normalized, CLEANING_PATTERNS)) return { ...canonRule('cleaning_housekeeping'), replyCount: 1 };
   if (hasAny(normalized, BOOKING_MISSING_PATTERNS)) return { ...canonRule('booking_missing_details'), replyCount: 1 };
   if (hasAny(normalized, PAYMENT_BOOKING_PATTERNS)) return { ...canonRule('payment_booking'), replyCount: 1 };
+  if (hasAny(normalized, DIRECTIONS_PATTERNS)) {
+    const fromOrigin = hasAny(normalized, DIRECTIONS_ORIGIN_PATTERNS);
+    return {
+      ...canonRule('property_directions'),
+      matchedExample: fromOrigin ? 'route_to_property' : 'property_directions_support',
+      actionType: fromOrigin ? 'route_to_property' : 'property_directions_support',
+      replyCount: 1,
+    };
+  }
   if (hasAny(normalized, CHECKIN_PATTERNS)) return { ...canonRule('checkin_info'), replyCount: 1 };
 
   return { ...canonRule('unknown'), replyCount: 1 };

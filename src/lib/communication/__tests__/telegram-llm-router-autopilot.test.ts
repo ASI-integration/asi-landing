@@ -171,7 +171,9 @@ describe('Telegram LLM router autopilot fallback', () => {
     expect(result.action).toBe('needs_context');
     expect(result.metadata.intent).toBe('unknown');
     expect(result.metadata.llmRouter?.validation).toBe('low_confidence');
-    expect(result.replyText).toMatch(/Уточните/);
+    expect(result.replyText).toBe(
+      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+    );
   });
 
   it('does not call LLM router for direct canon check-in code request', async () => {
@@ -292,7 +294,9 @@ describe('Telegram LLM router autopilot fallback', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.metadata.intent).toBe('unknown');
-    expect(result.replyText).toMatch(/Уточните/);
+    expect(result.replyText).toBe(
+      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+    );
   });
 
   it('keeps the successful secondary provider sticky for the session', async () => {

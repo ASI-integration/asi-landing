@@ -144,11 +144,25 @@ function hasLateCheckoutIntent(t: string): boolean {
 }
 
 function hasAccessKeyIssueIntent(t: string): boolean {
-  return /не\s+могу\s+войти|не\s+открыва|код.{0,30}(не\s+работает|не\s+подходит|не\s+открыва)|не\s+работает.{0,20}код|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(t);
+  if (
+    /не\s+могу\s+войти|не\s+открыва|код.{0,30}(не\s+работает|не\s+подходит|не\s+открыва)|не\s+работает.{0,20}код|замок|домофон|cannot\s+enter|locked\s*out|door\s+code/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  return (
+    /квартир[аыуе].{0,32}(готов|готовности|готова)/.test(t) ||
+    /готовност[ьи].{0,24}(квартир|объекта|номера|объект)/.test(t) ||
+    /(нужен|нужна|нужно|дайте|получить|хочу).{0,24}(ключ|код).{0,24}(доступ|вход|заселен)/.test(t) ||
+    /(ключ|код).{0,20}(доступ|вход|заселен)/.test(t)
+  );
 }
 
 function hasAddressFindObjectIntent(t: string): boolean {
-  return /как\s+найти|как\s+доехать|как\s+пройти|где.*вход|как\s+вас\s+найти|какой\s+адрес|how\s+to\s+find|where\s+is\s+entrance|address/i.test(t);
+  return /как\s+(найти|доехать|добраться|пройти)|маршрут|где.{0,24}(находится|адрес).{0,24}(квартир|объект|апартамент|номер)|адрес.{0,16}(квартир|объекта|апартамент|объект)|от\s+(метро|аэропорт)|шереметьев|внуков|домодед|пулков|вокзал|how\s+to\s+find|where\s+is\s+entrance|address/i.test(
+    t,
+  );
 }
 
 function hasWifiIntent(t: string): boolean {
