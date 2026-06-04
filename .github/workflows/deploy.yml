@@ -272,6 +272,13 @@ jobs:
             -o ConnectTimeout=20
           )
 
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /tmp/gha-derived.pub
+          echo "GHA_KEY_FINGERPRINT:"
+          ssh-keygen -lf /tmp/gha-derived.pub
+          echo "GHA_USER=${VPS_USER}"
+          echo "GHA_HOST=${VPS_HOST}"
+          ssh -vvv "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" 'echo SSH_OK'
+
           SCP_OPTS=(
             -P "$SELECTED_PORT"
             -o IdentitiesOnly=yes
