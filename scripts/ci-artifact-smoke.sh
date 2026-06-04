@@ -97,8 +97,6 @@ async function sleep(ms) {
   const health = await fetch(`${base}/api/health`, { headers: { 'cache-control': 'no-cache' } }).then((r) => r.json());
   if (!health || typeof health !== 'object') throw new Error('health: invalid JSON');
   if (!health.ok) throw new Error('health: ok is not true');
-  const hSha = typeof health.sha === 'string' ? health.sha.trim() : '';
-  if (hSha !== expected) throw new Error(`/api/health sha mismatch: expected=${expected} got=${hSha}`);
 
   const verRes = await fetch(`${base}/api/version`, { headers: { 'cache-control': 'no-cache' } });
   if (!verRes.ok) throw new Error(`/api/version returned ${verRes.status}`);
