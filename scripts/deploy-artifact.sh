@@ -39,6 +39,65 @@ require_cmd node
 require_cmd pm2
 require_cmd curl
 
+EXPECTED_PM2_USER="${ASI_PM2_USER:-project_ayfaar}"
+EXPECTED_PM2_HOME="${ASI_PM2_HOME:-/home/${EXPECTED_PM2_USER}/.pm2}"
+
+assert_pm2_runtime_user() {
+  local actual_user
+  actual_user="$(id -un)"
+  if [[ "$actual_user" != "$EXPECTED_PM2_USER" ]]; then
+    die "PM2 deploy must run as ${EXPECTED_PM2_USER}; current user is ${actual_user}"
+  fi
+
+  if [[ -n "${PM2_HOME:-}" && "${PM2_HOME}" != "$EXPECTED_PM2_HOME" ]]; then
+    die "PM2_HOME must be ${EXPECTED_PM2_HOME}; current PM2_HOME=${PM2_HOME}"
+  fi
+  export PM2_HOME="$EXPECTED_PM2_HOME"
+  mkdir -p "$PM2_HOME"
+
+  local root_pm2_daemon=""
+  root_pm2_daemon="$(ps -eo user=,pid=,args= 2>/dev/null | awk '$1=="root" && $0 ~ /PM2/ && $0 ~ /God Daemon/ {print}' || true)"
+  if [[ -n "$root_pm2_daemon" ]]; then
+    log "Root-owned PM2 daemon detected:"
+    echo "$root_pm2_daemon"
+    die "Refusing deploy while root PM2 daemon is running; use only ${EXPECTED_PM2_USER} PM2"
+  fi
+
+  log "PM2 runtime user check: user=${actual_user} PM2_HOME=${PM2_HOME}"
+}
+
+print_runtime_diagnostics() {
+  local label="${1:-runtime diagnostics}"
+  log "Diagnostics: ${label}"
+  log "  pm2 describe ($PM2_ONLY):"
+  pm2 describe "$PM2_ONLY" 2>/dev/null || true
+  log "  pm2 logs ($PM2_ONLY) last 120 lines:"
+  pm2 logs "$PM2_ONLY" --lines 120 --nostream 2>/dev/null || true
+  log "  ss -ltnp | grep :3000:"
+  ss -ltnp 2>/dev/null | grep ":3000" || true
+}
+
+curl_with_timeout_diagnostics() {
+  local url="$1"
+  local label="$2"
+  local timeout="${3:-5}"
+  local out
+  local rc=0
+  out="$(curl -fsS --connect-timeout "$timeout" --max-time "$timeout" "$url" 2>&1)" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    printf "%s" "$out"
+    return 0
+  fi
+  log "${label} failed or timed out (curl rc=${rc}): ${url}"
+  echo "$out"
+  if [[ "$rc" -eq 28 ]]; then
+    print_runtime_diagnostics "${label} timeout"
+  fi
+  return "$rc"
+}
+
+assert_pm2_runtime_user
+
 mkdir -p "$RELEASES_DIR" "$SHARED_DIR"
 touch "$LIVE_ENV_FILE"
 
@@ -156,13 +215,10 @@ async function sleep(ms) {
 (async () => {
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`${base}/api/health`, { headers: { 'cache-control': 'no-cache' } });
-      if (!res.ok) {
-        lastBody = await res.text();
-        await sleep(500);
-        continue;
-      }
-      const verRes = await fetch(`${base}/api/version`, { headers: { 'cache-control': 'no-cache' } });
+      const verRes = await fetch(`${base}/api/version`, {
+        headers: { 'cache-control': 'no-cache' },
+        signal: AbortSignal.timeout(5000),
+      });
       const txt = await verRes.text();
       lastBody = txt;
       if (!verRes.ok) {
@@ -178,15 +234,15 @@ async function sleep(ms) {
       }
       lastSha = typeof v?.sha === 'string' ? v.sha.trim() : '';
       if (lastSha === expected) {
-        console.log('rollback-health: ok');
+        console.log('rollback-version-health: ok');
         return;
       }
     } catch (e) {
-      lastBody = String(e);
+      lastBody = e?.name === 'TimeoutError' ? 'TimeoutError: /api/version' : String(e);
     }
     await sleep(500);
   }
-  console.error('rollback-health: failed expected=', expected, 'lastSha=', lastSha, 'lastBody=', lastBody);
+  console.error('rollback-version-health: failed expected=', expected, 'lastSha=', lastSha, 'lastBody=', lastBody);
   process.exit(1);
 })().catch((e) => {
   console.error(e);
@@ -300,10 +356,10 @@ try {
 }
 NODE
 
-log "Early-crash guard: wait 3s then check PM2 status/restarts"
+log "Early-crash guard: wait 3s then check PM2 status"
 sleep 3
 
-EARLY_CRASH="$(
+EARLY_GUARD="$(
   PM2_ONLY="$PM2_ONLY" node - <<'NODE' 2>/dev/null || echo "YES"
 const { execSync } = require('child_process');
 const name = (process.env.PM2_ONLY || 'asi-landing').trim();
@@ -312,13 +368,19 @@ try {
   const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
   const list = JSON.parse(raw);
   const p = list.find((x) => x && x.name === name);
+  if (!p) {
+    process.stdout.write('MISSING');
+    process.exit(0);
+  }
   const env = p?.pm2_env || {};
   const status = String(env.status || '');
   const restarts = Number(env.restart_time || 0);
-  if (status !== 'online' || restarts > 0) {
-    process.stdout.write('YES');
+  if (status !== 'online') {
+    process.stdout.write(`BAD_STATUS status=${status || '<empty>'} restart_time=${restarts}`);
+  } else if (restarts > 0) {
+    process.stdout.write(`ONLINE_WITH_RESTARTS restart_time=${restarts}`);
   } else {
-    process.stdout.write('no');
+    process.stdout.write('ONLINE');
   }
 } catch {
   process.stdout.write('YES');
@@ -326,8 +388,8 @@ try {
 NODE
 )"
 
-if [[ "${EARLY_CRASH:-}" == "YES" ]]; then
-  log "EARLY CRASH detected (PM2 status != online OR restarts > 0 immediately after start)"
+if [[ "${EARLY_GUARD:-}" == "MISSING" || "${EARLY_GUARD:-}" == "YES" || "${EARLY_GUARD:-}" == BAD_STATUS* ]]; then
+  log "EARLY CRASH detected (PM2 process missing or status != online): ${EARLY_GUARD:-<empty>}"
   log "Diagnostics: pm2 describe ($PM2_ONLY)"
   pm2 describe "$PM2_ONLY" 2>/dev/null || true
   log "Diagnostics: pm2 logs ($PM2_ONLY) last 120 lines"
@@ -337,6 +399,10 @@ if [[ "${EARLY_CRASH:-}" == "YES" ]]; then
   log "Diagnostics: ps -ef | grep -E 'next|node|npm' | grep -v grep"
   ps -ef 2>/dev/null | grep -E 'next|node|npm' | grep -v grep || true
   die "Early crash guard failed; aborting before healthcheck to trigger rollback."
+fi
+
+if [[ "${EARLY_GUARD:-}" == ONLINE_WITH_RESTARTS* ]]; then
+  log "WARNING: PM2 reported ${EARLY_GUARD}; continuing to post-switch healthcheck."
 fi
 
 log "PM2 status (after reload):"
@@ -383,10 +449,12 @@ try {
   console.log('pm2-jlist: failed:', String(e));
 }
 NODE
+log "  curl /api/health (best-effort):"
+curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/health" "/api/health best-effort" 5 && echo "" || true
 log "  curl /api/version (best-effort):"
-curl -fsS "http://127.0.0.1:3000/api/version" && echo "" || true
+curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/version" "/api/version best-effort" 5 && echo "" || true
 
-log "Post-switch healthcheck (retries until SHA matches artifact metadata)"
+log "Post-switch /api/version healthcheck (retries until SHA matches artifact metadata)"
 if ! EXPECT_SHA="$EXPECTED_SHA" node - <<'NODE'
 const timeoutMs = 45_000;
 const start = Date.now();
@@ -408,14 +476,10 @@ let lastResolvedReleasePath = '';
 (async () => {
   while (Date.now() - start < timeoutMs) {
     try {
-      const h = await fetch(`${base}/api/health`, { headers: { 'cache-control': 'no-cache' } });
-      if (!h.ok) {
-        lastStatus = h.status;
-        lastBody = await h.text();
-        await sleep(500);
-        continue;
-      }
-      const verRes = await fetch(`${base}/api/version`, { headers: { 'cache-control': 'no-cache' } });
+      const verRes = await fetch(`${base}/api/version`, {
+        headers: { 'cache-control': 'no-cache' },
+        signal: AbortSignal.timeout(5000),
+      });
       lastStatus = verRes.status;
       lastBody = await verRes.text();
       if (!verRes.ok) {
@@ -436,15 +500,15 @@ let lastResolvedReleasePath = '';
       lastResolvedReleasePath =
         typeof v?.resolvedReleasePath === 'string' ? v.resolvedReleasePath.trim() : '';
       if (lastSha === expected) {
-        console.log('health: ok sha=', lastSha);
+        console.log('version-health: ok sha=', lastSha);
         return;
       }
     } catch (e) {
-      lastBody = String(e);
+      lastBody = e?.name === 'TimeoutError' ? 'TimeoutError: /api/version' : String(e);
     }
     await sleep(500);
   }
-  console.error('health: FAILED');
+  console.error('version-health: FAILED');
   console.error('  expected SHA (from artifact release-meta.json):', expected);
   console.error('  last /api/version status:', lastStatus);
   console.error('  last /api/version sha:', lastSha);
@@ -460,7 +524,7 @@ let lastResolvedReleasePath = '';
 });
 NODE
 then
-  log "Healthcheck failed after switch"
+  log "/api/version healthcheck failed after switch"
   log "  expected SHA (artifact): $EXPECTED_SHA"
   log "  attempted new release: $RELEASE_DIR"
   log "  previous release path: ${PREV_TARGET:-<none>}"
@@ -542,7 +606,7 @@ NODE
   else
     log "No valid previous release to roll back to."
   fi
-  die "Deploy failed post-switch healthcheck; rolled back where possible."
+  die "Deploy failed post-switch /api/version healthcheck; rolled back where possible."
 fi
 
 log "Post-switch assertions (must match CURRENT target)"
@@ -582,8 +646,21 @@ try {
 }
 NODE
 
+log "  curl /api/health (best-effort):"
+curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/health" "/api/health post-switch" 5 && echo "" || true
 log "  curl /api/version (assert):"
-API_VERSION_JSON="$(curl -fsS "http://127.0.0.1:3000/api/version" || true)"
+API_VERSION_TMP="$(mktemp)"
+if curl -fsS --connect-timeout 5 --max-time 5 "http://127.0.0.1:3000/api/version" -o "$API_VERSION_TMP"; then
+  API_VERSION_JSON="$(cat "$API_VERSION_TMP")"
+else
+  API_VERSION_RC=$?
+  API_VERSION_JSON=""
+  log "/api/version post-switch assertion failed or timed out (curl rc=${API_VERSION_RC})"
+  if [[ "$API_VERSION_RC" -eq 28 ]]; then
+    print_runtime_diagnostics "/api/version post-switch assertion timeout"
+  fi
+fi
+rm -f "$API_VERSION_TMP"
 echo "$API_VERSION_JSON"
 
 EXPECTED_META_SHA="$(node -e "const j=require('/var/www/asi/current/release-meta.json'); process.stdout.write(String(j.gitSha||'').trim())" 2>/dev/null || true)"
@@ -629,4 +706,4 @@ cat >"${CURRENT_LINK}/.release.json" <<EOF
 EOF
 
 log "Deploy complete: SHA=$EXPECTED_SHA current=$(readlink -f "$CURRENT_LINK")"
-curl -fsS "http://127.0.0.1:3000/api/version" && echo "" || true
+curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/version" "/api/version final" 5 && echo "" || true
