@@ -15,6 +15,7 @@ import {
   auditPromptInjectionRepeat,
   auditRetryAttempt,
   auditFailureEnqueued,
+  auditTelegramGuestAgentShadow,
 } from './audit';
 import {
   buildIntelligentPrompt,
@@ -125,7 +126,29 @@ import {
   type CommunicationCanonNormalization,
 } from './communication-normalizer';
 import {
+  bookingObjectContextToAutopilotFields,
+  buildGuestMissingContextReplyRu,
+  resolveEmailGuestBookingObjectContext,
+  resolveTelegramGuestBookingObjectContext,
+} from './telegram-booking-object-memory';
+import {
+  audit_object_knowledge_reply,
+  type ObjectKnowledgeStatus,
+} from './object-knowledge';
+import { isTelegramOutboundDryRun } from './telegram-outbound-safe-mode';
+import { shouldSuppressEmailOutbound } from './email-outbound-safe-mode';
+import {
+  applyCommAgentSessionContinuation,
+  deriveSessionMemoryPatchFromDecision,
+  getCommAgentSessionMemory,
+  updateCommAgentSessionMemory,
+} from './comm-agent-session-memory';
+import { logCommAgentHandoffPreview, logCommAgentMetrics } from './comm-agent-metrics';
+import { buildOperatorHandoffDecision } from './operator-handoff-decision';
+import { stableEmailChatId } from './email-stable-chat-id';
+import {
   decideCommunicationAutopilotResponseWithLlmRouter,
+  composeCommunicationAutopilotContextReply,
   type CommunicationAutopilotDecision,
   type CommunicationAutopilotContext,
 } from './autopilot';
@@ -364,15 +387,25 @@ function buildOutboundTransportMetadata(params: {
   update_id: number;
   category: MessageCategory;
   telegramMetaRouteKind?: TelegramTextMetaKind | null;
+  isEscalation?: boolean;
 }): Record<string, unknown> | undefined {
   const replyHandler = `orchestrator:${params.usedPath}${
     params.telegramMetaRouteKind ? `:telegram_meta=${params.telegramMetaRouteKind}` : ''
   }:category=${params.category}`;
 
   if (params.envelope.channel === 'telegram') {
+    const metadata = params.envelope.metadata;
+    const originalMessageType =
+      metadataString(metadata, ['originalMessageType']) ??
+      metadataString((metadata as any)?.voice, ['originalMessageType', 'source']);
+    const isInboundVoice = Boolean((metadata as any)?.voice) || originalMessageType === 'voice' || originalMessageType === 'audio';
     return {
       reply_handler: replyHandler,
       update_id: params.update_id,
+      ...(isInboundVoice ? { voice_reply_source: 'inbound_voice' } : {}),
+      ...(params.isEscalation ? { voice_reply_is_escalation: true } : {}),
+      ...(params.usedPath.includes('payment') ? { voice_reply_is_payment: true } : {}),
+      ...(params.usedPath.includes('checkin') || params.usedPath.includes('check_in') ? { voice_reply_is_checkin_instructions: true } : {}),
     };
   }
 
@@ -414,6 +447,37 @@ function firstUsefulText(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function objectKnowledgeKeyForAutopilotIntent(intent: string): string | null {
+  switch (intent) {
+    case 'baby_crib_request':
+      return 'baby_crib_note';
+    case 'waste_disposal_info':
+      return 'trash_bins_location';
+    case 'address_instruction':
+      return 'directions_text';
+    case 'parking':
+      return 'parking_text';
+    case 'wifi':
+    case 'wifi_access':
+      return 'wifi_password';
+    case 'wifi_problem':
+      return 'wifi_name';
+    default:
+      return null;
+  }
+}
+
+function resolveObjectKnowledgeStatusForAudit(params: {
+  key: string;
+  context: CommunicationAutopilotContext;
+  missingContext: string[];
+}): ObjectKnowledgeStatus {
+  const status = params.context.object?.knowledgeStatus?.[params.key];
+  if (status) return status;
+  if (params.missingContext.length > 0) return 'missing';
+  return 'found';
+}
+
 function boolOrUndefined(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
@@ -444,6 +508,8 @@ function mergeAutopilotContext(
     session: { ...(base.session ?? {}), ...(source.session ?? {}) },
     booking: { ...(base.booking ?? {}), ...(source.booking ?? {}) },
     object: { ...(base.object ?? {}), ...(source.object ?? {}) },
+    bookingVerified: source.bookingVerified ?? base.bookingVerified,
+    propertyResolved: source.propertyResolved ?? base.propertyResolved,
   };
 }
 
@@ -454,16 +520,19 @@ function buildAutopilotContext(params: {
   commContext: CommunicationContext;
   templates: Awaited<ReturnType<typeof getPropertyTemplates>> | null;
   lang: Lang;
+  bookingMemoryFields?: ReturnType<typeof bookingObjectContextToAutopilotFields>;
 }): CommunicationAutopilotContext {
   const wifi = parseWifiInstruction(params.commContext.knowledge?.wifiInstructions);
   const memory = params.commContext.memory as unknown as Record<string, unknown>;
   const reservation = params.commContext.reservation as unknown as Record<string, unknown>;
   const metadataContext = (params.envelope.metadata as Record<string, unknown> | undefined)?.autopilotContext;
+  const dbMemory = params.bookingMemoryFields;
 
   const context: CommunicationAutopilotContext = {
     session: {
       id: String(params.chatId),
       guestName: firstUsefulText(
+        dbMemory?.session?.guestName,
         params.identity.guestId,
         params.commContext.reservation.guestName,
         memory.guestName,
@@ -472,32 +541,42 @@ function buildAutopilotContext(params: {
     },
     booking: {
       id: firstUsefulText(
+        dbMemory?.booking?.id,
         params.commContext.reservation.reservationId,
         params.identity.reservationId,
         memory.reservationId,
         memory.bookingReference,
       ),
-      checkInDate: firstUsefulText((reservation as any).checkIn, (reservation as any).check_in, memory.checkInDate),
-      checkInTime: firstUsefulText((reservation as any).checkInTime, (reservation as any).check_in_time),
-      checkoutTime: firstUsefulText((reservation as any).checkoutTime, (reservation as any).checkout_time),
+      checkInDate: firstUsefulText(dbMemory?.booking?.checkInDate, (reservation as any).checkIn, (reservation as any).check_in, memory.checkInDate),
+      checkInTime: firstUsefulText(dbMemory?.booking?.checkInTime, (reservation as any).checkInTime, (reservation as any).check_in_time),
+      checkoutTime: firstUsefulText(dbMemory?.booking?.checkoutTime, (reservation as any).checkoutTime, (reservation as any).checkout_time),
       earlyCheckInAvailable: boolOrUndefined((reservation as any).earlyCheckInAvailable),
       lateCheckoutAvailable: boolOrUndefined((reservation as any).lateCheckoutAvailable),
+      verified: dbMemory?.booking?.verified,
     },
     object: {
       id: firstUsefulText(
+        dbMemory?.object?.id,
         params.commContext.reservation.propertyId,
         params.identity.propertyId,
         memory.propertyId,
       ),
-      name: firstUsefulText(memory.propertyLocation, params.commContext.reservation.propertyId, params.identity.propertyId),
-      address: firstUsefulText(memory.propertyLocation),
+      name: firstUsefulText(dbMemory?.object?.name, memory.propertyLocation, params.commContext.reservation.propertyId, params.identity.propertyId),
+      address: firstUsefulText(dbMemory?.object?.address, memory.propertyLocation),
+      directionsText: dbMemory?.object?.directionsText,
+      parkingText: dbMemory?.object?.parkingText,
       accessInstructions: firstUsefulText(
+        dbMemory?.object?.accessInstructions,
         params.templates?.pre_checkin_template,
         params.commContext.knowledge?.checkInInstructions,
       ),
-      wifiName: wifi.name,
-      wifiPassword: wifi.password,
+      accessCode: dbMemory?.object?.accessCode,
+      wifiName: firstUsefulText(dbMemory?.object?.wifiName, wifi.name),
+      wifiPassword: firstUsefulText(dbMemory?.object?.wifiPassword, wifi.password),
+      houseRules: dbMemory?.object?.houseRules,
     },
+    bookingVerified: dbMemory?.bookingVerified,
+    propertyResolved: dbMemory?.propertyResolved,
   };
 
   return mergeAutopilotContext(context, metadataContext);
@@ -523,6 +602,13 @@ function composeAutopilotContextClarifier(params: {
 
   const missing = params.decision.metadata.missingContext;
   if (params.lang === 'ru') {
+    if (
+      params.decision.metadata.intent === 'wifi' ||
+      params.decision.metadata.intent === 'wifi_access' ||
+      params.decision.metadata.intent === 'wifi_problem'
+    ) {
+      return buildGuestMissingContextReplyRu();
+    }
     if (params.decision.metadata.intent === 'unknown') {
       return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
     }
@@ -1188,7 +1274,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         chat_id: chatId,
         update_id,
         has_bot_token: Boolean(token && token.trim().length > 0),
-        dry_run: process.env.TELEGRAM_DRY_RUN === '1',
+        dry_run: isTelegramOutboundDryRun(),
         outbound_debug: process.env.TELEGRAM_OUTBOUND_DEBUG === '1',
         comm_pipeline_debug: process.env.COMM_PIPELINE_DEBUG ?? null,
         ru_telegram_debug: process.env.RU_TELEGRAM_DEBUG ?? null,
@@ -1389,6 +1475,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     let telegramGuestAgentLlmUsed = false;
     let currentAutopilotIntent: string | null = null;
     let antiLoopEligible = false;
+    let telegramGuestAgentShadowAudit: CommunicationAutopilotDecision['metadata']['guestAgentShadow'] | null = null;
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
@@ -1455,6 +1542,57 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       classification.lang === 'ru' &&
       text.trim()
     ) {
+      let bookingMemoryFields: ReturnType<typeof bookingObjectContextToAutopilotFields> | undefined;
+      if (envelope.channel === 'telegram') {
+        const bookingObjectCtx = await withAwaitCheckpoint(
+          'memory/booking_object.resolve.await',
+          () =>
+            resolveTelegramGuestBookingObjectContext({
+              telegram_chat_id: chatId,
+              text,
+            }),
+          { chat_id: chatId },
+          15_000,
+        );
+        bookingMemoryFields = bookingObjectContextToAutopilotFields(bookingObjectCtx);
+        if (ruDebug) {
+          console.log('[ru:tg] booking_object_memory', {
+            chat_id: chatId,
+            lookup_reason: bookingObjectCtx.lookup_reason,
+            booking_resolved: bookingObjectCtx.booking_resolved,
+            property_resolved: bookingObjectCtx.property_resolved,
+            access_verified: bookingObjectCtx.access_verified,
+            wifi_verified: bookingObjectCtx.wifi_verified,
+            booking_id: bookingObjectCtx.booking?.booking_id ?? null,
+            object_id: bookingObjectCtx.property?.object_id ?? null,
+          });
+        }
+      } else if (envelope.channel === 'email') {
+        const guestEmail = String(envelope.email ?? envelope.externalUserId ?? '').trim();
+        const bookingObjectCtx = await withAwaitCheckpoint(
+          'memory/email_booking_object.resolve.await',
+          () =>
+            resolveEmailGuestBookingObjectContext({
+              guest_email: guestEmail,
+              text,
+            }),
+          { chat_id: chatId, guest_email: guestEmail },
+          15_000,
+        );
+        bookingMemoryFields = bookingObjectContextToAutopilotFields(bookingObjectCtx);
+        if (pipeDebug) {
+          console.log('[comm:email] booking_object_memory', {
+            chat_id: chatId,
+            guest_email: guestEmail,
+            lookup_reason: bookingObjectCtx.lookup_reason,
+            booking_resolved: bookingObjectCtx.booking_resolved,
+            property_resolved: bookingObjectCtx.property_resolved,
+            access_verified: bookingObjectCtx.access_verified,
+            wifi_verified: bookingObjectCtx.wifi_verified,
+          });
+        }
+      }
+
       const autopilotContext = buildAutopilotContext({
         chatId,
         envelope,
@@ -1462,13 +1600,127 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         commContext,
         templates,
         lang: classification.lang,
+        bookingMemoryFields,
       });
+      const commSessionId = String(
+        envelope.channel === 'email' ? stableEmailChatId(envelope) : chatId,
+      );
+      const commSessionMemory = getCommAgentSessionMemory(envelope.channel, commSessionId);
+      const sessionContinuation = applyCommAgentSessionContinuation({
+        channel: envelope.channel,
+        sessionId: commSessionId,
+        messageText: text,
+        memory: commSessionMemory,
+      });
+      const autopilotMessageText = sessionContinuation.enriched_message_text;
       const autopilotDecision = await decideCommunicationAutopilotResponseWithLlmRouter({
         channel: envelope.channel,
-        messageText: text,
+        messageText: autopilotMessageText,
         context: autopilotContext,
+        wifiSession: {
+          previousReply: commSessionMemory?.last_safe_reply,
+          continuationUsed:
+            sessionContinuation.memory_used ||
+            commSessionMemory?.last_intent === 'wifi_problem' ||
+            sessionContinuation.continued_intent === 'wifi_problem',
+          previousIntent: sessionContinuation.continued_intent ?? commSessionMemory?.last_intent ?? null,
+        },
       });
+      const bookingResolved = Boolean(
+        autopilotContext.booking?.id || bookingMemoryFields?.booking?.id,
+      );
+      const operatorNeeded =
+        autopilotDecision.action === 'escalate' || Boolean(autopilotDecision.metadata.urgent);
+      logCommAgentMetrics({
+        channel: envelope.channel,
+        session_key: commSessionId,
+        intent: autopilotDecision.metadata.intent,
+        confidence: autopilotDecision.confidence,
+        action: autopilotDecision.action,
+        source: sessionContinuation.memory_used
+          ? 'session_continuation'
+          : autopilotDecision.metadata.llmRouter?.used
+            ? 'llm_router'
+            : autopilotDecision.metadata.policy.includes('llm_router')
+              ? 'llm_router'
+              : 'deterministic_mvp',
+        memory_used: sessionContinuation.memory_used,
+        booking_resolved: bookingResolved,
+        operator_needed: operatorNeeded,
+        auto_reply_allowed: autopilotDecision.action === 'auto_reply' && Boolean(autopilotDecision.replyText),
+        ...(autopilotDecision.metadata.wifiEscalation
+          ? {
+              object_resolved: autopilotDecision.metadata.wifiEscalation.object_resolved,
+              escalation_needed: autopilotDecision.metadata.wifiEscalation.escalation_needed,
+              booking_request_reason: autopilotDecision.metadata.wifiEscalation.booking_request_reason,
+            }
+          : {}),
+        chat_id: chatId,
+        update_id,
+        ...(autopilotDecision.metadata.semanticRouter?.used
+          ? {
+              semantic_router_used: true,
+              semantic_source: autopilotDecision.metadata.semanticRouter.source,
+              semantic_model: autopilotDecision.metadata.semanticRouter.modelName,
+              mvp_intent: autopilotDecision.metadata.semanticRouter.mvpIntent,
+              semantic_intent: autopilotDecision.metadata.semanticRouter.semanticIntent,
+              semantic_confidence: autopilotDecision.metadata.semanticRouter.semanticConfidence,
+              final_intent: autopilotDecision.metadata.semanticRouter.finalIntent ?? autopilotDecision.metadata.intent,
+              semantic_override_applied: autopilotDecision.metadata.semanticRouter.semanticOverrideApplied,
+              override_reason: autopilotDecision.metadata.semanticRouter.overrideReason,
+              reply_text: autopilotDecision.replyText,
+            }
+          : {}),
+      });
+      updateCommAgentSessionMemory(envelope.channel, commSessionId, {
+        ...deriveSessionMemoryPatchFromDecision({
+          intent: autopilotDecision.metadata.intent,
+          action: autopilotDecision.action,
+          replyText: autopilotDecision.replyText,
+          needsBookingLookup: autopilotDecision.metadata.missingContext.length > 0,
+          needsOperator: operatorNeeded,
+          bookingId: autopilotContext.booking?.id ?? null,
+          propertyId: autopilotContext.object?.id ?? null,
+          escalationReason: autopilotDecision.escalationReason ?? null,
+        }),
+      });
+      const handoffDecision = buildOperatorHandoffDecision({
+        channel: envelope.channel,
+        guestMessage: text,
+        autopilot: autopilotDecision,
+        bookingId: autopilotContext.booking?.id ?? null,
+        propertyId: autopilotContext.object?.id ?? null,
+      });
+      if (handoffDecision) {
+        logCommAgentHandoffPreview({
+          channel: envelope.channel,
+          session_key: commSessionId,
+          reason: handoffDecision.reason,
+          urgency: handoffDecision.urgency,
+          guest_message_preview: text,
+        });
+        if (envelope.channel === 'email' || !handoffDecision.safe_to_auto_send) {
+          persistEscalationReview({
+            reason: handoffDecision.reason,
+            escalationSummary: `comm_agent_handoff:${handoffDecision.urgency}`,
+            confidence: autopilotDecision.confidence,
+            source: {
+              route: 'comm_agent_handoff_v1',
+              channel: envelope.channel,
+              urgency: handoffDecision.urgency,
+              booking_id: handoffDecision.resolved_booking_id,
+              property_id: handoffDecision.resolved_property_id,
+            },
+            suggestedReply: handoffDecision.suggested_reply ?? undefined,
+            detail: JSON.stringify({
+              safe_to_auto_send: handoffDecision.safe_to_auto_send,
+              operator_needed: operatorNeeded,
+            }),
+          });
+        }
+      }
       currentAutopilotIntent = autopilotDecision.metadata.intent;
+      telegramGuestAgentShadowAudit = autopilotDecision.metadata.guestAgentShadow ?? null;
       telegramGuestAgentLlmUsed =
         envelope.channel === 'telegram' &&
         Boolean(autopilotDecision.metadata.llmRouter?.used || autopilotDecision.metadata.policy.includes('llm_router'));
@@ -1496,6 +1748,37 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             : undefined,
         }),
       });
+
+      const objectKnowledgeKey = objectKnowledgeKeyForAutopilotIntent(autopilotDecision.metadata.intent);
+      if (objectKnowledgeKey) {
+        const knowledgeStatus = resolveObjectKnowledgeStatusForAudit({
+          key: objectKnowledgeKey,
+          context: autopilotContext,
+          missingContext: autopilotDecision.metadata.missingContext,
+        });
+        audit_object_knowledge_reply({
+          message_id: firstUsefulText(
+            envelope.metadata?.providerMessageId,
+            envelope.metadata?.externalMessageId,
+            update_id,
+          ) ?? String(update_id),
+          object_id: autopilotContext.object?.id ?? null,
+          intent: autopilotDecision.metadata.intent,
+          knowledge_key: objectKnowledgeKey,
+          knowledge_found: knowledgeStatus === 'found' || knowledgeStatus === 'stale' || knowledgeStatus === 'low_confidence',
+          knowledge_status: knowledgeStatus,
+          source_type: null,
+          confidence: null,
+          last_verified_at: null,
+          reply_source:
+            autopilotDecision.action === 'auto_reply'
+              ? 'object_knowledge'
+              : autopilotDecision.action === 'escalate'
+                ? 'operator_review'
+                : 'fallback',
+          guest_reply_redacted: autopilotDecision.replyText ?? null,
+        });
+      }
 
       if (autopilotDecision.metadata.llmRouter?.used) {
         auditLLM({ chat_id: chatId, update_id, used_fallback: true });
@@ -1586,7 +1869,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         });
       } else if (canUseAutopilotReply && autopilotDecision.action === 'needs_context') {
         replyText = adapter.formatResponse(
-          composeAutopilotContextClarifier({ decision: autopilotDecision, lang: classification.lang }),
+          composeCommunicationAutopilotContextReply({ decision: autopilotDecision, lang: classification.lang }),
           commContext as unknown as Record<string, unknown>,
         );
         llmSucceeded = true;
@@ -2852,6 +3135,24 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
 
+    if (telegramGuestAgentShadowAudit) {
+      auditTelegramGuestAgentShadow({
+        chat_id: chatId,
+        update_id,
+        mvp_intent: telegramGuestAgentShadowAudit.mvp_intent,
+        semantic_intent: telegramGuestAgentShadowAudit.semantic_intent,
+        agent_intent: telegramGuestAgentShadowAudit.agent.intent,
+        agent_confidence: telegramGuestAgentShadowAudit.agent.confidence,
+        agent_safe_reply_draft: telegramGuestAgentShadowAudit.agent.safe_reply_draft,
+        final_sent_reply: replyText,
+        mismatch_reason: telegramGuestAgentShadowAudit.mismatch_reason,
+        would_agent_have_helped: telegramGuestAgentShadowAudit.would_agent_have_helped,
+        requested_action: telegramGuestAgentShadowAudit.agent.requested_action,
+        required_data: telegramGuestAgentShadowAudit.agent.required_data,
+        escalation_needed: telegramGuestAgentShadowAudit.agent.escalation_needed,
+      });
+    }
+
     updateContext(chatId, { lastIntent: intentResult.intent });
     cp('memory/context.update.last_intent.done', { chat_id: chatId });
 
@@ -3072,7 +3373,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
     }
 
-    const isDryRun = process.env.TELEGRAM_DRY_RUN === '1' && envelope.channel === 'telegram';
+    const isDryRun =
+      (isTelegramOutboundDryRun() && envelope.channel === 'telegram') ||
+      (shouldSuppressEmailOutbound() && envelope.channel === 'email');
     if (pipeDebug) {
       console.log('[comm:pipeline] outbound.dispatch', {
         corr_id: corrId,
@@ -3081,6 +3384,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         channel: envelope.channel,
         target_id: String(targetId),
         dry_run: isDryRun,
+        email_draft_only: envelope.channel === 'email' && shouldSuppressEmailOutbound(),
         reply_len: replyText.length,
       });
     }
@@ -3114,6 +3418,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                       update_id,
                       category: classification.category,
                       telegramMetaRouteKind,
+                      isEscalation: Boolean(escalation),
                     }),
                   ),
               });

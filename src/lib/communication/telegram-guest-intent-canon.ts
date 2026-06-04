@@ -7,6 +7,8 @@ export type TelegramGuestCanonIntent =
   | 'checkin_code_request'
   | 'checkin_info'
   | 'property_directions'
+  | 'waste_disposal_info'
+  | 'baby_crib_request'
   | 'maintenance'
   | 'cleaning_housekeeping'
   | 'booking_missing_details'
@@ -18,6 +20,7 @@ export type TelegramGuestCanonActionType =
   | 'access_support'
   | 'property_directions_support'
   | 'route_to_property'
+  | 'object_knowledge_support'
   | 'maintenance'
   | 'cleaning_housekeeping'
   | 'booking_payment_support';
@@ -136,6 +139,22 @@ export const TELEGRAM_GUEST_INTENT_CANON_V1: readonly TelegramGuestCanonRule[] =
     escalate: false,
     reply:
       'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.',
+  },
+  {
+    intent: 'waste_disposal_info',
+    examples: ['где мусорные баки', 'куда вынести мусор', 'где контейнеры для мусора'],
+    replyType: 'action_ack',
+    actionType: 'object_knowledge_support',
+    escalate: false,
+    reply: 'Напишите, пожалуйста, номер бронирования или адрес объекта. Я проверю информацию.',
+  },
+  {
+    intent: 'baby_crib_request',
+    examples: ['есть ли детская кроватка', 'нужна детская кроватка', 'можно детскую кроватку'],
+    replyType: 'action_ack',
+    actionType: 'object_knowledge_support',
+    escalate: false,
+    reply: 'Напишите, пожалуйста, номер бронирования или адрес объекта. Я проверю информацию.',
   },
   {
     intent: 'maintenance',
@@ -341,6 +360,17 @@ const DIRECTIONS_PATTERNS = [
   /(шереметьев|внуков|домодед|пулков|аэропорт|вокзал|метро).{0,32}(до|к\s+)?(квартир|объект|апартамент|номер|адрес)/,
 ];
 
+const WASTE_INFO_PATTERNS = [
+  /(мусор|баки|контейнер|выбросить|выносить|утилизац|recycling|trash|garbage|waste)/,
+  /(где|куда).{0,32}(баки|мусор|контейнер)/,
+];
+
+const BABY_CRIB_PATTERNS = [
+  /(детск|ребен|ребён|малыш).{0,32}(кроват|люльк|манеж)/,
+  /(кроват|люльк|манеж).{0,32}(детск|ребен|ребён|малыш)/,
+  /(baby\s+crib|cot|child\s+bed)/,
+];
+
 export function resolveTelegramGuestIntentCanon(text: string): TelegramGuestCanonMatch {
   const normalized = normalizeTelegramGuestCanonText(text);
 
@@ -378,6 +408,8 @@ export function resolveTelegramGuestIntentCanon(text: string): TelegramGuestCano
     };
   }
   if (hasAny(normalized, MAINTENANCE_PATTERNS)) return { ...canonRule('maintenance'), replyCount: 1 };
+  if (hasAny(normalized, WASTE_INFO_PATTERNS)) return { ...canonRule('waste_disposal_info'), replyCount: 1 };
+  if (hasAny(normalized, BABY_CRIB_PATTERNS)) return { ...canonRule('baby_crib_request'), replyCount: 1 };
   if (hasAny(normalized, CLEANING_PATTERNS)) return { ...canonRule('cleaning_housekeeping'), replyCount: 1 };
   if (hasAny(normalized, BOOKING_MISSING_PATTERNS)) return { ...canonRule('booking_missing_details'), replyCount: 1 };
   if (hasAny(normalized, PAYMENT_BOOKING_PATTERNS)) return { ...canonRule('payment_booking'), replyCount: 1 };

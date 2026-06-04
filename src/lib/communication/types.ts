@@ -453,6 +453,7 @@ export enum AuditEventType {
   OperationsActionCreated = 'OPERATIONS_ACTION_CREATED',
   OperationsActionDeduped = 'OPERATIONS_ACTION_DEDUPED',
   AutonomousDecision = 'AUTONOMOUS_DECISION',
+  GuestAgentShadow = 'GUEST_AGENT_SHADOW',
   IdentityDecision  = 'IDENTITY_DECISION',
   PersistError      = 'PERSIST_ERROR',
   UnhandledError    = 'UNHANDLED_ERROR',

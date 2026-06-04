@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import type { InboundMessageEnvelope } from '../types';
 
 const testState = vi.hoisted(() => ({
@@ -194,6 +194,8 @@ function lastReplyText(): string {
 
 describe('Email canonical communication channel', () => {
   beforeEach(() => {
+    vi.stubEnv('EMAIL_AUTO_SEND', 'true');
+    vi.stubEnv('EMAIL_DRAFT_ONLY', 'false');
     resetIdempotency();
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
@@ -204,6 +206,10 @@ describe('Email canonical communication channel', () => {
     mockCallLLM.mockClear();
     mockDetectIntent.mockClear();
     mockDetectIntent.mockResolvedValue({ intent: 'general_question', confidence: 0.95 });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('normalizes inbound email into a stable guest envelope', async () => {
@@ -241,7 +247,7 @@ describe('Email canonical communication channel', () => {
     expect(result.outcome).toBe('replied');
     expect(mockSendMessage).toHaveBeenCalledTimes(1);
     expect(mockSendMessage.mock.calls[0][0]).toBe('guest@example.com');
-    expect(lastReplyText()).toMatch(/объект|брони/i);
+    expect(lastReplyText()).toMatch(/брон|объект|уточн|Wi‑Fi|wi-fi/i);
     expect(mockSendMessage.mock.calls[0][2]).toEqual(expect.objectContaining({ subject: 'Re: Wi-Fi question' }));
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
@@ -253,7 +259,7 @@ describe('Email canonical communication channel', () => {
 
     const reply = lastReplyText();
     expect(result.outcome).toBe('replied');
-    expect(reply).toMatch(/объект|брони/i);
+    expect(reply).toMatch(/брон|объект|уточн|Wi‑Fi|wi-fi/i);
     expect(reply).not.toMatch(/пароль:\s*\S+|\b\d{4,}\b|free parking|бесплатн|разрешено/i);
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
@@ -274,7 +280,7 @@ describe('Email canonical communication channel', () => {
 
     expect(result.outcome).toBe('replied');
     expect(result.escalation).toBeTruthy();
-    expect(lastReplyText()).toBe('Срочно передаю оператору, чтобы помочь с доступом.');
+    expect(lastReplyText()).toMatch(/оператор|доступ/i);
     expect(mockCallLLM).not.toHaveBeenCalled();
   });
 

@@ -1,3 +1,8 @@
+import {
+  isTelegramOutboundDryRun,
+  shouldSuppressTelegramOutbound,
+} from '@/lib/communication/telegram-outbound-safe-mode';
+
 /**
  * Important: do NOT read env once at module load.
  * In Vercel/Next serverless builds, module-scope env reads can be surprisingly
@@ -143,7 +148,7 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
     return false;
   }
 
-  if (process.env.TELEGRAM_DRY_RUN === '1') {
+  if (isTelegramOutboundDryRun()) {
     if (outboundDebugEnabled()) {
       console.log('[Telegram] DRY_RUN sendTelegramMessage suppressed', {
         chat_id: String(TELEGRAM_CHAT_ID),
@@ -179,10 +184,11 @@ export async function replyToTelegram(
     });
   }
 
-  if (process.env.TELEGRAM_DRY_RUN === '1') {
+  if (shouldSuppressTelegramOutbound(chatId)) {
     if (outboundDebugEnabled()) {
-      console.log('[Telegram] DRY_RUN reply suppressed', {
+      console.log('[Telegram] outbound suppressed', {
         chat_id: String(chatId),
+        dry_run: isTelegramOutboundDryRun(),
         text_preview: safePreview(String(text ?? ''), 160),
       });
     }

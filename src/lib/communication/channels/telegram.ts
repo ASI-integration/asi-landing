@@ -1,6 +1,20 @@
 import { ChannelAdapter } from './base';
 import { CommunicationChannel } from '../types';
 import { replyToTelegram } from '../../telegram';
+import { getVoiceReplyMode, sendVoiceReply } from '../voice-reply';
+
+function voiceReplyRequested(metadata?: Record<string, unknown>): boolean {
+  if (process.env.VOICE_REPLY_ENABLED !== '1') return false;
+  const mode = getVoiceReplyMode();
+  if (mode === 'text') return false;
+  if (mode === 'voice' || mode === 'both') return true;
+  return metadata?.voice_reply_source === 'inbound_voice';
+}
+
+function voiceFallbackText(content: string): string {
+  const text = String(content ?? '').trim();
+  return text || 'Спасибо, сообщение получил. Уточню детали и вернусь с ответом.';
+}
 
 export class TelegramAdapter implements ChannelAdapter {
   channel: CommunicationChannel = 'telegram';
@@ -10,6 +24,24 @@ export class TelegramAdapter implements ChannelAdapter {
     if (isNaN(chatId)) return false;
 
     try {
+      const textFallback = voiceFallbackText(content);
+      if (voiceReplyRequested(metadata)) {
+        const voiceSent = await sendVoiceReply(chatId, textFallback, {
+          chatId,
+          voiceEnabled: true,
+          isEscalation: Boolean(metadata?.voice_reply_is_escalation),
+          isPayment: Boolean(metadata?.voice_reply_is_payment),
+          isCheckinInstructions: Boolean(metadata?.voice_reply_is_checkin_instructions),
+        });
+        if (voiceSent && getVoiceReplyMode() !== 'both') return true;
+        if (!voiceSent) {
+          console.warn('[tg:voice] voice_reply.text_fallback', {
+            chat_id: chatId,
+            update_id: typeof metadata?.update_id === 'number' ? metadata.update_id : null,
+          });
+        }
+      }
+
       // `replyToTelegram()` returns boolean (it does not throw on HTTP/network failure),
       // so we must propagate that result to the orchestrator.
       const handler =
@@ -18,7 +50,7 @@ export class TelegramAdapter implements ChannelAdapter {
           : 'telegram_adapter:unspecified_handler';
       const updateIdRaw = metadata?.update_id;
       const update_id = typeof updateIdRaw === 'number' && Number.isFinite(updateIdRaw) ? updateIdRaw : undefined;
-      return await replyToTelegram(chatId, content, { handler, update_id });
+      return await replyToTelegram(chatId, textFallback, { handler, update_id });
     } catch (e) {
       console.error('[TelegramAdapter] Failed to send message', e);
       return false;

@@ -91,6 +91,19 @@ function getFallbackProvider(): SttProviderId {
   return 'disabled';
 }
 
+function getVoiceSttRelayConfig(): { baseUrl: string; apiKey: string; model: string } | null {
+  const baseUrlRaw = (process.env.VOICE_STT_BASE_URL ?? '').trim();
+  if (!baseUrlRaw) return null;
+  const baseUrl = normalizeBaseUrl(baseUrlRaw);
+  const apiKey =
+    (process.env.VOICE_STT_API_KEY ?? '').trim() ||
+    (process.env.VOICE_STT_RELAY_TOKEN ?? '').trim() ||
+    (process.env.OPENAI_API_KEY ?? '').trim() ||
+    'relay';
+  const model = (process.env.VOICE_STT_MODEL ?? '').trim() || defaultModelForBaseUrl(baseUrl);
+  return { baseUrl, apiKey, model };
+}
+
 function getProviderConfig(provider: Exclude<SttProviderId, 'disabled'>): { baseUrl: string; apiKey: string; model: string } | null {
   if (provider === 'openai') {
     const apiKey = (process.env.OPENAI_API_KEY ?? '').trim();
@@ -366,6 +379,34 @@ export async function transcribeWithConfiguredStt(params: {
   if (process.env.VOICE_TRANSCRIPTION_DISABLED === '1') {
     if (debugEnabled()) console.info('[voice:stt] transcription.disabled');
     return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', message: 'VOICE_TRANSCRIPTION_DISABLED' } };
+  }
+
+  const relay = getVoiceSttRelayConfig();
+  if (relay) {
+    console.info('[voice:stt] selection', {
+      update_id: params.ctx?.updateId ?? null,
+      primary: 'google_stt_relay',
+      baseUrl: relay.baseUrl,
+      model: relay.model,
+    });
+    const relayAttempt = await transcribeOpenAiCompatible({
+      provider: 'openai',
+      baseUrl: relay.baseUrl,
+      apiKey: relay.apiKey,
+      model: relay.model,
+      audioBuffer: params.audioBuffer,
+      filename: params.filename,
+      ctx: params.ctx,
+    });
+    if (relayAttempt.ok) {
+      return { ok: true, provider: 'openai', usedFallback: false, text: relayAttempt.text };
+    }
+    return {
+      ok: false,
+      provider: 'openai',
+      usedFallback: false,
+      fail: relayAttempt.fail ?? { kind: 'unexpected' },
+    };
   }
 
   const primary = getPrimaryProvider();

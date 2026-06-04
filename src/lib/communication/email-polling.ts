@@ -1,5 +1,5 @@
-import { processMessage } from './orchestrator';
 import { EmailAdapter, type EmailInboundPayload } from './channels/email';
+import { processEmailInbound } from './email-inbound-processor';
 
 export type EmailPollingConfig = {
   configured: boolean;
@@ -51,8 +51,7 @@ export async function pollEmailInboxOnce(params: {
   const adapter = params.adapter ?? new EmailAdapter();
   const messages = await params.fetchInbound(config);
   for (const raw of messages) {
-    const envelope = await adapter.normalizeInbound(raw);
-    await processMessage(envelope);
+    await processEmailInbound({ payload: raw, adapter });
   }
   return { ok: true, processed: messages.length };
 }

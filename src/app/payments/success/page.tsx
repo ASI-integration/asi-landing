@@ -1,18 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 
 export default function PaymentSuccessPage() {
-  const searchParams = useSearchParams();
-  const reportId = searchParams.get('reportId')?.trim();
-  const requestId = searchParams.get('requestId')?.trim();
-  const reportHref = reportId
-    ? `/dashboard/reports/${encodeURIComponent(reportId)}`
-    : requestId
-      ? `/dashboard/reports/${encodeURIComponent(requestId)}`
-      : '/dashboard/reports';
-
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-gray-50 text-gray-900">
       <div className="mx-auto max-w-sm rounded-lg bg-white p-6 shadow-sm text-center border border-gray-100">
@@ -23,13 +13,13 @@ export default function PaymentSuccessPage() {
         </div>
         <h1 className="mb-2 text-xl font-bold">Оплата подтверждена</h1>
         <p className="text-sm text-gray-600 mb-6">
-          Отчёт будет открыт из сохранённой ссылки. Если расчёт ещё идёт, страница покажет текущий статус.
+          Оплачен ранний доступ к AI-коммуникациям для посуточной аренды: 1 объект, 1 месяц.
         </p>
         <Link
-          href={reportHref}
+          href="/ru/early-access#pilot-form"
           className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
         >
-          Открыть отчёт
+          Заполнить анкету объекта
         </Link>
       </div>
     </div>

@@ -1,6 +1,11 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
+import {
+  COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
+  COMMUNICATION_PILOT_PRICE_RUB,
+  COMMUNICATION_PILOT_SERVICE_TITLE,
+} from '@/lib/payments/yookassa-env';
 
 export const metadata: Metadata = {
   title: 'Оплата — ASI',
@@ -20,6 +25,12 @@ export default function RuPaymentPage() {
         предоставляется после подтверждения оплаты.
       </p>
       <p>Стоимость услуг указывается на сайте в рублях Российской Федерации.</p>
+      <section className="space-y-2 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] p-4">
+        <h2 className="text-base font-semibold text-[var(--t-text)]">Текущая услуга раннего доступа</h2>
+        <p>{COMMUNICATION_PILOT_SERVICE_TITLE}</p>
+        <p>{COMMUNICATION_PILOT_PAYMENT_DESCRIPTION}</p>
+        <p>Стоимость: {COMMUNICATION_PILOT_PRICE_RUB} ₽ за объект в месяц.</p>
+      </section>
       <p>
         При необходимости пользователь может запросить подтверждение оплаты, обратившись по контактам, указанным на
         странице «Контакты».

@@ -9,15 +9,15 @@ export default function PaymentCancelPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h1 className="mb-2 text-xl font-bold">Payment Cancelled</h1>
+        <h1 className="mb-2 text-xl font-bold">Оплата не завершена</h1>
         <p className="text-sm text-gray-600 mb-6">
-          The payment process was interrupted. No charges were made. You can return to Telegram and ask for a new link if needed.
+          Оплата раннего доступа к AI-коммуникациям не завершена. Списание не выполнено.
         </p>
         <button
           onClick={() => window.close()}
           className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2"
         >
-          Close Window
+          Закрыть окно
         </button>
       </div>
     </div>

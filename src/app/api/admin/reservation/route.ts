@@ -2,7 +2,7 @@
  * Admin endpoint: read a guest reservation record.
  *
  * GET /api/admin/reservation?reservation_ref=ABC-123
- * GET /api/admin/reservation?chat_id=931919812
+ * GET /api/admin/reservation?chat_id=920001
  * Header: x-admin-secret: {ADMIN_SECRET}
  *
  * Returns:

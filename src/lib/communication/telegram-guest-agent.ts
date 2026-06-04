@@ -1,3 +1,6 @@
+import {
+  composeGuestDirectionsReplyRu,
+} from './telegram-booking-object-memory';
 import type { CommunicationAutopilotContext, CommunicationAutopilotDecision } from './autopilot';
 import { classifyWithConfiguredLlmRouter } from './llm-router/provider';
 import type { LlmRouterAttemptAudit, LlmRouterDecision, LlmRouterProvider } from './llm-router/types';
@@ -15,6 +18,7 @@ import {
 } from './telegram-guest-intent-canon';
 
 export type TelegramGuestAgentAction = 'auto_reply' | 'ask_clarification' | 'escalate' | 'policy_handoff';
+export type TelegramGuestAgentMode = 'off' | 'shadow' | 'assist' | 'controlled_override' | 'primary';
 
 export type TelegramGuestAgentSafetyFlag =
   | 'urgent_access'
@@ -47,6 +51,78 @@ export type TelegramGuestAgentDecision = {
   };
 };
 
+export type TelegramGuestAgentShadowDraft = {
+  intent: string;
+  confidence: number;
+  requested_action: TelegramGuestAgentAction;
+  required_data: string[];
+  safe_reply_draft: string | null;
+  escalation_needed: boolean;
+  can_auto_reply: boolean;
+  safety_flags: TelegramGuestAgentSafetyFlag[];
+};
+
+export function getTelegramGuestAgentMode(): TelegramGuestAgentMode {
+  const raw = String(process.env.TELEGRAM_GUEST_AGENT_MODE ?? 'off').trim().toLowerCase();
+  if (raw === 'shadow') return 'shadow';
+  if (raw === 'assist') return 'assist';
+  if (raw === 'controlled_override' || raw === 'controlled-override') return 'controlled_override';
+  if (raw === 'primary') return 'primary';
+  return 'off';
+}
+
+export function buildTelegramGuestAgentShadowDraft(
+  decision: TelegramGuestAgentDecision,
+): TelegramGuestAgentShadowDraft {
+  return {
+    intent: decision.intent,
+    confidence: decision.confidence,
+    requested_action: decision.action,
+    required_data: requiredDataForAgentDecision(decision),
+    safe_reply_draft:
+      decision.reply_text ??
+      'Понял. Пришлите номер брони или адрес объекта, и я проверю точные данные.',
+    escalation_needed: decision.needs_operator || decision.action === 'escalate' || decision.action === 'policy_handoff',
+    can_auto_reply: decision.can_auto_reply,
+    safety_flags: decision.safety_flags,
+  };
+}
+
+function requiredDataForAgentDecision(decision: TelegramGuestAgentDecision): string[] {
+  const required = new Set<string>();
+  if (decision.needs_booking_lookup) {
+    required.add('booking.id_or_guest_phone');
+  }
+  if (decision.needs_operator) {
+    required.add('operator_review');
+  }
+  if (decision.safety_flags.includes('door_code')) {
+    required.add('booking.verification_before_access_secret');
+  }
+  if (decision.intent === 'address_instruction') {
+    required.add('object.address_or_directions');
+  }
+  if (decision.intent === 'wifi_access') {
+    required.add('object.wifi_credentials');
+  }
+  if (decision.intent === 'wifi_problem') {
+    required.add('object.wifi_network_status');
+  }
+  if (decision.intent === 'parking') {
+    required.add('object.parking_policy');
+  }
+  if (decision.intent === 'waste_disposal_info') {
+    required.add('object.waste_disposal_policy');
+  }
+  if (decision.intent === 'baby_crib_request') {
+    required.add('object.baby_crib_policy');
+  }
+  if (decision.intent === 'early_checkin_late_checkout') {
+    required.add('booking.checkout_policy');
+  }
+  return Array.from(required);
+}
+
 const POLICY_GUARD_CANON_INTENTS = new Set<TelegramGuestCanonIntent>([
   'access_urgent',
   'checkin_code_request',
@@ -75,6 +151,13 @@ export function shouldUseTelegramLlmDefault(input: {
   if (!input.messageText.trim()) return false;
   if (isTelegramPolicyGuardCanonIntent(input.canonIntent)) return false;
   if (isTelegramPolicyGuardAutopilotIntent(input.autopilotIntent)) return false;
+  if (
+    ['baby_crib_request', 'waste_disposal_info', 'wifi', 'wifi_access', 'wifi_problem', 'parking'].includes(
+      input.autopilotIntent,
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -201,6 +284,17 @@ function mapAgentIntentToAutopilotIntent(intent: string): CommunicationAutopilot
       return 'check_in_access';
     case 'address_instruction':
       return 'address_instruction';
+    case 'baby_crib_request':
+      return 'baby_crib_request';
+    case 'waste_disposal_info':
+      return 'waste_disposal_info';
+    case 'parking':
+      return 'parking';
+    case 'early_checkin_late_checkout':
+      return 'early_checkin_late_checkout';
+    case 'wifi_access':
+    case 'wifi_problem':
+      return intent;
     case 'booking_lookup_missing_details':
       return 'booking_lookup_missing_details';
     case 'booking_payment_support':
@@ -339,15 +433,39 @@ function resolvePolicyGuardDecision(input: {
 
   if (canon.intent === 'property_directions') {
     const hasContext = hasPropertyDirectionsContext(input.context);
+    const grounded = hasContext
+      ? composeGuestDirectionsReplyRu(
+          input.context?.object
+            ? {
+                object_id: input.context.object.id ?? '',
+                object_name: input.context.object.name ?? null,
+                address: input.context.object.address ?? null,
+                directions_text: input.context.object.directionsText ?? input.context.object.accessInstructions ?? null,
+                parking_text: input.context.object.parkingText ?? null,
+                trash_bins_location: input.context.object.trashBinsLocation ?? null,
+                waste_disposal_text: input.context.object.wasteDisposalText ?? null,
+                wifi_name: input.context.object.wifiName ?? null,
+                wifi_password: input.context.object.wifiPassword ?? null,
+                baby_crib_available: input.context.object.babyCribAvailable ?? null,
+                baby_crib_note: input.context.object.babyCribNote ?? null,
+                check_in_text: input.context.object.accessInstructions ?? null,
+                checkout_time: input.context.booking?.checkoutTime ?? null,
+                house_rules_text: input.context.object.houseRules ?? null,
+                door_code_notes: null,
+                knowledge_status: input.context.object.knowledgeStatus,
+              }
+            : null,
+        )
+      : null;
     return {
       intent: 'address_instruction',
       confidence: 0.95,
-      action: hasContext ? 'auto_reply' : 'ask_clarification',
+      action: hasContext && grounded ? 'auto_reply' : 'ask_clarification',
       needs_booking_lookup: !hasContext,
       needs_operator: false,
-      can_auto_reply: true,
+      can_auto_reply: Boolean(grounded),
       safety_flags: ['no_invented_facts'],
-      reply_text: resolvePropertyDirectionsReply(hasContext),
+      reply_text: grounded ?? resolvePropertyDirectionsReply(hasContext),
       source: 'policy_guard',
       llmRouter: { used: false, provider: 'policy_guard', validation: 'skipped' },
     };
@@ -540,6 +658,36 @@ function mapLlmRouterToAgentDecision(
       needs_operator: decision.shouldEscalate,
       can_auto_reply: false,
       safety_flags: ['no_invented_facts'],
+      reply_text: decision.reply,
+      source: 'llm_router',
+      llmRouter,
+    };
+  }
+
+  if (decision.intent === 'parking_question') {
+    return {
+      intent: 'parking',
+      confidence: decision.confidence,
+      action: 'ask_clarification',
+      needs_booking_lookup: decision.needsBookingDetails,
+      needs_operator: decision.shouldEscalate,
+      can_auto_reply: false,
+      safety_flags: ['no_invented_facts'],
+      reply_text: decision.reply,
+      source: 'llm_router',
+      llmRouter,
+    };
+  }
+
+  if (decision.intent === 'late_checkout') {
+    return {
+      intent: 'early_checkin_late_checkout',
+      confidence: decision.confidence,
+      action: 'ask_clarification',
+      needs_booking_lookup: true,
+      needs_operator: decision.shouldEscalate,
+      can_auto_reply: false,
+      safety_flags: ['booking_change', 'no_invented_facts'],
       reply_text: decision.reply,
       source: 'llm_router',
       llmRouter,

@@ -1,5 +1,6 @@
 import { PaymentProvider, PaymentRequest, PaymentStatus } from './types';
 import {
+  COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
   getYooKassaCredentials,
   getYooKassaReturnUrl,
   isYooKassaEnabled,
@@ -116,9 +117,10 @@ export class YookassaProvider implements PaymentProvider, YooKassaProviderSkelet
           type: 'redirect',
           return_url: getYooKassaReturnUrl(params.reservationId ?? params.id),
         },
-        ...(params.description ? { description: params.description } : {}),
+        description: params.description || COMMUNICATION_PILOT_PAYMENT_DESCRIPTION,
         metadata: {
           payment_id: params.id,
+          service_type: params.serviceType ?? 'communication_pilot_object_month',
           ...(params.reservationId ? { request_id: params.reservationId } : {}),
         },
       }),

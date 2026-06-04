@@ -7,14 +7,37 @@ import {
 } from './llm-router/validate-llm-router-decision';
 import type { LlmRouterAttemptAudit, LlmRouterDecision, LlmRouterProvider } from './llm-router/types';
 import {
+  buildTelegramGuestAgentShadowDraft,
   decideTelegramGuestAgentTurn,
+  getTelegramGuestAgentMode,
   mapAgentDecisionToAutopilot,
+  type TelegramGuestAgentShadowDraft,
 } from './telegram-guest-agent';
+import {
+  buildGuestMissingContextReplyRu,
+  composeGuestBabyCribReplyRu,
+  composeGuestCheckoutReplyRu,
+  composeGuestDirectionsReplyRu,
+  composeGuestParkingReplyRu,
+  composeGuestWasteReplyRu,
+  composeGuestWifiReplyRu,
+} from './telegram-booking-object-memory';
+import {
+  classifyTelegramGuestSemanticDeterministic,
+  mapSemanticRouterToAutopilotIntent,
+  routeTelegramGuestSemantic,
+  type SemanticAutopilotClassification,
+  type TelegramSemanticRouterProvider,
+} from './telegram-semantic-router';
+import type { ObjectKnowledgeStatus } from './object-knowledge';
+import {
+  resolveWifiProblemPolicy,
+  type WifiEscalationAudit,
+} from './wifi-escalation-policy';
 import {
   CHECKIN_READINESS_ACCESS_REPLY,
   hasPropertyDirectionsContext,
   PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY,
-  PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY,
   resolvePropertyDirectionsReply,
   resolveTelegramGuestIntentCanon,
 } from './telegram-guest-intent-canon';
@@ -25,7 +48,12 @@ export type CommunicationAutopilotIntent =
   | 'check_in_access'
   | 'address_instruction'
   | 'wifi'
+  | 'wifi_access'
+  | 'wifi_problem'
+  | 'parking'
+  | 'waste_disposal_info'
   | 'checkout'
+  | 'baby_crib_request'
   | 'early_checkin_late_checkout'
   | 'booking_lookup_missing_details'
   | 'checkin_code_request'
@@ -60,16 +88,27 @@ export type CommunicationAutopilotContext = {
     checkoutTime?: string;
     earlyCheckInAvailable?: boolean;
     lateCheckoutAvailable?: boolean;
+    verified?: boolean;
   };
   object?: {
     id?: string;
     name?: string;
     address?: string;
+    directionsText?: string;
+    parkingText?: string;
+    trashBinsLocation?: string;
+    wasteDisposalText?: string;
     accessInstructions?: string;
     accessCode?: string;
     wifiName?: string;
     wifiPassword?: string;
+    babyCribAvailable?: boolean;
+    babyCribNote?: string;
+    houseRules?: string;
+    knowledgeStatus?: Partial<Record<string, ObjectKnowledgeStatus>>;
   };
+  bookingVerified?: boolean;
+  propertyResolved?: boolean;
 };
 
 export type CommunicationAutopilotMetadata = {
@@ -90,7 +129,131 @@ export type CommunicationAutopilotMetadata = {
     modelName?: string;
     attempts?: LlmRouterAttemptAudit[];
   };
+  semanticRouter?: {
+    used: boolean;
+    provider: string;
+    intent: string;
+    topic: string;
+    source: 'llm' | 'deterministic';
+    guestSafeSummary?: string;
+    knowledgeKeys?: string[];
+    reason?: string;
+    modelName?: string;
+    mvpIntent?: string;
+    semanticIntent?: string;
+    semanticConfidence?: number;
+    finalIntent?: string;
+    semanticOverrideApplied?: boolean;
+    overrideReason?: string;
+  };
+  guestAgentShadow?: {
+    mode: 'shadow';
+    mvp_intent: string;
+    semantic_intent: string | null;
+    semantic_confidence: number | null;
+    final_live_intent: string;
+    agent: TelegramGuestAgentShadowDraft;
+    mismatch_reason: string | null;
+    would_agent_have_helped: boolean;
+  };
+  wifiEscalation?: WifiEscalationAudit;
 };
+
+export type CommunicationAutopilotWifiSession = {
+  previousReply?: string | null;
+  continuationUsed?: boolean;
+  previousIntent?: string | null;
+};
+
+const MVP_SEMANTIC_VERIFY_INTENTS = new Set<CommunicationAutopilotIntent>([
+  'wifi_access',
+  'wifi_problem',
+  'waste_disposal_info',
+  'cleaning_issue',
+  'check_in_access',
+  'checkin_code_request',
+  'urgent_access_problem',
+  'checkout',
+  'early_checkin_late_checkout',
+  'parking',
+  'baby_crib_request',
+  'address_instruction',
+]);
+
+const SEMANTIC_OVERRIDE_MIN_CONFIDENCE = 0.75;
+const SEMANTIC_RESOLVE_UNKNOWN_MIN_CONFIDENCE = 0.65;
+
+function shouldRunSemanticRouterForMvp(mvpIntent: CommunicationAutopilotIntent): boolean {
+  return mvpIntent === 'unknown' || MVP_SEMANTIC_VERIFY_INTENTS.has(mvpIntent);
+}
+
+function semanticResultTrusted(input: {
+  ok: boolean;
+  source: 'llm' | 'deterministic';
+  confidence: number;
+}): boolean {
+  if (input.ok && input.source === 'llm') return true;
+  return input.source === 'deterministic' && input.confidence >= 0.88;
+}
+
+function resolveSemanticVerifier(input: {
+  mvpIntent: CommunicationAutopilotIntent;
+  semantic: SemanticAutopilotClassification;
+  semanticRaw: { confidence: number; intent: string; source: 'llm' | 'deterministic' };
+  semanticRouteOk: boolean;
+}): {
+  semanticClassification?: SemanticAutopilotClassification;
+  overrideApplied: boolean;
+  overrideReason?: string;
+} {
+  const { mvpIntent, semantic, semanticRaw, semanticRouteOk } = input;
+
+  if (!shouldRunSemanticRouterForMvp(mvpIntent)) {
+    return { semanticClassification: undefined, overrideApplied: false };
+  }
+
+  if (mvpIntent === 'unknown') {
+    if (semantic.intent !== 'unknown' && semanticRaw.confidence >= SEMANTIC_RESOLVE_UNKNOWN_MIN_CONFIDENCE) {
+      return {
+        semanticClassification: semantic,
+        overrideApplied: true,
+        overrideReason: 'semantic_resolved_unknown',
+      };
+    }
+    return {
+      semanticClassification: undefined,
+      overrideApplied: false,
+      overrideReason: input.semanticRouteOk ? undefined : 'kept_unknown',
+    };
+  }
+
+  if (semantic.intent !== mvpIntent && semantic.intent !== 'unknown') {
+    if (
+      semanticRaw.confidence >= SEMANTIC_OVERRIDE_MIN_CONFIDENCE &&
+      semanticResultTrusted({ ok: semanticRouteOk, source: semanticRaw.source, confidence: semanticRaw.confidence })
+    ) {
+      return {
+        semanticClassification: semantic,
+        overrideApplied: true,
+        overrideReason: 'semantic_override_mvp_conflict',
+      };
+    }
+    return {
+      semanticClassification: undefined,
+      overrideApplied: false,
+      overrideReason:
+        semanticRaw.confidence < SEMANTIC_OVERRIDE_MIN_CONFIDENCE
+          ? 'kept_mvp_low_semantic_confidence'
+          : 'kept_mvp_semantic_untrusted',
+    };
+  }
+
+  return {
+    semanticClassification: undefined,
+    overrideApplied: false,
+    overrideReason: semantic.intent === mvpIntent ? 'semantic_confirmed_mvp' : 'kept_mvp_semantic_unknown',
+  };
+}
 
 export type CommunicationAutopilotDecision = {
   action: CommunicationAutopilotAction;
@@ -113,6 +276,7 @@ const INTENT_RULES: readonly IntentRule[] = [
     patterns: [
       /(can(?:not|'t)|unable|cannot)\s+(enter|get\s+in|open|access)/i,
       /(door|lock|key|code).{0,28}(does\s+not\s+work|doesn't\s+work|not\s+working|broken|stuck|wrong)/i,
+      /(домофон|подъезд|вход|дверь).{0,28}(не\s+открывает|не\s+работает|не\s+пускает|сломал)/i,
       /(urgent|emergency|outside|stuck).{0,40}(access|door|lock|key|code|enter|get\s+in)/i,
     ],
   },
@@ -180,9 +344,35 @@ const INTENT_RULES: readonly IntentRule[] = [
     ],
   },
   {
-    intent: 'wifi',
+    intent: 'wifi_access',
     confidence: 0.9,
-    patterns: [/(wi[\s-]?fi|вай[\s-]?фай|интернет|пароль)/i],
+    patterns: [
+      /(wi[\s-]?fi|вай[\s-]?фай|интернет)/i,
+      /парол[ья]?.{0,18}(wifi|wi[\s-]?fi|вай[\s-]?фай|интернет)/i,
+      /(wifi|wi[\s-]?fi|вай[\s-]?фай|интернет).{0,40}(парол|password|подключ|данные|сеть)/i,
+    ],
+  },
+  {
+    intent: 'parking',
+    confidence: 0.88,
+    patterns: [/(парков|где\s+припарк|можно\s+ли\s+парков|стоянк)/i, /(parking|park\s+car|where\s+to\s+park)/i],
+  },
+  {
+    intent: 'waste_disposal_info',
+    confidence: 0.89,
+    patterns: [
+      /(мусор|баки|контейнер|выбросить|выносить|утилизац|recycling|trash|garbage|waste)/i,
+      /(где|куда).{0,32}(баки|мусор|контейнер)/i,
+    ],
+  },
+  {
+    intent: 'baby_crib_request',
+    confidence: 0.9,
+    patterns: [
+      /(детск|ребен|ребён|малыш).{0,32}(кроват|люльк|манеж)/i,
+      /(кроват|люльк|манеж).{0,32}(детск|ребен|ребён|малыш)/i,
+      /(baby\s+crib|cot|child\s+bed)/i,
+    ],
   },
   {
     intent: 'checkout',
@@ -201,13 +391,19 @@ export function decideCommunicationAutopilotResponse(input: {
   channel: CommunicationAutopilotChannel;
   messageText: string;
   context?: CommunicationAutopilotContext;
+  semanticClassification?: SemanticAutopilotClassification;
+  wifiSession?: CommunicationAutopilotWifiSession;
 }): CommunicationAutopilotDecision {
   const normalizedText = normalizeText(input.messageText);
-  const canon = input.channel === 'telegram' ? resolveTelegramGuestIntentCanon(input.messageText) : null;
-  const classification =
-    canon && canon.intent !== 'unknown'
-      ? classifyCanonIntent(canon)
-      : classifyIntent(normalizedText);
+  const useGuestIntentCanon = input.channel === 'telegram' || input.channel === 'email';
+  const canon = useGuestIntentCanon ? resolveTelegramGuestIntentCanon(input.messageText) : null;
+  const classification = resolveGuestClassification({
+    channel: input.channel,
+    messageText: input.messageText,
+    normalizedText,
+    canon,
+    semanticClassification: input.semanticClassification,
+  });
   const missingContext = getMissingContext(classification.intent, input.context);
   const baseMetadata = buildMetadata({
     channel: input.channel,
@@ -219,15 +415,26 @@ export function decideCommunicationAutopilotResponse(input: {
 
   if (canon?.intent === 'access_urgent') {
     return {
-      action: missingContext.length === 0 ? 'auto_reply' : 'escalate',
+      action: 'escalate',
       confidence: classification.confidence,
       replyText: canon.reply,
-      escalationReason: missingContext.length === 0 ? undefined : 'urgent_access_problem',
-      metadata: baseMetadata,
+      escalationReason: 'urgent_access_problem',
+      metadata: { ...baseMetadata, urgent: true },
     };
   }
 
   if (canon?.intent === 'payment_booking') {
+    const refundOrCancel = /(отмен|возврат|refund|cancel)/i.test(input.messageText);
+    if (refundOrCancel) {
+      return {
+        action: 'escalate',
+        confidence: classification.confidence,
+        replyText:
+          'Понял запрос по отмене/возврату. Передаю оператору — сверим бронь и оплату без автоматических обещаний.',
+        escalationReason: 'booking_payment_support',
+        metadata: baseMetadata,
+      };
+    }
     return {
       action: 'needs_context',
       confidence: Math.min(classification.confidence, 0.72),
@@ -238,13 +445,37 @@ export function decideCommunicationAutopilotResponse(input: {
 
   if (canon?.intent === 'property_directions') {
     const hasContext = hasPropertyDirectionsContext(input.context);
+    const grounded = hasContext
+      ? composeGuestDirectionsReplyRu(
+          input.context?.object
+            ? {
+                object_id: input.context.object.id ?? '',
+                object_name: input.context.object.name ?? null,
+                address: input.context.object.address ?? null,
+                directions_text: input.context.object.directionsText ?? input.context.object.accessInstructions ?? null,
+                parking_text: input.context.object.parkingText ?? null,
+                trash_bins_location: input.context.object.trashBinsLocation ?? null,
+                waste_disposal_text: input.context.object.wasteDisposalText ?? null,
+                wifi_name: input.context.object.wifiName ?? null,
+                wifi_password: input.context.object.wifiPassword ?? null,
+                baby_crib_available: input.context.object.babyCribAvailable ?? null,
+                baby_crib_note: input.context.object.babyCribNote ?? null,
+                check_in_text: input.context.object.accessInstructions ?? null,
+                checkout_time: input.context.booking?.checkoutTime ?? null,
+                house_rules_text: input.context.object.houseRules ?? null,
+                door_code_notes: null,
+                knowledge_status: input.context.object.knowledgeStatus,
+              }
+            : null,
+        )
+      : null;
     return {
-      action: hasContext ? 'auto_reply' : 'needs_context',
+      action: hasContext && grounded ? 'auto_reply' : 'needs_context',
       confidence: classification.confidence,
-      replyText: resolvePropertyDirectionsReply(hasContext),
+      replyText: grounded ?? resolvePropertyDirectionsReply(hasContext),
       metadata: {
         ...baseMetadata,
-        missingContext: hasContext ? [] : ['object.address'],
+        missingContext: hasContext && grounded ? [] : ['object.address'],
       },
     };
   }
@@ -274,11 +505,53 @@ export function decideCommunicationAutopilotResponse(input: {
     };
   }
 
+  if (classification.intent === 'wifi_problem') {
+    const wifiPolicy = resolveWifiProblemPolicy({
+      messageText: input.messageText,
+      context: input.context,
+      previousReply: input.wifiSession?.previousReply,
+      continuationUsed: input.wifiSession?.continuationUsed,
+      previousIntent: input.wifiSession?.previousIntent,
+    });
+    return {
+      action: wifiPolicy.action,
+      confidence: classification.confidence,
+      replyText: wifiPolicy.replyText,
+      escalationReason: wifiPolicy.escalationNeeded ? 'wifi_problem' : undefined,
+      metadata: {
+        ...baseMetadata,
+        missingContext: wifiPolicy.action === 'needs_context' ? missingContext : [],
+        wifiEscalation: wifiPolicy.audit,
+      },
+    };
+  }
+
   if (missingContext.length > 0) {
+    const canonReply =
+      canon && canon.intent !== 'unknown' && classifyCanonIntent(canon).intent === classification.intent
+        && !(
+          classification.intent === 'baby_crib_request' ||
+          classification.intent === 'waste_disposal_info'
+        )
+        ? canon.reply
+        : undefined;
+    const semanticReply =
+      classification.intent === 'wifi_access' || classification.intent === 'wifi'
+          ? composeGuestWifiReplyRu({ property: null, verified: false })
+          : undefined;
     return {
       action: 'needs_context',
       confidence: Math.min(classification.confidence, 0.72),
-      replyText: canon?.reply,
+      replyText: canonReply ?? semanticReply,
+      metadata: baseMetadata,
+    };
+  }
+
+  if (isOperationsIntent(classification.intent) && missingContext.length === 0) {
+    return {
+      action: 'escalate',
+      confidence: classification.confidence,
+      escalationReason: classification.intent,
       metadata: baseMetadata,
     };
   }
@@ -298,17 +571,110 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
   messageText: string;
   context?: CommunicationAutopilotContext;
   llmRouterProvider?: LlmRouterProvider;
+  semanticRouterProvider?: TelegramSemanticRouterProvider;
+  wifiSession?: CommunicationAutopilotWifiSession;
 }): Promise<CommunicationAutopilotDecision> {
-  const deterministic = decideCommunicationAutopilotResponse(input);
+  let semanticClassification: SemanticAutopilotClassification | undefined;
+  let semanticRouterMeta: CommunicationAutopilotMetadata['semanticRouter'];
 
   if (input.channel === 'telegram') {
-    const agentDecision = await decideTelegramGuestAgentTurn({
-      messageText: input.messageText,
-      context: input.context,
-      deterministic,
-      llmRouterProvider: input.llmRouterProvider,
+    const canon = resolveTelegramGuestIntentCanon(input.messageText);
+    const mvpIntent = classifyIntent(normalizeText(input.messageText), input.messageText).intent;
+    const semanticRoute = await routeTelegramGuestSemantic(
+      {
+        messageText: input.messageText,
+        lang: input.context?.session?.language ?? 'ru',
+        bookingId: input.context?.booking?.id,
+        sessionId: input.context?.session?.id,
+        canonIntent: canon.intent,
+        deterministicIntent: mvpIntent,
+      },
+      input.semanticRouterProvider,
+    );
+    const semanticRaw = semanticRoute.ok ? semanticRoute.result : semanticRoute.fallback;
+    const semantic = mapSemanticRouterToAutopilotIntent(semanticRaw);
+    const verifier = resolveSemanticVerifier({
+      mvpIntent,
+      semantic,
+      semanticRaw,
+      semanticRouteOk: semanticRoute.ok,
     });
-    return mapAgentDecisionToAutopilot(agentDecision, deterministic);
+    semanticClassification = verifier.semanticClassification;
+    semanticRouterMeta = {
+      used: shouldRunSemanticRouterForMvp(mvpIntent),
+      provider: semanticRoute.ok ? semanticRoute.provider : 'deterministic',
+      intent: semantic.intent,
+      topic: semantic.topic,
+      source: semantic.semanticSource,
+      guestSafeSummary: semantic.guestSafeSummary,
+      knowledgeKeys: semantic.knowledgeKeys,
+      reason: semanticRoute.ok ? undefined : semanticRoute.reason,
+      modelName: semanticRoute.ok
+        ? semanticRoute.modelName
+        : semanticRaw.source === 'deterministic'
+          ? 'deterministic'
+          : 'disabled',
+      mvpIntent,
+      semanticIntent: semanticRaw.intent,
+      semanticConfidence: semanticRaw.confidence,
+      finalIntent: verifier.semanticClassification?.intent ?? mvpIntent,
+      semanticOverrideApplied: verifier.overrideApplied,
+      overrideReason: verifier.overrideReason,
+    };
+  }
+
+  const deterministic = decideCommunicationAutopilotResponse({
+    ...input,
+    semanticClassification,
+  });
+  if (semanticRouterMeta) {
+    deterministic.metadata.semanticRouter = semanticRouterMeta;
+  }
+
+  if (input.channel === 'telegram') {
+    const guestAgentMode = getTelegramGuestAgentMode();
+    if (guestAgentMode === 'primary') {
+      const agentDecision = await decideTelegramGuestAgentTurn({
+        messageText: input.messageText,
+        context: input.context,
+        deterministic,
+        llmRouterProvider: input.llmRouterProvider,
+      });
+      return mapAgentDecisionToAutopilot(agentDecision, deterministic);
+    }
+
+    if (guestAgentMode === 'shadow') {
+      const agentDecision = await decideTelegramGuestAgentTurn({
+        messageText: input.messageText,
+        context: input.context,
+        deterministic,
+        llmRouterProvider: input.llmRouterProvider,
+      });
+      const mvpIntent = semanticRouterMeta?.mvpIntent ?? deterministic.metadata.intent;
+      const semanticIntent = semanticRouterMeta?.semanticIntent ?? null;
+      const finalLiveIntent = deterministic.metadata.intent;
+      deterministic.metadata.guestAgentShadow = {
+        mode: 'shadow',
+        mvp_intent: mvpIntent,
+        semantic_intent: semanticIntent,
+        semantic_confidence: semanticRouterMeta?.semanticConfidence ?? null,
+        final_live_intent: finalLiveIntent,
+        agent: buildTelegramGuestAgentShadowDraft(agentDecision),
+        mismatch_reason: resolveGuestAgentMismatchReason({
+          mvpIntent,
+          semanticIntent,
+          finalLiveIntent,
+          agentIntent: agentDecision.intent,
+        }),
+        would_agent_have_helped: wouldGuestAgentHaveHelped({
+          finalLiveIntent,
+          finalReply: deterministic.replyText,
+          agentIntent: agentDecision.intent,
+          agentConfidence: agentDecision.confidence,
+          agentReply: agentDecision.reply_text,
+        }),
+      };
+    }
   }
 
   if (!shouldUseLlmRouterFallback(input.channel, input.messageText, deterministic)) {
@@ -348,6 +714,38 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
     result.modelName,
     result.attempts,
   );
+}
+
+function resolveGuestAgentMismatchReason(input: {
+  mvpIntent: string;
+  semanticIntent: string | null;
+  finalLiveIntent: string;
+  agentIntent: string;
+}): string | null {
+  if (input.agentIntent === input.finalLiveIntent) return null;
+  if (input.semanticIntent && input.semanticIntent !== input.mvpIntent && input.agentIntent === input.semanticIntent) {
+    return 'agent_matches_semantic_router_not_live_intent';
+  }
+  if (input.finalLiveIntent === 'unknown' && input.agentIntent !== 'unknown') {
+    return 'agent_resolved_live_unknown';
+  }
+  if (input.agentIntent !== input.mvpIntent) {
+    return 'agent_differs_from_mvp_intent';
+  }
+  return 'agent_differs_from_live_intent';
+}
+
+function wouldGuestAgentHaveHelped(input: {
+  finalLiveIntent: string;
+  finalReply?: string;
+  agentIntent: string;
+  agentConfidence: number;
+  agentReply?: string;
+}): boolean {
+  if (input.agentConfidence < 0.7 || !input.agentReply?.trim()) return false;
+  if (input.finalLiveIntent === 'unknown' && input.agentIntent !== 'unknown') return true;
+  if (input.agentIntent !== input.finalLiveIntent) return true;
+  return !input.finalReply?.trim();
 }
 
 async function decideWithSingleInjectedProvider(
@@ -428,6 +826,19 @@ export function composeCommunicationAutopilotContextReply(input: {
         return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
       case 'address_instruction':
         return PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
+    case 'wifi':
+    case 'wifi_access':
+      return composeGuestWifiReplyRu({ property: null, verified: false });
+    case 'wifi_problem':
+      return resolveWifiProblemPolicy({ messageText: '', context: undefined }).replyText;
+      case 'baby_crib_request':
+      case 'waste_disposal_info':
+        return input.decision.metadata.missingContext.includes('object.id')
+          ? 'Напишите, пожалуйста, номер бронирования или адрес объекта. Я проверю информацию.'
+          : 'Сейчас не вижу точной информации по этому вопросу для вашего объекта. Уточню и вернусь с ответом.';
+      case 'parking':
+      case 'checkout':
+        return buildGuestMissingContextReplyRu();
       default:
         return 'Уточните, пожалуйста, объект или номер брони, и я проверю точные детали.';
     }
@@ -437,6 +848,73 @@ export function composeCommunicationAutopilotContextReply(input: {
     return 'Please clarify what happened: check-in, access, cleaning, maintenance, or booking question?';
   }
   return 'Please send the property or booking number, and I will check the exact details.';
+}
+
+function resolveGuestClassification(input: {
+  channel: CommunicationAutopilotChannel;
+  messageText: string;
+  normalizedText: string;
+  canon: ReturnType<typeof resolveTelegramGuestIntentCanon> | null;
+  semanticClassification?: SemanticAutopilotClassification;
+}): {
+  intent: CommunicationAutopilotIntent;
+  confidence: number;
+  matchedSignals: string[];
+} {
+  const patternClassification = classifyIntent(input.normalizedText, input.messageText);
+  const canonClassification =
+    input.canon && input.canon.intent !== 'unknown' ? classifyCanonIntent(input.canon) : null;
+
+  const semantic = input.semanticClassification;
+  if (semantic && semantic.confidence >= 0.65 && semantic.intent !== 'unknown') {
+    if (shouldPreferSemanticClassification(canonClassification, semantic, patternClassification)) {
+      return {
+        intent: semantic.intent as CommunicationAutopilotIntent,
+        confidence: semantic.confidence,
+        matchedSignals: semantic.matchedSignals,
+      };
+    }
+  }
+
+  if (input.channel === 'telegram') {
+    const deterministicSemantic = mapSemanticRouterToAutopilotIntent(
+      classifyTelegramGuestSemanticDeterministic(input.messageText),
+    );
+    const disambiguationIntents = new Set([
+      'wifi_access',
+      'wifi_problem',
+      'waste_disposal_info',
+      'cleaning_issue',
+    ]);
+    if (
+      deterministicSemantic.confidence >= 0.88 &&
+      disambiguationIntents.has(deterministicSemantic.intent) &&
+      shouldPreferSemanticClassification(canonClassification, deterministicSemantic, patternClassification)
+    ) {
+      return {
+        intent: deterministicSemantic.intent as CommunicationAutopilotIntent,
+        confidence: deterministicSemantic.confidence,
+        matchedSignals: deterministicSemantic.matchedSignals,
+      };
+    }
+  }
+
+  if (canonClassification) return canonClassification;
+  return patternClassification;
+}
+
+function shouldPreferSemanticClassification(
+  canon: { intent: CommunicationAutopilotIntent; confidence: number } | null,
+  semantic: SemanticAutopilotClassification,
+  pattern: { intent: CommunicationAutopilotIntent; confidence: number },
+): boolean {
+  const semanticIntent = semantic.intent as CommunicationAutopilotIntent;
+  if (semanticIntent === 'wifi_problem' || semanticIntent === 'wifi_access') return true;
+  if (semanticIntent === 'waste_disposal_info' && pattern.intent === 'cleaning_issue') return true;
+  if (semanticIntent === 'cleaning_issue' && pattern.intent === 'waste_disposal_info') return true;
+  if (!canon) return semantic.confidence >= pattern.confidence;
+  if (canon.intent === 'unknown') return true;
+  return semantic.confidence >= canon.confidence + 0.05;
 }
 
 function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntentCanon>): {
@@ -458,6 +936,10 @@ function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntent
       return { intent: 'checkin_code_request', confidence: 0.96, matchedSignals };
     case 'property_directions':
       return { intent: 'address_instruction', confidence: 0.95, matchedSignals };
+    case 'waste_disposal_info':
+      return { intent: 'waste_disposal_info', confidence: 0.95, matchedSignals };
+    case 'baby_crib_request':
+      return { intent: 'baby_crib_request', confidence: 0.95, matchedSignals };
     case 'maintenance':
       return { intent: 'maintenance_issue', confidence: 0.96, matchedSignals };
     case 'cleaning_housekeeping':
@@ -471,7 +953,10 @@ function classifyCanonIntent(canon: ReturnType<typeof resolveTelegramGuestIntent
   }
 }
 
-function classifyIntent(normalizedText: string): {
+function classifyIntent(
+  normalizedText: string,
+  originalText = normalizedText,
+): {
   intent: CommunicationAutopilotIntent;
   confidence: number;
   matchedSignals: string[];
@@ -526,12 +1011,29 @@ function getMissingContext(
     case 'address_instruction':
       return missingPropertyDirectionsContext(context);
     case 'wifi':
+    case 'wifi_access':
+      if (!context?.bookingVerified && !context?.booking?.id) return ['booking.verification'];
       return missingFields([
         ['object.wifiName', context?.object?.wifiName],
         ['object.wifiPassword', context?.object?.wifiPassword],
       ]);
+    case 'wifi_problem':
+      if (!hasPropertyObjectContext(context)) return ['object.id'];
+      return [];
+    case 'parking':
+      return missingFields([['object.parkingText', context?.object?.parkingText]]);
+    case 'waste_disposal_info':
+      if (!hasPropertyObjectContext(context)) return ['object.id'];
+      return missingFields([
+        ['object.trashBinsLocation', context?.object?.trashBinsLocation ?? context?.object?.wasteDisposalText],
+      ]);
     case 'checkout':
       return missingFields([['booking.checkoutTime', context?.booking?.checkoutTime]]);
+    case 'baby_crib_request':
+      if (!hasPropertyObjectContext(context)) return ['object.id'];
+      return missingFields([
+        ['object.babyCribNote', context?.object?.babyCribNote ?? context?.object?.babyCribAvailable],
+      ]);
     case 'early_checkin_late_checkout':
       return missingFields([
         ['booking.earlyCheckInAvailable', context?.booking?.earlyCheckInAvailable],
@@ -559,8 +1061,12 @@ function missingPropertyDirectionsContext(context: CommunicationAutopilotContext
   return ['object.address'];
 }
 
+function hasPropertyObjectContext(context: CommunicationAutopilotContext | undefined): boolean {
+  return Boolean(context?.booking?.id || context?.object?.id || context?.object?.name || context?.object?.address);
+}
+
 function missingOperationalContext(context: CommunicationAutopilotContext | undefined): string[] {
-  if (context?.booking?.id || context?.object?.id || context?.object?.name || context?.object?.address) {
+  if (hasPropertyObjectContext(context)) {
     return [];
   }
   return ['object.id'];
@@ -593,14 +1099,161 @@ function composeRuReply(
 
       return parts.join(' ');
     }
-    case 'address_instruction':
-      return hasPropertyDirectionsContext(context)
-        ? PROPERTY_DIRECTIONS_WITH_CONTEXT_REPLY
-        : PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
+    case 'address_instruction': {
+      const grounded = composeGuestDirectionsReplyRu(
+        context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? context.object.accessInstructions ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+      );
+      return grounded ?? resolvePropertyDirectionsReply(hasPropertyDirectionsContext(context));
+    }
     case 'wifi':
-      return `Wi-Fi: ${context?.object?.wifiName}. Пароль: ${context?.object?.wifiPassword}.`;
-    case 'checkout':
-      return `Выезд до ${context?.booking?.checkoutTime}. Ключи оставьте по инструкции из заселения.`;
+    case 'wifi_access':
+      return composeGuestWifiReplyRu({
+        property: context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+        verified: Boolean(context?.bookingVerified ?? context?.booking?.id),
+      });
+    case 'wifi_problem':
+      return resolveWifiProblemPolicy({
+        messageText: '',
+        context,
+      }).replyText;
+    case 'parking': {
+      const parking = composeGuestParkingReplyRu(
+        context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+      );
+      return parking ?? buildGuestMissingContextReplyRu();
+    }
+    case 'waste_disposal_info': {
+      const waste = composeGuestWasteReplyRu(
+        context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+      );
+      return waste ?? 'Сейчас не вижу точной информации по этому вопросу для вашего объекта. Уточню и вернусь с ответом.';
+    }
+    case 'baby_crib_request': {
+      const babyCrib = composeGuestBabyCribReplyRu(
+        context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+      );
+      return babyCrib ?? 'Сейчас не вижу точной информации по этому вопросу для вашего объекта. Уточню и вернусь с ответом.';
+    }
+    case 'checkout': {
+      const checkout = composeGuestCheckoutReplyRu(
+        context?.object
+          ? {
+              object_id: context.object.id ?? '',
+              object_name: context.object.name ?? null,
+              address: context.object.address ?? null,
+              directions_text: context.object.directionsText ?? null,
+              parking_text: context.object.parkingText ?? null,
+              trash_bins_location: context.object.trashBinsLocation ?? null,
+              waste_disposal_text: context.object.wasteDisposalText ?? null,
+              wifi_name: context.object.wifiName ?? null,
+              wifi_password: context.object.wifiPassword ?? null,
+              baby_crib_available: context.object.babyCribAvailable ?? null,
+              baby_crib_note: context.object.babyCribNote ?? null,
+              check_in_text: context.object.accessInstructions ?? null,
+              checkout_time: context.booking?.checkoutTime ?? null,
+              house_rules_text: context.object.houseRules ?? null,
+              door_code_notes: null,
+              knowledge_status: context.object.knowledgeStatus,
+            }
+          : null,
+      );
+      return checkout ?? `Выезд до ${context?.booking?.checkoutTime}. Ключи оставьте по инструкции из заселения.`;
+    }
     case 'early_checkin_late_checkout': {
       const early = context?.booking?.earlyCheckInAvailable
         ? 'Ранний заезд сейчас возможен.'
@@ -907,6 +1560,9 @@ function collectContextKeys(context: CommunicationAutopilotContext | undefined):
       keys.push(`${scope}.${key}`);
     }
   }
+
+  if (context.bookingVerified !== undefined) keys.push('bookingVerified');
+  if (context.propertyResolved !== undefined) keys.push('propertyResolved');
 
   return keys;
 }

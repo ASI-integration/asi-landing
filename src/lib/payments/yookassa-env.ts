@@ -1,3 +1,13 @@
+export const COMMUNICATION_PILOT_SERVICE_TITLE =
+  'Ранний доступ: AI-коммуникации для посуточной аренды';
+export const COMMUNICATION_PILOT_PAYMENT_DESCRIPTION =
+  'AI-коммуникации для посуточной аренды, 1 объект, 1 месяц';
+export const COMMUNICATION_PILOT_PRICE_RUB = 1000;
+export const COMMUNICATION_PILOT_PRICE_KOPEKS = COMMUNICATION_PILOT_PRICE_RUB * 100;
+export const COMMUNICATION_PILOT_SERVICE_TYPE = 'communication_pilot_object_month';
+export const COMMUNICATION_PILOT_PAYMENT_PENDING_MESSAGE =
+  'Оплата пилота AI-коммуникаций будет доступна после подключения платежей. Услуга: AI-коммуникации для посуточной аренды, 1 объект, 1 месяц.';
+
 export const YOOKASSA_PENDING_REVIEW_MESSAGE =
   'Оплата будет подключена после финальной проверки отчёта. Сейчас доступна ссылка на сформированный отчёт.';
 
@@ -21,6 +31,7 @@ export function getYooKassaCredentials(): { shopId: string; secretKey: string } 
 export function getYooKassaReturnUrl(requestId?: string): string {
   const app = getAppBaseUrl();
   const params = new URLSearchParams();
-  if (requestId) params.set('requestId', requestId);
-  return `${app}/ru/location-report/status${params.toString() ? `?${params.toString()}` : ''}`;
+  params.set('service', COMMUNICATION_PILOT_SERVICE_TYPE);
+  if (requestId) params.set('paymentId', requestId);
+  return `${app}/payments/success?${params.toString()}`;
 }

@@ -63,6 +63,14 @@ export interface VoiceReplyContext {
   isCheckinInstructions?: boolean;
 }
 
+export type VoiceReplyMode = 'text' | 'voice' | 'both' | 'mirror';
+
+export function getVoiceReplyMode(): VoiceReplyMode {
+  const raw = String(process.env.VOICE_REPLY_MODE ?? 'mirror').trim().toLowerCase();
+  if (raw === 'text' || raw === 'voice' || raw === 'both' || raw === 'mirror') return raw;
+  return 'mirror';
+}
+
 export function shouldUseVoiceReply(replyText: string, ctx: VoiceReplyContext): boolean {
   if (process.env.VOICE_REPLY_ENABLED !== '1') return false;
   if (!ctx.voiceEnabled) return false;

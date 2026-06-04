@@ -7,16 +7,15 @@
  */
 
 import { NextResponse } from 'next/server';
-import { processMessage } from '@/lib/communication/orchestrator';
 import {
-  EmailAdapter,
   EmailInboundPayload,
   getPrimaryEmailAddress,
 } from '@/lib/communication/channels/email';
+import { processEmailInbound } from '@/lib/communication/email-inbound-processor';
 
 export const runtime = 'nodejs';
 
-const adapter = new EmailAdapter();
+const AUTO_REPLY_RE = /^(no-?reply|mailer-daemon|postmaster|bounce|auto[-_]?reply|noreply)/i;
 
 export async function POST(req: Request): Promise<Response> {
   let payload: EmailInboundPayload;
@@ -26,33 +25,41 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid_json' }, { status: 400 });
   }
 
-  // Ignore bounced / auto-reply loops (no-reply, mailer-daemon, etc.)
   if (isAutoReply(payload.from)) {
     return NextResponse.json({ ok: true, skipped: 'auto_reply' }, { status: 200 });
   }
 
   try {
-    const envelope = await adapter.normalizeInbound(payload);
-    const result   = await processMessage(envelope);
+    const result = await processEmailInbound({ payload });
 
     if (process.env.COMM_PIPELINE_DEBUG === '1') {
       console.log('[email:inbound] processed', {
-        outcome: result.outcome,
-        from:    getPrimaryEmailAddress(payload.from),
-        subject: payload.subject,
+        outcome: result.orchestrator?.outcome,
+        skipped: result.skipped,
+        reviewId: result.reviewId,
+        outboundMode: result.outboundMode,
+        from: result.from ?? getPrimaryEmailAddress(payload.from),
+        subject: result.subject ?? payload.subject,
       });
     }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        skipped: result.skipped,
+        reviewId: result.reviewId,
+        outboundMode: result.outboundMode,
+        outcome: result.orchestrator?.outcome,
+        draftOnly: result.outboundMode === 'draft_only',
+      },
+      { status: 200 },
+    );
   } catch (e) {
-    console.error('[email:inbound] processMessage threw', e);
-    // Return 200 to prevent Resend from resending.
+    console.error('[email:inbound] processEmailInbound threw', e);
+    // Return 200 to prevent provider resend loops.
+    return NextResponse.json({ ok: true, error: 'processing_failed' }, { status: 200 });
   }
-
-  return NextResponse.json({ ok: true }, { status: 200 });
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const AUTO_REPLY_RE = /^(no-?reply|mailer-daemon|postmaster|bounce|auto[-_]?reply|noreply)/i;
 
 function isAutoReply(from: EmailInboundPayload['from']): boolean {
   const addr = getPrimaryEmailAddress(from);

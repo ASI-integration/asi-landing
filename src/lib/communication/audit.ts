@@ -216,6 +216,42 @@ export function auditAutonomousDecision(params: {
   });
 }
 
+export function auditTelegramGuestAgentShadow(params: {
+  chat_id: number;
+  update_id?: number;
+  mvp_intent: string;
+  semantic_intent: string | null;
+  agent_intent: string;
+  agent_confidence: number;
+  agent_safe_reply_draft: string | null;
+  final_sent_reply: string | null;
+  mismatch_reason: string | null;
+  would_agent_have_helped: boolean;
+  requested_action?: string;
+  required_data?: string[];
+  escalation_needed?: boolean;
+}): void {
+  auditLog({
+    type: AuditEventType.GuestAgentShadow,
+    chat_id: params.chat_id,
+    update_id: params.update_id,
+    detail: JSON.stringify({
+      mode: 'shadow',
+      mvp_intent: params.mvp_intent,
+      semantic_intent: params.semantic_intent,
+      agent_intent: params.agent_intent,
+      agent_confidence: params.agent_confidence,
+      agent_safe_reply_draft: maskedPreview(params.agent_safe_reply_draft ?? undefined, 300) ?? null,
+      final_sent_reply: maskedPreview(params.final_sent_reply ?? undefined, 300) ?? null,
+      mismatch_reason: params.mismatch_reason,
+      would_agent_have_helped: params.would_agent_have_helped,
+      requested_action: params.requested_action,
+      required_data: params.required_data,
+      escalation_needed: params.escalation_needed,
+    }),
+  });
+}
+
 /**
  * Identity binding decision logger.
  * Use this for "who/what did we resolve" + confidence + why.

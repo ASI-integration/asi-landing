@@ -87,6 +87,8 @@ import {
   sendOperatorReply,
 } from '../operator-review';
 
+const SYNTHETIC_TEST_CHAT_ID = '920001';
+
 describe('Telegram outbound target regression', () => {
   let nextUpdateId = 30_000;
 
@@ -112,7 +114,7 @@ describe('Telegram outbound target regression', () => {
       receivedAt: new Date(),
       update_id: nextUpdateId++,
       metadata: {
-        telegram_chat_id: '931919812',
+        telegram_chat_id: SYNTHETIC_TEST_CHAT_ID,
         providerMessageId: 'tg-msg-normal-target',
         actorId: '56750',
         guestId: '56750',
@@ -124,7 +126,7 @@ describe('Telegram outbound target regression', () => {
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(mockSendMessage).toHaveBeenCalled();
-    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('931919812');
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe(SYNTHETIC_TEST_CHAT_ID);
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('56750');
   });
 
@@ -155,7 +157,7 @@ describe('Telegram outbound target regression', () => {
       edited_message: {
         message_id: 81_001,
         edit_date: 1_779_999_000,
-        chat: { id: 931919812 },
+        chat: { id: Number(SYNTHETIC_TEST_CHAT_ID) },
         from: { language_code: 'en' },
         text: 'check-out at 11am',
       },
@@ -165,7 +167,7 @@ describe('Telegram outbound target regression', () => {
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(mockSendMessage).toHaveBeenCalled();
-    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('931919812');
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe(SYNTHETIC_TEST_CHAT_ID);
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('56750');
   });
 
@@ -179,7 +181,7 @@ describe('Telegram outbound target regression', () => {
       receivedAt: new Date(),
       update_id: nextUpdateId++,
       metadata: {
-        telegram_chat_id: '931919812',
+        telegram_chat_id: SYNTHETIC_TEST_CHAT_ID,
         providerMessageId: 'tg-msg-operator-target',
         actorId: '56750',
         guestId: '56750',
@@ -190,7 +192,7 @@ describe('Telegram outbound target regression', () => {
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     const [review] = listEscalationReviews({ status: 'pending' });
-    expect(review?.targetId).toBe('931919812');
+    expect(review?.targetId).toBe(SYNTHETIC_TEST_CHAT_ID);
     expect(review?.targetId).not.toBe('56750');
 
     mockSendMessage.mockClear();
@@ -201,7 +203,7 @@ describe('Telegram outbound target regression', () => {
     });
 
     expect(operatorResult.ok).toBe(true);
-    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe('931919812');
+    expect(mockSendMessage.mock.calls.at(-1)?.[0]).toBe(SYNTHETIC_TEST_CHAT_ID);
     expect(mockSendMessage.mock.calls.at(-1)?.[0]).not.toBe('56750');
   });
 });

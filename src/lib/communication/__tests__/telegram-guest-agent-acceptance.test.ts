@@ -386,13 +386,4 @@ describe('Telegram guest agent structured decision object', () => {
   });
 });
 
-export function buildAcceptanceReport(): Array<{
-  id: string;
-  category: string;
-  phrase: string;
-  pass: boolean;
-  expected: string;
-  actual: string;
-}> {
-  return [];
-}
+export { buildAcceptanceReport } from './comm-agent-acceptance-100.test';
