@@ -145,44 +145,39 @@ try {
 
 pm2_clean_start() {
   local app_name="$1"
-  local config="$2"
-  local port="${3:-3000}"
+  local port="${2:-3000}"
 
-  log "pm2_clean_start: stop→kill-port→delete→start→save (app=$app_name port=$port)"
-  pm2 stop "$app_name" 2>/dev/null || true
+  log "pm2_clean_start: cd-current -> delete -> kill-port -> direct-next-start -> save (app=$app_name port=$port)"
 
-  # Ensure port is free before starting PM2.
-  if command -v fuser >/dev/null 2>&1; then
+  (
+    cd "$CURRENT_LINK"
+
+    pm2 delete "$app_name" 2>/dev/null || true
     fuser -k "${port}/tcp" 2>/dev/null || true
-  elif command -v lsof >/dev/null 2>&1; then
-    lsof -ti:"$port" 2>/dev/null | xargs kill -9 2>/dev/null || true
-  elif command -v ss >/dev/null 2>&1; then
-    local pids=""
-    pids="$(ss -ltnp 2>/dev/null | grep -E ":${port}\\b" | sed -n 's/.*pid=\\([0-9]\\+\\).*/\\1/p' | sort -u | tr '\n' ' ' || true)"
-    for pid in $pids; do
-      kill -9 "$pid" 2>/dev/null || true
-    done
-  fi
+    sleep 0.5
 
-  sleep 0.5
-  pm2 delete "$app_name" 2>/dev/null || true
-  sleep 0.3
-
-  if command -v ss >/dev/null 2>&1; then
-    if ss -ltnp 2>/dev/null | grep -qE ":${port}\\b"; then
-      log "ERROR: port $port still appears to be in use; refusing to start PM2"
-      ss -ltnp 2>/dev/null | grep -E ":${port}\\b" || true
-      return 1
+    if command -v ss >/dev/null 2>&1; then
+      if ss -ltnp 2>/dev/null | grep -qE ":${port}\\b"; then
+        log "ERROR: port $port still appears to be in use; refusing to start PM2"
+        ss -ltnp 2>/dev/null | grep -E ":${port}\\b" || true
+        return 1
+      fi
+    elif command -v lsof >/dev/null 2>&1; then
+      if lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+        log "ERROR: port $port still appears to be in use; refusing to start PM2"
+        lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+        return 1
+      fi
     fi
-  elif command -v lsof >/dev/null 2>&1; then
-    if lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
-      log "ERROR: port $port still appears to be in use; refusing to start PM2"
-      lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
-      return 1
-    fi
-  fi
 
-  pm2 start "$config" --only "$app_name"
+    NODE_ENV=production \
+      PORT="$port" \
+      ASI_APP_ROOT="$CURRENT_LINK" \
+      pm2 start node_modules/next/dist/bin/next \
+        --name "$app_name" \
+        --cwd "$CURRENT_LINK" \
+        -- start -H 127.0.0.1 -p "$port"
+  ) || return $?
   pm2 save || true
 }
 
@@ -195,18 +190,22 @@ rollback_to() {
   mv -Tf "$tmp_link" "$CURRENT_LINK"
   log "PM2 status (before reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
-  pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
+  pm2_clean_start "$PM2_ONLY" "3000" || die "PM2 start aborted: port 3000 not free"
   log "PM2 status (after reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   if [[ -n "${expect_sha:-}" ]]; then
-    log "Post-rollback healthcheck (expect SHA from previous release metadata)"
-    if ! EXPECT_SHA="$expect_sha" node - <<'NODE'
-const timeoutMs = 45_000;
+    local expect_release_path
+    expect_release_path="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+    log "Post-rollback /api/version check (expect SHA and releasePath from previous release)"
+    if ! EXPECT_SHA="$expect_sha" EXPECT_RELEASE_PATH="$expect_release_path" node - <<'NODE'
+const timeoutMs = 60_000;
 const start = Date.now();
 const base = 'http://127.0.0.1:3000';
 const expected = (process.env.EXPECT_SHA || '').trim();
+const expectedReleasePath = (process.env.EXPECT_RELEASE_PATH || '').trim();
 let lastBody = '';
 let lastSha = '';
+let lastReleasePath = '';
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -233,7 +232,8 @@ async function sleep(ms) {
         continue;
       }
       lastSha = typeof v?.sha === 'string' ? v.sha.trim() : '';
-      if (lastSha === expected) {
+      lastReleasePath = typeof v?.releasePath === 'string' ? v.releasePath.trim() : '';
+      if (lastSha === expected && lastReleasePath === expectedReleasePath) {
         console.log('rollback-version-health: ok');
         return;
       }
@@ -242,7 +242,18 @@ async function sleep(ms) {
     }
     await sleep(500);
   }
-  console.error('rollback-version-health: failed expected=', expected, 'lastSha=', lastSha, 'lastBody=', lastBody);
+  console.error(
+    'rollback-version-health: failed expected=',
+    expected,
+    'expectedReleasePath=',
+    expectedReleasePath,
+    'lastSha=',
+    lastSha,
+    'lastReleasePath=',
+    lastReleasePath,
+    'lastBody=',
+    lastBody,
+  );
   process.exit(1);
 })().catch((e) => {
   console.error(e);
@@ -270,7 +281,6 @@ log "Preflight: mandatory artifact paths"
 [[ -f "$STAGING_DIR/package.json" ]] || die "artifact missing package.json"
 [[ -f "$STAGING_DIR/package-lock.json" ]] || die "artifact missing package-lock.json"
 [[ -d "$STAGING_DIR/.next" ]] || die "artifact missing .next/"
-[[ -f "$STAGING_DIR/ecosystem.config.cjs" ]] || die "artifact missing ecosystem.config.cjs"
 [[ -f "$STAGING_DIR/release-meta.json" ]] || die "artifact missing release-meta.json"
 [[ -d "$STAGING_DIR/node_modules" ]] || die "artifact missing node_modules/ (artifact must bundle prod deps)"
 [[ -f "$STAGING_DIR/node_modules/next/dist/bin/next" ]] || die "artifact missing Next CLI (node_modules/next/dist/bin/next)"
@@ -328,8 +338,8 @@ ln -sfn "$RELEASE_DIR" "$SWAP_LINK"
 mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 unset SWAP_LINK
 
-log "Starting PM2 (clean: stop→kill-port→delete→start) (single app: $PM2_ONLY)"
-pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
+log "Starting PM2 with direct Next command (single app: $PM2_ONLY)"
+pm2_clean_start "$PM2_ONLY" "3000" || die "PM2 start aborted: port 3000 not free"
 
 log "Resolved current symlink (readlink -f /var/www/asi/current):"
 readlink -f /var/www/asi/current || true
@@ -356,54 +366,7 @@ try {
 }
 NODE
 
-log "Early-crash guard: wait 3s then check PM2 status"
-sleep 3
-
-EARLY_GUARD="$(
-  PM2_ONLY="$PM2_ONLY" node - <<'NODE' 2>/dev/null || echo "YES"
-const { execSync } = require('child_process');
-const name = (process.env.PM2_ONLY || 'asi-landing').trim();
-
-try {
-  const raw = execSync('pm2 jlist', { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8');
-  const list = JSON.parse(raw);
-  const p = list.find((x) => x && x.name === name);
-  if (!p) {
-    process.stdout.write('MISSING');
-    process.exit(0);
-  }
-  const env = p?.pm2_env || {};
-  const status = String(env.status || '');
-  const restarts = Number(env.restart_time || 0);
-  if (status !== 'online') {
-    process.stdout.write(`BAD_STATUS status=${status || '<empty>'} restart_time=${restarts}`);
-  } else if (restarts > 0) {
-    process.stdout.write(`ONLINE_WITH_RESTARTS restart_time=${restarts}`);
-  } else {
-    process.stdout.write('ONLINE');
-  }
-} catch {
-  process.stdout.write('YES');
-}
-NODE
-)"
-
-if [[ "${EARLY_GUARD:-}" == "MISSING" || "${EARLY_GUARD:-}" == "YES" || "${EARLY_GUARD:-}" == BAD_STATUS* ]]; then
-  log "EARLY CRASH detected (PM2 process missing or status != online): ${EARLY_GUARD:-<empty>}"
-  log "Diagnostics: pm2 describe ($PM2_ONLY)"
-  pm2 describe "$PM2_ONLY" 2>/dev/null || true
-  log "Diagnostics: pm2 logs ($PM2_ONLY) last 120 lines"
-  pm2 logs "$PM2_ONLY" --lines 120 --nostream 2>/dev/null || true
-  log "Diagnostics: ss -ltnp | grep :3000"
-  ss -ltnp 2>/dev/null | grep :3000 || true
-  log "Diagnostics: ps -ef | grep -E 'next|node|npm' | grep -v grep"
-  ps -ef 2>/dev/null | grep -E 'next|node|npm' | grep -v grep || true
-  die "Early crash guard failed; aborting before healthcheck to trigger rollback."
-fi
-
-if [[ "${EARLY_GUARD:-}" == ONLINE_WITH_RESTARTS* ]]; then
-  log "WARNING: PM2 reported ${EARLY_GUARD}; continuing to post-switch healthcheck."
-fi
+log "PM2 online status is diagnostic only; release readiness is checked by /api/version"
 
 log "PM2 status (after reload):"
 pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
@@ -454,12 +417,14 @@ curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/health" "/api/health be
 log "  curl /api/version (best-effort):"
 curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/version" "/api/version best-effort" 5 && echo "" || true
 
-log "Post-switch /api/version healthcheck (retries until SHA matches artifact metadata)"
-if ! EXPECT_SHA="$EXPECTED_SHA" node - <<'NODE'
-const timeoutMs = 45_000;
+EXPECTED_CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+log "Post-switch /api/version healthcheck (retries until SHA and releasePath match current release)"
+if ! EXPECT_SHA="$EXPECTED_SHA" EXPECT_RELEASE_PATH="$EXPECTED_CURRENT_TARGET" node - <<'NODE'
+const timeoutMs = 60_000;
 const start = Date.now();
 const base = 'http://127.0.0.1:3000';
 const expected = (process.env.EXPECT_SHA || '').trim();
+const expectedReleasePath = (process.env.EXPECT_RELEASE_PATH || '').trim();
 
 async function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -499,8 +464,8 @@ let lastResolvedReleasePath = '';
       lastProcessCwd = typeof v?.processCwd === 'string' ? v.processCwd.trim() : '';
       lastResolvedReleasePath =
         typeof v?.resolvedReleasePath === 'string' ? v.resolvedReleasePath.trim() : '';
-      if (lastSha === expected) {
-        console.log('version-health: ok sha=', lastSha);
+      if (lastSha === expected && lastReleasePath === expectedReleasePath) {
+        console.log('version-health: ok sha=', lastSha, 'releasePath=', lastReleasePath);
         return;
       }
     } catch (e) {
@@ -510,6 +475,7 @@ let lastResolvedReleasePath = '';
   }
   console.error('version-health: FAILED');
   console.error('  expected SHA (from artifact release-meta.json):', expected);
+  console.error('  expected releasePath (readlink -f current):', expectedReleasePath || '<missing>');
   console.error('  last /api/version status:', lastStatus);
   console.error('  last /api/version sha:', lastSha);
   console.error('  last /api/version releasePath:', lastReleasePath || '<missing>');
@@ -609,8 +575,8 @@ NODE
   die "Deploy failed post-switch /api/version healthcheck; rolled back where possible."
 fi
 
-log "Post-switch assertions (must match CURRENT target)"
-EXPECTED_CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+log "Post-switch diagnostics"
+EXPECTED_CURRENT_TARGET="${EXPECTED_CURRENT_TARGET:-$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)}"
 log "  readlink -f ${CURRENT_LINK}: ${EXPECTED_CURRENT_TARGET:-<unavailable>}"
 log "  release-meta.json (current):"
 cat "${CURRENT_LINK}/release-meta.json" 2>/dev/null || echo "<missing release-meta.json>"
@@ -648,48 +614,8 @@ NODE
 
 log "  curl /api/health (best-effort):"
 curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/health" "/api/health post-switch" 5 && echo "" || true
-log "  curl /api/version (assert):"
-API_VERSION_TMP="$(mktemp)"
-if curl -fsS --connect-timeout 5 --max-time 5 "http://127.0.0.1:3000/api/version" -o "$API_VERSION_TMP"; then
-  API_VERSION_JSON="$(cat "$API_VERSION_TMP")"
-else
-  API_VERSION_RC=$?
-  API_VERSION_JSON=""
-  log "/api/version post-switch assertion failed or timed out (curl rc=${API_VERSION_RC})"
-  if [[ "$API_VERSION_RC" -eq 28 ]]; then
-    print_runtime_diagnostics "/api/version post-switch assertion timeout"
-  fi
-fi
-rm -f "$API_VERSION_TMP"
-echo "$API_VERSION_JSON"
-
-EXPECTED_META_SHA="$(node -e "const j=require('/var/www/asi/current/release-meta.json'); process.stdout.write(String(j.gitSha||'').trim())" 2>/dev/null || true)"
-API_SHA="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.sha||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
-API_RELEASE_PATH="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.releasePath||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
-API_APP_ROOT="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.appRoot||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
-API_PROCESS_CWD="$(node -e "try{const j=JSON.parse(process.argv[1]||'{}');process.stdout.write(String(j.processCwd||'').trim())}catch{}" "$API_VERSION_JSON" 2>/dev/null || true)"
-
-if [[ -z "${EXPECTED_META_SHA:-}" ]]; then
-  die "Post-switch assertion failed: could not read /var/www/asi/current/release-meta.json gitSha"
-fi
-if [[ "$API_SHA" != "$EXPECTED_META_SHA" ]]; then
-  log "Post-switch assertion mismatch: SHA"
-  log "  expected sha (current release-meta.json): $EXPECTED_META_SHA"
-  log "  actual sha (/api/version.sha): ${API_SHA:-<missing>}"
-  log "  actual /api/version.releasePath: ${API_RELEASE_PATH:-<missing>}"
-  log "  actual /api/version.appRoot: ${API_APP_ROOT:-<missing>}"
-  log "  actual /api/version.processCwd: ${API_PROCESS_CWD:-<missing>}"
-  die "Post-switch assertion failed: /api/version.sha does not match current release-meta.json gitSha"
-fi
-if [[ -n "${EXPECTED_CURRENT_TARGET:-}" && "$API_RELEASE_PATH" != "$EXPECTED_CURRENT_TARGET" ]]; then
-  log "Post-switch assertion mismatch: releasePath"
-  log "  expected releasePath (readlink -f /var/www/asi/current): $EXPECTED_CURRENT_TARGET"
-  log "  actual releasePath (/api/version.releasePath): ${API_RELEASE_PATH:-<missing>}"
-  log "  actual /api/version.sha: ${API_SHA:-<missing>}"
-  log "  actual /api/version.appRoot: ${API_APP_ROOT:-<missing>}"
-  log "  actual /api/version.processCwd: ${API_PROCESS_CWD:-<missing>}"
-  die "Post-switch assertion failed: /api/version.releasePath does not match current target"
-fi
+log "  curl /api/version (best-effort after successful release check):"
+curl_with_timeout_diagnostics "http://127.0.0.1:3000/api/version" "/api/version post-switch best-effort" 5 && echo "" || true
 
 log "Writing deploy-side metadata (.release.json)"
 BUILD_META="{}"
