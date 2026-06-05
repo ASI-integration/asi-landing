@@ -38,21 +38,24 @@ const objectCountOptions = [
 const communityOptions: Array<{ value: CommunityStatus; label: string }> = [
   {
     value: 'community_member',
-    label: 'Я участник сообщества Ярослава Стригунова или Анатолия Брагина. Зафиксировать стартовую цену на 1 год.',
+    label: 'Участник сообщества Стригунова или Брагина — 1 000 ₽/мес на год',
   },
   {
     value: 'standard_terms',
-    label: 'Я не состою в сообществах. Хочу участвовать на стандартных условиях.',
+    label: 'Стандартные условия',
   },
   {
     value: 'community_info',
-    label: 'Я хочу узнать, как вступить в сообщество и получить скидку на год.',
+    label: 'Хочу узнать про сообщество и скидку',
   },
 ];
 
-function communityLabel(value: CommunityStatus): string {
-  return communityOptions.find((item) => item.value === value)?.label ?? communityOptions[0].label;
-}
+const communitySubmissionLabels: Record<CommunityStatus, string> = {
+  community_member:
+    'Участник сообщества Ярослава Стригунова или Анатолия Брагина. Зафиксировать стартовую цену на 1 год.',
+  standard_terms: 'Стандартные условия участия.',
+  community_info: 'Хочет узнать, как вступить в сообщество и получить скидку на год.',
+};
 
 export function EarlyAccessObjectForm() {
   const [form, setForm] = useState<FormState>(initialState);
@@ -70,7 +73,7 @@ export function EarlyAccessObjectForm() {
 
     const details = [
       `Количество объектов: ${form.objectsCount}`,
-      `Условия участия: ${communityLabel(form.communityStatus)}`,
+      `Условия участия: ${communitySubmissionLabels[form.communityStatus]}`,
     ].join('\n');
 
     try {
@@ -97,7 +100,7 @@ export function EarlyAccessObjectForm() {
         setStatus(data.message || 'Не удалось отправить заявку.');
         return;
       }
-      setStatus('Заявка отправлена. Мы свяжемся с вами и поможем подключить сервис.');
+      setStatus('Заявка отправлена. Свяжемся с вами в ближайшее время.');
       setForm(initialState);
     } catch {
       setStatus('Ошибка сети. Попробуйте еще раз.');
@@ -130,14 +133,14 @@ export function EarlyAccessObjectForm() {
         </label>
 
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Сколько объектов в управлении?</span>
+          <span className="block text-sm font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
           <select
             value={form.objectsCount}
             onChange={(event) => updateField('objectsCount', event.target.value)}
             required
             className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           >
-            <option value="">Выберите количество объектов</option>
+            <option value="">Выберите количество</option>
             {objectCountOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -168,7 +171,7 @@ export function EarlyAccessObjectForm() {
           disabled={saving}
           className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {saving ? 'Отправляем...' : 'Отправить заявку и запустить автопилот'}
+          {saving ? 'Отправляем...' : 'Отправить заявку'}
         </button>
       </form>
 

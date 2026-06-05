@@ -187,12 +187,12 @@ export default function RuEarlyAccessPage() {
         <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
             <div className="mb-8">
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Финальный шаг</p>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
               <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
-                Оставьте заявку на ранний доступ.
+                Подключить объект
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--t-text-2)]">
-                Индивидуальная помощь на каждом этапе подключения и последующего использования сервиса.
+                Оставьте контакты — свяжемся и поможем с подключением.
               </p>
             </div>
             <EarlyAccessObjectForm />
