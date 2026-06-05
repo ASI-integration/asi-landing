@@ -228,6 +228,7 @@ jobs:
           fi
 
           REMOTE_USER="project_ayfaar"
+          REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
           REMOTE_PORT="${VPS_PORT:-22}"
 
           if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
@@ -286,7 +287,7 @@ jobs:
           echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
           set +e
           PREFLIGHT_OUT="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            'whoami; hostname; echo SSH_OK; test -w /tmp && echo TMP_OK')"
+            'whoami; hostname; echo SSH_OK')"
           PREFLIGHT_RC=$?
           set -e
 
@@ -312,27 +313,26 @@ jobs:
             echo "SSH preflight missing SSH_OK marker"
             exit 1
           fi
-          if ! echo "$PREFLIGHT_OUT" | grep -q 'TMP_OK'; then
-            echo "SSH preflight failed: /tmp is not writable for ${REMOTE_USER}"
-            exit 1
-          fi
+          echo "Ensuring remote deploy temp dir: ${REMOTE_TMP}"
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "mkdir -p \"${REMOTE_TMP}\" && chmod 700 \"${REMOTE_TMP}\""
 
-          echo "Copying deploy script + artifact to VPS /tmp..."
-          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:/tmp/asi-deploy-artifact.sh"
-          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
+          echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
+          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
+          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/${ARTIFACT_FILE}"
 
           echo "Verifying artifact on VPS..."
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "ls -lh /tmp/asi-release-*.tgz | tail -5"
+            "ls -lh ${REMOTE_TMP}/asi-release-*.tgz | tail -5"
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
             "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
               echo \"Deploying SHA: ${SHA}\"
 
-              chmod +x /tmp/asi-deploy-artifact.sh || true
-              ASI_BASE_DIR=\"/var/www/asi\" bash /tmp/asi-deploy-artifact.sh \"${SHA}\" \"/tmp/${ARTIFACT_FILE}\"
+              chmod +x ${REMOTE_TMP}/asi-deploy-artifact.sh || true
+              ASI_BASE_DIR=\"/var/www/asi\" bash ${REMOTE_TMP}/asi-deploy-artifact.sh \"${SHA}\" \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
-              rm -f /tmp/asi-deploy-artifact.sh \"/tmp/${ARTIFACT_FILE}\"
+              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
               echo \"LIVE_SHA_EXPECTED=${SHA}\"
               curl -fsS http://127.0.0.1:3000/api/version
