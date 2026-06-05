@@ -68,22 +68,30 @@ export default function RuEarlyAccessPage() {
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Ранний доступ</p>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Первые подключения</p>
               <h1 className="mt-4 max-w-4xl text-3xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl">
-                Управляйте посуточной недвижимостью на полном автопилоте.
+                Умные ответы гостям для посуточной аренды
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-8 text-[var(--t-text-2)] sm:text-lg">
-                Освободите до 99% времени и забудьте о рутине. Экосистема ASI берет на себя общение с гостями, умное ценообразование и практически все операционные процессы.
+                Сервис помогает отвечать на частые вопросы гостей, не пропускать важные сообщения и сокращать рутину в переписке.
               </p>
               <div className="mt-7">
-                <a
-                  href="#pilot-form"
-                  className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
-                >
-                  Занять место в раннем доступе
-                </a>
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href="#pilot-form"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
+                  >
+                    Подключить объект
+                  </a>
+                  <a
+                    href="#pilot-form"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
+                  >
+                    1000 ₽/мес за объект
+                  </a>
+                </div>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
-                  Первые 7–14 дней бесплатно. Количество мест ограничено.
+                  Подключаем ограниченное количество объектов, чтобы спокойно проверить работу сервиса на реальных гостях и донастроить сценарии под владельцев.
                 </p>
               </div>
             </div>
