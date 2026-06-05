@@ -243,6 +243,20 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
 
+          echo "SSH key diagnostics (fingerprint only, no key material):"
+          if ! SSH_KEY_FP="$(ssh-keygen -lf "$SSH_KEY" 2>&1)"; then
+            echo "VPS_SSH_KEY secret is not a valid SSH private key."
+            echo "${SSH_KEY_FP}"
+            echo "Ensure the secret contains a full OpenSSH private key (BEGIN/END lines, no extra quotes)."
+            exit 1
+          fi
+          echo "private_key: ${SSH_KEY_FP}"
+          if SSH_PUB_FP="$(ssh-keygen -y -f "$SSH_KEY" 2>/dev/null | ssh-keygen -lf - 2>/dev/null)"; then
+            echo "public_key:  ${SSH_PUB_FP}"
+          else
+            echo "public_key:  (could not derive from secret)"
+          fi
+
           SSH_OPTS=(
             -i "$SSH_KEY"
             -p "$REMOTE_PORT"
@@ -273,6 +287,8 @@ jobs:
           if [ "$PREFLIGHT_RC" -ne 0 ]; then
             echo "SSH preflight failed (exit ${PREFLIGHT_RC}) for ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
             echo "$PREFLIGHT_OUT"
+            echo "Loaded key fingerprint: ${SSH_KEY_FP}"
+            echo "Compare public_key fingerprint above with ${REMOTE_USER}@server authorized_keys."
             echo "Check VPS_HOST, VPS_PORT (default 22), and that VPS_SSH_KEY is authorized for user ${REMOTE_USER}."
             exit 1
           fi
