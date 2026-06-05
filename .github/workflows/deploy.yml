@@ -206,11 +206,10 @@ jobs:
           name: ${{ needs.build_release.outputs.artifact_name }}
           path: release-artifact
 
-      - name: Deploy over SSH (auto-detect port)
+      - name: Deploy over SSH
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
@@ -228,59 +227,35 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_USER:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
-            echo "Missing one of required secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY"
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+
+          if [ -z "${VPS_HOST:-}" ] || [ -z "${VPS_SSH_KEY:-}" ]; then
+            echo "Missing one of required secrets: VPS_HOST, VPS_SSH_KEY"
             exit 1
           fi
 
-          echo "Resolving VPS_HOST..."
-          getent hosts "$VPS_HOST" || true
-
-          if [ -n "${VPS_PORT:-}" ]; then
-            CANDIDATE_PORTS=("$VPS_PORT")
-          else
-            CANDIDATE_PORTS=(22 2222 22022 22222)
-          fi
-
-          SELECTED_PORT=""
-          for p in "${CANDIDATE_PORTS[@]}"; do
-            echo "Preflight TCP check: ${VPS_HOST}:${p}"
-            if timeout 6 bash -lc "cat < /dev/null > /dev/tcp/${VPS_HOST}/${p}" 2>/dev/null; then
-              SELECTED_PORT="$p"
-              break
-            fi
-          done
-
-          if [ -z "$SELECTED_PORT" ]; then
-            echo "No reachable SSH port found (tried: ${CANDIDATE_PORTS[*]}). Likely firewall/security-group blocking inbound SSH or VPS is down."
-            exit 1
-          fi
-
-          echo "Selected SSH port: ${SELECTED_PORT}"
+          echo "Deploy target: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
 
           SSH_OPTS=(
-            -p "$SELECTED_PORT"
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=4
             -o ConnectTimeout=20
           )
-
-          ssh-keygen -y -f ~/.ssh/id_ed25519 > /tmp/gha-derived.pub
-          echo "GHA_KEY_FINGERPRINT:"
-          ssh-keygen -lf /tmp/gha-derived.pub
-          echo "GHA_USER=${VPS_USER}"
-          echo "GHA_HOST=${VPS_HOST}"
-          ssh -vvv "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" 'echo SSH_OK'
 
           SCP_OPTS=(
-            -P "$SELECTED_PORT"
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
             -o ServerAliveInterval=15
@@ -288,11 +263,44 @@ jobs:
             -o ConnectTimeout=20
           )
 
-          echo "Copying deploy script + artifact to VPS..."
-          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${VPS_USER}@${VPS_HOST}:/tmp/asi-deploy-artifact.sh"
-          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${VPS_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
+          echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
+          set +e
+          PREFLIGHT_OUT="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            'whoami; hostname; echo SSH_OK; test -w /tmp && echo TMP_OK' 2>&1)"
+          PREFLIGHT_RC=$?
+          set -e
 
-          ssh "${SSH_OPTS[@]}" "${VPS_USER}@${VPS_HOST}" \
+          if [ "$PREFLIGHT_RC" -ne 0 ]; then
+            echo "SSH preflight failed (exit ${PREFLIGHT_RC}) for ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
+            echo "$PREFLIGHT_OUT"
+            echo "Check VPS_HOST, VPS_PORT (default 22), and that VPS_SSH_KEY is authorized for user ${REMOTE_USER}."
+            exit 1
+          fi
+          echo "$PREFLIGHT_OUT"
+
+          REMOTE_WHOAMI="$(echo "$PREFLIGHT_OUT" | head -n1 | tr -d '\r')"
+          if [ "$REMOTE_WHOAMI" != "$REMOTE_USER" ]; then
+            echo "SSH preflight connected as unexpected user: got '${REMOTE_WHOAMI}', expected '${REMOTE_USER}'"
+            exit 1
+          fi
+          if ! echo "$PREFLIGHT_OUT" | grep -q 'SSH_OK'; then
+            echo "SSH preflight missing SSH_OK marker"
+            exit 1
+          fi
+          if ! echo "$PREFLIGHT_OUT" | grep -q 'TMP_OK'; then
+            echo "SSH preflight failed: /tmp is not writable for ${REMOTE_USER}"
+            exit 1
+          fi
+
+          echo "Copying deploy script + artifact to VPS /tmp..."
+          scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:/tmp/asi-deploy-artifact.sh"
+          scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:/tmp/${ARTIFACT_FILE}"
+
+          echo "Verifying artifact on VPS..."
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "ls -lh /tmp/asi-release-*.tgz | tail -5"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
             "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
               echo \"Deploying SHA: ${SHA}\"
 
