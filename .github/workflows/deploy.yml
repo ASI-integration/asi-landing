@@ -262,6 +262,7 @@ jobs:
             -p "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=4
             -o ConnectTimeout=20
@@ -272,21 +273,28 @@ jobs:
             -P "$REMOTE_PORT"
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
             -o ServerAliveInterval=15
             -o ServerAliveCountMax=4
             -o ConnectTimeout=20
           )
 
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
           echo "SSH preflight: ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
           set +e
           PREFLIGHT_OUT="$(ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            'whoami; hostname; echo SSH_OK; test -w /tmp && echo TMP_OK' 2>&1)"
+            'whoami; hostname; echo SSH_OK; test -w /tmp && echo TMP_OK')"
           PREFLIGHT_RC=$?
           set -e
 
           if [ "$PREFLIGHT_RC" -ne 0 ]; then
             echo "SSH preflight failed (exit ${PREFLIGHT_RC}) for ${REMOTE_USER}@${VPS_HOST}:${REMOTE_PORT}"
-            echo "$PREFLIGHT_OUT"
+            if [ -n "${PREFLIGHT_OUT:-}" ]; then
+              echo "$PREFLIGHT_OUT"
+            fi
             echo "Loaded key fingerprint: ${SSH_KEY_FP}"
             echo "Compare public_key fingerprint above with ${REMOTE_USER}@server authorized_keys."
             echo "Check VPS_HOST, VPS_PORT (default 22), and that VPS_SSH_KEY is authorized for user ${REMOTE_USER}."
@@ -294,9 +302,10 @@ jobs:
           fi
           echo "$PREFLIGHT_OUT"
 
-          REMOTE_WHOAMI="$(echo "$PREFLIGHT_OUT" | head -n1 | tr -d '\r')"
-          if [ "$REMOTE_WHOAMI" != "$REMOTE_USER" ]; then
-            echo "SSH preflight connected as unexpected user: got '${REMOTE_WHOAMI}', expected '${REMOTE_USER}'"
+          PREFLIGHT_LINES="$(printf '%s\n' "$PREFLIGHT_OUT" | grep -vE '^Warning: ')"
+          if ! printf '%s\n' "$PREFLIGHT_LINES" | grep -Fxq "$REMOTE_USER"; then
+            echo "SSH preflight connected as unexpected user: expected line '${REMOTE_USER}'"
+            echo "$PREFLIGHT_OUT"
             exit 1
           fi
           if ! echo "$PREFLIGHT_OUT" | grep -q 'SSH_OK'; then
