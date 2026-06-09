@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard', key: 'overview' },
   { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
+  { href: '/dashboard/channel-manager', key: 'channelManager' },
   { href: '/dashboard/properties', key: 'properties' },
   { href: '/dashboard/communication', key: 'communication' },
   { href: '/dashboard/operations', key: 'operations' },
