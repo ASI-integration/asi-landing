@@ -14,6 +14,7 @@ type Session = {
     trial_started_at: string | null;
     trial_ends_at: string | null;
   } | null;
+  isInternal?: boolean;
 };
 
 const SessionContext = createContext<{
@@ -33,9 +34,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         user: null as Session['user'] | null,
         subscription: null as Session['subscription'] | null,
         account: null as Session['account'] | null,
+        isInternal: false,
       });
       if (data.user) {
-        setSession({ user: data.user, subscription: data.subscription, account: data.account ?? null });
+        setSession({
+          user: data.user,
+          subscription: data.subscription,
+          account: data.account ?? null,
+          isInternal: data.isInternal === true,
+        });
       } else {
         setSession(null);
       }
