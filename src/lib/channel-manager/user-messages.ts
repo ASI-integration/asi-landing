@@ -21,13 +21,24 @@ const ERROR_CODE_LABELS: Record<string, string> = {
     'Рабочее пространство аккаунта ещё не готово. Обратитесь в поддержку.',
   ops_request_failed: 'Не удалось выполнить запрос. Попробуйте ещё раз.',
   Unauthorized: 'Нужно войти в аккаунт.',
+  channel_not_found: 'Канал не найден.',
+  channel_shadow_mode_required: 'Для этого действия канал должен работать в теневом режиме.',
+  property_day_and_units_required: 'Нужно выбрать объект, дату и количество мест.',
+  property_guest_and_dates_required: 'Нужно заполнить объект, гостя и даты.',
+  shadow_event_payload_required: 'Нужно заполнить данные shadow-события.',
+  dates_required: 'Нужно указать даты.',
 };
+
+const GENERIC_LOAD_ERROR =
+  'Не удалось загрузить данные менеджера каналов. Обновите страницу или обратитесь в поддержку.';
+const GENERIC_ACTION_ERROR = 'Не удалось выполнить действие. Попробуйте ещё раз или обратитесь в поддержку.';
 
 export function formatApiErrorField(value: unknown): string | undefined {
   if (value == null) return undefined;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return trimmed || undefined;
+    if (!trimmed || trimmed === '[object Object]') return undefined;
+    return trimmed;
   }
   if (value instanceof Error) return value.message;
   if (typeof value === 'object') {
@@ -41,22 +52,33 @@ export function formatApiErrorField(value: unknown): string | undefined {
 }
 
 export function channelManagerErrorText(code?: string): string {
-  if (!code) return 'Не удалось выполнить действие';
-  return ERROR_CODE_LABELS[code] ?? code;
+  if (!code) return GENERIC_ACTION_ERROR;
+  return ERROR_CODE_LABELS[code] ?? GENERIC_ACTION_ERROR;
+}
+
+/**
+ * Returns a friendly RU label only when the API code/detail maps to a known error.
+ * Raw technical strings (including the literal "[object Object]") are never shown to
+ * the user — they are logged and replaced by a generic message.
+ */
+function knownErrorLabel(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = formatApiErrorField(value);
+    if (text && ERROR_CODE_LABELS[text]) return ERROR_CODE_LABELS[text];
+  }
+  return undefined;
 }
 
 export function userFacingChannelManagerLoadError(detail?: unknown, code?: unknown): string {
-  const detailText = formatApiErrorField(detail);
-  const codeText = formatApiErrorField(code);
-  const primary = detailText ?? codeText;
-  if (!primary) {
-    return 'Не удалось загрузить данные менеджера каналов. Обновите страницу или обратитесь в поддержку.';
-  }
-  return channelManagerErrorText(primary);
+  const known = knownErrorLabel(code, detail);
+  if (known) return known;
+  console.error('[channel-manager] unmapped load error', { code, detail });
+  return GENERIC_LOAD_ERROR;
 }
 
 export function userFacingChannelManagerActionError(detail?: unknown, code?: unknown): string {
-  const detailText = formatApiErrorField(detail);
-  const codeText = formatApiErrorField(code);
-  return channelManagerErrorText(detailText ?? codeText);
+  const known = knownErrorLabel(code, detail);
+  if (known) return known;
+  console.error('[channel-manager] unmapped action error', { code, detail });
+  return GENERIC_ACTION_ERROR;
 }

@@ -32,4 +32,24 @@ describe('channel manager user messages', () => {
   it('maps known action error codes to Russian text', () => {
     expect(userFacingChannelManagerActionError('invalid_dates')).toBe('Проверьте даты заезда и выезда.');
   });
+
+  it('never surfaces the literal [object Object] string to users', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(formatApiErrorField('[object Object]')).toBeUndefined();
+    expect(userFacingChannelManagerLoadError('[object Object]', undefined)).toBe(
+      'Не удалось загрузить данные менеджера каналов. Обновите страницу или обратитесь в поддержку.',
+    );
+    expect(userFacingChannelManagerActionError('[object Object]', '[object Object]')).toBe(
+      'Не удалось выполнить действие. Попробуйте ещё раз или обратитесь в поддержку.',
+    );
+    spy.mockRestore();
+  });
+
+  it('prefers a known error code over a raw technical detail', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(userFacingChannelManagerLoadError('relation "channels" does not exist', 'ops_request_failed')).toBe(
+      'Не удалось выполнить запрос. Попробуйте ещё раз.',
+    );
+    spy.mockRestore();
+  });
 });

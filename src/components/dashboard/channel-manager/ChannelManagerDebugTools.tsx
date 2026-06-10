@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { BronevikDryRunPreview } from '@/lib/channel-manager/bronevik-mts-real-adapter';
 import type {
   ChannelCode,
@@ -146,17 +147,34 @@ export function ChannelManagerDebugTools(props: ChannelManagerDebugToolsProps) {
 
   const bronevikState = state.bronevikMtsTravel;
   const activeBronevikPreview = bronevikPreview ?? null;
+  const [open, setOpen] = useState(false);
 
   return (
     <section className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80">
-      <div className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-base font-semibold text-slate-900">Внутренние инструменты / тестовый режим</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Только для команды ASI: ручная доступность, mock-брони, журналы синхронизации и предпросмотр payload.
-        </p>
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+      >
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-900">Внутренние инструменты / тестовый режим</h2>
+            <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-500">
+              Только для команды ASI
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Ручная доступность, mock-брони, журналы синхронизации, Bronevik dry-run и предпросмотр payload.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600">
+          {open ? 'Скрыть' : 'Показать'}
+        </span>
+      </button>
 
-      <div className="space-y-6 p-5">
+      {open ? (
+      <div className="space-y-6 border-t border-slate-200 p-5">
         <section className="rounded-md border border-slate-200 bg-white">
           <div className="border-b border-slate-100 px-5 py-4">
             <h3 className="text-base font-semibold text-slate-900">Список каналов (управление)</h3>
@@ -538,6 +556,7 @@ export function ChannelManagerDebugTools(props: ChannelManagerDebugToolsProps) {
           </div>
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

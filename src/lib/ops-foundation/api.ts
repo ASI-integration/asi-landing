@@ -13,7 +13,7 @@ export async function requireOpsFoundationContext(): Promise<OpsFoundationApiCon
   try {
     session = await getSession();
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = describeUnknownError(err);
     return {
       ok: false,
       response: NextResponse.json({ ok: false, error: 'ops_backend_unavailable', detail }, { status: 503 }),
@@ -41,12 +41,24 @@ export async function requireOpsFoundationContext(): Promise<OpsFoundationApiCon
       ctx: { accountId, userId: session.userId },
     };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = describeUnknownError(err);
     return {
       ok: false,
       response: NextResponse.json({ ok: false, error: 'ops_backend_unavailable', detail }, { status: 503 }),
     };
   }
+}
+
+export function describeUnknownError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    const serialized = JSON.stringify(err);
+    if (serialized && serialized !== '{}') return serialized;
+  } catch {
+    // fall through to generic label
+  }
+  return 'unknown_error';
 }
 
 export function opsFoundationApiErrorResponse(err: unknown): NextResponse {
@@ -57,8 +69,10 @@ export function opsFoundationApiErrorResponse(err: unknown): NextResponse {
     );
   }
 
-  const detail = err instanceof Error ? err.message : String(err);
-  return NextResponse.json({ ok: false, error: 'ops_request_failed', detail }, { status: 500 });
+  return NextResponse.json(
+    { ok: false, error: 'ops_request_failed', detail: describeUnknownError(err) },
+    { status: 500 },
+  );
 }
 
 export async function readJsonObject(req: Request): Promise<Record<string, unknown>> {
