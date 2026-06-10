@@ -1,0 +1,126 @@
+name: Diag SSH Reachability (temporary)
+
+# TEMPORARY read-only diagnostic. Does not deploy, does not change anything.
+# Prints ONLY classifications (yes/no, connected/timeout/refused/auth_failed).
+# Never prints secret values (host, port, key, tokens).
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: diag-ssh
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Diagnose SSH reachability (no secret values printed)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # Pure-string masking (no regex) so host/port never leak into output.
+          mask() {
+            local s; s="$(cat)"
+            if [ -n "${VPS_HOST:-}" ]; then s="${s//${VPS_HOST}/HOST}"; fi
+            if [ -n "${VPS_PORT:-}" ]; then s="${s//${VPS_PORT}/PORT}"; fi
+            printf '%s\n' "$s"
+          }
+
+          PORT="${VPS_PORT:-22}"
+          USER_FIXED="project_ayfaar"
+
+          echo "===== 1) Does the runner see the secrets? (presence only) ====="
+          echo "vps_host_set=$([ -n "${VPS_HOST:-}" ] && echo yes || echo no)"
+          echo "vps_port_set=$([ -n "${VPS_PORT:-}" ] && echo yes || echo no)"
+          echo "vps_ssh_key_set=$([ -n "${VPS_SSH_KEY:-}" ] && echo yes || echo no)"
+
+          echo "===== 2) Target identity (booleans only, value never printed) ====="
+          echo "host_is_google_vm_35_254_73_132=$([ "${VPS_HOST:-}" = "35.254.73.132" ] && echo yes || echo no)"
+          echo "host_is_timeweb_176_124_216_6=$([ "${VPS_HOST:-}" = "176.124.216.6" ] && echo yes || echo no)"
+          echo "host_is_old_google_34_42_241_227=$([ "${VPS_HOST:-}" = "34.42.241.227" ] && echo yes || echo no)"
+          echo "host_is_ipv4_literal=$(printf '%s' "${VPS_HOST:-}" | grep -Eq '^[0-9]+(\.[0-9]+){3}$' && echo yes || echo no)"
+          echo "host_is_hostname=$(printf '%s' "${VPS_HOST:-}" | grep -Eq '[a-zA-Z]' && echo yes || echo no)"
+          echo "port_is_22=$([ "${PORT}" = "22" ] && echo yes || echo no)"
+          echo "port_is_numeric=$(printf '%s' "${PORT}" | grep -Eq '^[0-9]+$' && echo yes || echo no)"
+
+          echo "===== runner egress IP (public; needed for firewall allowlist) ====="
+          echo "runner_egress_ip=$(curl -s --max-time 10 https://api.ipify.org || echo unknown)"
+
+          echo "===== 3) DNS resolution of target ====="
+          if getent hosts "${VPS_HOST}" >/dev/null 2>&1; then
+            echo "dns_resolved=yes"
+            RIP="$(getent hosts "${VPS_HOST}" | awk '{print $1}' | head -n1)"
+            echo "resolved_is_google_vm=$([ "${RIP}" = "35.254.73.132" ] && echo yes || echo no)"
+            echo "resolved_is_timeweb=$([ "${RIP}" = "176.124.216.6" ] && echo yes || echo no)"
+          else
+            echo "dns_resolved=no"
+          fi
+
+          echo "===== 4) TCP connect to SSH port ====="
+          tcp_result="unknown"
+          if timeout 20 bash -c ": </dev/tcp/${VPS_HOST}/${PORT}" 2>/tmp/tcp.err; then
+            tcp_result="connected"
+          else
+            rc=$?
+            if [ "$rc" -eq 124 ]; then tcp_result="timeout"
+            elif grep -qi "Connection refused" /tmp/tcp.err; then tcp_result="refused"
+            elif grep -qi "No route to host" /tmp/tcp.err; then tcp_result="no_route"
+            elif grep -qi "name or service not known\|temporary failure in name resolution" /tmp/tcp.err; then tcp_result="dns_failure"
+            else tcp_result="failed_rc_${rc}"; fi
+          fi
+          echo "tcp_connect=${tcp_result}"
+
+          echo "===== 5) SSH banner (server greeting; confirms a real sshd) ====="
+          banner="$(timeout 15 bash -c 'exec 3<>/dev/tcp/'"${VPS_HOST}"'/'"${PORT}"'; head -c 80 <&3' 2>/dev/null | tr -dc '[:print:]' | head -n1 || true)"
+          if printf '%s' "$banner" | grep -q '^SSH-'; then
+            echo "ssh_banner=present"
+            echo "ssh_server_id=${banner}"
+          else
+            echo "ssh_banner=absent"
+          fi
+
+          echo "===== 6) SSH auth test (BatchMode, key from secret, host never printed) ====="
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          KEY=~/.ssh/diag_key
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY"
+          chmod 600 "$KEY"
+          set +e
+          ssh -i "$KEY" -p "$PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o LogLevel=ERROR \
+            "${USER_FIXED}@${VPS_HOST}" "echo SSH_AUTH_OK" >/tmp/ssh.out 2>/tmp/ssh.err
+          rc=$?
+          set -e
+          if grep -q "SSH_AUTH_OK" /tmp/ssh.out 2>/dev/null; then
+            echo "ssh_auth=connected_ok"
+          elif grep -qi "Connection timed out\|Operation timed out\|Connection timout" /tmp/ssh.err; then
+            echo "ssh_auth=timeout"
+          elif grep -qi "Connection refused" /tmp/ssh.err; then
+            echo "ssh_auth=refused"
+          elif grep -qi "No route to host" /tmp/ssh.err; then
+            echo "ssh_auth=no_route"
+          elif grep -qi "Permission denied\|publickey\|password\|authentication" /tmp/ssh.err; then
+            echo "ssh_auth=auth_failed"
+          elif grep -qi "Could not resolve hostname\|name or service not known" /tmp/ssh.err; then
+            echo "ssh_auth=dns_failure"
+          else
+            echo "ssh_auth=failed_rc_${rc}"
+          fi
+          # masked single-line reason class only (no raw host/port/key)
+          echo "ssh_error_class=$(head -n1 /tmp/ssh.err 2>/dev/null | mask | tr -dc '[:print:]' | cut -c1-160)"
+          rm -f "$KEY"
+
+          echo "===== DONE (diagnostic only; nothing deployed/changed) ====="
