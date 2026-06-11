@@ -55,15 +55,23 @@ assert_pm2_runtime_user() {
   export PM2_HOME="$EXPECTED_PM2_HOME"
   mkdir -p "$PM2_HOME"
 
-  local root_pm2_daemon=""
-  root_pm2_daemon="$(ps -eo user=,pid=,args= 2>/dev/null | awk '$1=="root" && $0 ~ /PM2/ && $0 ~ /God Daemon/ {print}' || true)"
-  if [[ -n "$root_pm2_daemon" ]]; then
-    log "Root-owned PM2 daemon detected:"
-    echo "$root_pm2_daemon"
-    die "Refusing deploy while root PM2 daemon is running; use only ${EXPECTED_PM2_USER} PM2"
+  # Only refuse when a root-owned process is actually serving the SITE (Next on :3000 /
+  # under /var/www/asi). A root PM2 daemon that only runs backend/telegram services is fine:
+  # the site must run under ${EXPECTED_PM2_USER}, but unrelated backends may stay on root PM2.
+  local root_site_proc=""
+  root_site_proc="$(ps -eo user=,pid=,args= 2>/dev/null | awk '
+    $1=="root" && (
+      $0 ~ /next-server/ ||
+      $0 ~ /next\/dist\/bin\/next/ ||
+      ($0 ~ /\/var\/www\/asi\// && $0 ~ /next/)
+    ) {print}' || true)"
+  if [[ -n "$root_site_proc" ]]; then
+    log "Root-owned SITE process detected (the site must run under ${EXPECTED_PM2_USER} only):"
+    echo "$root_site_proc"
+    die "Refusing deploy while a root-owned site process is running; stop/delete it from root PM2 (leave backend processes untouched)"
   fi
 
-  log "PM2 runtime user check: user=${actual_user} PM2_HOME=${PM2_HOME}"
+  log "PM2 runtime user check: user=${actual_user} PM2_HOME=${PM2_HOME} (no root-owned site process detected)"
 }
 
 print_runtime_diagnostics() {
