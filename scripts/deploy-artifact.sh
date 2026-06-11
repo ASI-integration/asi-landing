@@ -59,12 +59,7 @@ assert_pm2_runtime_user() {
   # under /var/www/asi). A root PM2 daemon that only runs backend/telegram services is fine:
   # the site must run under ${EXPECTED_PM2_USER}, but unrelated backends may stay on root PM2.
   local root_site_proc=""
-  root_site_proc="$(ps -eo user=,pid=,args= 2>/dev/null | awk '
-    $1=="root" && (
-      $0 ~ /next-server/ ||
-      $0 ~ /next\/dist\/bin\/next/ ||
-      ($0 ~ /\/var\/www\/asi\// && $0 ~ /next/)
-    ) {print}' || true)"
+  root_site_proc="$(ps -eo user=,pid=,args= 2>/dev/null | awk '$1=="root" && ($0 ~ /next-server/ || $0 ~ /next\/dist\/bin\/next/ || ($0 ~ /\/var\/www\/asi\// && $0 ~ /next/)) {print}' || true)"
   if [[ -n "$root_site_proc" ]]; then
     log "Root-owned SITE process detected (the site must run under ${EXPECTED_PM2_USER} only):"
     echo "$root_site_proc"
