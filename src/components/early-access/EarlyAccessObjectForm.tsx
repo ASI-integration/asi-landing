@@ -113,32 +113,32 @@ export function EarlyAccessObjectForm() {
     <div id="pilot-form" className="scroll-mt-24">
       <form onSubmit={handleSubmit} className="grid gap-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Ваше имя</span>
+          <span className="block text-base font-semibold text-[var(--t-text)]">Ваше имя</span>
           <input
             value={form.name}
             onChange={(event) => updateField('name', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           />
         </label>
 
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Телефон / Telegram</span>
+          <span className="block text-base font-semibold text-[var(--t-text)]">Телефон / Telegram</span>
           <input
             value={form.contact}
             onChange={(event) => updateField('contact', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           />
         </label>
 
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
+          <span className="block text-base font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
           <select
             value={form.objectsCount}
             onChange={(event) => updateField('objectsCount', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           >
             <option value="">Выберите количество</option>
             {objectCountOptions.map((option) => (
@@ -150,9 +150,9 @@ export function EarlyAccessObjectForm() {
         </label>
 
         <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--t-text)]">Готовность к подключению</legend>
+          <legend className="text-base font-semibold text-[var(--t-text)]">Готовность к подключению</legend>
           {pilotReadinessOptions.map((option) => (
-            <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
+            <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-base leading-7 text-[var(--t-text-2)]">
               <input
                 type="radio"
                 name="pilotReadiness"
@@ -169,14 +169,14 @@ export function EarlyAccessObjectForm() {
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-base font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving ? 'Отправляем...' : 'Отправить заявку'}
         </button>
       </form>
 
       {status ? (
-        <div className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm font-medium text-[var(--t-text)]" aria-live="polite">
+        <div className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base font-medium text-[var(--t-text)]" aria-live="polite">
           {status}
         </div>
       ) : null}

@@ -54,11 +54,14 @@ const securityItems = [
 ];
 
 const pricingRows = [
-  ['Первые 30 дней', '0 ₽'],
-  ['Период пилотной настройки', '0 ₽ для первых подключённых объектов'],
+  ['Первый месяц', '0 ₽'],
   [
-    'После завершения пилота',
-    'Условия согласуем отдельно. Для первых участников планируется льготная цена 1 000 ₽ за объект в год.',
+    'Для участников групп Анатолия Брагина и Ярослава Стригунова',
+    'после бесплатного месяца 1 000 ₽ за объект в месяц в течение первого года',
+  ],
+  [
+    'После первого года',
+    'условия согласуем отдельно с учётом подключённых функций и количества объектов',
   ],
 ];
 
@@ -71,7 +74,7 @@ export default function RuEarlyAccessPage() {
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Закрытый пилот</p>
+              <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Закрытый пилот</p>
               <h1 className="mt-4 max-w-4xl text-3xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl">
                 Подключите объект к ASI для бесплатного пилотного тестирования
               </h1>
@@ -83,18 +86,18 @@ export default function RuEarlyAccessPage() {
                 <div className="flex flex-wrap gap-3">
                   <a
                     href="#pilot-form"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-base font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
                   >
                     Подключить объект
                   </a>
                   <a
                     href="#pricing"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-base font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
                   >
                     Бесплатный пилот
                   </a>
                 </div>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
+                <p className="mt-4 max-w-2xl text-base leading-8 text-[var(--t-muted)]">
                   Пилот открыт для первых участников. Подключение проходит аккуратно, без передачи паролей от личных
                   кабинетов площадок и без доступа к вашим деньгам.
                 </p>
@@ -105,7 +108,7 @@ export default function RuEarlyAccessPage() {
               <h2 className="text-xl font-bold text-[var(--t-text)]">Что входит в пилот</h2>
               <ul className="mt-5 space-y-3">
                 {pilotItems.map((item) => (
-                  <li key={item} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
+                  <li key={item} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-base leading-7 text-[var(--t-text-2)]">
                     {item}
                   </li>
                 ))}
@@ -116,7 +119,7 @@ export default function RuEarlyAccessPage() {
 
         <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Главное</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Главное</p>
             <h2 className="mt-4 text-2xl font-bold leading-tight text-[var(--t-text)] sm:text-4xl">
               ASI помогает собрать управление объектом в один рабочий контур
             </h2>
@@ -125,7 +128,7 @@ export default function RuEarlyAccessPage() {
               проверить данные, сценарии ответов, подготовку к каналам размещения и дальнейшую автоматизацию на реальных
               условиях.
             </p>
-            <p className="mt-4 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-sm leading-7 text-[var(--t-text-2)]">
+            <p className="mt-4 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
               Сначала подключаем базовые данные объекта и ручной режим. Затем постепенно добавляем полуавтоматические
               действия, рекомендации по ценам, календарь, доступность и управление каналами.
             </p>
@@ -134,17 +137,17 @@ export default function RuEarlyAccessPage() {
 
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Что ещё будет в сервисе</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Что ещё будет в сервисе</p>
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               {roadmapItems.map((item, index) => (
                 <article key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
                   <div className="flex items-start gap-3">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--t-surface-2)] text-base font-bold text-[var(--t-text)]">
                       {index + 1}
                     </span>
                     <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
                   </div>
-                  <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
+                  <p className="mt-4 text-base leading-8 text-[var(--t-text-2)]">{item.text}</p>
                 </article>
               ))}
             </div>
@@ -153,12 +156,12 @@ export default function RuEarlyAccessPage() {
 
         <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Безопасность</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Безопасность</p>
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {securityItems.map((item) => (
                 <article key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
                   <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
-                  <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
+                  <p className="mt-3 text-base leading-8 text-[var(--t-text-2)]">{item.text}</p>
                 </article>
               ))}
             </div>
@@ -167,22 +170,23 @@ export default function RuEarlyAccessPage() {
 
         <section id="pricing" className="scroll-mt-24 px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Стоимость пилотного подключения</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Стоимость пилотного подключения</p>
             <div className="mt-6 overflow-hidden rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)]">
-              <div className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
+              <div className="grid border-b border-[var(--t-border)] bg-[var(--t-surface-2)] text-base font-bold text-[var(--t-text)] sm:grid-cols-[0.9fr_1.1fr]">
                 <div className="px-4 py-3">Период</div>
-                <div className="border-l border-[var(--t-border)] px-4 py-3">Стоимость</div>
+                <div className="border-t border-[var(--t-border)] px-4 py-3 sm:border-l sm:border-t-0">Стоимость</div>
               </div>
               {pricingRows.map(([period, price]) => (
-                <div key={period} className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] text-sm leading-6 text-[var(--t-text-2)] last:border-b-0">
+                <div key={period} className="grid border-b border-[var(--t-border)] text-base leading-7 text-[var(--t-text-2)] last:border-b-0 sm:grid-cols-[0.9fr_1.1fr]">
                   <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{period}</div>
-                  <div className="border-l border-[var(--t-border)] px-4 py-4">{price}</div>
+                  <div className="border-t border-[var(--t-border)] px-4 py-4 sm:border-l sm:border-t-0">{price}</div>
                 </div>
               ))}
             </div>
-            <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-sm leading-7 text-[var(--t-text-2)]">
-              Пока продукт проходит пилотную обкатку, мы не берём оплату за подключение первых объектов. Оплата обсуждается
-              только после того, как базовый функционал станет полезен на практике.
+            <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
+              Пока продукт проходит пилотную обкатку, мы подключаем первые объекты в спокойном режиме и не берём оплату
+              за первый месяц. Для участников групп Анатолия Брагина и Ярослава Стригунова сохраняется льготное условие
+              на первый год после подключения.
             </p>
           </div>
         </section>
@@ -190,15 +194,15 @@ export default function RuEarlyAccessPage() {
         <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
             <div className="mb-8">
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
+              <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
               <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
                 Подключить объект к пилоту
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--t-text-2)]">
+              <p className="mt-3 max-w-2xl text-base leading-8 text-[var(--t-text-2)]">
                 Оставьте контакты и краткую информацию об объекте. Мы свяжемся, уточним данные и поможем пройти первые
                 шаги подключения.
               </p>
-              <p className="mt-3 max-w-3xl rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-sm leading-7 text-[var(--t-text-2)]">
+              <p className="mt-3 max-w-3xl rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
                 Для старта понадобятся: адрес или район, тип объекта, фото, описание, правила проживания, условия
                 заселения, Wi-Fi, базовая цена и список площадок, где объект уже размещён.
               </p>
