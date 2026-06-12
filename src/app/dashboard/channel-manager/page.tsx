@@ -1,445 +1,340 @@
-'use client';
-
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSession } from '@/contexts/SessionContext';
-import { ChannelManagerDebugTools } from '@/components/dashboard/channel-manager/ChannelManagerDebugTools';
-import { ChannelManagerOwnerView } from '@/components/dashboard/channel-manager/ChannelManagerOwnerView';
-import { isApiLikeChannel, statusLabel } from '@/components/dashboard/channel-manager/labels';
-import type { BronevikDryRunPreview } from '@/lib/channel-manager/bronevik-mts-real-adapter';
-import type { PropertyReadiness } from '@/lib/channel-manager/property-lifecycle';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+import { ChannelManagerObjectDataLink } from '@/components/dashboard/channel-manager/ChannelManagerObjectDataLink';
 import {
-  userFacingChannelManagerActionError,
-  userFacingChannelManagerLoadError,
-} from '@/lib/channel-manager/user-messages';
-import type {
-  ChannelCode,
-  ChannelManagerChannel,
-  ChannelReservation,
-  ChannelShadowBookingEvent,
-  ChannelShadowDiscrepancy,
-  ChannelSyncJob,
-  ChannelSyncLog,
-  InventoryDay,
-} from '@/lib/channel-manager/types';
-import type { OpsProperty } from '@/lib/ops-foundation/types';
+  CHANNEL_MANAGER_MOCK_CHANNELS,
+  CHANNEL_MANAGER_MODES,
+  channelManagerModeHasFeature,
+  channelManagerModeShowsBlock,
+  normalizeChannelManagerMode,
+  type ChannelManagerMockChannel,
+  type ChannelManagerTariffMode,
+} from '@/lib/channel-manager/tariff-modes';
 
-type ApiState = {
-  channels: ChannelManagerChannel[];
-  inventoryDays: InventoryDay[];
-  reservations: ChannelReservation[];
-  syncJobs: ChannelSyncJob[];
-  syncLogs: ChannelSyncLog[];
-  shadowEvents: ChannelShadowBookingEvent[];
-  shadowDiscrepancies: ChannelShadowDiscrepancy[];
-  bronevikMtsTravel: {
-    channelId: string | null;
-    credentials: { ok: boolean; maskedValues: Record<string, string> };
-    health: { ok: boolean; message: string; externalCalls: number };
-    mode: 'sandbox_shadow_read_only';
-    sandbox: boolean;
-    dryRunPreview: BronevikDryRunPreview | null;
-    missingMappings: BronevikDryRunPreview['missingMappings'];
-    latestSyncJobs: ChannelSyncJob[];
-    latestSyncLogs: ChannelSyncLog[];
-  } | null;
+const modeOrder: ChannelManagerTariffMode[] = ['manual', 'assisted', 'autopilot'];
+
+const statusTone: Record<ChannelManagerMockChannel['status'], string> = {
+  'Не подключен': 'border-slate-200 bg-slate-50 text-slate-600',
+  'Черновик': 'border-sky-200 bg-sky-50 text-sky-700',
+  'Требует настройки': 'border-amber-200 bg-amber-50 text-amber-800',
+  'Готов': 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'Активен': 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  'Ошибка': 'border-red-200 bg-red-50 text-red-700',
+  'Отключён': 'border-slate-200 bg-white text-slate-500',
 };
 
-type ApiEnvelope = { ok?: boolean; error?: unknown; detail?: unknown; result?: unknown };
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function Card({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        {subtitle ? <p className="mt-1 text-sm leading-6 text-slate-500">{subtitle}</p> : null}
+      </div>
+      <div className="px-5 py-5">{children}</div>
+    </section>
+  );
 }
 
-function addDaysIso(day: string, amount: number): string {
-  const date = new Date(`${day}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + amount);
-  return date.toISOString().slice(0, 10);
+function ChannelList({ mode }: { mode: ChannelManagerTariffMode }) {
+  const compact = channelManagerModeHasFeature(mode, 'compactChannels') || channelManagerModeHasFeature(mode, 'activeChannels');
+  const channels = channelManagerModeHasFeature(mode, 'activeChannels')
+    ? CHANNEL_MANAGER_MOCK_CHANNELS.filter((channel) => channel.status === 'Активен' || channel.status === 'Готов')
+    : CHANNEL_MANAGER_MOCK_CHANNELS;
+
+  return (
+    <Card
+      title={compact ? 'Каналы' : 'Список каналов'}
+      subtitle="Список подготовительный. Реальные отправки на площадки пока отключены."
+    >
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
+          <thead>
+            <tr className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <th className="whitespace-nowrap py-2 pr-4">Канал</th>
+              <th className="whitespace-nowrap px-4 py-2">Статус</th>
+              {!compact ? <th className="whitespace-nowrap px-4 py-2">Тип подключения</th> : null}
+              <th className="whitespace-nowrap px-4 py-2">Готовность</th>
+              {!compact ? <th className="whitespace-nowrap px-4 py-2">Последнее обновление</th> : null}
+              <th className="whitespace-nowrap py-2 pl-4">Ошибки</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {channels.map((channel) => (
+              <tr key={channel.name} className="align-top">
+                <td className="whitespace-nowrap py-3 pr-4 font-medium text-slate-900">{channel.name}</td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone[channel.status]}`}>
+                    {channel.status}
+                  </span>
+                </td>
+                {!compact ? <td className="whitespace-nowrap px-4 py-3 text-slate-600">{channel.connectionType}</td> : null}
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{channel.readiness}</td>
+                {!compact ? <td className="whitespace-nowrap px-4 py-3 text-slate-500">{channel.lastUpdate}</td> : null}
+                <td className="whitespace-nowrap py-3 pl-4 text-slate-600">
+                  {channel.hasErrors ? 'Есть ошибки' : 'Нет'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 }
 
-export default function ChannelManagerPage() {
-  const { session } = useSession();
-  const isInternal = session?.isInternal === true;
-
-  const [properties, setProperties] = useState<OpsProperty[]>([]);
-  const [propertyId, setPropertyId] = useState('');
-  const [readiness, setReadiness] = useState<PropertyReadiness | null>(null);
-  const [state, setState] = useState<ApiState>({
-    channels: [],
-    inventoryDays: [],
-    reservations: [],
-    syncJobs: [],
-    syncLogs: [],
-    shadowEvents: [],
-    shadowDiscrepancies: [],
-    bronevikMtsTravel: null,
-  });
-  const [bronevikPreview, setBronevikPreview] = useState<BronevikDryRunPreview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const [inventoryDay, setInventoryDayValue] = useState(todayIso());
-  const [totalUnits, setTotalUnits] = useState(1);
-  const [blockedUnits, setBlockedUnits] = useState(0);
-
-  const [channelCode, setChannelCode] = useState<ChannelCode>('yandex_travel');
-  const [guestName, setGuestName] = useState('Тестовый гость');
-  const [checkInDate, setCheckInDate] = useState(todayIso());
-  const [checkOutDate, setCheckOutDate] = useState(addDaysIso(todayIso(), 2));
-  const [externalBookingId, setExternalBookingId] = useState('');
-  const [totalAmount, setTotalAmount] = useState(12000);
-  const [confirmationMode, setConfirmationMode] = useState<'confirm' | 'pending'>('confirm');
-  const [editingReservationId, setEditingReservationId] = useState<string | null>(null);
-  const [editCheckInDate, setEditCheckInDate] = useState(todayIso());
-  const [editCheckOutDate, setEditCheckOutDate] = useState(addDaysIso(todayIso(), 2));
-
-  const selectedProperty = useMemo(
-    () => properties.find((property) => property.id === propertyId) ?? null,
-    [properties, propertyId],
+function ModeSwitcher({ activeMode }: { activeMode: ChannelManagerTariffMode }) {
+  return (
+    <Card title="Текущий режим тарифа" subtitle="Сейчас режим выбирается локально. Позже ASI сможет брать его из подписки аккаунта.">
+      <div className="grid gap-3 md:grid-cols-3">
+        {modeOrder.map((mode) => {
+          const item = CHANNEL_MANAGER_MODES[mode];
+          const active = mode === activeMode;
+          return (
+            <Link
+              key={mode}
+              href={`/dashboard/channel-manager?mode=${mode}`}
+              className={`rounded-lg border px-4 py-4 transition-colors ${
+                active
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
+              }`}
+            >
+              <p className="text-base font-semibold">{item.label}</p>
+              <p className={`mt-2 text-sm leading-6 ${active ? 'text-slate-200' : 'text-slate-500'}`}>{item.summary}</p>
+            </Link>
+          );
+        })}
+      </div>
+    </Card>
   );
-  const conflictReservations = state.reservations.filter((reservation) =>
-    ['conflict', 'rejected_by_inventory', 'declined'].includes(reservation.status),
+}
+
+function ReadinessBlock() {
+  const items = [
+    ['Основные данные объекта', true],
+    ['Адрес и правила проживания', true],
+    ['Фото и описание', true],
+    ['Цены и ограничения', true],
+    ['Каналы для публикации', false],
+  ] as const;
+
+  return (
+    <Card title="Готовность объекта" subtitle="Объект готов к публикации на 9 из 11 шагов.">
+      <ul className="space-y-2">
+        {items.map(([label, done]) => (
+          <li key={label} className="flex items-center gap-3 text-sm">
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+              }`}
+            >
+              {done ? '✓' : '—'}
+            </span>
+            <span className={done ? 'text-slate-900' : 'text-slate-500'}>{label}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
-  const channelNameByCode = useMemo(
-    () => new Map(state.channels.map((channel) => [channel.code, channel.name])),
-    [state.channels],
+}
+
+function UpdatesBlock() {
+  return (
+    <Card title="Очередь обновлений" subtitle="Изменения будут появляться здесь перед отправкой на площадки.">
+      <p className="text-sm font-medium text-slate-900">Пока нет ожидающих обновлений</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Реальные отправки на площадки пока отключены.</p>
+    </Card>
   );
-  const channelNameById = useMemo(
-    () => new Map(state.channels.map((channel) => [channel.id, channel.name])),
-    [state.channels],
+}
+
+function ActivityBlock({ mode }: { mode: ChannelManagerTariffMode }) {
+  const title = mode === 'autopilot' ? 'Последние важные действия' : 'Журнал действий';
+  return (
+    <Card title={title} subtitle="Здесь будет история значимых изменений по каналам.">
+      <ul className="space-y-3 text-sm">
+        <li>
+          <p className="font-medium text-slate-900">Карточка объекта проверена</p>
+          <p className="text-slate-500">Сегодня, 10:20 · без внешней отправки</p>
+        </li>
+        <li>
+          <p className="font-medium text-slate-900">Цены подготовлены к проверке</p>
+          <p className="text-slate-500">Вчера, 18:40 · ожидает подтверждения</p>
+        </li>
+      </ul>
+    </Card>
   );
-  const selectableChannels = state.channels.filter(isApiLikeChannel);
-  const selectedChannel = state.channels.find((channel) => channel.code === channelCode) ?? null;
+}
 
-  const load = useCallback(async (nextPropertyId = propertyId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const propertiesRes = await fetch('/api/ops/properties');
-      const propertiesJson = (await propertiesRes.json()) as ApiEnvelope & { properties?: OpsProperty[] };
-      if (!propertiesRes.ok || !propertiesJson.ok) {
-        console.error('[channel-manager] properties load failed', propertiesJson);
-        setError(userFacingChannelManagerLoadError(propertiesJson.detail, propertiesJson.error));
-        return;
-      }
+function AlertsBlock({ mode }: { mode: ChannelManagerTariffMode }) {
+  return (
+    <Card
+      title={mode === 'autopilot' ? 'Критические ошибки' : 'Ошибки и предупреждения'}
+      subtitle="Скелет показывает только безопасные статусы, без реальных вызовов к площадкам."
+    >
+      <p className="text-sm font-medium text-emerald-700">Критических ошибок нет</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Активный API не включён. Автопилот работает в безопасном тестовом режиме.</p>
+    </Card>
+  );
+}
 
-      const loadedProperties = propertiesJson.properties ?? [];
-      setProperties(loadedProperties);
-      const activePropertyId = nextPropertyId || loadedProperties[0]?.id || '';
-      if (!propertyId && activePropertyId) setPropertyId(activePropertyId);
+function ManualActionsBlock() {
+  return (
+    <Card title="Ручные действия" subtitle="Инструкции для команды, когда обновления выполняются вручную.">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="font-medium text-slate-900">Скопировать данные для площадки</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Экспорт и копирование будут добавлены отдельным шагом.</p>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="font-medium text-slate-900">Проверить инструкции обновления</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Команда видит, какие поля нужно перенести вручную.</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
-      const summaryUrl = activePropertyId
-        ? `/api/channel-manager/summary?propertyId=${activePropertyId}`
-        : '/api/channel-manager/summary';
-      const readinessUrl = activePropertyId
-        ? `/api/channel-manager/readiness?propertyId=${activePropertyId}`
-        : '/api/channel-manager/readiness';
+function PreparedChangesBlock() {
+  return (
+    <Card title="Подготовленные изменения" subtitle="ASI готовит изменения, пользователь проверяет их перед применением.">
+      <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+        <p className="font-medium text-slate-900">Цена на будни подготовлена к проверке</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">Рекомендация: 5 900 ₽ за ночь, без отправки на площадки.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {['Проверить', 'Одобрить', 'Отклонить'].map((label) => (
+            <button
+              key={label}
+              type="button"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
 
-      const [stateRes, readinessRes] = await Promise.all([fetch(summaryUrl), fetch(readinessUrl)]);
-      const stateJson = (await stateRes.json()) as ApiEnvelope & Partial<ApiState>;
-      const readinessJson = (await readinessRes.json()) as ApiEnvelope & { readiness?: PropertyReadiness };
+function RecommendationsBlock({ mode }: { mode: ChannelManagerTariffMode }) {
+  const text =
+    mode === 'assisted'
+      ? 'Рекомендация по цене: проверить диапазон 5 500-6 200 ₽ перед публикацией.'
+      : 'Рекомендация: сначала закрыть оставшиеся шаги готовности объекта.';
 
-      if (!stateRes.ok || !stateJson.ok) {
-        console.error('[channel-manager] summary load failed', stateJson);
-        setError(userFacingChannelManagerLoadError(stateJson.detail, stateJson.error));
-        return;
-      }
+  return (
+    <Card title="Рекомендации" subtitle="Подсказки остаются справочными и не меняют данные автоматически.">
+      <p className="text-sm leading-6 text-slate-600">{text}</p>
+    </Card>
+  );
+}
 
-      setState({
-        channels: stateJson.channels ?? [],
-        inventoryDays: stateJson.inventoryDays ?? [],
-        reservations: stateJson.reservations ?? [],
-        syncJobs: stateJson.syncJobs ?? [],
-        syncLogs: stateJson.syncLogs ?? [],
-        shadowEvents: stateJson.shadowEvents ?? [],
-        shadowDiscrepancies: stateJson.shadowDiscrepancies ?? [],
-        bronevikMtsTravel: stateJson.bronevikMtsTravel ?? null,
-      });
+function SystemStatusBlock() {
+  return (
+    <Card title="Статус системы" subtitle="Автопилот показывает итоговое состояние без подробной ручной работы.">
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+          <p className="text-sm text-emerald-700">Состояние</p>
+          <p className="mt-1 font-semibold text-emerald-900">Безопасный тестовый режим</p>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="text-sm text-slate-500">Активные каналы</p>
+          <p className="mt-1 font-semibold text-slate-900">3 канала готовы</p>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="text-sm text-slate-500">Отправки</p>
+          <p className="mt-1 font-semibold text-slate-900">Отключены</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
-      if (readinessRes.ok && readinessJson.ok && readinessJson.readiness) {
-        setReadiness(readinessJson.readiness);
-      } else {
-        console.warn('[channel-manager] readiness load failed', readinessJson);
-        setReadiness(null);
-      }
-    } catch (loadError) {
-      console.error('[channel-manager] network error', loadError);
-      setError('Ошибка сети при загрузке данных. Обновите страницу.');
-    } finally {
-      setLoading(false);
-    }
-  }, [propertyId]);
+function AutopilotLimitsBlock() {
+  return (
+    <Card title="Ограничения автопилота" subtitle="Владелец задаёт рамки, система не выходит за них.">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="text-sm text-slate-500">Минимальная цена</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900">4 800 ₽</p>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+          <p className="text-sm text-slate-500">Максимальная цена</p>
+          <p className="mt-1 text-lg font-semibold text-slate-900">8 900 ₽</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" disabled className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500">
+          Поставить на паузу
+        </button>
+        <button type="button" disabled className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500">
+          Передать оператору
+        </button>
+      </div>
+    </Card>
+  );
+}
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+function ObjectDataBlock() {
+  return (
+    <Card title="Данные объекта для каналов" subtitle="CHM остаётся отдельным мастером подготовки карточки объекта.">
+      <p className="text-sm leading-6 text-slate-600">
+        Откройте мастер, чтобы заполнить описание, фото, цены, правила проживания и готовность объекта.
+      </p>
+      <ChannelManagerObjectDataLink />
+    </Card>
+  );
+}
 
-  async function postJson<T>(url: string, body?: Record<string, unknown>, method = 'POST'): Promise<ApiEnvelope & T> {
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return (await res.json()) as ApiEnvelope & T;
-  }
-
-  async function handlePropertyChange(nextId: string) {
-    setPropertyId(nextId);
-    setBronevikPreview(null);
-    await load(nextId);
-  }
-
-  async function handleChannelPatch(channel: ChannelManagerChannel, patch: Record<string, unknown>) {
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{ channel?: ChannelManagerChannel }>(
-      `/api/channel-manager/channels/${channel.id}`,
-      patch,
-      'PATCH',
-    );
-    setSaving(false);
-    if (!result.ok) {
-      console.error('[channel-manager] channel patch failed', result);
-      setError(userFacingChannelManagerActionError(result.detail, result.error));
-      return;
-    }
-    setMessage('Настройки канала обновлены.');
-    await load(propertyId);
-  }
-
-  async function handleHealthCheck(channel: ChannelManagerChannel) {
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{ result?: { message: string; externalCalls: number } }>(
-      `/api/channel-manager/channels/${channel.id}/health-check`,
-    );
-    setSaving(false);
-    if (!result.ok) {
-      setError(userFacingChannelManagerActionError(result.detail, result.error));
-      return;
-    }
-    setMessage(`${result.result?.message ?? 'Проверка выполнена.'} Внешних вызовов: ${result.result?.externalCalls ?? 0}.`);
-    await load(propertyId);
-  }
-
-  async function handleBronevikDryRun() {
-    if (!propertyId) return;
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{
-      result?: { preview: BronevikDryRunPreview; externalCalls: 0 };
-    }>('/api/channel-manager/bronevik-mts-travel/dry-run', {
-      propertyId,
-      unitKey: 'default',
-      dateFrom: checkInDate,
-      dateTo: checkOutDate,
-    });
-    setSaving(false);
-    if (!result.ok || !result.result) {
-      setError(userFacingChannelManagerActionError(result.detail, result.error) || 'Не удалось подготовить предпросмотр.');
-      return;
-    }
-    setBronevikPreview(result.result.preview);
-    setMessage(`Предпросмотр Bronevik / МТС Travel создан. Внешних вызовов: ${result.result.externalCalls}.`);
-    await load(propertyId);
-  }
-
-  async function handleInventorySubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!propertyId) return;
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{ result?: { availableUnits: number; syncJobs: number } }>('/api/channel-manager/inventory', {
-      propertyId,
-      unitKey: 'default',
-      day: inventoryDay,
-      totalUnits,
-      manualBlockedUnits: blockedUnits,
-    });
-    setSaving(false);
-    if (!result.ok) {
-      setError(userFacingChannelManagerActionError(result.detail, result.error) || 'Не удалось обновить доступность');
-      return;
-    }
-    setMessage(`Доступно к продаже: ${result.result?.availableUnits ?? 0}. Задач синхронизации: ${result.result?.syncJobs ?? 0}.`);
-    await load(propertyId);
-  }
-
-  async function handleReservationSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!propertyId) return;
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const isShadowEvent = selectedChannel?.syncMode === 'shadow';
-    const result = await postJson<{
-      result?: {
-        status: ChannelReservation['status'] | ChannelShadowBookingEvent['status'];
-        syncJobs: number;
-        idempotent: boolean;
-        priorityScore?: number;
-        discrepancies?: number;
-        externalCalls?: number;
-      };
-    }>(isShadowEvent ? '/api/channel-manager/shadow/events' : '/api/channel-manager/mock/reservation', {
-      propertyId,
-      unitKey: 'default',
-      channelCode,
-      eventType: 'reservation_created',
-      guestName,
-      checkInDate,
-      checkOutDate,
-      externalBookingId: externalBookingId || undefined,
-      idempotencyKey: externalBookingId ? `${channelCode}:${externalBookingId}` : undefined,
-      totalAmount,
-      confirmationMode,
-      externalAvailabilityByDay: isShadowEvent ? { [checkInDate]: 0 } : undefined,
-    });
-    setSaving(false);
-    if (!result.ok) {
-      if (result.result?.status === 'conflict' || result.result?.status === 'rejected_by_inventory') {
-        setMessage('Бронь ушла в конфликт: на выбранные даты нет доступности.');
-        await load(propertyId);
-        return;
-      }
-      setError(userFacingChannelManagerActionError(result.detail, result.error) || 'Не удалось создать тестовую бронь');
-      return;
-    }
-    if (isShadowEvent) {
-      setMessage(
-        `Shadow-событие обработано. Задач: ${result.result?.syncJobs ?? 0}. Расхождений: ${result.result?.discrepancies ?? 0}.`,
-      );
-      await load(propertyId);
-      return;
-    }
-    setMessage(
-      result.result?.idempotent
-        ? 'Повторное событие обработано без дубля.'
-        : `Тестовая бронь создана. Статус: ${statusLabel(result.result?.status ?? 'pending')}.`,
-    );
-    await load(propertyId);
-  }
-
-  function startReservationEdit(reservation: ChannelReservation) {
-    setEditingReservationId(reservation.id);
-    setEditCheckInDate(reservation.checkInDate);
-    setEditCheckOutDate(reservation.checkOutDate);
-  }
-
-  async function handleModify(reservationId: string) {
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{ result?: { status: ChannelReservation['status']; available: boolean; syncJobs: number } }>(
-      '/api/channel-manager/mock/modification',
-      { reservationId, checkInDate: editCheckInDate, checkOutDate: editCheckOutDate },
-    );
-    setSaving(false);
-    if (!result.ok) {
-      if (result.result && !result.result.available) {
-        setMessage('Изменение не применено: на выбранные даты нет доступности.');
-        await load(propertyId);
-        return;
-      }
-      setError(userFacingChannelManagerActionError(result.detail, result.error) || 'Не удалось изменить тестовую бронь');
-      return;
-    }
-    setEditingReservationId(null);
-    setMessage(`Тестовая бронь изменена. Статус: ${statusLabel(result.result?.status ?? 'modified')}.`);
-    await load(propertyId);
-  }
-
-  async function handleCancel(reservationId: string) {
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-    const result = await postJson<{ result?: { syncJobs: number } }>('/api/channel-manager/mock/cancellation', {
-      reservationId,
-    });
-    setSaving(false);
-    if (!result.ok) {
-      setError(userFacingChannelManagerActionError(result.detail, result.error) || 'Не удалось отменить бронь');
-      return;
-    }
-    setMessage(`Бронь отменена. Задач синхронизации: ${result.result?.syncJobs ?? 0}.`);
-    await load(propertyId);
-  }
+export default function ChannelManagerPage({
+  searchParams,
+}: {
+  searchParams?: { mode?: string | string[] };
+}) {
+  const mode = normalizeChannelManagerMode(searchParams?.mode);
+  const modeConfig = CHANNEL_MANAGER_MODES[mode];
 
   return (
     <div className="max-w-7xl space-y-6">
-      {message ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>
-      ) : null}
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
-      ) : null}
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Каналы</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Менеджер каналов</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Управление публикацией объекта, ценами, доступностью и обновлениями на площадках
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <span className="font-medium text-slate-900">{modeConfig.label}</span>
+          <span className="mx-2 text-slate-300">·</span>
+          реальные отправки отключены
+        </div>
+      </header>
 
-      <ChannelManagerOwnerView
-        properties={properties}
-        propertyId={propertyId}
-        selectedProperty={selectedProperty}
-        readiness={readiness}
-        channels={state.channels}
-        conflictReservations={conflictReservations}
-        discrepancyCount={state.shadowDiscrepancies.length}
-        loading={loading}
-        onPropertyChange={(nextId) => void handlePropertyChange(nextId)}
-      />
+      <ModeSwitcher activeMode={mode} />
 
-      {isInternal ? (
-        <ChannelManagerDebugTools
-          loading={loading}
-          saving={saving}
-          propertyId={propertyId}
-          selectedProperty={selectedProperty}
-          state={state}
-          bronevikPreview={bronevikPreview}
-          channelNameByCode={channelNameByCode}
-          channelNameById={channelNameById}
-          selectableChannels={selectableChannels}
-          selectedChannel={selectedChannel}
-          conflictReservations={conflictReservations}
-          inventoryDay={inventoryDay}
-          totalUnits={totalUnits}
-          blockedUnits={blockedUnits}
-          channelCode={channelCode}
-          guestName={guestName}
-          checkInDate={checkInDate}
-          checkOutDate={checkOutDate}
-          externalBookingId={externalBookingId}
-          totalAmount={totalAmount}
-          confirmationMode={confirmationMode}
-          editingReservationId={editingReservationId}
-          editCheckInDate={editCheckInDate}
-          editCheckOutDate={editCheckOutDate}
-          onInventoryDayChange={setInventoryDayValue}
-          onTotalUnitsChange={setTotalUnits}
-          onBlockedUnitsChange={setBlockedUnits}
-          onChannelCodeChange={setChannelCode}
-          onGuestNameChange={setGuestName}
-          onCheckInDateChange={setCheckInDate}
-          onCheckOutDateChange={setCheckOutDate}
-          onExternalBookingIdChange={setExternalBookingId}
-          onTotalAmountChange={setTotalAmount}
-          onConfirmationModeChange={setConfirmationMode}
-          onEditCheckInDateChange={setEditCheckInDate}
-          onEditCheckOutDateChange={setEditCheckOutDate}
-          onChannelPatch={(channel, patch) => void handleChannelPatch(channel, patch)}
-          onHealthCheck={(channel) => void handleHealthCheck(channel)}
-          onBronevikDryRun={() => void handleBronevikDryRun()}
-          onInventorySubmit={(e) => void handleInventorySubmit(e)}
-          onReservationSubmit={(e) => void handleReservationSubmit(e)}
-          onStartReservationEdit={startReservationEdit}
-          onModify={(id) => void handleModify(id)}
-          onCancel={(id) => void handleCancel(id)}
-          onCloseReservationEdit={() => setEditingReservationId(null)}
-        />
-      ) : null}
+      {channelManagerModeShowsBlock(mode, 'systemStatus') ? <SystemStatusBlock /> : null}
+      {channelManagerModeShowsBlock(mode, 'channels') ? <ChannelList mode={mode} /> : null}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {channelManagerModeShowsBlock(mode, 'readiness') ? <ReadinessBlock /> : null}
+        {channelManagerModeShowsBlock(mode, 'manualActions') ? <ManualActionsBlock /> : null}
+        {channelManagerModeShowsBlock(mode, 'preparedChanges') ? <PreparedChangesBlock /> : null}
+        {channelManagerModeShowsBlock(mode, 'updates') ? <UpdatesBlock /> : null}
+        {channelManagerModeShowsBlock(mode, 'alerts') ? <AlertsBlock mode={mode} /> : null}
+        {channelManagerModeShowsBlock(mode, 'activity') ? <ActivityBlock mode={mode} /> : null}
+        {channelManagerModeShowsBlock(mode, 'recommendations') ? <RecommendationsBlock mode={mode} /> : null}
+        {channelManagerModeShowsBlock(mode, 'autopilotLimits') ? <AutopilotLimitsBlock /> : null}
+        {channelManagerModeShowsBlock(mode, 'objectData') ? <ObjectDataBlock /> : null}
+      </div>
     </div>
   );
 }

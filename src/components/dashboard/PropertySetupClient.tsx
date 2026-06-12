@@ -363,9 +363,14 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24">
       <div>
-        <Link href={`/dashboard/properties/${propertyId}`} className="text-sm text-slate-500 hover:text-slate-700">
-          ← К объекту
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href={`/dashboard/properties/${propertyId}`} className="text-sm text-slate-500 hover:text-slate-700">
+            ← К объекту
+          </Link>
+          <Link href="/dashboard/channel-manager" className="text-sm font-medium text-slate-700 hover:text-slate-900">
+            Вернуться в менеджер каналов
+          </Link>
+        </div>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Данные объекта для каналов</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
           Заполните данные один раз — ASI подготовит карточки и проверит готовность.
