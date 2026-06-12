@@ -578,7 +578,7 @@
   },
   "dashboard": {
     "sidebar": {
-      "overview": "Overview",
+      "overview": "Обзор",
       "reports": "My reports",
       "channelConnections": "Channel connections",
       "channelManager": "Менеджер каналов",
