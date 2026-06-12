@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { OpsProperty, PropertyMedia } from '@/lib/ops-foundation/types';
 import {
@@ -28,34 +29,56 @@ const primaryBtn = 'inline-flex items-center justify-center rounded-lg bg-slate-
 const ghostBtn = 'inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50';
 
 type FlatSection = 'basic' | 'address' | 'description' | 'rules' | 'checkInOut' | 'wifi' | 'pricing';
+type SetupStepId =
+  | 'basic'
+  | 'address'
+  | 'units'
+  | 'photos'
+  | 'description'
+  | 'rules'
+  | 'checkin'
+  | 'wifi'
+  | 'pricing'
+  | 'channels'
+  | 'readiness';
 
-const SECTION_NAV: Array<{ anchor: string; label: string }> = [
+const SECTION_NAV: Array<{ anchor: SetupStepId; label: string }> = [
   { anchor: 'basic', label: 'Основная информация' },
   { anchor: 'address', label: 'Адрес' },
   { anchor: 'units', label: 'Категории/юниты' },
   { anchor: 'photos', label: 'Фото' },
   { anchor: 'description', label: 'Описание' },
-  { anchor: 'rules', label: 'Правила' },
-  { anchor: 'checkin', label: 'Заезд/выезд' },
-  { anchor: 'wifi', label: 'Wi-Fi/инструкции' },
-  { anchor: 'pricing', label: 'Цены' },
-  { anchor: 'channels', label: 'Каналы' },
-  { anchor: 'readiness', label: 'Готовность' },
+  { anchor: 'rules', label: 'Правила проживания' },
+  { anchor: 'checkin', label: 'Заезд и выезд' },
+  { anchor: 'wifi', label: 'Wi-Fi и инструкции' },
+  { anchor: 'pricing', label: 'Цены и базовый тариф' },
+  { anchor: 'channels', label: 'Каналы для подключения' },
+  { anchor: 'readiness', label: 'Проверка готовности' },
 ];
+
+const STEP_IDS = SECTION_NAV.map((item) => item.anchor);
+
+function normalizeStepId(value: string | null | undefined): SetupStepId {
+  return STEP_IDS.includes(value as SetupStepId) ? (value as SetupStepId) : 'basic';
+}
 
 function Section({
   id,
   step,
   title,
   subtitle,
+  active,
   children,
 }: {
-  id: string;
+  id: SetupStepId;
   step: number;
   title: string;
   subtitle?: string;
+  active: boolean;
   children: React.ReactNode;
 }) {
+  if (!active) return null;
+
   return (
     <section id={id} className="scroll-mt-24 rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-5 py-4">
@@ -94,9 +117,11 @@ const channelStatusTone: Record<PropertySetupChannelStatus, string> = {
 };
 
 export function PropertySetupClient({ propertyId }: { propertyId: string }) {
+  const router = useRouter();
   const [property, setProperty] = useState<OpsProperty | null>(null);
   const [data, setData] = useState<PropertySetupData>(createEmptySetupData());
   const [media, setMedia] = useState<PropertyMedia[]>([]);
+  const [activeStepId, setActiveStepId] = useState<SetupStepId>('basic');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +172,13 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const hashStep = window.location.hash.replace('#', '');
+    setActiveStepId(normalizeStepId(params.get('step') ?? hashStep));
+  }, []);
+
   function updateFlat(section: FlatSection, key: string, value: string) {
     setData((prev) => ({
       ...prev,
@@ -176,7 +208,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     }));
   }
 
-  async function save() {
+  async function save(): Promise<boolean> {
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -189,15 +221,22 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       const json = (await res.json()) as { ok?: boolean; error?: string; extrasPersisted?: boolean };
       if (!res.ok || !json.ok) {
         setError('Не удалось сохранить черновик. Попробуйте ещё раз.');
-        return;
+        return false;
       }
       setExtrasWarning(json.extrasPersisted === false);
       setMessage('Черновик сохранён.');
+      return true;
     } catch {
       setError('Ошибка сети при сохранении.');
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  function goToStep(stepId: SetupStepId) {
+    setActiveStepId(stepId);
+    router.replace(`/dashboard/properties/${propertyId}/setup?step=${stepId}`, { scroll: false });
   }
 
   async function addPhoto(e: React.FormEvent) {
@@ -255,9 +294,59 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     [data, mediaCount],
   );
   const completed = checklist.filter((item) => item.done).length;
+  const completedStepCount = completed + (completed === checklist.length ? 1 : 0);
+  const totalStepCount = SECTION_NAV.length;
+  const activeStepIndex = Math.max(
+    SECTION_NAV.findIndex((item) => item.anchor === activeStepId),
+    0,
+  );
+  const activeStep = SECTION_NAV[activeStepIndex];
+  const canGoBack = activeStepIndex > 0;
+  const canGoNext = activeStepIndex < SECTION_NAV.length - 1;
+
+  function isStepDone(stepId: SetupStepId): boolean {
+    switch (stepId) {
+      case 'basic':
+        return isSetupBasicComplete(data);
+      case 'address':
+        return isSetupAddressComplete(data);
+      case 'units':
+        return isSetupUnitsComplete(data);
+      case 'photos':
+        return mediaCount > 0;
+      case 'description':
+        return isSetupDescriptionComplete(data);
+      case 'rules':
+        return isSetupRulesComplete(data);
+      case 'checkin':
+        return isSetupCheckInComplete(data);
+      case 'wifi':
+        return isSetupWifiComplete(data);
+      case 'pricing':
+        return isSetupPricingComplete(data);
+      case 'channels':
+        return isSetupChannelsSelected(data);
+      case 'readiness':
+        return completed === checklist.length;
+    }
+    return false;
+  }
+
+  async function handleNext() {
+    const saved = await save();
+    if (saved && canGoNext) {
+      goToStep(SECTION_NAV[activeStepIndex + 1].anchor);
+    }
+  }
+
+  function handleBack() {
+    if (canGoBack) {
+      goToStep(SECTION_NAV[activeStepIndex - 1].anchor);
+    }
+  }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Загрузка подготовки объекта…</p>;
+    return <p className="text-sm text-slate-500">Загрузка данных объекта…</p>;
   }
 
   if (error && !property) {
@@ -272,30 +361,39 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 pb-24">
+    <div className="mx-auto max-w-5xl space-y-6 pb-24">
       <div>
         <Link href={`/dashboard/properties/${propertyId}`} className="text-sm text-slate-500 hover:text-slate-700">
           ← К объекту
         </Link>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Подготовка объекта</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {property?.title ?? 'Объект'} — заполните данные один раз. Дальше ASI структурирует их,
-          подготовит карточки для каналов и посчитает готовность.
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Данные объекта для каналов</h1>
+        <p className="mt-1 max-w-3xl text-sm text-slate-600">
+          Заполните данные один раз — ASI подготовит карточки и проверит готовность.
         </p>
-        <p className="mt-2 text-sm font-medium text-slate-700">
-          Сценарий: заполнить объект → проверить готовность → подключить каналы.
+        <p className="mt-3 text-sm font-medium text-slate-700">
+          {property?.title ?? 'Объект'} · Шаг {activeStepIndex + 1} из {totalStepCount}: {activeStep.label}
         </p>
       </div>
 
-      <nav className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-3">
+      <nav className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
         {SECTION_NAV.map((item) => (
-          <a
+          <button
+            type="button"
             key={item.anchor}
-            href={`#${item.anchor}`}
-            className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+            onClick={() => goToStep(item.anchor)}
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-medium ${
+              item.anchor === activeStepId
+                ? 'bg-slate-900 text-white'
+                : isStepDone(item.anchor)
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+            }`}
           >
-            {item.label}
-          </a>
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-[11px] text-slate-700">
+              {isStepDone(item.anchor) ? '✓' : SECTION_NAV.findIndex((step) => step.anchor === item.anchor) + 1}
+            </span>
+            <span>{item.label}</span>
+          </button>
         ))}
       </nav>
 
@@ -315,7 +413,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       ) : null}
 
       {/* 1. Основная информация */}
-      <Section id="basic" step={1} title="Основная информация" subtitle="Базовые сведения об объекте.">
+      <Section id="basic" step={1} title="Основная информация" subtitle="Базовые сведения об объекте." active={activeStepId === 'basic'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Название объекта">
             <input
@@ -353,7 +451,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 2. Адрес */}
-      <Section id="address" step={2} title="Адрес" subtitle="Адрес нужен для карточек каналов и инструкций гостю.">
+      <Section id="address" step={2} title="Адрес" subtitle="Адрес нужен для карточек каналов и инструкций гостю." active={activeStepId === 'address'}>
         <div className="grid gap-4">
           <Field label="Адрес">
             <input
@@ -388,6 +486,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         step={3}
         title="Категории и юниты"
         subtitle="Опишите категории размещения. Если объект один — добавьте один юнит."
+        active={activeStepId === 'units'}
       >
         <div className="space-y-4">
           {data.units.length === 0 ? (
@@ -430,7 +529,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 4. Фото */}
-      <Section id="photos" step={4} title="Фото" subtitle="Добавьте фото по ссылке. Список ниже — уже добавленные фото.">
+      <Section id="photos" step={4} title="Фото" subtitle="Добавьте фото по ссылке. Список ниже — уже добавленные фото." active={activeStepId === 'photos'}>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Загрузка файлов с устройства будет подключена следующим шагом. Сейчас можно добавить фото по ссылке (URL).
         </div>
@@ -481,7 +580,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 5. Описание */}
-      <Section id="description" step={5} title="Описание" subtitle="Тексты для гостей и карточек на каналах.">
+      <Section id="description" step={5} title="Описание" subtitle="Тексты для гостей и карточек на каналах." active={activeStepId === 'description'}>
         <div className="grid gap-4">
           <Field label="Полное описание объекта">
             <textarea className={textareaCls} value={data.description.full} onChange={(e) => updateFlat('description', 'full', e.target.value)} />
@@ -501,7 +600,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 6. Правила проживания */}
-      <Section id="rules" step={6} title="Правила проживания" subtitle="Заполните, что важно для гостей.">
+      <Section id="rules" step={6} title="Правила проживания" subtitle="Заполните, что важно для гостей." active={activeStepId === 'rules'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Курение">
             <input className={inputCls} value={data.rules.smoking} onChange={(e) => updateFlat('rules', 'smoking', e.target.value)} placeholder="Запрещено" />
@@ -528,7 +627,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 7. Заезд/выезд */}
-      <Section id="checkin" step={7} title="Заезд и выезд" subtitle="Время и инструкции по заселению и выезду.">
+      <Section id="checkin" step={7} title="Заезд и выезд" subtitle="Время и инструкции по заселению и выезду." active={activeStepId === 'checkin'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Время заезда">
             <input className={inputCls} value={data.checkInOut.checkInTime} onChange={(e) => updateFlat('checkInOut', 'checkInTime', e.target.value)} placeholder="14:00" />
@@ -546,7 +645,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 8. Wi-Fi/инструкции */}
-      <Section id="wifi" step={8} title="Wi-Fi и инструкции" subtitle="Доступ к сети и бытовые детали для гостя.">
+      <Section id="wifi" step={8} title="Wi-Fi и инструкции" subtitle="Доступ к сети и бытовые детали для гостя." active={activeStepId === 'wifi'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Название Wi-Fi">
             <input className={inputCls} value={data.wifi.wifiName} onChange={(e) => updateFlat('wifi', 'wifiName', e.target.value)} />
@@ -567,7 +666,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 9. Цены */}
-      <Section id="pricing" step={9} title="Цены и базовый тариф" subtitle="Базовые условия. ASI подготовит тарифы для каналов.">
+      <Section id="pricing" step={9} title="Цены и базовый тариф" subtitle="Базовые условия. ASI подготовит тарифы для каналов." active={activeStepId === 'pricing'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Базовая цена за ночь, ₽">
             <input className={inputCls} value={data.pricing.basePricePerNight} onChange={(e) => updateFlat('pricing', 'basePricePerNight', e.target.value)} placeholder="5000" />
@@ -593,6 +692,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         step={10}
         title="Каналы для подключения"
         subtitle="Подготовительный список. Реальное подключение OTA здесь не включается."
+        active={activeStepId === 'channels'}
       >
         <ul className="divide-y divide-slate-100">
           {SETUP_CHANNEL_CATALOG.map((channel) => {
@@ -624,7 +724,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 11. Проверка готовности */}
-      <Section id="readiness" step={11} title="Проверка готовности" subtitle={`Заполнено ${completed} из ${checklist.length} пунктов.`}>
+      <Section id="readiness" step={11} title="Проверка готовности" subtitle={`Заполнено ${completed} из ${checklist.length} пунктов.`} active={activeStepId === 'readiness'}>
         <ul className="space-y-2">
           {checklist.map((item) => (
             <li key={item.label} className="flex items-center gap-3">
@@ -646,11 +746,21 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         )}
       </Section>
 
-      <div className="sticky bottom-0 -mx-4 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:-mx-6 md:px-6">
-        <p className="text-sm text-slate-500">Готовность: {completed} из {checklist.length}</p>
-        <button type="button" onClick={() => void save()} disabled={saving} className={primaryBtn}>
-          {saving ? 'Сохранение…' : 'Сохранить черновик'}
-        </button>
+      <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between md:-mx-6 md:px-6">
+        <p className="text-sm text-slate-500">
+          Готово: {completedStepCount} из {totalStepCount}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={handleBack} disabled={!canGoBack || saving} className={ghostBtn}>
+            Назад
+          </button>
+          <button type="button" onClick={() => void save()} disabled={saving} className={ghostBtn}>
+            {saving ? 'Сохранение…' : 'Сохранить черновик'}
+          </button>
+          <button type="button" onClick={() => void handleNext()} disabled={!canGoNext || saving} className={primaryBtn}>
+            Далее
+          </button>
+        </div>
       </div>
     </div>
   );

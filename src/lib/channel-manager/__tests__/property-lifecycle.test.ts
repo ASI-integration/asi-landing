@@ -193,7 +193,7 @@ describe('computePropertyReadiness', () => {
     const channels = result.steps.find((step) => step.id === 'channels');
     expect(pricing?.done).toBe(true);
     expect(channels?.done).toBe(true);
-    expect(pricing?.actionHref).toBe('/dashboard/properties/prop-1/setup#pricing');
+    expect(pricing?.actionHref).toBe('/dashboard/properties/prop-1/setup?step=pricing');
   });
 
   it('links every preparation step to an existing setup section', () => {
@@ -208,17 +208,17 @@ describe('computePropertyReadiness', () => {
     });
 
     expect(result.steps.map((step) => step.actionHref)).toEqual([
-      '/dashboard/properties/prop-1/setup#basic',
-      '/dashboard/properties/prop-1/setup#address',
-      '/dashboard/properties/prop-1/setup#units',
-      '/dashboard/properties/prop-1/setup#photos',
-      '/dashboard/properties/prop-1/setup#description',
-      '/dashboard/properties/prop-1/setup#rules',
-      '/dashboard/properties/prop-1/setup#checkin',
-      '/dashboard/properties/prop-1/setup#wifi',
-      '/dashboard/properties/prop-1/setup#pricing',
-      '/dashboard/properties/prop-1/setup#channels',
-      '/dashboard/properties/prop-1/setup#readiness',
+      '/dashboard/properties/prop-1/setup?step=basic',
+      '/dashboard/properties/prop-1/setup?step=address',
+      '/dashboard/properties/prop-1/setup?step=units',
+      '/dashboard/properties/prop-1/setup?step=photos',
+      '/dashboard/properties/prop-1/setup?step=description',
+      '/dashboard/properties/prop-1/setup?step=rules',
+      '/dashboard/properties/prop-1/setup?step=checkin',
+      '/dashboard/properties/prop-1/setup?step=wifi',
+      '/dashboard/properties/prop-1/setup?step=pricing',
+      '/dashboard/properties/prop-1/setup?step=channels',
+      '/dashboard/properties/prop-1/setup?step=readiness',
     ]);
   });
 

@@ -640,7 +640,7 @@ export function PropertyDetailClient({ propertyId }: { propertyId: string }) {
           href={`/dashboard/properties/${property.id}/setup`}
           className="inline-flex shrink-0 items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
         >
-          Подготовка объекта
+          Данные объекта для каналов
         </Link>
       </div>
 

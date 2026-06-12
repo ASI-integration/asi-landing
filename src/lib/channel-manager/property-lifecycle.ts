@@ -54,7 +54,7 @@ export interface PropertyReadinessInput {
   setupProfile?: PropertySetupData | null;
 }
 
-/** Якоря секций на странице подготовки объекта (/dashboard/properties/[id]/setup). */
+/** Шаги мастера данных объекта для каналов (/dashboard/properties/[id]/setup). */
 export const PREPARATION_STEP_ANCHORS: Record<PreparationStepId, string> = {
   basic_info: 'basic',
   address: 'address',
@@ -103,7 +103,7 @@ export function buildPreparationSteps(input: PropertyReadinessInput): Preparatio
   const setup = input.setupProfile ?? null;
   const setupBase = propertyId ? `/dashboard/properties/${propertyId}/setup` : null;
   const hrefFor = (id: PreparationStepId): string =>
-    setupBase ? `${setupBase}#${PREPARATION_STEP_ANCHORS[id]}` : '/dashboard/properties';
+    setupBase ? `${setupBase}?step=${PREPARATION_STEP_ANCHORS[id]}` : '/dashboard/properties';
 
   const basicInfoDone =
     Boolean(input.property?.title?.trim()) || Boolean(setup && hasText(setup.basic.title));

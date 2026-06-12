@@ -16,68 +16,88 @@ const statusTone: Record<PropertyReadiness['status'], string> = {
 export function PropertyPreparationSteps({
   readiness,
   propertyId,
+  propertyTitle,
 }: {
   readiness: PropertyReadiness;
   propertyId?: string;
+  propertyTitle?: string;
 }) {
   const hasProperty = Boolean(propertyId);
+  const nextStep = readiness.steps.find((step) => !step.done) ?? readiness.steps.at(-1);
+  const upcomingSteps = readiness.steps.filter((step) => !step.done).slice(0, 3);
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="px-5 py-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Подготовка объекта</h2>
+            <h2 className="text-base font-semibold text-slate-900">Данные объекта для каналов</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Заполните данные один раз — ASI подготовит карточки и подключит каналы.
+              Заполните данные один раз — ASI подготовит карточки для каналов и проверит готовность.
             </p>
           </div>
           <span className={`rounded-full border px-3 py-1 text-sm font-medium ${statusTone[readiness.status]}`}>
             {readiness.statusLabel}
           </span>
         </div>
-        <p className="mt-3 text-sm leading-6 text-slate-600">{readiness.statusMessage}</p>
-        <p className="mt-2 text-xs text-slate-500">
-          Готово шагов: {readiness.completedStepCount} из {readiness.totalStepCount}
-        </p>
-      </div>
-      <ol className="divide-y divide-slate-100">
-        {readiness.steps.map((step, index) => (
-          <li key={step.id} className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex gap-3">
-              <span
-                className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                  step.done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                {step.done ? '✓' : index + 1}
-              </span>
-              <div>
-                <p className="text-sm font-medium text-slate-900">{step.title}</p>
-                <p className="mt-1 text-sm text-slate-500">{step.description}</p>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase text-slate-400">Объект</p>
+                <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                  {propertyTitle || (hasProperty ? 'Выбранный объект' : 'Сначала выберите объект')}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase text-slate-400">Прогресс</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  Готово: {readiness.completedStepCount} из {readiness.totalStepCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase text-slate-400">Статус</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{readiness.statusLabel}</p>
               </div>
             </div>
-            {hasProperty && step.actionHref ? (
-              <Link
-                href={step.actionHref}
-                className={`inline-flex shrink-0 items-center justify-center rounded-md border px-3 py-2 text-sm font-medium ${
-                  step.done
-                    ? 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                {step.actionLabel ?? 'Открыть'}
-              </Link>
-            ) : (
-              <span
-                className="inline-flex shrink-0 cursor-not-allowed items-center justify-center rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-400"
-                title="Сначала выберите объект"
-              >
-                Сначала выберите объект
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
+
+            <div>
+              <p className="text-sm leading-6 text-slate-600">{readiness.statusMessage}</p>
+              <p className="mt-2 text-sm font-medium text-slate-900">
+                Следующий шаг: {hasProperty && nextStep ? nextStep.actionLabel ?? nextStep.title : 'Сначала выберите объект'}
+              </p>
+            </div>
+
+            {upcomingSteps.length > 0 ? (
+              <ul className="flex flex-wrap gap-2">
+                {upcomingSteps.map((step, index) => (
+                  <li key={step.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    {index === 0 ? 'Сейчас' : 'Потом'}: {step.actionLabel ?? step.title}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          {hasProperty && nextStep?.actionHref ? (
+            <Link
+              href={nextStep.actionHref}
+              className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Продолжить заполнение
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="inline-flex cursor-not-allowed items-center justify-center rounded-lg bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500"
+            >
+              Сначала выберите объект
+            </button>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
