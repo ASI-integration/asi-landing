@@ -132,22 +132,36 @@ export function EarlyAccessObjectForm() {
           />
         </label>
 
-        <label>
-          <span className="block text-base font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
-          <select
-            value={form.objectsCount}
-            onChange={(event) => updateField('objectsCount', event.target.value)}
-            required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
-          >
-            <option value="">Выберите количество</option>
-            {objectCountOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="grid gap-3">
+          <legend className="text-base font-semibold text-[var(--t-text)]">Сколько у вас объектов?</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {objectCountOptions.map((option) => {
+              const selected = form.objectsCount === option;
+
+              return (
+                <label
+                  key={option}
+                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-base leading-6 transition ${
+                    selected
+                      ? 'border-[var(--t-accent)] bg-[var(--t-surface-2)] font-bold text-[var(--t-text)] ring-2 ring-[color:var(--t-accent)]/20'
+                      : 'border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="objectsCount"
+                    value={option}
+                    checked={selected}
+                    onChange={() => updateField('objectsCount', option)}
+                    required
+                    className="h-4 w-4 shrink-0 accent-[var(--t-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--t-accent)]"
+                  />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
 
         <fieldset className="grid gap-3">
           <legend className="text-base font-semibold text-[var(--t-text)]">Готовность к подключению</legend>

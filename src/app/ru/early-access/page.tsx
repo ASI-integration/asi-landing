@@ -54,15 +54,26 @@ const securityItems = [
 ];
 
 const pricingRows = [
-  ['Первый месяц', '0 ₽'],
-  [
-    'Для участников групп Анатолия Брагина и Ярослава Стригунова',
-    'после бесплатного месяца 1 000 ₽ за объект в месяц в течение первого года',
-  ],
-  [
-    'После первого года',
-    'условия согласуем отдельно с учётом подключённых функций и количества объектов',
-  ],
+  {
+    id: 'first-month',
+    period: 'Первый месяц',
+    price: '0 ₽',
+  },
+  {
+    id: 'group-members',
+    period: (
+      <>
+        Для участников групп <strong className="font-bold">Анатолия Брагина</strong> и{' '}
+        <strong className="font-bold">Ярослава Стригунова</strong>
+      </>
+    ),
+    price: 'после бесплатного месяца 1 000 ₽ за объект в месяц в течение первого года',
+  },
+  {
+    id: 'after-first-year',
+    period: 'После первого года',
+    price: 'условия согласуем отдельно с учётом подключённых функций и количества объектов',
+  },
 ];
 
 export default function RuEarlyAccessPage() {
@@ -176,17 +187,18 @@ export default function RuEarlyAccessPage() {
                 <div className="px-4 py-3">Период</div>
                 <div className="border-t border-[var(--t-border)] px-4 py-3 sm:border-l sm:border-t-0">Стоимость</div>
               </div>
-              {pricingRows.map(([period, price]) => (
-                <div key={period} className="grid border-b border-[var(--t-border)] text-base leading-7 text-[var(--t-text-2)] last:border-b-0 sm:grid-cols-[0.9fr_1.1fr]">
-                  <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{period}</div>
-                  <div className="border-t border-[var(--t-border)] px-4 py-4 sm:border-l sm:border-t-0">{price}</div>
+              {pricingRows.map((row) => (
+                <div key={row.id} className="grid border-b border-[var(--t-border)] text-base leading-7 text-[var(--t-text-2)] last:border-b-0 sm:grid-cols-[0.9fr_1.1fr]">
+                  <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{row.period}</div>
+                  <div className="border-t border-[var(--t-border)] px-4 py-4 sm:border-l sm:border-t-0">{row.price}</div>
                 </div>
               ))}
             </div>
             <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
               Пока продукт проходит пилотную обкатку, мы подключаем первые объекты в спокойном режиме и не берём оплату
-              за первый месяц. Для участников групп Анатолия Брагина и Ярослава Стригунова сохраняется льготное условие
-              на первый год после подключения.
+              за первый месяц. Для участников групп <strong className="font-bold text-[var(--t-text)]">Анатолия Брагина</strong> и{' '}
+              <strong className="font-bold text-[var(--t-text)]">Ярослава Стригунова</strong> сохраняется льготное
+              условие на первый год после подключения.
             </p>
           </div>
         </section>
