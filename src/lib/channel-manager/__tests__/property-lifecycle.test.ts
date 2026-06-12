@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { computePropertyReadiness } from '../property-lifecycle';
 import type { OpsProperty, PropertyMasterCard } from '@/lib/ops-foundation/types';
+import { createEmptySetupData, type PropertySetupData } from '@/lib/property-setup/setup-data';
 import type { ChannelManagerChannel } from '../types';
+
+function completeSetup(): PropertySetupData {
+  const setup = createEmptySetupData();
+  setup.basic.title = 'Тестовый объект';
+  setup.basic.city = 'Москва';
+  setup.basic.shortSummary = 'Кратко';
+  setup.address.line = 'ул. Примерная, 1';
+  setup.units = [{ name: 'Студия', count: '1', capacity: '2', bedType: 'Двуспальная', amenities: 'Wi-Fi' }];
+  setup.description.full = 'Полное описание';
+  setup.rules.smoking = 'Запрещено';
+  setup.checkInOut.checkInTime = '14:00';
+  setup.checkInOut.checkOutTime = '12:00';
+  setup.wifi.wifiName = 'GuestWiFi';
+  setup.pricing.basePricePerNight = '5000';
+  setup.channels = setup.channels.map((channel, index) =>
+    index === 0 ? { ...channel, status: 'preparing' } : channel,
+  );
+  return setup;
+}
 
 function property(overrides: Partial<OpsProperty> = {}): OpsProperty {
   return {
@@ -152,8 +172,67 @@ describe('computePropertyReadiness', () => {
       channels: [channel({ syncMode: 'shadow', status: 'sandbox' })],
       conflictCount: 0,
       discrepancyCount: 0,
+      setupProfile: completeSetup(),
     });
 
     expect(result.status).toBe('shadow_mode');
+  });
+
+  it('marks pricing and channels done from setup profile, not real channels', () => {
+    const result = computePropertyReadiness({
+      property: property(),
+      masterCard: null,
+      mediaCount: 1,
+      channels: [],
+      conflictCount: 0,
+      discrepancyCount: 0,
+      setupProfile: completeSetup(),
+    });
+
+    const pricing = result.steps.find((step) => step.id === 'pricing');
+    const channels = result.steps.find((step) => step.id === 'channels');
+    expect(pricing?.done).toBe(true);
+    expect(channels?.done).toBe(true);
+    expect(pricing?.actionHref).toBe('/dashboard/properties/prop-1/setup#pricing');
+  });
+
+  it('links every preparation step to an existing setup section', () => {
+    const result = computePropertyReadiness({
+      property: property(),
+      masterCard: null,
+      mediaCount: 0,
+      channels: [],
+      conflictCount: 0,
+      discrepancyCount: 0,
+      setupProfile: completeSetup(),
+    });
+
+    expect(result.steps.map((step) => step.actionHref)).toEqual([
+      '/dashboard/properties/prop-1/setup#basic',
+      '/dashboard/properties/prop-1/setup#address',
+      '/dashboard/properties/prop-1/setup#units',
+      '/dashboard/properties/prop-1/setup#photos',
+      '/dashboard/properties/prop-1/setup#description',
+      '/dashboard/properties/prop-1/setup#rules',
+      '/dashboard/properties/prop-1/setup#checkin',
+      '/dashboard/properties/prop-1/setup#wifi',
+      '/dashboard/properties/prop-1/setup#pricing',
+      '/dashboard/properties/prop-1/setup#channels',
+      '/dashboard/properties/prop-1/setup#readiness',
+    ]);
+  });
+
+  it('keeps pricing and channels incomplete without setup selections', () => {
+    const result = computePropertyReadiness({
+      property: property(),
+      masterCard: null,
+      mediaCount: 1,
+      channels: [channel({ syncMode: 'active', status: 'active', isAutoSellEnabled: true })],
+      conflictCount: 0,
+      discrepancyCount: 0,
+    });
+
+    expect(result.steps.find((step) => step.id === 'pricing')?.done).toBe(false);
+    expect(result.steps.find((step) => step.id === 'channels')?.done).toBe(false);
   });
 });

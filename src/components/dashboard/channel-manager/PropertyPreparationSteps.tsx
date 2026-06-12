@@ -13,7 +13,14 @@ const statusTone: Record<PropertyReadiness['status'], string> = {
   attention_required: 'bg-red-50 text-red-800 border-red-200',
 };
 
-export function PropertyPreparationSteps({ readiness }: { readiness: PropertyReadiness }) {
+export function PropertyPreparationSteps({
+  readiness,
+  propertyId,
+}: {
+  readiness: PropertyReadiness;
+  propertyId?: string;
+}) {
+  const hasProperty = Boolean(propertyId);
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-5 py-4">
@@ -49,14 +56,25 @@ export function PropertyPreparationSteps({ readiness }: { readiness: PropertyRea
                 <p className="mt-1 text-sm text-slate-500">{step.description}</p>
               </div>
             </div>
-            {!step.done && step.actionHref ? (
+            {hasProperty && step.actionHref ? (
               <Link
                 href={step.actionHref}
-                className="inline-flex shrink-0 items-center justify-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className={`inline-flex shrink-0 items-center justify-center rounded-md border px-3 py-2 text-sm font-medium ${
+                  step.done
+                    ? 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                    : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
               >
                 {step.actionLabel ?? 'Открыть'}
               </Link>
-            ) : null}
+            ) : (
+              <span
+                className="inline-flex shrink-0 cursor-not-allowed items-center justify-center rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-400"
+                title="Сначала выберите объект"
+              >
+                Сначала выберите объект
+              </span>
+            )}
           </li>
         ))}
       </ol>

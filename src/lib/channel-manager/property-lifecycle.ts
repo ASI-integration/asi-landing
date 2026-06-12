@@ -1,4 +1,14 @@
 import type { OpsProperty, PropertyMasterCard } from '@/lib/ops-foundation/types';
+import {
+  isSetupChannelsSelected,
+  isSetupCheckInComplete,
+  isSetupDescriptionComplete,
+  isSetupPricingComplete,
+  isSetupRulesComplete,
+  isSetupUnitsComplete,
+  isSetupWifiComplete,
+  type PropertySetupData,
+} from '@/lib/property-setup/setup-data';
 import type { ChannelManagerChannel } from './types';
 
 export type ChannelManagerPropertyStatus =
@@ -41,7 +51,23 @@ export interface PropertyReadinessInput {
   channels: ChannelManagerChannel[];
   conflictCount: number;
   discrepancyCount: number;
+  setupProfile?: PropertySetupData | null;
 }
+
+/** Якоря секций на странице подготовки объекта (/dashboard/properties/[id]/setup). */
+export const PREPARATION_STEP_ANCHORS: Record<PreparationStepId, string> = {
+  basic_info: 'basic',
+  address: 'address',
+  units: 'units',
+  photos: 'photos',
+  description: 'description',
+  house_rules: 'rules',
+  check_in_out: 'checkin',
+  wifi_instructions: 'wifi',
+  pricing: 'pricing',
+  channels: 'channels',
+  readiness_check: 'readiness',
+};
 
 export interface PropertyReadiness {
   status: ChannelManagerPropertyStatus;
@@ -74,31 +100,35 @@ function isApiLikeChannel(channel: ChannelManagerChannel): boolean {
 
 export function buildPreparationSteps(input: PropertyReadinessInput): PreparationStep[] {
   const propertyId = input.property?.id;
-  const propertyHref = propertyId ? `/dashboard/properties/${propertyId}` : '/dashboard/properties';
-  const mediaHref = propertyId ? `/dashboard/properties/${propertyId}?tab=media` : propertyHref;
-  const masterCardHref = propertyId ? `/dashboard/properties/${propertyId}?tab=master-card` : propertyHref;
+  const setup = input.setupProfile ?? null;
+  const setupBase = propertyId ? `/dashboard/properties/${propertyId}/setup` : null;
+  const hrefFor = (id: PreparationStepId): string =>
+    setupBase ? `${setupBase}#${PREPARATION_STEP_ANCHORS[id]}` : '/dashboard/properties';
 
-  const basicInfoDone = Boolean(input.property?.title?.trim());
-  const addressDone = hasText(input.property?.address) && hasText(input.property?.city);
+  const basicInfoDone =
+    Boolean(input.property?.title?.trim()) || Boolean(setup && hasText(setup.basic.title));
+  const addressDone =
+    (hasText(input.property?.address) && hasText(input.property?.city)) ||
+    Boolean(setup && hasText(setup.address.line) && hasText(setup.basic.city));
+  const unitsDone = setup ? isSetupUnitsComplete(setup) : Boolean(input.property);
   const photosDone = input.mediaCount > 0;
   const descriptionDone =
-    hasText(input.masterCard?.shortDescription) || hasText(input.masterCard?.fullDescription);
-  const houseRulesDone = hasText(input.masterCard?.houseRules);
+    hasText(input.masterCard?.shortDescription) ||
+    hasText(input.masterCard?.fullDescription) ||
+    Boolean(setup && isSetupDescriptionComplete(setup));
+  const houseRulesDone =
+    hasText(input.masterCard?.houseRules) || Boolean(setup && isSetupRulesComplete(setup));
   const checkInOutDone =
-    hasText(input.masterCard?.checkInInstructions) && hasText(input.masterCard?.checkOutInstructions);
+    (hasText(input.masterCard?.checkInInstructions) && hasText(input.masterCard?.checkOutInstructions)) ||
+    Boolean(setup && isSetupCheckInComplete(setup));
   const wifiDone =
     hasText(input.masterCard?.wifiName) ||
     hasText(input.masterCard?.checkInInstructions) ||
-    hasText(input.masterCard?.parkingInfo);
-  const pricingDone = Boolean(
-    input.channels.some((channel) => isApiLikeChannel(channel) && channel.syncMode !== 'disabled'),
-  );
-  const channelsDone = input.channels.some(
-    (channel) =>
-      isApiLikeChannel(channel) &&
-      channel.syncMode !== 'disabled' &&
-      channel.status !== 'planned',
-  );
+    hasText(input.masterCard?.parkingInfo) ||
+    Boolean(setup && isSetupWifiComplete(setup));
+  // Цены и каналы — подготовительные данные владельца, без реального подключения OTA.
+  const pricingDone = Boolean(setup && isSetupPricingComplete(setup));
+  const channelsDone = Boolean(setup && isSetupChannelsSelected(setup));
   const readinessCheckDone =
     basicInfoDone &&
     addressDone &&
@@ -107,6 +137,7 @@ export function buildPreparationSteps(input: PropertyReadinessInput): Preparatio
     houseRulesDone &&
     checkInOutDone &&
     wifiDone &&
+    pricingDone &&
     channelsDone;
 
   return [
@@ -115,87 +146,87 @@ export function buildPreparationSteps(input: PropertyReadinessInput): Preparatio
       title: 'Основная информация об объекте',
       description: 'Название, город и базовые параметры размещения.',
       done: basicInfoDone,
-      actionHref: propertyHref,
-      actionLabel: 'Заполнить',
+      actionHref: hrefFor('basic_info'),
+      actionLabel: basicInfoDone ? 'Изменить' : 'Заполнить',
     },
     {
       id: 'address',
       title: 'Адрес',
       description: 'Точный адрес нужен для карточек каналов и инструкций гостю.',
       done: addressDone,
-      actionHref: propertyHref,
-      actionLabel: 'Указать адрес',
+      actionHref: hrefFor('address'),
+      actionLabel: addressDone ? 'Изменить' : 'Указать адрес',
     },
     {
       id: 'units',
       title: 'Категории и номера',
-      description: 'ASI соберёт структуру объекта из ваших данных. Пока используется базовый юнит.',
-      done: Boolean(input.property),
-      actionHref: propertyHref,
-      actionLabel: 'Открыть объект',
+      description: 'Опишите юниты и категории — ASI соберёт структуру объекта.',
+      done: unitsDone,
+      actionHref: hrefFor('units'),
+      actionLabel: 'Открыть',
     },
     {
       id: 'photos',
       title: 'Фото',
       description: 'Загрузите фото для карточек на площадках.',
       done: photosDone,
-      actionHref: mediaHref,
-      actionLabel: 'Добавить фото',
+      actionHref: hrefFor('photos'),
+      actionLabel: photosDone ? 'Изменить' : 'Добавить фото',
     },
     {
       id: 'description',
       title: 'Описание',
       description: 'Краткое и полное описание для гостей и каналов продаж.',
       done: descriptionDone,
-      actionHref: masterCardHref,
-      actionLabel: 'Заполнить описание',
+      actionHref: hrefFor('description'),
+      actionLabel: descriptionDone ? 'Изменить' : 'Заполнить описание',
     },
     {
       id: 'house_rules',
       title: 'Правила проживания',
       description: 'Тихий час, курение, животные и другие правила.',
       done: houseRulesDone,
-      actionHref: masterCardHref,
-      actionLabel: 'Добавить правила',
+      actionHref: hrefFor('house_rules'),
+      actionLabel: houseRulesDone ? 'Изменить' : 'Добавить правила',
     },
     {
       id: 'check_in_out',
       title: 'Заезд и выезд',
-      description: 'Инструкции по заселению и выезду.',
+      description: 'Время и инструкции по заселению и выезду.',
       done: checkInOutDone,
-      actionHref: masterCardHref,
-      actionLabel: 'Указать время',
+      actionHref: hrefFor('check_in_out'),
+      actionLabel: checkInOutDone ? 'Изменить' : 'Указать время',
     },
     {
       id: 'wifi_instructions',
       title: 'Wi‑Fi и инструкции',
-      description: 'Сеть, пароль, парковка и другие детали для гостя.',
+      description: 'Сеть, пароль, доступ в объект и бытовые детали для гостя.',
       done: wifiDone,
-      actionHref: masterCardHref,
-      actionLabel: 'Добавить инструкции',
+      actionHref: hrefFor('wifi_instructions'),
+      actionLabel: wifiDone ? 'Изменить' : 'Добавить инструкции',
     },
     {
       id: 'pricing',
       title: 'Цены и базовый тариф',
-      description: 'ASI подготовит цены после подключения каналов. Сейчас достаточно базовой настройки.',
+      description: 'Базовая цена за ночь и условия — ASI подготовит тарифы для каналов.',
       done: pricingDone,
-      actionHref: '/dashboard/channel-connections',
-      actionLabel: 'К подключению',
+      actionHref: hrefFor('pricing'),
+      actionLabel: pricingDone ? 'Изменить' : 'Указать цены',
     },
     {
       id: 'channels',
       title: 'Каналы для подключения',
-      description: 'Выберите площадки и передайте доступы — ASI настроит синхронизацию.',
+      description: 'Выберите площадки и подготовьте доступы — без включения реальных продаж.',
       done: channelsDone,
-      actionHref: '/dashboard/channel-connections',
-      actionLabel: 'Подключить каналы',
+      actionHref: hrefFor('channels'),
+      actionLabel: channelsDone ? 'Изменить' : 'Выбрать каналы',
     },
     {
       id: 'readiness_check',
       title: 'Проверка готовности',
       description: 'Финальная проверка перед теневым режимом и запуском.',
       done: readinessCheckDone,
-      actionHref: propertyHref,
+      actionHref: hrefFor('readiness_check'),
       actionLabel: 'Проверить',
     },
   ];

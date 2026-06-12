@@ -71,7 +71,7 @@ export function ChannelManagerOwnerView({
         </label>
       </header>
 
-      {readiness ? <PropertyPreparationSteps readiness={readiness} /> : null}
+      {readiness ? <PropertyPreparationSteps readiness={readiness} propertyId={propertyId} /> : null}
 
       <AsiAutomationInfo />
 

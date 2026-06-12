@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { optionalString, requireOpsFoundationContext } from '@/lib/ops-foundation/api';
-import { getMasterCard, listProperties, listPropertyMedia } from '@/lib/ops-foundation/repository';
+import { getMasterCard, getSetupProfile, listProperties, listPropertyMedia } from '@/lib/ops-foundation/repository';
 import { channelManagerApiErrorResponse } from '@/lib/channel-manager/api';
 import { computePropertyReadiness } from '@/lib/channel-manager/property-lifecycle';
 import { listChannelManagerState } from '@/lib/channel-manager/repository';
+import { normalizeSetupData, type PropertySetupData } from '@/lib/property-setup/setup-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
 
     let masterCard = null;
     let mediaCount = 0;
+    let setupProfile: PropertySetupData | null = null;
     if (property) {
       try {
         masterCard = await getMasterCard(auth.ctx, property.id);
@@ -35,6 +37,12 @@ export async function GET(req: Request) {
         mediaCount = media.filter((item) => item.status === 'active').length;
       } catch {
         mediaCount = 0;
+      }
+      try {
+        const profileRaw = await getSetupProfile(auth.ctx, property.id);
+        setupProfile = profileRaw ? normalizeSetupData(profileRaw) : null;
+      } catch {
+        setupProfile = null;
       }
     }
 
@@ -49,6 +57,7 @@ export async function GET(req: Request) {
       channels: state.channels ?? [],
       conflictCount,
       discrepancyCount: state.shadowDiscrepancies?.length ?? 0,
+      setupProfile,
     });
 
     return NextResponse.json({

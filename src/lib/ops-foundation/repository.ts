@@ -420,6 +420,72 @@ export async function updateProperty(
   }
 }
 
+// ─── Setup profile (подготовка объекта) ─────────────────────────────────────
+// Owner-facing черновик подготовки объекта, хранится в JSONB.
+// Чтение деградирует мягко (null), если таблица ещё не создана миграцией.
+
+type SetupProfileRow = {
+  id: string;
+  property_id: string;
+  data: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getSetupProfile(
+  ctx: OpsFoundationContext,
+  propertyId: string,
+): Promise<Record<string, unknown> | null> {
+  await assertPropertyAccess(ctx, propertyId);
+
+  try {
+    const { data, error } = await supabase
+      .from('property_setup_profiles')
+      .select('*')
+      .eq('property_id', propertyId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as SetupProfileRow;
+    if (row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
+      return row.data as Record<string, unknown>;
+    }
+    return null;
+  } catch (err) {
+    // Таблица ещё не создана — не считаем это ошибкой, профиль просто пуст.
+    if (isMissingTableError(err)) return null;
+    wrapDbError(err);
+  }
+}
+
+export async function upsertSetupProfile(
+  ctx: OpsFoundationContext,
+  propertyId: string,
+  data: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  await assertPropertyAccess(ctx, propertyId);
+
+  const now = nowIso();
+  try {
+    const { data: row, error } = await supabase
+      .from('property_setup_profiles')
+      .upsert(
+        { property_id: propertyId, data, updated_at: now },
+        { onConflict: 'property_id' },
+      )
+      .select('*')
+      .single();
+    if (error) throw error;
+    const saved = (row as SetupProfileRow).data;
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      return saved as Record<string, unknown>;
+    }
+    return data;
+  } catch (err) {
+    wrapDbError(err);
+  }
+}
+
 // ─── Master card ─────────────────────────────────────────────────────────────
 
 export async function getMasterCard(
