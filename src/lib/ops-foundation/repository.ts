@@ -32,16 +32,33 @@ export class OpsFoundationUnavailableError extends Error {
   }
 }
 
+function extractDbErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return String(err);
+}
+
 function isMissingTableError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes('does not exist') || msg.includes('relation');
+  const msg = extractDbErrorMessage(err).toLowerCase();
+  const code = typeof err === 'object' && err !== null ? String((err as { code?: unknown }).code ?? '') : '';
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    msg.includes('does not exist') ||
+    msg.includes('relation') ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table')
+  );
 }
 
 function wrapDbError(err: unknown): never {
   if (isMissingTableError(err)) {
     throw new OpsFoundationUnavailableError('ops_foundation_tables_unavailable');
   }
-  throw err instanceof Error ? err : new Error(String(err));
+  throw err instanceof Error ? err : new Error(extractDbErrorMessage(err));
 }
 
 function nowIso(): string {

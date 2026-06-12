@@ -33,12 +33,41 @@ export class ChannelManagerUnavailableError extends Error {
   }
 }
 
+function extractDbErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return String(err);
+}
+
+/**
+ * Detects "table/feature not provisioned yet" errors across Postgres and PostgREST.
+ * Postgres raises `relation "x" does not exist` (code 42P01); PostgREST returns
+ * `Could not find the table 'public.x' in the schema cache` (code PGRST205) when a
+ * table is missing or the schema cache is stale right after a deploy/migration.
+ * Supabase surfaces these as plain objects (not Error instances), so both the
+ * message and the code are inspected.
+ */
+function isChannelManagerTablesUnavailable(err: unknown): boolean {
+  const msg = extractDbErrorMessage(err).toLowerCase();
+  const code = typeof err === 'object' && err !== null ? String((err as { code?: unknown }).code ?? '') : '';
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    msg.includes('does not exist') ||
+    msg.includes('relation') ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table')
+  );
+}
+
 function wrapDbError(err: unknown): never {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes('does not exist') || msg.includes('relation')) {
+  if (isChannelManagerTablesUnavailable(err)) {
     throw new ChannelManagerUnavailableError('channel_manager_tables_unavailable');
   }
-  throw err instanceof Error ? err : new Error(String(err));
+  throw err instanceof Error ? err : new Error(extractDbErrorMessage(err));
 }
 
 type ChannelRow = {
@@ -524,10 +553,7 @@ export async function ensureDefaultChannelListings(
   }
 }
 
-export async function listChannelManagerState(
-  ctx: OpsFoundationContext,
-  propertyId?: string,
-): Promise<{
+export interface ChannelManagerState {
   channels: ChannelManagerChannel[];
   registry: typeof allChannelCapabilities;
   listings: ChannelListing[];
@@ -538,7 +564,48 @@ export async function listChannelManagerState(
   shadowEvents: ChannelShadowBookingEvent[];
   shadowDiscrepancies: ChannelShadowDiscrepancy[];
   bronevikMtsTravel: BronevikMtsTravelAdminState | null;
-}> {
+}
+
+function emptyChannelManagerState(): ChannelManagerState {
+  return {
+    channels: [],
+    registry: allChannelCapabilities,
+    listings: [],
+    inventoryDays: [],
+    reservations: [],
+    syncJobs: [],
+    syncLogs: [],
+    shadowEvents: [],
+    shadowDiscrepancies: [],
+    bronevikMtsTravel: null,
+  };
+}
+
+/**
+ * Read-only state for the owner/admin view. When the channel manager tables are
+ * not provisioned yet (fresh VM, stale PostgREST schema cache), this is treated
+ * as an empty "nothing connected yet" state rather than a hard error — the UI
+ * then renders empty states instead of a red error banner. Genuine failures
+ * (connection errors, unexpected DB errors) still propagate.
+ */
+export async function listChannelManagerState(
+  ctx: OpsFoundationContext,
+  propertyId?: string,
+): Promise<ChannelManagerState> {
+  try {
+    return await loadChannelManagerState(ctx, propertyId);
+  } catch (err) {
+    if (err instanceof ChannelManagerUnavailableError) {
+      return emptyChannelManagerState();
+    }
+    throw err;
+  }
+}
+
+async function loadChannelManagerState(
+  ctx: OpsFoundationContext,
+  propertyId?: string,
+): Promise<ChannelManagerState> {
   const channels = await ensureDefaultChannels(ctx);
 
   try {
