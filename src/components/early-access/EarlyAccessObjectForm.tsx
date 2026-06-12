@@ -5,13 +5,13 @@ import { useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { PilotObjectSummary } from '@/lib/communication/pilot-object-intake';
 
-type CommunityStatus = 'community_member' | 'standard_terms' | 'community_info';
+type PilotReadiness = 'ready_to_start' | 'need_help_collecting' | 'want_to_discuss';
 
 type FormState = {
   name: string;
   contact: string;
   objectsCount: string;
-  communityStatus: CommunityStatus;
+  pilotReadiness: PilotReadiness;
 };
 
 type SaveResponse = {
@@ -24,7 +24,7 @@ const initialState: FormState = {
   name: '',
   contact: '',
   objectsCount: '',
-  communityStatus: 'community_member',
+  pilotReadiness: 'ready_to_start',
 };
 
 const objectCountOptions = [
@@ -35,26 +35,25 @@ const objectCountOptions = [
   'Более 20 объектов',
 ];
 
-const communityOptions: Array<{ value: CommunityStatus; label: string }> = [
+const pilotReadinessOptions: Array<{ value: PilotReadiness; label: string }> = [
   {
-    value: 'community_member',
-    label: 'Участник сообщества Стригунова или Брагина — 1 000 ₽/мес на год',
+    value: 'ready_to_start',
+    label: 'Есть базовые данные объекта, можно начинать пилотное подключение',
   },
   {
-    value: 'standard_terms',
-    label: 'Стандартные условия',
+    value: 'need_help_collecting',
+    label: 'Нужно помочь собрать описание, правила, фото и условия заселения',
   },
   {
-    value: 'community_info',
-    label: 'Хочу узнать про сообщество и скидку',
+    value: 'want_to_discuss',
+    label: 'Сначала хочу обсудить формат пилота',
   },
 ];
 
-const communitySubmissionLabels: Record<CommunityStatus, string> = {
-  community_member:
-    'Участник сообщества Ярослава Стригунова или Анатолия Брагина. Зафиксировать стартовую цену на 1 год.',
-  standard_terms: 'Стандартные условия участия.',
-  community_info: 'Хочет узнать, как вступить в сообщество и получить скидку на год.',
+const pilotReadinessSubmissionLabels: Record<PilotReadiness, string> = {
+  ready_to_start: 'Есть базовые данные объекта, можно начинать пилотное подключение.',
+  need_help_collecting: 'Нужно помочь собрать описание, правила, фото и условия заселения.',
+  want_to_discuss: 'Сначала хочет обсудить формат пилота.',
 };
 
 export function EarlyAccessObjectForm() {
@@ -73,7 +72,8 @@ export function EarlyAccessObjectForm() {
 
     const details = [
       `Количество объектов: ${form.objectsCount}`,
-      `Условия участия: ${communitySubmissionLabels[form.communityStatus]}`,
+      `Готовность к пилоту: ${pilotReadinessSubmissionLabels[form.pilotReadiness]}`,
+      'Для старта нужны: адрес или район, тип объекта, фото, описание, правила проживания, условия заселения, Wi-Fi, базовая цена и список площадок размещения.',
     ].join('\n');
 
     try {
@@ -81,7 +81,7 @@ export function EarlyAccessObjectForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          city: 'Заявка раннего доступа',
+          city: 'Заявка на пилотное подключение',
           objectName: form.name,
           addressOrArea: '',
           wifiName: '',
@@ -103,7 +103,7 @@ export function EarlyAccessObjectForm() {
       setStatus('Заявка отправлена. Свяжемся с вами в ближайшее время.');
       setForm(initialState);
     } catch {
-      setStatus('Ошибка сети. Попробуйте еще раз.');
+      setStatus('Ошибка сети. Попробуйте ещё раз.');
     } finally {
       setSaving(false);
     }
@@ -150,15 +150,15 @@ export function EarlyAccessObjectForm() {
         </label>
 
         <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--t-text)]">Условия участия</legend>
-          {communityOptions.map((option) => (
+          <legend className="text-sm font-semibold text-[var(--t-text)]">Готовность к подключению</legend>
+          {pilotReadinessOptions.map((option) => (
             <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
               <input
                 type="radio"
-                name="communityStatus"
+                name="pilotReadiness"
                 value={option.value}
-                checked={form.communityStatus === option.value}
-                onChange={() => updateField('communityStatus', option.value)}
+                checked={form.pilotReadiness === option.value}
+                onChange={() => updateField('pilotReadiness', option.value)}
                 className="mt-1 h-4 w-4"
               />
               <span>{option.label}</span>
