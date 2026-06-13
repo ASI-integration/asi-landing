@@ -205,8 +205,21 @@ describe('ASI Feedback Telegram lead intake', () => {
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:channels', 1009));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:pms:bnovo', 1010));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:automation_processes:guest_messages', 1011));
+    const automationMarkup = JSON.stringify(mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[3]);
+    expect(automationMarkup).toContain('Общение с гостями и автоответы');
+    expect(automationMarkup).not.toContain('Повторяющиеся вопросы');
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:automation_processes:checkin', 1012));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:automation_processes', 1013));
+    const timeConsumersMarkup = JSON.stringify(mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[3]);
+    expect(timeConsumersMarkup).toContain('Переписка с гостями');
+    expect(timeConsumersMarkup).toContain('Заселение и инструкции');
+    expect(timeConsumersMarkup).toContain('Координация уборок');
+    expect(timeConsumersMarkup).toContain('Обновление данных на площадках');
+    expect(timeConsumersMarkup).toContain('Контроль цен и загрузки');
+    expect(timeConsumersMarkup).toContain('Отчёты');
+    expect(timeConsumersMarkup).toContain('Подключение новых объектов');
+    expect(timeConsumersMarkup).toContain('Не понимаю, с чего начать');
+    expect(timeConsumersMarkup).toContain('Другое');
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:time_consumers:messages', 1014));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:time_consumers:cleaning', 1015));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:time_consumers', 1016));
@@ -218,8 +231,8 @@ describe('ASI Feedback Telegram lead intake', () => {
       object_types: ['Дома / коттеджи'],
       channels: ['Авито', 'Суточно'],
       pms: ['Bnovo'],
-      automation_processes: ['Общение с гостями', 'Инструкции по заселению'],
-      time_consumers: ['Переписка', 'Координация уборок'],
+      automation_processes: ['Общение с гостями и автоответы', 'Инструкции по заселению'],
+      time_consumers: ['Переписка с гостями', 'Координация уборок'],
       ai_normalized: {
         object_types: ['Дома / коттеджи'],
         channels: ['Авито', 'Суточно'],
@@ -252,5 +265,44 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Типы объектов: Дома / коттеджи');
     expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('AI-сводка:');
     expect(mockAnswerTelegramCallbackQuery).toHaveBeenCalled();
+  });
+
+  it('normalizes legacy guest communication process duplicates before admin summary', async () => {
+    const now = new Date().toISOString();
+    mockDb.rows.unshift({
+      id: 'legacy-lead',
+      telegram_user_id: '9001',
+      telegram_username: 'pilot_owner',
+      first_name: 'Иван',
+      source: 'site',
+      answers_json: {
+        source: 'site',
+        object_count_range: '2-5',
+        object_types: ['Квартиры'],
+        channels: ['Авито'],
+        pms: ['Bnovo'],
+        automation_processes: ['Общение с гостями', 'Повторяющиеся вопросы', 'Инструкции по заселению'],
+        time_consumers: ['Переписка с гостями'],
+        other_texts: {},
+        flow: { step: 'comment' },
+      },
+      status: 'new',
+      created_at: now,
+      updated_at: now,
+    });
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 2001));
+
+    expect(mockDb.rows[0].answers_json.automation_processes).toEqual([
+      'Общение с гостями и автоответы',
+      'Инструкции по заселению',
+    ]);
+    expect(mockDb.rows[0].answers_json.ai_normalized.automation_processes).toEqual([
+      'Общение с гостями и автоответы',
+      'Инструкции по заселению',
+    ]);
+    expect(mockDb.rows[0].answers_json.ai_summary).toContain('Общение с гостями и автоответы');
+    expect(mockDb.rows[0].answers_json.ai_summary).not.toContain('Повторяющиеся вопросы');
+    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Что хочет автоматизировать: Общение с гостями и автоответы, Инструкции по заселению');
   });
 });

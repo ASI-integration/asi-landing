@@ -123,6 +123,12 @@ const STEP_LABELS: Record<Exclude<LeadFlowStep, 'completed'>, string> = {
   comment: 'Можно коротко описать ситуацию своими словами или нажать «Пропустить».',
 };
 
+const GUEST_COMMUNICATION_AUTOREPLIES = 'Общение с гостями и автоответы';
+const LEGACY_GUEST_COMMUNICATION_PROCESS_LABELS = new Set([
+  'Общение с гостями',
+  'Повторяющиеся вопросы',
+]);
+
 const OPTIONS: Record<Exclude<LeadFlowStep, 'comment' | 'completed'>, LeadOption[]> = {
   object_count: [
     { id: '1', label: '1' },
@@ -160,8 +166,7 @@ const OPTIONS: Record<Exclude<LeadFlowStep, 'comment' | 'completed'>, LeadOption
     { id: 'choosing', label: 'Только выбираем / подключаем' },
   ],
   automation_processes: [
-    { id: 'guest_messages', label: 'Общение с гостями' },
-    { id: 'faq', label: 'Повторяющиеся вопросы' },
+    { id: 'guest_messages', label: GUEST_COMMUNICATION_AUTOREPLIES },
     { id: 'checkin', label: 'Инструкции по заселению' },
     { id: 'cleaning_tasks', label: 'Уборки и задачи персоналу' },
     { id: 'readiness', label: 'Контроль готовности объекта' },
@@ -173,11 +178,11 @@ const OPTIONS: Record<Exclude<LeadFlowStep, 'comment' | 'completed'>, LeadOption
     { id: 'other', label: 'Другое' },
   ],
   time_consumers: [
-    { id: 'messages', label: 'Переписка' },
-    { id: 'checkin', label: 'Заселение' },
+    { id: 'messages', label: 'Переписка с гостями' },
+    { id: 'checkin', label: 'Заселение и инструкции' },
     { id: 'cleaning', label: 'Координация уборок' },
     { id: 'listing_updates', label: 'Обновление данных на площадках' },
-    { id: 'prices', label: 'Контроль цен' },
+    { id: 'prices', label: 'Контроль цен и загрузки' },
     { id: 'reports', label: 'Отчёты' },
     { id: 'new_objects', label: 'Подключение новых объектов' },
     { id: 'dont_know', label: 'Не понимаю, с чего начать' },
@@ -265,7 +270,10 @@ function isOtherStep(value: unknown): value is LeadOtherStep {
 }
 
 function optionLabel(step: Exclude<LeadFlowStep, 'comment' | 'completed'>, id: string): string | null {
-  return OPTIONS[step].find((option) => option.id === id)?.label ?? null;
+  const label = OPTIONS[step].find((option) => option.id === id)?.label;
+  if (label) return label;
+  if (step === 'automation_processes' && id === 'faq') return GUEST_COMMUNICATION_AUTOREPLIES;
+  return null;
 }
 
 function stepAnswerKey(step: LeadMultiStep): keyof Pick<LeadAnswers, 'object_types' | 'channels' | 'automation_processes' | 'time_consumers'> {
@@ -274,13 +282,14 @@ function stepAnswerKey(step: LeadMultiStep): keyof Pick<LeadAnswers, 'object_typ
 
 function selectedForStep(answers: LeadAnswers, step: LeadMultiStep): string[] {
   const value = answers[stepAnswerKey(step)];
+  if (step === 'automation_processes') return normalizeAutomationProcesses(value);
   return Array.isArray(value) ? value : [];
 }
 
 function setSelectedForStep(answers: LeadAnswers, step: LeadMultiStep, selected: string[]): LeadAnswers {
   return {
     ...answers,
-    [stepAnswerKey(step)]: selected,
+    [stepAnswerKey(step)]: step === 'automation_processes' ? normalizeAutomationProcesses(selected) : selected,
   };
 }
 
@@ -587,6 +596,24 @@ function includesAny(values: string[] | undefined, needles: string[]): boolean {
   return needles.some((needle) => text.includes(needle.toLowerCase()));
 }
 
+function normalizeAutomationProcesses(values: string[] | undefined): string[] {
+  const normalized: string[] = [];
+  for (const value of values ?? []) {
+    const next = LEGACY_GUEST_COMMUNICATION_PROCESS_LABELS.has(value)
+      ? GUEST_COMMUNICATION_AUTOREPLIES
+      : value;
+    if (!normalized.includes(next)) normalized.push(next);
+  }
+  return normalized;
+}
+
+function normalizeLeadAnswers(answers: LeadAnswers): LeadAnswers {
+  return {
+    ...answers,
+    automation_processes: normalizeAutomationProcesses(answers.automation_processes),
+  };
+}
+
 function objectCountWeight(range?: string): number {
   if (range === '20+') return 4;
   if (range === '6-20') return 3;
@@ -635,11 +662,12 @@ function buildFallbackSummary(answers: LeadAnswers): string {
 }
 
 async function finalizeAnswers(answers: LeadAnswers): Promise<LeadAnswers> {
+  const normalizedAnswers = normalizeLeadAnswers(answers);
   const base: LeadAnswers = {
-    ...answers,
-    lead_type: inferLeadType(answers),
-    lead_potential: inferLeadPotential(answers),
-    recommended_next_step: inferRecommendedNextStep(answers),
+    ...normalizedAnswers,
+    lead_type: inferLeadType(normalizedAnswers),
+    lead_potential: inferLeadPotential(normalizedAnswers),
+    recommended_next_step: inferRecommendedNextStep(normalizedAnswers),
   };
   const fallbackSummary = buildFallbackSummary(base);
 
