@@ -765,8 +765,14 @@ function inferLeadType(answers: LeadAnswers): LeadType {
 function inferLeadPotential(answers: LeadAnswers): LeadPotential {
   const count = objectCountWeight(answers.object_count_range);
   const selectedPainCount = (answers.automation_processes?.length ?? 0) + (answers.time_consumers?.length ?? 0);
-  if (count >= 3 || selectedPainCount >= 6 || includesAny(answers.object_types, ['Мини-отель', 'Коммерческая', 'Смешанный'])) return 'высокий';
-  if (count >= 2 || selectedPainCount >= 3) return 'средний';
+  // Mirror the rule-based automation potential so the admin card and the
+  // stored automation block stay consistent. A single object without strong
+  // structural signals must never be classified as high potential.
+  if (includesAny(answers.object_types, ['Мини-отель', 'апарт-отель'])) return 'высокий';
+  if (count >= 3) return 'высокий';
+  if (includesAny(answers.object_types, ['Коммерческая', 'Смешанный'])) return count >= 2 ? 'высокий' : 'средний';
+  if (count >= 2) return 'средний';
+  if (count === 1) return selectedPainCount >= 3 ? 'средний' : 'низкий';
   return 'низкий';
 }
 

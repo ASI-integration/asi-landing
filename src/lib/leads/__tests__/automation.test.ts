@@ -127,6 +127,74 @@ describe('lead automation v1 (rule-based)', () => {
     expect(automation.manualReplyReason).toBe('custom_other_text');
   });
 
+  it('does not over-escalate a single manual object lead (regression)', () => {
+    const automation = computeLeadAutomation({
+      objectCountRange: '1',
+      pms: ['Нет, всё ведём вручную'],
+      objectTypes: ['Квартиры'],
+      channels: ['Авито', 'Суточно', 'Островок'],
+    });
+
+    expect(automation.scenario).not.toBe('high_value_operator');
+    expect(['no_pms_manual', 'small_host']).toContain(automation.scenario);
+    expect(automation.manualReplyNeeded).toBe(false);
+    expect(automation.manualReplyReason).toBe('none');
+    expect(automation.suggestedStatus).toBe('qualified');
+    expect(automation.potential).not.toBe('высокий');
+  });
+
+  it('still does not escalate a single manual object even when AI marked it high potential', () => {
+    const automation = computeLeadAutomation({
+      objectCountRange: '1',
+      pms: ['Нет, всё ведём вручную'],
+      objectTypes: ['Квартиры'],
+      channels: ['Авито'],
+      leadPotential: 'высокий',
+    });
+
+    expect(automation.scenario).toBe('no_pms_manual');
+    expect(automation.manualReplyNeeded).toBe(false);
+    expect(automation.potential).not.toBe('высокий');
+  });
+
+  it('classifies 6-20 objects as a high-value operator with high potential', () => {
+    const automation = computeLeadAutomation({
+      objectCountRange: '6-20',
+      objectTypes: ['Квартиры'],
+      pms: ['Нет, всё ведём вручную'],
+    });
+
+    expect(automation.scenario).toBe('high_value_operator');
+    expect(automation.manualReplyNeeded).toBe(true);
+    expect(automation.manualReplyReason).toBe('high_value_lead');
+    expect(automation.potential).toBe('высокий');
+  });
+
+  it('keeps 2-5 manual objects at medium potential without manual reply', () => {
+    const automation = computeLeadAutomation({
+      objectCountRange: '2-5',
+      objectTypes: ['Квартиры'],
+      pms: ['Нет, всё ведём вручную'],
+    });
+
+    expect(automation.scenario).toBe('no_pms_manual');
+    expect(automation.suggestedStatus).toBe('qualified');
+    expect(automation.manualReplyNeeded).toBe(false);
+    expect(automation.potential).toBe('средний');
+  });
+
+  it('flags a commercial single object for manual review at medium potential', () => {
+    const automation = computeLeadAutomation({
+      objectCountRange: '1',
+      objectTypes: ['Коммерческая недвижимость'],
+      pms: ['Нет, всё ведём вручную'],
+    });
+
+    expect(automation.scenario).toBe('commercial_property');
+    expect(automation.manualReplyNeeded).toBe(true);
+    expect(automation.potential).toBe('средний');
+  });
+
   it('serializes automation into snake_case for answers_json storage', () => {
     const automation = computeLeadAutomation({ objectCountRange: '2-5', pms: ['RealtyCalendar'] });
     const serialized = serializeLeadAutomation(automation);
