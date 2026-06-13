@@ -186,8 +186,14 @@ describe('ASI Feedback Telegram lead intake', () => {
     await processTelegramLeadIntakeUpdate(leadUpdate('/start tenchat', 1001));
     expect(mockDb.rows).toHaveLength(1);
     expect(mockDb.rows[0].source).toBe('tenchat');
+    expect(mockDb.rows[0].answers_json.flow.step).toBe('menu');
+    expect(mockReplyToTelegram.mock.calls[0]?.[1]).toContain('Выберите, что хотите сделать');
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Оставить заявку');
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Задать вопрос / поддержка');
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 10015));
     expect(mockDb.rows[0].answers_json.flow.step).toBe('object_count');
-    expect(mockReplyToTelegram.mock.calls[0]?.[1]).toContain('Сколько объектов');
+    expect(mockEditTelegramMessageText.mock.calls[0]?.[2]).toContain('Сколько объектов');
     expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).not.toContain('Овербукинг');
 
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 1002));
@@ -304,5 +310,98 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(mockDb.rows[0].answers_json.ai_summary).toContain('Общение с гостями и автоответы');
     expect(mockDb.rows[0].answers_json.ai_summary).not.toContain('Повторяющиеся вопросы');
     expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Что хочет автоматизировать: Общение с гостями и автоответы, Инструкции по заселению');
+  });
+
+  it('routes direct support deep link questions to the admin chat without AI auto-replies', async () => {
+    const startResult = await processTelegramLeadIntakeUpdate(leadUpdate('/start support', 3001));
+
+    expect(startResult?.reply).toContain('Напишите вопрос одним сообщением');
+    expect(mockDb.rows).toHaveLength(1);
+    expect(mockDb.rows[0].source).toBe('unknown');
+    expect(mockDb.rows[0].answers_json).toMatchObject({
+      source: 'support',
+      flow: { step: 'support' },
+    });
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Оставить заявку');
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Назад');
+
+    const result = await processTelegramLeadIntakeUpdate(leadUpdate('Можно ли подключить RealtyCalendar?', 3002));
+
+    expect(result?.reply).toContain('Спасибо, вопрос получил');
+    expect(mockDb.rows[0].answers_json.flow.step).toBe('menu');
+    expect(mockDb.rows[0].answers_json.support_requests).toHaveLength(1);
+    expect(mockDb.rows[0].answers_json.support_requests[0]).toMatchObject({
+      source: 'support',
+      text: 'Можно ли подключить RealtyCalendar?',
+      status: 'new',
+      support_ai_intent: null,
+      support_ai_summary: null,
+      support_auto_reply_eligible: false,
+    });
+    expect(mockCallLLM).toHaveBeenCalledTimes(0);
+    expect(mockSendTelegramMessageToChat).toHaveBeenCalledWith(
+      '-100admin',
+      expect.stringContaining('Новый вопрос в поддержку ASI'),
+      { botToken: 'feedback-token', tokenLabel: 'ASI_FEEDBACK_BOT_TOKEN' },
+    );
+    const adminCard = String(mockSendTelegramMessageToChat.mock.calls[0]?.[1]);
+    expect(adminCard).toContain('Источник: support');
+    expect(adminCard).toContain('Имя: Иван');
+    expect(adminCard).toContain('Username: @pilot_owner');
+    expect(adminCard).toContain('Telegram ID: 9001');
+    expect(adminCard).toContain('Текст вопроса: Можно ли подключить RealtyCalendar?');
+    expect(adminCard).toContain('Пользователь: https://t.me/pilot_owner');
+    expect(adminCard).toContain('Статус: new');
+  });
+
+  it('lets support return back to the lead questionnaire', async () => {
+    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 3101));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:support', 3102));
+
+    expect(mockDb.rows[0].answers_json.flow.step).toBe('support');
+    expect(mockReplyToTelegram.mock.calls[mockReplyToTelegram.mock.calls.length - 1]?.[1]).toContain('Напишите вопрос одним сообщением');
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 3103));
+
+    expect(mockDb.rows[0].answers_json.flow.step).toBe('object_count');
+    expect(mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[2]).toContain('Сколько объектов');
+  });
+
+  it('adds completed lead context to later support requests', async () => {
+    const now = new Date().toISOString();
+    mockDb.rows.unshift({
+      id: 'completed-lead',
+      telegram_user_id: '9001',
+      telegram_username: 'pilot_owner',
+      first_name: 'Иван',
+      source: 'site',
+      answers_json: {
+        source: 'site',
+        object_count_range: '6-20',
+        object_types: ['Квартиры'],
+        pms: ['RealtyCalendar'],
+        automation_processes: ['Общение с гостями и автоответы'],
+        flow: { step: 'completed' },
+      },
+      status: 'new',
+      created_at: now,
+      updated_at: now,
+    });
+
+    await processTelegramLeadIntakeUpdate(leadUpdate('/support', 3201));
+    await processTelegramLeadIntakeUpdate(leadUpdate('Можно ли подключить RealtyCalendar?', 3202));
+
+    expect(mockDb.rows[0].answers_json.support_requests[0].lead_context).toMatchObject({
+      object_count_range: '6-20',
+      object_types: ['Квартиры'],
+      pms: ['RealtyCalendar'],
+      automation_processes: ['Общение с гостями и автоответы'],
+    });
+    const adminCard = String(mockSendTelegramMessageToChat.mock.calls[0]?.[1]);
+    expect(adminCard).toContain('Контекст лида:');
+    expect(adminCard).toContain('Объектов: 6-20');
+    expect(adminCard).toContain('Тип объектов: Квартиры');
+    expect(adminCard).toContain('PMS/МК: RealtyCalendar');
+    expect(adminCard).toContain('Что хотел автоматизировать: Общение с гостями и автоответы');
   });
 });

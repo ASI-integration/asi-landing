@@ -11,6 +11,7 @@ import {
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
 
 type LeadFlowStep =
+  | 'menu'
   | 'object_count'
   | 'object_types'
   | 'channels'
@@ -18,10 +19,12 @@ type LeadFlowStep =
   | 'automation_processes'
   | 'time_consumers'
   | 'comment'
+  | 'support'
   | 'completed';
 
 type LeadMultiStep = 'object_types' | 'channels' | 'automation_processes' | 'time_consumers';
 type LeadOtherStep = LeadMultiStep | 'pms';
+type LeadQuestionStep = Exclude<LeadFlowStep, 'menu' | 'support' | 'completed'>;
 type LeadPotential = 'низкий' | 'средний' | 'высокий';
 type LeadType =
   | 'новичок без PMS/МК'
@@ -45,6 +48,26 @@ type LeadAiNormalized = {
   time_consumers?: string[];
 };
 
+type SupportRequestSource = AsiFeedbackLeadSource | 'support';
+
+type SupportLeadContext = {
+  object_count_range?: string;
+  object_types?: string[];
+  pms?: string[];
+  automation_processes?: string[];
+};
+
+type SupportRequest = {
+  source: SupportRequestSource;
+  text: string;
+  status: 'new';
+  received_at: string;
+  lead_context?: SupportLeadContext;
+  support_ai_intent: string | null;
+  support_ai_summary: string | null;
+  support_auto_reply_eligible: boolean;
+};
+
 type LeadAnswers = {
   object_count_range?: string;
   object_types?: string[];
@@ -59,7 +82,9 @@ type LeadAnswers = {
   lead_type?: LeadType;
   lead_potential?: LeadPotential;
   recommended_next_step?: RecommendedNextStep;
-  source?: AsiFeedbackLeadSource;
+  source?: SupportRequestSource;
+  support_requests?: SupportRequest[];
+  support_lead_context?: SupportLeadContext;
   flow?: {
     step: LeadFlowStep;
     awaiting_text_for?: LeadOtherStep | 'comment';
@@ -96,10 +121,13 @@ type ParsedCallback =
   | { kind: 'toggle'; step: LeadMultiStep; id: string }
   | { kind: 'done'; step: LeadMultiStep }
   | { kind: 'other'; step: LeadOtherStep }
+  | { kind: 'start_lead' }
+  | { kind: 'support' }
   | { kind: 'skip_comment' }
   | { kind: 'back' };
 
 const START_RE = /^\/start(?:@\w+)?(?:\s+(.+))?$/i;
+const SUPPORT_COMMAND_RE = /^\/support(?:@\w+)?$/i;
 const CALLBACK_PREFIX = 'ali2';
 
 const STEP_ORDER: LeadFlowStep[] = [
@@ -113,7 +141,7 @@ const STEP_ORDER: LeadFlowStep[] = [
   'completed',
 ];
 
-const STEP_LABELS: Record<Exclude<LeadFlowStep, 'completed'>, string> = {
+const STEP_LABELS: Record<LeadQuestionStep, string> = {
   object_count: 'Сколько объектов у вас сейчас?',
   object_types: 'Какой тип объектов у вас основной? Можно выбрать несколько.',
   channels: 'Какие каналы уже используете? Можно выбрать несколько.',
@@ -129,7 +157,7 @@ const LEGACY_GUEST_COMMUNICATION_PROCESS_LABELS = new Set([
   'Повторяющиеся вопросы',
 ]);
 
-const OPTIONS: Record<Exclude<LeadFlowStep, 'comment' | 'completed'>, LeadOption[]> = {
+const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
   object_count: [
     { id: '1', label: '1' },
     { id: '2_5', label: '2-5' },
@@ -195,6 +223,14 @@ const MULTI_STEPS = new Set<LeadFlowStep>(['object_types', 'channels', 'automati
 const FINAL_REPLY =
   'Спасибо, заявку получил. По вашим ответам видно, какие процессы можно автоматизировать в первую очередь. Мы свяжемся с вами или предложим демо, если формат подходит для пилота ASI.';
 
+const MAIN_MENU_REPLY = 'Выберите, что хотите сделать:';
+
+const SUPPORT_PROMPT =
+  'Напишите вопрос одним сообщением. Я передам его администратору ASI. Позже часть ответов будет обрабатываться автоматически.';
+
+const SUPPORT_CONFIRMATION =
+  'Спасибо, вопрос получил. Передал администратору ASI. Если вопрос требует ручного ответа, мы свяжемся с вами.';
+
 const STORAGE_ERROR_REPLY =
   'Не удалось сохранить заявку. Попробуйте начать ещё раз позже или напишите нам обычным сообщением.';
 
@@ -240,6 +276,8 @@ function callbackData(callback: ParsedCallback): string {
   if (callback.kind === 'toggle') return `${CALLBACK_PREFIX}:t:${callback.step}:${callback.id}`;
   if (callback.kind === 'done') return `${CALLBACK_PREFIX}:d:${callback.step}`;
   if (callback.kind === 'other') return `${CALLBACK_PREFIX}:o:${callback.step}`;
+  if (callback.kind === 'start_lead') return `${CALLBACK_PREFIX}:lead`;
+  if (callback.kind === 'support') return `${CALLBACK_PREFIX}:support`;
   if (callback.kind === 'skip_comment') return `${CALLBACK_PREFIX}:skip`;
   return `${CALLBACK_PREFIX}:back`;
 }
@@ -256,6 +294,8 @@ function parseCallbackData(data: string | undefined): ParsedCallback | null {
   }
   if (parts[1] === 'd' && isMultiStep(parts[2])) return { kind: 'done', step: parts[2] };
   if (parts[1] === 'o' && isOtherStep(parts[2])) return { kind: 'other', step: parts[2] };
+  if (parts[1] === 'lead') return { kind: 'start_lead' };
+  if (parts[1] === 'support') return { kind: 'support' };
   if (parts[1] === 'skip') return { kind: 'skip_comment' };
   if (parts[1] === 'back') return { kind: 'back' };
   return null;
@@ -269,7 +309,7 @@ function isOtherStep(value: unknown): value is LeadOtherStep {
   return isMultiStep(value) || value === 'pms';
 }
 
-function optionLabel(step: Exclude<LeadFlowStep, 'comment' | 'completed'>, id: string): string | null {
+function optionLabel(step: Exclude<LeadQuestionStep, 'comment'>, id: string): string | null {
   const label = OPTIONS[step].find((option) => option.id === id)?.label;
   if (label) return label;
   if (step === 'automation_processes' && id === 'faq') return GUEST_COMMUNICATION_AUTOREPLIES;
@@ -332,7 +372,27 @@ function chunkRows(buttons: Array<{ text: string; callback_data: string }>, colu
   return rows;
 }
 
+function mainMenuKeyboard(): Record<string, unknown> {
+  return {
+    inline_keyboard: [
+      [{ text: 'Оставить заявку', callback_data: callbackData({ kind: 'start_lead' }) }],
+      [{ text: 'Задать вопрос / поддержка', callback_data: callbackData({ kind: 'support' }) }],
+    ],
+  };
+}
+
+function supportKeyboard(): Record<string, unknown> {
+  return {
+    inline_keyboard: [
+      [{ text: 'Оставить заявку', callback_data: callbackData({ kind: 'start_lead' }) }],
+      [{ text: 'Назад', callback_data: callbackData({ kind: 'back' }) }],
+    ],
+  };
+}
+
 function keyboardForStep(step: LeadFlowStep, answers: LeadAnswers): Record<string, unknown> | null {
+  if (step === 'menu') return mainMenuKeyboard();
+  if (step === 'support') return supportKeyboard();
   if (step === 'completed') return null;
   if (step === 'comment') {
     return {
@@ -380,6 +440,8 @@ function keyboardForStep(step: LeadFlowStep, answers: LeadAnswers): Record<strin
 }
 
 function questionText(step: LeadFlowStep, answers: LeadAnswers): string {
+  if (step === 'menu') return MAIN_MENU_REPLY;
+  if (step === 'support') return SUPPORT_PROMPT;
   if (step === 'completed') return FINAL_REPLY;
   const selected = isMultiStep(step) ? selectedForStep(answers, step) : [];
   if (!selected.length) return STEP_LABELS[step];
@@ -415,6 +477,10 @@ async function updateQuestionMessage(
   await sendQuestion(user, step, answers, update.update_id);
 }
 
+async function sendMainMenu(user: TelegramLeadUser, answers: LeadAnswers, updateId?: number): Promise<void> {
+  await sendQuestion(user, 'menu', withFlow(answers, 'menu'), updateId);
+}
+
 function isCompleted(lead: LeadRow): boolean {
   return lead.answers_json?.flow?.step === 'completed';
 }
@@ -447,7 +513,39 @@ async function findActiveLead(telegramUserId: string): Promise<LeadRow | null> {
   }
 }
 
-async function createLead(user: TelegramLeadUser, source: AsiFeedbackLeadSource): Promise<LeadRow | null> {
+async function findLatestLead(telegramUserId: string): Promise<LeadRow | null> {
+  try {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('id, telegram_user_id, telegram_username, first_name, source, answers_json, status, created_at, updated_at')
+      .eq('telegram_user_id', telegramUserId)
+      .eq('status', 'new')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('[asi-feedback] failed to load latest lead', {
+        telegram_user_id: telegramUserId,
+        error: error.message,
+      });
+      return null;
+    }
+
+    return ((data ?? []) as LeadRow[])[0] ?? null;
+  } catch (error) {
+    console.error('[asi-feedback] failed to load latest lead', {
+      telegram_user_id: telegramUserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function createLead(
+  user: TelegramLeadUser,
+  source: AsiFeedbackLeadSource,
+  initialStep: LeadFlowStep = 'menu',
+): Promise<LeadRow | null> {
   const answers: LeadAnswers = {
     source,
     object_types: [],
@@ -456,7 +554,7 @@ async function createLead(user: TelegramLeadUser, source: AsiFeedbackLeadSource)
     automation_processes: [],
     time_consumers: [],
     other_texts: {},
-    flow: { step: 'object_count' },
+    flow: { step: initialStep },
   };
 
   try {
@@ -800,6 +898,110 @@ async function notifyAdmin(lead: LeadRow): Promise<void> {
   await sendTelegramMessageToChat(adminChatId, formatAdminNotification(lead), getAsiFeedbackTelegramSendOptions());
 }
 
+function leadContextFromAnswers(answers: LeadAnswers | null | undefined): SupportLeadContext | undefined {
+  if (!answers) return undefined;
+  const context: SupportLeadContext = {
+    object_count_range: answers.object_count_range,
+    object_types: answers.object_types,
+    pms: answers.pms,
+    automation_processes: answers.automation_processes,
+  };
+  const hasContext = Boolean(
+    context.object_count_range ||
+      context.object_types?.length ||
+      context.pms?.length ||
+      context.automation_processes?.length,
+  );
+  return hasContext ? context : undefined;
+}
+
+function buildSupportRequest(
+  text: string,
+  source: SupportRequestSource,
+  context?: SupportLeadContext,
+): SupportRequest {
+  return {
+    source,
+    text: text.trim(),
+    status: 'new',
+    received_at: new Date().toISOString(),
+    ...(context ? { lead_context: context } : {}),
+    support_ai_intent: null,
+    support_ai_summary: null,
+    support_auto_reply_eligible: false,
+  };
+}
+
+function withSupportRequest(answers: LeadAnswers, request: SupportRequest): LeadAnswers {
+  return withFlow(
+    {
+      ...answers,
+      support_requests: [...(answers.support_requests ?? []), request].slice(-10),
+    },
+    'menu',
+  );
+}
+
+function supportSourceForLead(lead: LeadRow | null, fallback: SupportRequestSource = 'support'): SupportRequestSource {
+  const source = lead?.answers_json?.source ?? lead?.source ?? fallback;
+  return source === 'support' ? 'support' : normalizeAsiFeedbackLeadSource(source);
+}
+
+function telegramUserLink(user: TelegramLeadUser): string {
+  return user.telegram_username
+    ? `https://t.me/${user.telegram_username}`
+    : `tg://user?id=${user.telegram_user_id}`;
+}
+
+function formatSupportAdminNotification(
+  lead: LeadRow,
+  user: TelegramLeadUser,
+  request: SupportRequest,
+): string {
+  const username = user.telegram_username ? `@${user.telegram_username}` : 'не указан';
+  const context = request.lead_context;
+  const contextLines = context
+    ? [
+        '',
+        'Контекст лида:',
+        `Объектов: ${context.object_count_range ?? 'не указано'}`,
+        `Тип объектов: ${formatList(context.object_types)}`,
+        `PMS/МК: ${formatList(context.pms)}`,
+        `Что хотел автоматизировать: ${formatList(context.automation_processes)}`,
+      ]
+    : [];
+
+  return [
+    'Новый вопрос в поддержку ASI',
+    `Источник: ${request.source}`,
+    `Имя: ${user.first_name ?? lead.first_name ?? 'не указано'}`,
+    `Username: ${username}`,
+    `Telegram ID: ${user.telegram_user_id}`,
+    `Текст вопроса: ${request.text}`,
+    `Пользователь: ${telegramUserLink(user)}`,
+    `Статус: ${request.status}`,
+    ...contextLines,
+  ].join('\n');
+}
+
+async function notifySupportAdmin(
+  lead: LeadRow,
+  user: TelegramLeadUser,
+  request: SupportRequest,
+): Promise<void> {
+  const adminChatId = getAdminChatId();
+  if (!adminChatId) {
+    console.warn('[asi-feedback] admin chat id is not configured');
+    return;
+  }
+
+  await sendTelegramMessageToChat(
+    adminChatId,
+    formatSupportAdminNotification(lead, user, request),
+    getAsiFeedbackTelegramSendOptions(),
+  );
+}
+
 async function completeLead(lead: LeadRow, user: TelegramLeadUser, answers: LeadAnswers): Promise<LeadRow | null> {
   const finalized = await finalizeAnswers(answers);
   return updateLead(lead, user, finalized);
@@ -818,6 +1020,108 @@ async function persistOrReplyError(
     update_id: updateId,
   }, getAsiFeedbackTelegramSendOptions());
   return null;
+}
+
+async function ensureLeadForSupport(
+  user: TelegramLeadUser,
+  source: SupportRequestSource,
+): Promise<LeadRow | null> {
+  const activeLead = await findActiveLead(user.telegram_user_id);
+  if (activeLead) return activeLead;
+
+  const rowSource = source === 'support' ? 'unknown' : normalizeAsiFeedbackLeadSource(source);
+  return createLead(user, rowSource, 'support');
+}
+
+async function beginSupportFlow(
+  update: TelegramUpdate,
+  user: TelegramLeadUser,
+  lead: LeadRow | null,
+  source: SupportRequestSource = 'support',
+): Promise<ProcessResult> {
+  const previousLead = lead ? null : await findLatestLead(user.telegram_user_id);
+  const supportLead = lead ?? (await ensureLeadForSupport(user, source));
+  if (!supportLead) {
+    await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
+      handler: 'asi_feedback_lead_intake/storage_error',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Error,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: STORAGE_ERROR_REPLY,
+    };
+  }
+
+  const nextAnswers = withFlow(
+    {
+      ...(supportLead.answers_json ?? {}),
+      source: source === 'support' ? 'support' : supportSourceForLead(supportLead, source),
+      support_lead_context: leadContextFromAnswers(lead?.answers_json ?? previousLead?.answers_json),
+    },
+    'support',
+  );
+  const updatedLead = await persistOrReplyError(supportLead, user, nextAnswers, update.update_id);
+  if (!updatedLead) {
+    return {
+      outcome: ProcessOutcome.Error,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: STORAGE_ERROR_REPLY,
+    };
+  }
+
+  await sendQuestion(user, 'support', updatedLead.answers_json ?? nextAnswers, update.update_id);
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: update.update_id,
+    chat_id: user.chat_id,
+    category: MessageCategory.Start,
+    reply: SUPPORT_PROMPT,
+  };
+}
+
+async function handleSupportText(
+  update: TelegramUpdate,
+  lead: LeadRow,
+  user: TelegramLeadUser,
+  text: string,
+): Promise<ProcessResult> {
+  const latestLead = await findLatestLead(user.telegram_user_id);
+  const contextSource = latestLead?.id === lead.id ? lead : latestLead;
+  const request = buildSupportRequest(
+    text,
+    supportSourceForLead(lead, 'support'),
+    lead.answers_json?.support_lead_context ?? leadContextFromAnswers(contextSource?.answers_json),
+  );
+  const nextAnswers = withSupportRequest(lead.answers_json ?? {}, request);
+  const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+  if (!updatedLead) {
+    return {
+      outcome: ProcessOutcome.Error,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: STORAGE_ERROR_REPLY,
+    };
+  }
+
+  await notifySupportAdmin(updatedLead, user, request);
+  await replyToTelegram(user.chat_id, SUPPORT_CONFIRMATION, {
+    handler: 'asi_feedback_lead_intake/support_completed',
+    update_id: update.update_id,
+  }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: mainMenuKeyboard() });
+
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: update.update_id,
+    chat_id: user.chat_id,
+    category: MessageCategory.Start,
+    reply: SUPPORT_CONFIRMATION,
+  };
 }
 
 async function handleTextAnswer(
@@ -883,8 +1187,27 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
   let nextAnswers = { ...current };
   let reply = '';
 
+  if (action.kind === 'start_lead') {
+    nextAnswers = withFlow(nextAnswers, 'object_count');
+    const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+    if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+    await updateQuestionMessage(user, update, 'object_count', updatedLead.answers_json ?? nextAnswers);
+    return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: questionText('object_count', updatedLead.answers_json ?? nextAnswers) };
+  }
+
+  if (action.kind === 'support') {
+    return beginSupportFlow(update, user, lead, supportSourceForLead(lead, 'support'));
+  }
+
   if (action.kind === 'back') {
     const currentStep = current.flow?.step ?? 'object_count';
+    if (currentStep === 'support' || currentStep === 'menu') {
+      nextAnswers = withFlow(nextAnswers, 'menu');
+      const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+      if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+      await updateQuestionMessage(user, update, 'menu', updatedLead.answers_json ?? nextAnswers);
+      return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: MAIN_MENU_REPLY };
+    }
     const step = previousStep(currentStep);
     nextAnswers = withFlow(nextAnswers, step);
     const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
@@ -971,6 +1294,11 @@ export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): P
   const user = getTelegramLeadUser(update);
   if (!user) return null;
 
+  const supportRequested = SUPPORT_COMMAND_RE.test(text) || text.trim().toLowerCase().match(START_RE)?.[1]?.trim().toLowerCase() === 'support';
+  if (supportRequested) {
+    return beginSupportFlow(update, user, null, 'support');
+  }
+
   const startSource = text ? parseAsiFeedbackStartSource(text) : null;
   if (startSource) {
     const lead = await createLead(user, startSource);
@@ -988,13 +1316,13 @@ export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): P
       };
     }
 
-    await sendQuestion(user, 'object_count', lead.answers_json ?? {}, update.update_id);
+    await sendMainMenu(user, lead.answers_json ?? {}, update.update_id);
     return {
       outcome: ProcessOutcome.Replied,
       update_id: update.update_id,
       chat_id: user.chat_id,
       category: MessageCategory.Start,
-      reply: questionText('object_count', lead.answers_json ?? {}),
+      reply: MAIN_MENU_REPLY,
     };
   }
 
@@ -1006,6 +1334,17 @@ export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): P
 
   if (update.callback_query) return handleCallback(update, activeLead, user);
   if (!text) return null;
+  if (currentStep === 'support') return handleSupportText(update, activeLead, user, text);
+  if (currentStep === 'menu') {
+    await sendMainMenu(user, activeLead.answers_json ?? {}, update.update_id);
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: MAIN_MENU_REPLY,
+    };
+  }
 
   return handleTextAnswer(update, activeLead, user, text);
 }
