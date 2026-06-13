@@ -7,8 +7,16 @@ import { useTranslation } from '@/i18n/useTranslation';
 import { SessionProvider, useSession } from '@/contexts/SessionContext';
 import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
 
-const navItems = [
+type DashboardNavItem = {
+  href: string;
+  key: string;
+  label?: string;
+  internalOnly?: boolean;
+};
+
+const navItems: readonly DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard/leads', key: 'leads', label: 'Заявки', internalOnly: true },
   { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
   { href: '/dashboard/channel-manager', key: 'channelManager' },
@@ -18,7 +26,7 @@ const navItems = [
   { href: '/dashboard/bookings', key: 'bookings' },
   { href: '/dashboard/automations', key: 'automations' },
   { href: '/dashboard/settings', key: 'settings' },
-] as const;
+];
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
@@ -48,7 +56,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           ASI
         </Link>
         <nav className="flex-1 px-4 py-4 space-y-1.5">
-          {visibleNavItems.map(({ href, key }) => {
+          {visibleNavItems.map(({ href, key, label }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
               <Link
@@ -61,7 +69,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                     : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 }`}
               >
-                {t(`dashboard.sidebar.${key}`)}
+                {label ?? t(`dashboard.sidebar.${key}`)}
               </Link>
             );
           })}
