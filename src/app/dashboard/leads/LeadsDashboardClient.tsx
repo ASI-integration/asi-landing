@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CRM_LEAD_STATUSES,
   SUPPORT_REQUEST_STATUSES,
+  getLatestLeadsByTelegramId,
+  getLeadHistoryByTelegramId,
   type CrmLeadStatus,
   type LeadSource,
   type LeadSupportRequest,
@@ -53,15 +55,12 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   archived: 'Архив',
 };
 
-type DuplicateStats = Record<string, {
-  count: number;
-  lastCreatedAt: string;
-}>;
+const SOFT_EMPTY = 'Пока не указано';
 
 function formatDateRu(iso: string | null | undefined): string {
-  if (!iso) return 'не указано';
+  if (!iso) return SOFT_EMPTY;
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'не указано';
+  if (Number.isNaN(date.getTime())) return SOFT_EMPTY;
   return date.toLocaleString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
@@ -71,15 +70,26 @@ function formatDateRu(iso: string | null | undefined): string {
   });
 }
 
-function listText(values: string[]): string {
-  return values.length ? values.join(', ') : 'не указано';
+function formatShortDateRu(iso: string | null | undefined): string {
+  if (!iso) return SOFT_EMPTY;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return SOFT_EMPTY;
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  });
+}
+
+function listText(values: readonly string[], empty = SOFT_EMPTY): string {
+  return values.length ? values.join(', ') : empty;
 }
 
 function textOrEmpty(value: string): string {
-  return value || 'не указано';
+  return value || SOFT_EMPTY;
 }
 
-function shortText(value: string, maxLength = 88): string {
+function shortText(value: string, maxLength = 84): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 1).trim()}…`;
 }
@@ -107,25 +117,6 @@ function hasLeadContext(
   );
 }
 
-function buildDuplicateStats(leads: LeadViewModel[]): DuplicateStats {
-  const stats: DuplicateStats = {};
-  for (const lead of leads) {
-    if (!lead.telegramUserId) continue;
-    const current = stats[lead.telegramUserId];
-    if (!current) {
-      stats[lead.telegramUserId] = { count: 1, lastCreatedAt: lead.createdAt };
-      continue;
-    }
-    const currentTime = new Date(current.lastCreatedAt).getTime();
-    const nextTime = new Date(lead.createdAt).getTime();
-    stats[lead.telegramUserId] = {
-      count: current.count + 1,
-      lastCreatedAt: Number.isNaN(nextTime) || nextTime <= currentTime ? current.lastCreatedAt : lead.createdAt,
-    };
-  }
-  return stats;
-}
-
 function statusTone(status: string): string {
   if (status === 'ready_for_setup' || status === 'qualified' || status === 'pilot_candidate') {
     return 'bg-emerald-50 text-emerald-700 border-emerald-100';
@@ -137,6 +128,12 @@ function statusTone(status: string): string {
     return 'bg-slate-100 text-slate-600 border-slate-200';
   }
   return 'bg-blue-50 text-blue-700 border-blue-100';
+}
+
+function needsManualReply(lead: LeadViewModel): boolean {
+  if (lead.status === 'manual_reply_needed') return true;
+  const supportRequest = latestSupportRequest(lead);
+  return supportRequest?.status === 'new' || supportRequest?.status === 'in_progress';
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -157,18 +154,63 @@ async function copyToClipboard(text: string): Promise<void> {
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="mt-1 break-words text-sm leading-relaxed text-slate-900">{children}</dd>
+      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
+      <dd className="mt-1 break-words text-sm leading-6 text-slate-900">{children}</dd>
     </div>
   );
 }
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-slate-100 pt-5 first:border-t-0 first:pt-0">
+    <section className="border-t border-slate-100 pt-4 first:border-t-0 first:pt-0">
       <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-      <div className="mt-3">{children}</div>
+      <div className="mt-2.5">{children}</div>
     </section>
+  );
+}
+
+function TruncatedText({ value, empty = SOFT_EMPTY, className = '' }: { value: string; empty?: string; className?: string }) {
+  const text = value || empty;
+  return (
+    <div title={text} className={`truncate ${value ? '' : 'text-slate-400'} ${className}`}>
+      {text}
+    </div>
+  );
+}
+
+function ContextSummary({ context }: { context: LeadSupportRequest['leadContext'] }) {
+  if (!hasLeadContext(context)) return <span className="text-slate-400">Пока не указано</span>;
+
+  const parts = [
+    context.object_count_range ? `Объектов: ${context.object_count_range}` : '',
+    context.pms.length ? `PMS/МК: ${listText(context.pms)}` : '',
+    context.automation_processes.length ? `Процессы: ${shortText(listText(context.automation_processes), 72)}` : '',
+  ].filter(Boolean);
+
+  return <span title={parts.join(' · ')}>{parts.join(' · ')}</span>;
+}
+
+function SupportLeadContext({ context }: { context: LeadSupportRequest['leadContext'] }) {
+  if (!hasLeadContext(context)) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-100 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">Контекст PMS/МК</h4>
+      <dl className="mt-2 grid grid-cols-1 gap-2">
+        {context.object_count_range ? (
+          <DetailField label="Объекты">{context.object_count_range}</DetailField>
+        ) : null}
+        {context.object_types.length ? (
+          <DetailField label="Типы объектов">{listText(context.object_types)}</DetailField>
+        ) : null}
+        {context.pms.length ? (
+          <DetailField label="PMS/МК">{listText(context.pms)}</DetailField>
+        ) : null}
+        {context.automation_processes.length ? (
+          <DetailField label="Что хочет автоматизировать">{listText(context.automation_processes)}</DetailField>
+        ) : null}
+      </dl>
+    </div>
   );
 }
 
@@ -177,12 +219,13 @@ export function LeadsDashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSupportId, setSelectedSupportId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'leads' | 'support'>('leads');
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [pmsFilter, setPmsFilter] = useState('');
   const [potentialFilter, setPotentialFilter] = useState('');
-  const [supportOnly, setSupportOnly] = useState(false);
+  const [showLatestOnly, setShowLatestOnly] = useState(true);
   const [hideTestLeads, setHideTestLeads] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -210,19 +253,28 @@ export function LeadsDashboardClient() {
       if (sourceFilter && lead.source !== sourceFilter) return false;
       if (pmsFilter && !lead.pms.includes(pmsFilter)) return false;
       if (potentialFilter && lead.leadPotential !== potentialFilter) return false;
-      if (supportOnly && !lead.hasSupportRequest) return false;
       return true;
     });
-  }, [pmsFilter, potentialFilter, sourceFilter, statusFilter, supportOnly, visibleLeads]);
+  }, [pmsFilter, potentialFilter, sourceFilter, statusFilter, visibleLeads]);
 
-  const duplicateStats = useMemo(
-    () => buildDuplicateStats(visibleLeads),
-    [visibleLeads],
+  const tableLeads = useMemo(
+    () => (showLatestOnly ? getLatestLeadsByTelegramId(filteredLeads) : filteredLeads),
+    [filteredLeads, showLatestOnly],
   );
 
   const selectedLead = useMemo(
-    () => filteredLeads.find((lead) => lead.id === selectedId) ?? filteredLeads[0] ?? null,
-    [filteredLeads, selectedId],
+    () => filteredLeads.find((lead) => lead.id === selectedId) ?? tableLeads[0] ?? null,
+    [filteredLeads, selectedId, tableLeads],
+  );
+
+  const selectedHistory = useMemo(
+    () => getLeadHistoryByTelegramId(visibleLeads, selectedLead),
+    [selectedLead, visibleLeads],
+  );
+
+  const selectedSupportRequest = useMemo(
+    () => supportRequests.find((request) => request.id === selectedSupportId) ?? supportRequests[0] ?? null,
+    [selectedSupportId, supportRequests],
   );
 
   const refresh = useCallback(async () => {
@@ -281,37 +333,37 @@ export function LeadsDashboardClient() {
   }
 
   return (
-    <div className="max-w-[1500px] space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="w-full max-w-none space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Заявки</h1>
-          <p className="mt-2 max-w-3xl text-base leading-relaxed text-slate-600">
-            Лиды из Telegram bot и вопросы поддержки в одном рабочем списке.
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Заявки</h1>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Рабочий список лидов и обращений поддержки.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('leads')}
-            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+            className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               activeTab === 'leads' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
             }`}
           >
-            Заявки
+            Заявки {tableLeads.length}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('support')}
-            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+            className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               activeTab === 'support' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
             }`}
           >
-            Поддержка
+            Поддержка {supportRequests.length}
           </button>
           <button
             type="button"
             onClick={() => void refresh()}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             Обновить
           </button>
@@ -324,14 +376,14 @@ export function LeadsDashboardClient() {
         </div>
       ) : null}
 
-      <section className="rounded-md border border-slate-200 bg-white p-4">
+      <section className="rounded-md border border-slate-200 bg-white p-3">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Статус
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
             >
               <option value="">Все статусы</option>
               {CRM_LEAD_STATUSES.map((status) => (
@@ -339,12 +391,12 @@ export function LeadsDashboardClient() {
               ))}
             </select>
           </label>
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Источник
             <select
               value={sourceFilter}
               onChange={(event) => setSourceFilter(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
             >
               <option value="">Все источники</option>
               {(['site', 'tenchat', 'dzen', 'support', 'unknown'] as LeadSource[]).map((source) => (
@@ -352,12 +404,12 @@ export function LeadsDashboardClient() {
               ))}
             </select>
           </label>
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             PMS/МК
             <select
               value={pmsFilter}
               onChange={(event) => setPmsFilter(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
             >
               <option value="">Все PMS/МК</option>
               {filterOptions.pms.map((pms) => (
@@ -365,12 +417,12 @@ export function LeadsDashboardClient() {
               ))}
             </select>
           </label>
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Потенциал
             <select
               value={potentialFilter}
               onChange={(event) => setPotentialFilter(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
             >
               <option value="">Любой</option>
               {filterOptions.potentials.map((potential) => (
@@ -378,23 +430,23 @@ export function LeadsDashboardClient() {
               ))}
             </select>
           </label>
-          <label className="flex items-end gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
-              checked={supportOnly}
-              onChange={(event) => setSupportOnly(event.target.checked)}
+              checked={showLatestOnly}
+              onChange={(event) => setShowLatestOnly(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Только с вопросами поддержки
+            Только последние заявки
           </label>
-          <label className="flex items-end gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
             <input
               type="checkbox"
               checked={hideTestLeads}
               onChange={(event) => setHideTestLeads(event.target.checked)}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Скрыть тестовые заявки
+            Скрыть тестовые
           </label>
         </div>
       </section>
@@ -404,32 +456,47 @@ export function LeadsDashboardClient() {
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
         </div>
       ) : activeTab === 'support' ? (
-        <SupportRequestsTable
-          requests={supportRequests}
-          savingId={savingId}
-          onOpenLead={(leadId) => {
-            setSelectedId(leadId);
-            setActiveTab('leads');
-          }}
-          onUpdateStatus={(request, status) => patchLead(request.leadId, {
-            supportRequestIndex: request.index,
-            supportStatus: status,
-          })}
-        />
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
+          <SupportRequestsTable
+            requests={supportRequests}
+            savingId={savingId}
+            selectedId={selectedSupportRequest?.id ?? null}
+            onOpenRequest={(request) => {
+              setSelectedSupportId(request.id);
+              setSelectedId(request.leadId);
+            }}
+            onUpdateStatus={(request, status) => patchLead(request.leadId, {
+              supportRequestIndex: request.index,
+              supportStatus: status,
+            })}
+          />
+          <SupportDetailPanel
+            request={selectedSupportRequest}
+            saving={Boolean(selectedSupportRequest && savingId === selectedSupportRequest.leadId)}
+            onOpenLead={(leadId) => {
+              setSelectedId(leadId);
+              setActiveTab('leads');
+            }}
+            onUpdateStatus={(request, status) => patchLead(request.leadId, {
+              supportRequestIndex: request.index,
+              supportStatus: status,
+            })}
+          />
+        </div>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <LeadsTable
-            leads={filteredLeads}
-            duplicateStats={duplicateStats}
+            leads={tableLeads}
+            allVisibleLeads={visibleLeads}
             savingId={savingId}
             selectedId={selectedLead?.id ?? null}
-            copiedId={copiedId}
             onOpen={(leadId) => setSelectedId(leadId)}
-            onCopy={(lead) => void handleCopy(lead)}
             onStatusChange={(leadId, status) => patchLead(leadId, { status })}
           />
           <LeadDetailPanel
             lead={selectedLead}
+            history={selectedHistory}
+            copiedId={copiedId}
             saving={Boolean(selectedLead && savingId === selectedLead.id)}
             noteValue={selectedLead ? noteDrafts[selectedLead.id] ?? selectedLead.adminNote : ''}
             onNoteChange={(value) => {
@@ -440,6 +507,7 @@ export function LeadsDashboardClient() {
               if (!selectedLead) return;
               void patchLead(selectedLead.id, { adminNote: noteDrafts[selectedLead.id] ?? selectedLead.adminNote });
             }}
+            onSelectHistory={(leadId) => setSelectedId(leadId)}
             onCopy={(lead) => void handleCopy(lead)}
           />
         </div>
@@ -450,26 +518,22 @@ export function LeadsDashboardClient() {
 
 function LeadsTable({
   leads,
-  duplicateStats,
+  allVisibleLeads,
   savingId,
   selectedId,
-  copiedId,
   onOpen,
-  onCopy,
   onStatusChange,
 }: {
   leads: LeadViewModel[];
-  duplicateStats: DuplicateStats;
+  allVisibleLeads: LeadViewModel[];
   savingId: string | null;
   selectedId: string | null;
-  copiedId: string | null;
   onOpen: (leadId: string) => void;
-  onCopy: (lead: LeadViewModel) => void;
   onStatusChange: (leadId: string, status: CrmLeadStatus) => void;
 }) {
   if (!leads.length) {
     return (
-      <div className="rounded-md border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
         Нет заявок по выбранным фильтрам.
       </div>
     );
@@ -478,106 +542,90 @@ function LeadsTable({
   return (
     <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
       <div className="overflow-x-auto">
-        <table className="min-w-[1120px] w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <table className="min-w-[720px] w-full table-fixed divide-y divide-slate-200 text-sm">
+          <colgroup>
+            <col className="w-[104px]" />
+            <col className="w-[18%]" />
+            <col className="w-[92px]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[170px]" />
+            <col className="w-[20%]" />
+          </colgroup>
+          <thead className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Дата</th>
-              <th className="px-4 py-3">Источник</th>
-              <th className="px-4 py-3">Имя</th>
-              <th className="px-4 py-3">Username</th>
-              <th className="px-4 py-3">Объектов</th>
-              <th className="px-4 py-3">Типы объектов</th>
-              <th className="px-4 py-3">PMS/МК</th>
-              <th className="px-4 py-3">Что хочет автоматизировать</th>
-              <th className="px-4 py-3">Потенциал</th>
-              <th className="px-4 py-3">Статус</th>
-              <th className="px-4 py-3">Поддержка</th>
-              <th className="px-4 py-3">Действия</th>
+              <th className="px-3 py-2">Дата</th>
+              <th className="px-3 py-2">Клиент</th>
+              <th className="px-3 py-2">Источник</th>
+              <th className="px-3 py-2">Объекты / PMS</th>
+              <th className="px-3 py-2">Потенциал</th>
+              <th className="px-3 py-2">Статус</th>
+              <th className="px-3 py-2">Следующий шаг</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
             {leads.map((lead) => {
               const supportRequest = latestSupportRequest(lead);
-              const duplicateInfo = lead.telegramUserId ? duplicateStats[lead.telegramUserId] : null;
+              const historyCount = getLeadHistoryByTelegramId(allVisibleLeads, lead).length;
               return (
-              <tr key={lead.id} className={lead.id === selectedId ? 'bg-blue-50/40' : undefined}>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                  <div>{formatDateRu(lead.createdAt)}</div>
-                  {duplicateInfo && duplicateInfo.count > 1 ? (
-                    <div className="mt-1 text-xs text-slate-400">
-                      Последняя: {formatDateRu(duplicateInfo.lastCreatedAt)}
+                <tr
+                  key={lead.id}
+                  onClick={() => onOpen(lead.id)}
+                  className={`cursor-pointer transition-colors hover:bg-slate-50 ${
+                    lead.id === selectedId ? 'bg-blue-50/60' : supportRequest ? 'bg-amber-50/35' : ''
+                  }`}
+                >
+                  <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-600">
+                    {formatShortDateRu(lead.createdAt)}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <div title={lead.name} className="truncate font-semibold text-slate-900">{lead.name}</div>
+                    <div title={lead.telegramUsername ? `@${lead.telegramUsername}` : lead.telegramUserId} className="truncate text-xs text-slate-500">
+                      {lead.telegramUsername ? `@${lead.telegramUsername}` : lead.telegramUserId}
                     </div>
-                  ) : null}
-                </td>
-                <td className="px-4 py-3 text-slate-700">{SOURCE_LABELS[lead.source]}</td>
-                <td className="px-4 py-3">
-                  <div className="font-medium text-slate-900">{lead.name}</div>
-                  {duplicateInfo && duplicateInfo.count > 1 ? (
-                    <div className="mt-1 text-xs text-slate-500">{duplicateInfo.count} заявки от этого Telegram ID</div>
-                  ) : null}
-                </td>
-                <td className="px-4 py-3 text-slate-600">{lead.telegramUsername ? `@${lead.telegramUsername}` : 'не указан'}</td>
-                <td className="px-4 py-3 text-slate-700">{textOrEmpty(lead.objectCountRange)}</td>
-                <td className="max-w-[220px] px-4 py-3 text-slate-700">{listText(lead.objectTypes)}</td>
-                <td className="max-w-[180px] px-4 py-3 text-slate-700">{listText(lead.pms)}</td>
-                <td className="max-w-[260px] px-4 py-3 text-slate-700">{listText(lead.automationProcesses)}</td>
-                <td className="px-4 py-3 text-slate-700">{textOrEmpty(lead.leadPotential)}</td>
-                <td className="px-4 py-3">
-                  <select
-                    value={CRM_LEAD_STATUSES.includes(lead.status as CrmLeadStatus) ? lead.status : ''}
-                    disabled={savingId === lead.id}
-                    onChange={(event) => onStatusChange(lead.id, event.target.value as CrmLeadStatus)}
-                    className="w-[180px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
-                  >
-                    {!CRM_LEAD_STATUSES.includes(lead.status as CrmLeadStatus) ? (
-                      <option value="">{STATUS_LABELS[lead.status] ?? lead.status}</option>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {historyCount > 1 ? (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          еще {historyCount - 1}
+                        </span>
+                      ) : null}
+                      {supportRequest ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                          поддержка
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top text-slate-700">{SOURCE_LABELS[lead.source]}</td>
+                  <td className="px-3 py-2 align-top text-slate-700">
+                    <TruncatedText value={lead.objectCountRange} />
+                    <TruncatedText value={listText(lead.pms, '')} empty="PMS/МК не указано" className="mt-0.5 text-xs text-slate-500" />
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <TruncatedText value={lead.leadPotential} />
+                  </td>
+                  <td className="px-3 py-2 align-top" onClick={(event) => event.stopPropagation()}>
+                    <select
+                      value={CRM_LEAD_STATUSES.includes(lead.status as CrmLeadStatus) ? lead.status : ''}
+                      disabled={savingId === lead.id}
+                      onChange={(event) => onStatusChange(lead.id, event.target.value as CrmLeadStatus)}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-900"
+                    >
+                      {!CRM_LEAD_STATUSES.includes(lead.status as CrmLeadStatus) ? (
+                        <option value="">{STATUS_LABELS[lead.status] ?? lead.status}</option>
+                      ) : null}
+                      {CRM_LEAD_STATUSES.map((status) => (
+                        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+                      ))}
+                    </select>
+                    {needsManualReply(lead) ? (
+                      <div className="mt-1 text-[11px] font-semibold text-amber-700">нужен ответ</div>
                     ) : null}
-                    {CRM_LEAD_STATUSES.map((status) => (
-                      <option key={status} value={status}>{STATUS_LABELS[status]}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-3">
-                  {supportRequest ? (
-                    <div className="max-w-[220px]">
-                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                        Вопрос поддержки
-                      </span>
-                      <p className="mt-2 text-xs leading-relaxed text-slate-700">
-                        {shortText(supportRequest.text)}
-                      </p>
-                    </div>
-                  ) : (
-                    <span className="text-slate-400">нет</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpen(lead.id)}
-                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
-                    >
-                      Открыть
-                    </button>
-                    <a
-                      href={lead.telegramUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Telegram
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => onCopy(lead)}
-                      className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      {copiedId === lead.id ? 'Скопировано' : 'Сводка'}
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                  </td>
+                  <td className="px-3 py-2 align-top text-slate-700">
+                    <TruncatedText value={lead.recommendedNextStep} />
+                  </td>
+                </tr>
               );
             })}
           </tbody>
@@ -587,133 +635,90 @@ function LeadsTable({
   );
 }
 
-function SupportLeadContext({ context }: { context: LeadSupportRequest['leadContext'] }) {
-  if (!hasLeadContext(context)) return null;
-
-  return (
-    <div className="mt-3 rounded-md border border-amber-100 bg-white p-3">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">Контекст лида</h4>
-      <dl className="mt-2 grid grid-cols-1 gap-2">
-        {context.object_count_range ? (
-          <DetailField label="Количество объектов">{context.object_count_range}</DetailField>
-        ) : null}
-        {context.object_types.length ? (
-          <DetailField label="Типы объектов">{listText(context.object_types)}</DetailField>
-        ) : null}
-        {context.pms.length ? (
-          <DetailField label="PMS/МК">{listText(context.pms)}</DetailField>
-        ) : null}
-        {context.automation_processes.length ? (
-          <DetailField label="Что хочет автоматизировать">{listText(context.automation_processes)}</DetailField>
-        ) : null}
-      </dl>
-    </div>
-  );
-}
-
 function LeadDetailPanel({
   lead,
+  history,
+  copiedId,
   saving,
   noteValue,
   onNoteChange,
   onSaveNote,
+  onSelectHistory,
   onCopy,
 }: {
   lead: LeadViewModel | null;
+  history: LeadViewModel[];
+  copiedId: string | null;
   saving: boolean;
   noteValue: string;
   onNoteChange: (value: string) => void;
   onSaveNote: () => void;
+  onSelectHistory: (leadId: string) => void;
   onCopy: (lead: LeadViewModel) => void;
 }) {
   if (!lead) {
     return (
-      <aside className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-500">
+      <aside className="rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-500">
         Выберите заявку, чтобы открыть карточку.
       </aside>
     );
   }
 
   const supportRequest = latestSupportRequest(lead);
-  const hasMainData = Boolean(
-    lead.objectCountRange
-      || lead.objectTypes.length
-      || lead.channels.length
-      || lead.pms.length
-      || lead.automationProcesses.length
-      || lead.timeConsumers.length
-      || lead.leadType
-      || lead.leadPotential
-      || lead.comment
-      || Object.keys(lead.otherTexts).length,
-  );
 
   return (
-    <aside className="rounded-md border border-slate-200 bg-white p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-96px)] xl:overflow-auto">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">{lead.name}</h2>
-          <p className="mt-1 text-sm text-slate-500">{lead.telegramUsername ? `@${lead.telegramUsername}` : lead.telegramUserId}</p>
+    <aside className="rounded-md border border-slate-200 bg-white p-4 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-92px)] 2xl:overflow-auto">
+      <div className="min-w-0">
+        <h2 className="truncate text-lg font-bold text-slate-900" title={lead.name}>{lead.name}</h2>
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+          <a href={lead.telegramUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 hover:underline">
+            {lead.telegramUsername ? `@${lead.telegramUsername}` : lead.telegramUserId}
+          </a>
+          {lead.isTestLead ? (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">тест</span>
+          ) : null}
         </div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(lead.status)}`}>
-          {STATUS_LABELS[lead.status] ?? lead.status}
-        </span>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <a
           href={lead.telegramUrl}
           target="_blank"
           rel="noreferrer"
-          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+          className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
         >
-          Открыть Telegram
+          Telegram
         </a>
         <button
           type="button"
           onClick={() => onCopy(lead)}
-          className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Скопировать сводку
+          {copiedId === lead.id ? 'Скопировано' : 'Сводка'}
         </button>
       </div>
 
-      <div className="mt-5 space-y-5">
+      <div className="mt-4 space-y-4">
         <DetailSection title="Статус">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(lead.status)}`}>
-              {STATUS_LABELS[lead.status] ?? lead.status}
-            </span>
-            {lead.isTestLead ? (
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                Тестовая заявка
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-4">
-            <label className="text-sm font-semibold text-slate-900">
-              Заметка администратора
-              <textarea
-                rows={4}
-                value={noteValue}
-                onChange={(event) => onNoteChange(event.target.value)}
-                className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                placeholder="Добавить заметку"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onSaveNote}
-              className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-            >
-              {saving ? 'Сохранение...' : 'Сохранить заметку'}
-            </button>
-          </div>
+          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(lead.status)}`}>
+            {STATUS_LABELS[lead.status] ?? lead.status}
+          </span>
         </DetailSection>
 
         <DetailSection title="Следующий шаг">
-          <p className="text-sm leading-relaxed text-slate-900">{textOrEmpty(lead.recommendedNextStep)}</p>
+          <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.recommendedNextStep)}</p>
+        </DetailSection>
+
+        <DetailSection title="Потенциал">
+          <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.leadPotential)}</p>
+        </DetailSection>
+
+        <DetailSection title="Нужен ручной ответ">
+          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+            needsManualReply(lead) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+          }`}>
+            {needsManualReply(lead) ? 'Да' : 'Нет'}
+          </span>
         </DetailSection>
 
         {supportRequest ? (
@@ -723,84 +728,99 @@ function LeadDetailPanel({
                 <span>{formatDateRu(supportRequest.receivedAt)}</span>
                 <span className="font-semibold">{SUPPORT_STATUS_LABELS[supportRequest.status]}</span>
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-slate-900">{supportRequest.text}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-900">{supportRequest.text}</p>
               <SupportLeadContext context={supportRequest.leadContext} />
             </div>
           </DetailSection>
         ) : null}
 
         <DetailSection title="AI-сводка">
-          <p className="text-sm leading-relaxed text-slate-900">{textOrEmpty(lead.aiSummary)}</p>
+          <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.aiSummary)}</p>
         </DetailSection>
 
-        <DetailSection title="Основные данные лида">
-          {hasMainData ? (
-            <dl className="grid grid-cols-1 gap-4">
-              {lead.objectCountRange ? (
-                <DetailField label="Количество объектов">{lead.objectCountRange}</DetailField>
-              ) : null}
-              {lead.objectTypes.length ? (
-                <DetailField label="Типы объектов">{listText(lead.objectTypes)}</DetailField>
-              ) : null}
-              {lead.channels.length ? (
-                <DetailField label="Каналы">{listText(lead.channels)}</DetailField>
-              ) : null}
-              {lead.pms.length ? (
-                <DetailField label="PMS/МК">{listText(lead.pms)}</DetailField>
-              ) : null}
-              {lead.automationProcesses.length ? (
-                <DetailField label="Что хочет автоматизировать">{listText(lead.automationProcesses)}</DetailField>
-              ) : null}
-              {lead.timeConsumers.length ? (
-                <DetailField label="Что съедает время">{listText(lead.timeConsumers)}</DetailField>
-              ) : null}
-              {lead.leadType ? (
-                <DetailField label="Тип лида">{lead.leadType}</DetailField>
-              ) : null}
-              {lead.leadPotential ? (
-                <DetailField label="Потенциал">{lead.leadPotential}</DetailField>
-              ) : null}
-              {lead.comment ? (
-                <DetailField label="Комментарий">{lead.comment}</DetailField>
-              ) : null}
-              {Object.keys(lead.otherTexts).length ? (
-                <DetailField label="Дополнительно">
-                  <div className="space-y-1">
-                    {Object.entries(lead.otherTexts).map(([key, values]) => (
-                      <div key={key}>
-                        <span className="font-medium">{key}:</span> {values.join(', ')}
-                      </div>
-                    ))}
-                  </div>
-                </DetailField>
-              ) : null}
+        {lead.automationProcesses.length ? (
+          <DetailSection title="Что хочет автоматизировать">
+            <p className="text-sm leading-6 text-slate-900">{listText(lead.automationProcesses)}</p>
+          </DetailSection>
+        ) : null}
+
+        {lead.timeConsumers.length ? (
+          <DetailSection title="Что съедает время">
+            <p className="text-sm leading-6 text-slate-900">{listText(lead.timeConsumers)}</p>
+          </DetailSection>
+        ) : null}
+
+        {(lead.objectCountRange || lead.objectTypes.length || lead.channels.length || lead.pms.length) ? (
+          <DetailSection title="Объекты / каналы / PMS">
+            <dl className="grid grid-cols-1 gap-3">
+              {lead.objectCountRange ? <DetailField label="Объекты">{lead.objectCountRange}</DetailField> : null}
+              {lead.objectTypes.length ? <DetailField label="Типы объектов">{listText(lead.objectTypes)}</DetailField> : null}
+              {lead.channels.length ? <DetailField label="Каналы">{listText(lead.channels)}</DetailField> : null}
+              {lead.pms.length ? <DetailField label="PMS/МК">{listText(lead.pms)}</DetailField> : null}
             </dl>
-          ) : (
-            <p className="text-sm text-slate-500">не указано</p>
-          )}
+          </DetailSection>
+        ) : null}
+
+        {lead.comment || lead.leadType || Object.keys(lead.otherTexts).length ? (
+          <DetailSection title="Дополнительно">
+            <dl className="grid grid-cols-1 gap-3">
+              {lead.comment ? <DetailField label="Комментарий">{lead.comment}</DetailField> : null}
+              {lead.leadType ? <DetailField label="Тип лида">{lead.leadType}</DetailField> : null}
+              {Object.entries(lead.otherTexts).map(([key, values]) => (
+                <DetailField key={key} label={key}>{values.join(', ')}</DetailField>
+              ))}
+            </dl>
+          </DetailSection>
+        ) : null}
+
+        <DetailSection title="Заметка администратора">
+          <textarea
+            rows={4}
+            value={noteValue}
+            onChange={(event) => onNoteChange(event.target.value)}
+            className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            placeholder="Добавить заметку"
+          />
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onSaveNote}
+            className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {saving ? 'Сохранение...' : 'Сохранить'}
+          </button>
         </DetailSection>
 
-        <DetailSection title="Telegram данные">
-          <dl className="grid grid-cols-1 gap-4">
+        {history.length > 1 ? (
+          <DetailSection title="История заявок">
+            <div className="space-y-2">
+              {history.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelectHistory(item.id)}
+                  className={`w-full rounded-md border px-3 py-2 text-left text-xs ${
+                    item.id === lead.id ? 'border-blue-100 bg-blue-50 text-blue-900' : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <span className="font-semibold">{formatDateRu(item.createdAt)}</span>
+                  <span className="ml-2 text-slate-500">{SOURCE_LABELS[item.source]}</span>
+                  {item.recommendedNextStep ? (
+                    <span className="mt-1 block truncate" title={item.recommendedNextStep}>{item.recommendedNextStep}</span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </DetailSection>
+        ) : null}
+
+        <DetailSection title="Служебные данные">
+          <dl className="grid grid-cols-1 gap-3">
             <DetailField label="Telegram ID">{textOrEmpty(lead.telegramUserId)}</DetailField>
-            {lead.telegramUsername ? (
-              <DetailField label="Telegram username">@{lead.telegramUsername}</DetailField>
-            ) : null}
-            <DetailField label="Ссылка на пользователя Telegram">
-              <a href={lead.telegramUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
-                {lead.telegramUrl}
-              </a>
-            </DetailField>
-          </dl>
-        </DetailSection>
-
-        <DetailSection title="Служебная информация">
-          <dl className="grid grid-cols-1 gap-4">
-            <DetailField label="Источник">{SOURCE_LABELS[lead.source]}</DetailField>
-            <DetailField label="Дата создания">{formatDateRu(lead.createdAt)}</DetailField>
-            {lead.updatedAt ? (
-              <DetailField label="Дата обновления">{formatDateRu(lead.updatedAt)}</DetailField>
-            ) : null}
+            {lead.telegramUsername ? <DetailField label="Telegram username">@{lead.telegramUsername}</DetailField> : null}
+            <DetailField label="Source">{SOURCE_LABELS[lead.source]}</DetailField>
+            <DetailField label="Создана">{formatDateRu(lead.createdAt)}</DetailField>
+            {lead.updatedAt ? <DetailField label="Обновлена">{formatDateRu(lead.updatedAt)}</DetailField> : null}
             <DetailField label="ID заявки">{lead.id}</DetailField>
           </dl>
         </DetailSection>
@@ -812,17 +832,19 @@ function LeadDetailPanel({
 function SupportRequestsTable({
   requests,
   savingId,
-  onOpenLead,
+  selectedId,
+  onOpenRequest,
   onUpdateStatus,
 }: {
   requests: LeadSupportRequest[];
   savingId: string | null;
-  onOpenLead: (leadId: string) => void;
+  selectedId: string | null;
+  onOpenRequest: (request: LeadSupportRequest) => void;
   onUpdateStatus: (request: LeadSupportRequest, status: SupportRequestStatus) => void;
 }) {
   if (!requests.length) {
     return (
-      <div className="rounded-md border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
         Вопросов поддержки пока нет.
       </div>
     );
@@ -831,60 +853,65 @@ function SupportRequestsTable({
   return (
     <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
       <div className="overflow-x-auto">
-        <table className="min-w-[980px] w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <table className="min-w-[760px] w-full table-fixed divide-y divide-slate-200 text-sm">
+          <colgroup>
+            <col className="w-[104px]" />
+            <col className="w-[17%]" />
+            <col className="w-[28%]" />
+            <col className="w-[150px]" />
+            <col className="w-[26%]" />
+            <col className="w-[120px]" />
+          </colgroup>
+          <thead className="bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Дата вопроса</th>
-              <th className="px-4 py-3">Текст вопроса</th>
-              <th className="px-4 py-3">Статус</th>
-              <th className="px-4 py-3">Связанный лид</th>
-              <th className="px-4 py-3">Контекст лида</th>
-              <th className="px-4 py-3">Telegram</th>
+              <th className="px-3 py-2">Дата</th>
+              <th className="px-3 py-2">Клиент</th>
+              <th className="px-3 py-2">Текст вопроса</th>
+              <th className="px-3 py-2">Статус</th>
+              <th className="px-3 py-2">Контекст PMS/МК</th>
+              <th className="px-3 py-2">Telegram</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {requests.map((request) => (
-              <tr key={request.id}>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDateRu(request.receivedAt)}</td>
-                <td className="max-w-[360px] px-4 py-3 text-slate-900">{request.text}</td>
-                <td className="px-4 py-3">
+              <tr
+                key={request.id}
+                onClick={() => onOpenRequest(request)}
+                className={`cursor-pointer transition-colors hover:bg-amber-50/50 ${request.id === selectedId ? 'bg-amber-50' : ''}`}
+              >
+                <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-600">{formatShortDateRu(request.receivedAt)}</td>
+                <td className="px-3 py-2 align-top">
+                  <div className="truncate font-semibold text-slate-900" title={request.leadName}>{request.leadName}</div>
+                  <div className="truncate text-xs text-slate-500" title={request.telegramUsername ? `@${request.telegramUsername}` : request.telegramUserId}>
+                    {request.telegramUsername ? `@${request.telegramUsername}` : request.telegramUserId}
+                  </div>
+                </td>
+                <td className="px-3 py-2 align-top text-slate-900">
+                  <div title={request.text} className="line-clamp-2 leading-5">{request.text}</div>
+                </td>
+                <td className="px-3 py-2 align-top" onClick={(event) => event.stopPropagation()}>
                   <select
                     value={request.status}
                     disabled={savingId === request.leadId}
                     onChange={(event) => onUpdateStatus(request, event.target.value as SupportRequestStatus)}
-                    className="w-[150px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-900"
                   >
                     {SUPPORT_REQUEST_STATUSES.map((status) => (
                       <option key={status} value={status}>{SUPPORT_STATUS_LABELS[status]}</option>
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => onOpenLead(request.leadId)}
-                    className="text-sm font-semibold text-blue-700 hover:underline"
-                  >
-                    {request.leadName}
-                  </button>
+                <td className="px-3 py-2 align-top text-xs leading-5 text-slate-700">
+                  <ContextSummary context={request.leadContext} />
                 </td>
-                <td className="max-w-[300px] px-4 py-3 text-slate-700">
-                  {request.leadContext ? (
-                    <div className="space-y-1">
-                      <div>Объектов: {request.leadContext.object_count_range || 'не указано'}</div>
-                      <div>PMS/МК: {listText(request.leadContext.pms)}</div>
-                      <div>Процессы: {listText(request.leadContext.automation_processes)}</div>
-                    </div>
-                  ) : 'не указано'}
-                </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2 align-top" onClick={(event) => event.stopPropagation()}>
                   <a
                     href={request.telegramUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-semibold text-blue-700 hover:underline"
+                    className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-slate-50"
                   >
-                    {request.telegramUsername ? `@${request.telegramUsername}` : request.telegramUserId}
+                    Telegram
                   </a>
                 </td>
               </tr>
@@ -893,5 +920,84 @@ function SupportRequestsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function SupportDetailPanel({
+  request,
+  saving,
+  onOpenLead,
+  onUpdateStatus,
+}: {
+  request: LeadSupportRequest | null;
+  saving: boolean;
+  onOpenLead: (leadId: string) => void;
+  onUpdateStatus: (request: LeadSupportRequest, status: SupportRequestStatus) => void;
+}) {
+  if (!request) {
+    return (
+      <aside className="rounded-md border border-slate-200 bg-white p-5 text-sm text-slate-500">
+        Выберите вопрос поддержки.
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="rounded-md border border-amber-100 bg-white p-4 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-92px)] 2xl:overflow-auto">
+      <div className="space-y-4">
+        <DetailSection title="Вопрос поддержки">
+          <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
+            <div className="text-xs font-semibold text-amber-800">{formatDateRu(request.receivedAt)}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-950">{request.text}</p>
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Клиент">
+          <h2 className="truncate text-lg font-bold text-slate-900" title={request.leadName}>{request.leadName}</h2>
+          <a href={request.telegramUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm font-semibold text-blue-700 hover:underline">
+            {request.telegramUsername ? `@${request.telegramUsername}` : request.telegramUserId}
+          </a>
+        </DetailSection>
+
+        <DetailSection title="Статус">
+          <select
+            value={request.status}
+            disabled={saving}
+            onChange={(event) => onUpdateStatus(request, event.target.value as SupportRequestStatus)}
+            className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-900"
+          >
+            {SUPPORT_REQUEST_STATUSES.map((status) => (
+              <option key={status} value={status}>{SUPPORT_STATUS_LABELS[status]}</option>
+            ))}
+          </select>
+        </DetailSection>
+
+        <DetailSection title="Контекст PMS/МК">
+          {hasLeadContext(request.leadContext) ? (
+            <SupportLeadContext context={request.leadContext} />
+          ) : (
+            <p className="text-sm text-slate-500">Пока не указано</p>
+          )}
+        </DetailSection>
+
+        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+          <a
+            href={request.telegramUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+          >
+            Telegram
+          </a>
+          <button
+            type="button"
+            onClick={() => onOpenLead(request.leadId)}
+            className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Открыть лид
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }

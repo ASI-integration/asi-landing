@@ -294,6 +294,39 @@ export function buildLeadCopySummary(lead: Pick<LeadViewModel,
   ].join('\n');
 }
 
+function createdTime(value: string): number {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+export function getLatestLeadsByTelegramId<T extends Pick<LeadViewModel, 'id' | 'telegramUserId' | 'createdAt'>>(
+  leads: readonly T[],
+): T[] {
+  const latestByKey = new Map<string, T>();
+
+  for (const lead of leads) {
+    const key = lead.telegramUserId ? `telegram:${lead.telegramUserId}` : `lead:${lead.id}`;
+    const current = latestByKey.get(key);
+    if (!current || createdTime(lead.createdAt) > createdTime(current.createdAt)) {
+      latestByKey.set(key, lead);
+    }
+  }
+
+  return Array.from(latestByKey.values()).sort((left, right) => createdTime(right.createdAt) - createdTime(left.createdAt));
+}
+
+export function getLeadHistoryByTelegramId<T extends Pick<LeadViewModel, 'id' | 'telegramUserId' | 'createdAt'>>(
+  leads: readonly T[],
+  lead: T | null,
+): T[] {
+  if (!lead) return [];
+  if (!lead.telegramUserId) return [lead];
+
+  return leads
+    .filter((candidate) => candidate.telegramUserId === lead.telegramUserId)
+    .sort((left, right) => createdTime(right.createdAt) - createdTime(left.createdAt));
+}
+
 export function isCrmLeadStatus(value: unknown): value is CrmLeadStatus {
   return CRM_LEAD_STATUSES.includes(value as CrmLeadStatus);
 }

@@ -3,6 +3,8 @@ import {
   answersJsonWithAdminNote,
   answersJsonWithSupportStatus,
   buildLeadCopySummary,
+  getLatestLeadsByTelegramId,
+  getLeadHistoryByTelegramId,
   normalizeLeadRow,
   type LeadDbRow,
 } from '../leads';
@@ -129,5 +131,33 @@ describe('dashboard leads parser', () => {
     expect(smokeLead.pms).toEqual(['Bnovo']);
     expect(sourceTestLead.isTestLead).toBe(true);
     expect(sourceTestLead.aiSummary).toBe('Тестовая проверка production формы.');
+  });
+
+  it('keeps only the latest visible row per Telegram ID and preserves history', () => {
+    const older = normalizeLeadRow(row({
+      id: 'lead-old',
+      created_at: '2026-06-13T09:00:00.000Z',
+      answers_json: { source: 'site', recommended_next_step: 'старый шаг' },
+    }));
+    const latest = normalizeLeadRow(row({
+      id: 'lead-new',
+      created_at: '2026-06-13T12:00:00.000Z',
+      answers_json: { source: 'support', recommended_next_step: 'новый шаг' },
+    }));
+    const otherUser = normalizeLeadRow(row({
+      id: 'lead-other',
+      telegram_user_id: '67890',
+      telegram_username: 'other_owner',
+      created_at: '2026-06-13T11:00:00.000Z',
+    }));
+
+    expect(getLatestLeadsByTelegramId([older, latest, otherUser]).map((lead) => lead.id)).toEqual([
+      'lead-new',
+      'lead-other',
+    ]);
+    expect(getLeadHistoryByTelegramId([older, latest, otherUser], latest).map((lead) => lead.id)).toEqual([
+      'lead-new',
+      'lead-old',
+    ]);
   });
 });
