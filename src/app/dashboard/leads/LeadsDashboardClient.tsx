@@ -25,11 +25,11 @@ type PatchResponse = {
 };
 
 const SOURCE_LABELS: Record<LeadSource, string> = {
-  site: 'site',
-  tenchat: 'tenchat',
-  dzen: 'dzen',
-  support: 'support',
-  unknown: 'unknown',
+  site: 'Сайт',
+  tenchat: 'TenChat',
+  dzen: 'Дзен',
+  support: 'Поддержка',
+  unknown: 'Неизвестно',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -47,11 +47,16 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
-  new: 'new',
-  in_progress: 'in_progress',
-  answered: 'answered',
-  archived: 'archived',
+  new: 'Новый',
+  in_progress: 'В работе',
+  answered: 'Отвечен',
+  archived: 'Архив',
 };
+
+type DuplicateStats = Record<string, {
+  count: number;
+  lastCreatedAt: string;
+}>;
 
 function formatDateRu(iso: string | null | undefined): string {
   if (!iso) return 'не указано';
@@ -72,6 +77,53 @@ function listText(values: string[]): string {
 
 function textOrEmpty(value: string): string {
   return value || 'не указано';
+}
+
+function shortText(value: string, maxLength = 88): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trim()}…`;
+}
+
+function latestSupportRequest(lead: LeadViewModel): LeadSupportRequest | null {
+  return lead.supportRequests.reduce<LeadSupportRequest | null>((latest, request) => {
+    if (!latest) return request;
+    const latestTime = new Date(latest.receivedAt ?? '').getTime();
+    const requestTime = new Date(request.receivedAt ?? '').getTime();
+    if (Number.isNaN(requestTime)) return latest;
+    if (Number.isNaN(latestTime)) return request;
+    return requestTime > latestTime ? request : latest;
+  }, null);
+}
+
+function hasLeadContext(
+  context: LeadSupportRequest['leadContext'],
+): context is NonNullable<LeadSupportRequest['leadContext']> {
+  if (!context) return false;
+  return Boolean(
+    context.object_count_range
+      || context.object_types.length
+      || context.pms.length
+      || context.automation_processes.length,
+  );
+}
+
+function buildDuplicateStats(leads: LeadViewModel[]): DuplicateStats {
+  const stats: DuplicateStats = {};
+  for (const lead of leads) {
+    if (!lead.telegramUserId) continue;
+    const current = stats[lead.telegramUserId];
+    if (!current) {
+      stats[lead.telegramUserId] = { count: 1, lastCreatedAt: lead.createdAt };
+      continue;
+    }
+    const currentTime = new Date(current.lastCreatedAt).getTime();
+    const nextTime = new Date(lead.createdAt).getTime();
+    stats[lead.telegramUserId] = {
+      count: current.count + 1,
+      lastCreatedAt: Number.isNaN(nextTime) || nextTime <= currentTime ? current.lastCreatedAt : lead.createdAt,
+    };
+  }
+  return stats;
 }
 
 function statusTone(status: string): string {
@@ -111,6 +163,15 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-t border-slate-100 pt-5 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
 export function LeadsDashboardClient() {
   const [leads, setLeads] = useState<LeadViewModel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,28 +183,29 @@ export function LeadsDashboardClient() {
   const [pmsFilter, setPmsFilter] = useState('');
   const [potentialFilter, setPotentialFilter] = useState('');
   const [supportOnly, setSupportOnly] = useState(false);
+  const [hideTestLeads, setHideTestLeads] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const selectedLead = useMemo(
-    () => leads.find((lead) => lead.id === selectedId) ?? leads[0] ?? null,
-    [leads, selectedId],
+  const visibleLeads = useMemo(
+    () => leads.filter((lead) => !hideTestLeads || !lead.isTestLead),
+    [hideTestLeads, leads],
   );
 
   const supportRequests = useMemo(
-    () => leads.flatMap((lead) => lead.supportRequests),
-    [leads],
+    () => visibleLeads.flatMap((lead) => lead.supportRequests),
+    [visibleLeads],
   );
 
   const filterOptions = useMemo(() => {
-    const pms = Array.from(new Set(leads.flatMap((lead) => lead.pms))).sort();
-    const potentials = Array.from(new Set(leads.map((lead) => lead.leadPotential).filter(Boolean))).sort();
+    const pms = Array.from(new Set(visibleLeads.flatMap((lead) => lead.pms))).sort();
+    const potentials = Array.from(new Set(visibleLeads.map((lead) => lead.leadPotential).filter(Boolean))).sort();
     return { pms, potentials };
-  }, [leads]);
+  }, [visibleLeads]);
 
   const filteredLeads = useMemo(() => {
-    return leads.filter((lead) => {
+    return visibleLeads.filter((lead) => {
       if (statusFilter && lead.status !== statusFilter) return false;
       if (sourceFilter && lead.source !== sourceFilter) return false;
       if (pmsFilter && !lead.pms.includes(pmsFilter)) return false;
@@ -151,7 +213,17 @@ export function LeadsDashboardClient() {
       if (supportOnly && !lead.hasSupportRequest) return false;
       return true;
     });
-  }, [leads, pmsFilter, potentialFilter, sourceFilter, statusFilter, supportOnly]);
+  }, [pmsFilter, potentialFilter, sourceFilter, statusFilter, supportOnly, visibleLeads]);
+
+  const duplicateStats = useMemo(
+    () => buildDuplicateStats(visibleLeads),
+    [visibleLeads],
+  );
+
+  const selectedLead = useMemo(
+    () => filteredLeads.find((lead) => lead.id === selectedId) ?? filteredLeads[0] ?? null,
+    [filteredLeads, selectedId],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -253,7 +325,7 @@ export function LeadsDashboardClient() {
       ) : null}
 
       <section className="rounded-md border border-slate-200 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <label className="text-sm font-medium text-slate-700">
             Статус
             <select
@@ -315,6 +387,15 @@ export function LeadsDashboardClient() {
             />
             Только с вопросами поддержки
           </label>
+          <label className="flex items-end gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={hideTestLeads}
+              onChange={(event) => setHideTestLeads(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Скрыть тестовые заявки
+          </label>
         </div>
       </section>
 
@@ -339,6 +420,7 @@ export function LeadsDashboardClient() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <LeadsTable
             leads={filteredLeads}
+            duplicateStats={duplicateStats}
             savingId={savingId}
             selectedId={selectedLead?.id ?? null}
             copiedId={copiedId}
@@ -368,6 +450,7 @@ export function LeadsDashboardClient() {
 
 function LeadsTable({
   leads,
+  duplicateStats,
   savingId,
   selectedId,
   copiedId,
@@ -376,6 +459,7 @@ function LeadsTable({
   onStatusChange,
 }: {
   leads: LeadViewModel[];
+  duplicateStats: DuplicateStats;
   savingId: string | null;
   selectedId: string | null;
   copiedId: string | null;
@@ -412,11 +496,26 @@ function LeadsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white">
-            {leads.map((lead) => (
+            {leads.map((lead) => {
+              const supportRequest = latestSupportRequest(lead);
+              const duplicateInfo = lead.telegramUserId ? duplicateStats[lead.telegramUserId] : null;
+              return (
               <tr key={lead.id} className={lead.id === selectedId ? 'bg-blue-50/40' : undefined}>
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDateRu(lead.createdAt)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                  <div>{formatDateRu(lead.createdAt)}</div>
+                  {duplicateInfo && duplicateInfo.count > 1 ? (
+                    <div className="mt-1 text-xs text-slate-400">
+                      Последняя: {formatDateRu(duplicateInfo.lastCreatedAt)}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3 text-slate-700">{SOURCE_LABELS[lead.source]}</td>
-                <td className="px-4 py-3 font-medium text-slate-900">{lead.name}</td>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-slate-900">{lead.name}</div>
+                  {duplicateInfo && duplicateInfo.count > 1 ? (
+                    <div className="mt-1 text-xs text-slate-500">{duplicateInfo.count} заявки от этого Telegram ID</div>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3 text-slate-600">{lead.telegramUsername ? `@${lead.telegramUsername}` : 'не указан'}</td>
                 <td className="px-4 py-3 text-slate-700">{textOrEmpty(lead.objectCountRange)}</td>
                 <td className="max-w-[220px] px-4 py-3 text-slate-700">{listText(lead.objectTypes)}</td>
@@ -439,10 +538,15 @@ function LeadsTable({
                   </select>
                 </td>
                 <td className="px-4 py-3">
-                  {lead.hasSupportRequest ? (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                      есть
-                    </span>
+                  {supportRequest ? (
+                    <div className="max-w-[220px]">
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                        Вопрос поддержки
+                      </span>
+                      <p className="mt-2 text-xs leading-relaxed text-slate-700">
+                        {shortText(supportRequest.text)}
+                      </p>
+                    </div>
                   ) : (
                     <span className="text-slate-400">нет</span>
                   )}
@@ -474,10 +578,35 @@ function LeadsTable({
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function SupportLeadContext({ context }: { context: LeadSupportRequest['leadContext'] }) {
+  if (!hasLeadContext(context)) return null;
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-100 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">Контекст лида</h4>
+      <dl className="mt-2 grid grid-cols-1 gap-2">
+        {context.object_count_range ? (
+          <DetailField label="Количество объектов">{context.object_count_range}</DetailField>
+        ) : null}
+        {context.object_types.length ? (
+          <DetailField label="Типы объектов">{listText(context.object_types)}</DetailField>
+        ) : null}
+        {context.pms.length ? (
+          <DetailField label="PMS/МК">{listText(context.pms)}</DetailField>
+        ) : null}
+        {context.automation_processes.length ? (
+          <DetailField label="Что хочет автоматизировать">{listText(context.automation_processes)}</DetailField>
+        ) : null}
+      </dl>
     </div>
   );
 }
@@ -504,6 +633,20 @@ function LeadDetailPanel({
       </aside>
     );
   }
+
+  const supportRequest = latestSupportRequest(lead);
+  const hasMainData = Boolean(
+    lead.objectCountRange
+      || lead.objectTypes.length
+      || lead.channels.length
+      || lead.pms.length
+      || lead.automationProcesses.length
+      || lead.timeConsumers.length
+      || lead.leadType
+      || lead.leadPotential
+      || lead.comment
+      || Object.keys(lead.otherTexts).length,
+  );
 
   return (
     <aside className="rounded-md border border-slate-200 bg-white p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-96px)] xl:overflow-auto">
@@ -535,77 +678,133 @@ function LeadDetailPanel({
         </button>
       </div>
 
-      <dl className="mt-5 grid grid-cols-1 gap-4">
-        <DetailField label="Telegram ID">{textOrEmpty(lead.telegramUserId)}</DetailField>
-        <DetailField label="Telegram username">{lead.telegramUsername ? `@${lead.telegramUsername}` : 'не указан'}</DetailField>
-        <DetailField label="Ссылка на пользователя Telegram">
-          <a href={lead.telegramUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
-            {lead.telegramUrl}
-          </a>
-        </DetailField>
-        <DetailField label="Источник">{SOURCE_LABELS[lead.source]}</DetailField>
-        <DetailField label="Дата создания">{formatDateRu(lead.createdAt)}</DetailField>
-        <DetailField label="object_count_range">{textOrEmpty(lead.objectCountRange)}</DetailField>
-        <DetailField label="object_types">{listText(lead.objectTypes)}</DetailField>
-        <DetailField label="channels">{listText(lead.channels)}</DetailField>
-        <DetailField label="pms">{listText(lead.pms)}</DetailField>
-        <DetailField label="automation_processes">{listText(lead.automationProcesses)}</DetailField>
-        <DetailField label="time_consumers">{listText(lead.timeConsumers)}</DetailField>
-        <DetailField label="other_texts">
-          {Object.keys(lead.otherTexts).length ? (
-            <div className="space-y-1">
-              {Object.entries(lead.otherTexts).map(([key, values]) => (
-                <div key={key}>
-                  <span className="font-medium">{key}:</span> {values.join(', ')}
-                </div>
-              ))}
-            </div>
-          ) : 'не указано'}
-        </DetailField>
-        <DetailField label="comment">{textOrEmpty(lead.comment)}</DetailField>
-        <DetailField label="ai_summary">{textOrEmpty(lead.aiSummary)}</DetailField>
-        <DetailField label="lead_type">{textOrEmpty(lead.leadType)}</DetailField>
-        <DetailField label="lead_potential">{textOrEmpty(lead.leadPotential)}</DetailField>
-        <DetailField label="recommended_next_step">{textOrEmpty(lead.recommendedNextStep)}</DetailField>
-      </dl>
-
-      <div className="mt-5 border-t border-slate-100 pt-5">
-        <label className="text-sm font-semibold text-slate-900">
-          Заметка администратора
-          <textarea
-            rows={4}
-            value={noteValue}
-            onChange={(event) => onNoteChange(event.target.value)}
-            className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            placeholder="Добавить заметку"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={onSaveNote}
-          className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-        >
-          {saving ? 'Сохранение...' : 'Сохранить заметку'}
-        </button>
-      </div>
-
-      {lead.supportRequests.length ? (
-        <div className="mt-5 border-t border-slate-100 pt-5">
-          <h3 className="text-sm font-bold text-slate-900">support_requests</h3>
-          <div className="mt-3 space-y-3">
-            {lead.supportRequests.map((request) => (
-              <div key={request.id} className="rounded-md border border-amber-100 bg-amber-50 p-3">
-                <div className="flex items-center justify-between gap-3 text-xs text-amber-800">
-                  <span>{formatDateRu(request.receivedAt)}</span>
-                  <span className="font-semibold">{request.status}</span>
-                </div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-900">{request.text}</p>
-              </div>
-            ))}
+      <div className="mt-5 space-y-5">
+        <DetailSection title="Статус">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(lead.status)}`}>
+              {STATUS_LABELS[lead.status] ?? lead.status}
+            </span>
+            {lead.isTestLead ? (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                Тестовая заявка
+              </span>
+            ) : null}
           </div>
-        </div>
-      ) : null}
+          <div className="mt-4">
+            <label className="text-sm font-semibold text-slate-900">
+              Заметка администратора
+              <textarea
+                rows={4}
+                value={noteValue}
+                onChange={(event) => onNoteChange(event.target.value)}
+                className="mt-2 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                placeholder="Добавить заметку"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onSaveNote}
+              className="mt-3 rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {saving ? 'Сохранение...' : 'Сохранить заметку'}
+            </button>
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Следующий шаг">
+          <p className="text-sm leading-relaxed text-slate-900">{textOrEmpty(lead.recommendedNextStep)}</p>
+        </DetailSection>
+
+        {supportRequest ? (
+          <DetailSection title="Вопрос поддержки">
+            <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
+              <div className="flex items-center justify-between gap-3 text-xs text-amber-800">
+                <span>{formatDateRu(supportRequest.receivedAt)}</span>
+                <span className="font-semibold">{SUPPORT_STATUS_LABELS[supportRequest.status]}</span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-slate-900">{supportRequest.text}</p>
+              <SupportLeadContext context={supportRequest.leadContext} />
+            </div>
+          </DetailSection>
+        ) : null}
+
+        <DetailSection title="AI-сводка">
+          <p className="text-sm leading-relaxed text-slate-900">{textOrEmpty(lead.aiSummary)}</p>
+        </DetailSection>
+
+        <DetailSection title="Основные данные лида">
+          {hasMainData ? (
+            <dl className="grid grid-cols-1 gap-4">
+              {lead.objectCountRange ? (
+                <DetailField label="Количество объектов">{lead.objectCountRange}</DetailField>
+              ) : null}
+              {lead.objectTypes.length ? (
+                <DetailField label="Типы объектов">{listText(lead.objectTypes)}</DetailField>
+              ) : null}
+              {lead.channels.length ? (
+                <DetailField label="Каналы">{listText(lead.channels)}</DetailField>
+              ) : null}
+              {lead.pms.length ? (
+                <DetailField label="PMS/МК">{listText(lead.pms)}</DetailField>
+              ) : null}
+              {lead.automationProcesses.length ? (
+                <DetailField label="Что хочет автоматизировать">{listText(lead.automationProcesses)}</DetailField>
+              ) : null}
+              {lead.timeConsumers.length ? (
+                <DetailField label="Что съедает время">{listText(lead.timeConsumers)}</DetailField>
+              ) : null}
+              {lead.leadType ? (
+                <DetailField label="Тип лида">{lead.leadType}</DetailField>
+              ) : null}
+              {lead.leadPotential ? (
+                <DetailField label="Потенциал">{lead.leadPotential}</DetailField>
+              ) : null}
+              {lead.comment ? (
+                <DetailField label="Комментарий">{lead.comment}</DetailField>
+              ) : null}
+              {Object.keys(lead.otherTexts).length ? (
+                <DetailField label="Дополнительно">
+                  <div className="space-y-1">
+                    {Object.entries(lead.otherTexts).map(([key, values]) => (
+                      <div key={key}>
+                        <span className="font-medium">{key}:</span> {values.join(', ')}
+                      </div>
+                    ))}
+                  </div>
+                </DetailField>
+              ) : null}
+            </dl>
+          ) : (
+            <p className="text-sm text-slate-500">не указано</p>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Telegram данные">
+          <dl className="grid grid-cols-1 gap-4">
+            <DetailField label="Telegram ID">{textOrEmpty(lead.telegramUserId)}</DetailField>
+            {lead.telegramUsername ? (
+              <DetailField label="Telegram username">@{lead.telegramUsername}</DetailField>
+            ) : null}
+            <DetailField label="Ссылка на пользователя Telegram">
+              <a href={lead.telegramUrl} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+                {lead.telegramUrl}
+              </a>
+            </DetailField>
+          </dl>
+        </DetailSection>
+
+        <DetailSection title="Служебная информация">
+          <dl className="grid grid-cols-1 gap-4">
+            <DetailField label="Источник">{SOURCE_LABELS[lead.source]}</DetailField>
+            <DetailField label="Дата создания">{formatDateRu(lead.createdAt)}</DetailField>
+            {lead.updatedAt ? (
+              <DetailField label="Дата обновления">{formatDateRu(lead.updatedAt)}</DetailField>
+            ) : null}
+            <DetailField label="ID заявки">{lead.id}</DetailField>
+          </dl>
+        </DetailSection>
+      </div>
     </aside>
   );
 }

@@ -42,6 +42,7 @@ describe('dashboard leads parser', () => {
     }));
 
     expect(lead.source).toBe('site');
+    expect(lead.isTestLead).toBe(false);
     expect(lead.objectCountRange).toBe('6-20');
     expect(lead.pms).toEqual(['RealtyCalendar']);
     expect(lead.comment).toBe('Нужен быстрый запуск');
@@ -103,5 +104,30 @@ describe('dashboard leads parser', () => {
       aiSummary: '',
       recommendedNextStep: 'Нужен ручной ответ',
     })).toContain('Объектов: не указано');
+  });
+
+  it('marks smoke and test-source leads without removing their data', () => {
+    const smokeLead = normalizeLeadRow(row({
+      telegram_username: 'asi_prod_smoke_owner',
+      answers_json: {
+        object_count_range: '1',
+        pms: ['Bnovo'],
+      },
+    }));
+    const sourceTestLead = normalizeLeadRow(row({
+      id: 'lead-2',
+      telegram_username: 'owner_ru',
+      first_name: 'Анна',
+      source: 'test',
+      answers_json: {
+        source: 'site',
+        ai_summary: 'Тестовая проверка production формы.',
+      },
+    }));
+
+    expect(smokeLead.isTestLead).toBe(true);
+    expect(smokeLead.pms).toEqual(['Bnovo']);
+    expect(sourceTestLead.isTestLead).toBe(true);
+    expect(sourceTestLead.aiSummary).toBe('Тестовая проверка production формы.');
   });
 });

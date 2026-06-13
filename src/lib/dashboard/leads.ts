@@ -81,6 +81,7 @@ export type LeadViewModel = {
   adminNote: string;
   supportRequests: LeadSupportRequest[];
   hasSupportRequest: boolean;
+  isTestLead: boolean;
   copySummary: string;
 };
 
@@ -137,6 +138,33 @@ function parseOtherTexts(value: unknown): Record<string, string[]> {
     if (values.length) result[key] = values;
   }
   return result;
+}
+
+function isTestSourceValue(value: unknown): boolean {
+  const source = asString(value).toLowerCase();
+  return source === 'test' || source === 'smoke' || source.includes('asi_prod_smoke');
+}
+
+function isTestLeadRow(
+  row: LeadDbRow,
+  answers: Record<string, unknown>,
+  name: string,
+  telegramUsername: string | null,
+): boolean {
+  const textValues = [
+    name,
+    telegramUsername ?? '',
+    asString(row.telegram_username),
+    asString(row.first_name),
+  ];
+  if (textValues.some((value) => value.toLowerCase().includes('asi_prod_smoke'))) return true;
+
+  return [
+    row.source,
+    answers.source,
+    answers.utm_source,
+    answers.lead_source,
+  ].some(isTestSourceValue);
 }
 
 function contextFromRecord(value: unknown): LeadSupportRequest['leadContext'] {
@@ -245,6 +273,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     adminNote,
     supportRequests,
     hasSupportRequest: supportRequests.length > 0,
+    isTestLead: isTestLeadRow(row, answers, name, telegramUsername),
     copySummary: '',
   };
   lead.copySummary = buildLeadCopySummary(lead);
