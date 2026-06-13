@@ -5,12 +5,12 @@ import {
 
 /**
  * Important: do NOT read env once at module load.
- * In Vercel/Next serverless builds, module-scope env reads can be surprisingly
- * sticky across build/runtime boundaries. Always read on call.
+ * In Next server runtime, module-scope env reads can be sticky across
+ * build/runtime boundaries. Always read on call.
  */
-// Outbound Telegram sends use runtime TELEGRAM_BOT_TOKEN; changing local helper env files alone does not change production bot identity.
-function getTelegramBotToken(): string | null {
-  const t = process.env.TELEGRAM_BOT_TOKEN;
+// Default outbound Telegram sends use runtime TELEGRAM_BOT_TOKEN.
+function getTelegramBotToken(explicitBotToken?: string | null): string | null {
+  const t = explicitBotToken ?? process.env.TELEGRAM_BOT_TOKEN;
   return t && t.trim().length > 0 ? t.trim() : null;
 }
 
@@ -140,6 +140,11 @@ export type TelegramReplyLogContext = {
   update_id?: number;
 };
 
+export type TelegramSendOptions = {
+  botToken?: string | null;
+  tokenLabel?: string;
+};
+
 export async function sendTelegramMessage(text: string): Promise<boolean> {
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   const TELEGRAM_CHAT_ID = getTelegramChatId();
@@ -164,15 +169,41 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
   return sendOnce(url, { chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true });
 }
 
+export async function sendTelegramMessageToChat(
+  chatId: number | string,
+  text: string,
+  options: TelegramSendOptions = {},
+): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken(options.botToken);
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(`[Telegram] Missing ${options.tokenLabel ?? 'TELEGRAM_BOT_TOKEN'} for targeted send`);
+    return false;
+  }
+
+  if (isTelegramOutboundDryRun()) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] DRY_RUN sendTelegramMessageToChat suppressed', {
+        chat_id: String(chatId),
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  return sendOnce(url, { chat_id: chatId, text, disable_web_page_preview: true });
+}
+
 export async function replyToTelegram(
   chatId: number | string,
   text: string,
   logCtx?: TelegramReplyLogContext,
+  options: TelegramSendOptions = {},
 ): Promise<boolean> {
   const sendStartedAt = Date.now();
-  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken(options.botToken);
   if (!TELEGRAM_BOT_TOKEN) {
-    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
+    console.warn(`[Telegram] Missing ${options.tokenLabel ?? 'TELEGRAM_BOT_TOKEN'} for reply`);
     return false;
   }
 

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
+import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
 import { ruNavMainLinks } from '@/config/ruNav';
 import { ruComplianceRoutes } from '@/config/ruCompliance';
 
@@ -123,7 +124,7 @@ export function RuPublicNavHeader({
             <div className="flex items-center gap-2 sm:gap-3 justify-end shrink-0">
               {showContacts ? (
                 <a
-                  href="https://t.me/ASI_core_bot"
+                  href={buildAsiFeedbackTelegramLink('site')}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Написать в Telegram"

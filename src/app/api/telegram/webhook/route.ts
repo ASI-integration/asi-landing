@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
+import { processTelegramLeadIntakeUpdate } from '@/lib/communication/telegram-lead-intake';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 import type { TelegramUpdate } from '@/lib/communication/types';
 
 export const runtime = 'nodejs';
-// Production Telegram webhook entrypoint. The active production bot is determined only by runtime TELEGRAM_BOT_TOKEN;
-// local helper scripts/env files are not the source of truth for production bot identity.
+// Production Telegram webhook entrypoint. Operational Telegram stays on TELEGRAM_BOT_TOKEN;
+// ASI Feedback lead intake uses its own runtime ASI_FEEDBACK_* env values.
+
+type TelegramWebhookScope = 'operational' | 'asi_feedback' | 'unscoped';
 
 function getHeader(req: Request, name: string): string | null {
   // Headers are case-insensitive, but Next's Request exposes a normalized map.
@@ -18,15 +21,35 @@ function preview(text: string, max = 120): string {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
+function readOptionalEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value || null;
+}
+
+function resolveWebhookScope(secretGot: string | null): TelegramWebhookScope | null {
+  const operationalSecret = readOptionalEnv('TELEGRAM_WEBHOOK_SECRET');
+  const feedbackSecret = readOptionalEnv('ASI_FEEDBACK_WEBHOOK_SECRET');
+  const hasAnySecret = Boolean(operationalSecret || feedbackSecret);
+
+  if (!hasAnySecret) return 'unscoped';
+  if (feedbackSecret && secretGot === feedbackSecret) return 'asi_feedback';
+  if (operationalSecret && secretGot === operationalSecret) return 'operational';
+  return null;
+}
+
+function shouldTryLeadIntake(scope: TelegramWebhookScope): boolean {
+  return scope === 'asi_feedback' || (scope === 'unscoped' && !readOptionalEnv('ASI_FEEDBACK_WEBHOOK_SECRET'));
+}
+
 export async function POST(req: Request): Promise<Response> {
   const webhookStartedAt = Date.now();
-  const secretExpected = process.env.TELEGRAM_WEBHOOK_SECRET;
   const secretGot =
     getHeader(req, 'x-telegram-bot-api-secret-token') ??
     getHeader(req, 'X-Telegram-Bot-Api-Secret-Token');
+  const webhookScope = resolveWebhookScope(secretGot);
 
   // Telegram treats 4xx as final, so keep this strict only when configured.
-  if (secretExpected && secretGot !== secretExpected) {
+  if (!webhookScope) {
     console.warn('[tg:webhook] 403 secret mismatch', {
       hasSecretHeader: Boolean(secretGot),
     });
@@ -82,6 +105,25 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
+    if (update && hasText && chatId && shouldTryLeadIntake(webhookScope)) {
+      let leadResult = null;
+      try {
+        leadResult = await processTelegramLeadIntakeUpdate(update);
+      } catch (e) {
+        console.error('[tg:webhook] lead intake threw; falling back to operational routing', e);
+      }
+      if (leadResult) {
+        console.info('[comm:routing]', {
+          path: 'telegram_lead_intake',
+          outcome: leadResult.outcome,
+          update_id: update.update_id,
+          chat_id: chatId,
+          telegram_event_type: telegramEventType,
+        });
+        return NextResponse.json({ ok: true, path: 'telegram_lead_intake' }, { status: 200 });
+      }
+    }
+
     if (update && (hasVoice || hasAudio) && chatId) {
       console.info('[comm:routing]', {
         path: 'telegram_voice',

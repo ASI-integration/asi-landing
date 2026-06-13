@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { productSupportEmail } from '@/config/contact';
+import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
 
 type PublicConfigResponse = {
   googleClientId?: string;
@@ -476,7 +477,7 @@ export default function OnboardingPageContent() {
                     Вход через Google сейчас недоступен. Вы всё равно можете начать тест: зарегистрируйтесь по email или напишите нам.
                   </p>
                   <a
-                    href="https://t.me/ASI_core_bot"
+                    href={buildAsiFeedbackTelegramLink('site')}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex w-full items-center justify-center px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
