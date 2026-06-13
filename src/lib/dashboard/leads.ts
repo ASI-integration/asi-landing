@@ -1,3 +1,5 @@
+import { computeLeadAutomation, type LeadAutomation } from '@/lib/leads/automation';
+
 export const CRM_LEAD_STATUSES = [
   'new',
   'qualified',
@@ -81,6 +83,7 @@ export type LeadViewModel = {
   adminNote: string;
   supportRequests: LeadSupportRequest[];
   hasSupportRequest: boolean;
+  automation: LeadAutomation;
   isTestLead: boolean;
   copySummary: string;
 };
@@ -252,6 +255,23 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
   const comment = asString(answers.comment) || (otherTexts.comment ?? []).join(' / ');
   const adminNote = asString(answers.admin_note);
   const supportRequests = parseSupportRequests(base, answers, source);
+  const hasOpenSupportRequest = supportRequests.some(
+    (request) => request.status === 'new' || request.status === 'in_progress',
+  );
+  const automation = computeLeadAutomation({
+    objectCountRange: asString(answers.object_count_range),
+    objectTypes,
+    channels,
+    pms,
+    automationProcesses,
+    timeConsumers,
+    comment,
+    otherTexts,
+    leadPotential: asString(answers.lead_potential),
+    source,
+    hasSupportRequest: supportRequests.length > 0,
+    hasOpenSupportRequest,
+  });
   const lead: LeadViewModel = {
     ...base,
     createdAt: row.created_at,
@@ -273,6 +293,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     adminNote,
     supportRequests,
     hasSupportRequest: supportRequests.length > 0,
+    automation,
     isTestLead: isTestLeadRow(row, answers, name, telegramUsername),
     copySummary: '',
   };

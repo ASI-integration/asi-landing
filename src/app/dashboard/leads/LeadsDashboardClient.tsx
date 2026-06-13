@@ -55,6 +55,27 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   archived: 'Архив',
 };
 
+const SCENARIO_LABELS: Record<string, string> = {
+  has_pms: 'Есть PMS/МК',
+  no_pms_manual: 'Без PMS/МК, вручную',
+  choosing_pms: 'Выбирает PMS/МК',
+  support_question: 'Вопрос поддержки',
+  high_value_operator: 'Крупный оператор',
+  small_host: 'Небольшой хозяин',
+  commercial_property: 'Коммерческая недвижимость',
+  mixed_portfolio: 'Смешанный портфель',
+  unclear: 'Недостаточно данных',
+};
+
+const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
+  support_question: 'Вопрос поддержки',
+  needs_pms_access: 'Нужен доступ к PMS/МК',
+  unclear_pms: 'Непонятный PMS/МК',
+  high_value_lead: 'Высокий потенциал',
+  custom_other_text: 'Свободный текст в анкете',
+  none: '—',
+};
+
 const SOFT_EMPTY = 'Пока не указано';
 
 function formatDateRu(iso: string | null | undefined): string {
@@ -131,9 +152,14 @@ function statusTone(status: string): string {
 }
 
 function needsManualReply(lead: LeadViewModel): boolean {
+  if (lead.automation.manualReplyNeeded) return true;
   if (lead.status === 'manual_reply_needed') return true;
   const supportRequest = latestSupportRequest(lead);
   return supportRequest?.status === 'new' || supportRequest?.status === 'in_progress';
+}
+
+function leadNextStep(lead: LeadViewModel): string {
+  return lead.automation.nextStep || lead.recommendedNextStep;
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -227,6 +253,7 @@ export function LeadsDashboardClient() {
   const [potentialFilter, setPotentialFilter] = useState('');
   const [showLatestOnly, setShowLatestOnly] = useState(true);
   const [hideTestLeads, setHideTestLeads] = useState(true);
+  const [manualReplyOnly, setManualReplyOnly] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -253,9 +280,10 @@ export function LeadsDashboardClient() {
       if (sourceFilter && lead.source !== sourceFilter) return false;
       if (pmsFilter && !lead.pms.includes(pmsFilter)) return false;
       if (potentialFilter && lead.leadPotential !== potentialFilter) return false;
+      if (manualReplyOnly && !needsManualReply(lead)) return false;
       return true;
     });
-  }, [pmsFilter, potentialFilter, sourceFilter, statusFilter, visibleLeads]);
+  }, [manualReplyOnly, pmsFilter, potentialFilter, sourceFilter, statusFilter, visibleLeads]);
 
   const tableLeads = useMemo(
     () => (showLatestOnly ? getLatestLeadsByTelegramId(filteredLeads) : filteredLeads),
@@ -448,6 +476,15 @@ export function LeadsDashboardClient() {
             />
             Скрыть тестовые
           </label>
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={manualReplyOnly}
+              onChange={(event) => setManualReplyOnly(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Требуют ручного ответа
+          </label>
         </div>
       </section>
 
@@ -566,13 +603,18 @@ function LeadsTable({
           <tbody className="divide-y divide-slate-100 bg-white">
             {leads.map((lead) => {
               const supportRequest = latestSupportRequest(lead);
+              const manualReply = needsManualReply(lead);
               const historyCount = getLeadHistoryByTelegramId(allVisibleLeads, lead).length;
               return (
                 <tr
                   key={lead.id}
                   onClick={() => onOpen(lead.id)}
                   className={`cursor-pointer transition-colors hover:bg-slate-50 ${
-                    lead.id === selectedId ? 'bg-blue-50/60' : supportRequest ? 'bg-amber-50/35' : ''
+                    lead.id === selectedId
+                      ? 'bg-blue-50/60'
+                      : manualReply
+                        ? 'bg-amber-50/60 border-l-2 border-amber-300'
+                        : ''
                   }`}
                 >
                   <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-600">
@@ -623,7 +665,7 @@ function LeadsTable({
                     ) : null}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-700">
-                    <TruncatedText value={lead.recommendedNextStep} />
+                    <TruncatedText value={leadNextStep(lead)} />
                   </td>
                 </tr>
               );
@@ -705,20 +747,40 @@ function LeadDetailPanel({
           </span>
         </DetailSection>
 
-        <DetailSection title="Следующий шаг">
-          <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.recommendedNextStep)}</p>
+        <DetailSection title="Автоматизация">
+          <dl className="grid grid-cols-1 gap-3">
+            <DetailField label="Сценарий">
+              {SCENARIO_LABELS[lead.automation.scenario] ?? lead.automation.scenario}
+            </DetailField>
+            <DetailField label="Нужен ручной ответ">
+              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                needsManualReply(lead) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+              }`}>
+                {needsManualReply(lead) ? 'Да' : 'Нет'}
+              </span>
+            </DetailField>
+            {lead.automation.manualReplyReason !== 'none' ? (
+              <DetailField label="Причина">
+                {MANUAL_REPLY_REASON_LABELS[lead.automation.manualReplyReason] ?? lead.automation.manualReplyReason}
+              </DetailField>
+            ) : null}
+            <DetailField label="Следующий шаг">{textOrEmpty(leadNextStep(lead))}</DetailField>
+            <DetailField label="Чеклист подключения">
+              {lead.automation.onboardingChecklist.length ? (
+                <ul className="mt-0.5 list-disc space-y-1 pl-5">
+                  {lead.automation.onboardingChecklist.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <span className="text-slate-400">{SOFT_EMPTY}</span>
+              )}
+            </DetailField>
+          </dl>
         </DetailSection>
 
         <DetailSection title="Потенциал">
           <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.leadPotential)}</p>
-        </DetailSection>
-
-        <DetailSection title="Нужен ручной ответ">
-          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-            needsManualReply(lead) ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
-          }`}>
-            {needsManualReply(lead) ? 'Да' : 'Нет'}
-          </span>
         </DetailSection>
 
         {supportRequest ? (

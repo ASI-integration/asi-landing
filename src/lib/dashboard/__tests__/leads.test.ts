@@ -52,6 +52,37 @@ describe('dashboard leads parser', () => {
     expect(lead.copySummary).toContain('AI-сводка: Есть портфель');
   });
 
+  it('computes rule-based automation for the lead and keeps the admin-set status', () => {
+    const lead = normalizeLeadRow(row({
+      status: 'archived',
+      answers_json: {
+        object_count_range: '6-20',
+        object_types: ['Квартиры'],
+        pms: ['RealtyCalendar'],
+        automation_processes: ['Общение с гостями и автоответы'],
+      },
+    }));
+
+    expect(lead.status).toBe('archived');
+    expect(lead.automation.scenario).toBe('has_pms');
+    expect(lead.automation.suggestedStatus).toBe('needs_pms_access');
+    expect(lead.automation.nextStep).toContain('RealtyCalendar');
+    expect(lead.automation.onboardingChecklist).toContain('Выбрать тестовый объект');
+  });
+
+  it('marks leads with open support requests as needing a manual reply', () => {
+    const lead = normalizeLeadRow(row({
+      source: 'unknown',
+      answers_json: {
+        source: 'support',
+        support_requests: [{ text: 'Вопрос', status: 'new', received_at: '2026-06-13T11:00:00.000Z' }],
+      },
+    }));
+
+    expect(lead.automation.manualReplyNeeded).toBe(true);
+    expect(lead.automation.manualReplyReason).toBe('support_question');
+  });
+
   it('parses support requests and preserves lead context when present', () => {
     const lead = normalizeLeadRow(row({
       source: 'unknown',

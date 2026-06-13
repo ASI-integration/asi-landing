@@ -367,6 +367,93 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[2]).toContain('Сколько объектов');
   });
 
+  it('auto-classifies a has_pms lead with PMS-specific status, automation and scenario reply', async () => {
+    const now = new Date().toISOString();
+    mockDb.rows.unshift({
+      id: 'has-pms-lead',
+      telegram_user_id: '9001',
+      telegram_username: 'pilot_owner',
+      first_name: 'Иван',
+      source: 'site',
+      answers_json: {
+        source: 'site',
+        object_count_range: '2-5',
+        object_types: ['Квартиры'],
+        channels: ['Авито'],
+        pms: ['RealtyCalendar'],
+        automation_processes: ['Общение с гостями и автоответы'],
+        time_consumers: ['Переписка с гостями'],
+        other_texts: {},
+        flow: { step: 'comment' },
+      },
+      status: 'new',
+      created_at: now,
+      updated_at: now,
+    });
+
+    const result = await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 4001));
+
+    expect(result?.reply).toContain('уже есть PMS/МК');
+    expect(mockDb.rows[0].status).toBe('needs_pms_access');
+    expect(mockDb.rows[0].answers_json.automation).toMatchObject({
+      version: 'v1',
+      lead_scenario: 'has_pms',
+      manual_reply_needed: false,
+      suggested_status: 'needs_pms_access',
+    });
+    expect(mockDb.rows[0].answers_json.automation.recommended_next_step).toContain('RealtyCalendar');
+    expect(mockDb.rows[0].answers_json.automation.onboarding_checklist).toContain('Выбрать тестовый объект');
+    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Сценарий: has_pms');
+  });
+
+  it('auto-classifies a fully manual lead as qualified with a no-PMS scenario reply', async () => {
+    const now = new Date().toISOString();
+    mockDb.rows.unshift({
+      id: 'manual-lead',
+      telegram_user_id: '9001',
+      telegram_username: 'pilot_owner',
+      first_name: 'Иван',
+      source: 'site',
+      answers_json: {
+        source: 'site',
+        object_count_range: '2-5',
+        object_types: ['Квартиры'],
+        channels: ['Авито'],
+        pms: ['Нет, всё ведём вручную'],
+        automation_processes: ['Общение с гостями и автоответы'],
+        time_consumers: ['Переписка с гостями'],
+        other_texts: {},
+        flow: { step: 'comment' },
+      },
+      status: 'new',
+      created_at: now,
+      updated_at: now,
+    });
+
+    const result = await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 4101));
+
+    expect(result?.reply).toContain('выстроить базовую схему');
+    expect(mockDb.rows[0].status).toBe('qualified');
+    expect(mockDb.rows[0].answers_json.automation).toMatchObject({
+      lead_scenario: 'no_pms_manual',
+      suggested_status: 'qualified',
+    });
+    expect(mockDb.rows[0].answers_json.automation.onboarding_checklist).toContain('Выбрать PMS/МК или временный ручной режим');
+  });
+
+  it('flags support requests as manual reply needed via automation', async () => {
+    await processTelegramLeadIntakeUpdate(leadUpdate('/start support', 4201));
+    await processTelegramLeadIntakeUpdate(leadUpdate('Не приходят сообщения гостям', 4202));
+
+    expect(mockDb.rows[0].status).toBe('manual_reply_needed');
+    expect(mockDb.rows[0].answers_json.automation).toMatchObject({
+      lead_scenario: 'support_question',
+      manual_reply_needed: true,
+      manual_reply_reason: 'support_question',
+      suggested_status: 'manual_reply_needed',
+    });
+  });
+
   it('adds completed lead context to later support requests', async () => {
     const now = new Date().toISOString();
     mockDb.rows.unshift({

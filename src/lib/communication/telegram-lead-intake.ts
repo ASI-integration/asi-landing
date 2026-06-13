@@ -1,4 +1,13 @@
 import { normalizeAsiFeedbackLeadSource, type AsiFeedbackLeadSource } from '@/config/publicTelegram';
+import {
+  computeLeadAutomation,
+  serializeLeadAutomation,
+  type LeadAutomation,
+  type LeadAutomationInput,
+  type LeadScenario,
+  type ManualReplyReason,
+  type PmsState,
+} from '@/lib/leads/automation';
 import { callLLM } from '@/lib/openai';
 import { supabase } from '@/lib/supabase';
 import {
@@ -85,6 +94,16 @@ type LeadAnswers = {
   source?: SupportRequestSource;
   support_requests?: SupportRequest[];
   support_lead_context?: SupportLeadContext;
+  automation?: {
+    version?: string;
+    lead_scenario?: LeadScenario;
+    pms_state?: PmsState;
+    manual_reply_needed?: boolean;
+    manual_reply_reason?: ManualReplyReason;
+    recommended_next_step?: string;
+    onboarding_checklist?: string[];
+    suggested_status?: string;
+  };
   flow?: {
     step: LeadFlowStep;
     awaiting_text_for?: LeadOtherStep | 'comment';
@@ -222,6 +241,12 @@ const MULTI_STEPS = new Set<LeadFlowStep>(['object_types', 'channels', 'automati
 
 const FINAL_REPLY =
   'Спасибо, заявку получил. По вашим ответам видно, какие процессы можно автоматизировать в первую очередь. Мы свяжемся с вами или предложим демо, если формат подходит для пилота ASI.';
+
+const FINAL_REPLY_HAS_PMS =
+  'Спасибо, заявку получил. Вижу, что у вас уже есть PMS/МК. Следующий шаг — выбрать один тестовый объект и подготовить доступ или приглашение к системе, чтобы проверить автоматизацию без риска для всех объектов.';
+
+const FINAL_REPLY_NO_PMS =
+  'Спасибо, заявку получил. Судя по ответам, сначала нужно выстроить базовую схему: объекты, каналы и процессы. Мы можем начать с одного тестового объекта и постепенно довести до подключения PMS/МК.';
 
 const MAIN_MENU_REPLY = 'Выберите, что хотите сделать:';
 
@@ -519,7 +544,6 @@ async function findLatestLead(telegramUserId: string): Promise<LeadRow | null> {
       .from('leads')
       .select('id, telegram_user_id, telegram_username, first_name, source, answers_json, status, created_at, updated_at')
       .eq('telegram_user_id', telegramUserId)
-      .eq('status', 'new')
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -591,16 +615,23 @@ async function createLead(
   }
 }
 
-async function updateLead(lead: LeadRow, user: TelegramLeadUser, answers: LeadAnswers): Promise<LeadRow | null> {
+async function updateLead(
+  lead: LeadRow,
+  user: TelegramLeadUser,
+  answers: LeadAnswers,
+  extra: { status?: string } = {},
+): Promise<LeadRow | null> {
   try {
+    const update: Record<string, unknown> = {
+      telegram_username: user.telegram_username,
+      first_name: user.first_name,
+      answers_json: answers,
+      updated_at: new Date().toISOString(),
+    };
+    if (extra.status && extra.status !== lead.status) update.status = extra.status;
     const { data, error } = await supabase
       .from('leads')
-      .update({
-        telegram_username: user.telegram_username,
-        first_name: user.first_name,
-        answers_json: answers,
-        updated_at: new Date().toISOString(),
-      })
+      .update(update)
       .eq('id', lead.id)
       .select('id, telegram_user_id, telegram_username, first_name, source, answers_json, status, created_at, updated_at')
       .single();
@@ -868,6 +899,8 @@ function formatAdminNotification(lead: LeadRow): string {
     ? `https://t.me/${lead.telegram_username}`
     : `telegram_user_id=${lead.telegram_user_id}`;
   const comment = answers.comment || answers.other_texts?.comment?.join(' / ') || 'нет';
+  const automation = answers.automation;
+  const automationStep = automation?.recommended_next_step || answers.recommended_next_step || 'не определён';
 
   return [
     'Новая заявка ASI',
@@ -883,7 +916,10 @@ function formatAdminNotification(lead: LeadRow): string {
     `AI-сводка: ${answers.ai_summary ?? 'не сформирована'}`,
     `Тип лида: ${answers.lead_type ?? 'не определён'}`,
     `Потенциал: ${answers.lead_potential ?? 'не определён'}`,
-    `Следующий шаг: ${answers.recommended_next_step ?? 'не определён'}`,
+    `Сценарий: ${automation?.lead_scenario ?? 'не определён'}`,
+    `Нужен ручной ответ: ${automation?.manual_reply_needed ? 'да' : 'нет'}`,
+    `Статус: ${automation?.suggested_status ?? lead.status}`,
+    `Следующий шаг: ${automationStep}`,
     `Пользователь: ${userLink}`,
   ].join('\n');
 }
@@ -1002,9 +1038,53 @@ async function notifySupportAdmin(
   );
 }
 
-async function completeLead(lead: LeadRow, user: TelegramLeadUser, answers: LeadAnswers): Promise<LeadRow | null> {
+function automationInputFromAnswers(
+  answers: LeadAnswers,
+  overrides: Partial<Pick<LeadAutomationInput, 'hasSupportRequest' | 'hasOpenSupportRequest'>> = {},
+): LeadAutomationInput {
+  const supportRequests = answers.support_requests ?? [];
+  return {
+    objectCountRange: answers.object_count_range,
+    objectTypes: answers.object_types,
+    channels: answers.channels,
+    pms: answers.pms,
+    automationProcesses: answers.automation_processes,
+    timeConsumers: answers.time_consumers,
+    comment: answers.comment,
+    otherTexts: answers.other_texts as Record<string, string[]> | undefined,
+    leadPotential: answers.lead_potential,
+    source: answers.source,
+    hasSupportRequest: overrides.hasSupportRequest ?? supportRequests.length > 0,
+    hasOpenSupportRequest: overrides.hasOpenSupportRequest,
+  };
+}
+
+function withAutomation(answers: LeadAnswers, automation: LeadAutomation): LeadAnswers {
+  return {
+    ...answers,
+    automation: serializeLeadAutomation(automation),
+  };
+}
+
+function finalReplyForAutomation(automation: LeadAutomation): string {
+  if (automation.pmsState === 'has_pms') return FINAL_REPLY_HAS_PMS;
+  if (automation.pmsState === 'no_pms_manual' || automation.pmsState === 'choosing_pms') return FINAL_REPLY_NO_PMS;
+  return FINAL_REPLY;
+}
+
+async function completeLead(
+  lead: LeadRow,
+  user: TelegramLeadUser,
+  answers: LeadAnswers,
+): Promise<{ lead: LeadRow | null; automation: LeadAutomation }> {
   const finalized = await finalizeAnswers(answers);
-  return updateLead(lead, user, finalized);
+  const automation = computeLeadAutomation(automationInputFromAnswers(finalized));
+  const withAuto = withAutomation(finalized, automation);
+  // Only set the auto status when the row is still untouched ('new').
+  // An admin-changed status must never be overwritten by automation.
+  const status = lead.status === 'new' ? automation.suggestedStatus : undefined;
+  const updated = await updateLead(lead, user, withAuto, { status });
+  return { lead: updated, automation };
 }
 
 async function persistOrReplyError(
@@ -1097,9 +1177,20 @@ async function handleSupportText(
     supportSourceForLead(lead, 'support'),
     lead.answers_json?.support_lead_context ?? leadContextFromAnswers(contextSource?.answers_json),
   );
-  const nextAnswers = withSupportRequest(lead.answers_json ?? {}, request);
-  const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+  const requestAnswers = withSupportRequest(lead.answers_json ?? {}, request);
+  const automation = computeLeadAutomation(
+    automationInputFromAnswers(requestAnswers, { hasSupportRequest: true, hasOpenSupportRequest: true }),
+  );
+  const nextAnswers = withAutomation(requestAnswers, automation);
+  // A new support request needs a manual reply, but never overwrite an
+  // admin-set status: only auto-set when the row is still 'new'.
+  const status = lead.status === 'new' ? 'manual_reply_needed' : undefined;
+  const updatedLead = await updateLead(lead, user, nextAnswers, { status });
   if (!updatedLead) {
+    await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
+      handler: 'asi_feedback_lead_intake/storage_error',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
     return {
       outcome: ProcessOutcome.Error,
       update_id: update.update_id,
@@ -1145,7 +1236,7 @@ async function handleTextAnswer(
 
   if (awaiting === 'comment') {
     const answers: LeadAnswers = addOtherText({ ...current, comment: text.trim() }, 'comment', text);
-    const updatedLead = await completeLead(lead, user, answers);
+    const { lead: updatedLead, automation } = await completeLead(lead, user, answers);
     if (!updatedLead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
         handler: 'asi_feedback_lead_intake/storage_error',
@@ -1153,12 +1244,13 @@ async function handleTextAnswer(
       }, getAsiFeedbackTelegramSendOptions());
       return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
     }
-    await replyToTelegram(user.chat_id, FINAL_REPLY, {
+    const finalReply = finalReplyForAutomation(automation);
+    await replyToTelegram(user.chat_id, finalReply, {
       handler: 'asi_feedback_lead_intake/completed',
       update_id: update.update_id,
     }, getAsiFeedbackTelegramSendOptions());
     await notifyAdmin(updatedLead);
-    return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: FINAL_REPLY };
+    return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: finalReply };
   }
 
   const normalized = await aiNormalizeOther(awaiting, text);
@@ -1263,7 +1355,7 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
   }
 
   if (action.kind === 'skip_comment') {
-    const updatedLead = await completeLead(lead, user, nextAnswers);
+    const { lead: updatedLead, automation } = await completeLead(lead, user, nextAnswers);
     if (!updatedLead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
         handler: 'asi_feedback_lead_intake/storage_error',
@@ -1271,7 +1363,7 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
       }, getAsiFeedbackTelegramSendOptions());
       return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
     }
-    reply = FINAL_REPLY;
+    reply = finalReplyForAutomation(automation);
     await replyToTelegram(user.chat_id, reply, {
       handler: 'asi_feedback_lead_intake/completed',
       update_id: update.update_id,
