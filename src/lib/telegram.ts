@@ -143,6 +143,7 @@ export type TelegramReplyLogContext = {
 export type TelegramSendOptions = {
   botToken?: string | null;
   tokenLabel?: string;
+  replyMarkup?: Record<string, unknown> | null;
 };
 
 export async function sendTelegramMessage(text: string): Promise<boolean> {
@@ -191,7 +192,55 @@ export async function sendTelegramMessageToChat(
   }
 
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  return sendOnce(url, { chat_id: chatId, text, disable_web_page_preview: true });
+  return sendOnce(url, {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+  });
+}
+
+export async function editTelegramMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  options: TelegramSendOptions = {},
+): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken(options.botToken);
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(`[Telegram] Missing ${options.tokenLabel ?? 'TELEGRAM_BOT_TOKEN'} for editMessageText`);
+    return false;
+  }
+
+  if (isTelegramOutboundDryRun()) return true;
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+  return sendOnce(url, {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    disable_web_page_preview: true,
+    ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+  });
+}
+
+export async function answerTelegramCallbackQuery(
+  callbackQueryId: string,
+  options: TelegramSendOptions & { text?: string } = {},
+): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken(options.botToken);
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn(`[Telegram] Missing ${options.tokenLabel ?? 'TELEGRAM_BOT_TOKEN'} for answerCallbackQuery`);
+    return false;
+  }
+
+  if (isTelegramOutboundDryRun()) return true;
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
+  return sendOnce(url, {
+    callback_query_id: callbackQueryId,
+    ...(options.text ? { text: options.text } : {}),
+  });
 }
 
 export async function replyToTelegram(
@@ -237,7 +286,7 @@ export async function replyToTelegram(
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
-    reply_markup: { remove_keyboard: true },
+    reply_markup: options.replyMarkup ?? { remove_keyboard: true },
   });
   console.info('[tg:latency] telegram.send', {
     chat_id: String(chatId),

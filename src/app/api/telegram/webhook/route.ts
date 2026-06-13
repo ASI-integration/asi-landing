@@ -65,13 +65,20 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true, ignored: 'invalid_json' }, { status: 200 });
   }
 
-  const telegramEventType = update?.edited_message ? 'edited_message' : update?.message ? 'message' : 'unknown';
-  const message = update?.edited_message ?? update?.message;
+  const telegramEventType = update?.callback_query
+    ? 'callback_query'
+    : update?.edited_message
+      ? 'edited_message'
+      : update?.message
+        ? 'message'
+        : 'unknown';
+  const message = update?.edited_message ?? update?.message ?? update?.callback_query?.message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
   const hasVoice = Boolean(message?.voice);
   const hasAudio = Boolean(message?.audio);
   const hasText = Boolean(text);
+  const hasCallback = Boolean(update?.callback_query?.data);
   // Always log webhook receipt — minimal fields, no PII beyond chat_id
   console.info('[tg:webhook] recv', {
     update_id: update?.update_id,
@@ -81,6 +88,7 @@ export async function POST(req: Request): Promise<Response> {
     has_voice: hasVoice,
     has_audio: hasAudio,
     has_text: hasText,
+    has_callback: hasCallback,
   });
   console.info('[tg:latency] webhook.received', {
     update_id: update?.update_id,
@@ -105,7 +113,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    if (update && hasText && chatId && shouldTryLeadIntake(webhookScope)) {
+    if (update && (hasText || hasCallback) && chatId && shouldTryLeadIntake(webhookScope)) {
       let leadResult = null;
       try {
         leadResult = await processTelegramLeadIntakeUpdate(update);
@@ -122,6 +130,10 @@ export async function POST(req: Request): Promise<Response> {
         });
         return NextResponse.json({ ok: true, path: 'telegram_lead_intake' }, { status: 200 });
       }
+    }
+
+    if (hasCallback) {
+      return NextResponse.json({ ok: true, ignored: 'callback_query' }, { status: 200 });
     }
 
     if (update && (hasVoice || hasAudio) && chatId) {

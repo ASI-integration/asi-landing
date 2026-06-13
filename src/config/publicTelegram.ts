@@ -15,7 +15,7 @@ export const ASI_FEEDBACK_LEAD_SOURCES: readonly AsiFeedbackLeadSource[] = [
   'unknown',
 ] as const;
 
-const DEFAULT_ASI_FEEDBACK_BOT_USERNAME = 'ASI_feedback_bot';
+const DEFAULT_ASI_FEEDBACK_BOT_USERNAME = 'ASI_Global_Bot';
 
 export function getAsiFeedbackBotUsername(): string {
   const configured = process.env.NEXT_PUBLIC_ASI_FEEDBACK_BOT_USERNAME?.trim();

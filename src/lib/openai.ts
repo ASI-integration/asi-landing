@@ -30,13 +30,14 @@ interface ProviderConfig {
 export interface LLMCallOptions {
   systemPrompt: string;
   userMessage: string;
+  model?: string;
 }
 
-function buildConfig(): { primary: ProviderConfig; fallback: ProviderConfig | null } {
+function buildConfig(modelOverride?: string): { primary: ProviderConfig; fallback: ProviderConfig | null } {
   const primary: ProviderConfig = {
     baseUrl: (process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
     apiKey: process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? '',
-    model: process.env.LLM_MODEL ?? 'gpt-4o-mini',
+    model: modelOverride || process.env.LLM_MODEL || 'gpt-4o-mini',
   };
 
   const fallbackBase = process.env.LLM_FALLBACK_BASE_URL;
@@ -44,7 +45,7 @@ function buildConfig(): { primary: ProviderConfig; fallback: ProviderConfig | nu
     ? {
         baseUrl: fallbackBase.replace(/\/$/, ''),
         apiKey: process.env.LLM_FALLBACK_API_KEY ?? '',
-        model: process.env.LLM_FALLBACK_MODEL ?? primary.model,
+        model: modelOverride || process.env.LLM_FALLBACK_MODEL || primary.model,
       }
     : null;
 
@@ -57,7 +58,7 @@ function buildConfig(): { primary: ProviderConfig; fallback: ProviderConfig | nu
  * callers can degrade gracefully.
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
-  const { primary, fallback } = buildConfig();
+  const { primary, fallback } = buildConfig(options.model?.trim() || undefined);
 
   const result = await callProvider(primary, options, false);
   if (result !== null) return result;

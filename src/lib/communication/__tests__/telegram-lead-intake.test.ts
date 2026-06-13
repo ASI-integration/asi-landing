@@ -20,10 +20,19 @@ const mockDb = {
 
 const mockReplyToTelegram = vi.fn();
 const mockSendTelegramMessageToChat = vi.fn();
+const mockEditTelegramMessageText = vi.fn();
+const mockAnswerTelegramCallbackQuery = vi.fn();
+const mockCallLLM = vi.fn();
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
   sendTelegramMessageToChat: (...args: unknown[]) => mockSendTelegramMessageToChat(...args),
+  editTelegramMessageText: (...args: unknown[]) => mockEditTelegramMessageText(...args),
+  answerTelegramCallbackQuery: (...args: unknown[]) => mockAnswerTelegramCallbackQuery(...args),
+}));
+
+vi.mock('@/lib/openai', () => ({
+  callLLM: (...args: unknown[]) => mockCallLLM(...args),
 }));
 
 function clone<T>(value: T): T {
@@ -124,16 +133,43 @@ function leadUpdate(text: string, update_id = 1000) {
   return update;
 }
 
+function callbackUpdate(data: string, update_id: number) {
+  return {
+    update_id,
+    callback_query: {
+      id: `cb-${update_id}`,
+      from: {
+        id: 9001,
+        username: 'pilot_owner',
+        first_name: 'Иван',
+        language_code: 'ru',
+      },
+      message: {
+        message_id: update_id,
+        chat: { id: 7001 },
+      },
+      data,
+    },
+  };
+}
+
 describe('ASI Feedback Telegram lead intake', () => {
   beforeEach(() => {
     mockDb.rows = [];
     mockDb.nextId = 1;
     mockReplyToTelegram.mockReset();
     mockSendTelegramMessageToChat.mockReset();
+    mockEditTelegramMessageText.mockReset();
+    mockAnswerTelegramCallbackQuery.mockReset();
+    mockCallLLM.mockReset();
     mockReplyToTelegram.mockResolvedValue(true);
     mockSendTelegramMessageToChat.mockResolvedValue(true);
+    mockEditTelegramMessageText.mockResolvedValue(true);
+    mockAnswerTelegramCallbackQuery.mockResolvedValue(true);
+    mockCallLLM.mockResolvedValue(null);
     process.env.ASI_FEEDBACK_BOT_TOKEN = 'feedback-token';
     process.env.ASI_FEEDBACK_ADMIN_CHAT_ID = '-100admin';
+    process.env.LEAD_INTAKE_AI_MODEL = 'lead-model';
   });
 
   it('parses supported Telegram /start sources with unknown fallback', () => {
@@ -146,42 +182,75 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(parseAsiFeedbackStartSource('hello')).toBeNull();
   });
 
-  it('stores source at start and completes the five-question intake', async () => {
+  it('runs the v2 button flow with multi-select, other text normalization, and AI fallback', async () => {
     await processTelegramLeadIntakeUpdate(leadUpdate('/start tenchat', 1001));
     expect(mockDb.rows).toHaveLength(1);
     expect(mockDb.rows[0].source).toBe('tenchat');
-    expect(mockDb.rows[0].status).toBe('new');
     expect(mockDb.rows[0].answers_json.flow.step).toBe('object_count');
+    expect(mockReplyToTelegram.mock.calls[0]?.[1]).toContain('Сколько объектов');
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).not.toContain('Овербукинг');
 
-    await processTelegramLeadIntakeUpdate(leadUpdate('12', 1002));
-    await processTelegramLeadIntakeUpdate(leadUpdate('квартиры и апартаменты', 1003));
-    await processTelegramLeadIntakeUpdate(leadUpdate('Авито, Суточно, Циан', 1004));
-    await processTelegramLeadIntakeUpdate(leadUpdate('сообщения гостей', 1005));
-    const result = await processTelegramLeadIntakeUpdate(leadUpdate('Bnovo', 1006));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 1002));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:object_types:houses', 1003));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:o:object_types', 1004));
+    expect(mockDb.rows[0].answers_json.flow.awaiting_text_for).toBe('object_types');
+
+    await processTelegramLeadIntakeUpdate(leadUpdate('таунхаусы', 1005));
+    expect(mockDb.rows[0].answers_json.object_types).toContain('Дома / коттеджи');
+    expect(mockDb.rows[0].answers_json.other_texts.object_types).toEqual(['таунхаусы']);
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 1006));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:channels:avito', 1007));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:channels:sutochno', 1008));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:channels', 1009));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:pms:bnovo', 1010));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:automation_processes:guest_messages', 1011));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:automation_processes:checkin', 1012));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:automation_processes', 1013));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:time_consumers:messages', 1014));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:time_consumers:cleaning', 1015));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:time_consumers', 1016));
+    const result = await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 1017));
 
     expect(result?.reply).toContain('Спасибо, заявку получил');
     expect(mockDb.rows[0].answers_json).toMatchObject({
-      object_count: '12',
-      property_type: 'квартиры и апартаменты',
-      channels: ['Авито', 'Суточно', 'Циан'],
-      main_pain: 'сообщения гостей',
-      pms: 'Bnovo',
-      flow: { step: 'completed' },
-      future_ai: {
-        lead_scoring_ready: false,
-        ai_summary_ready: false,
+      object_count_range: '6-20',
+      object_types: ['Дома / коттеджи'],
+      channels: ['Авито', 'Суточно'],
+      pms: ['Bnovo'],
+      automation_processes: ['Общение с гостями', 'Инструкции по заселению'],
+      time_consumers: ['Переписка', 'Координация уборок'],
+      ai_normalized: {
+        object_types: ['Дома / коттеджи'],
+        channels: ['Авито', 'Суточно'],
       },
+      lead_potential: 'высокий',
+      recommended_next_step: 'предложить демо коммуникационного модуля',
+      flow: { step: 'completed' },
     });
+    expect(mockDb.rows[0].answers_json.ai_summary).toContain('Объектов: 6-20');
+    expect(mockCallLLM).toHaveBeenCalledWith(expect.objectContaining({ model: 'lead-model' }));
+    expect(mockEditTelegramMessageText).toHaveBeenCalledWith(
+      7001,
+      expect.any(Number),
+      expect.stringContaining('Выбрано: Дома / коттеджи'),
+      expect.objectContaining({
+        replyMarkup: expect.objectContaining({
+          inline_keyboard: expect.arrayContaining([
+            expect.arrayContaining([
+              expect.objectContaining({ text: expect.stringContaining('✓ Дома / коттеджи') }),
+            ]),
+          ]),
+        }),
+      }),
+    );
     expect(mockSendTelegramMessageToChat).toHaveBeenCalledWith(
       '-100admin',
-      expect.stringContaining('Источник: tenchat'),
+      expect.stringContaining('Новая заявка ASI'),
       { botToken: 'feedback-token', tokenLabel: 'ASI_FEEDBACK_BOT_TOKEN' },
     );
-    expect(mockReplyToTelegram).toHaveBeenLastCalledWith(
-      7001,
-      expect.stringContaining('Спасибо, заявку получил'),
-      expect.objectContaining({ handler: 'asi_feedback_lead_intake/completed' }),
-      { botToken: 'feedback-token', tokenLabel: 'ASI_FEEDBACK_BOT_TOKEN' },
-    );
+    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Типы объектов: Дома / коттеджи');
+    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('AI-сводка:');
+    expect(mockAnswerTelegramCallbackQuery).toHaveBeenCalled();
   });
 });

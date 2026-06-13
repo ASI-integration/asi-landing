@@ -372,10 +372,24 @@ export interface TelegramMessage {
   caption?: string;
 }
 
+export interface TelegramCallbackQuery {
+  id: string;
+  from?: {
+    id?: number;
+    is_bot?: boolean;
+    first_name?: string;
+    username?: string;
+    language_code?: string;
+  };
+  message?: TelegramMessage;
+  data?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 /**

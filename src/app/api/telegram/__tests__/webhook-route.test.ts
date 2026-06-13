@@ -112,6 +112,32 @@ describe('Telegram webhook route', () => {
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
   });
 
+  it('routes ASI Feedback callback queries to lead intake', async () => {
+    const update = {
+      update_id: 9010,
+      callback_query: {
+        id: 'cb-9010',
+        from: { id: 9001, first_name: 'Иван' },
+        message: { message_id: 50, chat: { id: 337 } },
+        data: 'ali2:s:object_count:2_5',
+      },
+    };
+    mockProcessTelegramLeadIntakeUpdate.mockResolvedValue({
+      outcome: 'replied',
+      update_id: 9010,
+      chat_id: 337,
+      reply: 'question',
+    });
+
+    const res = await POST(telegramRequest(update));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, path: 'telegram_lead_intake' });
+    expect(mockProcessTelegramLeadIntakeUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
+  });
+
   it('accepts ASI Feedback webhook secret for lead intake', async () => {
     process.env.TELEGRAM_WEBHOOK_SECRET = 'operational-secret';
     process.env.ASI_FEEDBACK_WEBHOOK_SECRET = 'feedback-secret';
