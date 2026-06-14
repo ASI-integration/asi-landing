@@ -273,6 +273,38 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(mockAnswerTelegramCallbackQuery).toHaveBeenCalled();
   });
 
+  it('supports the expanded channel catalog via buttons and free-text normalization', async () => {
+    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 5001));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 5002));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 5003));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 5004));
+
+    const channelsMarkup = JSON.stringify(
+      mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[3],
+    );
+    expect(channelsMarkup).toContain('101Hotels / 101Отель');
+    expect(channelsMarkup).toContain('Броневик');
+    expect(channelsMarkup).toContain('Квартирка');
+    expect(channelsMarkup).toContain('Ozon Travel');
+    expect(channelsMarkup).toContain('МТС Travel');
+    expect(channelsMarkup).toContain('OneTwoTrip');
+    expect(channelsMarkup).toContain('Твил');
+    expect(channelsMarkup).toContain('Отелло');
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:channels:ozon_travel', 5005));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:channels:bronevik', 5006));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:channels:otello', 5007));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:o:channels', 5008));
+    expect(mockDb.rows[0].answers_json.flow.awaiting_text_for).toBe('channels');
+
+    await processTelegramLeadIntakeUpdate(leadUpdate('ещё используем озон, мтс тревел, 101отель и tvil', 5009));
+
+    expect(mockDb.rows[0].answers_json.channels).toEqual(
+      expect.arrayContaining(['Ozon Travel', 'Броневик', 'Отелло', 'МТС Travel', '101Hotels / 101Отель', 'Твил']),
+    );
+    expect(mockDb.rows[0].answers_json.channels).not.toContain('Другое');
+  });
+
   it('normalizes legacy guest communication process duplicates before admin summary', async () => {
     const now = new Date().toISOString();
     mockDb.rows.unshift({

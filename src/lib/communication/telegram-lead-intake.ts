@@ -198,6 +198,14 @@ const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
     { id: 'ostrovok', label: 'Островок' },
     { id: 'yandex_travel', label: 'Яндекс Путешествия' },
     { id: 'cian', label: 'Циан' },
+    { id: 'hotels101', label: '101Hotels / 101Отель' },
+    { id: 'bronevik', label: 'Броневик' },
+    { id: 'kvartirka', label: 'Квартирка' },
+    { id: 'ozon_travel', label: 'Ozon Travel' },
+    { id: 'mts_travel', label: 'МТС Travel' },
+    { id: 'onetwotrip', label: 'OneTwoTrip' },
+    { id: 'tvil', label: 'Твил' },
+    { id: 'otello', label: 'Отелло' },
     { id: 'own_site', label: 'Свой сайт' },
     { id: 'social', label: 'Соцсети / мессенджеры' },
     { id: 'none', label: 'Пока не используем' },
@@ -238,6 +246,18 @@ const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
 };
 
 const MULTI_STEPS = new Set<LeadFlowStep>(['object_types', 'channels', 'automation_processes', 'time_consumers']);
+
+// Маппинг свободного текста на канонические каналы для шага "Другое".
+const CHANNEL_OTHER_SYNONYMS: Array<{ label: string; variants: string[] }> = [
+  { label: 'Ozon Travel', variants: ['озон тревел', 'озон трэвел', 'озон', 'ozon travel', 'ozon'] },
+  { label: 'МТС Travel', variants: ['мтс тревел', 'мтс трэвел', 'мтс травел', 'мтс', 'mts travel', 'mts'] },
+  { label: '101Hotels / 101Отель', variants: ['101 отель', '101отель', '101 отел', '101отел', '101 hotels', '101hotels', '101 hotel', '101hotel'] },
+  { label: 'OneTwoTrip', variants: ['onetwotrip', 'one two trip', 'one-two-trip', 'вантутрип', 'уантутрип'] },
+  { label: 'Броневик', variants: ['броневик', 'бронев', 'bronevik'] },
+  { label: 'Твил', variants: ['твил', 'tvil'] },
+  { label: 'Отелло', variants: ['отелло', 'otello'] },
+  { label: 'Квартирка', variants: ['квартирк', 'kvartirka'] },
+];
 
 const FINAL_REPLY =
   'Спасибо, заявку получил. По вашим ответам видно, какие процессы можно автоматизировать в первую очередь. Мы свяжемся с вами или предложим демо, если формат подходит для пилота ASI.';
@@ -664,7 +684,14 @@ function normalizeKnownOtherText(step: LeadOtherStep, text: string): string[] {
     if (/помещ|коммерц|офис|склад/.test(lower)) return ['Коммерческая недвижимость'];
   }
   if (step === 'channels') {
-    return OPTIONS.channels.filter((option) => option.id !== 'other' && lower.includes(option.label.toLowerCase())).map((option) => option.label);
+    const matched = new Set<string>();
+    for (const option of OPTIONS.channels) {
+      if (option.id !== 'other' && lower.includes(option.label.toLowerCase())) matched.add(option.label);
+    }
+    for (const { label, variants } of CHANNEL_OTHER_SYNONYMS) {
+      if (variants.some((variant) => lower.includes(variant))) matched.add(label);
+    }
+    return Array.from(matched);
   }
   if (step === 'automation_processes' || step === 'time_consumers') {
     const catalog = OPTIONS[step];
