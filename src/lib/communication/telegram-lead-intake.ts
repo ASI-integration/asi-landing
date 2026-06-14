@@ -19,6 +19,7 @@ import {
   getMissingFinalMinimumFields,
   mergePolicyResults,
   policyTextMetadata,
+  withRateLimitPolicy,
   type InputPolicyContext,
   type InputPolicyResult,
   type InputPolicyTextMetadata,
@@ -33,6 +34,11 @@ import {
   type TelegramSendOptions,
 } from '@/lib/telegram';
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
+import {
+  checkTelegramRateLimit,
+  type TelegramRateLimitAction,
+  type TelegramRateLimitDecision,
+} from './telegram-rate-limit';
 
 type LeadFlowStep =
   | 'menu'
@@ -114,6 +120,12 @@ type LeadAnswers = {
   policy_texts?: InputPolicyTextMetadata[];
   security_flags?: {
     possible_prompt_injection?: boolean;
+  };
+  rate_limit?: {
+    rate_limited: boolean;
+    rate_limit_reason: string | null;
+    rate_limit_until: string | null;
+    repeated_security_attempts_count: number;
   };
   automation?: {
     version?: string;
@@ -321,6 +333,15 @@ const EMPTY_REQUIRED_REPLY =
 const PROMPT_INJECTION_FRIENDLY_REPLY =
   'Похоже, вы проверяете, насколько ASI устойчив к хитрым инструкциям 🙂 Я сохраню сообщение как комментарий, но системные правила, статусы и доступы меняются только по внутренней логике.';
 
+const FREQUENT_START_REPLY =
+  'Похоже, вы активно тестируете ASI 🙂 Я уже сохранил последние данные. Чтобы не плодить дубли, давайте продолжим текущую заявку или зададим вопрос в поддержку.';
+
+const FREQUENT_SUPPORT_REPLY =
+  'Похоже, вопросов стало много за короткое время 🙂 Я передал диалог администратору ASI, чтобы ничего не потерялось.';
+
+const REPEATED_PROMPT_INJECTION_REPLY =
+  'Похоже, вы проверяете защиту ASI особенно настойчиво 🙂 Я сохраню сообщения как пользовательские данные, но системные правила, статусы и доступы меняются только по внутренней логике. Диалог передан на ручную проверку.';
+
 const INSUFFICIENT_LEAD_REPLY =
   'Похоже, данных пока маловато для нормального разбора 🙂 ASI ещё не читает мысли, хотя этот модуль уже просится в roadmap.\n\n' +
   'Пожалуйста, вернитесь и заполните хотя бы:\n\n' +
@@ -520,6 +541,69 @@ function refreshFinalPolicy(answers: LeadAnswers): LeadAnswers {
   return withPolicy(answers, policy);
 }
 
+function hasRateLimitSignal(decision: TelegramRateLimitDecision): boolean {
+  return Boolean(
+    decision.rate_limited ||
+      decision.rate_limit_reason ||
+      decision.manual_review_recommended ||
+      decision.repeated_security_attempts_count > 0,
+  );
+}
+
+function withRateLimitDecision(answers: LeadAnswers, decision: TelegramRateLimitDecision): LeadAnswers {
+  if (!hasRateLimitSignal(decision)) return answers;
+  const basePolicy = answers.policy ?? evaluateInputPolicy({
+    context: 'other_text',
+    raw_text: '',
+    source: answers.source,
+    current_lead_context: leadPolicyContext(answers),
+  });
+  const policy = withRateLimitPolicy(basePolicy, {
+    rate_limited: decision.rate_limited,
+    rate_limit_reason: decision.rate_limit_reason,
+    rate_limit_until: decision.rate_limit_until,
+    repeated_security_attempts_count: decision.repeated_security_attempts_count,
+    manual_review_recommended: decision.manual_review_recommended,
+    manual_review_reason: decision.manual_review_reason,
+  });
+  return {
+    ...answers,
+    policy,
+    rate_limit: {
+      rate_limited: policy.rate_limited,
+      rate_limit_reason: policy.rate_limit_reason,
+      rate_limit_until: policy.rate_limit_until,
+      repeated_security_attempts_count: policy.repeated_security_attempts_count,
+    },
+  };
+}
+
+async function checkUserRateLimit(
+  user: TelegramLeadUser,
+  action: TelegramRateLimitAction,
+  source?: string | null,
+  metadata?: Record<string, unknown>,
+): Promise<TelegramRateLimitDecision> {
+  return checkTelegramRateLimit({
+    telegramUserId: user.telegram_user_id,
+    action,
+    source,
+    metadata,
+  });
+}
+
+async function checkPromptInjectionRateLimit(
+  user: TelegramLeadUser,
+  policy: InputPolicyResult,
+  source?: string | null,
+): Promise<TelegramRateLimitDecision | null> {
+  if (!policy.possible_prompt_injection) return null;
+  return checkUserRateLimit(user, 'prompt_injection', source, {
+    prompt_injection_reason: policy.prompt_injection_reason,
+    security_flags: policy.security_flags,
+  });
+}
+
 function hasExplicitPromptInjection(policy: InputPolicyResult): boolean {
   return policy.security_flags.some((flag) => (
     flag === 'ignore_instructions_attempt'
@@ -567,6 +651,15 @@ function mainMenuKeyboard(): Record<string, unknown> {
     inline_keyboard: [
       [{ text: 'Оставить заявку', callback_data: callbackData({ kind: 'start_lead' }) }],
       [{ text: 'Задать вопрос / поддержка', callback_data: callbackData({ kind: 'support' }) }],
+    ],
+  };
+}
+
+function frequentStartKeyboard(): Record<string, unknown> {
+  return {
+    inline_keyboard: [
+      [{ text: 'Продолжить заявку', callback_data: callbackData({ kind: 'start_lead' }) }],
+      [{ text: 'Задать вопрос в поддержку', callback_data: callbackData({ kind: 'support' }) }],
     ],
   };
 }
@@ -748,6 +841,18 @@ async function findLatestLead(telegramUserId: string): Promise<LeadRow | null> {
     });
     return null;
   }
+}
+
+async function markLatestLeadForManualRateLimit(
+  user: TelegramLeadUser,
+  decision: TelegramRateLimitDecision,
+): Promise<void> {
+  const lead = (await findActiveLead(user.telegram_user_id)) ?? (await findLatestLead(user.telegram_user_id));
+  if (!lead) return;
+  const answers = withRateLimitDecision(lead.answers_json ?? {}, decision);
+  await updateLead(lead, user, answers, {
+    status: lead.status === 'new' ? 'manual_reply_needed' : undefined,
+  });
 }
 
 async function createLead(
@@ -1462,6 +1567,9 @@ async function completeLead(
   // An admin-changed status must never be overwritten by automation.
   const status = lead.status === 'new' ? automation.suggestedStatus : undefined;
   const updated = await updateLead(lead, user, withAuto, { status });
+  if (updated) {
+    await checkUserRateLimit(user, 'lead_complete', finalized.source, { lead_id: updated.id });
+  }
   return { lead: updated, automation };
 }
 
@@ -1551,13 +1659,55 @@ async function handleSupportText(
   const latestLead = await findLatestLead(user.telegram_user_id);
   const contextSource = latestLead?.id === lead.id ? lead : latestLead;
   const policyResult = evaluateTextPolicy(lead.answers_json ?? {}, 'support_question', text, 'support_question');
+  const promptLimitDecision = await checkPromptInjectionRateLimit(user, policyResult.policy, 'support');
+  const supportLimitDecision = promptLimitDecision?.rate_limited
+    ? promptLimitDecision
+    : await checkUserRateLimit(user, 'support_message', supportSourceForLead(lead, 'support'), {
+        policy_prompt_injection: policyResult.policy.possible_prompt_injection,
+      });
+  if (supportLimitDecision.rate_limited) {
+    const nextAnswers = withRateLimitDecision(policyResult.answers, supportLimitDecision);
+    const updatedLead = await updateLead(lead, user, nextAnswers, {
+      status: lead.status === 'new' ? 'manual_reply_needed' : undefined,
+    });
+    if (!updatedLead) {
+      await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
+        handler: 'asi_feedback_lead_intake/storage_error',
+        update_id: update.update_id,
+      }, getAsiFeedbackTelegramSendOptions());
+      return {
+        outcome: ProcessOutcome.Error,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply: STORAGE_ERROR_REPLY,
+      };
+    }
+    const reply = supportLimitDecision.manual_review_reason === 'repeated_prompt_injection'
+      ? REPEATED_PROMPT_INJECTION_REPLY
+      : FREQUENT_SUPPORT_REPLY;
+    await replyToTelegram(user.chat_id, reply, {
+      handler: 'asi_feedback_lead_intake/rate_limited_support',
+      update_id: update.update_id,
+    }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: mainMenuKeyboard() });
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply,
+    };
+  }
   const request = buildSupportRequest(
     text,
     supportSourceForLead(lead, 'support'),
     lead.answers_json?.support_lead_context ?? leadContextFromAnswers(contextSource?.answers_json),
     policyResult.policy,
   );
-  const requestAnswers = withSupportRequest(policyResult.answers, request);
+  const requestAnswers = withRateLimitDecision(
+    withSupportRequest(policyResult.answers, request),
+    promptLimitDecision ?? supportLimitDecision,
+  );
   const automation = computeLeadAutomation(
     automationInputFromAnswers(requestAnswers, { hasSupportRequest: true, hasOpenSupportRequest: true }),
   );
@@ -1581,7 +1731,11 @@ async function handleSupportText(
   }
 
   await notifySupportAdmin(updatedLead, user, request);
-  const reply = hasExplicitPromptInjection(policyResult.policy) ? PROMPT_INJECTION_FRIENDLY_REPLY : SUPPORT_CONFIRMATION;
+  const reply = promptLimitDecision?.manual_review_reason === 'repeated_prompt_injection'
+    ? REPEATED_PROMPT_INJECTION_REPLY
+    : hasExplicitPromptInjection(policyResult.policy)
+      ? PROMPT_INJECTION_FRIENDLY_REPLY
+      : SUPPORT_CONFIRMATION;
   await replyToTelegram(user.chat_id, reply, {
     handler: 'asi_feedback_lead_intake/support_completed',
     update_id: update.update_id,
@@ -1620,6 +1774,18 @@ async function handleTextAnswer(
     const policyResult = evaluateTextPolicy(answers, 'comment', text, 'comment');
     answers = policyResult.answers;
     if (detectPromptInjection(text)) answers = flagPromptInjection(answers);
+    const promptLimitDecision = await checkPromptInjectionRateLimit(user, policyResult.policy, answers.source);
+    if (promptLimitDecision) answers = withRateLimitDecision(answers, promptLimitDecision);
+    if (promptLimitDecision?.rate_limited) {
+      const nextAnswers = withFlow(answers, 'comment', { awaiting_text_for: 'comment' });
+      const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+      if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+      await replyToTelegram(user.chat_id, REPEATED_PROMPT_INJECTION_REPLY, {
+        handler: 'asi_feedback_lead_intake/rate_limited_prompt_injection',
+        update_id: update.update_id,
+      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: mainMenuKeyboard() });
+      return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: REPEATED_PROMPT_INJECTION_REPLY };
+    }
     const checkedAnswers = refreshFinalPolicy(answers);
     if (isLeadTooIncompleteForCompletion(checkedAnswers)) {
       const nextAnswers = withFlow(checkedAnswers, 'comment', { awaiting_text_for: 'comment' });
@@ -1639,9 +1805,11 @@ async function handleTextAnswer(
       }, getAsiFeedbackTelegramSendOptions());
       return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
     }
-    const finalReply = hasExplicitPromptInjection(policyResult.policy)
-      ? PROMPT_INJECTION_FRIENDLY_REPLY
-      : finalReplyForAutomation(automation);
+    const finalReply = promptLimitDecision?.manual_review_reason === 'repeated_prompt_injection'
+      ? REPEATED_PROMPT_INJECTION_REPLY
+      : hasExplicitPromptInjection(policyResult.policy)
+        ? PROMPT_INJECTION_FRIENDLY_REPLY
+        : finalReplyForAutomation(automation);
     await replyToTelegram(user.chat_id, finalReply, {
       handler: 'asi_feedback_lead_intake/completed',
       update_id: update.update_id,
@@ -1655,11 +1823,18 @@ async function handleTextAnswer(
   const policyResult = evaluateTextPolicy(normalizedAnswers, awaiting, text, 'other_text');
   normalizedAnswers = policyResult.answers;
   if (detectPromptInjection(text)) normalizedAnswers = flagPromptInjection(normalizedAnswers);
+  const promptLimitDecision = await checkPromptInjectionRateLimit(user, policyResult.policy, normalizedAnswers.source);
+  if (promptLimitDecision) normalizedAnswers = withRateLimitDecision(normalizedAnswers, promptLimitDecision);
   const nextAnswers = withFlow(normalizedAnswers, awaiting);
   const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
   if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
 
-  if (hasExplicitPromptInjection(policyResult.policy)) {
+  if (promptLimitDecision?.manual_review_reason === 'repeated_prompt_injection') {
+    await replyToTelegram(user.chat_id, REPEATED_PROMPT_INJECTION_REPLY, {
+      handler: 'asi_feedback_lead_intake/repeated_prompt_injection',
+      update_id: update.update_id,
+    }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: mainMenuKeyboard() });
+  } else if (hasExplicitPromptInjection(policyResult.policy)) {
     await replyToTelegram(user.chat_id, PROMPT_INJECTION_FRIENDLY_REPLY, {
       handler: 'asi_feedback_lead_intake/policy_prompt_injection',
       update_id: update.update_id,
@@ -1672,9 +1847,11 @@ async function handleTextAnswer(
     update_id: update.update_id,
     chat_id: user.chat_id,
     category: MessageCategory.Start,
-    reply: hasExplicitPromptInjection(policyResult.policy)
-      ? PROMPT_INJECTION_FRIENDLY_REPLY
-      : questionText(awaiting, updatedLead.answers_json ?? nextAnswers),
+    reply: promptLimitDecision?.manual_review_reason === 'repeated_prompt_injection'
+      ? REPEATED_PROMPT_INJECTION_REPLY
+      : hasExplicitPromptInjection(policyResult.policy)
+        ? PROMPT_INJECTION_FRIENDLY_REPLY
+        : questionText(awaiting, updatedLead.answers_json ?? nextAnswers),
   };
 }
 
@@ -1839,13 +2016,48 @@ export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): P
   const user = getTelegramLeadUser(update);
   if (!user) return null;
 
-  const supportRequested = SUPPORT_COMMAND_RE.test(text) || text.trim().toLowerCase().match(START_RE)?.[1]?.trim().toLowerCase() === 'support';
+  const startMatch = text.trim().toLowerCase().match(START_RE);
+  if (startMatch) {
+    const restartDecision = await checkUserRateLimit(user, 'webhook_message', null, { command: 'start' });
+    if (restartDecision.rate_limited) {
+      await markLatestLeadForManualRateLimit(user, restartDecision);
+      await replyToTelegram(user.chat_id, FREQUENT_START_REPLY, {
+        handler: 'asi_feedback_lead_intake/rate_limited_start',
+        update_id: update.update_id,
+      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: frequentStartKeyboard() });
+      return {
+        outcome: ProcessOutcome.Replied,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply: FREQUENT_START_REPLY,
+      };
+    }
+  }
+
+  const supportRequested = SUPPORT_COMMAND_RE.test(text) || startMatch?.[1]?.trim().toLowerCase() === 'support';
   if (supportRequested) {
     return beginSupportFlow(update, user, null, 'support');
   }
 
   const startSource = text ? parseAsiFeedbackStartSource(text) : null;
   if (startSource) {
+    const leadStartDecision = await checkUserRateLimit(user, 'lead_start', startSource, { command: 'start' });
+    if (leadStartDecision.rate_limited) {
+      await markLatestLeadForManualRateLimit(user, leadStartDecision);
+      await replyToTelegram(user.chat_id, FREQUENT_START_REPLY, {
+        handler: 'asi_feedback_lead_intake/rate_limited_lead_start',
+        update_id: update.update_id,
+      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: frequentStartKeyboard() });
+      return {
+        outcome: ProcessOutcome.Replied,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply: FREQUENT_START_REPLY,
+      };
+    }
+
     const lead = await createLead(user, startSource);
     if (!lead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {

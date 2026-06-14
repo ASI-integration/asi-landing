@@ -28,6 +28,8 @@ export type ManualReplyReason =
   | 'custom_other_text'
   | 'policy_security_review'
   | 'possible_prompt_injection'
+  | 'repeated_prompt_injection'
+  | 'rate_limited'
   | 'none';
 
 export type PmsState = 'has_pms' | 'no_pms_manual' | 'choosing_pms' | 'unknown';
@@ -59,6 +61,8 @@ export type LeadAutomationInput = {
     possible_prompt_injection?: boolean;
     manual_review_recommended?: boolean;
     manual_review_reason?: string | null;
+    rate_limited?: boolean;
+    rate_limit_reason?: string | null;
   } | null;
 };
 
@@ -306,6 +310,12 @@ function resolveManualReply(
   highValue: boolean,
 ): { needed: boolean; reason: ManualReplyReason } {
   if (input.policy?.manual_review_recommended) {
+    if (input.policy.rate_limited) {
+      return { needed: true, reason: 'rate_limited' };
+    }
+    if (input.policy.manual_review_reason === 'repeated_prompt_injection') {
+      return { needed: true, reason: 'repeated_prompt_injection' };
+    }
     return {
       needed: true,
       reason: input.policy.possible_prompt_injection ? 'possible_prompt_injection' : 'policy_security_review',

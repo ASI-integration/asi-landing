@@ -101,6 +101,10 @@ describe('dashboard leads parser', () => {
           missing_required_fields: ['automation_processes', 'time_consumers'],
           manual_review_recommended: true,
           manual_review_reason: 'possible_prompt_injection_repeat',
+          rate_limited: true,
+          rate_limit_reason: 'prompt_injection_temporary_limit',
+          rate_limit_until: '2026-06-14T10:20:00.000Z',
+          repeated_security_attempts_count: 5,
         },
       },
     }));
@@ -111,9 +115,12 @@ describe('dashboard leads parser', () => {
       lead_completeness_score: 67,
       missing_required_fields: ['automation_processes', 'time_consumers'],
       manual_review_recommended: true,
+      rate_limited: true,
+      rate_limit_reason: 'prompt_injection_temporary_limit',
+      repeated_security_attempts_count: 5,
     });
     expect(lead.automation.manualReplyNeeded).toBe(true);
-    expect(lead.automation.manualReplyReason).toBe('possible_prompt_injection');
+    expect(lead.automation.manualReplyReason).toBe('rate_limited');
   });
 
   it('parses support requests and preserves lead context when present', () => {

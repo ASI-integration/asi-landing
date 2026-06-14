@@ -73,6 +73,8 @@ const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
   unclear_pms: 'Неясно, какой менеджер каналов используется',
   high_value_lead: 'Потенциально важный лид',
   custom_other_text: 'Есть нестандартный ответ',
+  repeated_prompt_injection: 'повторная проверка защиты',
+  rate_limited: 'мягкое ограничение по частоте',
   none: 'Нет',
 };
 
@@ -90,6 +92,12 @@ const POLICY_REASON_LABELS: Record<string, string> = {
   policy_security_review: 'нужна проверка безопасности',
   low_completeness: 'мало данных в анкете',
   possible_prompt_injection: 'есть флаги безопасности',
+  repeated_prompt_injection: 'повторная проверка защиты',
+  rate_limited: 'мягкое ограничение по частоте',
+  lead_start_hourly_limit: 'слишком много новых заявок за час',
+  lead_restart_hourly_limit: 'слишком много запусков за час',
+  support_hourly_limit: 'слишком много вопросов за час',
+  prompt_injection_temporary_limit: 'частые проверки защиты',
 };
 
 const SOFT_EMPTY = 'Пока не указано';
@@ -274,6 +282,9 @@ function PolicyProcessingSection({ policy }: { policy: LeadViewModel['policy'] }
   if (!policy) return null;
   const hasSecurityFlags = policy.possible_prompt_injection || policy.security_flags.length > 0;
   const missing = policy.missing_required_fields.map((field) => POLICY_MISSING_FIELD_LABELS[field] ?? field);
+  const rateLimitReason = policy.rate_limit_reason
+    ? POLICY_REASON_LABELS[policy.rate_limit_reason] ?? policy.rate_limit_reason
+    : SOFT_EMPTY;
   const reason = policy.manual_review_reason
     ? POLICY_REASON_LABELS[policy.manual_review_reason] ?? policy.manual_review_reason
     : policy.prompt_injection_reason
@@ -291,6 +302,16 @@ function PolicyProcessingSection({ policy }: { policy: LeadViewModel['policy'] }
           </span>
         </DetailField>
         <DetailField label="Качество заявки">{policy.lead_completeness_score}%</DetailField>
+        <DetailField label="Мягкое ограничение">{policy.rate_limited ? 'Да' : 'Нет'}</DetailField>
+        {policy.rate_limited || policy.rate_limit_reason ? (
+          <DetailField label="Причина ограничения">{rateLimitReason}</DetailField>
+        ) : null}
+        {policy.rate_limit_until ? (
+          <DetailField label="Ограничение до">{formatDateRu(policy.rate_limit_until)}</DetailField>
+        ) : null}
+        {policy.repeated_security_attempts_count > 0 ? (
+          <DetailField label="Повторные проверки защиты">{policy.repeated_security_attempts_count}</DetailField>
+        ) : null}
         {missing.length ? (
           <DetailField label="Не хватает данных">
             <ul className="mt-0.5 list-disc space-y-1 pl-5">

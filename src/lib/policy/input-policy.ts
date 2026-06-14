@@ -29,6 +29,8 @@ export type PromptInjectionReason =
 
 export type ManualReviewReason =
   | 'possible_prompt_injection_repeat'
+  | 'repeated_prompt_injection'
+  | 'rate_limited'
   | 'policy_security_review'
   | 'low_completeness';
 
@@ -65,6 +67,19 @@ export type InputPolicyResult = {
   can_affect_ai_prompt: boolean;
   manual_review_recommended: boolean;
   manual_review_reason: ManualReviewReason | null;
+  rate_limited: boolean;
+  rate_limit_reason: string | null;
+  rate_limit_until: string | null;
+  repeated_security_attempts_count: number;
+};
+
+export type InputPolicyRateLimitOverlay = {
+  rate_limited?: boolean;
+  rate_limit_reason?: string | null;
+  rate_limit_until?: string | null;
+  repeated_security_attempts_count?: number;
+  manual_review_recommended?: boolean;
+  manual_review_reason?: ManualReviewReason | null;
 };
 
 export type EvaluateInputPolicyInput = {
@@ -251,6 +266,30 @@ export function evaluateInputPolicy(input: EvaluateInputPolicyInput): InputPolic
       : lowCompletenessFinal
         ? 'low_completeness'
         : null,
+    rate_limited: false,
+    rate_limit_reason: null,
+    rate_limit_until: null,
+    repeated_security_attempts_count: 0,
+  };
+}
+
+export function withRateLimitPolicy(
+  policy: InputPolicyResult,
+  overlay: InputPolicyRateLimitOverlay,
+): InputPolicyResult {
+  const rateLimited = Boolean(overlay.rate_limited);
+  const manualReview = Boolean(overlay.manual_review_recommended || rateLimited || policy.manual_review_recommended);
+  return {
+    ...policy,
+    manual_review_recommended: manualReview,
+    manual_review_reason: overlay.manual_review_reason ?? policy.manual_review_reason,
+    rate_limited: policy.rate_limited || rateLimited,
+    rate_limit_reason: overlay.rate_limit_reason ?? policy.rate_limit_reason,
+    rate_limit_until: overlay.rate_limit_until ?? policy.rate_limit_until,
+    repeated_security_attempts_count: Math.max(
+      policy.repeated_security_attempts_count,
+      overlay.repeated_security_attempts_count ?? 0,
+    ),
   };
 }
 
@@ -267,6 +306,13 @@ export function mergePolicyResults(base: InputPolicyResult | undefined, next: In
     prompt_injection_reason: next.prompt_injection_reason ?? base.prompt_injection_reason,
     manual_review_recommended: base.manual_review_recommended || next.manual_review_recommended,
     manual_review_reason: next.manual_review_reason ?? base.manual_review_reason,
+    rate_limited: base.rate_limited || next.rate_limited,
+    rate_limit_reason: next.rate_limit_reason ?? base.rate_limit_reason,
+    rate_limit_until: next.rate_limit_until ?? base.rate_limit_until,
+    repeated_security_attempts_count: Math.max(
+      base.repeated_security_attempts_count,
+      next.repeated_security_attempts_count,
+    ),
   };
 }
 

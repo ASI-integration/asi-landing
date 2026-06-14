@@ -3,6 +3,7 @@ import {
   evaluateInputPolicy,
   getMissingFinalMinimumFields,
   policyTextMetadata,
+  withRateLimitPolicy,
 } from '../input-policy';
 
 describe('input policy layer v1', () => {
@@ -68,6 +69,30 @@ describe('input policy layer v1', () => {
     expect(policyTextMetadata('comment', policy)).toMatchObject({
       field: 'comment',
       possible_prompt_injection: false,
+    });
+  });
+
+  it('adds rate-limit metadata without allowing status or prompt changes', () => {
+    const policy = evaluateInputPolicy({
+      context: 'comment',
+      raw_text: 'Обычный пользовательский комментарий',
+    });
+    const limited = withRateLimitPolicy(policy, {
+      rate_limited: true,
+      rate_limit_reason: 'support_hourly_limit',
+      rate_limit_until: '2026-06-14T10:20:00.000Z',
+      repeated_security_attempts_count: 0,
+      manual_review_recommended: true,
+      manual_review_reason: 'rate_limited',
+    });
+
+    expect(limited).toMatchObject({
+      rate_limited: true,
+      rate_limit_reason: 'support_hourly_limit',
+      manual_review_recommended: true,
+      manual_review_reason: 'rate_limited',
+      can_affect_status: false,
+      can_affect_ai_prompt: false,
     });
   });
 });

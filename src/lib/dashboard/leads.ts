@@ -37,6 +37,10 @@ export type LeadPolicyView = Pick<InputPolicyResult,
   | 'missing_required_fields'
   | 'manual_review_recommended'
   | 'manual_review_reason'
+  | 'rate_limited'
+  | 'rate_limit_reason'
+  | 'rate_limit_until'
+  | 'repeated_security_attempts_count'
 >;
 
 export type LeadDbRow = {
@@ -179,6 +183,10 @@ function parsePolicy(value: unknown): LeadPolicyView | null {
     missing_required_fields: asStringArray(policy.missing_required_fields),
     manual_review_recommended: asBoolean(policy.manual_review_recommended),
     manual_review_reason: asString(policy.manual_review_reason) as LeadPolicyView['manual_review_reason'] || null,
+    rate_limited: asBoolean(policy.rate_limited),
+    rate_limit_reason: asString(policy.rate_limit_reason),
+    rate_limit_until: asString(policy.rate_limit_until) || null,
+    repeated_security_attempts_count: asNumber(policy.repeated_security_attempts_count),
   };
 }
 
