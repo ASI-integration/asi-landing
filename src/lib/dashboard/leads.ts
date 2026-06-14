@@ -308,7 +308,7 @@ export function buildLeadCopySummary(lead: Pick<LeadViewModel,
   return [
     `Лид: ${lead.name}${username}`,
     `Объектов: ${lead.objectCountRange || EMPTY}`,
-    `PMS/МК: ${listText(lead.pms)}`,
+    `Менеджер каналов: ${listText(lead.pms)}`,
     `Хочет автоматизировать: ${listText(lead.automationProcesses)}`,
     `AI-сводка: ${lead.aiSummary || EMPTY}`,
     `Следующий шаг: ${lead.recommendedNextStep || EMPTY}`,

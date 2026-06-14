@@ -33,8 +33,8 @@ describe('lead automation v1 (rule-based)', () => {
 
     expect(automation.scenario).toBe('no_pms_manual');
     expect(automation.suggestedStatus).toBe('qualified');
-    expect(automation.nextStep).toContain('Помочь выбрать PMS/МК');
-    expect(automation.onboardingChecklist).toContain('Выбрать PMS/МК или временный ручной режим');
+    expect(automation.nextStep).toContain('Помочь выбрать менеджер каналов');
+    expect(automation.onboardingChecklist).toContain('Выбрать менеджер каналов или временный ручной режим');
     expect(automation.manualReplyNeeded).toBe(false);
   });
 
@@ -47,7 +47,7 @@ describe('lead automation v1 (rule-based)', () => {
     expect(automation.scenario).toBe('choosing_pms');
     expect(automation.suggestedStatus).toBe('qualified');
     expect(automation.nextStep).toContain('подходящий сценарий подключения');
-    expect(automation.onboardingChecklist).toContain('Выбрать PMS/МК или временный ручной режим');
+    expect(automation.onboardingChecklist).toContain('Выбрать менеджер каналов или временный ручной режим');
   });
 
   it('flags a support question as manual reply needed', () => {
@@ -102,7 +102,7 @@ describe('lead automation v1 (rule-based)', () => {
 
     expect(automation.scenario).toBe('unclear');
     expect(automation.suggestedStatus).toBe('new');
-    expect(automation.onboardingChecklist).toContain('Уточнить наличие PMS/МК');
+    expect(automation.onboardingChecklist).toContain('Уточнить наличие менеджера каналов');
   });
 
   it('flags an unrecognized PMS for manual review', () => {

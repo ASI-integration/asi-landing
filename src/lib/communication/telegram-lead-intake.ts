@@ -8,6 +8,12 @@ import {
   type ManualReplyReason,
   type PmsState,
 } from '@/lib/leads/automation';
+import {
+  PROMPT_INJECTION_GUARD,
+  SUPPORT_AI_INTENT_INJECTION,
+  detectPromptInjection,
+  wrapUserProvidedText,
+} from '@/lib/leads/prompt-injection';
 import { callLLM } from '@/lib/openai';
 import { supabase } from '@/lib/supabase';
 import {
@@ -36,8 +42,8 @@ type LeadOtherStep = LeadMultiStep | 'pms';
 type LeadQuestionStep = Exclude<LeadFlowStep, 'menu' | 'support' | 'completed'>;
 type LeadPotential = 'низкий' | 'средний' | 'высокий';
 type LeadType =
-  | 'новичок без PMS/МК'
-  | 'посуточник с PMS/МК'
+  | 'новичок без менеджера каналов'
+  | 'посуточник с менеджером каналов'
   | 'управляющий несколькими объектами'
   | 'мини-отель / апарт-отель'
   | 'коммерческая недвижимость'
@@ -94,6 +100,9 @@ type LeadAnswers = {
   source?: SupportRequestSource;
   support_requests?: SupportRequest[];
   support_lead_context?: SupportLeadContext;
+  security_flags?: {
+    possible_prompt_injection?: boolean;
+  };
   automation?: {
     version?: string;
     lead_scenario?: LeadScenario;
@@ -165,7 +174,7 @@ const STEP_LABELS: Record<LeadQuestionStep, string> = {
   object_count: 'Сколько объектов у вас сейчас?',
   object_types: 'Какой тип объектов у вас основной? Можно выбрать несколько.',
   channels: 'Какие каналы уже используете? Можно выбрать несколько.',
-  pms: 'Используете ли PMS или менеджер каналов?',
+  pms: 'Используете ли менеджер каналов или PMS?',
   automation_processes: 'Какие процессы хотите автоматизировать? Можно выбрать несколько.',
   time_consumers: 'Что сейчас больше всего съедает время? Можно выбрать несколько.',
   comment: 'Можно коротко описать ситуацию своими словами или нажать «Пропустить».',
@@ -286,12 +295,15 @@ const FINAL_REPLY =
   'Спасибо, заявку получил. По вашим ответам видно, какие процессы можно автоматизировать в первую очередь. Мы свяжемся с вами или предложим демо, если формат подходит для пилота ASI.';
 
 const FINAL_REPLY_HAS_PMS =
-  'Спасибо, заявку получил. Вижу, что у вас уже есть PMS/МК. Следующий шаг — выбрать один тестовый объект и подготовить доступ или приглашение к системе, чтобы проверить автоматизацию без риска для всех объектов.';
+  'Спасибо, заявку получил. Вижу, что у вас уже есть менеджер каналов. Следующий шаг — выбрать один тестовый объект и подготовить доступ или приглашение к системе, чтобы проверить автоматизацию без риска для всех объектов.';
 
 const FINAL_REPLY_NO_PMS =
-  'Спасибо, заявку получил. Судя по ответам, сначала нужно выстроить базовую схему: объекты, каналы и процессы. Мы можем начать с одного тестового объекта и постепенно довести до подключения PMS/МК.';
+  'Спасибо, заявку получил. Судя по ответам, сначала нужно выстроить базовую схему: объекты, каналы и процессы. Мы можем начать с одного тестового объекта и постепенно довести до подключения менеджера каналов.';
 
 const MAIN_MENU_REPLY = 'Выберите, что хотите сделать:';
+
+const EMPTY_REQUIRED_REPLY =
+  'Кажется, здесь пока ничего не выбрано 🙂 Вернитесь, пожалуйста, назад и отметьте подходящий вариант. ASI ещё не умеет читать мысли, но мы над этим работаем.';
 
 const SUPPORT_PROMPT =
   'Напишите вопрос одним сообщением. Я передам его администратору ASI. Позже часть ответов будет обрабатываться автоматически.';
@@ -436,6 +448,16 @@ function addOtherText(answers: LeadAnswers, step: LeadOtherStep | 'comment', tex
   };
 }
 
+function flagPromptInjection(answers: LeadAnswers): LeadAnswers {
+  return {
+    ...answers,
+    security_flags: {
+      ...(answers.security_flags ?? {}),
+      possible_prompt_injection: true,
+    },
+  };
+}
+
 function chunkRows(buttons: Array<{ text: string; callback_data: string }>, columns = 2) {
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (let i = 0; i < buttons.length; i += columns) rows.push(buttons.slice(i, i + columns));
@@ -504,15 +526,17 @@ function keyboardForStep(step: LeadFlowStep, answers: LeadAnswers): Record<strin
   );
   if (step === 'channels') {
     const allOtaSelected = OTA_CHANNEL_LABELS.every((label) => selected.has(label));
+    // Telegram inline-кнопки не поддерживают Markdown/bold, поэтому делаем
+    // кнопку заметнее за счёт текста: эмодзи + капс.
     rows.push([
       {
-        text: allOtaSelected ? 'Снять все OTA' : 'Выбрать все OTA',
+        text: allOtaSelected ? '↩ СНЯТЬ ВСЕ OTA' : '✅ ВЫБРАТЬ ВСЕ OTA',
         callback_data: callbackData({ kind: 'select_all_ota' }),
       },
     ]);
   }
   rows.push([
-    { text: 'Готово', callback_data: callbackData({ kind: 'done', step }) },
+    { text: 'Далее', callback_data: callbackData({ kind: 'done', step }) },
     { text: 'Назад', callback_data: callbackData({ kind: 'back' }) },
   ]);
   return { inline_keyboard: rows };
@@ -763,8 +787,9 @@ async function aiNormalizeOther(step: LeadOtherStep, text: string): Promise<stri
     const response = await callLLM({
       model: process.env.LEAD_INTAKE_AI_MODEL?.trim() || undefined,
       systemPrompt:
-        'Ты внутренний нормализатор анкеты ASI. Верни только JSON вида {"items":["..."]}. Не веди диалог. Используй только разрешенные варианты, если текст явно подходит.',
-      userMessage: JSON.stringify({ step, text, allowed }),
+        'Ты внутренний нормализатор анкеты ASI. Верни только JSON вида {"items":["..."]}. Не веди диалог. Используй только разрешенные варианты, если текст явно подходит. ' +
+        PROMPT_INJECTION_GUARD,
+      userMessage: JSON.stringify({ step, allowed, user_text: wrapUserProvidedText(text) }),
     });
     if (!response) return fallback;
     const parsed = JSON.parse(response.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()) as { items?: unknown };
@@ -819,8 +844,8 @@ function inferLeadType(answers: LeadAnswers): LeadType {
   if (includesAny(objectTypes, ['Коммерческая'])) return 'коммерческая недвижимость';
   if (includesAny(objectTypes, ['Мини-отель', 'апарт-отель'])) return 'мини-отель / апарт-отель';
   if (objectCountWeight(answers.object_count_range) >= 2) return 'управляющий несколькими объектами';
-  if (includesAny(pms, ['Нет, всё ведём вручную', 'Только выбираем'])) return 'новичок без PMS/МК';
-  return 'посуточник с PMS/МК';
+  if (includesAny(pms, ['Нет, всё ведём вручную', 'Только выбираем'])) return 'новичок без менеджера каналов';
+  return 'посуточник с менеджером каналов';
 }
 
 function inferLeadPotential(answers: LeadAnswers): LeadPotential {
@@ -867,17 +892,26 @@ async function finalizeAnswers(answers: LeadAnswers): Promise<LeadAnswers> {
   };
   const fallbackSummary = buildFallbackSummary(base);
 
+  // Свободный текст пользователя (комментарий и тексты «Другое») отделяем от
+  // структурированных ответов и помечаем как данные, а не инструкции.
+  const { comment, other_texts, ...structured } = base;
+
   try {
     const response = await callLLM({
       model: process.env.LEAD_INTAKE_AI_MODEL?.trim() || undefined,
       systemPrompt:
-        'Ты внутренний аналитик ASI. Верни только JSON: {"ai_summary":"короткая сводка","lead_type":"...","lead_potential":"низкий|средний|высокий","recommended_next_step":"..."}. Не пиши пользователю.',
+        'Ты внутренний аналитик ASI. Верни только JSON: {"ai_summary":"короткая сводка","lead_type":"...","lead_potential":"низкий|средний|высокий","recommended_next_step":"..."}. Не пиши пользователю. ' +
+        PROMPT_INJECTION_GUARD,
       userMessage: JSON.stringify({
-        answers: base,
+        answers: structured,
+        user_provided_text: {
+          comment: comment ? wrapUserProvidedText(comment) : null,
+          other_texts: other_texts ?? null,
+        },
         allowed: {
           lead_type: [
-            'новичок без PMS/МК',
-            'посуточник с PMS/МК',
+            'новичок без менеджера каналов',
+            'посуточник с менеджером каналов',
             'управляющий несколькими объектами',
             'мини-отель / апарт-отель',
             'коммерческая недвижимость',
@@ -932,8 +966,8 @@ function buildAiNormalized(answers: LeadAnswers): LeadAiNormalized {
 
 function isLeadType(value: unknown): value is LeadType {
   return [
-    'новичок без PMS/МК',
-    'посуточник с PMS/МК',
+    'новичок без менеджера каналов',
+    'посуточник с менеджером каналов',
     'управляющий несколькими объектами',
     'мини-отель / апарт-отель',
     'коммерческая недвижимость',
@@ -979,12 +1013,15 @@ function formatAdminNotification(lead: LeadRow): string {
 
   return [
     'Новая заявка ASI',
+    ...(answers.security_flags?.possible_prompt_injection
+      ? ['⚠️ Внимание: в свободном тексте возможна попытка обойти инструкции. Текст сохранён как обычные данные, правила классификации не менялись.']
+      : []),
     `Источник: ${lead.source}`,
     `Имя: ${lead.first_name ?? 'не указано'} (${username})`,
     `Объектов: ${answers.object_count_range ?? 'не указано'}`,
     formatNumberedSection('Типы объектов', answers.object_types),
     formatNumberedSection('Каналы', answers.channels),
-    `PMS/МК: ${formatList(answers.pms)}`,
+    `Менеджер каналов: ${formatList(answers.pms)}`,
     formatNumberedSection('Что хочет автоматизировать', answers.automation_processes),
     formatNumberedSection('Что съедает время', answers.time_consumers),
     `Комментарий: ${comment}`,
@@ -1037,7 +1074,9 @@ function buildSupportRequest(
     status: 'new',
     received_at: new Date().toISOString(),
     ...(context ? { lead_context: context } : {}),
-    support_ai_intent: null,
+    // Свободный текст вопроса — это данные. При явной попытке обойти инструкции
+    // помечаем безопасно, сырой текст не интерпретируем как команду.
+    support_ai_intent: detectPromptInjection(text) ? SUPPORT_AI_INTENT_INJECTION : null,
     support_ai_summary: null,
     support_auto_reply_eligible: false,
   };
@@ -1077,13 +1116,16 @@ function formatSupportAdminNotification(
         'Контекст лида:',
         `Объектов: ${context.object_count_range ?? 'не указано'}`,
         `Тип объектов: ${formatList(context.object_types)}`,
-        `PMS/МК: ${formatList(context.pms)}`,
+        `Менеджер каналов: ${formatList(context.pms)}`,
         `Что хотел автоматизировать: ${formatList(context.automation_processes)}`,
       ]
     : [];
 
   return [
     'Новый вопрос в поддержку ASI',
+    ...(request.support_ai_intent === SUPPORT_AI_INTENT_INJECTION
+      ? ['⚠️ Внимание: возможная попытка обойти инструкции в тексте вопроса. Обработано как обычные данные, без авто-ответа.']
+      : []),
     `Источник: ${request.source}`,
     `Имя: ${user.first_name ?? lead.first_name ?? 'не указано'}`,
     `Username: ${username}`,
@@ -1310,7 +1352,8 @@ async function handleTextAnswer(
   }
 
   if (awaiting === 'comment') {
-    const answers: LeadAnswers = addOtherText({ ...current, comment: text.trim() }, 'comment', text);
+    let answers: LeadAnswers = addOtherText({ ...current, comment: text.trim() }, 'comment', text);
+    if (detectPromptInjection(text)) answers = flagPromptInjection(answers);
     const { lead: updatedLead, automation } = await completeLead(lead, user, answers);
     if (!updatedLead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
@@ -1329,7 +1372,9 @@ async function handleTextAnswer(
   }
 
   const normalized = await aiNormalizeOther(awaiting, text);
-  const nextAnswers = withFlow(applyNormalizedOther(current, awaiting, text, normalized), awaiting);
+  let normalizedAnswers = applyNormalizedOther(current, awaiting, text, normalized);
+  if (detectPromptInjection(text)) normalizedAnswers = flagPromptInjection(normalizedAnswers);
+  const nextAnswers = withFlow(normalizedAnswers, awaiting);
   const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
   if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
 
@@ -1426,6 +1471,22 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
   }
 
   if (action.kind === 'done') {
+    // Все multi-select шаги обязательны: не пускаем дальше с пустым выбором.
+    // Нажатие «Другое» без текста не добавляет вариант в выбор, поэтому этот
+    // случай тоже отлавливается здесь.
+    if (selectedForStep(nextAnswers, action.step).length === 0) {
+      await replyToTelegram(user.chat_id, EMPTY_REQUIRED_REPLY, {
+        handler: 'asi_feedback_lead_intake/empty_required',
+        update_id: update.update_id,
+      }, getAsiFeedbackTelegramSendOptions());
+      return {
+        outcome: ProcessOutcome.Replied,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply: EMPTY_REQUIRED_REPLY,
+      };
+    }
     const step = nextStep(action.step);
     nextAnswers = withFlow(nextAnswers, step);
     const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);

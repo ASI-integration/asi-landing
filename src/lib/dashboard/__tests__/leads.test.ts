@@ -48,7 +48,7 @@ describe('dashboard leads parser', () => {
     expect(lead.objectCountRange).toBe('6-20');
     expect(lead.pms).toEqual(['RealtyCalendar']);
     expect(lead.comment).toBe('Нужен быстрый запуск');
-    expect(lead.copySummary).toContain('PMS/МК: RealtyCalendar');
+    expect(lead.copySummary).toContain('Менеджер каналов: RealtyCalendar');
     expect(lead.copySummary).toContain('AI-сводка: Есть портфель');
   });
 

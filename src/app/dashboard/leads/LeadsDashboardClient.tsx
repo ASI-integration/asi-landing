@@ -37,7 +37,7 @@ const SOURCE_LABELS: Record<LeadSource, string> = {
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая',
   qualified: 'Квалифицирована',
-  needs_pms_access: 'Нужен доступ к PMS/МК',
+  needs_pms_access: 'Нужен доступ к менеджеру каналов',
   ready_for_setup: 'Готов к подключению',
   manual_reply_needed: 'Нужен ручной ответ',
   pilot_candidate: 'Кандидат в пилот',
@@ -56,9 +56,9 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
 };
 
 const SCENARIO_LABELS: Record<string, string> = {
-  has_pms: 'Есть PMS/МК',
-  no_pms_manual: 'Без PMS/МК, вручную',
-  choosing_pms: 'Выбирает PMS/МК',
+  has_pms: 'Есть менеджер каналов',
+  no_pms_manual: 'Без менеджера каналов, вручную',
+  choosing_pms: 'Выбирает менеджер каналов',
   support_question: 'Вопрос поддержки',
   high_value_operator: 'Крупный оператор',
   small_host: 'Небольшой хозяин',
@@ -69,8 +69,8 @@ const SCENARIO_LABELS: Record<string, string> = {
 
 const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
   support_question: 'Вопрос поддержки',
-  needs_pms_access: 'Нужен доступ к PMS/МК',
-  unclear_pms: 'Непонятный PMS/МК',
+  needs_pms_access: 'Нужен доступ к менеджеру каналов',
+  unclear_pms: 'Непонятный менеджер каналов',
   high_value_lead: 'Высокий потенциал',
   custom_other_text: 'Свободный текст в анкете',
   none: '—',
@@ -209,7 +209,7 @@ function ContextSummary({ context }: { context: LeadSupportRequest['leadContext'
 
   const parts = [
     context.object_count_range ? `Объектов: ${context.object_count_range}` : '',
-    context.pms.length ? `PMS/МК: ${listText(context.pms)}` : '',
+    context.pms.length ? `Менеджер каналов: ${listText(context.pms)}` : '',
     context.automation_processes.length ? `Процессы: ${shortText(listText(context.automation_processes), 72)}` : '',
   ].filter(Boolean);
 
@@ -221,7 +221,7 @@ function SupportLeadContext({ context }: { context: LeadSupportRequest['leadCont
 
   return (
     <div className="mt-3 rounded-md border border-amber-100 bg-white p-3">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">Контекст PMS/МК</h4>
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-800">Контекст: менеджер каналов</h4>
       <dl className="mt-2 grid grid-cols-1 gap-2">
         {context.object_count_range ? (
           <DetailField label="Объекты">{context.object_count_range}</DetailField>
@@ -230,7 +230,7 @@ function SupportLeadContext({ context }: { context: LeadSupportRequest['leadCont
           <DetailField label="Типы объектов">{listText(context.object_types)}</DetailField>
         ) : null}
         {context.pms.length ? (
-          <DetailField label="PMS/МК">{listText(context.pms)}</DetailField>
+          <DetailField label="Менеджер каналов">{listText(context.pms)}</DetailField>
         ) : null}
         {context.automation_processes.length ? (
           <DetailField label="Что хочет автоматизировать">{listText(context.automation_processes)}</DetailField>
@@ -433,13 +433,13 @@ export function LeadsDashboardClient() {
             </select>
           </label>
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            PMS/МК
+            Менеджер каналов
             <select
               value={pmsFilter}
               onChange={(event) => setPmsFilter(event.target.value)}
               className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium normal-case tracking-normal text-slate-900"
             >
-              <option value="">Все PMS/МК</option>
+              <option value="">Все менеджеры каналов</option>
               {filterOptions.pms.map((pms) => (
                 <option key={pms} value={pms}>{pms}</option>
               ))}
@@ -641,7 +641,7 @@ function LeadsTable({
                   <td className="px-3 py-2 align-top text-slate-700">{SOURCE_LABELS[lead.source]}</td>
                   <td className="px-3 py-2 align-top text-slate-700">
                     <TruncatedText value={lead.objectCountRange} />
-                    <TruncatedText value={listText(lead.pms, '')} empty="PMS/МК не указано" className="mt-0.5 text-xs text-slate-500" />
+                    <TruncatedText value={listText(lead.pms, '')} empty="Менеджер каналов не указан" className="mt-0.5 text-xs text-slate-500" />
                   </td>
                   <td className="px-3 py-2 align-top">
                     <TruncatedText value={lead.leadPotential} />
@@ -818,7 +818,7 @@ function LeadDetailPanel({
               {lead.objectCountRange ? <DetailField label="Объекты">{lead.objectCountRange}</DetailField> : null}
               {lead.objectTypes.length ? <DetailField label="Типы объектов">{listText(lead.objectTypes)}</DetailField> : null}
               {lead.channels.length ? <DetailField label="Каналы">{listText(lead.channels)}</DetailField> : null}
-              {lead.pms.length ? <DetailField label="PMS/МК">{listText(lead.pms)}</DetailField> : null}
+              {lead.pms.length ? <DetailField label="Менеджер каналов">{listText(lead.pms)}</DetailField> : null}
             </dl>
           </DetailSection>
         ) : null}
@@ -930,7 +930,7 @@ function SupportRequestsTable({
               <th className="px-3 py-2">Клиент</th>
               <th className="px-3 py-2">Текст вопроса</th>
               <th className="px-3 py-2">Статус</th>
-              <th className="px-3 py-2">Контекст PMS/МК</th>
+              <th className="px-3 py-2">Контекст: менеджер каналов</th>
               <th className="px-3 py-2">Telegram</th>
             </tr>
           </thead>
@@ -1034,7 +1034,7 @@ function SupportDetailPanel({
           </select>
         </DetailSection>
 
-        <DetailSection title="Контекст PMS/МК">
+        <DetailSection title="Контекст: менеджер каналов">
           {hasLeadContext(request.leadContext) ? (
             <SupportLeadContext context={request.leadContext} />
           ) : (
