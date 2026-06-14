@@ -13,6 +13,7 @@ import {
   type SupportRequestStatus,
 } from '@/lib/dashboard/leads';
 import {
+  CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS,
   CHANNEL_MANAGER_ONBOARDING_STATUSES,
   type ChannelManagerOnboardingStatus,
   type ChannelManagerTestObject,
@@ -59,21 +60,6 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   in_progress: 'В работе',
   answered: 'Отвечен',
   archived: 'Архив',
-};
-
-const ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnboardingStatus, string> = {
-  not_started: 'Не начато',
-  needs_access: 'Нужен доступ',
-  access_instructions_sent: 'Инструкция отправлена',
-  waiting_for_client: 'Ждём клиента',
-  access_received_offline: 'Доступ получен офлайн',
-  test_object_needed: 'Нужен тестовый объект',
-  test_object_selected: 'Тестовый объект выбран',
-  ready_for_setup: 'Готов к настройке',
-  setup_in_progress: 'Настройка в работе',
-  ready_for_test: 'Готов к тесту',
-  blocked_manual_call: 'Нужен ручной созвон',
-  completed: 'Подключение завершено',
 };
 
 const SCENARIO_LABELS: Record<string, string> = {
@@ -151,8 +137,8 @@ function listText(values: readonly string[], empty = SOFT_EMPTY): string {
   return values.length ? values.map(sanitizeVisibleText).join(', ') : empty;
 }
 
-function sanitizeVisibleText(value: string): string {
-  return redactSensitiveText(value)
+function normalizeVisibleText(value: string): string {
+  return value
     .replace(/PMS\/МК/gi, 'Менеджер каналов')
     .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
     .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
@@ -163,6 +149,10 @@ function sanitizeVisibleText(value: string): string {
     .replace(/\bPMS\b/g, 'менеджер каналов')
     .replace(/\bpms\b/g, 'менеджер каналов')
     .replace(/\bМК\b/g, 'менеджер каналов');
+}
+
+function sanitizeVisibleText(value: string): string {
+  return normalizeVisibleText(redactSensitiveText(value));
 }
 
 function textOrEmpty(value: string): string {
@@ -958,7 +948,7 @@ function LeadDetailPanel({
           <DetailSection title="Подключение менеджера каналов">
             <dl className="grid grid-cols-1 gap-3">
               <DetailField label="Менеджер каналов">
-                {sanitizeVisibleText(lead.channelManagerOnboarding.manager)}
+                {normalizeVisibleText(lead.channelManagerOnboarding.manager)}
               </DetailField>
               <DetailField label="Статус подключения">
                 <select
@@ -968,7 +958,7 @@ function LeadDetailPanel({
                   className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-900"
                 >
                   {CHANNEL_MANAGER_ONBOARDING_STATUSES.map((status) => (
-                    <option key={status} value={status}>{ONBOARDING_STATUS_LABELS[status]}</option>
+                    <option key={status} value={status}>{CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS[status]}</option>
                   ))}
                 </select>
               </DetailField>
@@ -981,20 +971,20 @@ function LeadDetailPanel({
               </DetailField>
               {lead.channelManagerOnboarding.manual_call_reason ? (
                 <DetailField label="Причина ручного созвона">
-                  {sanitizeVisibleText(lead.channelManagerOnboarding.manual_call_reason)}
+                  {normalizeVisibleText(lead.channelManagerOnboarding.manual_call_reason)}
                 </DetailField>
               ) : null}
               <DetailField label="Что нужно получить">
                 <ul className="mt-0.5 list-disc space-y-1 pl-5">
                   {lead.channelManagerOnboarding.required_access.map((item) => (
-                    <li key={item}>{sanitizeVisibleText(item)}</li>
+                    <li key={item}>{normalizeVisibleText(item)}</li>
                   ))}
                 </ul>
               </DetailField>
               <DetailField label="Чеклист">
                 <ul className="mt-0.5 list-disc space-y-1 pl-5">
                   {lead.channelManagerOnboarding.checklist.map((item) => (
-                    <li key={item}>{sanitizeVisibleText(item)}</li>
+                    <li key={item}>{normalizeVisibleText(item)}</li>
                   ))}
                 </ul>
               </DetailField>
@@ -1031,7 +1021,7 @@ function LeadDetailPanel({
               </DetailField>
               <DetailField label="Инструкция клиенту">
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-900 whitespace-pre-wrap">
-                  {sanitizeVisibleText(lead.channelManagerOnboarding.client_instruction)}
+                  {normalizeVisibleText(lead.channelManagerOnboarding.client_instruction)}
                 </div>
                 <button
                   type="button"

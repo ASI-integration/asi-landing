@@ -254,6 +254,7 @@ describe('ASI Feedback Telegram lead intake', () => {
     const result = await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 1017));
 
     expect(result?.reply).toContain('Спасибо, заявку получил');
+    expect(result?.reply).not.toContain('Кажется, здесь пока ничего не выбрано');
     expect(mockDb.rows[0].answers_json).toMatchObject({
       object_count_range: '6-20',
       object_types: ['Дома / коттеджи'],
@@ -539,8 +540,14 @@ describe('ASI Feedback Telegram lead intake', () => {
     expect(adminCard).toContain('Сценарий: Есть менеджер каналов');
     expect(adminCard).toContain('Статус: Нужен доступ к менеджеру каналов');
     expect(adminCard).toContain('✅ Подключение менеджера каналов');
+    expect(adminCard).toContain('Статус подключения: нужен доступ');
+    expect(adminCard).toContain('Получить доступ, API-ключ или приглашение');
+    expect(adminCard).toContain('Пароли в Telegram отправлять не нужно.');
     expect(adminCard).not.toContain('Сценарий: has_pms');
     expect(adminCard).not.toContain('needs_pms_access');
+    expect(adminCard).not.toContain('Статус подключения: needs_access');
+    expect(adminCard).not.toContain('API-ключ [скрыто]');
+    expect(adminCard).not.toContain('Пароли [скрыто]');
   });
 
   it('auto-classifies a fully manual lead as qualified with a no-PMS scenario reply', async () => {

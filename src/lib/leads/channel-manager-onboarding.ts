@@ -17,6 +17,25 @@ export const CHANNEL_MANAGER_ONBOARDING_STATUSES = [
 
 export type ChannelManagerOnboardingStatus = (typeof CHANNEL_MANAGER_ONBOARDING_STATUSES)[number];
 
+export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnboardingStatus, string> = {
+  not_started: 'не начато',
+  needs_access: 'нужен доступ',
+  access_instructions_sent: 'инструкция отправлена',
+  waiting_for_client: 'ждём клиента',
+  access_received_offline: 'доступ получен офлайн',
+  test_object_needed: 'нужен тестовый объект',
+  test_object_selected: 'тестовый объект выбран',
+  ready_for_setup: 'готов к настройке',
+  setup_in_progress: 'настройка в процессе',
+  ready_for_test: 'готов к тесту',
+  blocked_manual_call: 'нужен ручной созвон',
+  completed: 'подключение завершено',
+};
+
+export function formatChannelManagerOnboardingStatus(status: ChannelManagerOnboardingStatus): string {
+  return CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS[status];
+}
+
 export type ChannelManagerName = 'RealtyCalendar' | 'Bnovo' | 'TravelLine' | 'Shelter' | 'Другой';
 
 export type ChannelManagerTestObject = {

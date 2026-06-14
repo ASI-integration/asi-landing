@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildChannelManagerOnboarding,
   ensureChannelManagerOnboarding,
+  formatChannelManagerOnboardingStatus,
   updateChannelManagerOnboarding,
 } from '../channel-manager-onboarding';
 
@@ -62,5 +63,12 @@ describe('channel manager onboarding v1', () => {
       },
       admin_note: 'Клиент готовит доступ.',
     });
+  });
+
+  it('formats onboarding status labels in Russian', () => {
+    expect(formatChannelManagerOnboardingStatus('needs_access')).toBe('нужен доступ');
+    expect(formatChannelManagerOnboardingStatus('ready_for_setup')).toBe('готов к настройке');
+    expect(formatChannelManagerOnboardingStatus('blocked_manual_call')).toBe('нужен ручной созвон');
+    expect(formatChannelManagerOnboardingStatus('completed')).toBe('подключение завершено');
   });
 });

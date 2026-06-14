@@ -1,6 +1,7 @@
 import { normalizeAsiFeedbackLeadSource, type AsiFeedbackLeadSource } from '@/config/publicTelegram';
 import {
   ensureChannelManagerOnboarding,
+  formatChannelManagerOnboardingStatus,
   type ChannelManagerOnboarding,
 } from '@/lib/leads/channel-manager-onboarding';
 import {
@@ -1279,8 +1280,8 @@ const POLICY_MISSING_FIELD_LABELS: Record<string, string> = {
   time_consumers: 'что съедает время',
 };
 
-function sanitizeVisibleText(value: string): string {
-  return redactSensitiveText(value)
+function normalizeVisibleText(value: string): string {
+  return value
     .replace(/PMS\/МК/gi, 'Менеджер каналов')
     .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
     .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
@@ -1294,17 +1295,22 @@ function sanitizeVisibleText(value: string): string {
     .replace(/\bМК\b/g, 'менеджер каналов');
 }
 
+function sanitizeUserText(value: string): string {
+  return normalizeVisibleText(redactSensitiveText(value));
+}
+
 function labelFromMap(value: unknown, labels: Record<string, string>, fallback = SOFT_EMPTY_VALUE): string {
   if (typeof value !== 'string' || !value.trim()) return fallback;
-  return labels[value] ?? sanitizeVisibleText(value);
+  return labels[value] ?? normalizeVisibleText(value);
 }
 
 function formatList(value: string[] | undefined, fallback = SOFT_EMPTY_VALUE): string {
-  return value?.length ? value.map(sanitizeVisibleText).join(', ') : fallback;
+  return value?.length ? value.map(normalizeVisibleText).join(', ') : fallback;
 }
 
-function formatNumberedList(value: string[] | undefined): string[] {
-  return (value ?? []).filter(Boolean).map((item, index) => `${index + 1}. ${sanitizeVisibleText(item)}`);
+function formatNumberedList(value: string[] | undefined, options: { redactUserText?: boolean } = {}): string[] {
+  const format = options.redactUserText ? sanitizeUserText : normalizeVisibleText;
+  return (value ?? []).filter(Boolean).map((item, index) => `${index + 1}. ${format(item)}`);
 }
 
 function formatSection(title: string, lines: Array<string | null | undefined>): string | null {
@@ -1366,12 +1372,12 @@ function formatAdminNotification(lead: LeadRow): string {
   const commentLines = [
     ...(answers.comment ? [answers.comment] : []),
     ...(answers.other_texts?.comment ?? []),
-  ].map(sanitizeVisibleText);
+  ].map(sanitizeUserText);
   const otherTextLines = Object.entries(answers.other_texts ?? {})
     .filter(([key]) => key !== 'comment')
     .flatMap(([, values]) => (Array.isArray(values) ? values : []))
     .filter(Boolean)
-    .map(sanitizeVisibleText);
+    .map(sanitizeUserText);
   const userTextLines = [...commentLines, ...otherTextLines];
   const manualReplyNeeded = Boolean(automation?.manual_reply_needed);
   const manualReplyReason = labelFromMap(automation?.manual_reply_reason, MANUAL_REPLY_REASON_LABELS, 'Нет');
@@ -1392,20 +1398,20 @@ function formatAdminNotification(lead: LeadRow): string {
       : null,
     ...formatPolicySections(answers.policy),
     formatSection('Автоматизация', [
-      `Тип лида: ${answers.lead_type ? sanitizeVisibleText(answers.lead_type) : SOFT_EMPTY_VALUE}`,
+      `Тип лида: ${answers.lead_type ? normalizeVisibleText(answers.lead_type) : SOFT_EMPTY_VALUE}`,
       `Сценарий: ${labelFromMap(automation?.lead_scenario, SCENARIO_LABELS)}`,
       `Потенциал: ${answers.lead_potential ?? automation?.potential ?? SOFT_EMPTY_VALUE}`,
       `Нужен ручной ответ: ${manualReplyNeeded ? 'да' : 'нет'}`,
       manualReplyNeeded && manualReplyReason !== 'Нет' ? `Причина ручного ответа: ${manualReplyReason}` : null,
     ]),
-    automationStep ? formatSection('Следующий шаг', [sanitizeVisibleText(automationStep)]) : null,
+    automationStep ? formatSection('Следующий шаг', [normalizeVisibleText(automationStep)]) : null,
     formatNumberedSection('Чеклист', automation?.onboarding_checklist as string[] | undefined),
     onboarding ? formatSection('Подключение менеджера каналов', [
-      `Менеджер каналов: ${sanitizeVisibleText(onboarding.manager)}`,
-      `Статус подключения: ${sanitizeVisibleText(onboarding.status)}`,
+      `Менеджер каналов: ${normalizeVisibleText(onboarding.manager)}`,
+      `Статус подключения: ${formatChannelManagerOnboardingStatus(onboarding.status)}`,
       `Нужен ручной созвон: ${onboarding.manual_call_needed ? 'да' : 'нет'}`,
-      onboarding.manual_call_reason ? `Причина: ${sanitizeVisibleText(onboarding.manual_call_reason)}` : null,
-      onboarding.client_instruction ? `Инструкция клиенту: ${sanitizeVisibleText(onboarding.client_instruction)}` : null,
+      onboarding.manual_call_reason ? `Причина: ${normalizeVisibleText(onboarding.manual_call_reason)}` : null,
+      onboarding.client_instruction ? `Инструкция клиенту: ${normalizeVisibleText(onboarding.client_instruction)}` : null,
     ]) : null,
     formatSection('Пользователь', [userLink]),
   ].filter((section): section is string => Boolean(section));
@@ -1518,7 +1524,7 @@ function formatSupportAdminNotification(
       `Telegram ID: ${user.telegram_user_id}`,
       `Статус: ${labelFromMap(request.status, SUPPORT_REQUEST_STATUS_LABELS)}`,
     ]),
-    formatSection('Вопрос пользователя', [sanitizeVisibleText(request.text)]),
+    formatSection('Вопрос пользователя', [sanitizeUserText(request.text)]),
     ...formatPolicySections(lead.answers_json?.policy),
     ...contextSections,
     formatSection('Пользователь', [telegramUserLink(user)]),
