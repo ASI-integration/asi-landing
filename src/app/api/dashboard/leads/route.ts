@@ -4,6 +4,7 @@ import { isDashboardInternalUser } from '@/lib/dashboard/internal-access';
 import {
   answersJsonWithAdminNote,
   answersJsonWithChannelManagerOnboarding,
+  answersJsonWithCrmStatusAction,
   answersJsonWithSupportStatus,
   isCrmLeadStatus,
   isSupportRequestStatus,
@@ -135,6 +136,7 @@ export async function PATCH(req: NextRequest) {
     if (!current) return jsonError('Заявка не найдена', 404);
 
     let answersJson = current.answers_json;
+    const now = new Date().toISOString();
     if (typeof adminNote === 'string') {
       answersJson = answersJsonWithAdminNote(answersJson, adminNote.slice(0, 4000));
     }
@@ -164,15 +166,23 @@ export async function PATCH(req: NextRequest) {
         status: onboardingStatus,
         adminNote: typeof onboardingAdminNote === 'string' ? onboardingAdminNote.slice(0, 4000) : undefined,
         testObject,
+        now,
       });
     }
 
     const patch: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
     const onboardingCrmStatus = onboardingStatus ? crmStatusForOnboarding(onboardingStatus) : null;
-    if (status !== undefined) patch.status = status;
-    else if (onboardingCrmStatus && isCrmLeadStatus(onboardingCrmStatus)) patch.status = onboardingCrmStatus;
+    const nextStatus = status !== undefined
+      ? status
+      : onboardingCrmStatus && isCrmLeadStatus(onboardingCrmStatus)
+        ? onboardingCrmStatus
+        : null;
+    if (nextStatus) {
+      patch.status = nextStatus;
+      answersJson = answersJsonWithCrmStatusAction(answersJson, nextStatus, now);
+    }
     if (answersJson !== current.answers_json) patch.answers_json = answersJson;
 
     const { data, error } = await supabase

@@ -22,7 +22,7 @@ export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnbo
   needs_access: 'нужен доступ',
   access_instructions_sent: 'инструкция отправлена',
   waiting_for_client: 'ждём клиента',
-  access_received_offline: 'доступ получен офлайн',
+  access_received_offline: 'доступ получен',
   test_object_needed: 'нужен тестовый объект',
   test_object_selected: 'тестовый объект выбран',
   ready_for_setup: 'готов к настройке',
@@ -273,6 +273,10 @@ export function updateChannelManagerOnboarding(
 }
 
 export function crmStatusForOnboarding(status: ChannelManagerOnboardingStatus): string | null {
+  if (status === 'needs_access') return 'needs_pms_access';
+  if (status === 'access_instructions_sent') return 'instruction_sent';
+  if (status === 'access_received_offline') return 'access_received';
+  if (status === 'test_object_selected') return 'test_object_selected';
   if (status === 'ready_for_setup') return 'ready_for_setup';
   if (status === 'blocked_manual_call') return 'manual_reply_needed';
   if (status === 'completed') return 'qualified';

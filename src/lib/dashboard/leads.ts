@@ -11,9 +11,12 @@ import type { InputPolicyResult } from '@/lib/policy/input-policy';
 
 export const CRM_LEAD_STATUSES = [
   'new',
-  'qualified',
   'needs_pms_access',
+  'instruction_sent',
+  'access_received',
+  'test_object_selected',
   'ready_for_setup',
+  'qualified',
   'manual_reply_needed',
   'pilot_candidate',
   'not_fit',
@@ -26,6 +29,15 @@ export const ALL_LEAD_STATUSES = [...CRM_LEAD_STATUSES, ...LEGACY_LEAD_STATUSES]
 
 export type CrmLeadStatus = (typeof CRM_LEAD_STATUSES)[number];
 export type LeadStatus = (typeof ALL_LEAD_STATUSES)[number];
+
+export const CRM_ACTION_STATUSES = [
+  'instruction_sent',
+  'access_received',
+  'test_object_selected',
+  'ready_for_setup',
+] as const;
+
+export type CrmActionStatus = (typeof CRM_ACTION_STATUSES)[number];
 
 export const SUPPORT_REQUEST_STATUSES = ['new', 'in_progress', 'answered', 'archived'] as const;
 
@@ -111,6 +123,7 @@ export type LeadViewModel = {
   hasSupportRequest: boolean;
   automation: LeadAutomation;
   channelManagerOnboarding: ChannelManagerOnboarding | null;
+  crmActionTimestamps: Partial<Record<CrmActionStatus, string>>;
   policy: LeadPolicyView | null;
   isTestLead: boolean;
   copySummary: string;
@@ -199,6 +212,19 @@ function parsePolicy(value: unknown): LeadPolicyView | null {
     rate_limit_until: asString(policy.rate_limit_until) || null,
     repeated_security_attempts_count: asNumber(policy.repeated_security_attempts_count),
   };
+}
+
+function parseCrmActionTimestamps(value: unknown): Partial<Record<CrmActionStatus, string>> {
+  const actions = asRecord(value);
+  const result: Partial<Record<CrmActionStatus, string>> = {};
+  for (const status of CRM_ACTION_STATUSES) {
+    const raw = actions[status];
+    const timestamp = typeof raw === 'string'
+      ? asString(raw)
+      : asString(asRecord(raw).performed_at) || asString(asRecord(raw).updated_at);
+    if (timestamp) result[status] = timestamp;
+  }
+  return result;
 }
 
 function isTestSourceValue(value: unknown): boolean {
@@ -313,6 +339,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
   const comment = asString(answers.comment) || (otherTexts.comment ?? []).join(' / ');
   const adminNote = asString(answers.admin_note);
   const policy = parsePolicy(answers.policy);
+  const crmActionTimestamps = parseCrmActionTimestamps(answers.crm_actions);
   const supportRequests = parseSupportRequests(base, answers, source);
   const hasOpenSupportRequest = supportRequests.some(
     (request) => request.status === 'new' || request.status === 'in_progress',
@@ -361,6 +388,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     hasSupportRequest: supportRequests.length > 0,
     automation,
     channelManagerOnboarding,
+    crmActionTimestamps,
     policy,
     isTestLead: isTestLeadRow(row, answers, name, telegramUsername),
     copySummary: '',
@@ -431,6 +459,24 @@ export function answersJsonWithAdminNote(answersJson: LeadAnswersJson | null, ad
   };
 }
 
+export function answersJsonWithCrmStatusAction(
+  answersJson: LeadAnswersJson | null,
+  status: CrmLeadStatus,
+  now = new Date().toISOString(),
+): LeadAnswersJson {
+  const answers = asRecord(answersJson);
+  if (!CRM_ACTION_STATUSES.includes(status as CrmActionStatus)) return answers;
+  return {
+    ...answers,
+    crm_actions: {
+      ...asRecord(answers.crm_actions),
+      [status]: {
+        performed_at: now,
+      },
+    },
+  };
+}
+
 export function answersJsonWithSupportStatus(
   answersJson: LeadAnswersJson | null,
   index: number,
@@ -453,6 +499,7 @@ export function answersJsonWithChannelManagerOnboarding(
     status?: ChannelManagerOnboardingStatus;
     testObject?: Partial<ChannelManagerTestObject>;
     adminNote?: string;
+    now?: string;
   },
 ): LeadAnswersJson {
   return updateChannelManagerOnboarding(answersJson, patch);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildChannelManagerOnboarding,
+  crmStatusForOnboarding,
   ensureChannelManagerOnboarding,
   formatChannelManagerOnboardingStatus,
   updateChannelManagerOnboarding,
@@ -67,8 +68,17 @@ describe('channel manager onboarding v1', () => {
 
   it('formats onboarding status labels in Russian', () => {
     expect(formatChannelManagerOnboardingStatus('needs_access')).toBe('нужен доступ');
+    expect(formatChannelManagerOnboardingStatus('access_received_offline')).toBe('доступ получен');
     expect(formatChannelManagerOnboardingStatus('ready_for_setup')).toBe('готов к настройке');
     expect(formatChannelManagerOnboardingStatus('blocked_manual_call')).toBe('нужен ручной созвон');
     expect(formatChannelManagerOnboardingStatus('completed')).toBe('подключение завершено');
+  });
+
+  it('maps onboarding actions to dashboard CRM statuses', () => {
+    expect(crmStatusForOnboarding('needs_access')).toBe('needs_pms_access');
+    expect(crmStatusForOnboarding('access_instructions_sent')).toBe('instruction_sent');
+    expect(crmStatusForOnboarding('access_received_offline')).toBe('access_received');
+    expect(crmStatusForOnboarding('test_object_selected')).toBe('test_object_selected');
+    expect(crmStatusForOnboarding('ready_for_setup')).toBe('ready_for_setup');
   });
 });

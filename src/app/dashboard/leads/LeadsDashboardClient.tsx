@@ -43,9 +43,12 @@ const SOURCE_LABELS: Record<LeadSource, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   new: 'Новая',
+  needs_pms_access: 'Нужен доступ',
+  instruction_sent: 'Инструкция отправлена',
+  access_received: 'Доступ получен',
+  test_object_selected: 'Тестовый объект выбран',
+  ready_for_setup: 'Готов к настройке',
   qualified: 'Квалифицирована',
-  needs_pms_access: 'Нужен доступ к менеджеру каналов',
-  ready_for_setup: 'Готов к подключению',
   manual_reply_needed: 'Нужен ручной ответ',
   pilot_candidate: 'Кандидат в пилот',
   not_fit: 'Не подходит',
@@ -54,6 +57,41 @@ const STATUS_LABELS: Record<string, string> = {
   demo_offered: 'Демо предложено',
   closed: 'Закрыта',
 };
+
+const CRM_PIPELINE_STATUSES = [
+  'needs_pms_access',
+  'instruction_sent',
+  'access_received',
+  'test_object_selected',
+  'ready_for_setup',
+] as const;
+
+const CRM_ACTIONS: Array<{
+  status: CrmLeadStatus;
+  onboardingStatus: ChannelManagerOnboardingStatus;
+  label: string;
+}> = [
+  {
+    status: 'instruction_sent',
+    onboardingStatus: 'access_instructions_sent',
+    label: 'Инструкция отправлена',
+  },
+  {
+    status: 'access_received',
+    onboardingStatus: 'access_received_offline',
+    label: 'Доступ получен',
+  },
+  {
+    status: 'test_object_selected',
+    onboardingStatus: 'test_object_selected',
+    label: 'Тестовый объект выбран',
+  },
+  {
+    status: 'ready_for_setup',
+    onboardingStatus: 'ready_for_setup',
+    label: 'Готов к настройке',
+  },
+];
 
 const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   new: 'Новый',
@@ -188,10 +226,16 @@ function hasLeadContext(
 }
 
 function statusTone(status: string): string {
-  if (status === 'ready_for_setup' || status === 'qualified' || status === 'pilot_candidate') {
+  if (
+    status === 'ready_for_setup'
+    || status === 'test_object_selected'
+    || status === 'access_received'
+    || status === 'qualified'
+    || status === 'pilot_candidate'
+  ) {
     return 'bg-emerald-50 text-emerald-700 border-emerald-100';
   }
-  if (status === 'manual_reply_needed' || status === 'needs_pms_access') {
+  if (status === 'manual_reply_needed' || status === 'needs_pms_access' || status === 'instruction_sent') {
     return 'bg-amber-50 text-amber-800 border-amber-100';
   }
   if (status === 'not_fit' || status === 'archived' || status === 'closed') {
@@ -209,6 +253,21 @@ function needsManualReply(lead: LeadViewModel): boolean {
 
 function leadNextStep(lead: LeadViewModel): string {
   return lead.automation.nextStep || lead.recommendedNextStep;
+}
+
+function formatLeadStatus(status: string): string {
+  return STATUS_LABELS[status] ?? 'Другой статус';
+}
+
+function crmPipelineIndex(status: string): number {
+  return CRM_PIPELINE_STATUSES.indexOf(status as (typeof CRM_PIPELINE_STATUSES)[number]);
+}
+
+function isCrmActionDone(lead: LeadViewModel, status: CrmLeadStatus): boolean {
+  const currentIndex = crmPipelineIndex(lead.status);
+  const targetIndex = crmPipelineIndex(status);
+  if (targetIndex < 0) return false;
+  return currentIndex >= targetIndex || Boolean(lead.crmActionTimestamps[status as keyof typeof lead.crmActionTimestamps]);
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -528,7 +587,7 @@ export function LeadsDashboardClient() {
             >
               <option value="">Все статусы</option>
               {CRM_LEAD_STATUSES.map((status) => (
-                <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+                <option key={status} value={status}>{formatLeadStatus(status)}</option>
               ))}
             </select>
           </label>
@@ -676,6 +735,10 @@ export function LeadsDashboardClient() {
               if (!selectedLead) return;
               void patchLead(selectedLead.id, { onboardingStatus: status });
             }}
+            onCrmAction={(status, onboardingStatus) => {
+              if (!selectedLead) return;
+              void patchLead(selectedLead.id, { status, onboardingStatus });
+            }}
             onSaveOnboardingNote={() => {
               if (!selectedLead) return;
               void patchLead(selectedLead.id, {
@@ -799,10 +862,10 @@ function LeadsTable({
                       className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-900"
                     >
                       {!CRM_LEAD_STATUSES.includes(lead.status as CrmLeadStatus) ? (
-                        <option value="">{STATUS_LABELS[lead.status] ?? lead.status}</option>
+                        <option value="">{formatLeadStatus(lead.status)}</option>
                       ) : null}
                       {CRM_LEAD_STATUSES.map((status) => (
-                        <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+                        <option key={status} value={status}>{formatLeadStatus(status)}</option>
                       ))}
                     </select>
                     {needsManualReply(lead) ? (
@@ -836,6 +899,7 @@ function LeadDetailPanel({
   onTestObjectChange,
   onSaveNote,
   onOnboardingStatusChange,
+  onCrmAction,
   onSaveOnboardingNote,
   onSaveTestObject,
   onSelectHistory,
@@ -855,6 +919,7 @@ function LeadDetailPanel({
   onTestObjectChange: (value: ChannelManagerTestObject) => void;
   onSaveNote: () => void;
   onOnboardingStatusChange: (status: ChannelManagerOnboardingStatus) => void;
+  onCrmAction: (status: CrmLeadStatus, onboardingStatus: ChannelManagerOnboardingStatus) => void;
   onSaveOnboardingNote: () => void;
   onSaveTestObject: () => void;
   onSelectHistory: (leadId: string) => void;
@@ -906,8 +971,44 @@ function LeadDetailPanel({
       <div className="mt-4 space-y-4">
         <DetailSection title="Статус">
           <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(lead.status)}`}>
-            {STATUS_LABELS[lead.status] ?? lead.status}
+            {formatLeadStatus(lead.status)}
           </span>
+        </DetailSection>
+
+        <DetailSection title="CRM-действия">
+          <div className="grid grid-cols-1 gap-2">
+            {CRM_ACTIONS.map((action) => {
+              const done = isCrmActionDone(lead, action.status);
+              const timestamp = lead.crmActionTimestamps[action.status as keyof typeof lead.crmActionTimestamps];
+              return (
+                <button
+                  key={action.status}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onCrmAction(action.status, action.onboardingStatus)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm font-semibold transition-colors disabled:opacity-50 ${
+                    done
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block">{action.label}</span>
+                    {timestamp ? (
+                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                        Отмечено: {formatDateRu(timestamp)}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
+                    done ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {done ? 'готово' : 'отметить'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </DetailSection>
 
         <DetailSection title="Автоматизация">

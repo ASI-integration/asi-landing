@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   answersJsonWithAdminNote,
   answersJsonWithChannelManagerOnboarding,
+  answersJsonWithCrmStatusAction,
   answersJsonWithSupportStatus,
   buildLeadCopySummary,
   getLatestLeadsByTelegramId,
@@ -170,6 +171,28 @@ describe('dashboard leads parser', () => {
     }, 0, 'answered');
 
     expect(withSupportStatus?.support_requests).toEqual([{ text: 'Вопрос', status: 'answered' }]);
+  });
+
+  it('parses CRM action statuses and stores action timestamps', () => {
+    const answers = answersJsonWithCrmStatusAction(
+      { pms: ['Bnovo'] },
+      'instruction_sent',
+      '2026-06-14T12:00:00.000Z',
+    );
+    const lead = normalizeLeadRow(row({
+      status: 'instruction_sent',
+      answers_json: answers,
+    }));
+
+    expect(answers.crm_actions).toEqual({
+      instruction_sent: {
+        performed_at: '2026-06-14T12:00:00.000Z',
+      },
+    });
+    expect(lead.status).toBe('instruction_sent');
+    expect(lead.crmActionTimestamps).toEqual({
+      instruction_sent: '2026-06-14T12:00:00.000Z',
+    });
   });
 
   it('stores channel manager onboarding updates inside answers_json', () => {
