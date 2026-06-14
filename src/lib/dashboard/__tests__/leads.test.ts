@@ -64,7 +64,7 @@ describe('dashboard leads parser', () => {
     }));
 
     expect(lead.status).toBe('archived');
-    expect(lead.automation.scenario).toBe('has_pms');
+    expect(lead.automation.scenario).toBe('high_value_operator');
     expect(lead.automation.suggestedStatus).toBe('needs_pms_access');
     expect(lead.automation.nextStep).toContain('RealtyCalendar');
     expect(lead.automation.onboardingChecklist).toContain('Выбрать тестовый объект');
@@ -81,6 +81,39 @@ describe('dashboard leads parser', () => {
 
     expect(lead.automation.manualReplyNeeded).toBe(true);
     expect(lead.automation.manualReplyReason).toBe('support_question');
+  });
+
+  it('parses policy metadata for dashboard cards', () => {
+    const lead = normalizeLeadRow(row({
+      answers_json: {
+        object_count_range: '1',
+        object_types: ['Квартиры'],
+        channels: ['Авито'],
+        pms: ['Нет, всё ведём вручную'],
+        policy: {
+          version: 'v1',
+          input_role: 'user_data',
+          security_flags: ['secret_request_attempt'],
+          quality_flags: ['missing_required_fields'],
+          possible_prompt_injection: true,
+          prompt_injection_reason: 'request_for_secrets',
+          lead_completeness_score: 67,
+          missing_required_fields: ['automation_processes', 'time_consumers'],
+          manual_review_recommended: true,
+          manual_review_reason: 'possible_prompt_injection_repeat',
+        },
+      },
+    }));
+
+    expect(lead.policy).toMatchObject({
+      version: 'v1',
+      possible_prompt_injection: true,
+      lead_completeness_score: 67,
+      missing_required_fields: ['automation_processes', 'time_consumers'],
+      manual_review_recommended: true,
+    });
+    expect(lead.automation.manualReplyNeeded).toBe(true);
+    expect(lead.automation.manualReplyReason).toBe('possible_prompt_injection');
   });
 
   it('parses support requests and preserves lead context when present', () => {

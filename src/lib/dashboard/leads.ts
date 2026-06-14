@@ -1,4 +1,5 @@
 import { computeLeadAutomation, type LeadAutomation } from '@/lib/leads/automation';
+import type { InputPolicyResult } from '@/lib/policy/input-policy';
 
 export const CRM_LEAD_STATUSES = [
   'new',
@@ -25,6 +26,18 @@ export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
 export type LeadSource = 'site' | 'tenchat' | 'dzen' | 'support' | 'unknown';
 
 export type LeadAnswersJson = Record<string, unknown>;
+
+export type LeadPolicyView = Pick<InputPolicyResult,
+  | 'version'
+  | 'security_flags'
+  | 'quality_flags'
+  | 'possible_prompt_injection'
+  | 'prompt_injection_reason'
+  | 'lead_completeness_score'
+  | 'missing_required_fields'
+  | 'manual_review_recommended'
+  | 'manual_review_reason'
+>;
 
 export type LeadDbRow = {
   id: string;
@@ -84,6 +97,7 @@ export type LeadViewModel = {
   supportRequests: LeadSupportRequest[];
   hasSupportRequest: boolean;
   automation: LeadAutomation;
+  policy: LeadPolicyView | null;
   isTestLead: boolean;
   copySummary: string;
 };
@@ -141,6 +155,31 @@ function parseOtherTexts(value: unknown): Record<string, string[]> {
     if (values.length) result[key] = values;
   }
   return result;
+}
+
+function asBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function asNumber(value: unknown): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
+}
+
+function parsePolicy(value: unknown): LeadPolicyView | null {
+  const policy = asRecord(value);
+  if (!Object.keys(policy).length) return null;
+  return {
+    version: asString(policy.version) === 'v1' ? 'v1' : 'v1',
+    security_flags: asStringArray(policy.security_flags) as LeadPolicyView['security_flags'],
+    quality_flags: asStringArray(policy.quality_flags) as LeadPolicyView['quality_flags'],
+    possible_prompt_injection: asBoolean(policy.possible_prompt_injection),
+    prompt_injection_reason: asString(policy.prompt_injection_reason) as LeadPolicyView['prompt_injection_reason'] || null,
+    lead_completeness_score: asNumber(policy.lead_completeness_score),
+    missing_required_fields: asStringArray(policy.missing_required_fields),
+    manual_review_recommended: asBoolean(policy.manual_review_recommended),
+    manual_review_reason: asString(policy.manual_review_reason) as LeadPolicyView['manual_review_reason'] || null,
+  };
 }
 
 function isTestSourceValue(value: unknown): boolean {
@@ -254,6 +293,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
   const otherTexts = parseOtherTexts(answers.other_texts);
   const comment = asString(answers.comment) || (otherTexts.comment ?? []).join(' / ');
   const adminNote = asString(answers.admin_note);
+  const policy = parsePolicy(answers.policy);
   const supportRequests = parseSupportRequests(base, answers, source);
   const hasOpenSupportRequest = supportRequests.some(
     (request) => request.status === 'new' || request.status === 'in_progress',
@@ -271,6 +311,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     source,
     hasSupportRequest: supportRequests.length > 0,
     hasOpenSupportRequest,
+    policy,
   });
   const lead: LeadViewModel = {
     ...base,
@@ -294,6 +335,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     supportRequests,
     hasSupportRequest: supportRequests.length > 0,
     automation,
+    policy,
     isTestLead: isTestLeadRow(row, answers, name, telegramUsername),
     copySummary: '',
   };

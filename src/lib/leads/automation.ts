@@ -26,6 +26,8 @@ export type ManualReplyReason =
   | 'unclear_pms'
   | 'high_value_lead'
   | 'custom_other_text'
+  | 'policy_security_review'
+  | 'possible_prompt_injection'
   | 'none';
 
 export type PmsState = 'has_pms' | 'no_pms_manual' | 'choosing_pms' | 'unknown';
@@ -53,6 +55,11 @@ export type LeadAutomationInput = {
   source?: string | null;
   hasSupportRequest?: boolean;
   hasOpenSupportRequest?: boolean;
+  policy?: {
+    possible_prompt_injection?: boolean;
+    manual_review_recommended?: boolean;
+    manual_review_reason?: string | null;
+  } | null;
 };
 
 export type LeadAutomation = {
@@ -69,7 +76,7 @@ export type LeadAutomation = {
 
 const HAS_PMS_CHECKLIST = [
   'Уточнить менеджер каналов',
-  'Получить доступ / API / приглашение',
+  'Получить доступ, API-ключ или приглашение',
   'Выбрать тестовый объект',
   'Проверить список каналов',
   'Запустить тестовый сценарий автоматизации',
@@ -298,6 +305,12 @@ function resolveManualReply(
   supportSignal: boolean,
   highValue: boolean,
 ): { needed: boolean; reason: ManualReplyReason } {
+  if (input.policy?.manual_review_recommended) {
+    return {
+      needed: true,
+      reason: input.policy.possible_prompt_injection ? 'possible_prompt_injection' : 'policy_security_review',
+    };
+  }
   if (supportSignal) return { needed: true, reason: 'support_question' };
   if (highValue) return { needed: true, reason: 'high_value_lead' };
   // Commercial / mixed portfolios always need a human look, even with a single

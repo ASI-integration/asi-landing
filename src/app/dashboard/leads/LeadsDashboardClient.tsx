@@ -76,6 +76,22 @@ const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
   none: 'Нет',
 };
 
+const POLICY_MISSING_FIELD_LABELS: Record<string, string> = {
+  object_count_range: 'количество объектов',
+  object_types: 'тип объектов',
+  channels: 'каналы',
+  pms: 'менеджер каналов',
+  automation_processes: 'что хочет автоматизировать',
+  time_consumers: 'что съедает время',
+};
+
+const POLICY_REASON_LABELS: Record<string, string> = {
+  possible_prompt_injection_repeat: 'несколько подозрительных сообщений подряд',
+  policy_security_review: 'нужна проверка безопасности',
+  low_completeness: 'мало данных в анкете',
+  possible_prompt_injection: 'есть флаги безопасности',
+};
+
 const SOFT_EMPTY = 'Пока не указано';
 
 function formatDateRu(iso: string | null | undefined): string {
@@ -251,6 +267,43 @@ function SupportLeadContext({ context }: { context: LeadSupportRequest['leadCont
         ) : null}
       </dl>
     </div>
+  );
+}
+
+function PolicyProcessingSection({ policy }: { policy: LeadViewModel['policy'] }) {
+  if (!policy) return null;
+  const hasSecurityFlags = policy.possible_prompt_injection || policy.security_flags.length > 0;
+  const missing = policy.missing_required_fields.map((field) => POLICY_MISSING_FIELD_LABELS[field] ?? field);
+  const reason = policy.manual_review_reason
+    ? POLICY_REASON_LABELS[policy.manual_review_reason] ?? policy.manual_review_reason
+    : policy.prompt_injection_reason
+      ? POLICY_REASON_LABELS[policy.prompt_injection_reason] ?? 'есть флаги безопасности'
+      : SOFT_EMPTY;
+
+  return (
+    <DetailSection title="Политика обработки">
+      <dl className="grid grid-cols-1 gap-3">
+        <DetailField label="Безопасность">
+          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+            hasSecurityFlags ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+          }`}>
+            {hasSecurityFlags ? 'есть флаги' : 'спокойно'}
+          </span>
+        </DetailField>
+        <DetailField label="Качество заявки">{policy.lead_completeness_score}%</DetailField>
+        {missing.length ? (
+          <DetailField label="Не хватает данных">
+            <ul className="mt-0.5 list-disc space-y-1 pl-5">
+              {missing.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          </DetailField>
+        ) : null}
+        <DetailField label="Нужна ручная проверка">{policy.manual_review_recommended ? 'Да' : 'Нет'}</DetailField>
+        {(policy.manual_review_recommended || hasSecurityFlags) ? (
+          <DetailField label="Причина">{reason}</DetailField>
+        ) : null}
+      </dl>
+    </DetailSection>
   );
 }
 
@@ -792,6 +845,8 @@ function LeadDetailPanel({
             </DetailField>
           </dl>
         </DetailSection>
+
+        <PolicyProcessingSection policy={lead.policy} />
 
         <DetailSection title="Потенциал">
           <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.leadPotential)}</p>

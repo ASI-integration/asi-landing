@@ -14,6 +14,15 @@ import {
   detectPromptInjection,
   wrapUserProvidedText,
 } from '@/lib/leads/prompt-injection';
+import {
+  evaluateInputPolicy,
+  getMissingFinalMinimumFields,
+  mergePolicyResults,
+  policyTextMetadata,
+  type InputPolicyContext,
+  type InputPolicyResult,
+  type InputPolicyTextMetadata,
+} from '@/lib/policy/input-policy';
 import { callLLM } from '@/lib/openai';
 import { supabase } from '@/lib/supabase';
 import {
@@ -78,6 +87,7 @@ type SupportRequest = {
   status: 'new';
   received_at: string;
   lead_context?: SupportLeadContext;
+  policy?: InputPolicyTextMetadata;
   support_ai_intent: string | null;
   support_ai_summary: string | null;
   support_auto_reply_eligible: boolean;
@@ -100,6 +110,8 @@ type LeadAnswers = {
   source?: SupportRequestSource;
   support_requests?: SupportRequest[];
   support_lead_context?: SupportLeadContext;
+  policy?: InputPolicyResult;
+  policy_texts?: InputPolicyTextMetadata[];
   security_flags?: {
     possible_prompt_injection?: boolean;
   };
@@ -306,6 +318,17 @@ const MAIN_MENU_REPLY = 'Выберите, что хотите сделать:';
 const EMPTY_REQUIRED_REPLY =
   'Кажется, здесь пока ничего не выбрано 🙂 Вернитесь, пожалуйста, назад и отметьте подходящий вариант. ASI ещё не умеет читать мысли, но мы над этим работаем.';
 
+const PROMPT_INJECTION_FRIENDLY_REPLY =
+  'Похоже, вы проверяете, насколько ASI устойчив к хитрым инструкциям 🙂 Я сохраню сообщение как комментарий, но системные правила, статусы и доступы меняются только по внутренней логике.';
+
+const INSUFFICIENT_LEAD_REPLY =
+  'Похоже, данных пока маловато для нормального разбора 🙂 ASI ещё не читает мысли, хотя этот модуль уже просится в roadmap.\n\n' +
+  'Пожалуйста, вернитесь и заполните хотя бы:\n\n' +
+  '1. тип объектов;\n' +
+  '2. каналы;\n' +
+  '3. менеджер каналов;\n' +
+  '4. что хотите автоматизировать.';
+
 const SUPPORT_PROMPT =
   'Напишите вопрос одним сообщением. Я передам его администратору ASI. Позже часть ответов будет обрабатываться автоматически.';
 
@@ -436,6 +459,80 @@ function withFlow(answers: LeadAnswers, step: LeadFlowStep, extra: Partial<NonNu
   };
 }
 
+function leadPolicyContext(answers: LeadAnswers) {
+  return {
+    object_count_range: answers.object_count_range,
+    object_types: answers.object_types,
+    channels: answers.channels,
+    pms: answers.pms,
+    automation_processes: answers.automation_processes,
+    time_consumers: answers.time_consumers,
+    policy: answers.policy,
+  };
+}
+
+function withPolicy(answers: LeadAnswers, policy: InputPolicyResult, field?: string): LeadAnswers {
+  const merged = mergePolicyResults(answers.policy, policy);
+  return {
+    ...answers,
+    policy: merged,
+    ...(merged.possible_prompt_injection
+      ? {
+          security_flags: {
+            ...(answers.security_flags ?? {}),
+            possible_prompt_injection: true,
+          },
+        }
+      : {}),
+    ...(field
+      ? {
+          policy_texts: [
+            ...(answers.policy_texts ?? []),
+            policyTextMetadata(field, policy),
+          ].slice(-20),
+        }
+      : {}),
+  };
+}
+
+function evaluateTextPolicy(
+  answers: LeadAnswers,
+  field: string,
+  text: string,
+  context: InputPolicyContext,
+): { answers: LeadAnswers; policy: InputPolicyResult } {
+  const policy = evaluateInputPolicy({
+    context,
+    raw_text: text,
+    source: answers.source,
+    current_lead_context: leadPolicyContext(answers),
+  });
+  return { answers: withPolicy(answers, policy, field), policy };
+}
+
+function refreshFinalPolicy(answers: LeadAnswers): LeadAnswers {
+  const policy = evaluateInputPolicy({
+    context: 'final_check',
+    raw_text: '',
+    source: answers.source,
+    current_lead_context: leadPolicyContext(answers),
+  });
+  return withPolicy(answers, policy);
+}
+
+function hasExplicitPromptInjection(policy: InputPolicyResult): boolean {
+  return policy.security_flags.some((flag) => (
+    flag === 'ignore_instructions_attempt'
+      || flag === 'secret_request_attempt'
+      || flag === 'status_or_potential_change_attempt'
+      || flag === 'system_rules_change_attempt'
+  ));
+}
+
+function isLeadTooIncompleteForCompletion(answers: LeadAnswers): boolean {
+  return getMissingFinalMinimumFields(leadPolicyContext(answers)).length > 0;
+}
+
 function addOtherText(answers: LeadAnswers, step: LeadOtherStep | 'comment', text: string): LeadAnswers {
   const clean = text.trim();
   if (!clean) return answers;
@@ -479,6 +576,15 @@ function supportKeyboard(): Record<string, unknown> {
     inline_keyboard: [
       [{ text: 'Оставить заявку', callback_data: callbackData({ kind: 'start_lead' }) }],
       [{ text: 'Назад', callback_data: callbackData({ kind: 'back' }) }],
+    ],
+  };
+}
+
+function insufficientLeadKeyboard(): Record<string, unknown> {
+  return {
+    inline_keyboard: [
+      [{ text: 'Заполнить недостающее', callback_data: callbackData({ kind: 'start_lead' }) }],
+      [{ text: 'Задать вопрос в поддержку', callback_data: callbackData({ kind: 'support' }) }],
     ],
   };
 }
@@ -1034,6 +1140,34 @@ const SUPPORT_REQUEST_STATUS_LABELS: Record<string, string> = {
   archived: 'Архив',
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  site: 'Сайт',
+  tenchat: 'TenChat',
+  dzen: 'Дзен',
+  support: 'Поддержка',
+  unknown: 'Неизвестно',
+};
+
+const POLICY_SECURITY_FLAG_LABELS: Record<string, string> = {
+  ignore_instructions_attempt: 'попытка игнорировать правила',
+  system_rules_change_attempt: 'попытка изменить правила системы',
+  secret_request_attempt: 'запрос секретов',
+  status_or_potential_change_attempt: 'попытка изменить статус или потенциал',
+  admin_role_attempt: 'попытка получить роль администратора',
+  hide_from_admin_attempt: 'попытка скрыть сообщение от администратора',
+  ai_rule_override_attempt: 'попытка заставить AI отвечать не по правилам',
+  system_instruction_impersonation: 'попытка выдать текст за системную инструкцию',
+};
+
+const POLICY_MISSING_FIELD_LABELS: Record<string, string> = {
+  object_count_range: 'количество объектов',
+  object_types: 'тип объектов',
+  channels: 'каналы',
+  pms: 'менеджер каналов',
+  automation_processes: 'что хочет автоматизировать',
+  time_consumers: 'что съедает время',
+};
+
 function sanitizeVisibleText(value: string): string {
   return value
     .replace(/PMS\/МК/gi, 'Менеджер каналов')
@@ -1073,6 +1207,31 @@ function formatNumberedSection(title: string, value: string[] | undefined): stri
   return lines.length ? formatSection(title, lines) : null;
 }
 
+function formatPolicySections(policy: InputPolicyResult | undefined): string[] {
+  if (!policy) return [];
+  const sections: string[] = [];
+  if (policy.possible_prompt_injection || policy.security_flags.length) {
+    const reason = policy.security_flags
+      .map((flag) => POLICY_SECURITY_FLAG_LABELS[flag] ?? flag)
+      .filter(Boolean)
+      .join(' / ');
+    sections.push(formatSection('Безопасность', [
+      `Возможная prompt injection: ${policy.possible_prompt_injection ? 'да' : 'нет'}`,
+      reason ? `Причина: ${reason}` : null,
+      'Действие: текст сохранён как пользовательские данные, инструкции не выполнялись',
+    ])!);
+  }
+  if (policy.quality_flags.length || policy.missing_required_fields.length) {
+    const missing = policy.missing_required_fields.map((field) => POLICY_MISSING_FIELD_LABELS[field] ?? field);
+    sections.push(formatSection('Качество заявки', [
+      `Полнота: ${policy.lead_completeness_score}%`,
+      missing.length ? 'Не хватает:' : null,
+      ...formatNumberedList(missing),
+    ])!);
+  }
+  return sections;
+}
+
 function formatAdminNotification(lead: LeadRow): string {
   const answers = lead.answers_json ?? {};
   const username = lead.telegram_username ? `@${lead.telegram_username}` : 'username не указан';
@@ -1082,6 +1241,7 @@ function formatAdminNotification(lead: LeadRow): string {
   const automation = answers.automation;
   const automationStep = automation?.recommended_next_step || answers.recommended_next_step;
   const status = automation?.suggested_status ?? lead.status;
+  const sourceLabel = SOURCE_LABELS[lead.source] ?? lead.source;
   const commentLines = [
     ...(answers.comment ? [answers.comment] : []),
     ...(answers.other_texts?.comment ?? []),
@@ -1096,7 +1256,7 @@ function formatAdminNotification(lead: LeadRow): string {
   const manualReplyReason = labelFromMap(automation?.manual_reply_reason, MANUAL_REPLY_REASON_LABELS, 'Нет');
   const sections = [
     formatSection('Основное', [
-      `Источник: ${lead.source}`,
+      `Источник: ${sourceLabel}`,
       `Имя: ${lead.first_name ?? SOFT_EMPTY_VALUE} (${username})`,
       `Объектов: ${answers.object_count_range ?? SOFT_EMPTY_VALUE}`,
       `Статус: ${labelFromMap(status, STATUS_LABELS)}`,
@@ -1109,6 +1269,7 @@ function formatAdminNotification(lead: LeadRow): string {
     userTextLines.length
       ? formatSection('Комментарий пользователя', userTextLines.length === 1 ? userTextLines : formatNumberedList(userTextLines))
       : null,
+    ...formatPolicySections(answers.policy),
     formatSection('Автоматизация', [
       `Тип лида: ${answers.lead_type ? sanitizeVisibleText(answers.lead_type) : SOFT_EMPTY_VALUE}`,
       `Сценарий: ${labelFromMap(automation?.lead_scenario, SCENARIO_LABELS)}`,
@@ -1161,6 +1322,7 @@ function buildSupportRequest(
   text: string,
   source: SupportRequestSource,
   context?: SupportLeadContext,
+  policy?: InputPolicyResult,
 ): SupportRequest {
   return {
     source,
@@ -1168,9 +1330,10 @@ function buildSupportRequest(
     status: 'new',
     received_at: new Date().toISOString(),
     ...(context ? { lead_context: context } : {}),
+    ...(policy ? { policy: policyTextMetadata('support_question', policy) } : {}),
     // Свободный текст вопроса — это данные. При явной попытке обойти инструкции
     // помечаем безопасно, сырой текст не интерпретируем как команду.
-    support_ai_intent: detectPromptInjection(text) ? SUPPORT_AI_INTENT_INJECTION : null,
+    support_ai_intent: policy?.possible_prompt_injection || detectPromptInjection(text) ? SUPPORT_AI_INTENT_INJECTION : null,
     support_ai_summary: null,
     support_auto_reply_eligible: false,
   };
@@ -1221,13 +1384,14 @@ function formatSupportAdminNotification(
       ? ['⚠️ Внимание: возможная попытка обойти инструкции в тексте вопроса. Обработано как обычные данные, без авто-ответа.']
       : []),
     formatSection('Основное', [
-      `Источник: ${request.source}`,
+      `Источник: ${SOURCE_LABELS[request.source] ?? request.source}`,
       `Имя: ${user.first_name ?? lead.first_name ?? SOFT_EMPTY_VALUE}`,
       `Username: ${username}`,
       `Telegram ID: ${user.telegram_user_id}`,
       `Статус: ${labelFromMap(request.status, SUPPORT_REQUEST_STATUS_LABELS)}`,
     ]),
     formatSection('Вопрос пользователя', [sanitizeVisibleText(request.text)]),
+    ...formatPolicySections(lead.answers_json?.policy),
     ...contextSections,
     formatSection('Пользователь', [telegramUserLink(user)]),
   ].join('\n\n');
@@ -1269,6 +1433,7 @@ function automationInputFromAnswers(
     source: answers.source,
     hasSupportRequest: overrides.hasSupportRequest ?? supportRequests.length > 0,
     hasOpenSupportRequest: overrides.hasOpenSupportRequest,
+    policy: answers.policy,
   };
 }
 
@@ -1290,7 +1455,7 @@ async function completeLead(
   user: TelegramLeadUser,
   answers: LeadAnswers,
 ): Promise<{ lead: LeadRow | null; automation: LeadAutomation }> {
-  const finalized = await finalizeAnswers(answers);
+  const finalized = await finalizeAnswers(refreshFinalPolicy(answers));
   const automation = computeLeadAutomation(automationInputFromAnswers(finalized));
   const withAuto = withAutomation(finalized, automation);
   // Only set the auto status when the row is still untouched ('new').
@@ -1385,12 +1550,14 @@ async function handleSupportText(
 ): Promise<ProcessResult> {
   const latestLead = await findLatestLead(user.telegram_user_id);
   const contextSource = latestLead?.id === lead.id ? lead : latestLead;
+  const policyResult = evaluateTextPolicy(lead.answers_json ?? {}, 'support_question', text, 'support_question');
   const request = buildSupportRequest(
     text,
     supportSourceForLead(lead, 'support'),
     lead.answers_json?.support_lead_context ?? leadContextFromAnswers(contextSource?.answers_json),
+    policyResult.policy,
   );
-  const requestAnswers = withSupportRequest(lead.answers_json ?? {}, request);
+  const requestAnswers = withSupportRequest(policyResult.answers, request);
   const automation = computeLeadAutomation(
     automationInputFromAnswers(requestAnswers, { hasSupportRequest: true, hasOpenSupportRequest: true }),
   );
@@ -1414,7 +1581,8 @@ async function handleSupportText(
   }
 
   await notifySupportAdmin(updatedLead, user, request);
-  await replyToTelegram(user.chat_id, SUPPORT_CONFIRMATION, {
+  const reply = hasExplicitPromptInjection(policyResult.policy) ? PROMPT_INJECTION_FRIENDLY_REPLY : SUPPORT_CONFIRMATION;
+  await replyToTelegram(user.chat_id, reply, {
     handler: 'asi_feedback_lead_intake/support_completed',
     update_id: update.update_id,
   }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: mainMenuKeyboard() });
@@ -1424,7 +1592,7 @@ async function handleSupportText(
     update_id: update.update_id,
     chat_id: user.chat_id,
     category: MessageCategory.Start,
-    reply: SUPPORT_CONFIRMATION,
+    reply,
   };
 }
 
@@ -1449,7 +1617,20 @@ async function handleTextAnswer(
 
   if (awaiting === 'comment') {
     let answers: LeadAnswers = addOtherText({ ...current, comment: text.trim() }, 'comment', text);
+    const policyResult = evaluateTextPolicy(answers, 'comment', text, 'comment');
+    answers = policyResult.answers;
     if (detectPromptInjection(text)) answers = flagPromptInjection(answers);
+    const checkedAnswers = refreshFinalPolicy(answers);
+    if (isLeadTooIncompleteForCompletion(checkedAnswers)) {
+      const nextAnswers = withFlow(checkedAnswers, 'comment', { awaiting_text_for: 'comment' });
+      const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+      if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+      await replyToTelegram(user.chat_id, INSUFFICIENT_LEAD_REPLY, {
+        handler: 'asi_feedback_lead_intake/insufficient',
+        update_id: update.update_id,
+      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: insufficientLeadKeyboard() });
+      return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: INSUFFICIENT_LEAD_REPLY };
+    }
     const { lead: updatedLead, automation } = await completeLead(lead, user, answers);
     if (!updatedLead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
@@ -1458,7 +1639,9 @@ async function handleTextAnswer(
       }, getAsiFeedbackTelegramSendOptions());
       return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
     }
-    const finalReply = finalReplyForAutomation(automation);
+    const finalReply = hasExplicitPromptInjection(policyResult.policy)
+      ? PROMPT_INJECTION_FRIENDLY_REPLY
+      : finalReplyForAutomation(automation);
     await replyToTelegram(user.chat_id, finalReply, {
       handler: 'asi_feedback_lead_intake/completed',
       update_id: update.update_id,
@@ -1469,18 +1652,29 @@ async function handleTextAnswer(
 
   const normalized = await aiNormalizeOther(awaiting, text);
   let normalizedAnswers = applyNormalizedOther(current, awaiting, text, normalized);
+  const policyResult = evaluateTextPolicy(normalizedAnswers, awaiting, text, 'other_text');
+  normalizedAnswers = policyResult.answers;
   if (detectPromptInjection(text)) normalizedAnswers = flagPromptInjection(normalizedAnswers);
   const nextAnswers = withFlow(normalizedAnswers, awaiting);
   const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
   if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
 
-  await sendQuestion(user, awaiting, updatedLead.answers_json ?? nextAnswers, update.update_id);
+  if (hasExplicitPromptInjection(policyResult.policy)) {
+    await replyToTelegram(user.chat_id, PROMPT_INJECTION_FRIENDLY_REPLY, {
+      handler: 'asi_feedback_lead_intake/policy_prompt_injection',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+  } else {
+    await sendQuestion(user, awaiting, updatedLead.answers_json ?? nextAnswers, update.update_id);
+  }
   return {
     outcome: ProcessOutcome.Replied,
     update_id: update.update_id,
     chat_id: user.chat_id,
     category: MessageCategory.Start,
-    reply: questionText(awaiting, updatedLead.answers_json ?? nextAnswers),
+    reply: hasExplicitPromptInjection(policyResult.policy)
+      ? PROMPT_INJECTION_FRIENDLY_REPLY
+      : questionText(awaiting, updatedLead.answers_json ?? nextAnswers),
   };
 }
 
@@ -1603,7 +1797,18 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
   }
 
   if (action.kind === 'skip_comment') {
-    const { lead: updatedLead, automation } = await completeLead(lead, user, nextAnswers);
+    const checkedAnswers = refreshFinalPolicy(nextAnswers);
+    if (isLeadTooIncompleteForCompletion(checkedAnswers)) {
+      const nextIncompleteAnswers = withFlow(checkedAnswers, 'comment');
+      const updatedLead = await persistOrReplyError(lead, user, nextIncompleteAnswers, update.update_id);
+      if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+      await replyToTelegram(user.chat_id, INSUFFICIENT_LEAD_REPLY, {
+        handler: 'asi_feedback_lead_intake/insufficient',
+        update_id: update.update_id,
+      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: insufficientLeadKeyboard() });
+      return { outcome: ProcessOutcome.Replied, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: INSUFFICIENT_LEAD_REPLY };
+    }
+    const { lead: updatedLead, automation } = await completeLead(lead, user, checkedAnswers);
     if (!updatedLead) {
       await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
         handler: 'asi_feedback_lead_intake/storage_error',
