@@ -142,6 +142,7 @@ function resolvePmsState(pms?: string[]): PmsState {
     'travel line',
     'shelter',
     'другой pms',
+    'другой менеджер каналов',
     'менеджер каналов',
   ])) {
     return 'has_pms';
@@ -150,7 +151,7 @@ function resolvePmsState(pms?: string[]): PmsState {
 }
 
 function isUnrecognizedPms(pms?: string[]): boolean {
-  return hasAny(pms, ['другой pms']);
+  return hasAny(pms, ['другой pms', 'другой менеджер каналов']);
 }
 
 function isMiniHotel(objectTypes?: string[]): boolean {

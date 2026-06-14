@@ -112,6 +112,7 @@ type LeadAnswers = {
     recommended_next_step?: string;
     onboarding_checklist?: string[];
     suggested_status?: string;
+    potential?: LeadPotential;
   };
   flow?: {
     step: LeadFlowStep;
@@ -174,7 +175,7 @@ const STEP_LABELS: Record<LeadQuestionStep, string> = {
   object_count: 'Сколько объектов у вас сейчас?',
   object_types: 'Какой тип объектов у вас основной? Можно выбрать несколько.',
   channels: 'Какие каналы уже используете? Можно выбрать несколько.',
-  pms: 'Используете ли менеджер каналов или PMS?',
+  pms: 'Используете ли менеджер каналов?',
   automation_processes: 'Какие процессы хотите автоматизировать? Можно выбрать несколько.',
   time_consumers: 'Что сейчас больше всего съедает время? Можно выбрать несколько.',
   comment: 'Можно коротко описать ситуацию своими словами или нажать «Пропустить».',
@@ -226,7 +227,7 @@ const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
     { id: 'realtycalendar', label: 'RealtyCalendar' },
     { id: 'travelline', label: 'TravelLine' },
     { id: 'shelter', label: 'Shelter' },
-    { id: 'other', label: 'Другой PMS / менеджер каналов' },
+    { id: 'other', label: 'Другой менеджер каналов' },
     { id: 'manual', label: 'Нет, всё ведём вручную' },
     { id: 'choosing', label: 'Только выбираем / подключаем' },
   ],
@@ -239,7 +240,7 @@ const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
     { id: 'content_data', label: 'Фото, описания и данные объектов' },
     { id: 'reports', label: 'Отчётность' },
     { id: 'ota_channels', label: 'Подключение каналов / OTA' },
-    { id: 'pms_work', label: 'Работа с PMS / менеджером каналов' },
+    { id: 'pms_work', label: 'Работа с менеджером каналов' },
     { id: 'other', label: 'Другое' },
   ],
   time_consumers: [
@@ -763,7 +764,7 @@ function normalizeKnownOtherText(step: LeadOtherStep, text: string): string[] {
 function applyNormalizedOther(answers: LeadAnswers, step: LeadOtherStep, text: string, normalized: string[]): LeadAnswers {
   let next = addOtherText(answers, step, text);
   if (step === 'pms') {
-    next = { ...next, pms: ['Другой PMS / менеджер каналов'] };
+    next = { ...next, pms: ['Другой менеджер каналов'] };
     return next;
   }
 
@@ -989,16 +990,87 @@ function isRecommendedNextStep(value: unknown): value is RecommendedNextStep {
   ].includes(String(value));
 }
 
-function formatList(value: string[] | undefined): string {
-  return value?.length ? value.join(', ') : 'не указано';
+const SOFT_EMPTY_VALUE = 'Пока не указано';
+
+const SCENARIO_LABELS: Record<string, string> = {
+  has_pms: 'Есть менеджер каналов',
+  no_pms_manual: 'Без менеджера каналов, всё ведётся вручную',
+  choosing_pms: 'Менеджер каналов выбирается или подключается',
+  support_question: 'Вопрос в поддержку',
+  high_value_operator: 'Потенциально крупный управляющий',
+  small_host: 'Небольшой владелец / управляющий',
+  commercial_property: 'Коммерческая недвижимость',
+  mixed_portfolio: 'Смешанный портфель объектов',
+  unclear: 'Нужно уточнение',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  new: 'Новая',
+  qualified: 'Квалифицирована',
+  needs_pms_access: 'Нужен доступ к менеджеру каналов',
+  ready_for_setup: 'Готова к подключению',
+  manual_reply_needed: 'Нужен ручной ответ',
+  pilot_candidate: 'Кандидат в пилот',
+  not_fit: 'Не подходит',
+  archived: 'Архив',
+  contacted: 'Связались',
+  demo_offered: 'Демо предложено',
+  closed: 'Закрыта',
+};
+
+const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
+  support_question: 'Вопрос в поддержку',
+  needs_pms_access: 'Нужен доступ к менеджеру каналов',
+  unclear_pms: 'Неясно, какой менеджер каналов используется',
+  high_value_lead: 'Потенциально важный лид',
+  custom_other_text: 'Есть нестандартный ответ',
+  none: 'Нет',
+};
+
+const SUPPORT_REQUEST_STATUS_LABELS: Record<string, string> = {
+  new: 'Новый',
+  in_progress: 'В работе',
+  answered: 'Отвечен',
+  archived: 'Архив',
+};
+
+function sanitizeVisibleText(value: string): string {
+  return value
+    .replace(/PMS\/МК/gi, 'Менеджер каналов')
+    .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
+    .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
+    .replace(/Другой PMS\s*\/\s*менеджер каналов/gi, 'Другой менеджер каналов')
+    .replace(/Работа с PMS\s*\/\s*менеджером каналов/gi, 'Работа с менеджером каналов')
+    .replace(/доступ к PMS\s*\/\s*менеджеру каналов/gi, 'доступ к менеджеру каналов')
+    .replace(/PMS\s*\/\s*менеджер каналов/gi, 'Менеджер каналов')
+    .replace(/PMS\s*\/\s*менеджером каналов/gi, 'менеджером каналов')
+    .replace(/\bPMS\b/g, 'менеджер каналов')
+    .replace(/\bpms\b/g, 'менеджер каналов')
+    .replace(/\bМК\b/g, 'менеджер каналов');
 }
 
-// Длинные списки в админской карточке выводим под номерами, чтобы при выборе
-// многих OTA/процессов отчёт не сливался в одну строку.
-function formatNumberedSection(title: string, value: string[] | undefined): string {
-  if (!value?.length) return `${title}: не указано`;
-  const lines = value.map((item, index) => `${index + 1}. ${item}`);
-  return [`${title}:`, ...lines].join('\n');
+function labelFromMap(value: unknown, labels: Record<string, string>, fallback = SOFT_EMPTY_VALUE): string {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  return labels[value] ?? sanitizeVisibleText(value);
+}
+
+function formatList(value: string[] | undefined, fallback = SOFT_EMPTY_VALUE): string {
+  return value?.length ? value.map(sanitizeVisibleText).join(', ') : fallback;
+}
+
+function formatNumberedList(value: string[] | undefined): string[] {
+  return (value ?? []).filter(Boolean).map((item, index) => `${index + 1}. ${sanitizeVisibleText(item)}`);
+}
+
+function formatSection(title: string, lines: Array<string | null | undefined>): string | null {
+  const visible = lines.filter((line): line is string => Boolean(line?.trim()));
+  if (!visible.length) return null;
+  return [`✅ ${title}`, ...visible].join('\n');
+}
+
+function formatNumberedSection(title: string, value: string[] | undefined): string | null {
+  const lines = formatNumberedList(value);
+  return lines.length ? formatSection(title, lines) : null;
 }
 
 function formatAdminNotification(lead: LeadRow): string {
@@ -1007,33 +1079,55 @@ function formatAdminNotification(lead: LeadRow): string {
   const userLink = lead.telegram_username
     ? `https://t.me/${lead.telegram_username}`
     : `telegram_user_id=${lead.telegram_user_id}`;
-  const comment = answers.comment || answers.other_texts?.comment?.join(' / ') || 'нет';
   const automation = answers.automation;
-  const automationStep = automation?.recommended_next_step || answers.recommended_next_step || 'не определён';
+  const automationStep = automation?.recommended_next_step || answers.recommended_next_step;
+  const status = automation?.suggested_status ?? lead.status;
+  const commentLines = [
+    ...(answers.comment ? [answers.comment] : []),
+    ...(answers.other_texts?.comment ?? []),
+  ].map(sanitizeVisibleText);
+  const otherTextLines = Object.entries(answers.other_texts ?? {})
+    .filter(([key]) => key !== 'comment')
+    .flatMap(([, values]) => (Array.isArray(values) ? values : []))
+    .filter(Boolean)
+    .map(sanitizeVisibleText);
+  const userTextLines = [...commentLines, ...otherTextLines];
+  const manualReplyNeeded = Boolean(automation?.manual_reply_needed);
+  const manualReplyReason = labelFromMap(automation?.manual_reply_reason, MANUAL_REPLY_REASON_LABELS, 'Нет');
+  const sections = [
+    formatSection('Основное', [
+      `Источник: ${lead.source}`,
+      `Имя: ${lead.first_name ?? SOFT_EMPTY_VALUE} (${username})`,
+      `Объектов: ${answers.object_count_range ?? SOFT_EMPTY_VALUE}`,
+      `Статус: ${labelFromMap(status, STATUS_LABELS)}`,
+    ]),
+    formatNumberedSection('Типы объектов', answers.object_types),
+    formatNumberedSection('Каналы', answers.channels),
+    formatSection('Менеджер каналов', [formatList(answers.pms)]),
+    formatNumberedSection('Что хочет автоматизировать', answers.automation_processes),
+    formatNumberedSection('Что съедает время', answers.time_consumers),
+    userTextLines.length
+      ? formatSection('Комментарий пользователя', userTextLines.length === 1 ? userTextLines : formatNumberedList(userTextLines))
+      : null,
+    formatSection('Автоматизация', [
+      `Тип лида: ${answers.lead_type ? sanitizeVisibleText(answers.lead_type) : SOFT_EMPTY_VALUE}`,
+      `Сценарий: ${labelFromMap(automation?.lead_scenario, SCENARIO_LABELS)}`,
+      `Потенциал: ${answers.lead_potential ?? automation?.potential ?? SOFT_EMPTY_VALUE}`,
+      `Нужен ручной ответ: ${manualReplyNeeded ? 'да' : 'нет'}`,
+      manualReplyNeeded && manualReplyReason !== 'Нет' ? `Причина ручного ответа: ${manualReplyReason}` : null,
+    ]),
+    automationStep ? formatSection('Следующий шаг', [sanitizeVisibleText(automationStep)]) : null,
+    formatNumberedSection('Чеклист', automation?.onboarding_checklist as string[] | undefined),
+    formatSection('Пользователь', [userLink]),
+  ].filter((section): section is string => Boolean(section));
 
   return [
     'Новая заявка ASI',
     ...(answers.security_flags?.possible_prompt_injection
       ? ['⚠️ Внимание: в свободном тексте возможна попытка обойти инструкции. Текст сохранён как обычные данные, правила классификации не менялись.']
       : []),
-    `Источник: ${lead.source}`,
-    `Имя: ${lead.first_name ?? 'не указано'} (${username})`,
-    `Объектов: ${answers.object_count_range ?? 'не указано'}`,
-    formatNumberedSection('Типы объектов', answers.object_types),
-    formatNumberedSection('Каналы', answers.channels),
-    `Менеджер каналов: ${formatList(answers.pms)}`,
-    formatNumberedSection('Что хочет автоматизировать', answers.automation_processes),
-    formatNumberedSection('Что съедает время', answers.time_consumers),
-    `Комментарий: ${comment}`,
-    `AI-сводка: ${answers.ai_summary ?? 'не сформирована'}`,
-    `Тип лида: ${answers.lead_type ?? 'не определён'}`,
-    `Потенциал: ${answers.lead_potential ?? 'не определён'}`,
-    `Сценарий: ${automation?.lead_scenario ?? 'не определён'}`,
-    `Нужен ручной ответ: ${automation?.manual_reply_needed ? 'да' : 'нет'}`,
-    `Статус: ${automation?.suggested_status ?? lead.status}`,
-    `Следующий шаг: ${automationStep}`,
-    `Пользователь: ${userLink}`,
-  ].join('\n');
+    ...sections,
+  ].join('\n\n');
 }
 
 async function notifyAdmin(lead: LeadRow): Promise<void> {
@@ -1110,15 +1204,15 @@ function formatSupportAdminNotification(
 ): string {
   const username = user.telegram_username ? `@${user.telegram_username}` : 'не указан';
   const context = request.lead_context;
-  const contextLines = context
+  const contextSections = context
     ? [
-        '',
-        'Контекст лида:',
-        `Объектов: ${context.object_count_range ?? 'не указано'}`,
-        `Тип объектов: ${formatList(context.object_types)}`,
-        `Менеджер каналов: ${formatList(context.pms)}`,
-        `Что хотел автоматизировать: ${formatList(context.automation_processes)}`,
-      ]
+        formatSection('Контекст лида', [
+          `Объектов: ${context.object_count_range ?? SOFT_EMPTY_VALUE}`,
+          context.pms?.length ? `Менеджер каналов: ${formatList(context.pms)}` : null,
+        ]),
+        formatNumberedSection('Типы объектов', context.object_types),
+        formatNumberedSection('Что хотел автоматизировать', context.automation_processes),
+      ].filter((section): section is string => Boolean(section))
     : [];
 
   return [
@@ -1126,15 +1220,17 @@ function formatSupportAdminNotification(
     ...(request.support_ai_intent === SUPPORT_AI_INTENT_INJECTION
       ? ['⚠️ Внимание: возможная попытка обойти инструкции в тексте вопроса. Обработано как обычные данные, без авто-ответа.']
       : []),
-    `Источник: ${request.source}`,
-    `Имя: ${user.first_name ?? lead.first_name ?? 'не указано'}`,
-    `Username: ${username}`,
-    `Telegram ID: ${user.telegram_user_id}`,
-    `Текст вопроса: ${request.text}`,
-    `Пользователь: ${telegramUserLink(user)}`,
-    `Статус: ${request.status}`,
-    ...contextLines,
-  ].join('\n');
+    formatSection('Основное', [
+      `Источник: ${request.source}`,
+      `Имя: ${user.first_name ?? lead.first_name ?? SOFT_EMPTY_VALUE}`,
+      `Username: ${username}`,
+      `Telegram ID: ${user.telegram_user_id}`,
+      `Статус: ${labelFromMap(request.status, SUPPORT_REQUEST_STATUS_LABELS)}`,
+    ]),
+    formatSection('Вопрос пользователя', [sanitizeVisibleText(request.text)]),
+    ...contextSections,
+    formatSection('Пользователь', [telegramUserLink(user)]),
+  ].join('\n\n');
 }
 
 async function notifySupportAdmin(

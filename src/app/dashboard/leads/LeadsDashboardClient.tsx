@@ -57,23 +57,23 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
 
 const SCENARIO_LABELS: Record<string, string> = {
   has_pms: 'Есть менеджер каналов',
-  no_pms_manual: 'Без менеджера каналов, вручную',
-  choosing_pms: 'Выбирает менеджер каналов',
-  support_question: 'Вопрос поддержки',
-  high_value_operator: 'Крупный оператор',
-  small_host: 'Небольшой хозяин',
+  no_pms_manual: 'Без менеджера каналов, всё ведётся вручную',
+  choosing_pms: 'Менеджер каналов выбирается или подключается',
+  support_question: 'Вопрос в поддержку',
+  high_value_operator: 'Потенциально крупный управляющий',
+  small_host: 'Небольшой владелец / управляющий',
   commercial_property: 'Коммерческая недвижимость',
-  mixed_portfolio: 'Смешанный портфель',
-  unclear: 'Недостаточно данных',
+  mixed_portfolio: 'Смешанный портфель объектов',
+  unclear: 'Нужно уточнение',
 };
 
 const MANUAL_REPLY_REASON_LABELS: Record<string, string> = {
-  support_question: 'Вопрос поддержки',
+  support_question: 'Вопрос в поддержку',
   needs_pms_access: 'Нужен доступ к менеджеру каналов',
-  unclear_pms: 'Непонятный менеджер каналов',
-  high_value_lead: 'Высокий потенциал',
-  custom_other_text: 'Свободный текст в анкете',
-  none: '—',
+  unclear_pms: 'Неясно, какой менеджер каналов используется',
+  high_value_lead: 'Потенциально важный лид',
+  custom_other_text: 'Есть нестандартный ответ',
+  none: 'Нет',
 };
 
 const SOFT_EMPTY = 'Пока не указано';
@@ -103,7 +103,21 @@ function formatShortDateRu(iso: string | null | undefined): string {
 }
 
 function listText(values: readonly string[], empty = SOFT_EMPTY): string {
-  return values.length ? values.join(', ') : empty;
+  return values.length ? values.map(sanitizeVisibleText).join(', ') : empty;
+}
+
+function sanitizeVisibleText(value: string): string {
+  return value
+    .replace(/PMS\/МК/gi, 'Менеджер каналов')
+    .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
+    .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
+    .replace(/Другой PMS\s*\/\s*менеджер каналов/gi, 'Другой менеджер каналов')
+    .replace(/Работа с PMS\s*\/\s*менеджером каналов/gi, 'Работа с менеджером каналов')
+    .replace(/PMS\s*\/\s*менеджер каналов/gi, 'Менеджер каналов')
+    .replace(/PMS\s*\/\s*менеджером каналов/gi, 'менеджером каналов')
+    .replace(/\bPMS\b/g, 'менеджер каналов')
+    .replace(/\bpms\b/g, 'менеджер каналов')
+    .replace(/\bМК\b/g, 'менеджер каналов');
 }
 
 function textOrEmpty(value: string): string {
@@ -594,7 +608,7 @@ function LeadsTable({
               <th className="px-3 py-2">Дата</th>
               <th className="px-3 py-2">Клиент</th>
               <th className="px-3 py-2">Источник</th>
-              <th className="px-3 py-2">Объекты / PMS</th>
+              <th className="px-3 py-2">Объекты / менеджер каналов</th>
               <th className="px-3 py-2">Потенциал</th>
               <th className="px-3 py-2">Статус</th>
               <th className="px-3 py-2">Следующий шаг</th>
@@ -813,7 +827,7 @@ function LeadDetailPanel({
         ) : null}
 
         {(lead.objectCountRange || lead.objectTypes.length || lead.channels.length || lead.pms.length) ? (
-          <DetailSection title="Объекты / каналы / PMS">
+          <DetailSection title="Объекты / каналы / менеджер каналов">
             <dl className="grid grid-cols-1 gap-3">
               {lead.objectCountRange ? <DetailField label="Объекты">{lead.objectCountRange}</DetailField> : null}
               {lead.objectTypes.length ? <DetailField label="Типы объектов">{listText(lead.objectTypes)}</DetailField> : null}
