@@ -268,8 +268,12 @@ describe('ASI Feedback Telegram lead intake', () => {
       expect.stringContaining('Новая заявка ASI'),
       { botToken: 'feedback-token', tokenLabel: 'ASI_FEEDBACK_BOT_TOKEN' },
     );
-    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Типы объектов: Дома / коттеджи');
-    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('AI-сводка:');
+    const adminCard = String(mockSendTelegramMessageToChat.mock.calls[0]?.[1]);
+    expect(adminCard).toContain('Типы объектов:\n1. Дома / коттеджи');
+    expect(adminCard).toContain('Каналы:\n1. Авито\n2. Суточно');
+    expect(adminCard).toContain('Что хочет автоматизировать:\n1. Общение с гостями и автоответы\n2. Инструкции по заселению');
+    expect(adminCard).toContain('Что съедает время:\n1. Переписка с гостями\n2. Координация уборок');
+    expect(adminCard).toContain('AI-сводка:');
     expect(mockAnswerTelegramCallbackQuery).toHaveBeenCalled();
   });
 
@@ -303,6 +307,63 @@ describe('ASI Feedback Telegram lead intake', () => {
       expect.arrayContaining(['Ozon Travel', 'Броневик', 'Отелло', 'МТС Travel', '101Hotels / 101Отель', 'Твил']),
     );
     expect(mockDb.rows[0].answers_json.channels).not.toContain('Другое');
+  });
+
+  it('selects every main OTA via the "Выбрать все OTA" button without picking non-OTA channels', async () => {
+    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 6001));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 6002));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 6003));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 6004));
+
+    const channelsMarkup = JSON.stringify(
+      mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[3],
+    );
+    expect(channelsMarkup).toContain('Выбрать все OTA');
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:ota', 6005));
+
+    const channels = mockDb.rows[0].answers_json.channels as string[];
+    expect(channels).toEqual(
+      expect.arrayContaining([
+        'Авито',
+        'Суточно',
+        'Островок',
+        'Яндекс Путешествия',
+        'Циан',
+        '101Hotels / 101Отель',
+        'Броневик',
+        'Квартирка',
+        'Ozon Travel',
+        'МТС Travel',
+        'OneTwoTrip',
+        'Твил',
+        'Отелло',
+      ]),
+    );
+    expect(channels).toHaveLength(13);
+    expect(channels).not.toContain('Свой сайт');
+    expect(channels).not.toContain('Соцсети / мессенджеры');
+    expect(channels).not.toContain('Пока не используем');
+    expect(channels).not.toContain('Другое');
+
+    const toggledMarkup = JSON.stringify(
+      mockEditTelegramMessageText.mock.calls[mockEditTelegramMessageText.mock.calls.length - 1]?.[3],
+    );
+    expect(toggledMarkup).toContain('Снять все OTA');
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:ota', 6006));
+    expect((mockDb.rows[0].answers_json.channels as string[])).toHaveLength(0);
+
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:ota', 6007));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:channels', 6008));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:pms:bnovo', 6009));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:automation_processes', 6010));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:time_consumers', 6011));
+    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:skip', 6012));
+
+    const adminCard = String(mockSendTelegramMessageToChat.mock.calls[0]?.[1]);
+    expect(adminCard).toContain('Каналы:\n1. Авито\n2. Суточно\n3. Островок');
+    expect(adminCard).not.toContain('Каналы: Авито, Суточно');
   });
 
   it('normalizes legacy guest communication process duplicates before admin summary', async () => {
@@ -341,7 +402,7 @@ describe('ASI Feedback Telegram lead intake', () => {
     ]);
     expect(mockDb.rows[0].answers_json.ai_summary).toContain('Общение с гостями и автоответы');
     expect(mockDb.rows[0].answers_json.ai_summary).not.toContain('Повторяющиеся вопросы');
-    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Что хочет автоматизировать: Общение с гостями и автоответы, Инструкции по заселению');
+    expect(mockSendTelegramMessageToChat.mock.calls[0]?.[1]).toContain('Что хочет автоматизировать:\n1. Общение с гостями и автоответы\n2. Инструкции по заселению');
   });
 
   it('routes direct support deep link questions to the admin chat without AI auto-replies', async () => {

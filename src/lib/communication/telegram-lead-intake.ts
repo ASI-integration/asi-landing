@@ -138,6 +138,7 @@ type LeadOption = {
 type ParsedCallback =
   | { kind: 'select'; step: 'object_count' | 'pms'; id: string }
   | { kind: 'toggle'; step: LeadMultiStep; id: string }
+  | { kind: 'select_all_ota' }
   | { kind: 'done'; step: LeadMultiStep }
   | { kind: 'other'; step: LeadOtherStep }
   | { kind: 'start_lead' }
@@ -247,6 +248,28 @@ const OPTIONS: Record<Exclude<LeadQuestionStep, 'comment'>, LeadOption[]> = {
 
 const MULTI_STEPS = new Set<LeadFlowStep>(['object_types', 'channels', 'automation_processes', 'time_consumers']);
 
+// Основные OTA/каналы размещения для кнопки "Выбрать все OTA".
+// Намеренно исключаем own_site, social, none и other.
+const OTA_CHANNEL_IDS = new Set<string>([
+  'avito',
+  'sutochno',
+  'ostrovok',
+  'yandex_travel',
+  'cian',
+  'hotels101',
+  'bronevik',
+  'kvartirka',
+  'ozon_travel',
+  'mts_travel',
+  'onetwotrip',
+  'tvil',
+  'otello',
+]);
+
+const OTA_CHANNEL_LABELS: string[] = OPTIONS.channels
+  .filter((option) => OTA_CHANNEL_IDS.has(option.id))
+  .map((option) => option.label);
+
 // Маппинг свободного текста на канонические каналы для шага "Другое".
 const CHANNEL_OTHER_SYNONYMS: Array<{ label: string; variants: string[] }> = [
   { label: 'Ozon Travel', variants: ['озон тревел', 'озон трэвел', 'озон', 'ozon travel', 'ozon'] },
@@ -319,6 +342,7 @@ function getTelegramLeadUser(update: TelegramUpdate): TelegramLeadUser | null {
 function callbackData(callback: ParsedCallback): string {
   if (callback.kind === 'select') return `${CALLBACK_PREFIX}:s:${callback.step}:${callback.id}`;
   if (callback.kind === 'toggle') return `${CALLBACK_PREFIX}:t:${callback.step}:${callback.id}`;
+  if (callback.kind === 'select_all_ota') return `${CALLBACK_PREFIX}:ota`;
   if (callback.kind === 'done') return `${CALLBACK_PREFIX}:d:${callback.step}`;
   if (callback.kind === 'other') return `${CALLBACK_PREFIX}:o:${callback.step}`;
   if (callback.kind === 'start_lead') return `${CALLBACK_PREFIX}:lead`;
@@ -337,6 +361,7 @@ function parseCallbackData(data: string | undefined): ParsedCallback | null {
   if (parts[1] === 't' && isMultiStep(parts[2]) && parts[3]) {
     return { kind: 'toggle', step: parts[2], id: parts[3] };
   }
+  if (parts[1] === 'ota') return { kind: 'select_all_ota' };
   if (parts[1] === 'd' && isMultiStep(parts[2])) return { kind: 'done', step: parts[2] };
   if (parts[1] === 'o' && isOtherStep(parts[2])) return { kind: 'other', step: parts[2] };
   if (parts[1] === 'lead') return { kind: 'start_lead' };
@@ -477,6 +502,15 @@ function keyboardForStep(step: LeadFlowStep, answers: LeadAnswers): Record<strin
     })),
     2,
   );
+  if (step === 'channels') {
+    const allOtaSelected = OTA_CHANNEL_LABELS.every((label) => selected.has(label));
+    rows.push([
+      {
+        text: allOtaSelected ? 'Снять все OTA' : 'Выбрать все OTA',
+        callback_data: callbackData({ kind: 'select_all_ota' }),
+      },
+    ]);
+  }
   rows.push([
     { text: 'Готово', callback_data: callbackData({ kind: 'done', step }) },
     { text: 'Назад', callback_data: callbackData({ kind: 'back' }) },
@@ -925,6 +959,14 @@ function formatList(value: string[] | undefined): string {
   return value?.length ? value.join(', ') : 'не указано';
 }
 
+// Длинные списки в админской карточке выводим под номерами, чтобы при выборе
+// многих OTA/процессов отчёт не сливался в одну строку.
+function formatNumberedSection(title: string, value: string[] | undefined): string {
+  if (!value?.length) return `${title}: не указано`;
+  const lines = value.map((item, index) => `${index + 1}. ${item}`);
+  return [`${title}:`, ...lines].join('\n');
+}
+
 function formatAdminNotification(lead: LeadRow): string {
   const answers = lead.answers_json ?? {};
   const username = lead.telegram_username ? `@${lead.telegram_username}` : 'username не указан';
@@ -940,11 +982,11 @@ function formatAdminNotification(lead: LeadRow): string {
     `Источник: ${lead.source}`,
     `Имя: ${lead.first_name ?? 'не указано'} (${username})`,
     `Объектов: ${answers.object_count_range ?? 'не указано'}`,
-    `Типы объектов: ${formatList(answers.object_types)}`,
-    `Каналы: ${formatList(answers.channels)}`,
+    formatNumberedSection('Типы объектов', answers.object_types),
+    formatNumberedSection('Каналы', answers.channels),
     `PMS/МК: ${formatList(answers.pms)}`,
-    `Что хочет автоматизировать: ${formatList(answers.automation_processes)}`,
-    `Что съедает время: ${formatList(answers.time_consumers)}`,
+    formatNumberedSection('Что хочет автоматизировать', answers.automation_processes),
+    formatNumberedSection('Что съедает время', answers.time_consumers),
     `Комментарий: ${comment}`,
     `AI-сводка: ${answers.ai_summary ?? 'не сформирована'}`,
     `Тип лида: ${answers.lead_type ?? 'не определён'}`,
@@ -1365,6 +1407,22 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
     if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
     await updateQuestionMessage(user, update, action.step, updatedLead.answers_json ?? nextAnswers);
     reply = questionText(action.step, updatedLead.answers_json ?? nextAnswers);
+  }
+
+  if (action.kind === 'select_all_ota') {
+    const selected = new Set(selectedForStep(nextAnswers, 'channels'));
+    const allOtaSelected = OTA_CHANNEL_LABELS.every((label) => selected.has(label));
+    // Простой и устойчивый toggle: если все OTA уже выбраны — снимаем их,
+    // иначе добавляем поверх текущего multi-select, не трогая прочие пункты.
+    for (const label of OTA_CHANNEL_LABELS) {
+      if (allOtaSelected) selected.delete(label);
+      else selected.add(label);
+    }
+    nextAnswers = withFlow(setSelectedForStep(nextAnswers, 'channels', Array.from(selected)), 'channels');
+    const updatedLead = await persistOrReplyError(lead, user, nextAnswers, update.update_id);
+    if (!updatedLead) return { outcome: ProcessOutcome.Error, update_id: update.update_id, chat_id: user.chat_id, category: MessageCategory.Start, reply: STORAGE_ERROR_REPLY };
+    await updateQuestionMessage(user, update, 'channels', updatedLead.answers_json ?? nextAnswers);
+    reply = questionText('channels', updatedLead.answers_json ?? nextAnswers);
   }
 
   if (action.kind === 'done') {
