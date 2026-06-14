@@ -1,4 +1,12 @@
 import { computeLeadAutomation, type LeadAutomation } from '@/lib/leads/automation';
+import {
+  ensureChannelManagerOnboarding,
+  parseChannelManagerOnboarding,
+  updateChannelManagerOnboarding,
+  type ChannelManagerOnboarding,
+  type ChannelManagerOnboardingStatus,
+  type ChannelManagerTestObject,
+} from '@/lib/leads/channel-manager-onboarding';
 import type { InputPolicyResult } from '@/lib/policy/input-policy';
 
 export const CRM_LEAD_STATUSES = [
@@ -37,6 +45,7 @@ export type LeadPolicyView = Pick<InputPolicyResult,
   | 'missing_required_fields'
   | 'manual_review_recommended'
   | 'manual_review_reason'
+  | 'sensitive_credentials_possible'
   | 'rate_limited'
   | 'rate_limit_reason'
   | 'rate_limit_until'
@@ -101,6 +110,7 @@ export type LeadViewModel = {
   supportRequests: LeadSupportRequest[];
   hasSupportRequest: boolean;
   automation: LeadAutomation;
+  channelManagerOnboarding: ChannelManagerOnboarding | null;
   policy: LeadPolicyView | null;
   isTestLead: boolean;
   copySummary: string;
@@ -176,6 +186,7 @@ function parsePolicy(value: unknown): LeadPolicyView | null {
   return {
     version: asString(policy.version) === 'v1' ? 'v1' : 'v1',
     security_flags: asStringArray(policy.security_flags) as LeadPolicyView['security_flags'],
+    sensitive_credentials_possible: asBoolean(policy.sensitive_credentials_possible),
     quality_flags: asStringArray(policy.quality_flags) as LeadPolicyView['quality_flags'],
     possible_prompt_injection: asBoolean(policy.possible_prompt_injection),
     prompt_injection_reason: asString(policy.prompt_injection_reason) as LeadPolicyView['prompt_injection_reason'] || null,
@@ -321,6 +332,12 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     hasOpenSupportRequest,
     policy,
   });
+  const onboardingAnswers = ensureChannelManagerOnboarding({
+    answers,
+    pms,
+    leadStatus: asString(row.status) || 'new',
+  }) ?? answers;
+  const channelManagerOnboarding = parseChannelManagerOnboarding(onboardingAnswers.channel_manager_onboarding);
   const lead: LeadViewModel = {
     ...base,
     createdAt: row.created_at,
@@ -343,6 +360,7 @@ export function normalizeLeadRow(row: LeadDbRow): LeadViewModel {
     supportRequests,
     hasSupportRequest: supportRequests.length > 0,
     automation,
+    channelManagerOnboarding,
     policy,
     isTestLead: isTestLeadRow(row, answers, name, telegramUsername),
     copySummary: '',
@@ -427,4 +445,15 @@ export function answersJsonWithSupportStatus(
       currentIndex === index ? { ...asRecord(request), status } : request
     )),
   };
+}
+
+export function answersJsonWithChannelManagerOnboarding(
+  answersJson: LeadAnswersJson | null,
+  patch: {
+    status?: ChannelManagerOnboardingStatus;
+    testObject?: Partial<ChannelManagerTestObject>;
+    adminNote?: string;
+  },
+): LeadAnswersJson {
+  return updateChannelManagerOnboarding(answersJson, patch);
 }

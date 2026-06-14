@@ -8,6 +8,7 @@ export type SecurityFlag =
   | 'ignore_instructions_attempt'
   | 'system_rules_change_attempt'
   | 'secret_request_attempt'
+  | 'sensitive_credentials_possible'
   | 'status_or_potential_change_attempt'
   | 'admin_role_attempt'
   | 'hide_from_admin_attempt'
@@ -32,6 +33,7 @@ export type ManualReviewReason =
   | 'repeated_prompt_injection'
   | 'rate_limited'
   | 'policy_security_review'
+  | 'sensitive_credentials_possible'
   | 'low_completeness';
 
 export type LeadPolicyContext = {
@@ -58,6 +60,7 @@ export type InputPolicyResult = {
   safe_text: string;
   input_role: typeof INPUT_ROLE_USER_DATA;
   security_flags: SecurityFlag[];
+  sensitive_credentials_possible: boolean;
   quality_flags: QualityFlag[];
   possible_prompt_injection: boolean;
   prompt_injection_reason: PromptInjectionReason | null;
@@ -191,6 +194,22 @@ const SECURITY_PATTERNS: Array<{
   },
 ];
 
+const SENSITIVE_CREDENTIAL_PATTERNS = [
+  /\b(?:password|passwd|pwd|pass|token|secret|credential|api[\s_-]?key|cookie|webhook\s+secret)\b\s*[:=]?\s*\S{4,}/i,
+  /(?:парол[ья]|логин|токен|секрет|api[\s-]?ключ|ключ\s+api|cookie|куки|webhook\s+secret|секрет\s+webhook)\s*[:=]?\s*\S{3,}/i,
+];
+
+const SENSITIVE_VALUE_REPLACEMENTS: Array<{ pattern: RegExp; replacement: string }> = [
+  {
+    pattern: /\b(password|passwd|pwd|pass|token|secret|credential|api[\s_-]?key|cookie|webhook\s+secret)\b\s*[:=]?\s*([^\s,;]+)/gi,
+    replacement: '$1 [скрыто]',
+  },
+  {
+    pattern: /(парол[ья]?|логин|токен|секрет|api[\s-]?ключ|ключ\s+api|cookie|куки|webhook\s+secret|секрет\s+webhook)\s*[:=]?\s*([^\s,;]+)/gi,
+    replacement: '$1 [скрыто]',
+  },
+];
+
 function hasValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.some((item) => String(item ?? '').trim());
   return String(value ?? '').trim().length > 0;
@@ -228,15 +247,34 @@ function detectSecurity(text: string): { flags: SecurityFlag[]; reason: PromptIn
   };
 }
 
+export function hasSensitiveCredentials(text: string): boolean {
+  return SENSITIVE_CREDENTIAL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function redactSensitiveText(text: string): string {
+  let redacted = text;
+  for (const { pattern, replacement } of SENSITIVE_VALUE_REPLACEMENTS) {
+    redacted = redacted.replace(pattern, replacement);
+  }
+  return redacted;
+}
+
 function hasPreviousPromptInjection(context?: LeadPolicyContext | null): boolean {
   return Boolean(context?.policy?.possible_prompt_injection);
 }
 
 export function evaluateInputPolicy(input: EvaluateInputPolicyInput): InputPolicyResult {
   const rawText = (input.raw_text ?? '').toString();
-  const safeText = rawText.trim();
-  const { flags, reason } = detectSecurity(safeText);
-  const possiblePromptInjection = flags.length > 0;
+  const rawSafeText = rawText.trim();
+  const sensitiveCredentialsPossible = hasSensitiveCredentials(rawSafeText);
+  const safeText = sensitiveCredentialsPossible
+    ? 'Пользователь мог прислать чувствительные данные'
+    : rawSafeText;
+  const { flags: detectedFlags, reason } = detectSecurity(rawSafeText);
+  const flags = sensitiveCredentialsPossible
+    ? Array.from(new Set<SecurityFlag>([...detectedFlags, 'sensitive_credentials_possible']))
+    : detectedFlags;
+  const possiblePromptInjection = detectedFlags.length > 0;
   const missingRequiredFields = getMissingRequiredLeadFields(input.current_lead_context);
   const leadCompletenessScore = getLeadCompletenessScore(input.current_lead_context);
   const qualityFlags: QualityFlag[] = [];
@@ -246,6 +284,7 @@ export function evaluateInputPolicy(input: EvaluateInputPolicyInput): InputPolic
 
   const repeatedSuspicion = possiblePromptInjection && hasPreviousPromptInjection(input.current_lead_context);
   const lowCompletenessFinal = input.context === 'final_check' && getMissingFinalMinimumFields(input.current_lead_context).length > 0;
+  const manualReviewRecommended = sensitiveCredentialsPossible || repeatedSuspicion || lowCompletenessFinal;
 
   return {
     version: INPUT_POLICY_VERSION,
@@ -253,6 +292,7 @@ export function evaluateInputPolicy(input: EvaluateInputPolicyInput): InputPolic
     safe_text: safeText,
     input_role: INPUT_ROLE_USER_DATA,
     security_flags: flags,
+    sensitive_credentials_possible: sensitiveCredentialsPossible,
     quality_flags: qualityFlags,
     possible_prompt_injection: possiblePromptInjection,
     prompt_injection_reason: reason,
@@ -260,12 +300,14 @@ export function evaluateInputPolicy(input: EvaluateInputPolicyInput): InputPolic
     missing_required_fields: missingRequiredFields,
     can_affect_status: input.context === 'lead_field',
     can_affect_ai_prompt: false,
-    manual_review_recommended: repeatedSuspicion || lowCompletenessFinal,
-    manual_review_reason: repeatedSuspicion
-      ? 'possible_prompt_injection_repeat'
-      : lowCompletenessFinal
-        ? 'low_completeness'
-        : null,
+    manual_review_recommended: manualReviewRecommended,
+    manual_review_reason: sensitiveCredentialsPossible
+      ? 'sensitive_credentials_possible'
+      : repeatedSuspicion
+        ? 'possible_prompt_injection_repeat'
+        : lowCompletenessFinal
+          ? 'low_completeness'
+          : null,
     rate_limited: false,
     rate_limit_reason: null,
     rate_limit_until: null,
@@ -301,6 +343,7 @@ export function mergePolicyResults(base: InputPolicyResult | undefined, next: In
     raw_text: next.raw_text,
     safe_text: next.safe_text,
     security_flags: securityFlags,
+    sensitive_credentials_possible: base.sensitive_credentials_possible || next.sensitive_credentials_possible,
     quality_flags: next.quality_flags,
     possible_prompt_injection: base.possible_prompt_injection || next.possible_prompt_injection,
     prompt_injection_reason: next.prompt_injection_reason ?? base.prompt_injection_reason,

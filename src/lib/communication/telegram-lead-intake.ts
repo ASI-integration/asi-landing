@@ -1,5 +1,9 @@
 import { normalizeAsiFeedbackLeadSource, type AsiFeedbackLeadSource } from '@/config/publicTelegram';
 import {
+  ensureChannelManagerOnboarding,
+  type ChannelManagerOnboarding,
+} from '@/lib/leads/channel-manager-onboarding';
+import {
   computeLeadAutomation,
   serializeLeadAutomation,
   type LeadAutomation,
@@ -19,6 +23,7 @@ import {
   getMissingFinalMinimumFields,
   mergePolicyResults,
   policyTextMetadata,
+  redactSensitiveText,
   withRateLimitPolicy,
   type InputPolicyContext,
   type InputPolicyResult,
@@ -120,6 +125,7 @@ type LeadAnswers = {
   policy_texts?: InputPolicyTextMetadata[];
   security_flags?: {
     possible_prompt_injection?: boolean;
+    sensitive_credentials_possible?: boolean;
   };
   rate_limit?: {
     rate_limited: boolean;
@@ -138,6 +144,7 @@ type LeadAnswers = {
     suggested_status?: string;
     potential?: LeadPotential;
   };
+  channel_manager_onboarding?: ChannelManagerOnboarding;
   flow?: {
     step: LeadFlowStep;
     awaiting_text_for?: LeadOtherStep | 'comment';
@@ -320,7 +327,7 @@ const FINAL_REPLY =
   'Спасибо, заявку получил. По вашим ответам видно, какие процессы можно автоматизировать в первую очередь. Мы свяжемся с вами или предложим демо, если формат подходит для пилота ASI.';
 
 const FINAL_REPLY_HAS_PMS =
-  'Спасибо, заявку получил. Вижу, что у вас уже есть менеджер каналов. Следующий шаг — выбрать один тестовый объект и подготовить доступ или приглашение к системе, чтобы проверить автоматизацию без риска для всех объектов.';
+  'Спасибо, заявку получил. Вижу, что у вас уже есть менеджер каналов. Следующий шаг — выбрать один тестовый объект и подготовить безопасный способ доступа: приглашение, роль пользователя или API-ключ, если он предусмотрен. Пароли в Telegram отправлять не нужно.';
 
 const FINAL_REPLY_NO_PMS =
   'Спасибо, заявку получил. Судя по ответам, сначала нужно выстроить базовую схему: объекты, каналы и процессы. Мы можем начать с одного тестового объекта и постепенно довести до подключения менеджера каналов.';
@@ -494,17 +501,15 @@ function leadPolicyContext(answers: LeadAnswers) {
 
 function withPolicy(answers: LeadAnswers, policy: InputPolicyResult, field?: string): LeadAnswers {
   const merged = mergePolicyResults(answers.policy, policy);
+  const securityFlags = {
+    ...(answers.security_flags ?? {}),
+    ...(merged.possible_prompt_injection ? { possible_prompt_injection: true } : {}),
+    ...(merged.sensitive_credentials_possible ? { sensitive_credentials_possible: true } : {}),
+  };
   return {
     ...answers,
     policy: merged,
-    ...(merged.possible_prompt_injection
-      ? {
-          security_flags: {
-            ...(answers.security_flags ?? {}),
-            possible_prompt_injection: true,
-          },
-        }
-      : {}),
+    ...(Object.keys(securityFlags).length ? { security_flags: securityFlags } : {}),
     ...(field
       ? {
           policy_texts: [
@@ -1257,6 +1262,7 @@ const POLICY_SECURITY_FLAG_LABELS: Record<string, string> = {
   ignore_instructions_attempt: 'попытка игнорировать правила',
   system_rules_change_attempt: 'попытка изменить правила системы',
   secret_request_attempt: 'запрос секретов',
+  sensitive_credentials_possible: 'пользователь мог прислать чувствительные данные',
   status_or_potential_change_attempt: 'попытка изменить статус или потенциал',
   admin_role_attempt: 'попытка получить роль администратора',
   hide_from_admin_attempt: 'попытка скрыть сообщение от администратора',
@@ -1274,7 +1280,7 @@ const POLICY_MISSING_FIELD_LABELS: Record<string, string> = {
 };
 
 function sanitizeVisibleText(value: string): string {
-  return value
+  return redactSensitiveText(value)
     .replace(/PMS\/МК/gi, 'Менеджер каналов')
     .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
     .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
@@ -1315,16 +1321,25 @@ function formatNumberedSection(title: string, value: string[] | undefined): stri
 function formatPolicySections(policy: InputPolicyResult | undefined): string[] {
   if (!policy) return [];
   const sections: string[] = [];
+  if (policy.sensitive_credentials_possible || policy.security_flags.includes('sensitive_credentials_possible')) {
+    sections.push(formatSection('Безопасность', [
+      'Пользователь мог прислать чувствительные данные. Требуется ручная проверка.',
+      'Пароли и ключи не выводятся в отчёте полностью.',
+    ])!);
+  }
   if (policy.possible_prompt_injection || policy.security_flags.length) {
     const reason = policy.security_flags
+      .filter((flag) => flag !== 'sensitive_credentials_possible')
       .map((flag) => POLICY_SECURITY_FLAG_LABELS[flag] ?? flag)
       .filter(Boolean)
       .join(' / ');
-    sections.push(formatSection('Безопасность', [
-      `Возможная prompt injection: ${policy.possible_prompt_injection ? 'да' : 'нет'}`,
-      reason ? `Причина: ${reason}` : null,
-      'Действие: текст сохранён как пользовательские данные, инструкции не выполнялись',
-    ])!);
+    if (policy.possible_prompt_injection || reason) {
+      sections.push(formatSection('Безопасность', [
+        `Возможная prompt injection: ${policy.possible_prompt_injection ? 'да' : 'нет'}`,
+        reason ? `Причина: ${reason}` : null,
+        'Действие: текст сохранён как пользовательские данные, инструкции не выполнялись',
+      ])!);
+    }
   }
   if (policy.quality_flags.length || policy.missing_required_fields.length) {
     const missing = policy.missing_required_fields.map((field) => POLICY_MISSING_FIELD_LABELS[field] ?? field);
@@ -1344,6 +1359,7 @@ function formatAdminNotification(lead: LeadRow): string {
     ? `https://t.me/${lead.telegram_username}`
     : `telegram_user_id=${lead.telegram_user_id}`;
   const automation = answers.automation;
+  const onboarding = answers.channel_manager_onboarding;
   const automationStep = automation?.recommended_next_step || answers.recommended_next_step;
   const status = automation?.suggested_status ?? lead.status;
   const sourceLabel = SOURCE_LABELS[lead.source] ?? lead.source;
@@ -1384,6 +1400,13 @@ function formatAdminNotification(lead: LeadRow): string {
     ]),
     automationStep ? formatSection('Следующий шаг', [sanitizeVisibleText(automationStep)]) : null,
     formatNumberedSection('Чеклист', automation?.onboarding_checklist as string[] | undefined),
+    onboarding ? formatSection('Подключение менеджера каналов', [
+      `Менеджер каналов: ${sanitizeVisibleText(onboarding.manager)}`,
+      `Статус подключения: ${sanitizeVisibleText(onboarding.status)}`,
+      `Нужен ручной созвон: ${onboarding.manual_call_needed ? 'да' : 'нет'}`,
+      onboarding.manual_call_reason ? `Причина: ${sanitizeVisibleText(onboarding.manual_call_reason)}` : null,
+      onboarding.client_instruction ? `Инструкция клиенту: ${sanitizeVisibleText(onboarding.client_instruction)}` : null,
+    ]) : null,
     formatSection('Пользователь', [userLink]),
   ].filter((section): section is string => Boolean(section));
 
@@ -1543,10 +1566,16 @@ function automationInputFromAnswers(
 }
 
 function withAutomation(answers: LeadAnswers, automation: LeadAutomation): LeadAnswers {
-  return {
+  const withAutomationBlock = {
     ...answers,
     automation: serializeLeadAutomation(automation),
   };
+  const withOnboarding = ensureChannelManagerOnboarding({
+    answers: withAutomationBlock,
+    pms: answers.pms,
+    leadStatus: automation.suggestedStatus,
+  });
+  return (withOnboarding ?? withAutomationBlock) as LeadAnswers;
 }
 
 function finalReplyForAutomation(automation: LeadAutomation): string {

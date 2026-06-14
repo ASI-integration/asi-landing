@@ -3,6 +3,7 @@ import {
   evaluateInputPolicy,
   getMissingFinalMinimumFields,
   policyTextMetadata,
+  redactSensitiveText,
   withRateLimitPolicy,
 } from '../input-policy';
 
@@ -94,5 +95,19 @@ describe('input policy layer v1', () => {
       can_affect_status: false,
       can_affect_ai_prompt: false,
     });
+  });
+
+  it('flags credentials as sensitive input and returns safe text for reports', () => {
+    const policy = evaluateInputPolicy({
+      context: 'support_question',
+      raw_text: 'логин admin, пароль 123456',
+    });
+
+    expect(policy.sensitive_credentials_possible).toBe(true);
+    expect(policy.security_flags).toContain('sensitive_credentials_possible');
+    expect(policy.safe_text).toBe('Пользователь мог прислать чувствительные данные');
+    expect(policy.manual_review_recommended).toBe(true);
+    expect(policy.manual_review_reason).toBe('sensitive_credentials_possible');
+    expect(redactSensitiveText('логин admin, пароль 123456')).not.toContain('123456');
   });
 });

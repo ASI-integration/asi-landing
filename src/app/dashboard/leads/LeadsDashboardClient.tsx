@@ -12,6 +12,12 @@ import {
   type LeadViewModel,
   type SupportRequestStatus,
 } from '@/lib/dashboard/leads';
+import {
+  CHANNEL_MANAGER_ONBOARDING_STATUSES,
+  type ChannelManagerOnboardingStatus,
+  type ChannelManagerTestObject,
+} from '@/lib/leads/channel-manager-onboarding';
+import { redactSensitiveText } from '@/lib/policy/input-policy';
 
 type LeadsResponse = {
   ok: boolean;
@@ -53,6 +59,21 @@ const SUPPORT_STATUS_LABELS: Record<SupportRequestStatus, string> = {
   in_progress: 'В работе',
   answered: 'Отвечен',
   archived: 'Архив',
+};
+
+const ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnboardingStatus, string> = {
+  not_started: 'Не начато',
+  needs_access: 'Нужен доступ',
+  access_instructions_sent: 'Инструкция отправлена',
+  waiting_for_client: 'Ждём клиента',
+  access_received_offline: 'Доступ получен офлайн',
+  test_object_needed: 'Нужен тестовый объект',
+  test_object_selected: 'Тестовый объект выбран',
+  ready_for_setup: 'Готов к настройке',
+  setup_in_progress: 'Настройка в работе',
+  ready_for_test: 'Готов к тесту',
+  blocked_manual_call: 'Нужен ручной созвон',
+  completed: 'Подключение завершено',
 };
 
 const SCENARIO_LABELS: Record<string, string> = {
@@ -131,7 +152,7 @@ function listText(values: readonly string[], empty = SOFT_EMPTY): string {
 }
 
 function sanitizeVisibleText(value: string): string {
-  return value
+  return redactSensitiveText(value)
     .replace(/PMS\/МК/gi, 'Менеджер каналов')
     .replace(/PMS\s*\/\s*МК/gi, 'Менеджер каналов')
     .replace(/HPMs?\s*\/\s*PMS/gi, 'Менеджер каналов')
@@ -344,7 +365,10 @@ export function LeadsDashboardClient() {
   const [manualReplyOnly, setManualReplyOnly] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [onboardingNoteDrafts, setOnboardingNoteDrafts] = useState<Record<string, string>>({});
+  const [testObjectDrafts, setTestObjectDrafts] = useState<Record<string, ChannelManagerTestObject>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [instructionCopiedId, setInstructionCopiedId] = useState<string | null>(null);
 
   const visibleLeads = useMemo(
     () => leads.filter((lead) => !hideTestLeads || !lead.isTestLead),
@@ -421,6 +445,9 @@ export function LeadsDashboardClient() {
       adminNote?: string;
       supportRequestIndex?: number;
       supportStatus?: SupportRequestStatus;
+      onboardingStatus?: ChannelManagerOnboardingStatus;
+      onboardingAdminNote?: string;
+      onboardingTestObject?: Partial<ChannelManagerTestObject>;
     },
   ) {
     setSavingId(leadId);
@@ -446,6 +473,14 @@ export function LeadsDashboardClient() {
     await copyToClipboard(lead.copySummary);
     setCopiedId(lead.id);
     window.setTimeout(() => setCopiedId((current) => (current === lead.id ? null : current)), 1500);
+  }
+
+  async function handleCopyInstruction(lead: LeadViewModel) {
+    const instruction = lead.channelManagerOnboarding?.client_instruction;
+    if (!instruction) return;
+    await copyToClipboard(instruction);
+    setInstructionCopiedId(lead.id);
+    window.setTimeout(() => setInstructionCopiedId((current) => (current === lead.id ? null : current)), 1500);
   }
 
   return (
@@ -624,16 +659,48 @@ export function LeadsDashboardClient() {
             copiedId={copiedId}
             saving={Boolean(selectedLead && savingId === selectedLead.id)}
             noteValue={selectedLead ? noteDrafts[selectedLead.id] ?? selectedLead.adminNote : ''}
+            onboardingNoteValue={selectedLead
+              ? onboardingNoteDrafts[selectedLead.id] ?? selectedLead.channelManagerOnboarding?.admin_note ?? ''
+              : ''}
+            testObjectValue={selectedLead
+              ? testObjectDrafts[selectedLead.id] ?? selectedLead.channelManagerOnboarding?.test_object ?? { name: null, external_id: null, notes: null }
+              : { name: null, external_id: null, notes: null }}
+            instructionCopied={Boolean(selectedLead && instructionCopiedId === selectedLead.id)}
             onNoteChange={(value) => {
               if (!selectedLead) return;
               setNoteDrafts((current) => ({ ...current, [selectedLead.id]: value }));
+            }}
+            onOnboardingNoteChange={(value) => {
+              if (!selectedLead) return;
+              setOnboardingNoteDrafts((current) => ({ ...current, [selectedLead.id]: value }));
+            }}
+            onTestObjectChange={(value) => {
+              if (!selectedLead) return;
+              setTestObjectDrafts((current) => ({ ...current, [selectedLead.id]: value }));
             }}
             onSaveNote={() => {
               if (!selectedLead) return;
               void patchLead(selectedLead.id, { adminNote: noteDrafts[selectedLead.id] ?? selectedLead.adminNote });
             }}
+            onOnboardingStatusChange={(status) => {
+              if (!selectedLead) return;
+              void patchLead(selectedLead.id, { onboardingStatus: status });
+            }}
+            onSaveOnboardingNote={() => {
+              if (!selectedLead) return;
+              void patchLead(selectedLead.id, {
+                onboardingAdminNote: onboardingNoteDrafts[selectedLead.id] ?? selectedLead.channelManagerOnboarding?.admin_note ?? '',
+              });
+            }}
+            onSaveTestObject={() => {
+              if (!selectedLead) return;
+              void patchLead(selectedLead.id, {
+                onboardingTestObject: testObjectDrafts[selectedLead.id] ?? selectedLead.channelManagerOnboarding?.test_object ?? {},
+              });
+            }}
             onSelectHistory={(leadId) => setSelectedId(leadId)}
             onCopy={(lead) => void handleCopy(lead)}
+            onCopyInstruction={(lead) => void handleCopyInstruction(lead)}
           />
         </div>
       )}
@@ -771,20 +838,38 @@ function LeadDetailPanel({
   copiedId,
   saving,
   noteValue,
+  onboardingNoteValue,
+  testObjectValue,
+  instructionCopied,
   onNoteChange,
+  onOnboardingNoteChange,
+  onTestObjectChange,
   onSaveNote,
+  onOnboardingStatusChange,
+  onSaveOnboardingNote,
+  onSaveTestObject,
   onSelectHistory,
   onCopy,
+  onCopyInstruction,
 }: {
   lead: LeadViewModel | null;
   history: LeadViewModel[];
   copiedId: string | null;
   saving: boolean;
   noteValue: string;
+  onboardingNoteValue: string;
+  testObjectValue: ChannelManagerTestObject;
+  instructionCopied: boolean;
   onNoteChange: (value: string) => void;
+  onOnboardingNoteChange: (value: string) => void;
+  onTestObjectChange: (value: ChannelManagerTestObject) => void;
   onSaveNote: () => void;
+  onOnboardingStatusChange: (status: ChannelManagerOnboardingStatus) => void;
+  onSaveOnboardingNote: () => void;
+  onSaveTestObject: () => void;
   onSelectHistory: (leadId: string) => void;
   onCopy: (lead: LeadViewModel) => void;
+  onCopyInstruction: (lead: LeadViewModel) => void;
 }) {
   if (!lead) {
     return (
@@ -869,6 +954,114 @@ function LeadDetailPanel({
 
         <PolicyProcessingSection policy={lead.policy} />
 
+        {lead.channelManagerOnboarding ? (
+          <DetailSection title="Подключение менеджера каналов">
+            <dl className="grid grid-cols-1 gap-3">
+              <DetailField label="Менеджер каналов">
+                {sanitizeVisibleText(lead.channelManagerOnboarding.manager)}
+              </DetailField>
+              <DetailField label="Статус подключения">
+                <select
+                  value={lead.channelManagerOnboarding.status}
+                  disabled={saving}
+                  onChange={(event) => onOnboardingStatusChange(event.target.value as ChannelManagerOnboardingStatus)}
+                  className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-900"
+                >
+                  {CHANNEL_MANAGER_ONBOARDING_STATUSES.map((status) => (
+                    <option key={status} value={status}>{ONBOARDING_STATUS_LABELS[status]}</option>
+                  ))}
+                </select>
+              </DetailField>
+              <DetailField label="Нужен ручной созвон">
+                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  lead.channelManagerOnboarding.manual_call_needed ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                }`}>
+                  {lead.channelManagerOnboarding.manual_call_needed ? 'Да' : 'Нет'}
+                </span>
+              </DetailField>
+              {lead.channelManagerOnboarding.manual_call_reason ? (
+                <DetailField label="Причина ручного созвона">
+                  {sanitizeVisibleText(lead.channelManagerOnboarding.manual_call_reason)}
+                </DetailField>
+              ) : null}
+              <DetailField label="Что нужно получить">
+                <ul className="mt-0.5 list-disc space-y-1 pl-5">
+                  {lead.channelManagerOnboarding.required_access.map((item) => (
+                    <li key={item}>{sanitizeVisibleText(item)}</li>
+                  ))}
+                </ul>
+              </DetailField>
+              <DetailField label="Чеклист">
+                <ul className="mt-0.5 list-disc space-y-1 pl-5">
+                  {lead.channelManagerOnboarding.checklist.map((item) => (
+                    <li key={item}>{sanitizeVisibleText(item)}</li>
+                  ))}
+                </ul>
+              </DetailField>
+              <DetailField label="Тестовый объект">
+                <div className="space-y-2">
+                  <input
+                    value={testObjectValue.name ?? ''}
+                    onChange={(event) => onTestObjectChange({ ...testObjectValue, name: event.target.value })}
+                    placeholder="Название объекта"
+                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                  <input
+                    value={testObjectValue.external_id ?? ''}
+                    onChange={(event) => onTestObjectChange({ ...testObjectValue, external_id: event.target.value })}
+                    placeholder="Внешний ID, если есть"
+                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                  <textarea
+                    rows={2}
+                    value={testObjectValue.notes ?? ''}
+                    onChange={(event) => onTestObjectChange({ ...testObjectValue, notes: event.target.value })}
+                    placeholder="Заметка по тестовому объекту"
+                    className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={onSaveTestObject}
+                    className="rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Сохранить тестовый объект
+                  </button>
+                </div>
+              </DetailField>
+              <DetailField label="Инструкция клиенту">
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-900 whitespace-pre-wrap">
+                  {sanitizeVisibleText(lead.channelManagerOnboarding.client_instruction)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onCopyInstruction(lead)}
+                  className="mt-2 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                >
+                  {instructionCopied ? 'Скопировано' : 'Скопировать инструкцию клиенту'}
+                </button>
+              </DetailField>
+              <DetailField label="Заметка по подключению">
+                <textarea
+                  rows={3}
+                  value={onboardingNoteValue}
+                  onChange={(event) => onOnboardingNoteChange(event.target.value)}
+                  className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  placeholder="Добавить заметку по подключению"
+                />
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onSaveOnboardingNote}
+                  className="mt-2 rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {saving ? 'Сохранение...' : 'Сохранить заметку'}
+                </button>
+              </DetailField>
+            </dl>
+          </DetailSection>
+        ) : null}
+
         <DetailSection title="Потенциал">
           <p className="text-sm leading-6 text-slate-900">{textOrEmpty(lead.leadPotential)}</p>
         </DetailSection>
@@ -880,7 +1073,7 @@ function LeadDetailPanel({
                 <span>{formatDateRu(supportRequest.receivedAt)}</span>
                 <span className="font-semibold">{SUPPORT_STATUS_LABELS[supportRequest.status]}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-900">{supportRequest.text}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-900">{sanitizeVisibleText(supportRequest.text)}</p>
               <SupportLeadContext context={supportRequest.leadContext} />
             </div>
           </DetailSection>
@@ -916,10 +1109,10 @@ function LeadDetailPanel({
         {lead.comment || lead.leadType || Object.keys(lead.otherTexts).length ? (
           <DetailSection title="Дополнительно">
             <dl className="grid grid-cols-1 gap-3">
-              {lead.comment ? <DetailField label="Комментарий">{lead.comment}</DetailField> : null}
+              {lead.comment ? <DetailField label="Комментарий">{sanitizeVisibleText(lead.comment)}</DetailField> : null}
               {lead.leadType ? <DetailField label="Тип лида">{lead.leadType}</DetailField> : null}
               {Object.entries(lead.otherTexts).map(([key, values]) => (
-                <DetailField key={key} label={key}>{values.join(', ')}</DetailField>
+                <DetailField key={key} label={key}>{values.map(sanitizeVisibleText).join(', ')}</DetailField>
               ))}
             </dl>
           </DetailSection>
@@ -1100,7 +1293,7 @@ function SupportDetailPanel({
         <DetailSection title="Вопрос поддержки">
           <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
             <div className="text-xs font-semibold text-amber-800">{formatDateRu(request.receivedAt)}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-950">{request.text}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-950">{sanitizeVisibleText(request.text)}</p>
           </div>
         </DetailSection>
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   answersJsonWithAdminNote,
+  answersJsonWithChannelManagerOnboarding,
   answersJsonWithSupportStatus,
   buildLeadCopySummary,
   getLatestLeadsByTelegramId,
@@ -50,6 +51,10 @@ describe('dashboard leads parser', () => {
     expect(lead.comment).toBe('Нужен быстрый запуск');
     expect(lead.copySummary).toContain('Менеджер каналов: RealtyCalendar');
     expect(lead.copySummary).toContain('AI-сводка: Есть портфель');
+    expect(lead.channelManagerOnboarding).toMatchObject({
+      manager: 'RealtyCalendar',
+      status: 'needs_access',
+    });
   });
 
   it('computes rule-based automation for the lead and keeps the admin-set status', () => {
@@ -165,6 +170,28 @@ describe('dashboard leads parser', () => {
     }, 0, 'answered');
 
     expect(withSupportStatus?.support_requests).toEqual([{ text: 'Вопрос', status: 'answered' }]);
+  });
+
+  it('stores channel manager onboarding updates inside answers_json', () => {
+    const answers = answersJsonWithChannelManagerOnboarding(
+      { pms: ['Bnovo'] },
+      {
+        status: 'ready_for_setup',
+        testObject: { name: 'Тестовый объект', external_id: 'bn-7', notes: 'Начать с него' },
+        adminNote: 'Доступ согласован отдельно.',
+      },
+    );
+
+    expect(answers.channel_manager_onboarding).toMatchObject({
+      manager: 'Bnovo',
+      status: 'ready_for_setup',
+      test_object: {
+        name: 'Тестовый объект',
+        external_id: 'bn-7',
+        notes: 'Начать с него',
+      },
+      admin_note: 'Доступ согласован отдельно.',
+    });
   });
 
   it('builds a short copy summary with safe fallbacks', () => {
