@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CRM_LEAD_STATUSES,
   SUPPORT_REQUEST_STATUSES,
+  getCrmActionProgress,
   getLatestLeadsByTelegramId,
   getLeadHistoryByTelegramId,
   type CrmLeadStatus,
@@ -57,14 +58,6 @@ const STATUS_LABELS: Record<string, string> = {
   demo_offered: 'Демо предложено',
   closed: 'Закрыта',
 };
-
-const CRM_PIPELINE_STATUSES = [
-  'needs_pms_access',
-  'instruction_sent',
-  'access_received',
-  'test_object_selected',
-  'ready_for_setup',
-] as const;
 
 const CRM_ACTIONS: Array<{
   status: CrmLeadStatus;
@@ -257,17 +250,6 @@ function leadNextStep(lead: LeadViewModel): string {
 
 function formatLeadStatus(status: string): string {
   return STATUS_LABELS[status] ?? 'Другой статус';
-}
-
-function crmPipelineIndex(status: string): number {
-  return CRM_PIPELINE_STATUSES.indexOf(status as (typeof CRM_PIPELINE_STATUSES)[number]);
-}
-
-function isCrmActionDone(lead: LeadViewModel, status: CrmLeadStatus): boolean {
-  const currentIndex = crmPipelineIndex(lead.status);
-  const targetIndex = crmPipelineIndex(status);
-  if (targetIndex < 0) return false;
-  return currentIndex >= targetIndex || Boolean(lead.crmActionTimestamps[status as keyof typeof lead.crmActionTimestamps]);
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -935,6 +917,7 @@ function LeadDetailPanel({
   }
 
   const supportRequest = latestSupportRequest(lead);
+  const crmProgress = getCrmActionProgress(lead);
 
   return (
     <aside className="rounded-md border border-slate-200 bg-white p-4 2xl:sticky 2xl:top-4 2xl:max-h-[calc(100vh-92px)] 2xl:overflow-auto">
@@ -976,39 +959,68 @@ function LeadDetailPanel({
         </DetailSection>
 
         <DetailSection title="CRM-действия">
-          <div className="grid grid-cols-1 gap-2">
-            {CRM_ACTIONS.map((action) => {
-              const done = isCrmActionDone(lead, action.status);
-              const timestamp = lead.crmActionTimestamps[action.status as keyof typeof lead.crmActionTimestamps];
+          <ol className="space-y-2">
+            {crmProgress.map((step, index) => {
+              const action = CRM_ACTIONS.find((item) => item.status === step.status);
+              if (!action) return null;
+              const timestamp = lead.crmActionTimestamps[step.status];
+              const completed = step.state === 'completed';
+              const current = step.state === 'current';
               return (
-                <button
+                <li
                   key={action.status}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onCrmAction(action.status, action.onboardingStatus)}
-                  className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm font-semibold transition-colors disabled:opacity-50 ${
-                    done
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  className={`rounded-md border transition-colors ${
+                    completed
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : current
+                        ? 'border-blue-200 bg-blue-50'
+                        : 'border-slate-200 bg-slate-50'
                   }`}
                 >
-                  <span className="min-w-0">
-                    <span className="block">{action.label}</span>
-                    {timestamp ? (
-                      <span className="mt-0.5 block text-xs font-medium text-slate-500">
-                        Отмечено: {formatDateRu(timestamp)}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-                    done ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'
-                  }`}>
-                    {done ? 'готово' : 'отметить'}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={saving || !current}
+                    aria-current={current ? 'step' : undefined}
+                    onClick={() => onCrmAction(action.status, action.onboardingStatus)}
+                    className={`flex min-h-14 w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed ${
+                      completed
+                        ? 'text-emerald-900'
+                        : current
+                          ? 'text-blue-950 hover:bg-blue-100/50'
+                          : 'text-slate-500'
+                    }`}
+                  >
+                    <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-xs font-bold ${
+                      completed
+                        ? 'border-emerald-500 bg-emerald-600 text-white'
+                        : current
+                          ? 'border-blue-500 bg-white text-blue-700'
+                          : 'border-slate-300 bg-white text-slate-400'
+                    }`}>
+                      {completed ? '✓' : index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold">{index + 1}. {action.label}</span>
+                      {timestamp ? (
+                        <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                          Отмечено: {formatDateRu(timestamp)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      completed
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : current
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {completed ? 'готово' : current ? 'текущий' : 'ожидает'}
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ol>
         </DetailSection>
 
         <DetailSection title="Автоматизация">

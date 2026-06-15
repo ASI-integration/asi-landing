@@ -39,6 +39,11 @@ export const CRM_ACTION_STATUSES = [
 
 export type CrmActionStatus = (typeof CRM_ACTION_STATUSES)[number];
 
+export type CrmActionProgressStep = {
+  status: CrmActionStatus;
+  state: 'completed' | 'current' | 'upcoming';
+};
+
 export const SUPPORT_REQUEST_STATUSES = ['new', 'in_progress', 'answered', 'archived'] as const;
 
 export type SupportRequestStatus = (typeof SUPPORT_REQUEST_STATUSES)[number];
@@ -225,6 +230,28 @@ function parseCrmActionTimestamps(value: unknown): Partial<Record<CrmActionStatu
     if (timestamp) result[status] = timestamp;
   }
   return result;
+}
+
+function crmActionIndex(status: string | null | undefined): number {
+  return CRM_ACTION_STATUSES.indexOf(status as CrmActionStatus);
+}
+
+export function getCrmActionProgress(
+  lead: Pick<LeadViewModel, 'status' | 'crmActionTimestamps'>,
+): CrmActionProgressStep[] {
+  const explicitCompletedIndex = CRM_ACTION_STATUSES.reduce((maxIndex, status, index) => (
+    lead.crmActionTimestamps[status] ? Math.max(maxIndex, index) : maxIndex
+  ), -1);
+  const completedUpToIndex = explicitCompletedIndex >= 0
+    ? explicitCompletedIndex
+    : crmActionIndex(lead.status);
+  const currentIndex = completedUpToIndex + 1;
+
+  return CRM_ACTION_STATUSES.map((status, index) => {
+    if (index <= completedUpToIndex) return { status, state: 'completed' };
+    if (index === currentIndex) return { status, state: 'current' };
+    return { status, state: 'upcoming' };
+  });
 }
 
 function isTestSourceValue(value: unknown): boolean {

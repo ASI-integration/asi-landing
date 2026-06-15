@@ -5,6 +5,7 @@ import {
   answersJsonWithCrmStatusAction,
   answersJsonWithSupportStatus,
   buildLeadCopySummary,
+  getCrmActionProgress,
   getLatestLeadsByTelegramId,
   getLeadHistoryByTelegramId,
   normalizeLeadRow,
@@ -193,6 +194,62 @@ describe('dashboard leads parser', () => {
     expect(lead.crmActionTimestamps).toEqual({
       instruction_sent: '2026-06-14T12:00:00.000Z',
     });
+  });
+
+  it('builds sequential CRM action progress from explicit action timestamps', () => {
+    const firstStepLead = normalizeLeadRow(row({
+      status: 'instruction_sent',
+      answers_json: {
+        crm_actions: {
+          instruction_sent: { performed_at: '2026-06-14T12:00:00.000Z' },
+        },
+      },
+    }));
+
+    expect(getCrmActionProgress(firstStepLead)).toEqual([
+      { status: 'instruction_sent', state: 'completed' },
+      { status: 'access_received', state: 'current' },
+      { status: 'test_object_selected', state: 'upcoming' },
+      { status: 'ready_for_setup', state: 'upcoming' },
+    ]);
+  });
+
+  it('uses lead status as legacy CRM progress fallback when action timestamps are missing', () => {
+    const intermediateLead = normalizeLeadRow(row({
+      status: 'access_received',
+      answers_json: {},
+    }));
+    const finalLead = normalizeLeadRow(row({
+      status: 'ready_for_setup',
+      answers_json: {},
+    }));
+
+    expect(getCrmActionProgress(intermediateLead)).toEqual([
+      { status: 'instruction_sent', state: 'completed' },
+      { status: 'access_received', state: 'completed' },
+      { status: 'test_object_selected', state: 'current' },
+      { status: 'ready_for_setup', state: 'upcoming' },
+    ]);
+    expect(getCrmActionProgress(finalLead)).toEqual([
+      { status: 'instruction_sent', state: 'completed' },
+      { status: 'access_received', state: 'completed' },
+      { status: 'test_object_selected', state: 'completed' },
+      { status: 'ready_for_setup', state: 'completed' },
+    ]);
+  });
+
+  it('starts CRM action progress at the first step for new leads', () => {
+    const lead = normalizeLeadRow(row({
+      status: 'new',
+      answers_json: {},
+    }));
+
+    expect(getCrmActionProgress(lead)).toEqual([
+      { status: 'instruction_sent', state: 'current' },
+      { status: 'access_received', state: 'upcoming' },
+      { status: 'test_object_selected', state: 'upcoming' },
+      { status: 'ready_for_setup', state: 'upcoming' },
+    ]);
   });
 
   it('stores channel manager onboarding updates inside answers_json', () => {
