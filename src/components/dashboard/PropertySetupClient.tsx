@@ -130,7 +130,9 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
 
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoTitle, setPhotoTitle] = useState('');
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [addingPhoto, setAddingPhoto] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   const loadMedia = useCallback(async () => {
     try {
@@ -257,25 +259,70 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     }
   }
 
+  async function uploadPhotoFiles(e: React.FormEvent) {
+    e.preventDefault();
+    if (photoFiles.length === 0) return;
+    setUploadingPhotos(true);
+    try {
+      for (const file of photoFiles) {
+        const form = new FormData();
+        form.append('file', file);
+        if (photoTitle.trim()) form.append('title', photoTitle.trim());
+        await fetch(`/api/ops/properties/${propertyId}/media`, {
+          method: 'POST',
+          body: form,
+        });
+      }
+      setPhotoFiles([]);
+      setPhotoTitle('');
+      await loadMedia();
+    } finally {
+      setUploadingPhotos(false);
+    }
+  }
+
   async function removePhoto(mediaId: string) {
     await fetch(`/api/ops/properties/${propertyId}/media/${mediaId}`, { method: 'DELETE' });
     await loadMedia();
   }
 
   async function makeCover(mediaId: string) {
-    await Promise.all(
-      media.map((item) =>
-        fetch(`/api/ops/properties/${propertyId}/media/${item.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isCover: item.id === mediaId }),
-        }),
-      ),
-    );
+    await fetch(`/api/ops/properties/${propertyId}/media/${mediaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isCover: true }),
+    });
     await loadMedia();
   }
 
-  const activeMedia = useMemo(() => media.filter((item) => item.status !== 'deleted'), [media]);
+  async function movePhoto(mediaId: string, direction: -1 | 1) {
+    const index = activeMedia.findIndex((item) => item.id === mediaId);
+    const swapWith = index + direction;
+    if (index < 0 || swapWith < 0 || swapWith >= activeMedia.length) return;
+
+    const current = activeMedia[index];
+    const target = activeMedia[swapWith];
+    if (!current || !target) return;
+
+    await Promise.all([
+      fetch(`/api/ops/properties/${propertyId}/media/${current.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sortOrder: target.sortOrder }),
+      }),
+      fetch(`/api/ops/properties/${propertyId}/media/${target.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sortOrder: current.sortOrder }),
+      }),
+    ]);
+    await loadMedia();
+  }
+
+  const activeMedia = useMemo(
+    () => media.filter((item) => item.status !== 'deleted').sort((a, b) => a.sortOrder - b.sortOrder),
+    [media],
+  );
   const mediaCount = activeMedia.length;
 
   const checklist = useMemo(
@@ -536,8 +583,27 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       {/* 4. Фото */}
       <Section id="photos" step={4} title="Фото" subtitle="Добавьте фото по ссылке. Список ниже — уже добавленные фото." active={activeStepId === 'photos'}>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Загрузка файлов с устройства будет подключена следующим шагом. Сейчас можно добавить фото по ссылке (URL).
+          Загрузите фото объекта, выберите главное фото и расставьте порядок для карточки объекта.
         </div>
+        <form onSubmit={uploadPhotoFiles} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Фото с устройства">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className={inputCls}
+              onChange={(e) => setPhotoFiles(Array.from(e.target.files ?? []))}
+            />
+          </Field>
+          <Field label="Подпись для новых фото">
+            <input className={inputCls} value={photoTitle} onChange={(e) => setPhotoTitle(e.target.value)} />
+          </Field>
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={uploadingPhotos || photoFiles.length === 0} className={primaryBtn}>
+              {uploadingPhotos ? 'Загрузка...' : `Загрузить фото${photoFiles.length > 0 ? `: ${photoFiles.length}` : ''}`}
+            </button>
+          </div>
+        </form>
         <form onSubmit={addPhoto} className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Ссылка на фото (URL)">
             <input className={inputCls} value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://…" />
@@ -566,8 +632,32 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 break-all text-xs text-slate-500">{item.url ?? item.storagePath}</p>
-                  <div className="mt-2 flex gap-3">
+                  {item.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.url}
+                      alt={item.title ?? 'Фото объекта'}
+                      className="mt-3 aspect-video w-full rounded-md border border-slate-100 object-cover"
+                    />
+                  ) : null}
+                  <p className="mt-2 break-all text-xs text-slate-500">{item.url ?? item.storagePath}</p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void movePhoto(item.id, -1)}
+                      disabled={activeMedia[0]?.id === item.id}
+                      className="text-xs font-medium text-slate-700 hover:underline disabled:text-slate-300 disabled:no-underline"
+                    >
+                      Вверх
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void movePhoto(item.id, 1)}
+                      disabled={activeMedia[activeMedia.length - 1]?.id === item.id}
+                      className="text-xs font-medium text-slate-700 hover:underline disabled:text-slate-300 disabled:no-underline"
+                    >
+                      Вниз
+                    </button>
                     {!item.isCover ? (
                       <button type="button" onClick={() => void makeCover(item.id)} className="text-xs font-medium text-slate-700 hover:underline">
                         Сделать главным

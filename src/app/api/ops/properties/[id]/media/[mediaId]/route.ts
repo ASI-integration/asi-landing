@@ -6,10 +6,23 @@ import {
 } from '@/lib/ops-foundation/api';
 import { parseUpdateMediaInput } from '@/lib/ops-foundation/parsers';
 import { deletePropertyMedia, updatePropertyMedia } from '@/lib/ops-foundation/repository';
+import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
 type RouteParams = { params: { id: string; mediaId: string } };
+
+async function removeStoredMedia(storagePath: string | null): Promise<void> {
+  if (!storagePath) return;
+  const [bucket, ...pathParts] = storagePath.split('/');
+  const path = pathParts.join('/');
+  if (!bucket || !path) return;
+  try {
+    await supabase.storage.from(bucket).remove([path]);
+  } catch {
+    // DB visibility is the source of truth; a missing storage object should not block removal from the UI.
+  }
+}
 
 export async function PATCH(req: Request, { params }: RouteParams) {
   const auth = await requireOpsFoundationContext();
@@ -37,6 +50,7 @@ export async function DELETE(_: Request, { params }: RouteParams) {
 
   try {
     const media = await deletePropertyMedia(auth.ctx, params.id, params.mediaId);
+    await removeStoredMedia(media.storagePath);
     return NextResponse.json({ ok: true, media });
   } catch (err) {
     if (err instanceof Error && err.message === 'property_not_found') {

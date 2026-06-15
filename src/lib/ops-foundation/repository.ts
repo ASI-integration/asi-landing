@@ -589,6 +589,65 @@ export async function listPropertyMedia(
   }
 }
 
+async function clearPropertyMediaCover(
+  propertyId: string,
+  exceptMediaId?: string,
+): Promise<void> {
+  try {
+    let query = supabase
+      .from('property_media')
+      .update({ is_cover: false, updated_at: nowIso() })
+      .eq('property_id', propertyId)
+      .neq('status', 'deleted');
+    if (exceptMediaId) query = query.neq('id', exceptMediaId) as typeof query;
+    const { error } = await query;
+    if (error) throw error;
+  } catch (err) {
+    wrapDbError(err);
+  }
+}
+
+async function ensurePropertyMediaCover(ctx: OpsFoundationContext, propertyId: string): Promise<void> {
+  const media = await listPropertyMedia(ctx, propertyId);
+  if (media.length === 0 || media.some((item) => item.isCover)) return;
+
+  const first = media[0];
+  if (!first) return;
+
+  try {
+    const { error } = await supabase
+      .from('property_media')
+      .update({ is_cover: true, updated_at: nowIso() })
+      .eq('id', first.id)
+      .eq('property_id', propertyId);
+    if (error) throw error;
+  } catch (err) {
+    wrapDbError(err);
+  }
+}
+
+async function nextPropertyMediaSortOrder(
+  propertyId: string,
+): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('property_media')
+      .select('sort_order')
+      .eq('property_id', propertyId)
+      .neq('status', 'deleted')
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const current = typeof (data as { sort_order?: unknown } | null)?.sort_order === 'number'
+      ? (data as { sort_order: number }).sort_order
+      : -1;
+    return current + 1;
+  } catch (err) {
+    wrapDbError(err);
+  }
+}
+
 export async function addPropertyMedia(
   ctx: OpsFoundationContext,
   propertyId: string,
@@ -601,6 +660,13 @@ export async function addPropertyMedia(
   }
 
   const now = nowIso();
+  const existingMedia = await listPropertyMedia(ctx, propertyId);
+  const isCover = input.isCover ?? existingMedia.length === 0;
+  const sortOrder = input.sortOrder ?? (await nextPropertyMediaSortOrder(propertyId));
+  if (isCover) {
+    await clearPropertyMediaCover(propertyId);
+  }
+
   try {
     const { data, error } = await supabase
       .from('property_media')
@@ -610,8 +676,8 @@ export async function addPropertyMedia(
         storage_path: input.storagePath ?? null,
         title: input.title ?? null,
         description: input.description ?? null,
-        sort_order: input.sortOrder ?? 0,
-        is_cover: input.isCover ?? false,
+        sort_order: sortOrder,
+        is_cover: isCover,
         status: input.status ?? 'active',
         created_at: now,
         updated_at: now,
@@ -641,6 +707,11 @@ export async function updatePropertyMedia(
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder;
   if (input.isCover !== undefined) updates.is_cover = input.isCover;
   if (input.status !== undefined) updates.status = input.status;
+  if (input.status === 'deleted') updates.is_cover = false;
+
+  if (input.isCover === true && input.status !== 'deleted') {
+    await clearPropertyMediaCover(propertyId, mediaId);
+  }
 
   try {
     const { data, error } = await supabase
@@ -652,7 +723,11 @@ export async function updatePropertyMedia(
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('media_not_found');
-    return mapMedia(data as MediaRow);
+    const media = mapMedia(data as MediaRow);
+    if (input.status === 'deleted' || input.isCover === false) {
+      await ensurePropertyMediaCover(ctx, propertyId);
+    }
+    return media;
   } catch (err) {
     wrapDbError(err);
   }
