@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { processUpdate } from '@/lib/communication/orchestrator';
 import { processTelegramLeadIntakeUpdate } from '@/lib/communication/telegram-lead-intake';
+import { processTelegramRoutingUpdate } from '@/lib/communication/telegram-routing';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 import type { TelegramUpdate } from '@/lib/communication/types';
 
@@ -114,6 +115,23 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     if (update && (hasText || hasCallback) && chatId && shouldTryLeadIntake(webhookScope)) {
+      let routingResult = null;
+      try {
+        routingResult = await processTelegramRoutingUpdate(update);
+      } catch (e) {
+        console.error('[tg:webhook] telegram routing threw; falling back to lead intake', e);
+      }
+      if (routingResult) {
+        console.info('[comm:routing]', {
+          path: 'telegram_routing',
+          outcome: routingResult.outcome,
+          update_id: update.update_id,
+          chat_id: chatId,
+          telegram_event_type: telegramEventType,
+        });
+        return NextResponse.json({ ok: true, path: 'telegram_routing' }, { status: 200 });
+      }
+
       let leadResult = null;
       try {
         leadResult = await processTelegramLeadIntakeUpdate(update);

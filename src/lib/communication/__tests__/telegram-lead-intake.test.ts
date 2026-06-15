@@ -132,6 +132,7 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 import {
+  beginTelegramLeadIntakeFromRouting,
   parseAsiFeedbackStartSource,
   processTelegramLeadIntakeUpdate,
 } from '../telegram-lead-intake';
@@ -173,6 +174,19 @@ function callbackUpdate(data: string, update_id: number) {
   };
 }
 
+function leadUser() {
+  return {
+    telegram_user_id: '9001',
+    telegram_username: 'pilot_owner',
+    first_name: 'Иван',
+    chat_id: 7001,
+  };
+}
+
+async function startLead(source = 'site', update_id = 1001) {
+  await beginTelegramLeadIntakeFromRouting(leadUpdate(`/start ${source}`, update_id), leadUser(), source as any);
+}
+
 describe('ASI Feedback Telegram lead intake', () => {
   beforeEach(() => {
     mockDb.rows = [];
@@ -205,18 +219,11 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('runs the v2 button flow with multi-select, other text normalization, and AI fallback', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start tenchat', 1001));
+    await startLead('tenchat', 1001);
     expect(mockDb.rows).toHaveLength(1);
     expect(mockDb.rows[0].source).toBe('tenchat');
-    expect(mockDb.rows[0].answers_json.flow.step).toBe('menu');
-    expect(mockReplyToTelegram.mock.calls[0]?.[1]).toContain('Выберите, что хотите сделать');
-    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Оставить заявку');
-    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).toContain('Задать вопрос / поддержка');
-
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 10015));
     expect(mockDb.rows[0].answers_json.flow.step).toBe('object_count');
-    expect(mockEditTelegramMessageText.mock.calls[0]?.[2]).toContain('Сколько объектов');
-    expect(JSON.stringify(mockReplyToTelegram.mock.calls[0]?.[3])).not.toContain('Овербукинг');
+    expect(mockReplyToTelegram.mock.calls[0]?.[1]).toContain('Сколько объектов');
 
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 1002));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:object_types:houses', 1003));
@@ -304,8 +311,7 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('supports the expanded channel catalog via buttons and free-text normalization', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 5001));
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 5002));
+    await startLead('site', 5001);
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 5003));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:object_types:apartments', 50031));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 5004));
@@ -337,8 +343,7 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('selects every main OTA via the "Выбрать все OTA" button without picking non-OTA channels', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 6001));
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 6002));
+    await startLead('site', 6001);
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:6_20', 6003));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:object_types:apartments', 60031));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 6004));
@@ -481,8 +486,7 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('lets support return back to the lead questionnaire', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 3101));
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:support', 3102));
+    await processTelegramLeadIntakeUpdate(leadUpdate('/start support', 3101));
 
     expect(mockDb.rows[0].answers_json.flow.step).toBe('support');
     expect(mockReplyToTelegram.mock.calls[mockReplyToTelegram.mock.calls.length - 1]?.[1]).toContain('Напишите вопрос одним сообщением');
@@ -637,8 +641,7 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('asks the user to go back and choose when a required step is submitted empty', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 7101));
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 7102));
+    await startLead('site', 7101);
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:1', 7103));
 
     const blocked = await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:d:object_types', 7104));
@@ -655,11 +658,11 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('does not create a fourth full lead start within one hour and shows a soft duplicate message', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 7301));
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start tenchat', 7302));
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start dzen', 7303));
+    await startLead('site', 7301);
+    await startLead('tenchat', 7302);
+    await startLead('dzen', 7303);
 
-    const result = await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 7304));
+    const result = await beginTelegramLeadIntakeFromRouting(leadUpdate('/start site', 7304), leadUser(), 'site');
 
     expect(result?.reply).toContain('активно тестируете ASI');
     expect(result?.reply).toContain('не плодить дубли');
@@ -819,8 +822,7 @@ describe('ASI Feedback Telegram lead intake', () => {
   });
 
   it('treats prompt-injection free text ("Другое") as data without escalating potential', async () => {
-    await processTelegramLeadIntakeUpdate(leadUpdate('/start site', 9001));
-    await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:lead', 9002));
+    await startLead('site', 9001);
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:s:object_count:1', 9003));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:t:object_types:apartments', 9004));
     await processTelegramLeadIntakeUpdate(callbackUpdate('ali2:o:object_types', 9005));

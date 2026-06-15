@@ -300,6 +300,8 @@ export default function CommunicationPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [replyState, setReplyState] = useState<ReplyState>('idle');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [guestTestLink, setGuestTestLink] = useState<string | null>(null);
+  const [guestTestBusy, setGuestTestBusy] = useState(false);
 
   async function loadReviews(): Promise<void> {
     setLoading(true);
@@ -321,6 +323,28 @@ export default function CommunicationPage() {
   useEffect(() => {
     void loadReviews();
   }, []);
+
+  async function createGuestTestLink(propertyId?: string): Promise<void> {
+    setGuestTestBusy(true);
+    setGuestTestLink(null);
+    try {
+      const res = await fetch('/api/telegram/guest-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(propertyId ? { propertyId } : {}),
+      });
+      const json = (await res.json()) as { ok?: boolean; deepLink?: string; error?: string };
+      if (!res.ok || !json.ok || !json.deepLink) {
+        setActionMessage(json.error ?? 'Не удалось создать ссылку для тестового гостя');
+        return;
+      }
+      setGuestTestLink(json.deepLink);
+    } catch {
+      setActionMessage('Ошибка сети при создании ссылки для тестового гостя');
+    } finally {
+      setGuestTestBusy(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -513,6 +537,33 @@ export default function CommunicationPage() {
           Рабочий экран для сообщений гостей: Telegram уже основной, Email даёт базовый контур, телефон подключается следующим этапом.
         </p>
       </header>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Тестовый гость в Telegram</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Проверка гостевого автопилота без реального бронирования: адрес, заезд, Wi‑Fi, правила.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={guestTestBusy}
+            onClick={() => void createGuestTestLink()}
+            className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          >
+            {guestTestBusy ? 'Создание…' : 'Создать тестового гостя'}
+          </button>
+        </div>
+        {guestTestLink ? (
+          <p className="mt-3 text-sm text-slate-700">
+            Ссылка для Telegram:{' '}
+            <a href={guestTestLink} className="font-medium text-blue-700 underline" target="_blank" rel="noreferrer">
+              {guestTestLink}
+            </a>
+          </p>
+        ) : null}
+      </section>
 
       <section className="grid gap-3 lg:grid-cols-3">
         {channelReadinessCards.map((card) => {

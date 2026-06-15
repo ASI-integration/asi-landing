@@ -165,7 +165,7 @@ type LeadRow = {
   updated_at: string;
 };
 
-type TelegramLeadUser = {
+export type TelegramLeadUser = {
   telegram_user_id: string;
   telegram_username: string | null;
   first_name: string | null;
@@ -2045,6 +2045,59 @@ async function handleCallback(update: TelegramUpdate, lead: LeadRow, user: Teleg
   };
 }
 
+export async function beginTelegramLeadIntakeFromRouting(
+  update: TelegramUpdate,
+  user: TelegramLeadUser,
+  source: AsiFeedbackLeadSource = 'unknown',
+): Promise<ProcessResult> {
+  const leadStartDecision = await checkUserRateLimit(user, 'lead_start', source, { command: 'start' });
+  if (leadStartDecision.rate_limited) {
+    await markLatestLeadForManualRateLimit(user, leadStartDecision);
+    await replyToTelegram(user.chat_id, FREQUENT_START_REPLY, {
+      handler: 'asi_feedback_lead_intake/rate_limited_lead_start',
+      update_id: update.update_id,
+    }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: frequentStartKeyboard() });
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: FREQUENT_START_REPLY,
+    };
+  }
+
+  const lead = await createLead(user, source, 'object_count');
+  if (!lead) {
+    await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
+      handler: 'asi_feedback_lead_intake/storage_error',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Error,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: STORAGE_ERROR_REPLY,
+    };
+  }
+
+  await sendQuestion(user, 'object_count', lead.answers_json ?? {}, update.update_id);
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: update.update_id,
+    chat_id: user.chat_id,
+    category: MessageCategory.Start,
+    reply: questionText('object_count', lead.answers_json ?? {}),
+  };
+}
+
+export async function beginTelegramSupportFromRouting(
+  update: TelegramUpdate,
+  user: TelegramLeadUser,
+): Promise<ProcessResult> {
+  return beginSupportFlow(update, user, null, 'support');
+}
+
 export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): Promise<ProcessResult | null> {
   const message = extractMessage(update);
   const text = (message?.text ?? '').trim();
@@ -2075,47 +2128,8 @@ export async function processTelegramLeadIntakeUpdate(update: TelegramUpdate): P
     return beginSupportFlow(update, user, null, 'support');
   }
 
-  const startSource = text ? parseAsiFeedbackStartSource(text) : null;
-  if (startSource) {
-    const leadStartDecision = await checkUserRateLimit(user, 'lead_start', startSource, { command: 'start' });
-    if (leadStartDecision.rate_limited) {
-      await markLatestLeadForManualRateLimit(user, leadStartDecision);
-      await replyToTelegram(user.chat_id, FREQUENT_START_REPLY, {
-        handler: 'asi_feedback_lead_intake/rate_limited_lead_start',
-        update_id: update.update_id,
-      }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: frequentStartKeyboard() });
-      return {
-        outcome: ProcessOutcome.Replied,
-        update_id: update.update_id,
-        chat_id: user.chat_id,
-        category: MessageCategory.Start,
-        reply: FREQUENT_START_REPLY,
-      };
-    }
-
-    const lead = await createLead(user, startSource);
-    if (!lead) {
-      await replyToTelegram(user.chat_id, STORAGE_ERROR_REPLY, {
-        handler: 'asi_feedback_lead_intake/storage_error',
-        update_id: update.update_id,
-      }, getAsiFeedbackTelegramSendOptions());
-      return {
-        outcome: ProcessOutcome.Error,
-        update_id: update.update_id,
-        chat_id: user.chat_id,
-        category: MessageCategory.Start,
-        reply: STORAGE_ERROR_REPLY,
-      };
-    }
-
-    await sendMainMenu(user, lead.answers_json ?? {}, update.update_id);
-    return {
-      outcome: ProcessOutcome.Replied,
-      update_id: update.update_id,
-      chat_id: user.chat_id,
-      category: MessageCategory.Start,
-      reply: MAIN_MENU_REPLY,
-    };
+  if (startMatch) {
+    return null;
   }
 
   const activeLead = await findActiveLead(user.telegram_user_id);

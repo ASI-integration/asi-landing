@@ -16,6 +16,11 @@ vi.mock('@/lib/communication/telegram-lead-intake', () => ({
   processTelegramLeadIntakeUpdate: (...args: unknown[]) => mockProcessTelegramLeadIntakeUpdate(...args),
 }));
 
+const mockProcessTelegramRoutingUpdate = vi.fn();
+vi.mock('@/lib/communication/telegram-routing', () => ({
+  processTelegramRoutingUpdate: (...args: unknown[]) => mockProcessTelegramRoutingUpdate(...args),
+}));
+
 const mockReplyToTelegram = vi.fn();
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
@@ -36,6 +41,8 @@ describe('Telegram webhook route', () => {
     mockProcessUpdate.mockReset();
     mockProcessTelegramVoiceUpdate.mockReset();
     mockProcessTelegramLeadIntakeUpdate.mockReset();
+    mockProcessTelegramRoutingUpdate.mockReset();
+    mockProcessTelegramRoutingUpdate.mockResolvedValue(null);
     mockProcessTelegramLeadIntakeUpdate.mockResolvedValue(null);
     mockReplyToTelegram.mockReset();
     delete process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -93,8 +100,28 @@ describe('Telegram webhook route', () => {
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
   });
 
-  it('routes ASI Feedback lead intake before the operational orchestrator', async () => {
+  it('routes ASI Feedback telegram routing before lead intake and orchestrator', async () => {
     const update = tgTextUpdate({ chat_id: 334, update_id: 9007, message_id: 48, text: '/start site' });
+    mockProcessTelegramRoutingUpdate.mockResolvedValue({
+      outcome: 'replied',
+      update_id: 9007,
+      chat_id: 334,
+      reply: 'role selection',
+    });
+
+    const res = await POST(telegramRequest(update));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, path: 'telegram_routing' });
+    expect(mockProcessTelegramRoutingUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessTelegramLeadIntakeUpdate).toHaveBeenCalledTimes(0);
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
+    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
+  });
+
+  it('routes ASI Feedback lead intake after routing miss', async () => {
+    const update = tgTextUpdate({ chat_id: 334, update_id: 9007, message_id: 48, text: '2-5 объектов' });
     mockProcessTelegramLeadIntakeUpdate.mockResolvedValue({
       outcome: 'replied',
       update_id: 9007,
@@ -107,6 +134,7 @@ describe('Telegram webhook route', () => {
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ ok: true, path: 'telegram_lead_intake' });
+    expect(mockProcessTelegramRoutingUpdate).toHaveBeenCalledWith(update);
     expect(mockProcessTelegramLeadIntakeUpdate).toHaveBeenCalledWith(update);
     expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
