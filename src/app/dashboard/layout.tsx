@@ -17,6 +17,7 @@ type DashboardNavItem = {
 const navItems: readonly DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview' },
   { href: '/dashboard/leads', key: 'leads', label: 'Заявки', internalOnly: true },
+  { href: '/dashboard/crm', key: 'crm', label: 'CRM', internalOnly: true },
   { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
   { href: '/dashboard/channel-manager', key: 'channelManager' },

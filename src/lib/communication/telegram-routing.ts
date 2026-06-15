@@ -23,6 +23,8 @@ import {
   type TelegramRoutingRole,
 } from '@/lib/communication/telegram-routing-session';
 import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
+import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegram-owner-notifications';
+import { recordCrmCommunicationEvent, upsertCrmContactFromTelegram } from '@/lib/crm/repository';
 import { replyToTelegram, answerTelegramCallbackQuery, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
@@ -55,6 +57,75 @@ type ParsedRoutingCallback =
   | { kind: 'guest_test'; propertyId: string | null };
 
 type TelegramRoutingUser = TelegramLeadUser;
+
+function crmNotifyOptionsForGuest(
+  session: ReturnType<typeof getTelegramRoutingSession>,
+): Pick<TelegramOwnerNotificationInput, 'crmAllowCreateContact' | 'crmSource' | 'crmRole'> {
+  const testGuest = Boolean(session?.testGuest);
+  return {
+    crmAllowCreateContact: testGuest,
+    crmSource: testGuest ? 'test' : 'telegram',
+    crmRole: 'guest',
+  };
+}
+
+async function syncCrmRoleSelection(
+  user: TelegramRoutingUser,
+  role: Exclude<TelegramRoutingRole, 'unknown' | 'support' | 'guest'>,
+  propertyId?: string | null,
+): Promise<void> {
+  try {
+    if (role === 'lead') {
+      await upsertCrmContactFromTelegram({
+        name: user.first_name,
+        role: 'lead',
+        source: 'telegram',
+        telegramUserId: user.telegram_user_id,
+        telegramUsername: user.telegram_username,
+        telegramChatId: user.chat_id,
+        status: 'new',
+      });
+      return;
+    }
+
+    await upsertCrmContactFromTelegram({
+      name: user.first_name,
+      role: 'owner',
+      source: 'telegram',
+      telegramUserId: user.telegram_user_id,
+      telegramUsername: user.telegram_username,
+      telegramChatId: user.chat_id,
+      status: 'qualified',
+      propertyId: propertyId ?? undefined,
+    });
+  } catch (error) {
+    console.error('[crm] role selection sync failed', {
+      error: error instanceof Error ? error.message : String(error),
+      role,
+      telegram_user_id: user.telegram_user_id,
+    });
+  }
+}
+
+async function syncCrmGuestTest(user: TelegramRoutingUser, propertyId: string): Promise<void> {
+  try {
+    await upsertCrmContactFromTelegram({
+      name: user.first_name,
+      role: 'guest',
+      source: 'test',
+      telegramUserId: user.telegram_user_id,
+      telegramUsername: user.telegram_username,
+      telegramChatId: user.chat_id,
+      propertyId,
+      status: 'testing_communication',
+    });
+  } catch (error) {
+    console.error('[crm] guest test sync failed', {
+      error: error instanceof Error ? error.message : String(error),
+      telegram_user_id: user.telegram_user_id,
+    });
+  }
+}
 
 function getAsiFeedbackTelegramSendOptions(): TelegramSendOptions {
   return {
@@ -224,6 +295,8 @@ async function activateGuestTestMode(
     communicationMode: 'autopilot',
   });
 
+  void syncCrmGuestTest(user, resolvedPropertyId);
+
   await replyToTelegram(user.chat_id, GUEST_TEST_WELCOME_REPLY, {
     handler: 'telegram_routing/guest_test',
     update_id: update.update_id,
@@ -273,6 +346,7 @@ async function handleRoleSelectionCallback(
   }
 
   if (role === 'owner') {
+    void syncCrmRoleSelection(user, 'owner');
     await replyToTelegram(user.chat_id, OWNER_WELCOME_REPLY, {
       handler: 'telegram_routing/role_owner',
       update_id: update.update_id,
@@ -287,6 +361,7 @@ async function handleRoleSelectionCallback(
   }
 
   if (role === 'lead') {
+    void syncCrmRoleSelection(user, 'lead');
     return beginTelegramLeadIntakeFromRouting(update, user, leadSource);
   }
 
@@ -385,6 +460,7 @@ async function processGuestAutopilotMessage(
   });
 
   const notificationType = classifyOwnerNotificationType(decision);
+  const crmOptions = crmNotifyOptionsForGuest(session);
 
   if (mode === 'manual') {
     await notifyTelegramOwner({
@@ -400,6 +476,7 @@ async function processGuestAutopilotMessage(
       updateId: update.update_id,
       confidence: decision.confidence,
       bookingId: context.booking?.id ?? null,
+      ...crmOptions,
     });
     await replyToTelegram(user.chat_id, MANUAL_SAVED_REPLY, {
       handler: 'telegram_routing/guest_manual',
@@ -430,6 +507,7 @@ async function processGuestAutopilotMessage(
       updateId: update.update_id,
       confidence: decision.confidence,
       bookingId: context.booking?.id ?? null,
+      ...crmOptions,
     });
     await replyToTelegram(user.chat_id, DRAFT_PREPARED_REPLY, {
       handler: 'telegram_routing/guest_draft',
@@ -465,6 +543,7 @@ async function processGuestAutopilotMessage(
       updateId: update.update_id,
       confidence: decision.confidence,
       bookingId: context.booking?.id ?? null,
+      ...crmOptions,
     });
     await replyToTelegram(user.chat_id, guestReply, {
       handler: 'telegram_routing/guest_missing_data',
@@ -494,6 +573,7 @@ async function processGuestAutopilotMessage(
     updateId: update.update_id,
     confidence: decision.confidence,
     bookingId: context.booking?.id ?? null,
+    ...crmOptions,
   });
 
   await replyToTelegram(user.chat_id, guestReply, {
@@ -515,6 +595,25 @@ async function processOwnerMessage(
   user: TelegramRoutingUser,
   messageText: string,
 ): Promise<ProcessResult> {
+  void upsertCrmContactFromTelegram({
+    name: user.first_name,
+    role: 'owner',
+    source: 'telegram',
+    telegramUserId: user.telegram_user_id,
+    telegramUsername: user.telegram_username,
+    telegramChatId: user.chat_id,
+    lastMessage: messageText,
+    status: 'qualified',
+  }).catch(() => undefined);
+
+  void recordCrmCommunicationEvent({
+    telegramUserId: user.telegram_user_id,
+    telegramChatId: user.chat_id,
+    eventType: 'message_inbound',
+    messageText,
+    allowCreateContact: false,
+  }).catch(() => undefined);
+
   await notifyTelegramOwner({
     type: 'escalation_created',
     guestChatId: user.chat_id,
@@ -523,6 +622,9 @@ async function processOwnerMessage(
     messageText,
     escalationReason: 'owner_message',
     updateId: update.update_id,
+    crmAllowCreateContact: false,
+    crmRole: 'owner',
+    crmSource: 'telegram',
   });
 
   const reply = 'Принял сообщение. Команда ASI увидит его в уведомлениях.';

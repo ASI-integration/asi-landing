@@ -1,6 +1,7 @@
 import { auditLog } from '@/lib/communication/audit';
 import { saveCommunicationAutopilotDecision } from '@/lib/communication/persistence';
 import { AuditEventType } from '@/lib/communication/types';
+import { recordCrmEventFromOwnerNotification } from '@/lib/crm/repository';
 import { sendTelegramMessageToChat, type TelegramSendOptions } from '@/lib/telegram';
 
 export type TelegramOwnerNotificationType =
@@ -24,6 +25,9 @@ export type TelegramOwnerNotificationInput = {
   updateId?: number;
   confidence?: number;
   bookingId?: string | null;
+  crmAllowCreateContact?: boolean;
+  crmSource?: 'telegram' | 'test';
+  crmRole?: 'guest' | 'owner' | 'lead';
 };
 
 export type TelegramOwnerNotificationResult = {
@@ -134,6 +138,30 @@ async function persistOwnerNotification(input: TelegramOwnerNotificationInput): 
   }
 }
 
+async function persistCrmOwnerNotification(input: TelegramOwnerNotificationInput): Promise<void> {
+  try {
+    await recordCrmEventFromOwnerNotification({
+      type: input.type,
+      guestChatId: input.guestChatId,
+      guestName: input.guestName,
+      guestUsername: input.guestUsername,
+      messageText: input.messageText,
+      replyText: input.replyText,
+      propertyId: input.propertyId,
+      intent: input.intent,
+      escalationReason: input.escalationReason,
+      missingFields: input.missingFields,
+      allowCreateContact: input.crmAllowCreateContact ?? false,
+      source: input.crmSource,
+      role: input.crmRole,
+    });
+  } catch (error) {
+    console.error('[crm] owner notification event failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function notifyTelegramOwner(
   input: TelegramOwnerNotificationInput,
 ): Promise<TelegramOwnerNotificationResult> {
@@ -143,6 +171,7 @@ export async function notifyTelegramOwner(
   if (guestMatchesOwner || ownerChatIds.length === 0) {
     const skippedReason = ownerChatIds.length === 0 ? 'owner_chat_not_configured' : 'guest_chat_is_owner_chat';
     const persisted = await persistOwnerNotification(input);
+    void persistCrmOwnerNotification(input);
     auditLog({
       type: AuditEventType.EscalationCreated,
       chat_id: input.guestChatId,
@@ -155,6 +184,7 @@ export async function notifyTelegramOwner(
   const ownerChatId = ownerChatIds[0];
   if (String(input.guestChatId) === ownerChatId) {
     const persisted = await persistOwnerNotification(input);
+    void persistCrmOwnerNotification(input);
     return { sentToTelegram: false, persisted, skippedReason: 'guest_chat_is_owner_chat' };
   }
 
@@ -164,5 +194,6 @@ export async function notifyTelegramOwner(
     getAsiFeedbackTelegramSendOptions(),
   );
   const persisted = await persistOwnerNotification(input);
+  void persistCrmOwnerNotification(input);
   return { sentToTelegram: true, persisted };
 }

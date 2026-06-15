@@ -31,6 +31,7 @@ import {
   type InputPolicyTextMetadata,
 } from '@/lib/policy/input-policy';
 import { callLLM } from '@/lib/openai';
+import { upsertCrmContactFromTelegram } from '@/lib/crm/repository';
 import { supabase } from '@/lib/supabase';
 import {
   answerTelegramCallbackQuery,
@@ -2080,6 +2081,22 @@ export async function beginTelegramLeadIntakeFromRouting(
       reply: STORAGE_ERROR_REPLY,
     };
   }
+
+  void upsertCrmContactFromTelegram({
+    name: user.first_name,
+    role: 'lead',
+    source: 'telegram',
+    telegramUserId: user.telegram_user_id,
+    telegramUsername: user.telegram_username,
+    telegramChatId: user.chat_id,
+    leadId: lead.id,
+    status: 'new',
+  }).catch((error) => {
+    console.error('[crm] lead intake sync failed', {
+      error: error instanceof Error ? error.message : String(error),
+      lead_id: lead.id,
+    });
+  });
 
   await sendQuestion(user, 'object_count', lead.answers_json ?? {}, update.update_id);
   return {
