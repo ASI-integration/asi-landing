@@ -111,6 +111,7 @@ export type CommunicationAutopilotContext = {
 
 export type CommunicationAutopilotMetadata = {
   intent: CommunicationAutopilotIntent;
+  passportScenario?: string;
   matchedSignals: string[];
   missingContext: string[];
   contextKeys: string[];
@@ -428,7 +429,7 @@ export function decideCommunicationAutopilotResponse(input: {
         action: 'escalate',
         confidence: classification.confidence,
         replyText:
-          'Понял запрос по отмене/возврату. Передаю оператору — сверим бронь и оплату без автоматических обещаний.',
+          'Понял запрос по отмене или возврату. Передаю оператору — проверим бронирование и условия оплаты.',
         escalationReason: 'booking_payment_support',
         metadata: baseMetadata,
       };

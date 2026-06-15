@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
 import type { CommunicationAutopilotContext } from '../autopilot';
+import { guestReplyContainsForbiddenInternalTokens } from '../guest-facing-ru';
 import {
   __resetTelegramPromptInjectionGuardForTests,
   evaluateTelegramPromptInjectionGuard,
@@ -84,12 +85,33 @@ describe('Communication Autopilot v1 for Telegram guest passport questions', () 
     expect(decision.replyText).toContain('только после подтверждения оператора');
   });
 
-  it('escalates price and payment questions without inventing terms', async () => {
-    const decision = await decide('Какая цена и можно оплатить наличными?');
+  it('escalates price and payment questions with a clean guest-facing phrase', async () => {
+    const decision = await decide('Оплата наличными?');
 
     expect(decision.action).toBe('escalate');
     expect(decision.metadata.intent).toBe('booking_payment_support');
-    expect(decision.replyText).toMatch(/без автоматических обещаний/);
+    expect(decision.replyText).toBe(
+      'Понял вопрос по оплате. Передаю его оператору, чтобы он проверил бронирование и условия.',
+    );
+    expect(decision.replyText).not.toMatch(/без автоматических обещаний/);
+    expect(guestReplyContainsForbiddenInternalTokens(decision.replyText)).toBe(false);
+  });
+
+  it('keeps guest replies free of internal debug terms across key scenarios', async () => {
+    const cases = [
+      { message: 'Какой адрес?', context: passportContext },
+      { message: 'Как заселиться?', context: passportContext },
+      { message: 'Оплата наличными?', context: passportContext },
+      { message: 'В квартире не работает душ', context: passportContext },
+      { message: 'Пожар и дым в квартире, срочно помогите', context: passportContext },
+      { message: 'Посоветуйте ресторан рядом с музеем', context: passportContext },
+    ] as const;
+
+    for (const { message, context } of cases) {
+      const decision = await decide(message, context);
+      expect(guestReplyContainsForbiddenInternalTokens(decision.replyText), message).toBe(false);
+      expect(decision.replyText).not.toMatch(/без автоматических обещаний|автоматический ответ|object\.address|directionsText|prop_A/i);
+    }
   });
 
   it('escalates property problems to a human', async () => {
@@ -113,7 +135,7 @@ describe('Communication Autopilot v1 for Telegram guest passport questions', () 
 
     expect(decision.action).toBe('escalate');
     expect(decision.metadata.intent).toBe('unknown');
-    expect(decision.replyText).toContain('уточню этот вопрос у оператора');
+    expect(decision.replyText).toContain('уточню это у оператора');
     expect(decision.replyText).not.toContain('паспорт');
   });
 
@@ -128,6 +150,33 @@ describe('Communication Autopilot v1 for Telegram guest passport questions', () 
       const decision = await decide(phrase);
       expect(decision.metadata.intent, phrase).toBe('check_in_access');
     }
+  });
+
+  it('returns clean guest reply when check-in data is missing', async () => {
+    const contextWithoutCheckin: CommunicationAutopilotContext = {
+      ...passportContext,
+      object: {
+        id: passportContext.object.id,
+        name: passportContext.object.name,
+        address: passportContext.object.address,
+        directionsText: passportContext.object.directionsText,
+        wifiName: passportContext.object.wifiName,
+        wifiPassword: passportContext.object.wifiPassword,
+        houseRules: passportContext.object.houseRules,
+        earlyCheckinPolicy: passportContext.object.earlyCheckinPolicy,
+        lateCheckoutPolicy: passportContext.object.lateCheckoutPolicy,
+      },
+      booking: {
+        id: passportContext.booking.id,
+        verified: passportContext.booking.verified,
+      },
+    };
+    const decision = await decide('Как заселиться?', contextWithoutCheckin);
+
+    expect(decision.action).toBe('escalate');
+    expect(decision.replyText).toBe('Сейчас уточню, как заселиться, у оператора и напишу вам здесь.');
+    expect(decision.replyText).not.toContain('object.check_in_text');
+    expect(guestReplyContainsForbiddenInternalTokens(decision.replyText)).toBe(false);
   });
 
   it('returns clean guest reply when address data is missing', async () => {

@@ -108,6 +108,7 @@ export function normalizeBookingWordingRu(text: string | null | undefined): stri
 export function sanitizeGuestFacingReply(text: string | null | undefined): string | null {
   if (!text?.trim()) return null;
   let out = normalizeBookingWordingRu(localizePropertySnippet(text) ?? '') ?? '';
+  out = stripForbiddenGuestPhrases(out);
   out = out.replace(/паспорт[а-яё]*\s+объект[а-яё]*/gi, 'данные объекта');
   out = out.replace(/Адрес:\s*([^.\n]+)\.?/i, (_m, addr: string) => {
     const raw = String(addr).trim();
@@ -117,8 +118,14 @@ export function sanitizeGuestFacingReply(text: string | null | undefined): strin
   return out.trim() || null;
 }
 
+const FORBIDDEN_GUEST_PHRASES = [
+  'без автоматических обещаний',
+  'автоматический ответ',
+] as const;
+
 const FORBIDDEN_GUEST_INTERNAL_TOKENS = [
   'паспорт объекта',
+  'prop_a',
   'prop_',
   'intent',
   'reason',
@@ -132,7 +139,16 @@ const FORBIDDEN_GUEST_INTERNAL_TOKENS = [
   'гость:',
   'чат:',
   'объект: prop',
+  ...FORBIDDEN_GUEST_PHRASES,
 ] as const;
+
+function stripForbiddenGuestPhrases(text: string): string {
+  let out = text;
+  for (const phrase of FORBIDDEN_GUEST_PHRASES) {
+    out = out.replace(new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+  }
+  return out.replace(/\s{2,}/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+}
 
 export function guestReplyContainsForbiddenInternalTokens(text: string | null | undefined): boolean {
   if (!text?.trim()) return false;

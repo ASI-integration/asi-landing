@@ -12,7 +12,7 @@ import type {
   CommunicationAutopilotOperationsAction,
 } from './autopilot';
 
-type PassportScenario =
+export type CommunicationAutopilotPassportScenario =
   | 'address_directions'
   | 'checkin_checkout'
   | 'wifi'
@@ -24,6 +24,8 @@ type PassportScenario =
   | 'outside_object_data'
   | 'prompt_injection';
 
+type PassportScenario = CommunicationAutopilotPassportScenario;
+
 type PassportClassification = {
   scenario: PassportScenario;
   intent: CommunicationAutopilotIntent;
@@ -32,28 +34,32 @@ type PassportClassification = {
 };
 
 const MONEY_OR_LEGAL_REPLY =
-  'Понял вопрос по цене или оплате. Передаю оператору: по деньгам и условиям отвечаем только после проверки бронирования, без автоматических обещаний.';
+  'Понял вопрос по оплате. Передаю его оператору, чтобы он проверил бронирование и условия.';
 
 const MISSING_DATA_REPLY_GENERAL =
-  'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
+  'Сейчас уточню это у оператора и напишу вам здесь.';
 
 const MISSING_DATA_REPLY_ADDRESS =
   'Сейчас уточню точный адрес у оператора и напишу вам здесь.';
 
 const MISSING_DATA_REPLY_CHECKIN =
-  'Сейчас уточню инструкцию по заселению у оператора и напишу вам здесь.';
+  'Сейчас уточню, как заселиться, у оператора и напишу вам здесь.';
 
 const MISSING_DATA_REPLY_WIFI =
   'Сейчас уточню данные Wi-Fi у оператора и напишу вам здесь.';
 
 const PROBLEM_REPLY =
-  'Принял проблему по объекту. Передаю оператору, чтобы команда проверила и помогла.';
+  'Понял, есть проблема в объекте. Передаю оператору — команда проверит и поможет.';
 
 const EMERGENCY_REPLY =
-  'Понял, это срочно. Передаю оператору. Если есть угроза жизни, пожар, газ или сильное затопление, сразу звоните 112.';
+  'Понял, это срочно. Передаю оператору. Если есть угроза жизни, пожар, газ или сильное затопление — звоните 112.';
 
 const BLOCKED_REPLY =
-  'Сейчас могу отвечать только на вопросы по бронированию, заселению и проживанию.';
+  'Могу помочь с вопросами по бронированию, заселению и проживанию.';
+
+function guestTemplate(text: string): string {
+  return sanitizeGuestFacingReply(text) ?? text;
+}
 
 function normalizeRu(text: string): string {
   return text
@@ -329,28 +335,28 @@ function safeReplyForScenario(
     case 'early_late':
       return composeEarlyLateReply(context);
     case 'price_payment':
-      return MONEY_OR_LEGAL_REPLY;
+      return guestTemplate(MONEY_OR_LEGAL_REPLY);
     case 'property_problem':
-      return PROBLEM_REPLY;
+      return guestTemplate(PROBLEM_REPLY);
     case 'emergency':
-      return EMERGENCY_REPLY;
+      return guestTemplate(EMERGENCY_REPLY);
     case 'prompt_injection':
-      return BLOCKED_REPLY;
+      return guestTemplate(BLOCKED_REPLY);
     case 'outside_object_data':
-      return MISSING_DATA_REPLY_GENERAL;
+      return guestTemplate(MISSING_DATA_REPLY_GENERAL);
   }
 }
 
 function missingDataGuestReply(classification: PassportClassification): string {
   switch (classification.scenario) {
     case 'address_directions':
-      return MISSING_DATA_REPLY_ADDRESS;
+      return guestTemplate(MISSING_DATA_REPLY_ADDRESS);
     case 'checkin_checkout':
-      return MISSING_DATA_REPLY_CHECKIN;
+      return guestTemplate(MISSING_DATA_REPLY_CHECKIN);
     case 'wifi':
-      return MISSING_DATA_REPLY_WIFI;
+      return guestTemplate(MISSING_DATA_REPLY_WIFI);
     default:
-      return MISSING_DATA_REPLY_GENERAL;
+      return guestTemplate(MISSING_DATA_REPLY_GENERAL);
   }
 }
 
@@ -373,10 +379,11 @@ export function decideCommunicationAutopilotPassportV1(input: {
   const classification = classifyPassportScenario(input.messageText);
   const missingContext = missingForScenario(classification, input.context);
   const safeReply = safeReplyForScenario(classification, input.context);
-  const replyText =
+  const replyText = sanitizeGuestFacingReply(
     missingContext.length > 0
       ? missingDataGuestReply(classification)
-      : safeReply ?? MISSING_DATA_REPLY_GENERAL;
+      : safeReply ?? guestTemplate(MISSING_DATA_REPLY_GENERAL),
+  ) ?? guestTemplate(MISSING_DATA_REPLY_GENERAL);
   const escalate = shouldEscalate(classification, missingContext);
 
   return {
@@ -387,6 +394,7 @@ export function decideCommunicationAutopilotPassportV1(input: {
     metadata: {
       ...input.baseDecision.metadata,
       intent: classification.intent,
+      passportScenario: classification.scenario,
       matchedSignals: classification.signals,
       missingContext,
       urgent: classification.scenario === 'emergency' || input.baseDecision.metadata.urgent,

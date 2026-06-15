@@ -14,6 +14,7 @@ import {
   resolveTelegramGuestBookingObjectContext,
 } from '@/lib/communication/telegram-booking-object-memory';
 import { sanitizeGuestFacingReply, guestReplyContainsForbiddenInternalTokens } from '@/lib/communication/guest-facing-ru';
+import { polishGuestReplyWithLlm } from '@/lib/communication/guest-reply-llm-polish';
 import {
   getTelegramRoutingSession,
   patchTelegramRoutingSession,
@@ -443,8 +444,14 @@ async function processGuestAutopilotMessage(
     };
   }
 
-  const guestReply = resolveGuestFacingReply(decision.replyText);
-  if (!decision.replyText?.trim()) {
+  const polishedReplyText = decision.replyText?.trim()
+    ? await polishGuestReplyWithLlm({
+        draftReply: decision.replyText,
+        scenario: decision.metadata.passportScenario ?? decision.metadata.intent,
+      })
+    : decision.replyText;
+  const guestReply = resolveGuestFacingReply(polishedReplyText);
+  if (!polishedReplyText?.trim()) {
     await notifyTelegramOwner({
       type: 'missing_data',
       guestChatId: user.chat_id,
