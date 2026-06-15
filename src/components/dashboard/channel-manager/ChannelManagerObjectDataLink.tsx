@@ -14,6 +14,7 @@ export function ChannelManagerObjectDataLink() {
   const [property, setProperty] = useState<OpsProperty | null>(null);
   const [cover, setCover] = useState<PropertyMedia | null>(null);
   const [label, setLabel] = useState('Перейти к объектам');
+  const [empty, setEmpty] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -24,7 +25,12 @@ export function ChannelManagerObjectDataLink() {
         const json = (await res.json()) as PropertiesEnvelope;
         const selectedProperty = json.ok ? json.properties?.[0] : null;
         const propertyId = selectedProperty?.id ?? null;
-        if (!alive || !propertyId) return;
+        if (!alive) return;
+        if (!propertyId) {
+          setEmpty(true);
+          setLabel('Создать объект');
+          return;
+        }
 
         setProperty(selectedProperty ?? null);
         setHref(`/dashboard/properties/${propertyId}/setup?step=channels`);
@@ -61,9 +67,13 @@ export function ChannelManagerObjectDataLink() {
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-900">{property?.title ?? 'Объект'}</p>
+          <p className="truncate text-sm font-medium text-slate-900">{property?.title ?? (empty ? 'Объект не создан' : 'Объект')}</p>
           <p className="mt-1 text-xs text-slate-500">
-            {cover ? 'Главное фото готово для карточки объекта.' : 'Добавьте фото в мастере объекта.'}
+            {empty
+              ? 'Создайте объект, затем заполните данные для каналов.'
+              : cover
+                ? 'Главное фото готово для карточки объекта.'
+                : 'Добавьте фото в мастере объекта.'}
           </p>
         </div>
       </div>

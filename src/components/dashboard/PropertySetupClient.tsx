@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OpsProperty, PropertyMedia } from '@/lib/ops-foundation/types';
 import {
   SETUP_CHANNEL_CATALOG,
@@ -133,6 +133,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadMedia = useCallback(async () => {
     try {
@@ -263,22 +264,58 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     e.preventDefault();
     if (photoFiles.length === 0) return;
     setUploadingPhotos(true);
+    setError(null);
+    setMessage(null);
     try {
+      const failedFiles: string[] = [];
       for (const file of photoFiles) {
+        if (!file.type.startsWith('image/')) {
+          failedFiles.push(file.name);
+          continue;
+        }
+
         const form = new FormData();
         form.append('file', file);
         if (photoTitle.trim()) form.append('title', photoTitle.trim());
-        await fetch(`/api/ops/properties/${propertyId}/media`, {
+        const res = await fetch(`/api/ops/properties/${propertyId}/media`, {
           method: 'POST',
           body: form,
         });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          failedFiles.push(file.name);
+        }
+      }
+
+      await loadMedia();
+
+      if (failedFiles.length > 0) {
+        setError(
+          failedFiles.length === 1
+            ? `Не удалось загрузить фото: ${failedFiles[0]}. Уже загруженные фото сохранены.`
+            : `Не удалось загрузить часть фото: ${failedFiles.join(', ')}. Уже загруженные фото сохранены.`,
+        );
+      } else {
+        setMessage('Фото загружены.');
       }
       setPhotoFiles([]);
       setPhotoTitle('');
-      await loadMedia();
+      if (photoFileInputRef.current) photoFileInputRef.current.value = '';
     } finally {
       setUploadingPhotos(false);
     }
+  }
+
+  function handlePhotoFilesChange(files: FileList | null) {
+    const selected = Array.from(files ?? []);
+    const imageFiles = selected.filter((file) => file.type.startsWith('image/'));
+    const rejectedCount = selected.length - imageFiles.length;
+    setPhotoFiles(imageFiles);
+    if (rejectedCount > 0) {
+      setError('Можно загрузить только изображения. Файлы другого типа не выбраны.');
+      return;
+    }
+    if (error?.startsWith('Можно загрузить только изображения')) setError(null);
   }
 
   async function removePhoto(mediaId: string) {
@@ -581,18 +618,19 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 4. Фото */}
-      <Section id="photos" step={4} title="Фото" subtitle="Добавьте фото по ссылке. Список ниже — уже добавленные фото." active={activeStepId === 'photos'}>
+      <Section id="photos" step={4} title="Фото" subtitle="Добавьте одно или несколько фото. Список ниже — уже добавленные фото." active={activeStepId === 'photos'}>
         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Загрузите фото объекта, выберите главное фото и расставьте порядок для карточки объекта.
         </div>
         <form onSubmit={uploadPhotoFiles} className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Фото с устройства">
             <input
+              ref={photoFileInputRef}
               type="file"
               accept="image/*"
               multiple
               className={inputCls}
-              onChange={(e) => setPhotoFiles(Array.from(e.target.files ?? []))}
+              onChange={(e) => handlePhotoFilesChange(e.target.files)}
             />
           </Field>
           <Field label="Подпись для новых фото">

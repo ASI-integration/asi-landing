@@ -66,6 +66,25 @@ const priorityTone: Record<'Высокий' | 'Средний' | 'Низкий',
   Низкий: 'text-slate-500',
 };
 
+const manualActionStep: Record<string, string> = {
+  'avito-description': 'description',
+  'sutochno-photos': 'photos',
+  'yandex-prices': 'pricing',
+  'ostrovok-calendar': 'channels',
+  'cian-rules': 'rules',
+  'external-calendar': 'channels',
+};
+
+const transferItemStep: Record<string, string> = {
+  description: 'description',
+  'short-description': 'description',
+  rules: 'rules',
+  'check-in': 'checkin',
+  wifi: 'wifi',
+  'base-prices': 'pricing',
+  restrictions: 'channels',
+};
+
 function Card({
   title,
   subtitle,
@@ -346,7 +365,7 @@ function AlertsBlock({ mode }: { mode: ChannelManagerTariffMode }) {
 
 function ManualActionsBlock() {
   return (
-    <Card title="Ручные действия" subtitle="Очередь задач, которые оператор выполняет сам. Кнопки пока не сохраняют изменения.">
+    <Card title="Ручные действия" subtitle="Очередь задач, которые оператор выполняет сам. Реальные подключения пока отключены.">
       <div className="space-y-3">
         {CHANNEL_MANAGER_MANUAL_ACTIONS.map((action) => (
           <div key={action.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -362,20 +381,15 @@ function ManualActionsBlock() {
                 <p className="mt-2 text-sm leading-6 text-slate-600">{action.hint}</p>
               </div>
               <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-500"
-                >
-                  Отметить выполненным
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-500"
+                <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                  Отметка выполнения пока отключена
+                </span>
+                <Link
+                  href={`/dashboard/channel-manager/setup?step=${manualActionStep[action.id] ?? 'channels'}`}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Открыть данные
-                </button>
+                </Link>
               </div>
             </div>
             <p className={`mt-3 text-xs font-semibold ${priorityTone[action.priority]}`}>Приоритет: {action.priority}</p>
@@ -405,20 +419,15 @@ function ManualTransferDataBlock() {
                   </span>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    disabled
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-500"
+                  <Link
+                    href={`/dashboard/channel-manager/setup?step=${transferItemStep[item.id] ?? 'channels'}`}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     Открыть
-                  </button>
-                  <button
-                    type="button"
-                    disabled
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-500"
-                  >
-                    Скопировать
-                  </button>
+                  </Link>
+                  <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                    Копирование пока отключено
+                  </span>
                 </div>
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-600">{item.text}</p>
@@ -450,17 +459,9 @@ function PreparedChangesBlock() {
       <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
         <p className="font-medium text-slate-900">Цена на будни подготовлена к проверке</p>
         <p className="mt-1 text-sm leading-6 text-slate-500">Рекомендация: 5 900 ₽ за ночь, без отправки на площадки.</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {['Проверить', 'Одобрить', 'Отклонить'].map((label) => (
-            <button
-              key={label}
-              type="button"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <p className="mt-4 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+          Реальные подключения пока отключены. Подтверждение изменений появится после включения интеграций.
+        </p>
       </div>
     </Card>
   );
@@ -493,7 +494,7 @@ function SystemStatusBlock() {
         </div>
         <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
           <p className="text-sm text-slate-500">Отправки</p>
-          <p className="mt-1 font-semibold text-slate-900">Отключены</p>
+          <p className="mt-1 font-semibold text-slate-900">Реальные подключения пока отключены</p>
         </div>
       </div>
     </Card>
@@ -513,14 +514,9 @@ function AutopilotLimitsBlock() {
           <p className="mt-1 text-lg font-semibold text-slate-900">8 900 ₽</p>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" disabled className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500">
-          Поставить на паузу
-        </button>
-        <button type="button" disabled className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500">
-          Передать оператору
-        </button>
-      </div>
+      <p className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        Реальные подключения пока отключены. Управление автопилотом не активно.
+      </p>
     </Card>
   );
 }
