@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ChannelManagerObjectDataLink } from '@/components/dashboard/channel-manager/ChannelManagerObjectDataLink';
+import { PropertyPassportPreview } from '@/components/dashboard/channel-manager/PropertyPassportPreview';
 import {
   CHANNEL_MANAGER_MANUAL_ACTIONS,
   CHANNEL_MANAGER_MANUAL_LOG,
@@ -558,6 +559,8 @@ export default function ChannelManagerPage({
       </header>
 
       <ModeSwitcher activeMode={mode} />
+
+      <PropertyPassportPreview />
 
       {channelManagerModeShowsBlock(mode, 'systemStatus') ? <SystemStatusBlock /> : null}
       {mode === 'manual' ? <ObjectDataBlock compact /> : null}
