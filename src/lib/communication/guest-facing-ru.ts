@@ -108,10 +108,34 @@ export function normalizeBookingWordingRu(text: string | null | undefined): stri
 export function sanitizeGuestFacingReply(text: string | null | undefined): string | null {
   if (!text?.trim()) return null;
   let out = normalizeBookingWordingRu(localizePropertySnippet(text) ?? '') ?? '';
+  out = out.replace(/паспорт[а-яё]*\s+объект[а-яё]*/gi, 'данные объекта');
   out = out.replace(/Адрес:\s*([^.\n]+)\.?/i, (_m, addr: string) => {
     const raw = String(addr).trim();
     const normalized = normalizeGuestAddress(raw) ?? normalizeCityToken(raw);
     return `Адрес: ${normalized}.`;
   });
   return out.trim() || null;
+}
+
+const FORBIDDEN_GUEST_INTERNAL_TOKENS = [
+  'паспорт объекта',
+  'prop_',
+  'intent',
+  'reason',
+  'missing fields',
+  'object.address',
+  'directionstext',
+  'chat_id',
+  'telegram_user_id',
+  'намерение:',
+  'не хватает:',
+  'гость:',
+  'чат:',
+  'объект: prop',
+] as const;
+
+export function guestReplyContainsForbiddenInternalTokens(text: string | null | undefined): boolean {
+  if (!text?.trim()) return false;
+  const normalized = text.normalize('NFKC').toLocaleLowerCase('ru-RU');
+  return FORBIDDEN_GUEST_INTERNAL_TOKENS.some((token) => normalized.includes(token));
 }

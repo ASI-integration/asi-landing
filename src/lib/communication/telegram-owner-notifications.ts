@@ -1,3 +1,6 @@
+import { auditLog } from '@/lib/communication/audit';
+import { saveCommunicationAutopilotDecision } from '@/lib/communication/persistence';
+import { AuditEventType } from '@/lib/communication/types';
 import { sendTelegramMessageToChat, type TelegramSendOptions } from '@/lib/telegram';
 
 export type TelegramOwnerNotificationType =
@@ -18,6 +21,15 @@ export type TelegramOwnerNotificationInput = {
   intent?: string | null;
   escalationReason?: string | null;
   missingFields?: string[];
+  updateId?: number;
+  confidence?: number;
+  bookingId?: string | null;
+};
+
+export type TelegramOwnerNotificationResult = {
+  sentToTelegram: boolean;
+  persisted: boolean;
+  skippedReason?: 'guest_chat_is_owner_chat' | 'owner_chat_not_configured';
 };
 
 const TYPE_LABELS: Record<TelegramOwnerNotificationType, string> = {
@@ -35,6 +47,27 @@ function getOwnerNotifyChatId(): string | null {
   );
 }
 
+export function resolveOwnerNotifyChatIds(): string[] {
+  const ids = new Set<string>();
+  const primary = getOwnerNotifyChatId();
+  if (primary) ids.add(primary);
+
+  const ownerChatIds = process.env.TELEGRAM_OWNER_CHAT_IDS?.trim();
+  if (ownerChatIds) {
+    for (const value of ownerChatIds.split(/[,;\s]+/)) {
+      const trimmed = value.trim();
+      if (trimmed) ids.add(trimmed);
+    }
+  }
+
+  return [...ids];
+}
+
+export function isGuestChatSameAsOwnerNotify(guestChatId: number): boolean {
+  const guestChat = String(guestChatId);
+  return resolveOwnerNotifyChatIds().some((ownerChatId) => ownerChatId === guestChat);
+}
+
 function getAsiFeedbackTelegramSendOptions(): TelegramSendOptions {
   return {
     botToken: process.env.ASI_FEEDBACK_BOT_TOKEN?.trim() || null,
@@ -49,7 +82,7 @@ function guestLabel(input: TelegramOwnerNotificationInput): string {
   return name || username || `chat ${input.guestChatId}`;
 }
 
-function formatNotification(input: TelegramOwnerNotificationInput): string {
+export function formatTelegramOwnerNotification(input: TelegramOwnerNotificationInput): string {
   const lines = [
     TYPE_LABELS[input.type],
     `Гость: ${guestLabel(input)}`,
@@ -74,12 +107,62 @@ function formatNotification(input: TelegramOwnerNotificationInput): string {
   return lines.join('\n');
 }
 
-export async function notifyTelegramOwner(input: TelegramOwnerNotificationInput): Promise<void> {
-  const chatId = getOwnerNotifyChatId();
-  if (!chatId) {
-    console.warn('[telegram-routing] owner notify chat id is not configured');
-    return;
+function storedDecisionForType(type: TelegramOwnerNotificationType): 'auto_reply' | 'escalation' | 'blocked' {
+  if (type === 'auto_reply_sent') return 'auto_reply';
+  if (type === 'blocked') return 'blocked';
+  return 'escalation';
+}
+
+async function persistOwnerNotification(input: TelegramOwnerNotificationInput): Promise<boolean> {
+  try {
+    await saveCommunicationAutopilotDecision({
+      chat_id: input.guestChatId,
+      update_id: input.updateId,
+      channel: 'telegram',
+      intent: input.intent ?? 'unknown',
+      decision: storedDecisionForType(input.type),
+      confidence: input.confidence,
+      reason: input.escalationReason ?? input.type,
+      property_id: input.propertyId ?? null,
+      booking_id: input.bookingId ?? null,
+      missing_context: input.missingFields ?? [],
+      reply_preview: input.replyText ?? null,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function notifyTelegramOwner(
+  input: TelegramOwnerNotificationInput,
+): Promise<TelegramOwnerNotificationResult> {
+  const ownerChatIds = resolveOwnerNotifyChatIds();
+  const guestMatchesOwner = isGuestChatSameAsOwnerNotify(input.guestChatId);
+
+  if (guestMatchesOwner || ownerChatIds.length === 0) {
+    const skippedReason = ownerChatIds.length === 0 ? 'owner_chat_not_configured' : 'guest_chat_is_owner_chat';
+    const persisted = await persistOwnerNotification(input);
+    auditLog({
+      type: AuditEventType.EscalationCreated,
+      chat_id: input.guestChatId,
+      update_id: input.updateId,
+      detail: `owner_notification_skipped=${skippedReason} notification_type=${input.type} intent=${input.intent ?? 'unknown'}`,
+    });
+    return { sentToTelegram: false, persisted, skippedReason };
   }
 
-  await sendTelegramMessageToChat(chatId, formatNotification(input), getAsiFeedbackTelegramSendOptions());
+  const ownerChatId = ownerChatIds[0];
+  if (String(input.guestChatId) === ownerChatId) {
+    const persisted = await persistOwnerNotification(input);
+    return { sentToTelegram: false, persisted, skippedReason: 'guest_chat_is_owner_chat' };
+  }
+
+  await sendTelegramMessageToChat(
+    ownerChatId,
+    formatTelegramOwnerNotification(input),
+    getAsiFeedbackTelegramSendOptions(),
+  );
+  const persisted = await persistOwnerNotification(input);
+  return { sentToTelegram: true, persisted };
 }

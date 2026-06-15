@@ -34,8 +34,17 @@ type PassportClassification = {
 const MONEY_OR_LEGAL_REPLY =
   'Понял вопрос по цене или оплате. Передаю оператору: по деньгам и условиям отвечаем только после проверки бронирования, без автоматических обещаний.';
 
-const UNKNOWN_DATA_REPLY =
-  'Сейчас не вижу точные данные по этому вопросу в паспорте объекта. Передаю оператору, чтобы ответить без ошибки.';
+const MISSING_DATA_REPLY_GENERAL =
+  'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
+
+const MISSING_DATA_REPLY_ADDRESS =
+  'Сейчас уточню точный адрес у оператора и напишу вам здесь.';
+
+const MISSING_DATA_REPLY_CHECKIN =
+  'Сейчас уточню инструкцию по заселению у оператора и напишу вам здесь.';
+
+const MISSING_DATA_REPLY_WIFI =
+  'Сейчас уточню данные Wi-Fi у оператора и напишу вам здесь.';
 
 const PROBLEM_REPLY =
   'Принял проблему по объекту. Передаю оператору, чтобы команда проверила и помогла.';
@@ -147,17 +156,24 @@ function classifyPassportScenario(messageText: string): PassportClassification {
     };
   }
 
-  if (has(text, 'адрес', 'как добраться', 'как доехать', 'куда ехать', 'где находится', 'локация', 'геолокация')) {
-    return {
-      scenario: 'address_directions',
-      intent: 'address_instruction',
-      confidence: 0.9,
-      signals: ['passport_v1_address_directions'],
-    };
-  }
-
   if (
-    has(text, 'заезд', 'заселение', 'как попасть', 'как зайти', 'инструкция по заселению') ||
+    has(
+      text,
+      'заезд',
+      'заселение',
+      'заселиться',
+      'заселится',
+      'как попасть',
+      'как зайти',
+      'инструкция по заселению',
+      'где ключ',
+      'ключи',
+      'ключ ',
+      'код от двер',
+      'код двер',
+      'код на двер',
+    ) ||
+    (has(text, 'код') && has(text, 'двер')) ||
     has(text, 'выезд', 'до скольки', 'checkout', 'check-out', 'чекаут')
   ) {
     return {
@@ -165,6 +181,15 @@ function classifyPassportScenario(messageText: string): PassportClassification {
       intent: has(text, 'выезд', 'checkout', 'check-out', 'чекаут') ? 'checkout' : 'check_in_access',
       confidence: 0.88,
       signals: ['passport_v1_checkin_checkout'],
+    };
+  }
+
+  if (has(text, 'адрес', 'как добраться', 'как доехать', 'куда ехать', 'где находится', 'локация', 'геолокация')) {
+    return {
+      scenario: 'address_directions',
+      intent: 'address_instruction',
+      confidence: 0.9,
+      signals: ['passport_v1_address_directions'],
     };
   }
 
@@ -312,7 +337,20 @@ function safeReplyForScenario(
     case 'prompt_injection':
       return BLOCKED_REPLY;
     case 'outside_object_data':
-      return UNKNOWN_DATA_REPLY;
+      return MISSING_DATA_REPLY_GENERAL;
+  }
+}
+
+function missingDataGuestReply(classification: PassportClassification): string {
+  switch (classification.scenario) {
+    case 'address_directions':
+      return MISSING_DATA_REPLY_ADDRESS;
+    case 'checkin_checkout':
+      return MISSING_DATA_REPLY_CHECKIN;
+    case 'wifi':
+      return MISSING_DATA_REPLY_WIFI;
+    default:
+      return MISSING_DATA_REPLY_GENERAL;
   }
 }
 
@@ -334,7 +372,11 @@ export function decideCommunicationAutopilotPassportV1(input: {
 }): CommunicationAutopilotDecision {
   const classification = classifyPassportScenario(input.messageText);
   const missingContext = missingForScenario(classification, input.context);
-  const replyText = safeReplyForScenario(classification, input.context) ?? UNKNOWN_DATA_REPLY;
+  const safeReply = safeReplyForScenario(classification, input.context);
+  const replyText =
+    missingContext.length > 0
+      ? missingDataGuestReply(classification)
+      : safeReply ?? MISSING_DATA_REPLY_GENERAL;
   const escalate = shouldEscalate(classification, missingContext);
 
   return {

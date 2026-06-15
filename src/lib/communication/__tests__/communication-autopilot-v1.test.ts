@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { decideCommunicationAutopilotResponseWithLlmRouter } from '../autopilot';
+import type { CommunicationAutopilotContext } from '../autopilot';
 import {
   __resetTelegramPromptInjectionGuardForTests,
   evaluateTelegramPromptInjectionGuard,
@@ -29,7 +30,7 @@ const passportContext = {
   propertyResolved: true,
 } as const;
 
-async function decide(messageText: string, context = passportContext) {
+async function decide(messageText: string, context: CommunicationAutopilotContext = passportContext) {
   return decideCommunicationAutopilotResponseWithLlmRouter({
     channel: 'telegram',
     messageText,
@@ -112,7 +113,43 @@ describe('Communication Autopilot v1 for Telegram guest passport questions', () 
 
     expect(decision.action).toBe('escalate');
     expect(decision.metadata.intent).toBe('unknown');
-    expect(decision.replyText).toContain('не вижу точные данные');
+    expect(decision.replyText).toContain('уточню этот вопрос у оператора');
+    expect(decision.replyText).not.toContain('паспорт');
+  });
+
+  it('classifies check-in phrases as check_in_access', async () => {
+    for (const phrase of [
+      'Как заселиться?',
+      'Как попасть в квартиру?',
+      'Где ключи?',
+      'Какой код от двери?',
+      'Инструкция по заселению',
+    ]) {
+      const decision = await decide(phrase);
+      expect(decision.metadata.intent, phrase).toBe('check_in_access');
+    }
+  });
+
+  it('returns clean guest reply when address data is missing', async () => {
+    const contextWithoutAddress: CommunicationAutopilotContext = {
+      ...passportContext,
+      object: {
+        id: passportContext.object.id,
+        name: passportContext.object.name,
+        wifiName: passportContext.object.wifiName,
+        wifiPassword: passportContext.object.wifiPassword,
+        houseRules: passportContext.object.houseRules,
+        earlyCheckinPolicy: passportContext.object.earlyCheckinPolicy,
+        lateCheckoutPolicy: passportContext.object.lateCheckoutPolicy,
+      },
+    };
+    const decision = await decide('Какой адрес?', contextWithoutAddress);
+
+    expect(decision.action).toBe('escalate');
+    expect(decision.metadata.missingContext).toContain('object.address');
+    expect(decision.replyText).toBe('Сейчас уточню точный адрес у оператора и напишу вам здесь.');
+    expect(decision.replyText).not.toContain('object.address');
+    expect(decision.replyText).not.toContain('паспорт');
   });
 
   it('blocks attempts to make the bot ignore rules', () => {

@@ -13,7 +13,7 @@ import {
   lookup_property_by_booking,
   resolveTelegramGuestBookingObjectContext,
 } from '@/lib/communication/telegram-booking-object-memory';
-import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
+import { sanitizeGuestFacingReply, guestReplyContainsForbiddenInternalTokens } from '@/lib/communication/guest-facing-ru';
 import {
   getTelegramRoutingSession,
   patchTelegramRoutingSession,
@@ -21,6 +21,7 @@ import {
   type TelegramCommunicationMode,
   type TelegramRoutingRole,
 } from '@/lib/communication/telegram-routing-session';
+import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
 import { replyToTelegram, answerTelegramCallbackQuery, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
@@ -34,7 +35,7 @@ const ROLE_SELECTION_REPLY =
   'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 
 const GUEST_WELCOME_REPLY =
-  'Понял, вы гость по бронированию. Напишите вопрос по объекту — отвечу по паспорту, если вопрос безопасный. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
+  'Понял, вы гость по бронированию. Напишите вопрос по объекту — адрес, заезд, Wi‑Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 
 const OWNER_WELCOME_REPLY =
   'Понял, вы владелец или управляющий. Я буду присылать только уведомления и эскалации по гостям. Если нужна помощь команды ASI — напишите вопрос одним сообщением.';
@@ -45,6 +46,8 @@ const GUEST_TEST_WELCOME_REPLY =
 const MANUAL_SAVED_REPLY = 'Сообщение сохранено. Оператор ответит вручную.';
 const DRAFT_PREPARED_REPLY =
   'Подготовили черновик ответа. Оператор проверит и отправит гостю, если всё верно.';
+const MISSING_DATA_GUEST_FALLBACK =
+  'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
 type ParsedRoutingCallback =
   | { kind: 'role'; role: Exclude<TelegramRoutingRole, 'unknown'> }
@@ -358,6 +361,14 @@ function classifyOwnerNotificationType(decision: Awaited<ReturnType<typeof decid
   return 'escalation_created' as const;
 }
 
+function resolveGuestFacingReply(rawReply: string | null | undefined): string {
+  const sanitized = sanitizeGuestFacingReply(rawReply)?.trim();
+  if (sanitized && !guestReplyContainsForbiddenInternalTokens(sanitized)) {
+    return sanitized;
+  }
+  return MISSING_DATA_GUEST_FALLBACK;
+}
+
 async function processGuestAutopilotMessage(
   update: TelegramUpdate,
   user: TelegramRoutingUser,
@@ -385,6 +396,9 @@ async function processGuestAutopilotMessage(
       propertyName: context.object?.name ?? null,
       intent: decision.metadata.intent,
       escalationReason: 'manual_mode',
+      updateId: update.update_id,
+      confidence: decision.confidence,
+      bookingId: context.booking?.id ?? null,
     });
     await replyToTelegram(user.chat_id, MANUAL_SAVED_REPLY, {
       handler: 'telegram_routing/guest_manual',
@@ -412,6 +426,9 @@ async function processGuestAutopilotMessage(
       intent: decision.metadata.intent,
       escalationReason: decision.escalationReason ?? 'draft_mode',
       missingFields: decision.metadata.missingContext,
+      updateId: update.update_id,
+      confidence: decision.confidence,
+      bookingId: context.booking?.id ?? null,
     });
     await replyToTelegram(user.chat_id, DRAFT_PREPARED_REPLY, {
       handler: 'telegram_routing/guest_draft',
@@ -426,8 +443,8 @@ async function processGuestAutopilotMessage(
     };
   }
 
-  const guestReply = decision.replyText?.trim();
-  if (!guestReply) {
+  const guestReply = resolveGuestFacingReply(decision.replyText);
+  if (!decision.replyText?.trim()) {
     await notifyTelegramOwner({
       type: 'missing_data',
       guestChatId: user.chat_id,
@@ -438,9 +455,11 @@ async function processGuestAutopilotMessage(
       propertyName: context.object?.name ?? null,
       intent: decision.metadata.intent,
       missingFields: decision.metadata.missingContext,
+      updateId: update.update_id,
+      confidence: decision.confidence,
+      bookingId: context.booking?.id ?? null,
     });
-    const fallback = 'Сейчас не вижу точные данные по этому вопросу. Передаю оператору.';
-    await replyToTelegram(user.chat_id, fallback, {
+    await replyToTelegram(user.chat_id, guestReply, {
       handler: 'telegram_routing/guest_missing_data',
       update_id: update.update_id,
     }, getAsiFeedbackTelegramSendOptions());
@@ -449,7 +468,7 @@ async function processGuestAutopilotMessage(
       update_id: update.update_id,
       chat_id: user.chat_id,
       category: MessageCategory.GuestMessage,
-      reply: fallback,
+      reply: guestReply,
     };
   }
 
@@ -459,12 +478,15 @@ async function processGuestAutopilotMessage(
     guestName: user.first_name,
     guestUsername: user.telegram_username,
     messageText,
-    replyText: guestReply,
+    replyText: decision.replyText,
     propertyId: context.object?.id ?? session?.testPropertyId ?? null,
     propertyName: context.object?.name ?? null,
     intent: decision.metadata.intent,
     escalationReason: decision.escalationReason ?? undefined,
     missingFields: decision.metadata.missingContext,
+    updateId: update.update_id,
+    confidence: decision.confidence,
+    bookingId: context.booking?.id ?? null,
   });
 
   await replyToTelegram(user.chat_id, guestReply, {
@@ -493,6 +515,7 @@ async function processOwnerMessage(
     guestUsername: user.telegram_username,
     messageText,
     escalationReason: 'owner_message',
+    updateId: update.update_id,
   });
 
   const reply = 'Принял сообщение. Команда ASI увидит его в уведомлениях.';

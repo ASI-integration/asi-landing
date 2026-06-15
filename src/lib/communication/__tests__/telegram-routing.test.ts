@@ -30,6 +30,10 @@ vi.mock('@/lib/communication/autopilot', () => ({
   decideCommunicationAutopilotResponseWithLlmRouter: (...args: unknown[]) => mockDecideAutopilot(...args),
 }));
 
+vi.mock('@/lib/communication/persistence', () => ({
+  saveCommunicationAutopilotDecision: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('@/lib/communication/telegram-booking-object-memory', () => ({
   lookup_booking_by_telegram: (...args: unknown[]) => mockLookupBooking(...args),
   resolveTelegramGuestBookingObjectContext: (...args: unknown[]) => mockResolveGuestContext(...args),
@@ -194,6 +198,59 @@ describe('Telegram routing layer', () => {
       expect.any(Object),
     );
     expect(mockSendTelegramMessageToChat).toHaveBeenCalled();
+  });
+
+  it('does not leak operator notification into guest chat when admin chat matches guest chat', async () => {
+    process.env.ASI_FEEDBACK_ADMIN_CHAT_ID = '8101';
+    mockDecideAutopilot.mockResolvedValueOnce({
+      action: 'escalate',
+      confidence: 0.9,
+      replyText: 'Сейчас уточню точный адрес у оператора и напишу вам здесь.',
+      escalationReason: 'address_directions',
+      metadata: {
+        intent: 'address_instruction',
+        missingContext: ['object.address', 'object.directionsText'],
+        matchedSignals: [],
+        policy: [],
+      },
+    });
+
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2010));
+    await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2011));
+
+    expect(mockSendTelegramMessageToChat).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      'Сейчас уточню точный адрес у оператора и напишу вам здесь.',
+      expect.any(Object),
+      expect.any(Object),
+    );
+    const guestReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
+    expect(guestReply).not.toContain('Намерение:');
+    expect(guestReply).not.toContain('object.address');
+    expect(guestReply).not.toContain('prop_A');
+  });
+
+  it('sanitizes guest reply when autopilot draft contains forbidden internal tokens', async () => {
+    mockDecideAutopilot.mockResolvedValueOnce({
+      action: 'escalate',
+      confidence: 0.5,
+      replyText: 'Намерение: address_instruction. Не хватает: object.address',
+      escalationReason: 'address_directions',
+      metadata: {
+        intent: 'address_instruction',
+        missingContext: ['object.address'],
+        matchedSignals: [],
+        policy: [],
+      },
+    });
+
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2012));
+    await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2013));
+
+    const guestReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
+    expect(guestReply).toBe('Сейчас уточню этот вопрос у оператора и напишу вам здесь.');
+    expect(guestReply).not.toContain('object.address');
   });
 
   it('builds guest test deep link for dashboard', () => {
