@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
-import { auditLog } from './audit';
+import * as fs from 'fs';
+import * as path from 'path';
+import { auditLog, maskedPreview } from './audit';
 import { AuditEventType, MessageTurn, TelegramConversationSessionRow, TurnRole } from './types';
 
 /**
@@ -16,6 +18,14 @@ import { AuditEventType, MessageTurn, TelegramConversationSessionRow, TurnRole }
  */
 
 const MAX_CONTENT_LENGTH = 2000;
+const isTest = process.env.NODE_ENV === 'test';
+const stateDir =
+  process.env.COMM_STATE_DIR ??
+  process.env.CONVERSATION_SESSION_DIR ??
+  process.env.SESSION_STORE_DIR ??
+  process.env.STATE_DIR ??
+  path.join(process.cwd(), '.asi-comm-state');
+const decisionAuditPath = path.join(stateDir, 'asi-communication-autopilot-decisions.jsonl');
 
 function truncateContent(text: string): string {
   return text.length <= MAX_CONTENT_LENGTH ? text : text.slice(0, MAX_CONTENT_LENGTH) + '…';
@@ -149,4 +159,79 @@ export async function saveAssistantTurn(params: {
     category: params.category,
     lang: params.lang,
   });
+}
+
+export type CommunicationAutopilotStoredDecisionAction = 'auto_reply' | 'escalation' | 'blocked';
+
+export type CommunicationAutopilotStoredDecision = {
+  chat_id: number;
+  update_id?: number;
+  channel: string;
+  intent: string;
+  decision: CommunicationAutopilotStoredDecisionAction;
+  confidence?: number;
+  reason?: string | null;
+  property_id?: string | null;
+  booking_id?: string | null;
+  missing_context?: string[];
+  reply_preview?: string | null;
+  created_at?: string;
+};
+
+function appendAutopilotDecisionJsonl(record: CommunicationAutopilotStoredDecision): void {
+  if (isTest) return;
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(decisionAuditPath, JSON.stringify(record) + '\n', 'utf-8');
+  } catch {
+    // best-effort; database/audit logs still carry the decision
+  }
+}
+
+export async function saveCommunicationAutopilotDecision(
+  decision: CommunicationAutopilotStoredDecision,
+): Promise<void> {
+  const record: CommunicationAutopilotStoredDecision = {
+    ...decision,
+    reply_preview: maskedPreview(decision.reply_preview ?? undefined, 300) ?? null,
+    created_at: decision.created_at ?? new Date().toISOString(),
+  };
+
+  appendAutopilotDecisionJsonl(record);
+
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
+  try {
+    const { error } = await supabase
+      .from('communication_autopilot_decisions')
+      .insert({
+        chat_id: record.chat_id,
+        update_id: record.update_id ?? null,
+        channel: record.channel,
+        intent: record.intent,
+        decision: record.decision,
+        confidence: record.confidence ?? null,
+        reason: record.reason ?? null,
+        property_id: record.property_id ?? null,
+        booking_id: record.booking_id ?? null,
+        missing_context: record.missing_context ?? [],
+        reply_preview: record.reply_preview,
+        created_at: record.created_at,
+      });
+
+    if (error) {
+      auditLog({
+        type: AuditEventType.PersistError,
+        chat_id: record.chat_id,
+        update_id: record.update_id,
+        detail: `saveCommunicationAutopilotDecision: ${error.message}`,
+      });
+    }
+  } catch (err) {
+    auditLog({
+      type: AuditEventType.PersistError,
+      chat_id: record.chat_id,
+      update_id: record.update_id,
+      detail: `saveCommunicationAutopilotDecision exception: ${String(err)}`,
+    });
+  }
 }

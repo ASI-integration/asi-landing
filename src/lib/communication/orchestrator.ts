@@ -25,6 +25,7 @@ import {
 } from './classifier';
 import { checkAndMarkKey } from './idempotency';
 import {
+  saveCommunicationAutopilotDecision,
   saveAssistantTurn,
   saveUserTurn,
   upsertSession,
@@ -462,6 +463,10 @@ function objectKnowledgeKeyForAutopilotIntent(intent: string): string | null {
       return 'wifi_password';
     case 'wifi_problem':
       return 'wifi_name';
+    case 'house_rules':
+      return 'house_rules_text';
+    case 'early_checkin_late_checkout':
+      return 'early_checkin_policy';
     default:
       return null;
   }
@@ -574,6 +579,8 @@ function buildAutopilotContext(params: {
       wifiName: firstUsefulText(dbMemory?.object?.wifiName, wifi.name),
       wifiPassword: firstUsefulText(dbMemory?.object?.wifiPassword, wifi.password),
       houseRules: dbMemory?.object?.houseRules,
+      earlyCheckinPolicy: dbMemory?.object?.earlyCheckinPolicy,
+      lateCheckoutPolicy: dbMemory?.object?.lateCheckoutPolicy,
     },
     bookingVerified: dbMemory?.bookingVerified,
     propertyResolved: dbMemory?.propertyResolved,
@@ -1539,7 +1546,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (
       !replyText &&
       isLiveAutopilotInboundChannel(envelope.channel) &&
-      classification.lang === 'ru' &&
+      (classification.lang === 'ru' || envelope.channel === 'telegram') &&
       text.trim()
     ) {
       let bookingMemoryFields: ReturnType<typeof bookingObjectContextToAutopilotFields> | undefined;
@@ -1747,6 +1754,20 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               }
             : undefined,
         }),
+      });
+
+      await saveCommunicationAutopilotDecision({
+        chat_id: chatId,
+        update_id,
+        channel: envelope.channel,
+        intent: autopilotDecision.metadata.intent,
+        decision: autopilotDecision.action === 'auto_reply' ? 'auto_reply' : 'escalation',
+        confidence: autopilotDecision.confidence,
+        reason: autopilotDecision.escalationReason ?? autopilotDecision.metadata.matchedSignals[0] ?? null,
+        property_id: autopilotContext.object?.id ?? commContext.reservation.propertyId ?? null,
+        booking_id: autopilotContext.booking?.id ?? commContext.reservation.reservationId ?? null,
+        missing_context: autopilotDecision.metadata.missingContext,
+        reply_preview: autopilotDecision.replyText ?? null,
       });
 
       const objectKnowledgeKey = objectKnowledgeKeyForAutopilotIntent(autopilotDecision.metadata.intent);
@@ -3654,6 +3675,20 @@ async function handleTelegramPromptInjectionGuard(params: {
       detail: guard.action === 'block_first' ? `PROMPT_INJECTION_BLOCKED reason=${guard.reason}` : 'PROMPT_INJECTION_ACTIVE_BLOCK',
     });
   }
+
+  await saveCommunicationAutopilotDecision({
+    chat_id: params.message.chat.id,
+    update_id: params.update.update_id,
+    channel: 'telegram',
+    intent: 'prompt_injection',
+    decision: 'blocked',
+    confidence: 1,
+    reason: guard.action,
+    property_id: null,
+    booking_id: null,
+    missing_context: [],
+    reply_preview: replyText,
+  });
 
   if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: params.update.update_id, chatId: params.message.chat.id } })) {
     await replyToTelegram(params.message.chat.id, replyText, {

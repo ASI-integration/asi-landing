@@ -6,13 +6,7 @@ import {
   validateLlmRouterDecision,
 } from './llm-router/validate-llm-router-decision';
 import type { LlmRouterAttemptAudit, LlmRouterDecision, LlmRouterProvider } from './llm-router/types';
-import {
-  buildTelegramGuestAgentShadowDraft,
-  decideTelegramGuestAgentTurn,
-  getTelegramGuestAgentMode,
-  mapAgentDecisionToAutopilot,
-  type TelegramGuestAgentShadowDraft,
-} from './telegram-guest-agent';
+import type { TelegramGuestAgentShadowDraft } from './telegram-guest-agent';
 import {
   buildGuestMissingContextReplyRu,
   composeGuestBabyCribReplyRu,
@@ -41,6 +35,7 @@ import {
   resolvePropertyDirectionsReply,
   resolveTelegramGuestIntentCanon,
 } from './telegram-guest-intent-canon';
+import { decideCommunicationAutopilotPassportV1 } from './communication-autopilot-v1';
 
 export type CommunicationAutopilotAction = 'auto_reply' | 'escalate' | 'needs_context';
 
@@ -52,6 +47,7 @@ export type CommunicationAutopilotIntent =
   | 'wifi_problem'
   | 'parking'
   | 'waste_disposal_info'
+  | 'house_rules'
   | 'checkout'
   | 'baby_crib_request'
   | 'early_checkin_late_checkout'
@@ -105,6 +101,8 @@ export type CommunicationAutopilotContext = {
     babyCribAvailable?: boolean;
     babyCribNote?: string;
     houseRules?: string;
+    earlyCheckinPolicy?: string;
+    lateCheckoutPolicy?: string;
     knowledgeStatus?: Partial<Record<string, ObjectKnowledgeStatus>>;
   };
   bookingVerified?: boolean;
@@ -632,49 +630,11 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
   }
 
   if (input.channel === 'telegram') {
-    const guestAgentMode = getTelegramGuestAgentMode();
-    if (guestAgentMode === 'primary') {
-      const agentDecision = await decideTelegramGuestAgentTurn({
-        messageText: input.messageText,
-        context: input.context,
-        deterministic,
-        llmRouterProvider: input.llmRouterProvider,
-      });
-      return mapAgentDecisionToAutopilot(agentDecision, deterministic);
-    }
-
-    if (guestAgentMode === 'shadow') {
-      const agentDecision = await decideTelegramGuestAgentTurn({
-        messageText: input.messageText,
-        context: input.context,
-        deterministic,
-        llmRouterProvider: input.llmRouterProvider,
-      });
-      const mvpIntent = semanticRouterMeta?.mvpIntent ?? deterministic.metadata.intent;
-      const semanticIntent = semanticRouterMeta?.semanticIntent ?? null;
-      const finalLiveIntent = deterministic.metadata.intent;
-      deterministic.metadata.guestAgentShadow = {
-        mode: 'shadow',
-        mvp_intent: mvpIntent,
-        semantic_intent: semanticIntent,
-        semantic_confidence: semanticRouterMeta?.semanticConfidence ?? null,
-        final_live_intent: finalLiveIntent,
-        agent: buildTelegramGuestAgentShadowDraft(agentDecision),
-        mismatch_reason: resolveGuestAgentMismatchReason({
-          mvpIntent,
-          semanticIntent,
-          finalLiveIntent,
-          agentIntent: agentDecision.intent,
-        }),
-        would_agent_have_helped: wouldGuestAgentHaveHelped({
-          finalLiveIntent,
-          finalReply: deterministic.replyText,
-          agentIntent: agentDecision.intent,
-          agentConfidence: agentDecision.confidence,
-          agentReply: agentDecision.reply_text,
-        }),
-      };
-    }
+    return decideCommunicationAutopilotPassportV1({
+      messageText: input.messageText,
+      context: input.context,
+      baseDecision: deterministic,
+    });
   }
 
   if (!shouldUseLlmRouterFallback(input.channel, input.messageText, deterministic)) {
@@ -714,38 +674,6 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
     result.modelName,
     result.attempts,
   );
-}
-
-function resolveGuestAgentMismatchReason(input: {
-  mvpIntent: string;
-  semanticIntent: string | null;
-  finalLiveIntent: string;
-  agentIntent: string;
-}): string | null {
-  if (input.agentIntent === input.finalLiveIntent) return null;
-  if (input.semanticIntent && input.semanticIntent !== input.mvpIntent && input.agentIntent === input.semanticIntent) {
-    return 'agent_matches_semantic_router_not_live_intent';
-  }
-  if (input.finalLiveIntent === 'unknown' && input.agentIntent !== 'unknown') {
-    return 'agent_resolved_live_unknown';
-  }
-  if (input.agentIntent !== input.mvpIntent) {
-    return 'agent_differs_from_mvp_intent';
-  }
-  return 'agent_differs_from_live_intent';
-}
-
-function wouldGuestAgentHaveHelped(input: {
-  finalLiveIntent: string;
-  finalReply?: string;
-  agentIntent: string;
-  agentConfidence: number;
-  agentReply?: string;
-}): boolean {
-  if (input.agentConfidence < 0.7 || !input.agentReply?.trim()) return false;
-  if (input.finalLiveIntent === 'unknown' && input.agentIntent !== 'unknown') return true;
-  if (input.agentIntent !== input.finalLiveIntent) return true;
-  return !input.finalReply?.trim();
 }
 
 async function decideWithSingleInjectedProvider(
@@ -837,6 +765,7 @@ export function composeCommunicationAutopilotContextReply(input: {
           ? 'Напишите, пожалуйста, номер бронирования или адрес объекта. Я проверю информацию.'
           : 'Сейчас не вижу точной информации по этому вопросу для вашего объекта. Уточню и вернусь с ответом.';
       case 'parking':
+      case 'house_rules':
       case 'checkout':
         return buildGuestMissingContextReplyRu();
       default:
@@ -1034,10 +963,19 @@ function getMissingContext(
       return missingFields([
         ['object.babyCribNote', context?.object?.babyCribNote ?? context?.object?.babyCribAvailable],
       ]);
+    case 'house_rules':
+      if (!hasPropertyObjectContext(context)) return ['object.id'];
+      return missingFields([['object.houseRules', context?.object?.houseRules]]);
     case 'early_checkin_late_checkout':
       return missingFields([
-        ['booking.earlyCheckInAvailable', context?.booking?.earlyCheckInAvailable],
-        ['booking.lateCheckoutAvailable', context?.booking?.lateCheckoutAvailable],
+        [
+          'object.earlyCheckinPolicy',
+          context?.object?.earlyCheckinPolicy ?? context?.booking?.earlyCheckInAvailable,
+        ],
+        [
+          'object.lateCheckoutPolicy',
+          context?.object?.lateCheckoutPolicy ?? context?.booking?.lateCheckoutAvailable,
+        ],
       ]);
     case 'booking_lookup_missing_details':
     case 'checkin_code_request':
@@ -1229,6 +1167,8 @@ function composeRuReply(
       );
       return babyCrib ?? 'Сейчас не вижу точной информации по этому вопросу для вашего объекта. Уточню и вернусь с ответом.';
     }
+    case 'house_rules':
+      return `Правила проживания: ${context?.object?.houseRules}.`;
     case 'checkout': {
       const checkout = composeGuestCheckoutReplyRu(
         context?.object
@@ -1255,6 +1195,15 @@ function composeRuReply(
       return checkout ?? `Выезд до ${context?.booking?.checkoutTime}. Ключи оставьте по инструкции из заселения.`;
     }
     case 'early_checkin_late_checkout': {
+      const policyParts: string[] = [];
+      if (context?.object?.earlyCheckinPolicy) {
+        policyParts.push(`Ранний заезд: ${context.object.earlyCheckinPolicy}`);
+      }
+      if (context?.object?.lateCheckoutPolicy) {
+        policyParts.push(`Поздний выезд: ${context.object.lateCheckoutPolicy}`);
+      }
+      if (policyParts.length > 0) return policyParts.join(' ');
+
       const early = context?.booking?.earlyCheckInAvailable
         ? 'Ранний заезд сейчас возможен.'
         : 'Ранний заезд сейчас не подтвержден.';

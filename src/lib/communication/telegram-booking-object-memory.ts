@@ -42,6 +42,8 @@ export type TelegramPropertyObjectV1 = {
   checkout_time: string | null;
   house_rules_text: string | null;
   door_code_notes: string | null;
+  early_checkin_policy?: string | null;
+  late_checkout_policy?: string | null;
   knowledge_status?: Partial<Record<string, ObjectKnowledgeStatus>>;
 };
 
@@ -105,6 +107,8 @@ const OBJECT_KNOWLEDGE_CONTEXT_KEYS = [
   'house_rules_text',
   'check_in_text',
   'door_code_notes',
+  'early_checkin_policy',
+  'late_checkout_policy',
 ] as const;
 
 export function canRevealEmailAccessDetails(params: {
@@ -174,6 +178,8 @@ function mapPropertyRow(row: any): TelegramPropertyObjectV1 {
     checkout_time: stringOrNull(row?.check_out_time),
     house_rules_text: stringOrNull(row?.house_rules_text) ?? stringOrNull(row?.house_rules),
     door_code_notes: stringOrNull(row?.door_code_notes),
+    early_checkin_policy: stringOrNull(row?.early_checkin_policy),
+    late_checkout_policy: stringOrNull(row?.late_checkout_policy),
   };
 }
 
@@ -224,6 +230,8 @@ function mapObjectKnowledgeEntriesToProperty(objectId: string, entries: ObjectKn
     checkout_time: value('checkout_time') ?? value('checkout_rules'),
     house_rules_text: value('house_rules_text'),
     door_code_notes: value('door_code_notes'),
+    early_checkin_policy: value('early_checkin_policy'),
+    late_checkout_policy: value('late_checkout_policy'),
     knowledge_status,
   };
 }
@@ -626,6 +634,8 @@ export function bookingObjectContextToAutopilotFields(ctx: TelegramBookingObject
     babyCribAvailable?: boolean;
     babyCribNote?: string;
     houseRules?: string;
+    earlyCheckinPolicy?: string;
+    lateCheckoutPolicy?: string;
     knowledgeStatus?: Partial<Record<string, ObjectKnowledgeStatus>>;
   };
   bookingVerified?: boolean;
@@ -660,6 +670,8 @@ export function bookingObjectContextToAutopilotFields(ctx: TelegramBookingObject
           babyCribAvailable: property.baby_crib_available ?? undefined,
           babyCribNote: property.baby_crib_note ?? undefined,
           houseRules: property.house_rules_text ?? undefined,
+          earlyCheckinPolicy: property.early_checkin_policy ?? undefined,
+          lateCheckoutPolicy: property.late_checkout_policy ?? undefined,
           knowledgeStatus: property.knowledge_status,
         }
       : undefined,
