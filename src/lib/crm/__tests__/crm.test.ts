@@ -86,6 +86,13 @@ describe('crm view-model', () => {
     expect(contact.needsReaction).toBe(true);
   });
 
+  it('ignores non-uuid property ids for automation summaries lookup', () => {
+    const propertyUuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(propertyUuidRe.test('test-prop-tg-live')).toBe(false);
+    expect(propertyUuidRe.test('fa9e8871-2d50-4aaa-aa49-d7565430ee35')).toBe(true);
+  });
+
   it('filters testing contacts', () => {
     const contact = normalizeCrmContactRow(
       {

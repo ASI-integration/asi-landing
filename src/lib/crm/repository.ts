@@ -146,6 +146,13 @@ function chatIdString(value: string | number | null | undefined): string | null 
   return String(value);
 }
 
+const PROPERTY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isPropertyUuid(value: string): boolean {
+  return PROPERTY_UUID_RE.test(value.trim());
+}
+
 function isProtectedCrmRole(role: string | null | undefined): boolean {
   return role === 'owner' || role === 'manager';
 }
@@ -224,7 +231,7 @@ async function fetchEventsForContacts(contactIds: string[]): Promise<Map<string,
 async function fetchCrmPropertySummaries(
   propertyIds: string[],
 ): Promise<Map<string, CrmPropertyAutomationSummary>> {
-  const ids = [...new Set(propertyIds.map((id) => id.trim()).filter(Boolean))];
+  const ids = [...new Set(propertyIds.map((id) => id.trim()).filter(Boolean))].filter(isPropertyUuid);
   const map = new Map<string, CrmPropertyAutomationSummary>();
   if (ids.length === 0) return map;
 
