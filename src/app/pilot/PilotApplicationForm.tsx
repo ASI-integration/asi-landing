@@ -38,12 +38,18 @@ const activeBookings: PilotActiveBookingsOption[] = ['yes', 'no', 'soon'];
 const testFocuses: PilotTestFocusOption[] = ['communications', 'object_setup', 'channels', 'full_cycle'];
 const feedbackOptions: PilotFeedbackOption[] = ['yes', 'no', 'unsure'];
 
+export function normalizePropertyCountInput(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+  return String(Math.min(500, Number(digits)));
+}
+
 export function PilotApplicationForm() {
   const [name, setName] = useState('');
   const [telegramContact, setTelegramContact] = useState('');
   const [role, setRole] = useState<PilotRoleOption>('owner');
   const [city, setCity] = useState('');
-  const [propertyCount, setPropertyCount] = useState(1);
+  const [propertyCount, setPropertyCount] = useState('1');
   const [channelManager, setChannelManager] = useState<PilotChannelManagerOption>('none');
   const [selectedPlatforms, setSelectedPlatforms] = useState<PilotPlatformOption[]>([]);
   const [hasActiveBookings, setHasActiveBookings] = useState<PilotActiveBookingsOption>('yes');
@@ -71,7 +77,7 @@ export function PilotApplicationForm() {
           telegramContact,
           role,
           city,
-          propertyCount,
+          propertyCount: Number(propertyCount || 0),
           channelManager,
           platforms: selectedPlatforms,
           hasActiveBookings,
@@ -136,8 +142,9 @@ export function PilotApplicationForm() {
           <span className="font-medium text-slate-700">Количество объектов</span>
           <input
             value={propertyCount}
-            onChange={(event) => setPropertyCount(Number(event.target.value))}
+            onChange={(event) => setPropertyCount(normalizePropertyCountInput(event.target.value))}
             type="number"
+            inputMode="numeric"
             min={0}
             max={500}
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900"

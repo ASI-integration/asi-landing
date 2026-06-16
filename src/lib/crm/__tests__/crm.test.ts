@@ -123,4 +123,56 @@ describe('crm view-model', () => {
     expect(matchesCrmFilter(contact, 'testing')).toBe(true);
     expect(matchesCrmFilter(contact, 'pilot_active')).toBe(false);
   });
+
+  it('shows pilot candidates from pilot form applications', () => {
+    const contact = normalizeCrmContactRow(
+      {
+        id: 'pilot-1',
+        name: 'ASI Pilot Smoke',
+        role: 'owner',
+        source: 'pilot_form',
+        contact: '@pilot_owner',
+        telegram_user_id: null,
+        telegram_username: 'pilot_owner',
+        telegram_chat_id: null,
+        status: 'pilot_candidate',
+        property_id: null,
+        property_count: 2,
+        notes: '',
+        next_action: 'Оценить кандидата в пилот',
+        next_action_due_at: null,
+        last_message: 'Заявка в закрытый пилот ASI',
+        last_activity_at: '2026-06-16T10:00:00.000Z',
+        lead_id: null,
+        awaiting_reply: false,
+        created_at: '2026-06-16T09:00:00.000Z',
+        updated_at: '2026-06-16T10:00:00.000Z',
+      },
+      [event({
+        event_type: 'pilot_application_submitted',
+        metadata: {
+          source: 'pilot_form',
+          city: 'Kazan',
+          property_count: 2,
+          channel_manager_label: 'Нет',
+          platform_labels: ['Суточно.ру'],
+          has_active_bookings_label: 'Да',
+          test_focus_label: 'Коммуникации',
+          feedback_ready_label: 'Да',
+          role_label: 'Владелец',
+          telegram_contact: '@pilot_owner',
+          suggested_next_action: 'Оценить кандидата в пилот',
+        },
+      })],
+    );
+
+    expect(contact.source).toBe('pilot_form');
+    expect(contact.status).toBe('pilot_candidate');
+    expect(contact.pilotApplication).toMatchObject({
+      city: 'Kazan',
+      propertyCount: 2,
+      telegramContact: '@pilot_owner',
+    });
+    expect(matchesCrmFilter(contact, 'pilot_candidates')).toBe(true);
+  });
 });
