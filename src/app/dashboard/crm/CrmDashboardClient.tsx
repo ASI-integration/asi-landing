@@ -7,13 +7,20 @@ import {
   CRM_ROLE_LABELS,
   CRM_STATUS_LABELS,
 } from '@/lib/crm/labels';
-import type { CrmContactViewModel, CrmFilter, CrmRole, CrmStatus } from '@/lib/crm/types';
+import type {
+  CrmContactViewModel,
+  CrmFilter,
+  CrmPropertyAutomationSummary,
+  CrmRole,
+  CrmStatus,
+} from '@/lib/crm/types';
 import { CRM_ROLES, CRM_STATUSES } from '@/lib/crm/types';
 
 type CrmListResponse = {
   ok: boolean;
   contacts?: CrmContactViewModel[];
   needsReaction?: CrmContactViewModel[];
+  propertyOptions?: CrmPropertyAutomationSummary[];
   error?: string;
 };
 
@@ -48,6 +55,7 @@ function shortText(value: string | null | undefined, max = 72): string {
 export function CrmDashboardClient() {
   const [contacts, setContacts] = useState<CrmContactViewModel[]>([]);
   const [needsReaction, setNeedsReaction] = useState<CrmContactViewModel[]>([]);
+  const [propertyOptions, setPropertyOptions] = useState<CrmPropertyAutomationSummary[]>([]);
   const [filter, setFilter] = useState<CrmFilter>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,10 +91,12 @@ export function CrmDashboardClient() {
         setError(json.error ?? 'Не удалось загрузить CRM');
         setContacts([]);
         setNeedsReaction([]);
+        setPropertyOptions([]);
         return;
       }
       setContacts(json.contacts ?? []);
       setNeedsReaction(json.needsReaction ?? []);
+      setPropertyOptions(json.propertyOptions ?? []);
     } catch {
       setError('Ошибка сети при загрузке CRM');
     } finally {
@@ -100,9 +110,9 @@ export function CrmDashboardClient() {
 
   useEffect(() => {
     if (!selected) return;
-    setEditStatus(selected.status);
+    setEditStatus(selected.effectiveStatus);
     setEditNotes(selected.notes);
-    setEditNextAction(selected.nextAction);
+    setEditNextAction(selected.nextActionIsSuggested ? '' : selected.nextAction);
     setEditPropertyId(selected.propertyId ?? '');
   }, [selected]);
 
@@ -111,12 +121,16 @@ export function CrmDashboardClient() {
     setSaving(true);
     setError(null);
     try {
+      const propertyChanged = editPropertyId.trim() !== (selected.propertyId ?? '');
+      const status = propertyChanged && editPropertyId.trim() && editStatus === selected.status
+        ? 'creating_object'
+        : editStatus;
       const res = await fetch('/api/dashboard/crm', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: selected.id,
-          status: editStatus,
+          status,
           notes: editNotes,
           nextAction: editNextAction,
           propertyId: editPropertyId.trim() || null,
@@ -346,11 +360,11 @@ export function CrmDashboardClient() {
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
                           contact.needsReaction ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700'
                         }`}>
-                          {contact.statusLabel}
+                          {contact.effectiveStatusLabel}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {contact.propertyId ? shortText(contact.propertyId, 16) : '—'}
+                        {contact.propertySummary?.title ?? (contact.propertyId ? shortText(contact.propertyId, 16) : '—')}
                         {contact.propertyCount != null ? ` (${contact.propertyCount})` : ''}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
@@ -415,34 +429,94 @@ export function CrmDashboardClient() {
                   <input
                     value={editNextAction}
                     onChange={(e) => setEditNextAction(e.target.value)}
+                    placeholder={selected.nextActionIsSuggested ? selected.nextAction : undefined}
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   />
+                  {selected.nextActionIsSuggested && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      ASI предлагает: {selected.nextAction}
+                      {selected.nextActionHref ? (
+                        <>
+                          {' · '}
+                          <Link href={selected.nextActionHref} className="text-blue-700 hover:underline">
+                            Открыть шаг
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
+                  )}
                 </label>
                 <label className="block text-sm">
-                  <span className="text-slate-600">Связанный объект (ID)</span>
-                  <input
+                  <span className="text-slate-600">Связанный объект</span>
+                  <select
                     value={editPropertyId}
                     onChange={(e) => setEditPropertyId(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                  />
+                  >
+                    <option value="">Не выбран</option>
+                    {selected.propertyId && !propertyOptions.some((property) => property.id === selected.propertyId) ? (
+                      <option value={selected.propertyId}>{selected.propertyId}</option>
+                    ) : null}
+                    {propertyOptions.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.title} · {property.readinessCompleted}/{property.readinessTotal}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
+
+              {selected.propertySummary && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-slate-900">{selected.propertySummary.title}</p>
+                      <p className="mt-0.5 text-slate-600">{selected.propertySummary.location}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700">
+                      {selected.propertySummary.readinessCompleted}/{selected.propertySummary.readinessTotal}
+                    </span>
+                  </div>
+                  {selected.propertySummary.missingOperationalItems.length > 0 ? (
+                    <ul className="mt-3 space-y-1 text-slate-700">
+                      {selected.propertySummary.missingOperationalItems.map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-2">
+                          <span>{item.label}</span>
+                          <Link href={item.actionHref} className="text-blue-700 hover:underline">
+                            {item.actionLabel}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-emerald-700">Паспорт объекта готов для автопилота.</p>
+                  )}
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2 text-sm">
                 {selected.propertyId && (
                   <>
                     <Link
-                      href={`/dashboard/properties/${selected.propertyId}/setup`}
+                      href={selected.propertySummary?.setupHref ?? `/dashboard/properties/${selected.propertyId}/setup`}
                       className="text-blue-700 hover:underline"
                     >
                       Настройка объекта
                     </Link>
                     <Link
-                      href={`/dashboard/channel-manager?property=${selected.propertyId}`}
+                      href={selected.propertySummary?.channelManagerHref ?? `/dashboard/channel-manager?property=${selected.propertyId}`}
                       className="text-blue-700 hover:underline"
                     >
                       Channel Manager
                     </Link>
+                    {selected.propertySummary?.guestTestHref && (
+                      <Link
+                        href={selected.propertySummary.guestTestHref}
+                        className="text-blue-700 hover:underline"
+                      >
+                        guest_test
+                      </Link>
+                    )}
                   </>
                 )}
                 {selected.leadId && (
@@ -455,7 +529,18 @@ export function CrmDashboardClient() {
               {selected.missingDataFields.length > 0 && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
                   <p className="font-medium">ASI не смогла ответить — не хватает данных:</p>
-                  <p className="mt-1">{selected.missingDataFields.join(', ')}</p>
+                  <ul className="mt-1 space-y-1">
+                    {selected.missingDataActions.map((action) => (
+                      <li key={`${action.setupStep}:${action.label}`} className="flex items-center justify-between gap-2">
+                        <span>{action.label}</span>
+                        {action.setupHref ? (
+                          <Link href={action.setupHref} className="text-blue-700 hover:underline">
+                            Открыть setup
+                          </Link>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

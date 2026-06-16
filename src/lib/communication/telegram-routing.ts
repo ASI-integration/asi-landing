@@ -27,6 +27,7 @@ import { emergencyTestReply, resolveTelegramEmergencyProtocol } from '@/lib/comm
 import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
 import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegram-owner-notifications';
 import { recordCrmCommunicationEvent, upsertCrmContactFromTelegram } from '@/lib/crm/repository';
+import type { CrmContactViewModel } from '@/lib/crm/types';
 import { replyToTelegram, answerTelegramCallbackQuery, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
@@ -43,9 +44,6 @@ const ROLE_SELECTION_REPLY =
 
 const GUEST_WELCOME_REPLY =
   'Понял, вы гость по бронированию. Напишите вопрос по объекту — адрес, заезд, Wi‑Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
-
-const OWNER_WELCOME_REPLY =
-  'Понял, вы владелец или управляющий. Я буду присылать только уведомления и эскалации по гостям. Если нужна помощь команды ASI — напишите вопрос одним сообщением.';
 
 const GUEST_TEST_WELCOME_REPLY =
   'Тестовый режим гостя включён. Можно проверить автопилот: адрес, заезд, Wi‑Fi, правила. Напишите вопрос по объекту.';
@@ -79,10 +77,10 @@ async function syncCrmRoleSelection(
   user: TelegramRoutingUser,
   role: Exclude<TelegramRoutingRole, 'unknown' | 'support'>,
   propertyId?: string | null,
-): Promise<void> {
+): Promise<CrmContactViewModel | null> {
   try {
     const crmRole = role === 'owner' ? 'owner' : role;
-    await upsertCrmContactFromTelegram({
+    const contact = await upsertCrmContactFromTelegram({
       name: user.first_name,
       role: crmRole,
       source: 'telegram',
@@ -106,12 +104,14 @@ async function syncCrmRoleSelection(
         source: 'telegram_role_selection',
       },
     });
+    return contact;
   } catch (error) {
     console.error('[crm] role selection sync failed', {
       error: error instanceof Error ? error.message : String(error),
       role,
       telegram_user_id: user.telegram_user_id,
     });
+    return null;
   }
 }
 
@@ -143,6 +143,28 @@ async function syncCrmGuestTest(user: TelegramRoutingUser, propertyId: string): 
       telegram_user_id: user.telegram_user_id,
     });
   }
+}
+
+function appHref(pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || '').trim().replace(/\/$/, '');
+  return baseUrl ? `${baseUrl}${pathOrUrl}` : pathOrUrl;
+}
+
+function buildOwnerNextStepReply(contact: CrmContactViewModel | null): string {
+  const base = 'Понял, вы владелец или управляющий.';
+  const property = contact?.propertySummary ?? null;
+
+  if (!property) {
+    return `${base}\n\nСледующий шаг: создайте объект в личном кабинете или выберите уже созданный.\n${appHref('/dashboard/properties')}`;
+  }
+
+  const firstMissing = property.missingOperationalItems[0];
+  if (firstMissing) {
+    return `${base}\n\nПродолжите заполнение объекта: ${firstMissing.label}.\n${appHref(firstMissing.actionHref)}`;
+  }
+
+  return `${base}\n\nОбъект готов. Можно запустить тест гостя командой:\n/guest_test ${property.id}`;
 }
 
 function getAsiFeedbackTelegramSendOptions(): TelegramSendOptions {
@@ -365,8 +387,9 @@ async function handleRoleSelectionCallback(
   }
 
   if (role === 'owner') {
-    void syncCrmRoleSelection(user, 'owner');
-    await replyToTelegram(user.chat_id, OWNER_WELCOME_REPLY, {
+    const contact = await syncCrmRoleSelection(user, 'owner');
+    const reply = buildOwnerNextStepReply(contact);
+    await replyToTelegram(user.chat_id, reply, {
       handler: 'telegram_routing/role_owner',
       update_id: update.update_id,
     }, getAsiFeedbackTelegramSendOptions());
@@ -375,7 +398,7 @@ async function handleRoleSelectionCallback(
       update_id: update.update_id,
       chat_id: user.chat_id,
       category: MessageCategory.Start,
-      reply: OWNER_WELCOME_REPLY,
+      reply,
     };
   }
 

@@ -215,6 +215,59 @@ describe('Telegram routing layer', () => {
     expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
       eventType: 'role_selected_owner',
     }));
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('/dashboard/properties'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('sends owner to the next setup step when a linked object is incomplete', async () => {
+    mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      propertySummary: {
+        id: 'prop-setup',
+        title: 'ASI Test Flat',
+        missingOperationalItems: [
+          {
+            id: 'wifi',
+            label: 'Wi-Fi и инструкции',
+            done: false,
+            hint: '',
+            actionHref: '/dashboard/properties/prop-setup/setup?step=wifi',
+            actionLabel: 'Добавить Wi-Fi',
+          },
+        ],
+      },
+    });
+
+    await processTelegramRoutingUpdate(roleCallback('owner', 2008));
+
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('/dashboard/properties/prop-setup/setup?step=wifi'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('offers guest_test when owner linked object is ready', async () => {
+    mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      propertySummary: {
+        id: 'prop-ready',
+        title: 'ASI Ready Flat',
+        missingOperationalItems: [],
+      },
+    });
+
+    await processTelegramRoutingUpdate(roleCallback('owner', 2009));
+
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('/guest_test prop-ready'),
+      expect.any(Object),
+      expect.any(Object),
+    );
   });
 
   it('activates guest test mode and answers passport questions in autopilot', async () => {

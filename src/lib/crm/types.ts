@@ -11,6 +11,7 @@ export const CRM_STATUSES = [
   'creating_object',
   'object_filled',
   'testing_communication',
+  'needs_reaction',
   'pilot_active',
   'paused',
   'not_fit',
@@ -86,6 +87,37 @@ export type CrmEventViewModel = {
   label: string;
 };
 
+export type CrmMissingDataAction = {
+  field: string;
+  label: string;
+  setupStep: string;
+  setupHref: string | null;
+};
+
+export type CrmPropertyReadinessItem = {
+  id: string;
+  label: string;
+  done: boolean;
+  hint: string;
+  actionHref: string;
+  actionLabel: string;
+};
+
+export type CrmPropertyAutomationSummary = {
+  id: string;
+  title: string;
+  location: string;
+  readinessCompleted: number;
+  readinessTotal: number;
+  isPassportReady: boolean;
+  isOperationallyReady: boolean;
+  setupHref: string;
+  channelManagerHref: string;
+  guestTestHref: string;
+  readinessItems: CrmPropertyReadinessItem[];
+  missingOperationalItems: CrmPropertyReadinessItem[];
+};
+
 export type CrmContactViewModel = {
   id: string;
   name: string;
@@ -100,10 +132,15 @@ export type CrmContactViewModel = {
   telegramDisplay: string | null;
   status: CrmStatus;
   statusLabel: string;
+  effectiveStatus: CrmStatus;
+  effectiveStatusLabel: string;
   propertyId: string | null;
+  propertySummary: CrmPropertyAutomationSummary | null;
   propertyCount: number | null;
   notes: string;
   nextAction: string;
+  nextActionIsSuggested: boolean;
+  nextActionHref: string | null;
   nextActionDueAt: string | null;
   lastMessage: string | null;
   lastActivityAt: string | null;
@@ -117,6 +154,7 @@ export type CrmContactViewModel = {
   updatedAt: string;
   recentEvents: CrmEventViewModel[];
   missingDataFields: string[];
+  missingDataActions: CrmMissingDataAction[];
 };
 
 export type CreateCrmContactInput = {

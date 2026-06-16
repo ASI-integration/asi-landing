@@ -1,4 +1,9 @@
 import { CRM_EVENT_TYPE_LABELS, CRM_ROLE_LABELS, CRM_SOURCE_LABELS, CRM_STATUS_LABELS } from './labels';
+import {
+  deriveCrmAutomationSuggestion,
+  missingDataActionsForFields,
+  type CrmPropertyAutomationSummary,
+} from './automation-loop';
 import type {
   CrmContactRow,
   CrmContactViewModel,
@@ -130,17 +135,30 @@ export function normalizeCrmEventRow(row: CrmEventRow): CrmEventViewModel {
 export function normalizeCrmContactRow(
   row: CrmContactRow,
   events: CrmEventRow[] = [],
+  propertySummary: CrmPropertyAutomationSummary | null = null,
 ): CrmContactViewModel {
   const role = parseRole(row.role);
   const source = parseSource(row.source);
   const status = parseStatus(row.status);
   const normalizedEvents = events.map(normalizeCrmEventRow);
+  const missingDataFields = collectMissingDataFields(events);
+  const missingDataActions = missingDataActionsForFields(missingDataFields, row.property_id);
   const reaction = computeNeedsReaction({
     status,
     awaitingReply: row.awaiting_reply,
     nextAction: row.next_action,
     nextActionDueAt: row.next_action_due_at,
     events,
+  });
+  const automation = deriveCrmAutomationSuggestion({
+    role,
+    status,
+    source,
+    propertyId: row.property_id,
+    explicitNextAction: row.next_action,
+    propertySummary,
+    missingDataActions,
+    hasOpenReaction: reaction.unresolvedEscalationCount > 0,
   });
 
   return {
@@ -157,10 +175,15 @@ export function normalizeCrmContactRow(
     telegramDisplay: formatTelegramDisplay(row.telegram_username, row.telegram_user_id, row.telegram_chat_id),
     status,
     statusLabel: CRM_STATUS_LABELS[status],
+    effectiveStatus: automation.effectiveStatus,
+    effectiveStatusLabel: CRM_STATUS_LABELS[automation.effectiveStatus],
     propertyId: row.property_id,
+    propertySummary,
     propertyCount: row.property_count,
     notes: row.notes,
-    nextAction: row.next_action,
+    nextAction: automation.suggestedNextAction,
+    nextActionIsSuggested: automation.nextActionIsSuggested,
+    nextActionHref: automation.nextActionHref,
     nextActionDueAt: row.next_action_due_at,
     lastMessage: row.last_message,
     lastActivityAt: row.last_activity_at ?? row.updated_at,
@@ -173,7 +196,8 @@ export function normalizeCrmContactRow(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     recentEvents: normalizedEvents.slice(0, 20),
-    missingDataFields: collectMissingDataFields(events),
+    missingDataFields,
+    missingDataActions,
   };
 }
 
@@ -182,13 +206,13 @@ export function matchesCrmFilter(contact: CrmContactViewModel, filter: CrmFilter
     case 'all':
       return true;
     case 'new':
-      return contact.status === 'new';
+      return contact.effectiveStatus === 'new';
     case 'needs_reaction':
       return contact.needsReaction;
     case 'testing':
-      return contact.status === 'testing_communication' || contact.source === 'test';
+      return contact.effectiveStatus === 'testing_communication' || contact.source === 'test';
     case 'pilot_active':
-      return contact.status === 'pilot_active';
+      return contact.effectiveStatus === 'pilot_active';
     case 'escalations':
       return contact.unresolvedEscalationCount > 0;
     default:

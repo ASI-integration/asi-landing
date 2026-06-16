@@ -4,6 +4,7 @@ import { isDashboardInternalUser } from '@/lib/dashboard/internal-access';
 import {
   createCrmContact,
   listCrmContacts,
+  listCrmPropertyOptions,
   updateCrmContact,
 } from '@/lib/crm/repository';
 import { isCrmRole, isCrmSource, isCrmStatus, matchesCrmFilter } from '@/lib/crm/view-model';
@@ -44,7 +45,10 @@ export async function GET(req: NextRequest) {
   const filter = VALID_FILTERS.has(filterParam) ? filterParam : 'all';
 
   try {
-    const contacts = await listCrmContacts(limit);
+    const [contacts, propertyOptions] = await Promise.all([
+      listCrmContacts(limit),
+      listCrmPropertyOptions(),
+    ]);
     const filtered = filter === 'all' ? contacts : contacts.filter((contact) => matchesCrmFilter(contact, filter));
     const needsReaction = contacts.filter((contact) => contact.needsReaction);
 
@@ -52,6 +56,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       contacts: filtered,
       needsReaction,
+      propertyOptions,
       total: contacts.length,
     });
   } catch (error) {

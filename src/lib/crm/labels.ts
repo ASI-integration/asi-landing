@@ -22,6 +22,7 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   creating_object: 'Создает объект',
   object_filled: 'Объект заполнен',
   testing_communication: 'Тестирует коммуникацию',
+  needs_reaction: 'Нужна реакция',
   pilot_active: 'Пилот активен',
   paused: 'Пауза',
   not_fit: 'Не подходит',

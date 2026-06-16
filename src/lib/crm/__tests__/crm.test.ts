@@ -77,6 +77,12 @@ describe('crm view-model', () => {
     expect(contact.statusLabel).toBe('Новый');
     expect(contact.telegramDisplay).toBe('@ivan_test');
     expect(contact.missingDataFields).toEqual(['wifi_password', 'address']);
+    expect(contact.missingDataActions).toEqual([
+      expect.objectContaining({ label: 'Пароль Wi-Fi', setupHref: null }),
+      expect.objectContaining({ label: 'Адрес объекта', setupHref: null }),
+    ]);
+    expect(contact.effectiveStatus).toBe('needs_reaction');
+    expect(contact.nextAction).toBe('Заполнить: Пароль Wi-Fi');
     expect(contact.needsReaction).toBe(true);
   });
 
