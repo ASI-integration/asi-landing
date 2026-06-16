@@ -61,15 +61,15 @@ export function providerAvailabilityLabelRu(
 ): string {
   switch (availability) {
     case 'available':
-      return 'Доступно';
+      return 'Подключается вручную';
     case 'foundation':
-      return 'Foundation';
+      return 'Пилотный режим';
     case 'manual':
       return 'Вручную';
     case 'on_request':
-      return 'По заявке';
+      return 'Подключается вручную';
     case 'planned':
-      return 'Планируется';
+      return 'Скоро';
     default:
       return availability;
   }

@@ -184,6 +184,8 @@ export function deriveCrmAutomationSuggestion(input: {
   role: CrmRole;
   status: CrmStatus;
   source: string;
+  contact?: string | null;
+  telegramDisplay?: string | null;
   propertyId: string | null;
   explicitNextAction: string;
   propertySummary?: CrmPropertyAutomationSummary | null;
@@ -195,6 +197,8 @@ export function deriveCrmAutomationSuggestion(input: {
 
   if (hasOpenReaction) {
     effectiveStatus = 'needs_reaction';
+  } else if (input.status === 'pilot_candidate' || input.status === 'pilot_selected' || input.status === 'pilot_waitlist') {
+    effectiveStatus = input.status;
   } else if (input.status === 'testing_communication' || input.source === 'test') {
     effectiveStatus = 'testing_communication';
   } else if (input.propertySummary?.isOperationallyReady) {
@@ -208,12 +212,63 @@ export function deriveCrmAutomationSuggestion(input: {
   }
 
   const explicit = input.explicitNextAction.trim();
-  if (explicit) {
+  const stalePilotAction =
+    input.status === 'pilot_selected' &&
+    (explicit === 'Оценить кандидата в пилот' ||
+      explicit === 'Уточнить Telegram для подключения' ||
+      explicit === 'Уточнить наличие реального объекта' ||
+      explicit === 'Выбрать в пилот и предложить создать объект');
+  if (explicit && !stalePilotAction) {
     return {
       effectiveStatus,
       suggestedNextAction: explicit,
       nextActionHref: null,
       nextActionIsSuggested: false,
+    };
+  }
+
+  if (input.status === 'pilot_waitlist') {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Вернуться к кандидату, когда появится место в пилоте',
+      nextActionHref: null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.status === 'pilot_candidate' && !input.telegramDisplay && !input.contact?.trim()) {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Уточнить Telegram для подключения',
+      nextActionHref: null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.status === 'pilot_candidate' && (input.role === 'owner' || input.role === 'manager') && !input.propertyId) {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Выбрать в пилот и предложить создать объект',
+      nextActionHref: null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.status === 'pilot_candidate') {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Оценить кандидата в пилот',
+      nextActionHref: null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.status === 'pilot_selected' && !input.propertyId) {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Создать или заполнить объект',
+      nextActionHref: '/dashboard/properties',
+      nextActionIsSuggested: true,
     };
   }
 
@@ -259,8 +314,17 @@ export function deriveCrmAutomationSuggestion(input: {
   if (input.status === 'testing_communication' || input.source === 'test' || input.role === 'guest') {
     return {
       effectiveStatus,
-      suggestedNextAction: 'Пройти guest_test и проверить ответы ASI',
+      suggestedNextAction: 'Запустить тест гостя и проверить ответы ASI',
       nextActionHref: input.propertySummary?.guestTestHref ?? null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.status === 'pilot_selected' && input.propertySummary?.isOperationallyReady) {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Запустить тест гостя',
+      nextActionHref: input.propertySummary.guestTestHref,
       nextActionIsSuggested: true,
     };
   }

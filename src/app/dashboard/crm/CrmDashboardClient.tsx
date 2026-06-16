@@ -30,7 +30,15 @@ type CrmMutationResponse = {
   error?: string;
 };
 
-const FILTERS: CrmFilter[] = ['all', 'new', 'needs_reaction', 'testing', 'pilot_active', 'escalations'];
+const FILTERS: CrmFilter[] = [
+  'all',
+  'new',
+  'needs_reaction',
+  'pilot_candidates',
+  'testing',
+  'pilot_active',
+  'escalations',
+];
 
 function formatDateRu(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -402,6 +410,52 @@ export function CrmDashboardClient() {
                 </div>
               )}
 
+              {selected.pilotApplication && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+                  <h3 className="font-semibold">Заявка в пилот</h3>
+                  <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-emerald-800">Город</dt>
+                      <dd className="font-medium">{selected.pilotApplication.city || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-800">Объектов</dt>
+                      <dd className="font-medium">{selected.pilotApplication.propertyCount ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-800">Менеджер каналов</dt>
+                      <dd className="font-medium">{selected.pilotApplication.channelManager || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-800">Реальные брони</dt>
+                      <dd className="font-medium">{selected.pilotApplication.hasActiveBookings || '—'}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-emerald-800">Площадки</dt>
+                      <dd className="font-medium">
+                        {selected.pilotApplication.platforms.length > 0
+                          ? selected.pilotApplication.platforms.join(', ')
+                          : '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-800">Хочет тестировать</dt>
+                      <dd className="font-medium">{selected.pilotApplication.testFocus || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-800">Обратная связь</dt>
+                      <dd className="font-medium">{selected.pilotApplication.feedbackReady || '—'}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-emerald-800">Предложенный следующий шаг</dt>
+                      <dd className="font-medium">
+                        {selected.pilotApplication.suggestedNextAction || selected.nextAction}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
+
               <div className="grid gap-3">
                 <label className="block text-sm">
                   <span className="text-slate-600">Статус</span>
@@ -514,7 +568,7 @@ export function CrmDashboardClient() {
                         href={selected.propertySummary.guestTestHref}
                         className="text-blue-700 hover:underline"
                       >
-                        guest_test
+                        Тест гостя
                       </Link>
                     )}
                   </>

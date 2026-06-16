@@ -1,7 +1,7 @@
 export const CRM_ROLES = ['lead', 'owner', 'manager', 'guest', 'unknown'] as const;
 export type CrmRole = (typeof CRM_ROLES)[number];
 
-export const CRM_SOURCES = ['telegram', 'landing', 'manual', 'test'] as const;
+export const CRM_SOURCES = ['telegram', 'landing', 'manual', 'test', 'pilot_form'] as const;
 export type CrmSource = (typeof CRM_SOURCES)[number];
 
 export const CRM_STATUSES = [
@@ -13,6 +13,9 @@ export const CRM_STATUSES = [
   'testing_communication',
   'needs_reaction',
   'pilot_active',
+  'pilot_candidate',
+  'pilot_selected',
+  'pilot_waitlist',
   'paused',
   'not_fit',
 ] as const;
@@ -29,6 +32,7 @@ export const CRM_EVENT_TYPES = [
   'role_selected_lead',
   'role_selected_guest',
   'guest_test_started',
+  'pilot_application_submitted',
   'status_change',
   'note',
 ] as const;
@@ -38,9 +42,24 @@ export type CrmFilter =
   | 'all'
   | 'new'
   | 'needs_reaction'
+  | 'pilot_candidates'
   | 'testing'
   | 'pilot_active'
   | 'escalations';
+
+export type CrmPilotApplicationSummary = {
+  city: string;
+  propertyCount: number | null;
+  channelManager: string;
+  platforms: string[];
+  hasActiveBookings: string;
+  testFocus: string;
+  feedbackReady: string;
+  roleAnswer: string;
+  telegramContact: string | null;
+  suggestedNextAction: string;
+  submittedAt: string | null;
+};
 
 export type CrmContactRow = {
   id: string;
@@ -137,6 +156,7 @@ export type CrmContactViewModel = {
   propertyId: string | null;
   propertySummary: CrmPropertyAutomationSummary | null;
   propertyCount: number | null;
+  pilotApplication: CrmPilotApplicationSummary | null;
   notes: string;
   nextAction: string;
   nextActionIsSuggested: boolean;

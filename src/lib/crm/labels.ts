@@ -13,6 +13,7 @@ export const CRM_SOURCE_LABELS: Record<CrmSource, string> = {
   landing: 'Лендинг',
   manual: 'Вручную',
   test: 'Тест',
+  pilot_form: 'Форма пилота',
 };
 
 export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
@@ -24,6 +25,9 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   testing_communication: 'Тестирует коммуникацию',
   needs_reaction: 'Нужна реакция',
   pilot_active: 'Пилот активен',
+  pilot_candidate: 'Кандидат в пилот',
+  pilot_selected: 'Выбран в пилот',
+  pilot_waitlist: 'Лист ожидания',
   paused: 'Пауза',
   not_fit: 'Не подходит',
 };
@@ -39,6 +43,7 @@ export const CRM_EVENT_TYPE_LABELS: Record<CrmEventType, string> = {
   role_selected_lead: 'Выбрана роль: лид',
   role_selected_guest: 'Выбрана роль: гость',
   guest_test_started: 'Запущен тест гостя',
+  pilot_application_submitted: 'Заявка в пилот',
   status_change: 'Изменение статуса',
   note: 'Заметка',
 };
@@ -47,6 +52,7 @@ export const CRM_FILTER_LABELS: Record<string, string> = {
   all: 'Все',
   new: 'Новые',
   needs_reaction: 'Нужна реакция',
+  pilot_candidates: 'Кандидаты в пилот',
   testing: 'Тестируют',
   pilot_active: 'Пилот активен',
   escalations: 'Эскалации',

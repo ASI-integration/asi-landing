@@ -29,6 +29,7 @@ const VALID_FILTERS = new Set<CrmFilter>([
   'all',
   'new',
   'needs_reaction',
+  'pilot_candidates',
   'testing',
   'pilot_active',
   'escalations',

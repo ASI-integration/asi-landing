@@ -210,6 +210,8 @@ describe('Telegram routing layer', () => {
     expect(mockBeginLead).not.toHaveBeenCalled();
     expect(mockUpsertCrmContactFromTelegram).toHaveBeenCalledWith(expect.objectContaining({
       role: 'owner',
+      source: 'telegram',
+      telegramUsername: 'guest_tester',
       status: 'qualified',
     }));
     expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -246,6 +248,29 @@ describe('Telegram routing layer', () => {
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
       expect.stringContaining('/dashboard/properties/prop-setup/setup?step=wifi'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('keeps pilot application context when owner Telegram is linked by username', async () => {
+    mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      source: 'pilot_form',
+      status: 'pilot_candidate',
+      propertySummary: null,
+      nextAction: 'Выбрать в пилот и предложить создать объект',
+    });
+
+    await processTelegramRoutingUpdate(roleCallback('owner', 2014));
+
+    expect(mockUpsertCrmContactFromTelegram).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'owner',
+      telegramUsername: 'guest_tester',
+      telegramChatId: 8101,
+    }));
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('/dashboard/properties'),
       expect.any(Object),
       expect.any(Object),
     );

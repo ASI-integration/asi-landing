@@ -166,17 +166,29 @@ function shouldKeepExistingRole(existing: CrmContactRow, nextRole: string | null
 function shouldKeepExistingStatus(existing: CrmContactRow, nextStatus: string | null | undefined, nextRole: string | null | undefined): boolean {
   if (!nextStatus) return true;
   if (existing.status === 'pilot_active' && nextStatus !== 'pilot_active') return true;
+  if (
+    (existing.status === 'pilot_candidate' || existing.status === 'pilot_selected' || existing.status === 'pilot_waitlist') &&
+    (nextStatus === 'new' || nextStatus === 'qualified' || nextStatus === 'needs_clarification')
+  ) {
+    return true;
+  }
   if (nextRole === 'lead' && isProtectedCrmRole(existing.role) && (nextStatus === 'new' || nextStatus === 'qualified')) {
     return true;
   }
   return false;
 }
 
+function shouldKeepExistingSource(existing: CrmContactRow, nextSource: string | null | undefined): boolean {
+  return existing.source === 'pilot_form' && nextSource === 'telegram';
+}
+
 async function findContactByTelegram(input: {
   telegramUserId?: string | null;
+  telegramUsername?: string | null;
   telegramChatId?: string | number | null;
 }): Promise<CrmContactRow | null> {
   const userId = input.telegramUserId?.trim();
+  const username = input.telegramUsername?.trim().replace(/^@+/, '');
   const chatId = chatIdString(input.telegramChatId);
 
   if (userId) {
@@ -184,6 +196,18 @@ async function findContactByTelegram(input: {
       .from('crm_contacts')
       .select(CONTACT_SELECT)
       .eq('telegram_user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data as CrmContactRow;
+  }
+
+  if (username) {
+    const { data, error } = await supabase
+      .from('crm_contacts')
+      .select(CONTACT_SELECT)
+      .eq('telegram_username', username)
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -426,6 +450,7 @@ export async function upsertCrmContactFromTelegram(
   const allowCreate = input.allowCreate !== false;
   const existing = await findContactByTelegram({
     telegramUserId: input.telegramUserId,
+    telegramUsername: input.telegramUsername,
     telegramChatId: input.telegramChatId,
   });
 
@@ -474,7 +499,7 @@ export async function upsertCrmContactFromTelegram(
   };
   if (input.name?.trim()) patch.name = input.name.trim();
   if (!shouldKeepExistingRole(existing, input.role)) patch.role = input.role;
-  if (input.source) patch.source = input.source;
+  if (input.source && !shouldKeepExistingSource(existing, input.source)) patch.source = input.source;
   if (input.telegramUsername) patch.telegram_username = input.telegramUsername.replace(/^@+/, '');
   if (input.telegramChatId != null) patch.telegram_chat_id = chatIdString(input.telegramChatId);
   if (input.propertyId) patch.property_id = input.propertyId;

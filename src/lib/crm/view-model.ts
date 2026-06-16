@@ -11,6 +11,7 @@ import type {
   CrmEventType,
   CrmEventViewModel,
   CrmFilter,
+  CrmPilotApplicationSummary,
   CrmRole,
   CrmSource,
   CrmStatus,
@@ -132,6 +133,32 @@ export function normalizeCrmEventRow(row: CrmEventRow): CrmEventViewModel {
   };
 }
 
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => asString(item)).filter(Boolean)
+    : [];
+}
+
+function latestPilotApplication(events: CrmEventRow[]): CrmPilotApplicationSummary | null {
+  const event = events.find((item) => item.event_type === 'pilot_application_submitted');
+  if (!event) return null;
+  const meta = asRecord(event.metadata);
+  const propertyCountRaw = Number(meta.property_count);
+  return {
+    city: asString(meta.city),
+    propertyCount: Number.isFinite(propertyCountRaw) ? propertyCountRaw : null,
+    channelManager: asString(meta.channel_manager_label ?? meta.channel_manager),
+    platforms: asStringArray(meta.platform_labels ?? meta.platforms),
+    hasActiveBookings: asString(meta.has_active_bookings_label ?? meta.has_active_bookings),
+    testFocus: asString(meta.test_focus_label ?? meta.test_focus),
+    feedbackReady: asString(meta.feedback_ready_label ?? meta.feedback_ready),
+    roleAnswer: asString(meta.role_label ?? meta.role_answer),
+    telegramContact: asString(meta.telegram_contact) || null,
+    suggestedNextAction: asString(meta.suggested_next_action),
+    submittedAt: event.created_at,
+  };
+}
+
 export function normalizeCrmContactRow(
   row: CrmContactRow,
   events: CrmEventRow[] = [],
@@ -141,6 +168,8 @@ export function normalizeCrmContactRow(
   const source = parseSource(row.source);
   const status = parseStatus(row.status);
   const normalizedEvents = events.map(normalizeCrmEventRow);
+  const telegramDisplay = formatTelegramDisplay(row.telegram_username, row.telegram_user_id, row.telegram_chat_id);
+  const pilotApplication = latestPilotApplication(events);
   const missingDataFields = collectMissingDataFields(events);
   const missingDataActions = missingDataActionsForFields(missingDataFields, row.property_id);
   const reaction = computeNeedsReaction({
@@ -154,6 +183,8 @@ export function normalizeCrmContactRow(
     role,
     status,
     source,
+    contact: row.contact,
+    telegramDisplay,
     propertyId: row.property_id,
     explicitNextAction: row.next_action,
     propertySummary,
@@ -172,7 +203,7 @@ export function normalizeCrmContactRow(
     telegramUserId: row.telegram_user_id,
     telegramUsername: row.telegram_username?.replace(/^@+/, '') || null,
     telegramChatId: row.telegram_chat_id,
-    telegramDisplay: formatTelegramDisplay(row.telegram_username, row.telegram_user_id, row.telegram_chat_id),
+    telegramDisplay,
     status,
     statusLabel: CRM_STATUS_LABELS[status],
     effectiveStatus: automation.effectiveStatus,
@@ -180,6 +211,7 @@ export function normalizeCrmContactRow(
     propertyId: row.property_id,
     propertySummary,
     propertyCount: row.property_count,
+    pilotApplication,
     notes: row.notes,
     nextAction: automation.suggestedNextAction,
     nextActionIsSuggested: automation.nextActionIsSuggested,
@@ -209,6 +241,13 @@ export function matchesCrmFilter(contact: CrmContactViewModel, filter: CrmFilter
       return contact.effectiveStatus === 'new';
     case 'needs_reaction':
       return contact.needsReaction;
+    case 'pilot_candidates':
+      return (
+        contact.status === 'pilot_candidate' ||
+        contact.status === 'pilot_selected' ||
+        contact.status === 'pilot_waitlist' ||
+        contact.source === 'pilot_form'
+      );
     case 'testing':
       return contact.effectiveStatus === 'testing_communication' || contact.source === 'test';
     case 'pilot_active':

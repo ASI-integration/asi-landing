@@ -22,7 +22,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     availability: 'foundation',
     kind: 'channel_manager',
     description:
-      'Первый слой подключения: структура объектов, календарь, брони и базовые статусы через доступы владельца или провайдера.',
+      'Пилотный режим: фиксируем текущую структуру объектов, календарь, брони и базовые статусы.',
   },
   {
     code: 'bnovo',
@@ -31,7 +31,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     availability: 'foundation',
     kind: 'channel_manager',
     description:
-      'Подключение через действующий менеджер каналов, чтобы не перестраивать рабочий процесс объекта с нуля.',
+      'Пилотный режим: проверяем, как работать через действующий менеджер каналов без перестройки процесса.',
   },
   {
     code: 'sutochno',
@@ -40,7 +40,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     availability: 'on_request',
     kind: 'ota_adapter',
     description:
-      'Адаптер площадки подключается по заявке, когда у владельца есть нужные доступы и подтверждение со стороны площадки.',
+      'На пилоте подключается вручную после проверки объекта, доступов и текущей схемы работы.',
   },
   {
     code: 'yandex_travel',
@@ -48,7 +48,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'ota_adapter',
-    description: 'Планируем адаптер для бронирований и сверки данных. Сейчас это не live-интеграция.',
+    description: 'Скоро: начнём с ручной сверки данных и 1-2 тестовых сценариев.',
   },
   {
     code: 'ozon_travel',
@@ -56,7 +56,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'ota_adapter',
-    description: 'Планируем адаптер для российского OTA-контура после базовых подключений через менеджеры каналов.',
+    description: 'Скоро: подключение рассматривается после базовой проверки менеджера каналов.',
   },
   {
     code: 'avito',
@@ -64,7 +64,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'marketplace_adapter',
-    description: 'Планируем адаптер для объявлений и заявок, чтобы снизить ручную работу по площадке.',
+    description: 'Скоро: сначала фиксируем объявления и заявки вручную, затем выбираем тестовый сценарий.',
   },
   {
     code: 'cian',
@@ -72,7 +72,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'marketplace_adapter',
-    description: 'Планируем адаптер для объявлений и входящих заявок. Старт зависит от доступов и правил площадки.',
+    description: 'Скоро: старт зависит от текущих доступов, правил площадки и выбранного объекта.',
   },
   {
     code: 'hotels_101',
@@ -80,7 +80,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'ota_adapter',
-    description: 'Плейсхолдер в дорожной карте для будущего адаптера, без обещания live-подключения сейчас.',
+    description: 'Скоро: сейчас можно зафиксировать площадку в заявке и вернуться к ней после базового теста.',
   },
   {
     code: 'otello',
@@ -88,7 +88,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'planned',
     kind: 'ota_adapter',
-    description: 'Плейсхолдер в дорожной карте для будущего адаптера, без обещания live-подключения сейчас.',
+    description: 'Скоро: сейчас можно зафиксировать площадку в заявке и вернуться к ней после базового теста.',
   },
   {
     code: 'manual_import',
@@ -96,7 +96,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'available',
     kind: 'manual',
-    description: 'Доступный базовый путь: загрузить данные вручную или полуавтоматически, пока адаптеры готовятся.',
+    description: 'Доступный базовый путь: загрузить данные вручную, пока подключения готовятся.',
   },
   {
     code: 'future',
@@ -104,7 +104,7 @@ export const CHANNEL_MANAGER_PROVIDERS: readonly ChannelManagerProvider[] = [
     primaryMarket: 'ru',
     availability: 'on_request',
     kind: 'custom',
-    description: 'Если у вас уже есть другой менеджер каналов, ASI сначала проверит возможность подключиться к нему.',
+    description: 'Если у вас уже есть другой менеджер каналов, сначала проверим его вручную.',
   },
 ] as const;
 

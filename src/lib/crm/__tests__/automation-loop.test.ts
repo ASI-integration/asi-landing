@@ -139,4 +139,37 @@ describe('CRM automation loop', () => {
     expect(summary.isOperationallyReady).toBe(true);
     expect(suggestion.effectiveStatus).toBe('object_filled');
   });
+
+  it('suggests pilot candidate and selected pilot next actions', () => {
+    const candidateWithoutTelegram = deriveCrmAutomationSuggestion({
+      role: 'owner',
+      status: 'pilot_candidate',
+      source: 'pilot_form',
+      contact: null,
+      telegramDisplay: null,
+      propertyId: null,
+      explicitNextAction: '',
+    });
+
+    expect(candidateWithoutTelegram).toMatchObject({
+      effectiveStatus: 'pilot_candidate',
+      suggestedNextAction: 'Уточнить Telegram для подключения',
+    });
+
+    const selectedWithoutProperty = deriveCrmAutomationSuggestion({
+      role: 'owner',
+      status: 'pilot_selected',
+      source: 'pilot_form',
+      contact: '@pilot_owner',
+      telegramDisplay: '@pilot_owner',
+      propertyId: null,
+      explicitNextAction: 'Выбрать в пилот и предложить создать объект',
+    });
+
+    expect(selectedWithoutProperty).toMatchObject({
+      effectiveStatus: 'pilot_selected',
+      suggestedNextAction: 'Создать или заполнить объект',
+      nextActionHref: '/dashboard/properties',
+    });
+  });
 });

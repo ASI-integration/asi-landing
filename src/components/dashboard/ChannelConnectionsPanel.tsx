@@ -61,19 +61,19 @@ export function ChannelConnectionsPanel() {
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-sm font-semibold text-slate-900">1. Сначала менеджер каналов</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            Подключаемся к уже рабочему контуру, чтобы не переносить объект на новую систему вручную.
+            Фиксируем, где сейчас ведутся календарь, цены, брони и заявки.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-sm font-semibold text-slate-900">2. Затем адаптеры площадок</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            Российские OTA и площадки продаж добавляются поэтапно через отдельные адаптеры.
+            Начинаем с 1-2 площадок и проверяем ручной порядок подключения.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-sm font-semibold text-slate-900">3. Меньше ручной работы</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            ASI сводит календарь, цены, брони и заявки в один рабочий контур для будущей автоматизации.
+            ASI готовит единый контур данных для будущей автоматизации.
           </p>
         </div>
       </section>
@@ -81,7 +81,7 @@ export function ChannelConnectionsPanel() {
       <section className="bg-white rounded-xl border border-slate-200 p-7">
         <h2 className="text-xl font-bold text-slate-900">Менеджеры каналов и базовый ввод</h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          Это первый слой: ASI использует существующий менеджер каналов или ручную загрузку как основу для данных.
+          Это первый слой: ASI фиксирует существующий менеджер каналов или ручную загрузку как основу для данных.
         </p>
 
         <div className="mt-6 grid gap-3 md:grid-cols-2">
@@ -133,7 +133,7 @@ export function ChannelConnectionsPanel() {
       <section className="bg-white rounded-xl border border-slate-200 p-7">
         <h2 className="text-xl font-bold text-slate-900">Адаптеры российских площадок</h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          Эти подключения не заявлены как live-интеграции. Сейчас это карта адаптеров для поэтапного запуска.
+          Эти подключения пока не автоматические. Сейчас это карта площадок для поэтапного пилотного запуска.
         </p>
 
         <div className="mt-6 grid gap-3 md:grid-cols-2">
