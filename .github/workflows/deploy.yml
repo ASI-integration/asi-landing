@@ -152,10 +152,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build_release]
     steps:
-      - name: Checkout (smoke script)
+      - name: Checkout smoke script (same SHA as artifact)
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          ref: ${{ needs.build_release.outputs.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -195,10 +196,11 @@ jobs:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
     steps:
-      - name: Checkout (deploy script for SCP)
+      - name: Checkout deploy script (same SHA as artifact)
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          ref: ${{ needs.build_release.outputs.sha }}
 
       - name: Download release artifact
         uses: actions/download-artifact@v4
