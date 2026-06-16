@@ -25,6 +25,7 @@ export type TelegramOwnerNotificationInput = {
   updateId?: number;
   confidence?: number;
   bookingId?: string | null;
+  severity?: 'critical' | 'high' | 'normal' | null;
   crmAllowCreateContact?: boolean;
   crmSource?: 'telegram' | 'test';
   crmRole?: 'guest' | 'owner' | 'lead';
@@ -98,6 +99,7 @@ export function formatTelegramOwnerNotification(input: TelegramOwnerNotification
   }
   if (input.intent) lines.push(`Намерение: ${input.intent}`);
   if (input.escalationReason) lines.push(`Причина: ${input.escalationReason}`);
+  if (input.severity) lines.push(`Priority: ${input.severity}`);
   if (input.missingFields?.length) {
     lines.push(`Не хватает: ${input.missingFields.join(', ')}`);
   }
@@ -151,6 +153,7 @@ async function persistCrmOwnerNotification(input: TelegramOwnerNotificationInput
       intent: input.intent,
       escalationReason: input.escalationReason,
       missingFields: input.missingFields,
+      severity: input.severity,
       allowCreateContact: input.crmAllowCreateContact ?? false,
       source: input.crmSource,
       role: input.crmRole,

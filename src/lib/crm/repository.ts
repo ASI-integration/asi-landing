@@ -25,6 +25,25 @@ function chatIdString(value: string | number | null | undefined): string | null 
   return String(value);
 }
 
+function isProtectedCrmRole(role: string | null | undefined): boolean {
+  return role === 'owner' || role === 'manager';
+}
+
+function shouldKeepExistingRole(existing: CrmContactRow, nextRole: string | null | undefined): boolean {
+  if (!nextRole || nextRole === 'unknown') return true;
+  if (nextRole === 'lead' && (isProtectedCrmRole(existing.role) || existing.status === 'pilot_active')) return true;
+  return false;
+}
+
+function shouldKeepExistingStatus(existing: CrmContactRow, nextStatus: string | null | undefined, nextRole: string | null | undefined): boolean {
+  if (!nextStatus) return true;
+  if (existing.status === 'pilot_active' && nextStatus !== 'pilot_active') return true;
+  if (nextRole === 'lead' && isProtectedCrmRole(existing.role) && (nextStatus === 'new' || nextStatus === 'qualified')) {
+    return true;
+  }
+  return false;
+}
+
 async function findContactByTelegram(input: {
   telegramUserId?: string | null;
   telegramChatId?: string | number | null;
@@ -229,13 +248,13 @@ export async function upsertCrmContactFromTelegram(
     last_activity_at: now,
   };
   if (input.name?.trim()) patch.name = input.name.trim();
-  if (input.role && input.role !== 'unknown') patch.role = input.role;
+  if (!shouldKeepExistingRole(existing, input.role)) patch.role = input.role;
   if (input.source) patch.source = input.source;
   if (input.telegramUsername) patch.telegram_username = input.telegramUsername.replace(/^@+/, '');
   if (input.telegramChatId != null) patch.telegram_chat_id = chatIdString(input.telegramChatId);
   if (input.propertyId) patch.property_id = input.propertyId;
   if (input.leadId) patch.lead_id = input.leadId;
-  if (input.status) patch.status = input.status;
+  if (!shouldKeepExistingStatus(existing, input.status, input.role)) patch.status = input.status;
   if (input.lastMessage?.trim()) patch.last_message = input.lastMessage.trim();
 
   const { data, error } = await supabase
@@ -319,6 +338,7 @@ export async function recordCrmEventFromOwnerNotification(input: {
   intent?: string | null;
   escalationReason?: string | null;
   missingFields?: string[];
+  severity?: 'critical' | 'high' | 'normal' | null;
   allowCreateContact?: boolean;
   source?: 'telegram' | 'test';
   role?: 'guest' | 'owner' | 'lead';
@@ -354,6 +374,8 @@ export async function recordCrmEventFromOwnerNotification(input: {
       intent: input.intent ?? null,
       escalation_reason: input.escalationReason ?? null,
       missing_fields: input.missingFields ?? [],
+      severity: input.severity ?? null,
+      priority: input.severity ?? null,
       reply_preview: input.replyText ?? null,
       notification_type: input.type,
     },

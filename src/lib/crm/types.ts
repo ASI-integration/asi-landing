@@ -24,6 +24,10 @@ export const CRM_EVENT_TYPES = [
   'auto_reply',
   'message_inbound',
   'message_outbound',
+  'role_selected_owner',
+  'role_selected_lead',
+  'role_selected_guest',
+  'guest_test_started',
   'status_change',
   'note',
 ] as const;

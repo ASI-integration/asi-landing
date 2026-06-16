@@ -26,6 +26,10 @@ export function setTelegramRoutingSession(chatId: number, session: TelegramRouti
   sessions.set(chatId, session);
 }
 
+export function clearTelegramRoutingSession(chatId: number): void {
+  sessions.delete(chatId);
+}
+
 export function patchTelegramRoutingSession(
   chatId: number,
   patch: Partial<Omit<TelegramRoutingSession, 'updatedAt'>>,

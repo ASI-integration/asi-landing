@@ -113,15 +113,17 @@ export function computeNeedsReaction(input: {
 
 export function normalizeCrmEventRow(row: CrmEventRow): CrmEventViewModel {
   const eventType = parseEventType(row.event_type);
+  const metadata = asRecord(row.metadata);
+  const priority = eventType === 'escalation' ? asString(metadata.priority ?? metadata.severity) : '';
   return {
     id: row.id,
     eventType,
     messageText: row.message_text,
     propertyId: row.property_id,
-    metadata: asRecord(row.metadata),
+    metadata,
     acknowledgedAt: row.acknowledged_at,
     createdAt: row.created_at,
-    label: CRM_EVENT_TYPE_LABELS[eventType],
+    label: priority ? `${CRM_EVENT_TYPE_LABELS[eventType]}: ${priority}` : CRM_EVENT_TYPE_LABELS[eventType],
   };
 }
 

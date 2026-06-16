@@ -16,12 +16,14 @@ import {
 import { sanitizeGuestFacingReply, guestReplyContainsForbiddenInternalTokens } from '@/lib/communication/guest-facing-ru';
 import { polishGuestReplyWithLlm } from '@/lib/communication/guest-reply-llm-polish';
 import {
+  clearTelegramRoutingSession,
   getTelegramRoutingSession,
   patchTelegramRoutingSession,
   resolveTelegramCommunicationMode,
   type TelegramCommunicationMode,
   type TelegramRoutingRole,
 } from '@/lib/communication/telegram-routing-session';
+import { emergencyTestReply, resolveTelegramEmergencyProtocol } from '@/lib/communication/telegram-emergency-protocol';
 import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
 import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegram-owner-notifications';
 import { recordCrmCommunicationEvent, upsertCrmContactFromTelegram } from '@/lib/crm/repository';
@@ -32,6 +34,8 @@ import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdat
 const START_RE = /^\/start(?:@\w+)?(?:\s+(.+))?$/i;
 const SUPPORT_COMMAND_RE = /^\/support(?:@\w+)?$/i;
 const GUEST_TEST_COMMAND_RE = /^\/guest_test(?:@\w+)?(?:\s+(.+))?$/i;
+const RESET_TEST_STATE_COMMAND_RE = /^\/reset_test_state(?:@\w+)?$/i;
+const EMERGENCY_TEST_COMMAND_RE = /^\/emergency_test(?:@\w+)?(?:\s+(.+))?$/i;
 const ROUTING_CALLBACK_PREFIX = 'tr';
 
 const ROLE_SELECTION_REPLY =
@@ -52,6 +56,8 @@ const DRAFT_PREPARED_REPLY =
 const MISSING_DATA_GUEST_FALLBACK =
   'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
+const RESET_TEST_STATE_REPLY = 'Тестовое состояние сброшено. Отправьте /start, чтобы выбрать роль заново.';
+
 type ParsedRoutingCallback =
   | { kind: 'role'; role: Exclude<TelegramRoutingRole, 'unknown'> }
   | { kind: 'guest_test'; propertyId: string | null };
@@ -71,32 +77,34 @@ function crmNotifyOptionsForGuest(
 
 async function syncCrmRoleSelection(
   user: TelegramRoutingUser,
-  role: Exclude<TelegramRoutingRole, 'unknown' | 'support' | 'guest'>,
+  role: Exclude<TelegramRoutingRole, 'unknown' | 'support'>,
   propertyId?: string | null,
 ): Promise<void> {
   try {
-    if (role === 'lead') {
-      await upsertCrmContactFromTelegram({
-        name: user.first_name,
-        role: 'lead',
-        source: 'telegram',
-        telegramUserId: user.telegram_user_id,
-        telegramUsername: user.telegram_username,
-        telegramChatId: user.chat_id,
-        status: 'new',
-      });
-      return;
-    }
-
+    const crmRole = role === 'owner' ? 'owner' : role;
     await upsertCrmContactFromTelegram({
       name: user.first_name,
-      role: 'owner',
+      role: crmRole,
       source: 'telegram',
       telegramUserId: user.telegram_user_id,
       telegramUsername: user.telegram_username,
       telegramChatId: user.chat_id,
-      status: 'qualified',
+      status: role === 'lead' ? 'new' : role === 'guest' ? 'needs_clarification' : 'qualified',
       propertyId: propertyId ?? undefined,
+    });
+    await recordCrmCommunicationEvent({
+      telegramUserId: user.telegram_user_id,
+      telegramChatId: user.chat_id,
+      eventType: role === 'owner'
+        ? 'role_selected_owner'
+        : role === 'lead'
+          ? 'role_selected_lead'
+          : 'role_selected_guest',
+      propertyId: propertyId ?? undefined,
+      metadata: {
+        role,
+        source: 'telegram_role_selection',
+      },
     });
   } catch (error) {
     console.error('[crm] role selection sync failed', {
@@ -118,6 +126,16 @@ async function syncCrmGuestTest(user: TelegramRoutingUser, propertyId: string): 
       telegramChatId: user.chat_id,
       propertyId,
       status: 'testing_communication',
+    });
+    await recordCrmCommunicationEvent({
+      telegramUserId: user.telegram_user_id,
+      telegramChatId: user.chat_id,
+      eventType: 'guest_test_started',
+      propertyId,
+      metadata: {
+        source: 'telegram_guest_test',
+        property_id: propertyId,
+      },
     });
   } catch (error) {
     console.error('[crm] guest test sync failed', {
@@ -332,6 +350,7 @@ async function handleRoleSelectionCallback(
   });
 
   if (role === 'guest') {
+    void syncCrmRoleSelection(user, 'guest');
     await replyToTelegram(user.chat_id, GUEST_WELCOME_REPLY, {
       handler: 'telegram_routing/role_guest',
       update_id: update.update_id,
@@ -445,6 +464,101 @@ function resolveGuestFacingReply(rawReply: string | null | undefined): string {
   return MISSING_DATA_GUEST_FALLBACK;
 }
 
+async function processEmergencyProtocolMessage(
+  update: TelegramUpdate,
+  user: TelegramRoutingUser,
+  messageText: string,
+  context: CommunicationAutopilotContext,
+): Promise<ProcessResult | null> {
+  const emergency = resolveTelegramEmergencyProtocol(messageText);
+  if (!emergency) return null;
+
+  const session = getTelegramRoutingSession(user.chat_id);
+  const propertyId = context.object?.id ?? session?.testPropertyId ?? null;
+  const propertyName = context.object?.name ?? null;
+  const bookingId = context.booking?.id ?? null;
+  const crmOptions = crmNotifyOptionsForGuest(session);
+
+  if (emergency.isExplicitTestProbe) {
+    try {
+      await recordCrmCommunicationEvent({
+        telegramUserId: user.telegram_user_id,
+        telegramChatId: user.chat_id,
+        eventType: 'note',
+        messageText,
+        propertyId,
+        metadata: {
+          protocol: 'emergency_distress_v0',
+          emergency_kind: emergency.kind,
+          test_probe: true,
+          real_escalation_created: false,
+        },
+        allowCreateContact: crmOptions.crmAllowCreateContact,
+        contactHints: crmOptions.crmAllowCreateContact
+          ? {
+              name: user.first_name,
+              role: 'guest',
+              source: crmOptions.crmSource ?? 'test',
+              telegramUserId: user.telegram_user_id,
+              telegramUsername: user.telegram_username,
+              telegramChatId: user.chat_id,
+              propertyId,
+              status: 'testing_communication',
+            }
+          : undefined,
+      });
+    } catch (error) {
+      console.error('[crm] emergency test note failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const reply = emergencyTestReply();
+    await replyToTelegram(user.chat_id, reply, {
+      handler: 'telegram_routing/emergency_test_probe',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.GuestMessage,
+      reply,
+    };
+  }
+
+  await notifyTelegramOwner({
+    type: 'escalation_created',
+    guestChatId: user.chat_id,
+    guestName: user.first_name,
+    guestUsername: user.telegram_username,
+    messageText,
+    replyText: emergency.replyText,
+    propertyId,
+    propertyName,
+    intent: 'emergency_distress',
+    escalationReason: `emergency_${emergency.kind}`,
+    missingFields: [],
+    updateId: update.update_id,
+    confidence: 1,
+    bookingId,
+    severity: emergency.severity,
+    ...crmOptions,
+  });
+
+  await replyToTelegram(user.chat_id, emergency.replyText, {
+    handler: `telegram_routing/emergency/${emergency.kind}`,
+    update_id: update.update_id,
+  }, getAsiFeedbackTelegramSendOptions());
+
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: update.update_id,
+    chat_id: user.chat_id,
+    category: MessageCategory.GuestMessage,
+    reply: emergency.replyText,
+  };
+}
+
 async function processGuestAutopilotMessage(
   update: TelegramUpdate,
   user: TelegramRoutingUser,
@@ -453,6 +567,9 @@ async function processGuestAutopilotMessage(
   const session = getTelegramRoutingSession(user.chat_id);
   const mode: TelegramCommunicationMode = resolveTelegramCommunicationMode(session);
   const context = await buildGuestAutopilotContext(user, messageText);
+  const emergencyResult = await processEmergencyProtocolMessage(update, user, messageText, context);
+  if (emergencyResult) return emergencyResult;
+
   const decision = await decideCommunicationAutopilotResponseWithLlmRouter({
     channel: 'telegram',
     messageText,
@@ -662,6 +779,54 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
 
   if (SUPPORT_COMMAND_RE.test(text)) {
     return beginTelegramSupportFromRouting(update, user);
+  }
+
+  if (RESET_TEST_STATE_COMMAND_RE.test(text)) {
+    clearTelegramRoutingSession(user.chat_id);
+    await replyToTelegram(user.chat_id, RESET_TEST_STATE_REPLY, {
+      handler: 'telegram_routing/reset_test_state',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: RESET_TEST_STATE_REPLY,
+    };
+  }
+
+  if (EMERGENCY_TEST_COMMAND_RE.test(text)) {
+    const reply = emergencyTestReply();
+    try {
+      await recordCrmCommunicationEvent({
+        telegramUserId: user.telegram_user_id,
+        telegramChatId: user.chat_id,
+        eventType: 'note',
+        messageText: text,
+        metadata: {
+          protocol: 'emergency_distress_v0',
+          command: 'emergency_test',
+          test_probe: true,
+          real_escalation_created: false,
+        },
+      });
+    } catch (error) {
+      console.error('[crm] emergency test command note failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await replyToTelegram(user.chat_id, reply, {
+      handler: 'telegram_routing/emergency_test',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply,
+    };
   }
 
   const guestTestCommand = text.match(GUEST_TEST_COMMAND_RE);

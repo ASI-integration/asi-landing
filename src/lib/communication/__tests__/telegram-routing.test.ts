@@ -10,6 +10,9 @@ const mockDecideAutopilot = vi.fn();
 const mockLookupBooking = vi.fn();
 const mockResolveGuestContext = vi.fn();
 const mockLookupProperty = vi.fn();
+const mockUpsertCrmContactFromTelegram = vi.fn();
+const mockRecordCrmCommunicationEvent = vi.fn();
+const mockRecordCrmEventFromOwnerNotification = vi.fn();
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
@@ -43,6 +46,12 @@ vi.mock('@/lib/communication/telegram-booking-object-memory', () => ({
     propertyResolved: true,
     object: { id: 'test-prop-tg-live', name: 'Тестовая квартира ASI', address: 'Невский 24' },
   }),
+}));
+
+vi.mock('@/lib/crm/repository', () => ({
+  upsertCrmContactFromTelegram: (...args: unknown[]) => mockUpsertCrmContactFromTelegram(...args),
+  recordCrmCommunicationEvent: (...args: unknown[]) => mockRecordCrmCommunicationEvent(...args),
+  recordCrmEventFromOwnerNotification: (...args: unknown[]) => mockRecordCrmEventFromOwnerNotification(...args),
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -115,10 +124,16 @@ describe('Telegram routing layer', () => {
     mockLookupBooking.mockReset();
     mockResolveGuestContext.mockReset();
     mockLookupProperty.mockReset();
+    mockUpsertCrmContactFromTelegram.mockReset();
+    mockRecordCrmCommunicationEvent.mockReset();
+    mockRecordCrmEventFromOwnerNotification.mockReset();
 
     mockReplyToTelegram.mockResolvedValue(true);
     mockAnswerTelegramCallbackQuery.mockResolvedValue(true);
     mockSendTelegramMessageToChat.mockResolvedValue(true);
+    mockUpsertCrmContactFromTelegram.mockResolvedValue({});
+    mockRecordCrmCommunicationEvent.mockResolvedValue(undefined);
+    mockRecordCrmEventFromOwnerNotification.mockResolvedValue(undefined);
     mockLookupBooking.mockResolvedValue(null);
     mockResolveGuestContext.mockResolvedValue({
       booking_resolved: false,
@@ -173,9 +188,13 @@ describe('Telegram routing layer', () => {
 
   it('starts lead intake only after choosing connect ASI', async () => {
     await processTelegramRoutingUpdate(roleCallback('lead', 2001));
+    await Promise.resolve();
 
     expect(mockBeginLead).toHaveBeenCalledTimes(1);
     expect(getTelegramRoutingSession(8101)?.role).toBe('lead');
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'role_selected_lead',
+    }));
   });
 
   it('routes support choice to support flow', async () => {
@@ -184,9 +203,27 @@ describe('Telegram routing layer', () => {
     expect(mockBeginSupport).toHaveBeenCalledTimes(1);
   });
 
+  it('records owner role selection in CRM without starting lead intake', async () => {
+    await processTelegramRoutingUpdate(roleCallback('owner', 2007));
+    await Promise.resolve();
+
+    expect(mockBeginLead).not.toHaveBeenCalled();
+    expect(mockUpsertCrmContactFromTelegram).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'owner',
+      status: 'qualified',
+    }));
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'role_selected_owner',
+    }));
+  });
+
   it('activates guest test mode and answers passport questions in autopilot', async () => {
     await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2005));
+    await Promise.resolve();
     expect(getTelegramRoutingSession(8101)?.testGuest).toBe(true);
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'guest_test_started',
+    }));
 
     await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2006));
 
@@ -198,6 +235,56 @@ describe('Telegram routing layer', () => {
       expect.any(Object),
     );
     expect(mockSendTelegramMessageToChat).toHaveBeenCalled();
+  });
+
+  it('handles real emergency as CRM escalation and guest safety reply', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2020));
+    await Promise.resolve();
+    mockSendTelegramMessageToChat.mockClear();
+    mockRecordCrmCommunicationEvent.mockClear();
+    mockRecordCrmEventFromOwnerNotification.mockClear();
+    mockDecideAutopilot.mockClear();
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('Пожар и дым в квартире', 2021));
+    await Promise.resolve();
+
+    expect(result?.reply).toContain('112');
+    expect(result?.reply).toContain('101');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(mockSendTelegramMessageToChat).toHaveBeenCalled();
+    expect(mockRecordCrmEventFromOwnerNotification).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'escalation_created',
+      escalationReason: 'emergency_fire',
+      severity: 'critical',
+    }));
+  });
+
+  it('does not create critical escalation for explicit emergency test phrase', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2022));
+    await Promise.resolve();
+    mockSendTelegramMessageToChat.mockClear();
+    mockRecordCrmCommunicationEvent.mockClear();
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('тест пожар', 2023));
+
+    expect(result?.reply).toContain('Emergency Protocol');
+    expect(mockSendTelegramMessageToChat).not.toHaveBeenCalled();
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'note',
+      metadata: expect.objectContaining({
+        real_escalation_created: false,
+      }),
+    }));
+  });
+
+  it('resets telegram test state with /reset_test_state', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2024));
+    expect(getTelegramRoutingSession(8101)?.testGuest).toBe(true);
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/reset_test_state', 2025));
+
+    expect(result?.reply).toContain('/start');
+    expect(getTelegramRoutingSession(8101)).toBeUndefined();
   });
 
   it('does not leak operator notification into guest chat when admin chat matches guest chat', async () => {
