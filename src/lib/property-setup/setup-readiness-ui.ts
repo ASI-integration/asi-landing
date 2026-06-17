@@ -5,6 +5,16 @@ import {
   type SetupNextStepModel,
 } from './setup-next-step';
 
+const SETUP_GRID_HIDDEN_STEP_IDS = new Set(['readiness']);
+
+export function filterSetupStepsForGrid<T extends { anchor: string }>(steps: readonly T[]): T[] {
+  return steps.filter((step) => !SETUP_GRID_HIDDEN_STEP_IDS.has(step.anchor));
+}
+
+export function isRoutableSetupStepId(stepId: string, allStepIds: readonly string[]): boolean {
+  return allStepIds.includes(stepId);
+}
+
 export type SetupReadinessPageUi = {
   showTopReadinessBlock: boolean;
   showNextButton: boolean;

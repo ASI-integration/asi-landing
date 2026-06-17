@@ -30,7 +30,10 @@ import {
   type PropertySetupData,
   type PropertySetupUnit,
 } from '@/lib/property-setup/setup-data';
-import { resolveSetupReadinessPageUi } from '@/lib/property-setup/setup-readiness-ui';
+import {
+  filterSetupStepsForGrid,
+  resolveSetupReadinessPageUi,
+} from '@/lib/property-setup/setup-readiness-ui';
 
 const inputCls = 'mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none';
 const textareaCls = `${inputCls} min-h-[88px]`;
@@ -66,6 +69,7 @@ const SECTION_NAV: Array<{ anchor: SetupStepId; label: string }> = [
 ];
 
 const STEP_IDS = SECTION_NAV.map((item) => item.anchor);
+const GRID_NAV = filterSetupStepsForGrid(SECTION_NAV);
 
 function normalizeStepId(value: string | null | undefined): SetupStepId {
   return STEP_IDS.includes(value as SetupStepId) ? (value as SetupStepId) : 'basic';
@@ -556,7 +560,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       ) : null}
 
       <nav className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
-        {SECTION_NAV.map((item) => (
+        {GRID_NAV.map((item) => (
           <button
             type="button"
             key={item.anchor}

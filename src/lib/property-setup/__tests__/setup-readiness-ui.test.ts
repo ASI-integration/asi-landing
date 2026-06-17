@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeObjectGuestReadiness } from '@/lib/property-setup/object-guest-readiness';
 import { createEmptySetupData } from '@/lib/property-setup/setup-data';
 import {
+  filterSetupStepsForGrid,
+  isRoutableSetupStepId,
   resolveSetupReadinessPageUi,
   shouldShowSetupNextButton,
   shouldShowTopReadinessBlock,
@@ -79,7 +81,38 @@ function readyReadiness() {
   });
 }
 
+const SETUP_SECTION_NAV = [
+  { anchor: 'basic', label: 'Основная информация' },
+  { anchor: 'address', label: 'Адрес' },
+  { anchor: 'units', label: 'Категории/юниты' },
+  { anchor: 'photos', label: 'Фото' },
+  { anchor: 'description', label: 'Описание' },
+  { anchor: 'rules', label: 'Правила проживания' },
+  { anchor: 'checkin', label: 'Заезд и выезд' },
+  { anchor: 'wifi', label: 'Wi-Fi и инструкции' },
+  { anchor: 'pricing', label: 'Цены и базовый тариф' },
+  { anchor: 'channels', label: 'Каналы для подключения' },
+  { anchor: 'readiness', label: 'Проверка готовности' },
+] as const;
+
+const SETUP_STEP_IDS = SETUP_SECTION_NAV.map((item) => item.anchor);
+
 describe('setup readiness page ui', () => {
+  it('hides Проверка готовности tile from setup grid', () => {
+    const gridSteps = filterSetupStepsForGrid(SETUP_SECTION_NAV);
+
+    expect(gridSteps.map((step) => step.anchor)).not.toContain('readiness');
+    expect(gridSteps.map((step) => step.label)).not.toContain('Проверка готовности');
+    expect(gridSteps).toHaveLength(SETUP_SECTION_NAV.length - 1);
+  });
+
+  it('keeps readiness step routable via ?step=readiness', () => {
+    expect(isRoutableSetupStepId('readiness', SETUP_STEP_IDS)).toBe(true);
+    expect(SETUP_SECTION_NAV.find((step) => step.anchor === 'readiness')?.label).toBe(
+      'Проверка готовности',
+    );
+  });
+
   it('hides Далее on readiness step', () => {
     expect(shouldShowSetupNextButton('readiness')).toBe(false);
     expect(shouldShowSetupNextButton('channels')).toBe(true);
