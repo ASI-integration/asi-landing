@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
 import type { OpsProperty, PropertyMedia } from '@/lib/ops-foundation/types';
 import {
   SETUP_CHANNEL_CATALOG,
@@ -429,6 +430,18 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     }
   }
 
+  const pilotProperty = useMemo(
+    () =>
+      property
+        ? {
+            id: property.id,
+            city: data.basic.city || property.city,
+            address: data.address.line || property.address,
+          }
+        : { id: propertyId, city: data.basic.city, address: data.address.line },
+    [property, propertyId, data.basic.city, data.address.line],
+  );
+
   if (loading) {
     return <p className="text-sm text-slate-500">Загрузка данных объекта…</p>;
   }
@@ -446,6 +459,12 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24">
+      <PilotPropertyOnboardingSection
+        properties={[pilotProperty]}
+        propertyId={propertyId}
+        context="setup"
+      />
+
       <div>
         <div className="flex flex-wrap gap-3">
           <Link href={`/dashboard/properties/${propertyId}`} className="text-sm text-slate-500 hover:text-slate-700">

@@ -35,18 +35,26 @@ describe('pilot onboarding helpers', () => {
   it('builds telegram fallback when pilot contact id is missing', () => {
     const fallback = buildPilotTelegramContinuation(null);
     expect(fallback.href).toMatch(/^https:\/\/t\.me\//);
-    expect(fallback.hint).toBe('Напишите /start и выберите роль владельца');
+    expect(fallback.hint).toBe('Напишите /start и выберите роль владельца.');
   });
 
-  it('shows dashboard pilot block when crm contact id is known', () => {
+  it('shows dashboard pilot block when crm contact id or property context is known', () => {
     expect(shouldShowDashboardPilotBlock(CONTACT_ID)).toBe(true);
     expect(shouldShowDashboardPilotBlock(null)).toBe(false);
+    expect(shouldShowDashboardPilotBlock({ crmContactId: null, propertyId: 'prop-1' })).toBe(true);
 
     const progress = computeDashboardPilotProgress({
       crmContactId: CONTACT_ID,
       properties: [{ id: 'prop-1', city: null, address: null }],
     });
     expect(progress?.currentStepId).toBe('object_filled');
+
+    const detailProgress = computeDashboardPilotProgress({
+      crmContactId: null,
+      properties: [{ id: 'prop-1', city: null, address: null }],
+      propertyId: 'prop-1',
+    });
+    expect(detailProgress?.currentStepId).toBe('object_filled');
   });
 
   it('computes onboarding progress for a submitted pilot application', () => {

@@ -221,8 +221,13 @@ export function extractCrmContactIdFromPropertiesPath(path: string | null | unde
   }
 }
 
-export function shouldShowDashboardPilotBlock(crmContactId: string | null | undefined): boolean {
-  return Boolean(crmContactId?.trim());
+export function shouldShowDashboardPilotBlock(
+  input?: string | null | { crmContactId?: string | null; propertyId?: string | null },
+): boolean {
+  if (input && typeof input === 'object') {
+    return Boolean(input.crmContactId?.trim() || input.propertyId?.trim());
+  }
+  return Boolean(String(input ?? '').trim());
 }
 
 function isPropertyBasicsFilled(property: { city?: string | null; address?: string | null }): boolean {
@@ -230,11 +235,14 @@ function isPropertyBasicsFilled(property: { city?: string | null; address?: stri
 }
 
 export function computeDashboardPilotProgress(input: {
-  crmContactId: string | null;
+  crmContactId?: string | null;
   properties: Array<{ id: string; city?: string | null; address?: string | null }>;
   guestTestStarted?: boolean;
+  propertyId?: string | null;
 }): DashboardPilotProgress | null {
-  if (!shouldShowDashboardPilotBlock(input.crmContactId)) return null;
+  if (!shouldShowDashboardPilotBlock({ crmContactId: input.crmContactId, propertyId: input.propertyId })) {
+    return null;
+  }
 
   const applicationSubmitted = true;
   const cabinetLogin = true;
@@ -273,12 +281,49 @@ export function computeDashboardPilotProgress(input: {
   };
 }
 
+export type DashboardPilotNextAction = {
+  href: string | null;
+  label: string | null;
+  guestTestCommand: string | null;
+};
+
+export function buildPilotGuestTestCommand(propertyId: string): string {
+  return `/guest_test ${propertyId.trim()}`;
+}
+
+export function resolveDashboardPilotNextAction(
+  properties: Array<{ id: string; city?: string | null; address?: string | null }>,
+  options?: { propertyId?: string | null; onSetupPage?: boolean },
+): DashboardPilotNextAction {
+  const target =
+    (options?.propertyId ? properties.find((item) => item.id === options.propertyId) : null) ??
+    properties[0];
+
+  if (!target?.id) {
+    return { href: null, label: 'Создать объект', guestTestCommand: null };
+  }
+
+  const setupHref = `/dashboard/properties/${target.id}/setup`;
+  if (!isPropertyBasicsFilled(target)) {
+    return {
+      href: setupHref,
+      label: options?.onSetupPage ? 'Продолжить setup' : 'Заполнить данные объекта',
+      guestTestCommand: null,
+    };
+  }
+
+  return {
+    href: null,
+    label: null,
+    guestTestCommand: buildPilotGuestTestCommand(target.id),
+  };
+}
+
+/** @deprecated Use resolveDashboardPilotNextAction */
 export function resolveDashboardPilotNextPropertyHref(
   properties: Array<{ id: string }>,
 ): string | null {
-  const property = properties[0];
-  if (!property?.id) return null;
-  return `/dashboard/properties/${property.id}/setup`;
+  return resolveDashboardPilotNextAction(properties).href;
 }
 
 export function buildPilotTelegramContinuation(contactId?: string | null): {
@@ -295,6 +340,6 @@ export function buildPilotTelegramContinuation(contactId?: string | null): {
   const username = getAsiFeedbackBotUsername();
   return {
     href: `https://t.me/${username}`,
-    hint: 'Напишите /start и выберите роль владельца',
+    hint: 'Напишите /start и выберите роль владельца.',
   };
 }

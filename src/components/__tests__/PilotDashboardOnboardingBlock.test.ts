@@ -8,6 +8,7 @@ describe('PilotDashboardOnboardingBlock', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
       properties: [],
+      context: 'list',
     });
 
     expect(model).not.toBeNull();
@@ -21,7 +22,8 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.progress.steps[0]?.done).toBe(true);
     expect(model?.progress.steps[1]?.done).toBe(true);
     expect(model?.progress.currentStepId).toBe('object_created');
-    expect(model?.createObjectHref).toBeNull();
+    expect(model?.nextAction.label).toBe('Создать объект');
+    expect(model?.nextAction.href).toBeNull();
   });
 
   it('links telegram continuation with pilot contact payload', () => {
@@ -35,15 +37,46 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.telegramHint).toBeNull();
   });
 
-  it('routes create-object action to property setup when object exists', () => {
+  it('falls back to generic telegram bot when contact id is missing on property detail', () => {
+    const model = buildPilotDashboardOnboardingModel({
+      crmContactId: null,
+      properties: [{ id: 'prop-1', city: null, address: null }],
+      propertyId: 'prop-1',
+      context: 'detail',
+    });
+
+    expect(model).not.toBeNull();
+    expect(model?.telegramHref).toMatch(/^https:\/\/t\.me\/ASI_Global_Bot$/);
+    expect(model?.telegramHint).toBe('Напишите /start и выберите роль владельца.');
+    expect(model?.nextAction.href).toBe('/dashboard/properties/prop-1/setup');
+    expect(model?.nextAction.label).toBe('Заполнить данные объекта');
+  });
+
+  it('routes setup action to property setup when object exists', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
       properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1' }],
+      propertyId: 'prop-1',
+      context: 'detail',
     });
 
-    expect(model?.createObjectHref).toBe('/dashboard/properties/prop-1/setup');
+    expect(model?.nextAction.href).toBeNull();
+    expect(model?.nextAction.label).toBeNull();
     expect(model?.progress.steps[2]?.done).toBe(true);
     expect(model?.progress.steps[3]?.done).toBe(true);
     expect(model?.progress.currentStepId).toBe('guest_test_telegram');
+    expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
+  });
+
+  it('shows guest test command on setup page after basics are filled', () => {
+    const model = buildPilotDashboardOnboardingModel({
+      crmContactId: CONTACT_ID,
+      properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1' }],
+      propertyId: 'prop-1',
+      context: 'setup',
+    });
+
+    expect(model?.nextAction.label).toBeNull();
+    expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
   });
 });

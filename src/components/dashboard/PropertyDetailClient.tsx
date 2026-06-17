@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
 import {
   masterCardPublicationStatusLabels,
   opsIncidentSeverityLabels,
@@ -630,6 +631,12 @@ export function PropertyDetailClient({ propertyId }: { propertyId: string }) {
 
   return (
     <div className="space-y-6">
+      <PilotPropertyOnboardingSection
+        properties={[{ id: property.id, city: property.city, address: property.address }]}
+        propertyId={property.id}
+        context="detail"
+      />
+
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <Link href="/dashboard/properties" className="text-sm text-slate-500 hover:text-slate-700">← Объекты</Link>

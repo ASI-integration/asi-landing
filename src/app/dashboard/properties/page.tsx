@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { PilotDashboardOnboardingBlock } from '@/components/PilotDashboardOnboardingBlock';
-import { readStoredPilotContactId, rememberPilotContactId, shouldShowDashboardPilotBlock } from '@/lib/crm/pilot-onboarding';
+import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
+import { usePilotContactId } from '@/hooks/usePilotContactId';
+import { shouldShowDashboardPilotBlock } from '@/lib/crm/pilot-onboarding';
 import { propertyStatusLabels } from '@/lib/ops-foundation/labels';
 import type { OpsProperty, PropertyStatus } from '@/lib/ops-foundation/types';
 
@@ -18,7 +19,7 @@ const statusTone: Record<PropertyStatus, string> = {
 
 export default function PropertiesPage() {
   const router = useRouter();
-  const [crmContactId, setCrmContactId] = useState<string | null>(null);
+  const crmContactId = usePilotContactId();
   const [properties, setProperties] = useState<OpsProperty[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,17 +50,6 @@ export default function PropertiesPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get('crmContactId')?.trim();
-    if (fromUrl) {
-      rememberPilotContactId(fromUrl);
-      setCrmContactId(fromUrl);
-      return;
-    }
-    setCrmContactId(readStoredPilotContactId());
-  }, []);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -106,8 +96,8 @@ export default function PropertiesPage() {
         </p>
       </header>
 
-      {shouldShowDashboardPilotBlock(crmContactId) && crmContactId ? (
-        <PilotDashboardOnboardingBlock crmContactId={crmContactId} properties={properties} />
+      {shouldShowDashboardPilotBlock(crmContactId) ? (
+        <PilotPropertyOnboardingSection properties={properties} context="list" />
       ) : null}
 
       <section id="create-property" className="bg-white rounded-xl border border-slate-200 p-6 scroll-mt-8">
