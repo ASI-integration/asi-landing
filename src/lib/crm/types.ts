@@ -49,6 +49,10 @@ export type CrmFilter =
   | 'pilot_active'
   | 'escalations';
 
+import type { PilotOnboardingProgress } from './pilot-onboarding';
+
+export type { PilotOnboardingProgress, PilotOnboardingStep, PilotOnboardingStepId } from './pilot-onboarding';
+
 export type CrmPilotApplicationSummary = {
   city: string;
   propertyCount: number | null;
@@ -159,6 +163,7 @@ export type CrmContactViewModel = {
   propertySummary: CrmPropertyAutomationSummary | null;
   propertyCount: number | null;
   pilotApplication: CrmPilotApplicationSummary | null;
+  pilotOnboardingProgress: PilotOnboardingProgress | null;
   notes: string;
   nextAction: string;
   nextActionIsSuggested: boolean;

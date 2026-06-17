@@ -7,6 +7,7 @@ import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { productSupportEmail } from '@/config/contact';
 import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
+import { isPilotConnectRedirect } from '@/lib/crm/pilot-onboarding';
 
 type PublicConfigResponse = {
   googleClientId?: string;
@@ -49,6 +50,10 @@ export default function OnboardingPageContent() {
   const debugGoogle = useMemo(() => searchParams.get('debugGoogle') === '1', [searchParams]);
   const afterAuthRedirect = useMemo(
     () => safeRedirectPath(searchParams.get('redirect')),
+    [searchParams],
+  );
+  const isPilotConnect = useMemo(
+    () => isPilotConnectRedirect(searchParams.get('redirect')),
     [searchParams],
   );
   const publicConfigFetchAttemptedRef = useRef(false);
@@ -403,12 +408,19 @@ export default function OnboardingPageContent() {
       <div className="w-full max-w-2xl">
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            Начать 7‑дневный тест
+            {isPilotConnect ? 'Войти в кабинет ASI для пилота' : 'Начать 7‑дневный тест'}
           </h1>
           <p className="mt-2 text-slate-600">
-            Вы выбрали тариф <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. После регистрации вы получите доступ к кабинету и сможете подключить каналы.
+            {isPilotConnect ? (
+              'После входа вы сможете создать объект и продолжить пилотное подключение.'
+            ) : (
+              <>
+                Вы выбрали тариф <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. После регистрации вы получите доступ к кабинету и сможете подключить каналы.
+              </>
+            )}
           </p>
 
+          {!isPilotConnect ? (
           <div className="mt-6 grid sm:grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <p className="text-sm font-medium text-slate-900">Тариф</p>
@@ -423,6 +435,14 @@ export default function OnboardingPageContent() {
               <p className="mt-1 text-sm text-slate-600">Выберите формат в личном кабинете</p>
             </div>
           </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+              <p className="font-medium">Пилотное подключение ASI</p>
+              <p className="mt-1 text-emerald-900">
+                Сначала создайте объект, затем заполните базовые данные и запустите тест гостя.
+              </p>
+            </div>
+          )}
 
           <div className="mt-8 grid sm:grid-cols-2 gap-6">
             <div
@@ -518,7 +538,9 @@ export default function OnboardingPageContent() {
                 style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '400px', height: '80px', overflow: 'visible' }}
               />
               <p className="mt-3 text-xs text-slate-500">
-                Мы создадим рабочее пространство и запустим 7‑дневный тест.
+                {isPilotConnect
+                  ? 'После входа откроется раздел объектов для продолжения пилота.'
+                  : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
               </p>
             </div>
 
@@ -581,7 +603,9 @@ export default function OnboardingPageContent() {
                   disabled={loading}
                   className="w-full px-5 py-3 rounded-xl bg-white border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {mode === 'signup' ? 'Создать аккаунт и начать тест' : 'Войти и продолжить'}
+                  {mode === 'signup'
+                    ? (isPilotConnect ? 'Создать аккаунт и продолжить пилот' : 'Создать аккаунт и начать тест')
+                    : 'Войти и продолжить'}
                 </button>
               </form>
             </div>

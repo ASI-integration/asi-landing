@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { readStoredPilotContactId } from '@/lib/crm/pilot-onboarding';
 import { propertyStatusLabels } from '@/lib/ops-foundation/labels';
 import type { OpsProperty, PropertyStatus } from '@/lib/ops-foundation/types';
 
@@ -50,7 +51,12 @@ export default function PropertiesPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setCrmContactId(params.get('crmContactId')?.trim() || null);
+    const fromUrl = params.get('crmContactId')?.trim();
+    if (fromUrl) {
+      setCrmContactId(fromUrl);
+      return;
+    }
+    setCrmContactId(readStoredPilotContactId());
   }, []);
 
   async function handleCreate(e: React.FormEvent) {

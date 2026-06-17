@@ -547,7 +547,7 @@ export async function linkPilotCrmContactToProperty(input: {
   if (!existing) return null;
 
   const row = existing as CrmContactRow;
-  if (row.status !== 'pilot_selected') return null;
+  if (row.status !== 'pilot_selected' && row.status !== 'pilot_candidate') return null;
 
   const now = nowIso();
   const { data, error } = await supabase
@@ -576,6 +576,68 @@ export async function linkPilotCrmContactToProperty(input: {
       next_status: 'creating_object',
       source: 'property_created',
       property_id: propertyId,
+    },
+    created_at: now,
+  });
+  if (eventError) throw eventError;
+
+  return normalizeContactWithFreshEvents(data as CrmContactRow);
+}
+
+export async function attachTelegramToPilotContact(input: {
+  contactId: string;
+  telegramUserId: string;
+  telegramUsername?: string | null;
+  telegramChatId?: string | number | null;
+  name?: string | null;
+}): Promise<CrmContactViewModel | null> {
+  const contactId = input.contactId.trim();
+  if (!contactId) return null;
+
+  const { data: existing, error: existingError } = await supabase
+    .from('crm_contacts')
+    .select(CONTACT_SELECT)
+    .eq('id', contactId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existing) return null;
+
+  const row = existing as CrmContactRow;
+  const now = nowIso();
+  const patch: Record<string, unknown> = {
+    telegram_user_id: input.telegramUserId.trim(),
+    telegram_chat_id: chatIdString(input.telegramChatId),
+    updated_at: now,
+    last_activity_at: now,
+  };
+  if (input.telegramUsername?.trim()) {
+    patch.telegram_username = input.telegramUsername.replace(/^@+/, '');
+  }
+  if (input.name?.trim()) {
+    patch.name = input.name.trim();
+  }
+
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .update(patch)
+    .eq('id', contactId)
+    .select(CONTACT_SELECT)
+    .single();
+
+  if (error) throw error;
+
+  const { error: eventError } = await supabase.from('crm_events').insert({
+    contact_id: contactId,
+    event_type: 'note',
+    message_text: 'Telegram привязан к заявке в пилот.',
+    property_id: row.property_id,
+    metadata: {
+      source: 'pilot_telegram_link',
+      telegram_user_id: input.telegramUserId,
+      telegram_username: input.telegramUsername?.replace(/^@+/, '') || null,
+      telegram_chat_id: chatIdString(input.telegramChatId),
+      previous_status: row.status,
     },
     created_at: now,
   });

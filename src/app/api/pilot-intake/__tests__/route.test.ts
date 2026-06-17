@@ -41,7 +41,12 @@ describe('/api/pilot-intake', () => {
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json).toMatchObject({ ok: true, contactId: 'contact-1' });
+    expect(json).toMatchObject({
+      ok: true,
+      contactId: 'contact-1',
+      telegramLink: expect.stringContaining('?start='),
+      cabinetHref: '/connect?redirect=%2Fdashboard%2Fproperties%3FcrmContactId%3Dcontact-1',
+    });
     expect(upsertPilotApplication).toHaveBeenCalledWith(expect.objectContaining({
       propertyCount: 2,
       crmRole: 'owner',

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PilotOnboardingProgress } from '@/components/PilotOnboardingProgress';
 import {
   CRM_FILTER_LABELS,
   CRM_ROLE_LABELS,
@@ -437,6 +438,15 @@ export function CrmDashboardClient() {
               {selected.needsReaction && (
                 <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">
                   {selected.needsReactionReasons.join(' · ')}
+                </div>
+              )}
+
+              {selected.pilotOnboardingProgress && (
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm">
+                  <h3 className="font-semibold text-slate-900">Прогресс пилотного подключения</h3>
+                  <div className="mt-2">
+                    <PilotOnboardingProgress progress={selected.pilotOnboardingProgress} />
+                  </div>
                 </div>
               )}
 

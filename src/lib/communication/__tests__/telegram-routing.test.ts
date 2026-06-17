@@ -13,6 +13,7 @@ const mockLookupProperty = vi.fn();
 const mockUpsertCrmContactFromTelegram = vi.fn();
 const mockRecordCrmCommunicationEvent = vi.fn();
 const mockRecordCrmEventFromOwnerNotification = vi.fn();
+const mockAttachTelegramToPilotContact = vi.fn();
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
@@ -49,6 +50,7 @@ vi.mock('@/lib/communication/telegram-booking-object-memory', () => ({
 }));
 
 vi.mock('@/lib/crm/repository', () => ({
+  attachTelegramToPilotContact: (...args: unknown[]) => mockAttachTelegramToPilotContact(...args),
   upsertCrmContactFromTelegram: (...args: unknown[]) => mockUpsertCrmContactFromTelegram(...args),
   recordCrmCommunicationEvent: (...args: unknown[]) => mockRecordCrmCommunicationEvent(...args),
   recordCrmEventFromOwnerNotification: (...args: unknown[]) => mockRecordCrmEventFromOwnerNotification(...args),
@@ -127,6 +129,7 @@ describe('Telegram routing layer', () => {
     mockUpsertCrmContactFromTelegram.mockReset();
     mockRecordCrmCommunicationEvent.mockReset();
     mockRecordCrmEventFromOwnerNotification.mockReset();
+    mockAttachTelegramToPilotContact.mockReset();
 
     mockReplyToTelegram.mockResolvedValue(true);
     mockAnswerTelegramCallbackQuery.mockResolvedValue(true);
@@ -134,6 +137,7 @@ describe('Telegram routing layer', () => {
     mockUpsertCrmContactFromTelegram.mockResolvedValue({});
     mockRecordCrmCommunicationEvent.mockResolvedValue(undefined);
     mockRecordCrmEventFromOwnerNotification.mockResolvedValue(undefined);
+    mockAttachTelegramToPilotContact.mockResolvedValue(null);
     mockLookupBooking.mockResolvedValue(null);
     mockResolveGuestContext.mockResolvedValue({
       booking_resolved: false,
@@ -255,6 +259,7 @@ describe('Telegram routing layer', () => {
 
   it('keeps pilot application context when owner Telegram is linked by username', async () => {
     mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      id: 'crm-pilot-1',
       source: 'pilot_form',
       status: 'pilot_candidate',
       propertySummary: null,
@@ -270,7 +275,26 @@ describe('Telegram routing layer', () => {
     }));
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      expect.stringContaining('/dashboard/properties'),
+      expect.stringMatching(/Заявка в пилот принята[\s\S]*\/dashboard\/properties/),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('links pilot application from telegram start payload without creating a duplicate', async () => {
+    const contactId = '6c9f99b1-726c-4fcf-d428-bcb23d84df20';
+
+    await processTelegramRoutingUpdate(routingUpdate(`/start pilot_${contactId}`, 2016));
+
+    expect(mockAttachTelegramToPilotContact).toHaveBeenCalledWith(expect.objectContaining({
+      contactId,
+      telegramUserId: '9101',
+      telegramChatId: 8101,
+    }));
+    expect(mockUpsertCrmContactFromTelegram).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('Заявка в пилот ASI принята'),
       expect.any(Object),
       expect.any(Object),
     );
@@ -278,6 +302,7 @@ describe('Telegram routing layer', () => {
 
   it('sends selected pilot owner to property creation without changing pilot source', async () => {
     mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      id: 'crm-pilot-2',
       source: 'pilot_form',
       status: 'pilot_selected',
       propertySummary: null,
@@ -292,12 +317,10 @@ describe('Telegram routing layer', () => {
       telegramUsername: 'guest_tester',
       status: 'qualified',
     }));
-    expect(result?.reply).toBe(
-      'Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\nhttps://asi-global.ru/dashboard/properties',
-    );
+    expect(result?.reply).toMatch(/Вы выбраны в пилот ASI[\s\S]*\/dashboard\/properties/);
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      'Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\nhttps://asi-global.ru/dashboard/properties',
+      expect.stringMatching(/Вы выбраны в пилот ASI[\s\S]*\/dashboard\/properties/),
       expect.any(Object),
       expect.any(Object),
     );

@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import {
+  buildPilotApplicationTelegramLink,
+  buildPilotCabinetConnectHref,
+} from '@/lib/crm/pilot-onboarding';
+import {
   normalizePilotApplication,
   upsertPilotApplication,
 } from '@/lib/crm/pilot-intake';
@@ -30,6 +34,8 @@ export async function POST(req: Request): Promise<Response> {
       ok: true,
       contactId: contact.id,
       nextAction: contact.nextAction,
+      telegramLink: buildPilotApplicationTelegramLink(contact.id),
+      cabinetHref: buildPilotCabinetConnectHref(contact.id),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PilotSuccessActions } from '@/components/PilotSuccessActions';
+import { computePilotOnboardingProgress, rememberPilotContactId } from '@/lib/crm/pilot-onboarding';
 import {
   PILOT_ACTIVE_BOOKINGS_LABELS,
   PILOT_ACTIVE_BOOKINGS_OPTIONS,
@@ -25,7 +27,7 @@ import {
 type SubmitState =
   | { status: 'idle' }
   | { status: 'saving' }
-  | { status: 'done'; nextAction: string }
+  | { status: 'done'; contactId: string }
   | { status: 'error'; message: string };
 
 const roles: PilotRoleOption[] = [...PILOT_ROLE_OPTIONS];
@@ -171,12 +173,13 @@ export function PilotApplicationForm() {
           feedbackReady: draft.feedbackReady,
         }),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string; nextAction?: string };
-      if (!res.ok || !json.ok) {
+      const json = (await res.json()) as { ok?: boolean; error?: string; contactId?: string };
+      if (!res.ok || !json.ok || !json.contactId) {
         setSubmitState({ status: 'error', message: json.error ?? 'Не удалось отправить заявку.' });
         return;
       }
-      setSubmitState({ status: 'done', nextAction: json.nextAction ?? 'Оценить кандидата в пилот' });
+      rememberPilotContactId(json.contactId);
+      setSubmitState({ status: 'done', contactId: json.contactId });
     } catch {
       setSubmitState({ status: 'error', message: 'Ошибка сети. Попробуйте ещё раз.' });
     }
@@ -329,9 +332,40 @@ export function PilotApplicationForm() {
         </div>
       )}
       {submitState.status === 'done' && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Заявка сохранена. Следующий шаг в CRM: {submitState.nextAction}
-        </div>
+        <PilotSuccessActions
+          contactId={submitState.contactId}
+          progress={computePilotOnboardingProgress({
+            source: 'pilot_form',
+            status: 'pilot_candidate',
+            propertyId: null,
+            pilotApplication: {
+              city: draft.city,
+              propertyCount: Number(draft.propertyCount || 0) || null,
+              channelManager: PILOT_CHANNEL_MANAGER_LABELS[draft.channelManager],
+              platforms: draft.selectedPlatforms.map((item) => PILOT_PLATFORM_LABELS[item]),
+              hasActiveBookings: PILOT_ACTIVE_BOOKINGS_LABELS[draft.hasActiveBookings],
+              testFocus: PILOT_TEST_FOCUS_LABELS[draft.testFocus],
+              feedbackReady: PILOT_FEEDBACK_LABELS[draft.feedbackReady],
+              roleAnswer: PILOT_ROLE_LABELS[draft.role],
+              telegramContact: draft.telegramContact || null,
+              suggestedNextAction: 'Выбрать в пилот и предложить создать объект',
+              submittedAt: new Date().toISOString(),
+            },
+            propertySummary: null,
+            recentEvents: [
+              {
+                id: 'local',
+                eventType: 'pilot_application_submitted' as const,
+                messageText: null,
+                propertyId: null,
+                metadata: {},
+                acknowledgedAt: null,
+                createdAt: new Date().toISOString(),
+                label: 'Заявка в пилот',
+              },
+            ],
+          })!}
+        />
       )}
 
       <button

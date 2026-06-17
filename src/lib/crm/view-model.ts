@@ -1,4 +1,5 @@
 import { CRM_EVENT_TYPE_LABELS, CRM_ROLE_LABELS, CRM_SOURCE_LABELS, CRM_STATUS_LABELS } from './labels';
+import { computePilotOnboardingProgress } from './pilot-onboarding';
 import {
   deriveCrmAutomationSuggestion,
   missingDataActionsForFields,
@@ -191,6 +192,14 @@ export function normalizeCrmContactRow(
     missingDataActions,
     hasOpenReaction: reaction.unresolvedEscalationCount > 0,
   });
+  const pilotOnboardingProgress = computePilotOnboardingProgress({
+    source,
+    status,
+    propertyId: row.property_id,
+    pilotApplication,
+    propertySummary,
+    recentEvents: normalizedEvents,
+  });
 
   return {
     id: row.id,
@@ -212,6 +221,7 @@ export function normalizeCrmContactRow(
     propertySummary,
     propertyCount: row.property_count,
     pilotApplication,
+    pilotOnboardingProgress,
     notes: row.notes,
     nextAction: automation.suggestedNextAction,
     nextActionIsSuggested: automation.nextActionIsSuggested,

@@ -2,6 +2,15 @@ import { normalizeAsiFeedbackLeadSource, type AsiFeedbackLeadSource } from '@/co
 import { decideCommunicationAutopilotResponseWithLlmRouter } from '@/lib/communication/autopilot';
 import type { CommunicationAutopilotContext } from '@/lib/communication/autopilot';
 import {
+  attachTelegramToPilotContact,
+  recordCrmCommunicationEvent,
+  upsertCrmContactFromTelegram,
+} from '@/lib/crm/repository';
+import {
+  buildPilotPropertiesRedirect,
+  parsePilotTelegramStartPayload,
+} from '@/lib/crm/pilot-onboarding';
+import {
   beginTelegramLeadIntakeFromRouting,
   beginTelegramSupportFromRouting,
   parseAsiFeedbackStartSource,
@@ -26,7 +35,6 @@ import {
 import { emergencyTestReply, resolveTelegramEmergencyProtocol } from '@/lib/communication/telegram-emergency-protocol';
 import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
 import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegram-owner-notifications';
-import { recordCrmCommunicationEvent, upsertCrmContactFromTelegram } from '@/lib/crm/repository';
 import type { CrmContactViewModel } from '@/lib/crm/types';
 import { replyToTelegram, answerTelegramCallbackQuery, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
@@ -55,7 +63,6 @@ const MISSING_DATA_GUEST_FALLBACK =
   'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
 const RESET_TEST_STATE_REPLY = 'Тестовое состояние сброшено. Отправьте /start, чтобы выбрать роль заново.';
-const DASHBOARD_PROPERTIES_URL = 'https://asi-global.ru/dashboard/properties';
 
 type ParsedRoutingCallback =
   | { kind: 'role'; role: Exclude<TelegramRoutingRole, 'unknown'> }
@@ -152,16 +159,29 @@ function appHref(pathOrUrl: string): string {
   return baseUrl ? `${baseUrl}${pathOrUrl}` : pathOrUrl;
 }
 
+function ownerCabinetUrl(contact: CrmContactViewModel | null): string {
+  return appHref(buildPilotPropertiesRedirect(contact?.id));
+}
+
 function buildOwnerNextStepReply(contact: CrmContactViewModel | null): string {
   const base = 'Понял, вы владелец или управляющий.';
   const property = contact?.propertySummary ?? null;
+  const cabinetUrl = ownerCabinetUrl(contact);
+
+  if (contact?.status === 'pilot_waitlist' && !property) {
+    return `Заявка в пилот принята. Сейчас вы в листе ожидания — команда ASI свяжется, когда появится место.\n${cabinetUrl}`;
+  }
+
+  if (contact?.status === 'pilot_candidate' && !property) {
+    return `Заявка в пилот принята. Команда ASI рассматривает кандидатуру. После выбора создайте объект в личном кабинете.\n${cabinetUrl}`;
+  }
 
   if (contact?.status === 'pilot_selected' && !property) {
-    return `Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\n${DASHBOARD_PROPERTIES_URL}`;
+    return `Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\n${cabinetUrl}`;
   }
 
   if (!property) {
-    return `${base}\n\nСледующий шаг: создайте объект в личном кабинете или выберите уже созданный.\n${DASHBOARD_PROPERTIES_URL}`;
+    return `${base}\n\nСледующий шаг: создайте объект в личном кабинете или выберите уже созданный.\n${cabinetUrl}`;
   }
 
   const firstMissing = property.missingOperationalItems[0];
@@ -307,12 +327,14 @@ async function sendRoleSelection(
   user: TelegramRoutingUser,
   updateId: number,
   leadSource?: AsiFeedbackLeadSource,
+  intro?: string,
 ): Promise<ProcessResult> {
   patchTelegramRoutingSession(user.chat_id, {
     role: 'unknown',
     leadSource: leadSource ?? undefined,
   });
-  await replyToTelegram(user.chat_id, ROLE_SELECTION_REPLY, {
+  const reply = intro?.trim() || ROLE_SELECTION_REPLY;
+  await replyToTelegram(user.chat_id, reply, {
     handler: 'telegram_routing/role_selection',
     update_id: updateId,
   }, { ...getAsiFeedbackTelegramSendOptions(), replyMarkup: roleSelectionKeyboard() });
@@ -322,8 +344,37 @@ async function sendRoleSelection(
     update_id: updateId,
     chat_id: user.chat_id,
     category: MessageCategory.Start,
-    reply: ROLE_SELECTION_REPLY,
+    reply,
   };
+}
+
+async function handlePilotApplicationStart(
+  user: TelegramRoutingUser,
+  updateId: number,
+  contactId: string,
+): Promise<ProcessResult> {
+  try {
+    await attachTelegramToPilotContact({
+      contactId,
+      telegramUserId: user.telegram_user_id,
+      telegramUsername: user.telegram_username,
+      telegramChatId: user.chat_id,
+      name: user.first_name,
+    });
+  } catch (error) {
+    console.error('[crm] pilot telegram link failed', {
+      error: error instanceof Error ? error.message : String(error),
+      contactId,
+      telegram_user_id: user.telegram_user_id,
+    });
+  }
+
+  return sendRoleSelection(
+    user,
+    updateId,
+    'site',
+    'Заявка в пилот ASI принята. Подскажите, кто вы — так я подскажу следующий шаг:',
+  );
 }
 
 async function activateGuestTestMode(
@@ -869,6 +920,11 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
     const lowerPayload = startPayload.toLowerCase();
     if (lowerPayload === 'guest_test' || lowerPayload.startsWith('guest_test_')) {
       return activateGuestTestMode(user, update, parseGuestTestPayload(startPayload));
+    }
+
+    const pilotContactId = parsePilotTelegramStartPayload(startPayload);
+    if (pilotContactId) {
+      return handlePilotApplicationStart(user, update.update_id, pilotContactId);
     }
 
     const leadSource = parseAsiFeedbackStartSource(text) ?? 'unknown';
