@@ -7,7 +7,12 @@ import { loadGoogleIdentityServices } from '@/lib/googleIdentity';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { productSupportEmail } from '@/config/contact';
 import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
-import { isPilotConnectRedirect } from '@/lib/crm/pilot-onboarding';
+import {
+  extractCrmContactIdFromPropertiesPath,
+  isPilotConnectRedirect,
+  PILOT_CONNECT_COPY,
+  rememberPilotContactId,
+} from '@/lib/crm/pilot-onboarding';
 
 type PublicConfigResponse = {
   googleClientId?: string;
@@ -64,6 +69,11 @@ export default function OnboardingPageContent() {
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const contactId = extractCrmContactIdFromPropertiesPath(searchParams.get('redirect'));
+    if (contactId) rememberPilotContactId(contactId);
+  }, [searchParams]);
 
   const selectedPlan = useMemo(() => {
     const plan = (searchParams.get('plan') || '').toLowerCase();
@@ -408,11 +418,11 @@ export default function OnboardingPageContent() {
       <div className="w-full max-w-2xl">
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            {isPilotConnect ? 'Войти в кабинет ASI для пилота' : 'Начать 7‑дневный тест'}
+            {isPilotConnect ? PILOT_CONNECT_COPY.title : 'Начать 7‑дневный тест'}
           </h1>
           <p className="mt-2 text-slate-600">
             {isPilotConnect ? (
-              'После входа вы сможете создать объект и продолжить пилотное подключение.'
+              PILOT_CONNECT_COPY.subtitle
             ) : (
               <>
                 Вы выбрали тариф <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. После регистрации вы получите доступ к кабинету и сможете подключить каналы.
@@ -437,10 +447,8 @@ export default function OnboardingPageContent() {
           </div>
           ) : (
             <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
-              <p className="font-medium">Пилотное подключение ASI</p>
-              <p className="mt-1 text-emerald-900">
-                Сначала создайте объект, затем заполните базовые данные и запустите тест гостя.
-              </p>
+              <p className="font-medium">{PILOT_CONNECT_COPY.infoTitle}</p>
+              <p className="mt-1 text-emerald-900">{PILOT_CONNECT_COPY.infoBody}</p>
             </div>
           )}
 
@@ -538,9 +546,7 @@ export default function OnboardingPageContent() {
                 style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '400px', height: '80px', overflow: 'visible' }}
               />
               <p className="mt-3 text-xs text-slate-500">
-                {isPilotConnect
-                  ? 'После входа откроется раздел объектов для продолжения пилота.'
-                  : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
+                {isPilotConnect ? PILOT_CONNECT_COPY.googleHint : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
               </p>
             </div>
 
@@ -604,7 +610,7 @@ export default function OnboardingPageContent() {
                   className="w-full px-5 py-3 rounded-xl bg-white border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50 disabled:opacity-60"
                 >
                   {mode === 'signup'
-                    ? (isPilotConnect ? 'Создать аккаунт и продолжить пилот' : 'Создать аккаунт и начать тест')
+                    ? (isPilotConnect ? PILOT_CONNECT_COPY.signupCta : 'Создать аккаунт и начать тест')
                     : 'Войти и продолжить'}
                 </button>
               </form>

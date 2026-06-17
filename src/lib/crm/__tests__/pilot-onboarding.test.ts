@@ -3,10 +3,13 @@ import {
   buildPilotApplicationTelegramLink,
   buildPilotCabinetConnectHref,
   buildPilotPropertiesRedirect,
+  buildPilotTelegramContinuation,
   buildPilotTelegramStartPayload,
+  computeDashboardPilotProgress,
   computePilotOnboardingProgress,
   isPilotConnectRedirect,
   parsePilotTelegramStartPayload,
+  shouldShowDashboardPilotBlock,
 } from '../pilot-onboarding';
 
 const CONTACT_ID = '6c9f99b1-726c-4fcf-d428-bcb23d84df20';
@@ -27,6 +30,23 @@ describe('pilot onboarding helpers', () => {
     expect(isPilotConnectRedirect('/dashboard/properties')).toBe(true);
     expect(isPilotConnectRedirect('/dashboard/properties?crmContactId=abc')).toBe(true);
     expect(isPilotConnectRedirect('/dashboard')).toBe(false);
+  });
+
+  it('builds telegram fallback when pilot contact id is missing', () => {
+    const fallback = buildPilotTelegramContinuation(null);
+    expect(fallback.href).toMatch(/^https:\/\/t\.me\//);
+    expect(fallback.hint).toBe('Напишите /start и выберите роль владельца');
+  });
+
+  it('shows dashboard pilot block when crm contact id is known', () => {
+    expect(shouldShowDashboardPilotBlock(CONTACT_ID)).toBe(true);
+    expect(shouldShowDashboardPilotBlock(null)).toBe(false);
+
+    const progress = computeDashboardPilotProgress({
+      crmContactId: CONTACT_ID,
+      properties: [{ id: 'prop-1', city: null, address: null }],
+    });
+    expect(progress?.currentStepId).toBe('object_filled');
   });
 
   it('computes onboarding progress for a submitted pilot application', () => {

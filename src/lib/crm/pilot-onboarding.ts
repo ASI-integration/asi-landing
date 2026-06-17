@@ -8,6 +8,44 @@ export type PilotOnboardingStepId =
   | 'object_filled'
   | 'guest_test_started';
 
+export type DashboardPilotStepId =
+  | 'application_submitted'
+  | 'cabinet_login'
+  | 'object_created'
+  | 'object_filled'
+  | 'guest_test_telegram';
+
+export type DashboardPilotStep = {
+  id: DashboardPilotStepId;
+  label: string;
+  done: boolean;
+  current: boolean;
+};
+
+export type DashboardPilotProgress = {
+  steps: DashboardPilotStep[];
+  currentStepId: DashboardPilotStepId | null;
+  completedCount: number;
+};
+
+export const PILOT_CONNECT_COPY = {
+  title: 'Войти в кабинет ASI',
+  subtitle: 'После входа вы сможете создать объект и продолжить участие в закрытом пилоте ASI.',
+  infoTitle: 'Пилотное подключение',
+  infoBody:
+    'Сначала создайте объект, затем заполните базовые данные и запустите тест гостя. Telegram-бот будет использоваться для связи, уведомлений и проверки сценариев.',
+  signupCta: 'Создать аккаунт и продолжить',
+  googleHint: 'После входа откроется раздел объектов для продолжения пилота.',
+} as const;
+
+const DASHBOARD_PILOT_STEP_LABELS: Record<DashboardPilotStepId, string> = {
+  application_submitted: 'Заявка отправлена',
+  cabinet_login: 'Вход в кабинет',
+  object_created: 'Создание объекта',
+  object_filled: 'Заполнение объекта',
+  guest_test_telegram: 'Тест гостя в Telegram',
+};
+
 export type PilotOnboardingStep = {
   id: PilotOnboardingStepId;
   label: string;
@@ -170,4 +208,93 @@ export function readStoredPilotContactId(): string | null {
   } catch {
     return null;
   }
+}
+
+export function extractCrmContactIdFromPropertiesPath(path: string | null | undefined): string | null {
+  const value = String(path ?? '').trim();
+  if (!value.startsWith('/dashboard/properties')) return null;
+  try {
+    const url = new URL(value, 'https://asi.local');
+    return url.searchParams.get('crmContactId')?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function shouldShowDashboardPilotBlock(crmContactId: string | null | undefined): boolean {
+  return Boolean(crmContactId?.trim());
+}
+
+function isPropertyBasicsFilled(property: { city?: string | null; address?: string | null }): boolean {
+  return Boolean(property.city?.trim() && property.address?.trim());
+}
+
+export function computeDashboardPilotProgress(input: {
+  crmContactId: string | null;
+  properties: Array<{ id: string; city?: string | null; address?: string | null }>;
+  guestTestStarted?: boolean;
+}): DashboardPilotProgress | null {
+  if (!shouldShowDashboardPilotBlock(input.crmContactId)) return null;
+
+  const applicationSubmitted = true;
+  const cabinetLogin = true;
+  const objectCreated = input.properties.length > 0;
+  const objectFilled = input.properties.some(isPropertyBasicsFilled);
+  const guestTestStarted = Boolean(input.guestTestStarted);
+
+  const doneFlags: Record<DashboardPilotStepId, boolean> = {
+    application_submitted: applicationSubmitted,
+    cabinet_login: cabinetLogin,
+    object_created: objectCreated,
+    object_filled: objectFilled,
+    guest_test_telegram: guestTestStarted,
+  };
+
+  const stepOrder: DashboardPilotStepId[] = [
+    'application_submitted',
+    'cabinet_login',
+    'object_created',
+    'object_filled',
+    'guest_test_telegram',
+  ];
+
+  const currentStepId = stepOrder.find((id) => !doneFlags[id]) ?? stepOrder[stepOrder.length - 1];
+  const steps = stepOrder.map((id) => ({
+    id,
+    label: DASHBOARD_PILOT_STEP_LABELS[id],
+    done: doneFlags[id],
+    current: id === currentStepId && !doneFlags[id],
+  }));
+
+  return {
+    steps,
+    currentStepId: steps.every((step) => step.done) ? null : currentStepId,
+    completedCount: steps.filter((step) => step.done).length,
+  };
+}
+
+export function resolveDashboardPilotNextPropertyHref(
+  properties: Array<{ id: string }>,
+): string | null {
+  const property = properties[0];
+  if (!property?.id) return null;
+  return `/dashboard/properties/${property.id}/setup`;
+}
+
+export function buildPilotTelegramContinuation(contactId?: string | null): {
+  href: string;
+  hint: string | null;
+} {
+  const id = contactId?.trim();
+  if (id) {
+    return {
+      href: buildPilotApplicationTelegramLink(id),
+      hint: null,
+    };
+  }
+  const username = getAsiFeedbackBotUsername();
+  return {
+    href: `https://t.me/${username}`,
+    hint: 'Напишите /start и выберите роль владельца',
+  };
 }

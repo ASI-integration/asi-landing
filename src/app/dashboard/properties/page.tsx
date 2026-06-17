@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { readStoredPilotContactId } from '@/lib/crm/pilot-onboarding';
+import { PilotDashboardOnboardingBlock } from '@/components/PilotDashboardOnboardingBlock';
+import { readStoredPilotContactId, rememberPilotContactId, shouldShowDashboardPilotBlock } from '@/lib/crm/pilot-onboarding';
 import { propertyStatusLabels } from '@/lib/ops-foundation/labels';
 import type { OpsProperty, PropertyStatus } from '@/lib/ops-foundation/types';
 
@@ -53,6 +54,7 @@ export default function PropertiesPage() {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get('crmContactId')?.trim();
     if (fromUrl) {
+      rememberPilotContactId(fromUrl);
       setCrmContactId(fromUrl);
       return;
     }
@@ -104,7 +106,11 @@ export default function PropertiesPage() {
         </p>
       </header>
 
-      <section className="bg-white rounded-xl border border-slate-200 p-6">
+      {shouldShowDashboardPilotBlock(crmContactId) && crmContactId ? (
+        <PilotDashboardOnboardingBlock crmContactId={crmContactId} properties={properties} />
+      ) : null}
+
+      <section id="create-property" className="bg-white rounded-xl border border-slate-200 p-6 scroll-mt-8">
         <h2 className="text-lg font-semibold text-slate-900">Новый объект</h2>
         <form onSubmit={handleCreate} className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block sm:col-span-2">

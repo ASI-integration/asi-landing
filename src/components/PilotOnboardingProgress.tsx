@@ -1,6 +1,17 @@
-import type { PilotOnboardingProgress as PilotOnboardingProgressType } from '@/lib/crm/pilot-onboarding';
+type ProgressStep = {
+  id: string;
+  label: string;
+  done: boolean;
+  current: boolean;
+};
 
-export function PilotOnboardingProgress({ progress }: { progress: PilotOnboardingProgressType }) {
+type PilotOnboardingProgressProps = {
+  progress: {
+    steps: ProgressStep[];
+  };
+};
+
+export function PilotOnboardingProgress({ progress }: PilotOnboardingProgressProps) {
   return (
     <ol className="space-y-2">
       {progress.steps.map((step) => (
