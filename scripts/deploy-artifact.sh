@@ -29,10 +29,104 @@ PM2_ONLY="${PM2_ONLY:-$APP_NAME}"
 
 LIVE_ENV_FILE="${SHARED_DIR}/.env.production.live"
 
+# Keep at most this many finished releases (current + rollback targets). Staging dirs never count.
+KEEP_RELEASES="${ASI_KEEP_RELEASES:-3}"
+# Require at least this many free MiB on the release filesystem before unpack (artifact + headroom).
+MIN_FREE_MB="${ASI_DEPLOY_MIN_FREE_MB:-2048}"
+
 log() { printf "\n[%s] %s\n" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
+
+cleanup_stale_staging_dirs() {
+  local removed=0
+  shopt -s nullglob
+  for dir in "${RELEASES_DIR}"/*.tmp.*; do
+    if [[ -d "$dir" ]]; then
+      log "Removing stale staging dir: $dir"
+      rm -rf "$dir"
+      removed=$((removed + 1))
+    fi
+  done
+  shopt -u nullglob
+  log "Stale staging cleanup: removed ${removed} dir(s)"
+}
+
+prune_old_releases() {
+  local deploy_sha="${1:-}"
+  local current_target=""
+  local -a keep=()
+  local -a candidates=()
+  local name dir mtime
+
+  if [[ -L "$CURRENT_LINK" ]]; then
+    current_target="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+  fi
+  if [[ -n "${current_target:-}" ]]; then
+    keep+=("$(basename "$current_target")")
+  fi
+  if [[ -n "${deploy_sha:-}" ]]; then
+    keep+=("$deploy_sha")
+  fi
+
+  shopt -s nullglob
+  for dir in "${RELEASES_DIR}"/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    [[ "$name" == *.tmp.* ]] && continue
+    mtime="$(stat -c '%Y' "$dir" 2>/dev/null || echo 0)"
+    candidates+=("${mtime} ${name}")
+  done
+  shopt -u nullglob
+
+  if ((${#candidates[@]} == 0)); then
+    return 0
+  fi
+
+  # Newest releases first; retain KEEP_RELEASES total plus anything in keep[].
+  mapfile -t candidates < <(printf '%s\n' "${candidates[@]}" | sort -rn)
+  local idx=0
+  for entry in "${candidates[@]}"; do
+    name="${entry#* }"
+    idx=$((idx + 1))
+    if (( idx <= KEEP_RELEASES )); then
+      keep+=("$name")
+    fi
+  done
+
+  local -A keep_set=()
+  for name in "${keep[@]}"; do
+    [[ -n "$name" ]] && keep_set["$name"]=1
+  done
+
+  local pruned=0
+  shopt -s nullglob
+  for dir in "${RELEASES_DIR}"/*/; do
+    [[ -d "$dir" ]] || continue
+    name="$(basename "$dir")"
+    [[ "$name" == *.tmp.* ]] && continue
+    if [[ -z "${keep_set[$name]:-}" ]]; then
+      log "Pruning old release: $dir"
+      rm -rf "$dir"
+      pruned=$((pruned + 1))
+    fi
+  done
+  shopt -u nullglob
+  log "Release retention: keep up to ${KEEP_RELEASES} recent release(s); pruned ${pruned}"
+}
+
+assert_disk_space_for_deploy() {
+  local artifact_path="$1"
+  local artifact_mb free_mb need_mb
+  artifact_mb="$(du -m "$artifact_path" 2>/dev/null | awk '{print $1}' || echo 0)"
+  need_mb=$((artifact_mb * 2 + MIN_FREE_MB))
+  free_mb="$(df -Pm "$RELEASES_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)"
+  log "Disk preflight on $(df -Pm "$RELEASES_DIR" 2>/dev/null | awk 'NR==2 {print $1}' || echo '?'): free=${free_mb}MiB need>=${need_mb}MiB (artifact=${artifact_mb}MiB min_headroom=${MIN_FREE_MB}MiB)"
+  if [[ "${free_mb:-0}" -lt "$need_mb" ]]; then
+    die "Insufficient disk space for deploy: free=${free_mb}MiB required>=${need_mb}MiB on ${RELEASES_DIR}. Prune old releases under ${RELEASES_DIR} and remove ${RELEASES_DIR}/*.tmp.* staging dirs, then retry."
+  fi
+}
 
 require_cmd tar
 require_cmd node
@@ -272,6 +366,10 @@ NODE
 log "Artifact file: $ARTIFACT_PATH"
 log "Deploy argument SHA (CI): $SHA"
 log "Base dir: $BASE_DIR"
+
+cleanup_stale_staging_dirs
+prune_old_releases "$SHA"
+assert_disk_space_for_deploy "$ARTIFACT_PATH"
 
 log "Preparing staging dir: $STAGING_DIR"
 rm -rf "$STAGING_DIR"
