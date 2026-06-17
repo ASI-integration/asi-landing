@@ -6,6 +6,8 @@ import {
   recordCrmCommunicationEvent,
   upsertCrmContactFromTelegram,
 } from '@/lib/crm/repository';
+import { loadObjectGuestReadiness } from '@/lib/crm/property-readiness-sync';
+import { formatGuestReadinessBlockersRu } from '@/lib/property-setup/object-guest-readiness';
 import {
   buildPilotPropertiesRedirect,
   parsePilotTelegramStartPayload,
@@ -189,7 +191,7 @@ function buildOwnerNextStepReply(contact: CrmContactViewModel | null): string {
     return `${base}\n\nПродолжите заполнение объекта: ${firstMissing.label}.\n${appHref(firstMissing.actionHref)}`;
   }
 
-  return `${base}\n\nОбъект готов. Можно запустить тест гостя командой:\n/guest_test ${property.id}`;
+  return `${base}\n\nОбъект готов. Запустите тест гостя в Telegram:\n${property.guestTestHref}`;
 }
 
 function getAsiFeedbackTelegramSendOptions(): TelegramSendOptions {
@@ -382,7 +384,43 @@ async function activateGuestTestMode(
   update: TelegramUpdate,
   propertyId: string | null,
 ): Promise<ProcessResult> {
-  const resolvedPropertyId = propertyId || defaultGuestTestPropertyId();
+  const explicitPropertyId = propertyId?.trim() || null;
+
+  if (explicitPropertyId) {
+    const loaded = await loadObjectGuestReadiness(explicitPropertyId);
+    if (!loaded.found) {
+      const reply =
+        'Объект не найден. Проверьте ссылку из личного кабинета или создайте объект заново.';
+      await replyToTelegram(user.chat_id, reply, {
+        handler: 'telegram_routing/guest_test_not_found',
+        update_id: update.update_id,
+      }, getAsiFeedbackTelegramSendOptions());
+      return {
+        outcome: ProcessOutcome.Replied,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply,
+      };
+    }
+
+    if (loaded.readiness && !loaded.readiness.isReady) {
+      const reply = formatGuestReadinessBlockersRu(loaded.readiness);
+      await replyToTelegram(user.chat_id, reply, {
+        handler: 'telegram_routing/guest_test_not_ready',
+        update_id: update.update_id,
+      }, getAsiFeedbackTelegramSendOptions());
+      return {
+        outcome: ProcessOutcome.Replied,
+        update_id: update.update_id,
+        chat_id: user.chat_id,
+        category: MessageCategory.Start,
+        reply,
+      };
+    }
+  }
+
+  const resolvedPropertyId = explicitPropertyId || defaultGuestTestPropertyId();
   patchTelegramRoutingSession(user.chat_id, {
     role: 'guest',
     selectedRole: 'guest',

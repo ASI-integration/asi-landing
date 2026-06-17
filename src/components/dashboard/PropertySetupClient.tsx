@@ -4,7 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
-import type { OpsProperty, PropertyMedia } from '@/lib/ops-foundation/types';
+import { ObjectGuestReadinessBlock } from '@/components/dashboard/ObjectGuestReadinessBlock';
+import type { OpsProperty, PropertyMasterCard, PropertyMedia } from '@/lib/ops-foundation/types';
+import {
+  computeObjectGuestReadiness,
+  type ObjectGuestReadiness,
+} from '@/lib/property-setup/object-guest-readiness';
 import {
   SETUP_CHANNEL_CATALOG,
   SETUP_CHANNEL_STATUS_LABELS,
@@ -120,6 +125,7 @@ const channelStatusTone: Record<PropertySetupChannelStatus, string> = {
 export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   const router = useRouter();
   const [property, setProperty] = useState<OpsProperty | null>(null);
+  const [masterCard, setMasterCard] = useState<PropertyMasterCard | null>(null);
   const [data, setData] = useState<PropertySetupData>(createEmptySetupData());
   const [media, setMedia] = useState<PropertyMedia[]>([]);
   const [activeStepId, setActiveStepId] = useState<SetupStepId>('basic');
@@ -155,7 +161,9 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         ok?: boolean;
         error?: string;
         property?: OpsProperty;
+        masterCard?: PropertyMasterCard | null;
         setup?: unknown;
+        readiness?: ObjectGuestReadiness;
       };
       if (!res.ok || !json.ok) {
         setError(json.error === 'property_not_found' ? 'Объект не найден.' : 'Не удалось загрузить данные объекта.');
@@ -163,6 +171,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         return;
       }
       setProperty(json.property ?? null);
+      setMasterCard(json.masterCard ?? null);
       setData(normalizeSetupData(json.setup));
       await loadMedia();
     } catch {
@@ -222,7 +231,12 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ setup: data }),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string; extrasPersisted?: boolean };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        extrasPersisted?: boolean;
+        readiness?: ObjectGuestReadiness;
+      };
       if (!res.ok || !json.ok) {
         setError('Не удалось сохранить черновик. Попробуйте ещё раз.');
         return false;
@@ -363,6 +377,19 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   );
   const mediaCount = activeMedia.length;
 
+  const guestReadiness = useMemo(
+    () =>
+      computeObjectGuestReadiness({
+        propertyId,
+        property,
+        masterCard,
+        setup: data,
+        media: activeMedia,
+        mediaCount,
+      }),
+    [propertyId, property, masterCard, data, activeMedia, mediaCount],
+  );
+
   const checklist = useMemo(
     () => [
       { label: 'Основная информация заполнена', done: isSetupBasicComplete(data) },
@@ -437,9 +464,15 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
             id: property.id,
             city: data.basic.city || property.city,
             address: data.address.line || property.address,
+            guestReadinessReady: guestReadiness.isReady,
           }
-        : { id: propertyId, city: data.basic.city, address: data.address.line },
-    [property, propertyId, data.basic.city, data.address.line],
+        : {
+            id: propertyId,
+            city: data.basic.city,
+            address: data.address.line,
+            guestReadinessReady: guestReadiness.isReady,
+          },
+    [property, propertyId, data.basic.city, data.address.line, guestReadiness.isReady],
   );
 
   if (loading) {
@@ -482,6 +515,12 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
           {property?.title ?? 'Объект'} · Шаг {activeStepIndex + 1} из {totalStepCount}: {activeStep.label}
         </p>
       </div>
+
+      <ObjectGuestReadinessBlock
+        readiness={guestReadiness}
+        onGoToStep={(step) => goToStep(normalizeStepId(step))}
+        compact={activeStepId !== 'readiness'}
+      />
 
       <nav className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
         {SECTION_NAV.map((item) => (
@@ -876,26 +915,43 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       </Section>
 
       {/* 11. Проверка готовности */}
-      <Section id="readiness" step={11} title="Проверка готовности" subtitle={`Заполнено ${completed} из ${checklist.length} пунктов.`} active={activeStepId === 'readiness'}>
-        <ul className="space-y-2">
-          {checklist.map((item) => (
-            <li key={item.label} className="flex items-center gap-3">
-              <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                  item.done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                }`}
-              >
-                {item.done ? '✓' : '—'}
-              </span>
-              <span className={`text-sm ${item.done ? 'text-slate-900' : 'text-slate-500'}`}>{item.label}</span>
-            </li>
-          ))}
-        </ul>
-        {completed < checklist.length ? (
-          <p className="mt-4 text-sm text-slate-500">Заполните оставшиеся пункты — это нужно для подготовки карточек каналов.</p>
-        ) : (
-          <p className="mt-4 text-sm font-medium text-emerald-700">Все пункты заполнены. Объект готов к подключению каналов.</p>
-        )}
+      <Section
+        id="readiness"
+        step={11}
+        title="Проверка готовности"
+        subtitle={`Для каналов: ${completed} из ${checklist.length}. Для теста гостя: ${guestReadiness.completedCount} из ${guestReadiness.totalCount}.`}
+        active={activeStepId === 'readiness'}
+      >
+        <ObjectGuestReadinessBlock
+          readiness={guestReadiness}
+          onGoToStep={(step) => goToStep(normalizeStepId(step))}
+        />
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <h3 className="text-sm font-semibold text-slate-900">Подготовка карточек каналов</h3>
+          <ul className="mt-3 space-y-2">
+            {checklist.map((item) => (
+              <li key={item.label} className="flex items-center gap-3">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                    item.done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {item.done ? '✓' : '—'}
+                </span>
+                <span className={`text-sm ${item.done ? 'text-slate-900' : 'text-slate-500'}`}>{item.label}</span>
+              </li>
+            ))}
+          </ul>
+          {completed < checklist.length ? (
+            <p className="mt-4 text-sm text-slate-500">
+              Заполните оставшиеся пункты — это нужно для подготовки карточек каналов.
+            </p>
+          ) : (
+            <p className="mt-4 text-sm font-medium text-emerald-700">
+              Все пункты для каналов заполнены. Объект готов к подключению каналов.
+            </p>
+          )}
+        </div>
       </Section>
 
       <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between md:-mx-6 md:px-6">

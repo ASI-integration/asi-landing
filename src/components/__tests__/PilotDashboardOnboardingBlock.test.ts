@@ -52,10 +52,23 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.nextAction.label).toBe('Заполнить данные объекта');
   });
 
-  it('routes setup action to property setup when object exists', () => {
+  it('routes setup action to property setup when object exists but is not guest-ready', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
       properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1' }],
+      propertyId: 'prop-1',
+      context: 'detail',
+    });
+
+    expect(model?.nextAction.href).toBe('/dashboard/properties/prop-1/setup');
+    expect(model?.nextAction.label).toBe('Заполнить данные объекта');
+    expect(model?.nextAction.guestTestDeepLink).toBeNull();
+  });
+
+  it('shows guest test deep link when object is guest-ready', () => {
+    const model = buildPilotDashboardOnboardingModel({
+      crmContactId: CONTACT_ID,
+      properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1', guestReadinessReady: true }],
       propertyId: 'prop-1',
       context: 'detail',
     });
@@ -66,17 +79,19 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.progress.steps[3]?.done).toBe(true);
     expect(model?.progress.currentStepId).toBe('guest_test_telegram');
     expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
+    expect(model?.nextAction.guestTestDeepLink).toContain('guest_test_prop-1');
   });
 
-  it('shows guest test command on setup page after basics are filled', () => {
+  it('shows guest test deep link on setup page after guest readiness is complete', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
-      properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1' }],
+      properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1', guestReadinessReady: true }],
       propertyId: 'prop-1',
       context: 'setup',
     });
 
     expect(model?.nextAction.label).toBeNull();
+    expect(model?.nextAction.guestTestDeepLink).toContain('guest_test_prop-1');
     expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
   });
 });

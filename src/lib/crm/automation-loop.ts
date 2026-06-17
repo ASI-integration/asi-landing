@@ -1,5 +1,10 @@
-import { buildPropertyPassportModel, type PassportReadinessItem } from '@/lib/channel-manager/property-passport';
+import { buildPropertyPassportModel } from '@/lib/channel-manager/property-passport';
 import type { OpsProperty, PropertyMasterCard, PropertyMedia } from '@/lib/ops-foundation/types';
+import {
+  buildGuestTestDeepLink,
+  computeObjectGuestReadiness,
+  type GuestReadinessItem,
+} from '@/lib/property-setup/object-guest-readiness';
 import { normalizeSetupData, setupDataFromExisting, type PropertySetupData } from '@/lib/property-setup/setup-data';
 import type { CrmRole, CrmStatus } from './types';
 
@@ -10,10 +15,14 @@ export type CrmMissingDataAction = {
   setupHref: string | null;
 };
 
-export type CrmPropertyReadinessItem = Pick<
-  PassportReadinessItem,
-  'id' | 'label' | 'done' | 'hint' | 'actionHref' | 'actionLabel'
->;
+export type CrmPropertyReadinessItem = {
+  id: string;
+  label: string;
+  done: boolean;
+  hint: string;
+  actionHref: string;
+  actionLabel: string;
+};
 
 export type CrmPropertyAutomationSummary = {
   id: string;
@@ -36,8 +45,6 @@ export type CrmAutomationSuggestion = {
   nextActionHref: string | null;
   nextActionIsSuggested: boolean;
 };
-
-const OPERATIONAL_REQUIRED_ITEMS = ['photos', 'address', 'checkin', 'wifi'] as const;
 
 const FIELD_TO_SETUP_STEP: Array<{
   tokens: string[];
@@ -91,8 +98,7 @@ function setupHref(propertyId: string | null | undefined, step: string): string 
 }
 
 function guestTestHref(propertyId: string): string {
-  const username = process.env.NEXT_PUBLIC_ASI_FEEDBACK_BOT_USERNAME?.trim()?.replace(/^@+/, '') || 'ASI_Global_Bot';
-  return `https://t.me/${username}?start=${encodeURIComponent(`guest_test_${propertyId}`)}`;
+  return buildGuestTestDeepLink(propertyId);
 }
 
 function normalizeFieldToken(value: string): string {
@@ -147,23 +153,44 @@ export function buildCrmPropertyAutomationSummary(input: {
     setup,
     media: input.media,
   });
-  const missingOperationalItems = passport.readinessItems.filter(
-    (item) => OPERATIONAL_REQUIRED_ITEMS.includes(item.id as (typeof OPERATIONAL_REQUIRED_ITEMS)[number]) && !item.done,
+  const guestReadiness = computeObjectGuestReadiness({
+    propertyId: input.property.id,
+    property: input.property,
+    masterCard: input.masterCard,
+    setup,
+    media: input.media,
+  });
+  const missingOperationalItems: CrmPropertyReadinessItem[] = guestReadiness.items
+    .filter((item) => !item.done)
+    .map((item) => mapGuestItemToCrmItem(item));
+  const readinessItems: CrmPropertyReadinessItem[] = guestReadiness.items.map((item) =>
+    mapGuestItemToCrmItem(item),
   );
 
   return {
     id: input.property.id,
     title: passport.title,
     location: passport.location,
-    readinessCompleted: passport.completedCount,
-    readinessTotal: passport.totalCount,
+    readinessCompleted: guestReadiness.completedCount,
+    readinessTotal: guestReadiness.totalCount,
     isPassportReady: passport.isReady,
-    isOperationallyReady: missingOperationalItems.length === 0,
+    isOperationallyReady: guestReadiness.isReady,
     setupHref: `/dashboard/properties/${input.property.id}/setup`,
     channelManagerHref: `/dashboard/channel-manager?property=${input.property.id}`,
     guestTestHref: guestTestHref(input.property.id),
-    readinessItems: passport.readinessItems,
+    readinessItems,
     missingOperationalItems,
+  };
+}
+
+function mapGuestItemToCrmItem(item: GuestReadinessItem): CrmPropertyReadinessItem {
+  return {
+    id: item.id as CrmPropertyReadinessItem['id'],
+    label: item.label,
+    done: item.done,
+    hint: item.hint,
+    actionHref: item.actionHref,
+    actionLabel: item.actionLabel,
   };
 }
 
@@ -171,11 +198,20 @@ function nextActionForMissingItem(item: CrmPropertyReadinessItem): { text: strin
   if (item.id === 'photos') {
     return { text: 'Добавить фото объекта', href: item.actionHref };
   }
-  if (item.id === 'address' || item.id === 'checkin') {
-    return { text: 'Заполнить адрес и инструкции по заезду', href: item.actionHref };
+  if (item.id === 'address' || item.id === 'city') {
+    return { text: 'Заполнить адрес и город', href: item.actionHref };
+  }
+  if (item.id === 'checkin') {
+    return { text: 'Добавить инструкции по заезду', href: item.actionHref };
   }
   if (item.id === 'wifi') {
     return { text: 'Добавить данные Wi-Fi', href: item.actionHref };
+  }
+  if (item.id === 'rules') {
+    return { text: 'Добавить правила проживания', href: item.actionHref };
+  }
+  if (item.id === 'description') {
+    return { text: 'Добавить описание объекта', href: item.actionHref };
   }
   return { text: item.actionLabel, href: item.actionHref };
 }
@@ -318,7 +354,7 @@ export function deriveCrmAutomationSuggestion(input: {
   if (input.propertySummary?.isOperationallyReady) {
     return {
       effectiveStatus,
-      suggestedNextAction: 'Запустить guest_test',
+      suggestedNextAction: 'Запустить тест гостя',
       nextActionHref: input.propertySummary.guestTestHref,
       nextActionIsSuggested: true,
     };

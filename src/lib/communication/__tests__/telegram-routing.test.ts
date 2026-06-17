@@ -14,6 +14,11 @@ const mockUpsertCrmContactFromTelegram = vi.fn();
 const mockRecordCrmCommunicationEvent = vi.fn();
 const mockRecordCrmEventFromOwnerNotification = vi.fn();
 const mockAttachTelegramToPilotContact = vi.fn();
+const mockLoadObjectGuestReadiness = vi.fn();
+
+vi.mock('@/lib/crm/property-readiness-sync', () => ({
+  loadObjectGuestReadiness: (...args: unknown[]) => mockLoadObjectGuestReadiness(...args),
+}));
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
@@ -130,6 +135,7 @@ describe('Telegram routing layer', () => {
     mockRecordCrmCommunicationEvent.mockReset();
     mockRecordCrmEventFromOwnerNotification.mockReset();
     mockAttachTelegramToPilotContact.mockReset();
+    mockLoadObjectGuestReadiness.mockReset();
 
     mockReplyToTelegram.mockResolvedValue(true);
     mockAnswerTelegramCallbackQuery.mockResolvedValue(true);
@@ -138,6 +144,20 @@ describe('Telegram routing layer', () => {
     mockRecordCrmCommunicationEvent.mockResolvedValue(undefined);
     mockRecordCrmEventFromOwnerNotification.mockResolvedValue(undefined);
     mockAttachTelegramToPilotContact.mockResolvedValue(null);
+    mockLoadObjectGuestReadiness.mockResolvedValue({
+      found: true,
+      readiness: {
+        propertyId: 'test-prop-tg-live',
+        isReady: true,
+        items: [],
+        completedCount: 7,
+        totalCount: 7,
+        nextItem: null,
+        guestTestDeepLink: 'https://t.me/ASI_Global_Bot?start=guest_test_test-prop-tg-live',
+        guestTestCommand: '/guest_test test-prop-tg-live',
+        statusMessage: 'ready',
+      },
+    });
     mockLookupBooking.mockResolvedValue(null);
     mockResolveGuestContext.mockResolvedValue({
       booking_resolved: false,
@@ -326,12 +346,13 @@ describe('Telegram routing layer', () => {
     );
   });
 
-  it('offers guest_test when owner linked object is ready', async () => {
+  it('offers guest test when owner linked object is ready', async () => {
     mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
       propertySummary: {
         id: 'prop-ready',
         title: 'ASI Ready Flat',
         missingOperationalItems: [],
+        guestTestHref: 'https://t.me/ASI_Global_Bot?start=guest_test_prop-ready',
       },
     });
 
@@ -339,7 +360,7 @@ describe('Telegram routing layer', () => {
 
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      expect.stringContaining('/guest_test prop-ready'),
+      expect.stringContaining('guest_test_prop-ready'),
       expect.any(Object),
       expect.any(Object),
     );
@@ -466,6 +487,41 @@ describe('Telegram routing layer', () => {
     const guestReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
     expect(guestReply).toBe('Сейчас уточню этот вопрос у оператора и напишу вам здесь.');
     expect(guestReply).not.toContain('object.address');
+  });
+
+  it('rejects guest test deep link when property is not found', async () => {
+    mockLoadObjectGuestReadiness.mockResolvedValueOnce({ found: false, readiness: null });
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/start guest_test_missing-prop', 2030));
+
+    expect(result?.reply).toContain('Объект не найден');
+    expect(getTelegramRoutingSession(8101)?.testGuest).toBeUndefined();
+  });
+
+  it('explains missing setup fields when property is not guest-ready', async () => {
+    mockLoadObjectGuestReadiness.mockResolvedValueOnce({
+      found: true,
+      readiness: {
+        propertyId: 'prop-not-ready',
+        isReady: false,
+        items: [
+          { id: 'photos', label: 'Фото', done: false, hint: '', setupStep: 'photos', actionHref: '/setup', actionLabel: 'Добавить фото' },
+          { id: 'wifi', label: 'Wi-Fi', done: false, hint: '', setupStep: 'wifi', actionHref: '/setup', actionLabel: 'Добавить Wi-Fi' },
+        ],
+        completedCount: 5,
+        totalCount: 7,
+        nextItem: { id: 'photos', label: 'Фото', done: false, hint: '', setupStep: 'photos', actionHref: '/setup', actionLabel: 'Добавить фото' },
+        guestTestDeepLink: 'https://t.me/ASI_Global_Bot?start=guest_test_prop-not-ready',
+        guestTestCommand: '/guest_test prop-not-ready',
+        statusMessage: 'missing',
+      },
+    });
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/start guest_test_prop-not-ready', 2031));
+
+    expect(result?.reply).toContain('не хватает');
+    expect(result?.reply).toContain('фото');
+    expect(getTelegramRoutingSession(8101)?.testGuest).toBeUndefined();
   });
 
   it('builds guest test deep link for dashboard', () => {

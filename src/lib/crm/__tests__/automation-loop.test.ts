@@ -104,8 +104,8 @@ describe('CRM automation loop', () => {
 
     expect(linkedProperty).toMatchObject({
       effectiveStatus: 'creating_object',
-      suggestedNextAction: 'Добавить фото объекта',
-      nextActionHref: '/dashboard/properties/prop-1/setup?step=photos',
+      suggestedNextAction: 'Заполнить адрес и город',
+      nextActionHref: '/dashboard/properties/prop-1/setup?step=address',
     });
   });
 
@@ -120,6 +120,8 @@ describe('CRM automation loop', () => {
     setup.wifi.wifiName = 'ASI';
     setup.wifi.wifiPassword = 'secret';
     setup.wifi.entryInstructions = 'Вход со двора.';
+    setup.rules.smoking = 'Запрещено';
+    setup.description.full = 'Уютная квартира.';
 
     const summary = buildCrmPropertyAutomationSummary({
       property: { ...property, address: 'Тверская, 1' },
@@ -196,8 +198,8 @@ describe('CRM automation loop', () => {
 
     expect(creatingObject).toMatchObject({
       effectiveStatus: 'creating_object',
-      suggestedNextAction: 'Добавить фото объекта',
-      nextActionHref: '/dashboard/properties/prop-1/setup?step=photos',
+      suggestedNextAction: 'Заполнить адрес и город',
+      nextActionHref: '/dashboard/properties/prop-1/setup?step=address',
     });
 
     const readySetup = createEmptySetupData();
@@ -210,6 +212,8 @@ describe('CRM automation loop', () => {
     readySetup.wifi.wifiName = 'ASI';
     readySetup.wifi.wifiPassword = 'secret';
     readySetup.wifi.entryInstructions = 'Вход со двора.';
+    readySetup.rules.smoking = 'Запрещено';
+    readySetup.description.full = 'Уютная квартира.';
 
     const readySummary = buildCrmPropertyAutomationSummary({
       property: { ...property, address: 'Тверская, 1' },
@@ -231,7 +235,7 @@ describe('CRM automation loop', () => {
 
     expect(readyObject).toMatchObject({
       effectiveStatus: 'object_filled',
-      suggestedNextAction: 'Запустить guest_test',
+      suggestedNextAction: 'Запустить тест гостя',
       nextActionHref: expect.stringContaining('guest_test_prop-1'),
     });
   });

@@ -14,6 +14,10 @@ import {
   updateProperty,
   upsertSetupProfile,
 } from '@/lib/ops-foundation/repository';
+import { syncCrmAfterPropertySetupSave } from '@/lib/crm/property-readiness-sync';
+import {
+  computeObjectGuestReadiness,
+} from '@/lib/property-setup/object-guest-readiness';
 import {
   buildSetupMirrorUpdates,
   normalizeSetupData,
@@ -58,7 +62,15 @@ export async function GET(_: Request, { params }: RouteParams) {
       ? normalizeSetupData(profileRaw)
       : setupDataFromExisting(property, masterCard);
 
-    return NextResponse.json({ ok: true, property, masterCard, mediaCount, setup });
+    const readiness = computeObjectGuestReadiness({
+      propertyId: params.id,
+      property,
+      masterCard,
+      setup,
+      mediaCount,
+    });
+
+    return NextResponse.json({ ok: true, property, masterCard, mediaCount, setup, readiness });
   } catch (err) {
     if (err instanceof Error && err.message === 'property_not_found') {
       return NextResponse.json({ ok: false, error: 'property_not_found' }, { status: 404 });
@@ -98,7 +110,24 @@ export async function PUT(req: Request, { params }: RouteParams) {
       }
     }
 
-    return NextResponse.json({ ok: true, setup, extrasPersisted });
+    const mediaCount = await safeMediaCount(auth.ctx, params.id);
+    let masterCard = null;
+    try {
+      masterCard = await getMasterCard(auth.ctx, params.id);
+    } catch {
+      masterCard = null;
+    }
+    const readiness = computeObjectGuestReadiness({
+      propertyId: params.id,
+      property,
+      masterCard,
+      setup,
+      mediaCount,
+    });
+
+    void syncCrmAfterPropertySetupSave(params.id);
+
+    return NextResponse.json({ ok: true, setup, extrasPersisted, readiness, mediaCount });
   } catch (err) {
     if (err instanceof Error && err.message === 'property_not_found') {
       return NextResponse.json({ ok: false, error: 'property_not_found' }, { status: 404 });

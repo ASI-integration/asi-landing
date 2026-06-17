@@ -12,7 +12,12 @@ import { TgIcon } from '@/components/TgIcon';
 
 type PilotDashboardOnboardingBlockProps = {
   crmContactId: string | null;
-  properties: Array<{ id: string; city?: string | null; address?: string | null }>;
+  properties: Array<{
+    id: string;
+    city?: string | null;
+    address?: string | null;
+    guestReadinessReady?: boolean;
+  }>;
   propertyId?: string;
   context?: 'list' | 'detail' | 'setup';
 };
@@ -105,13 +110,26 @@ export function PilotDashboardOnboardingBlock({
           <span>Продолжить в Telegram</span>
         </a>
       </div>
-      {nextAction.guestTestCommand ? (
-        <p className="mt-3 text-sm text-emerald-900">
-          В Telegram отправьте команду:{' '}
-          <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs font-semibold text-emerald-950">
-            {nextAction.guestTestCommand}
-          </code>
-        </p>
+      {nextAction.guestTestDeepLink ? (
+        <div className="mt-3 space-y-2">
+          <a
+            href={nextAction.guestTestDeepLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            <TgIcon className="h-5 w-5 shrink-0" />
+            Запустить тест в Telegram
+          </a>
+          {nextAction.guestTestCommand ? (
+            <p className="text-sm text-emerald-900">
+              Запасной вариант:{' '}
+              <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs font-semibold text-emerald-950">
+                {nextAction.guestTestCommand}
+              </code>
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {telegramHint ? <p className="mt-3 text-xs text-emerald-800">{telegramHint}</p> : null}
     </section>

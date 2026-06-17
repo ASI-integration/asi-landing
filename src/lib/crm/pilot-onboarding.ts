@@ -1,4 +1,5 @@
 import { getAsiFeedbackBotUsername } from '@/config/publicTelegram';
+import { buildGuestTestDeepLink, buildGuestTestCommand } from '@/lib/property-setup/object-guest-readiness';
 import type { CrmContactViewModel, CrmEventViewModel, CrmPilotApplicationSummary, CrmStatus } from './types';
 
 export type PilotOnboardingStepId =
@@ -230,13 +231,22 @@ export function shouldShowDashboardPilotBlock(
   return Boolean(String(input ?? '').trim());
 }
 
-function isPropertyBasicsFilled(property: { city?: string | null; address?: string | null }): boolean {
-  return Boolean(property.city?.trim() && property.address?.trim());
+function isPropertyGuestTestReady(property: {
+  guestReadinessReady?: boolean;
+  city?: string | null;
+  address?: string | null;
+}): boolean {
+  return Boolean(property.guestReadinessReady);
 }
 
 export function computeDashboardPilotProgress(input: {
   crmContactId?: string | null;
-  properties: Array<{ id: string; city?: string | null; address?: string | null }>;
+  properties: Array<{
+    id: string;
+    city?: string | null;
+    address?: string | null;
+    guestReadinessReady?: boolean;
+  }>;
   guestTestStarted?: boolean;
   propertyId?: string | null;
 }): DashboardPilotProgress | null {
@@ -247,7 +257,7 @@ export function computeDashboardPilotProgress(input: {
   const applicationSubmitted = true;
   const cabinetLogin = true;
   const objectCreated = input.properties.length > 0;
-  const objectFilled = input.properties.some(isPropertyBasicsFilled);
+  const objectFilled = input.properties.some(isPropertyGuestTestReady);
   const guestTestStarted = Boolean(input.guestTestStarted);
 
   const doneFlags: Record<DashboardPilotStepId, boolean> = {
@@ -285,14 +295,24 @@ export type DashboardPilotNextAction = {
   href: string | null;
   label: string | null;
   guestTestCommand: string | null;
+  guestTestDeepLink: string | null;
 };
 
 export function buildPilotGuestTestCommand(propertyId: string): string {
-  return `/guest_test ${propertyId.trim()}`;
+  return buildGuestTestCommand(propertyId);
+}
+
+export function buildPilotGuestTestDeepLink(propertyId: string): string {
+  return buildGuestTestDeepLink(propertyId);
 }
 
 export function resolveDashboardPilotNextAction(
-  properties: Array<{ id: string; city?: string | null; address?: string | null }>,
+  properties: Array<{
+    id: string;
+    city?: string | null;
+    address?: string | null;
+    guestReadinessReady?: boolean;
+  }>,
   options?: { propertyId?: string | null; onSetupPage?: boolean },
 ): DashboardPilotNextAction {
   const target =
@@ -300,15 +320,16 @@ export function resolveDashboardPilotNextAction(
     properties[0];
 
   if (!target?.id) {
-    return { href: null, label: 'Создать объект', guestTestCommand: null };
+    return { href: null, label: 'Создать объект', guestTestCommand: null, guestTestDeepLink: null };
   }
 
   const setupHref = `/dashboard/properties/${target.id}/setup`;
-  if (!isPropertyBasicsFilled(target)) {
+  if (!isPropertyGuestTestReady(target)) {
     return {
       href: setupHref,
       label: options?.onSetupPage ? 'Продолжить setup' : 'Заполнить данные объекта',
       guestTestCommand: null,
+      guestTestDeepLink: null,
     };
   }
 
@@ -316,6 +337,7 @@ export function resolveDashboardPilotNextAction(
     href: null,
     label: null,
     guestTestCommand: buildPilotGuestTestCommand(target.id),
+    guestTestDeepLink: buildPilotGuestTestDeepLink(target.id),
   };
 }
 

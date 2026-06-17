@@ -5,7 +5,12 @@ import { usePilotContactId } from '@/hooks/usePilotContactId';
 import { shouldShowDashboardPilotBlock } from '@/lib/crm/pilot-onboarding';
 
 type PilotPropertyOnboardingSectionProps = {
-  properties: Array<{ id: string; city?: string | null; address?: string | null }>;
+  properties: Array<{
+    id: string;
+    city?: string | null;
+    address?: string | null;
+    guestReadinessReady?: boolean;
+  }>;
   propertyId?: string;
   context: 'list' | 'detail' | 'setup';
 };
