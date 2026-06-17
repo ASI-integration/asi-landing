@@ -10,6 +10,7 @@ type ObjectGuestReadinessBlockProps = {
   guestTestFlow?: GuestTestFlowState | null;
   onGoToStep: (step: string) => void;
   compact?: boolean;
+  showPrimaryCta?: boolean;
 };
 
 export function ObjectGuestReadinessBlock({
@@ -17,6 +18,7 @@ export function ObjectGuestReadinessBlock({
   guestTestFlow = null,
   onGoToStep,
   compact = false,
+  showPrimaryCta = true,
 }: ObjectGuestReadinessBlockProps) {
   const { items, completedCount, totalCount, isReady } = readiness;
   const nextStep = resolveSetupNextStep({
@@ -73,27 +75,29 @@ export function ObjectGuestReadinessBlock({
         </ul>
       ) : null}
 
-      <div className="mt-4">
-        {nextStep.primaryCta.kind === 'setup_step' ? (
-          <button
-            type="button"
-            onClick={() => onGoToStep(nextStep.primaryCta.setupStep ?? 'basic')}
-            className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            {nextStep.primaryCta.label}
-          </button>
-        ) : (
-          <a
-            href={nextStep.primaryCta.href ?? '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            <TgIcon className="h-5 w-5 shrink-0" />
-            {nextStep.primaryCta.label}
-          </a>
-        )}
-      </div>
+      {showPrimaryCta ? (
+        <div className="mt-4">
+          {nextStep.primaryCta.kind === 'setup_step' ? (
+            <button
+              type="button"
+              onClick={() => onGoToStep(nextStep.primaryCta.setupStep ?? 'basic')}
+              className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              {nextStep.primaryCta.label}
+            </button>
+          ) : (
+            <a
+              href={nextStep.primaryCta.href ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              <TgIcon className="h-5 w-5 shrink-0" />
+              {nextStep.primaryCta.label}
+            </a>
+          )}
+        </div>
+      ) : null}
 
       {nextStep.showTelegramFallback && nextStep.guestTestCommand ? (
         <p className="mt-3 text-xs text-emerald-800">

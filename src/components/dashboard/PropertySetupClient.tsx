@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
+import { TgIcon } from '@/components/TgIcon';
 import { ObjectGuestReadinessBlock } from '@/components/dashboard/ObjectGuestReadinessBlock';
 import type { GuestTestFlowState } from '@/lib/crm/guest-test-flow';
 import type { OpsProperty, PropertyMasterCard, PropertyMedia } from '@/lib/ops-foundation/types';
@@ -29,6 +30,7 @@ import {
   type PropertySetupData,
   type PropertySetupUnit,
 } from '@/lib/property-setup/setup-data';
+import { resolveSetupReadinessPageUi } from '@/lib/property-setup/setup-readiness-ui';
 
 const inputCls = 'mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none';
 const textareaCls = `${inputCls} min-h-[88px]`;
@@ -422,6 +424,17 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   const canGoBack = activeStepIndex > 0;
   const canGoNext = activeStepIndex < SECTION_NAV.length - 1;
 
+  const readinessPageUi = useMemo(
+    () =>
+      resolveSetupReadinessPageUi({
+        activeStepId,
+        readiness: guestReadiness,
+        telegramLinked: guestTestFlow?.telegramLinked ?? false,
+        guestTestDispatched: guestTestFlow?.guestTestDispatched ?? false,
+      }),
+    [activeStepId, guestReadiness, guestTestFlow?.telegramLinked, guestTestFlow?.guestTestDispatched],
+  );
+
   function isStepDone(stepId: SetupStepId): boolean {
     switch (stepId) {
       case 'basic':
@@ -454,6 +467,15 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     const saved = await save();
     if (saved && canGoNext) {
       goToStep(SECTION_NAV[activeStepIndex + 1].anchor);
+    }
+  }
+
+  async function handleReadinessPrimaryCta() {
+    const cta = readinessPageUi.stickyPrimaryCta;
+    if (!cta || cta.kind !== 'setup_step') return;
+    const saved = await save();
+    if (saved) {
+      goToStep(normalizeStepId(cta.setupStep ?? 'basic'));
     }
   }
 
@@ -524,12 +546,14 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         </p>
       </div>
 
-      <ObjectGuestReadinessBlock
-        readiness={guestReadiness}
-        guestTestFlow={guestTestFlow}
-        onGoToStep={(step) => goToStep(normalizeStepId(step))}
-        compact={activeStepId !== 'readiness'}
-      />
+      {readinessPageUi.showTopReadinessBlock ? (
+        <ObjectGuestReadinessBlock
+          readiness={guestReadiness}
+          guestTestFlow={guestTestFlow}
+          onGoToStep={(step) => goToStep(normalizeStepId(step))}
+          compact
+        />
+      ) : null}
 
       <nav className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
         {SECTION_NAV.map((item) => (
@@ -935,6 +959,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
           readiness={guestReadiness}
           guestTestFlow={guestTestFlow}
           onGoToStep={(step) => goToStep(normalizeStepId(step))}
+          showPrimaryCta={readinessPageUi.readinessBlockShowPrimaryCta}
         />
         <div className="mt-6 border-t border-slate-100 pt-5">
           <h3 className="text-sm font-semibold text-slate-900">Подготовка карточек каналов</h3>
@@ -975,9 +1000,32 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
           <button type="button" onClick={() => void save()} disabled={saving} className={ghostBtn}>
             {saving ? 'Сохранение…' : 'Сохранить черновик'}
           </button>
-          <button type="button" onClick={() => void handleNext()} disabled={!canGoNext || saving} className={primaryBtn}>
-            Далее
-          </button>
+          {readinessPageUi.showNextButton ? (
+            <button type="button" onClick={() => void handleNext()} disabled={!canGoNext || saving} className={primaryBtn}>
+              Далее
+            </button>
+          ) : readinessPageUi.stickyPrimaryCta ? (
+            readinessPageUi.stickyPrimaryCta.kind === 'setup_step' ? (
+              <button
+                type="button"
+                onClick={() => void handleReadinessPrimaryCta()}
+                disabled={saving}
+                className={primaryBtn}
+              >
+                {readinessPageUi.stickyPrimaryCta.label}
+              </button>
+            ) : (
+              <a
+                href={readinessPageUi.stickyPrimaryCta.href ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${primaryBtn} gap-2`}
+              >
+                <TgIcon className="h-5 w-5 shrink-0" />
+                {readinessPageUi.stickyPrimaryCta.label}
+              </a>
+            )
+          ) : null}
         </div>
       </div>
     </div>
