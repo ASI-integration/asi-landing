@@ -8,6 +8,7 @@ import {
   type DashboardPilotProgress,
 } from '@/lib/crm/pilot-onboarding';
 import { PilotOnboardingProgress } from '@/components/PilotOnboardingProgress';
+import { TgIcon } from '@/components/TgIcon';
 
 type PilotDashboardOnboardingBlockProps = {
   crmContactId: string | null;
@@ -97,9 +98,11 @@ export function PilotDashboardOnboardingBlock({
           href={telegramHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+          aria-label="Продолжить в Telegram"
+          className="inline-flex items-center justify-center gap-3 rounded-lg border border-[#2CA5E0]/40 bg-white px-5 py-3 text-sm font-semibold text-emerald-950 shadow-sm hover:border-[#2CA5E0]/70 hover:bg-[#2CA5E0]/5"
         >
-          Продолжить в Telegram
+          <TgIcon className="h-8 w-8 shrink-0" />
+          <span>Продолжить в Telegram</span>
         </a>
       </div>
       {nextAction.guestTestCommand ? (
