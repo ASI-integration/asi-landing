@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
 import { ObjectGuestReadinessBlock } from '@/components/dashboard/ObjectGuestReadinessBlock';
+import type { GuestTestFlowState } from '@/lib/crm/guest-test-flow';
 import type { OpsProperty, PropertyMasterCard, PropertyMedia } from '@/lib/ops-foundation/types';
 import {
   computeObjectGuestReadiness,
@@ -134,6 +135,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [extrasWarning, setExtrasWarning] = useState(false);
+  const [guestTestFlow, setGuestTestFlow] = useState<GuestTestFlowState | null>(null);
 
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoTitle, setPhotoTitle] = useState('');
@@ -164,6 +166,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         masterCard?: PropertyMasterCard | null;
         setup?: unknown;
         readiness?: ObjectGuestReadiness;
+        guestTestFlow?: GuestTestFlowState | null;
       };
       if (!res.ok || !json.ok) {
         setError(json.error === 'property_not_found' ? 'Объект не найден.' : 'Не удалось загрузить данные объекта.');
@@ -173,6 +176,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       setProperty(json.property ?? null);
       setMasterCard(json.masterCard ?? null);
       setData(normalizeSetupData(json.setup));
+      setGuestTestFlow(json.guestTestFlow ?? null);
       await loadMedia();
     } catch {
       setError('Ошибка сети при загрузке. Обновите страницу.');
@@ -236,12 +240,14 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         error?: string;
         extrasPersisted?: boolean;
         readiness?: ObjectGuestReadiness;
+        guestTestFlow?: GuestTestFlowState | null;
       };
       if (!res.ok || !json.ok) {
         setError('Не удалось сохранить черновик. Попробуйте ещё раз.');
         return false;
       }
       setExtrasWarning(json.extrasPersisted === false);
+      setGuestTestFlow(json.guestTestFlow ?? null);
       setMessage('Черновик сохранён.');
       return true;
     } catch {
@@ -496,6 +502,8 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         properties={[pilotProperty]}
         propertyId={propertyId}
         context="setup"
+        guestTestDispatched={guestTestFlow?.guestTestDispatched ?? false}
+        telegramLinked={guestTestFlow?.telegramLinked ?? false}
       />
 
       <div>
@@ -518,6 +526,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
 
       <ObjectGuestReadinessBlock
         readiness={guestReadiness}
+        guestTestFlow={guestTestFlow}
         onGoToStep={(step) => goToStep(normalizeStepId(step))}
         compact={activeStepId !== 'readiness'}
       />
@@ -924,6 +933,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
       >
         <ObjectGuestReadinessBlock
           readiness={guestReadiness}
+          guestTestFlow={guestTestFlow}
           onGoToStep={(step) => goToStep(normalizeStepId(step))}
         />
         <div className="mt-6 border-t border-slate-100 pt-5">

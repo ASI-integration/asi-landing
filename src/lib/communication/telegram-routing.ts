@@ -7,6 +7,11 @@ import {
   upsertCrmContactFromTelegram,
 } from '@/lib/crm/repository';
 import { loadObjectGuestReadiness } from '@/lib/crm/property-readiness-sync';
+import {
+  dispatchGuestTestToChat,
+  GUEST_TEST_WELCOME_REPLY,
+  tryLinkTelegramToPropertyOwner,
+} from '@/lib/crm/guest-test-flow';
 import { formatGuestReadinessBlockersRu } from '@/lib/property-setup/object-guest-readiness';
 import {
   buildPilotPropertiesRedirect,
@@ -54,9 +59,6 @@ const ROLE_SELECTION_REPLY =
 
 const GUEST_WELCOME_REPLY =
   'Понял, вы гость по бронированию. Напишите вопрос по объекту — адрес, заезд, Wi‑Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
-
-const GUEST_TEST_WELCOME_REPLY =
-  'Тестовый режим гостя включён. Можно проверить автопилот: адрес, заезд, Wi‑Fi, правила. Напишите вопрос по объекту.';
 
 const MANUAL_SAVED_REPLY = 'Сообщение сохранено. Оператор ответит вручную.';
 const DRAFT_PREPARED_REPLY =
@@ -136,16 +138,6 @@ async function syncCrmGuestTest(user: TelegramRoutingUser, propertyId: string): 
       telegramChatId: user.chat_id,
       propertyId,
       status: 'testing_communication',
-    });
-    await recordCrmCommunicationEvent({
-      telegramUserId: user.telegram_user_id,
-      telegramChatId: user.chat_id,
-      eventType: 'guest_test_started',
-      propertyId,
-      metadata: {
-        source: 'telegram_guest_test',
-        property_id: propertyId,
-      },
     });
   } catch (error) {
     console.error('[crm] guest test sync failed', {
@@ -421,20 +413,35 @@ async function activateGuestTestMode(
   }
 
   const resolvedPropertyId = explicitPropertyId || defaultGuestTestPropertyId();
-  patchTelegramRoutingSession(user.chat_id, {
-    role: 'guest',
-    selectedRole: 'guest',
-    testGuest: true,
-    testPropertyId: resolvedPropertyId,
-    communicationMode: 'autopilot',
+
+  if (explicitPropertyId) {
+    try {
+      await tryLinkTelegramToPropertyOwner({
+        propertyId: explicitPropertyId,
+        telegramUserId: user.telegram_user_id,
+        telegramUsername: user.telegram_username,
+        telegramChatId: user.chat_id,
+        name: user.first_name,
+      });
+    } catch (error) {
+      console.error('[crm] guest test owner telegram link failed', {
+        error: error instanceof Error ? error.message : String(error),
+        propertyId: explicitPropertyId,
+        telegram_user_id: user.telegram_user_id,
+      });
+    }
+  }
+
+  await dispatchGuestTestToChat({
+    chatId: user.chat_id,
+    telegramUserId: user.telegram_user_id,
+    telegramUsername: user.telegram_username,
+    firstName: user.first_name,
+    propertyId: resolvedPropertyId,
+    source: explicitPropertyId ? 'telegram_start' : 'telegram_command',
   });
 
   void syncCrmGuestTest(user, resolvedPropertyId);
-
-  await replyToTelegram(user.chat_id, GUEST_TEST_WELCOME_REPLY, {
-    handler: 'telegram_routing/guest_test',
-    update_id: update.update_id,
-  }, getAsiFeedbackTelegramSendOptions());
 
   return {
     outcome: ProcessOutcome.Replied,

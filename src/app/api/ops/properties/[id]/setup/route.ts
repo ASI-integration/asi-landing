@@ -15,6 +15,7 @@ import {
   upsertSetupProfile,
 } from '@/lib/ops-foundation/repository';
 import { syncCrmAfterPropertySetupSave } from '@/lib/crm/property-readiness-sync';
+import { loadGuestTestFlowState } from '@/lib/crm/guest-test-flow';
 import {
   computeObjectGuestReadiness,
 } from '@/lib/property-setup/object-guest-readiness';
@@ -70,7 +71,9 @@ export async function GET(_: Request, { params }: RouteParams) {
       mediaCount,
     });
 
-    return NextResponse.json({ ok: true, property, masterCard, mediaCount, setup, readiness });
+    const guestTestFlow = readiness.isReady ? await loadGuestTestFlowState(params.id) : null;
+
+    return NextResponse.json({ ok: true, property, masterCard, mediaCount, setup, readiness, guestTestFlow });
   } catch (err) {
     if (err instanceof Error && err.message === 'property_not_found') {
       return NextResponse.json({ ok: false, error: 'property_not_found' }, { status: 404 });
@@ -125,9 +128,11 @@ export async function PUT(req: Request, { params }: RouteParams) {
       mediaCount,
     });
 
-    void syncCrmAfterPropertySetupSave(params.id);
+    await syncCrmAfterPropertySetupSave(params.id);
 
-    return NextResponse.json({ ok: true, setup, extrasPersisted, readiness, mediaCount });
+    const guestTestFlow = readiness.isReady ? await loadGuestTestFlowState(params.id) : null;
+
+    return NextResponse.json({ ok: true, setup, extrasPersisted, readiness, mediaCount, guestTestFlow });
   } catch (err) {
     if (err instanceof Error && err.message === 'property_not_found') {
       return NextResponse.json({ ok: false, error: 'property_not_found' }, { status: 404 });

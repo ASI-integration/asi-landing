@@ -4,6 +4,7 @@ import {
   buildCrmPropertyAutomationSummary,
   deriveCrmAutomationSuggestion,
 } from './automation-loop';
+import { syncGuestTestOnPropertyReady } from './guest-test-flow';
 import { updateCrmContact, recordCrmCommunicationEvent } from './repository';
 import type { CrmContactRow } from './types';
 import {
@@ -239,6 +240,10 @@ export async function syncCrmAfterPropertySetupSave(propertyId: string): Promise
           },
         });
       }
+    }
+
+    if (loaded.readiness.isReady) {
+      await syncGuestTestOnPropertyReady(id);
     }
   } catch (error) {
     console.error('[crm] property setup readiness sync failed', {

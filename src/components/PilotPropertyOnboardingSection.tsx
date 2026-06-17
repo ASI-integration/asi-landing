@@ -13,12 +13,16 @@ type PilotPropertyOnboardingSectionProps = {
   }>;
   propertyId?: string;
   context: 'list' | 'detail' | 'setup';
+  guestTestDispatched?: boolean;
+  telegramLinked?: boolean;
 };
 
 export function PilotPropertyOnboardingSection({
   properties,
   propertyId,
   context,
+  guestTestDispatched = false,
+  telegramLinked = false,
 }: PilotPropertyOnboardingSectionProps) {
   const crmContactId = usePilotContactId();
 
@@ -32,6 +36,8 @@ export function PilotPropertyOnboardingSection({
       properties={properties}
       propertyId={propertyId}
       context={context}
+      guestTestDispatched={guestTestDispatched}
+      telegramLinked={telegramLinked}
     />
   );
 }

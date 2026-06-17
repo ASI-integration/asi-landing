@@ -31,6 +31,7 @@ export const CRM_EVENT_TYPES = [
   'role_selected_owner',
   'role_selected_lead',
   'role_selected_guest',
+  'guest_test_ready',
   'guest_test_started',
   'pilot_application_submitted',
   'pilot_selected',

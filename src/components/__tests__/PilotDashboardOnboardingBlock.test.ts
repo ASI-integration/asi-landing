@@ -35,6 +35,7 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.telegramHref).toContain('?start=');
     expect(model?.telegramHref).toContain(encodeURIComponent(`pilot_${CONTACT_ID}`));
     expect(model?.telegramHint).toBeNull();
+    expect(model?.showTelegramContinuation).toBe(true);
   });
 
   it('falls back to generic telegram bot when contact id is missing on property detail', () => {
@@ -50,6 +51,8 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.telegramHint).toBe('Напишите /start и выберите роль владельца.');
     expect(model?.nextAction.href).toBe('/dashboard/properties/prop-1/setup');
     expect(model?.nextAction.label).toBe('Заполнить данные объекта');
+    expect(model?.showTelegramContinuation).toBe(true);
+    expect(model?.showGuestTestAction).toBe(false);
   });
 
   it('routes setup action to property setup when object exists but is not guest-ready', () => {
@@ -63,9 +66,10 @@ describe('PilotDashboardOnboardingBlock', () => {
     expect(model?.nextAction.href).toBe('/dashboard/properties/prop-1/setup');
     expect(model?.nextAction.label).toBe('Заполнить данные объекта');
     expect(model?.nextAction.guestTestDeepLink).toBeNull();
+    expect(model?.showGuestTestAction).toBe(false);
   });
 
-  it('shows guest test deep link when object is guest-ready', () => {
+  it('shows single guest test CTA on detail when object is guest-ready', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
       properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1', guestReadinessReady: true }],
@@ -73,16 +77,16 @@ describe('PilotDashboardOnboardingBlock', () => {
       context: 'detail',
     });
 
-    expect(model?.nextAction.href).toBeNull();
-    expect(model?.nextAction.label).toBeNull();
+    expect(model?.showPrimaryAction).toBe(false);
+    expect(model?.showTelegramContinuation).toBe(false);
+    expect(model?.showGuestTestAction).toBe(true);
     expect(model?.progress.steps[2]?.done).toBe(true);
     expect(model?.progress.steps[3]?.done).toBe(true);
     expect(model?.progress.currentStepId).toBe('guest_test_telegram');
-    expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
     expect(model?.nextAction.guestTestDeepLink).toContain('guest_test_prop-1');
   });
 
-  it('shows guest test deep link on setup page after guest readiness is complete', () => {
+  it('hides all pilot CTAs on setup page and delegates to readiness block', () => {
     const model = buildPilotDashboardOnboardingModel({
       crmContactId: CONTACT_ID,
       properties: [{ id: 'prop-1', city: 'Казань', address: 'ул. Баумана, 1', guestReadinessReady: true }],
@@ -90,8 +94,21 @@ describe('PilotDashboardOnboardingBlock', () => {
       context: 'setup',
     });
 
-    expect(model?.nextAction.label).toBeNull();
-    expect(model?.nextAction.guestTestDeepLink).toContain('guest_test_prop-1');
-    expect(model?.nextAction.guestTestCommand).toBe('/guest_test prop-1');
+    expect(model?.showPrimaryAction).toBe(false);
+    expect(model?.showTelegramContinuation).toBe(false);
+    expect(model?.showGuestTestAction).toBe(false);
+  });
+
+  it('hides telegram continuation on setup page before guest readiness is complete', () => {
+    const model = buildPilotDashboardOnboardingModel({
+      crmContactId: CONTACT_ID,
+      properties: [{ id: 'prop-1', city: 'Казань', address: null }],
+      propertyId: 'prop-1',
+      context: 'setup',
+    });
+
+    expect(model?.showTelegramContinuation).toBe(false);
+    expect(model?.showPrimaryAction).toBe(false);
+    expect(model?.showGuestTestAction).toBe(false);
   });
 });

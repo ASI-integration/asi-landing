@@ -183,7 +183,7 @@ export function computeObjectGuestReadiness(input: {
   const isReady = completedCount === items.length;
 
   const statusMessage = isReady
-    ? 'Объект готов к тесту гостя. Можно запустить проверку в Telegram.'
+    ? 'Объект готов к тесту гостя.'
     : nextItem
       ? `Следующий шаг: ${nextItem.label.toLowerCase()}.`
       : 'Заполните данные объекта для теста гостя.';

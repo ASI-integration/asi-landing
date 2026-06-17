@@ -42,6 +42,7 @@ export const CRM_EVENT_TYPE_LABELS: Record<CrmEventType, string> = {
   role_selected_owner: 'Выбрана роль: владелец',
   role_selected_lead: 'Выбрана роль: лид',
   role_selected_guest: 'Выбрана роль: гость',
+  guest_test_ready: 'Готов к тесту гостя',
   guest_test_started: 'Запущен тест гостя',
   pilot_application_submitted: 'Заявка в пилот',
   pilot_selected: 'Выбран в пилот',

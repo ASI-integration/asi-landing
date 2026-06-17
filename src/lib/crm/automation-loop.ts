@@ -360,11 +360,20 @@ export function deriveCrmAutomationSuggestion(input: {
     };
   }
 
-  if (input.status === 'testing_communication' || input.source === 'test' || input.role === 'guest') {
+  if (input.status === 'testing_communication' || input.source === 'test') {
     return {
       effectiveStatus,
-      suggestedNextAction: 'Запустить тест гостя и проверить ответы ASI',
-      nextActionHref: input.propertySummary?.guestTestHref ?? null,
+      suggestedNextAction: 'Проверить результат теста гостя',
+      nextActionHref: input.propertySummary?.setupHref ?? null,
+      nextActionIsSuggested: true,
+    };
+  }
+
+  if (input.role === 'guest') {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Проверить результат теста гостя',
+      nextActionHref: input.propertySummary?.setupHref ?? null,
       nextActionIsSuggested: true,
     };
   }
