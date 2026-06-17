@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { isDashboardInternalUser } from '@/lib/dashboard/internal-access';
 import {
+  applyPilotCrmDecision,
   createCrmContact,
   listCrmContacts,
   listCrmPropertyOptions,
   updateCrmContact,
+  type PilotCrmDecision,
 } from '@/lib/crm/repository';
 import { isCrmRole, isCrmSource, isCrmStatus, matchesCrmFilter } from '@/lib/crm/view-model';
 import type { CrmFilter } from '@/lib/crm/types';
@@ -30,10 +32,13 @@ const VALID_FILTERS = new Set<CrmFilter>([
   'new',
   'needs_reaction',
   'pilot_candidates',
+  'pilot_selected',
   'testing',
   'pilot_active',
   'escalations',
 ]);
+
+const PILOT_DECISIONS = new Set<PilotCrmDecision>(['select', 'waitlist', 'not_fit']);
 
 export async function GET(req: NextRequest) {
   const auth = await requireInternalSession();
@@ -122,6 +127,21 @@ export async function PATCH(req: NextRequest) {
 
   const contactId = typeof body.id === 'string' ? body.id.trim() : '';
   if (!contactId) return jsonError('Не указан id записи', 400);
+
+  if (typeof body.pilotDecision === 'string') {
+    if (!PILOT_DECISIONS.has(body.pilotDecision as PilotCrmDecision)) {
+      return jsonError('Некорректное действие по пилоту', 400);
+    }
+    try {
+      const updated = await applyPilotCrmDecision(contactId, body.pilotDecision as PilotCrmDecision);
+      if (!updated) return jsonError('Запись не найдена', 404);
+      return NextResponse.json({ ok: true, contact: updated });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[dashboard/crm] pilot decision failed', { error: message, id: contactId });
+      return jsonError('Не удалось обновить решение по пилоту', 500);
+    }
+  }
 
   const patch: Parameters<typeof updateCrmContact>[1] = {};
   if (typeof body.status === 'string') {

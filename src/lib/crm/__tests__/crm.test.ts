@@ -175,4 +175,35 @@ describe('crm view-model', () => {
     });
     expect(matchesCrmFilter(contact, 'pilot_candidates')).toBe(true);
   });
+
+  it('filters contacts selected for pilot by dedicated event', () => {
+    const contact = normalizeCrmContactRow(
+      {
+        id: 'pilot-2',
+        name: 'ASI Selected Pilot',
+        role: 'owner',
+        source: 'pilot_form',
+        contact: '@selected_owner',
+        telegram_user_id: null,
+        telegram_username: 'selected_owner',
+        telegram_chat_id: null,
+        status: 'creating_object',
+        property_id: 'prop-1',
+        property_count: 1,
+        notes: '',
+        next_action: '',
+        next_action_due_at: null,
+        last_message: 'Создан объект',
+        last_activity_at: '2026-06-17T10:00:00.000Z',
+        lead_id: null,
+        awaiting_reply: false,
+        created_at: '2026-06-16T09:00:00.000Z',
+        updated_at: '2026-06-17T10:00:00.000Z',
+      },
+      [event({ event_type: 'pilot_selected' })],
+    );
+
+    expect(matchesCrmFilter(contact, 'pilot_selected')).toBe(true);
+    expect(matchesCrmFilter(contact, 'pilot_candidates')).toBe(true);
+  });
 });

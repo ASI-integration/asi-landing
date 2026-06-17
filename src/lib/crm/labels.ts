@@ -44,6 +44,7 @@ export const CRM_EVENT_TYPE_LABELS: Record<CrmEventType, string> = {
   role_selected_guest: 'Выбрана роль: гость',
   guest_test_started: 'Запущен тест гостя',
   pilot_application_submitted: 'Заявка в пилот',
+  pilot_selected: 'Выбран в пилот',
   status_change: 'Изменение статуса',
   note: 'Заметка',
 };
@@ -53,6 +54,7 @@ export const CRM_FILTER_LABELS: Record<string, string> = {
   new: 'Новые',
   needs_reaction: 'Нужна реакция',
   pilot_candidates: 'Кандидаты в пилот',
+  pilot_selected: 'Выбраны в пилот',
   testing: 'Тестируют',
   pilot_active: 'Пилот активен',
   escalations: 'Эскалации',

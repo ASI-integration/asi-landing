@@ -168,8 +168,71 @@ describe('CRM automation loop', () => {
 
     expect(selectedWithoutProperty).toMatchObject({
       effectiveStatus: 'pilot_selected',
-      suggestedNextAction: 'Создать или заполнить объект',
+      suggestedNextAction: 'Предложить создать объект',
       nextActionHref: '/dashboard/properties',
+    });
+  });
+
+  it('moves selected pilot with object into setup and then guest_test', () => {
+    const incompleteSetup = createEmptySetupData();
+    incompleteSetup.basic.title = 'Апартаменты ASI';
+    const incompleteSummary = buildCrmPropertyAutomationSummary({
+      property,
+      masterCard,
+      setup: incompleteSetup,
+      media: [],
+    });
+
+    const creatingObject = deriveCrmAutomationSuggestion({
+      role: 'owner',
+      status: 'pilot_selected',
+      source: 'pilot_form',
+      contact: '@pilot_owner',
+      telegramDisplay: '@pilot_owner',
+      propertyId: 'prop-1',
+      explicitNextAction: '',
+      propertySummary: incompleteSummary,
+    });
+
+    expect(creatingObject).toMatchObject({
+      effectiveStatus: 'creating_object',
+      suggestedNextAction: 'Добавить фото объекта',
+      nextActionHref: '/dashboard/properties/prop-1/setup?step=photos',
+    });
+
+    const readySetup = createEmptySetupData();
+    readySetup.basic.title = 'Апартаменты ASI';
+    readySetup.basic.city = 'Москва';
+    readySetup.address.line = 'Тверская, 1';
+    readySetup.checkInOut.checkInTime = '15:00';
+    readySetup.checkInOut.checkOutTime = '12:00';
+    readySetup.checkInOut.checkInInstructions = 'Ключи в сейфе.';
+    readySetup.wifi.wifiName = 'ASI';
+    readySetup.wifi.wifiPassword = 'secret';
+    readySetup.wifi.entryInstructions = 'Вход со двора.';
+
+    const readySummary = buildCrmPropertyAutomationSummary({
+      property: { ...property, address: 'Тверская, 1' },
+      masterCard,
+      setup: readySetup,
+      media: [photo],
+    });
+
+    const readyObject = deriveCrmAutomationSuggestion({
+      role: 'owner',
+      status: 'pilot_selected',
+      source: 'pilot_form',
+      contact: '@pilot_owner',
+      telegramDisplay: '@pilot_owner',
+      propertyId: 'prop-1',
+      explicitNextAction: '',
+      propertySummary: readySummary,
+    });
+
+    expect(readyObject).toMatchObject({
+      effectiveStatus: 'object_filled',
+      suggestedNextAction: 'Запустить guest_test',
+      nextActionHref: expect.stringContaining('guest_test_prop-1'),
     });
   });
 });

@@ -10,6 +10,7 @@ import type {
   CrmContactRow,
   CrmContactViewModel,
   CrmEventRow,
+  CrmStatus,
   RecordCrmEventInput,
   UpdateCrmContactInput,
   UpsertCrmFromTelegramInput,
@@ -180,6 +181,24 @@ function shouldKeepExistingStatus(existing: CrmContactRow, nextStatus: string | 
 
 function shouldKeepExistingSource(existing: CrmContactRow, nextSource: string | null | undefined): boolean {
   return existing.source === 'pilot_form' && nextSource === 'telegram';
+}
+
+async function normalizeContactWithFreshEvents(row: CrmContactRow): Promise<CrmContactViewModel> {
+  const { data: events, error: eventsError } = await supabase
+    .from('crm_events')
+    .select(EVENT_SELECT)
+    .eq('contact_id', row.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (eventsError) throw eventsError;
+
+  const propertiesById = await fetchCrmPropertySummaries(row.property_id ? [row.property_id] : []);
+  return normalizeCrmContactRow(
+    row,
+    (events ?? []) as CrmEventRow[],
+    row.property_id ? propertiesById.get(row.property_id) ?? null : null,
+  );
 }
 
 async function findContactByTelegram(input: {
@@ -428,20 +447,141 @@ export async function updateCrmContact(
   if (error) throw error;
   if (!data) return null;
 
-  const row = data as CrmContactRow;
-  const { data: events } = await supabase
-    .from('crm_events')
-    .select(EVENT_SELECT)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  return normalizeContactWithFreshEvents(data as CrmContactRow);
+}
 
-  const propertiesById = await fetchCrmPropertySummaries(row.property_id ? [row.property_id] : []);
-  return normalizeCrmContactRow(
-    row,
-    (events ?? []) as CrmEventRow[],
-    row.property_id ? propertiesById.get(row.property_id) ?? null : null,
-  );
+export type PilotCrmDecision = 'select' | 'waitlist' | 'not_fit';
+
+const PILOT_DECISION_CONFIG: Record<PilotCrmDecision, {
+  status: CrmStatus;
+  nextAction: string;
+  eventType: 'pilot_selected' | 'status_change';
+  messageText: string;
+}> = {
+  select: {
+    status: 'pilot_selected',
+    nextAction: 'Предложить создать объект',
+    eventType: 'pilot_selected',
+    messageText: 'Кандидат выбран в пилот ASI. Следующий шаг: предложить создать объект.',
+  },
+  waitlist: {
+    status: 'pilot_waitlist',
+    nextAction: 'Вернуться к кандидату, когда появится место в пилоте',
+    eventType: 'status_change',
+    messageText: 'Кандидат перенесен в лист ожидания пилота.',
+  },
+  not_fit: {
+    status: 'not_fit',
+    nextAction: '',
+    eventType: 'status_change',
+    messageText: 'Кандидат сейчас не подходит для пилота.',
+  },
+};
+
+export async function applyPilotCrmDecision(
+  contactId: string,
+  decision: PilotCrmDecision,
+): Promise<CrmContactViewModel | null> {
+  const config = PILOT_DECISION_CONFIG[decision];
+  const now = nowIso();
+
+  const { data: existing, error: existingError } = await supabase
+    .from('crm_contacts')
+    .select(CONTACT_SELECT)
+    .eq('id', contactId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existing) return null;
+
+  const row = existing as CrmContactRow;
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .update({
+      status: config.status,
+      next_action: config.nextAction,
+      awaiting_reply: false,
+      updated_at: now,
+      last_activity_at: now,
+    })
+    .eq('id', contactId)
+    .select(CONTACT_SELECT)
+    .single();
+
+  if (error) throw error;
+
+  const { error: eventError } = await supabase.from('crm_events').insert({
+    contact_id: contactId,
+    event_type: config.eventType,
+    message_text: config.messageText,
+    property_id: row.property_id,
+    metadata: {
+      previous_status: row.status,
+      next_status: config.status,
+      next_action: config.nextAction,
+      source: 'crm_pilot_decision',
+      telegram_next_step_prepared: Boolean(row.telegram_chat_id || row.telegram_username || row.contact),
+    },
+    created_at: now,
+  });
+  if (eventError) throw eventError;
+
+  return normalizeContactWithFreshEvents(data as CrmContactRow);
+}
+
+export async function linkPilotCrmContactToProperty(input: {
+  contactId?: string | null;
+  propertyId: string;
+}): Promise<CrmContactViewModel | null> {
+  const contactId = input.contactId?.trim();
+  const propertyId = input.propertyId.trim();
+  if (!contactId || !propertyId) return null;
+
+  const { data: existing, error: existingError } = await supabase
+    .from('crm_contacts')
+    .select(CONTACT_SELECT)
+    .eq('id', contactId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (!existing) return null;
+
+  const row = existing as CrmContactRow;
+  if (row.status !== 'pilot_selected') return null;
+
+  const now = nowIso();
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .update({
+      status: 'creating_object',
+      property_id: propertyId,
+      next_action: '',
+      awaiting_reply: false,
+      updated_at: now,
+      last_activity_at: now,
+    })
+    .eq('id', contactId)
+    .select(CONTACT_SELECT)
+    .single();
+
+  if (error) throw error;
+
+  const { error: eventError } = await supabase.from('crm_events').insert({
+    contact_id: contactId,
+    event_type: 'status_change',
+    message_text: 'Создан первый объект для выбранного участника пилота. Следующий шаг: заполнить объект.',
+    property_id: propertyId,
+    metadata: {
+      previous_status: row.status,
+      next_status: 'creating_object',
+      source: 'property_created',
+      property_id: propertyId,
+    },
+    created_at: now,
+  });
+  if (eventError) throw eventError;
+
+  return normalizeContactWithFreshEvents(data as CrmContactRow);
 }
 
 export async function upsertCrmContactFromTelegram(

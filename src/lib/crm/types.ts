@@ -33,6 +33,7 @@ export const CRM_EVENT_TYPES = [
   'role_selected_guest',
   'guest_test_started',
   'pilot_application_submitted',
+  'pilot_selected',
   'status_change',
   'note',
 ] as const;
@@ -43,6 +44,7 @@ export type CrmFilter =
   | 'new'
   | 'needs_reaction'
   | 'pilot_candidates'
+  | 'pilot_selected'
   | 'testing'
   | 'pilot_active'
   | 'escalations';

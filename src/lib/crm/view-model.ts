@@ -248,6 +248,11 @@ export function matchesCrmFilter(contact: CrmContactViewModel, filter: CrmFilter
         contact.status === 'pilot_waitlist' ||
         contact.source === 'pilot_form'
       );
+    case 'pilot_selected':
+      return (
+        contact.status === 'pilot_selected' ||
+        contact.recentEvents.some((event) => event.eventType === 'pilot_selected')
+      );
     case 'testing':
       return contact.effectiveStatus === 'testing_communication' || contact.source === 'test';
     case 'pilot_active':

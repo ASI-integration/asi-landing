@@ -197,6 +197,10 @@ export function deriveCrmAutomationSuggestion(input: {
 
   if (hasOpenReaction) {
     effectiveStatus = 'needs_reaction';
+  } else if (input.status === 'pilot_selected' && input.propertySummary?.isOperationallyReady) {
+    effectiveStatus = 'object_filled';
+  } else if (input.status === 'pilot_selected' && input.propertyId) {
+    effectiveStatus = 'creating_object';
   } else if (input.status === 'pilot_candidate' || input.status === 'pilot_selected' || input.status === 'pilot_waitlist') {
     effectiveStatus = input.status;
   } else if (input.status === 'testing_communication' || input.source === 'test') {
@@ -266,7 +270,7 @@ export function deriveCrmAutomationSuggestion(input: {
   if (input.status === 'pilot_selected' && !input.propertyId) {
     return {
       effectiveStatus,
-      suggestedNextAction: 'Создать или заполнить объект',
+      suggestedNextAction: 'Предложить создать объект',
       nextActionHref: '/dashboard/properties',
       nextActionIsSuggested: true,
     };
@@ -311,20 +315,20 @@ export function deriveCrmAutomationSuggestion(input: {
     };
   }
 
+  if (input.propertySummary?.isOperationallyReady) {
+    return {
+      effectiveStatus,
+      suggestedNextAction: 'Запустить guest_test',
+      nextActionHref: input.propertySummary.guestTestHref,
+      nextActionIsSuggested: true,
+    };
+  }
+
   if (input.status === 'testing_communication' || input.source === 'test' || input.role === 'guest') {
     return {
       effectiveStatus,
       suggestedNextAction: 'Запустить тест гостя и проверить ответы ASI',
       nextActionHref: input.propertySummary?.guestTestHref ?? null,
-      nextActionIsSuggested: true,
-    };
-  }
-
-  if (input.status === 'pilot_selected' && input.propertySummary?.isOperationallyReady) {
-    return {
-      effectiveStatus,
-      suggestedNextAction: 'Запустить тест гостя',
-      nextActionHref: input.propertySummary.guestTestHref,
       nextActionIsSuggested: true,
     };
   }

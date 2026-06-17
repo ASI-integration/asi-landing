@@ -276,6 +276,33 @@ describe('Telegram routing layer', () => {
     );
   });
 
+  it('sends selected pilot owner to property creation without changing pilot source', async () => {
+    mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
+      source: 'pilot_form',
+      status: 'pilot_selected',
+      propertySummary: null,
+      nextAction: 'Предложить создать объект',
+    });
+
+    const result = await processTelegramRoutingUpdate(roleCallback('owner', 2015));
+
+    expect(mockUpsertCrmContactFromTelegram).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'owner',
+      source: 'telegram',
+      telegramUsername: 'guest_tester',
+      status: 'qualified',
+    }));
+    expect(result?.reply).toBe(
+      'Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\nhttps://asi-global.ru/dashboard/properties',
+    );
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      'Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\nhttps://asi-global.ru/dashboard/properties',
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
   it('offers guest_test when owner linked object is ready', async () => {
     mockUpsertCrmContactFromTelegram.mockResolvedValueOnce({
       propertySummary: {

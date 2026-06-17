@@ -30,11 +30,14 @@ type CrmMutationResponse = {
   error?: string;
 };
 
+type PilotDecision = 'select' | 'waitlist' | 'not_fit';
+
 const FILTERS: CrmFilter[] = [
   'all',
   'new',
   'needs_reaction',
   'pilot_candidates',
+  'pilot_selected',
   'testing',
   'pilot_active',
   'escalations',
@@ -154,6 +157,33 @@ export function CrmDashboardClient() {
       await load(filter);
     } catch {
       setError('Ошибка сети при сохранении');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePilotDecision(decision: PilotDecision) {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboard/crm', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selected.id,
+          pilotDecision: decision,
+        }),
+      });
+      const json = (await res.json()) as CrmMutationResponse;
+      if (!res.ok || !json.ok || !json.contact) {
+        setError(json.error ?? 'Не удалось обновить решение по пилоту');
+        return;
+      }
+      setSelectedId(json.contact.id);
+      await load(filter);
+    } catch {
+      setError('Ошибка сети при обновлении решения по пилоту');
     } finally {
       setSaving(false);
     }
@@ -453,6 +483,79 @@ export function CrmDashboardClient() {
                       </dd>
                     </div>
                   </dl>
+                  {selected.status === 'pilot_candidate' && (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handlePilotDecision('select')}
+                        disabled={saving}
+                        className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                      >
+                        Выбрать в пилот
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePilotDecision('waitlist')}
+                        disabled={saving}
+                        className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-60"
+                      >
+                        В лист ожидания
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePilotDecision('not_fit')}
+                        disabled={saving}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        Не подходит сейчас
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!selected.pilotApplication && selected.status === 'pilot_candidate' && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-950">
+                  <h3 className="font-semibold">Решение по пилоту</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handlePilotDecision('select')}
+                      disabled={saving}
+                      className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                    >
+                      Выбрать в пилот
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handlePilotDecision('waitlist')}
+                      disabled={saving}
+                      className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-60"
+                    >
+                      В лист ожидания
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handlePilotDecision('not_fit')}
+                      disabled={saving}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Не подходит сейчас
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selected.status === 'pilot_selected' && !selected.propertyId && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm text-blue-950">
+                  <h3 className="font-semibold">Следующий шаг: создать объект</h3>
+                  <p className="mt-1">Создайте первый объект и заполните базовые данные.</p>
+                  <Link
+                    href={`/dashboard/properties?crmContactId=${encodeURIComponent(selected.id)}`}
+                    className="mt-2 inline-flex text-blue-700 hover:underline"
+                  >
+                    Перейти к объектам
+                  </Link>
                 </div>
               )}
 
@@ -543,7 +646,15 @@ export function CrmDashboardClient() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-3 text-emerald-700">Паспорт объекта готов для автопилота.</p>
+                    <div className="mt-3 space-y-2 text-emerald-800">
+                      <p>Паспорт объекта готов для автопилота.</p>
+                      <p className="font-medium text-slate-900">
+                        Следующий шаг: запустить guest_test
+                      </p>
+                      <code className="block rounded-md bg-white px-3 py-2 text-slate-800">
+                        /guest_test {selected.propertySummary.id}
+                      </code>
+                    </div>
                   )}
                 </div>
               )}

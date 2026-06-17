@@ -55,6 +55,7 @@ const MISSING_DATA_GUEST_FALLBACK =
   'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
 const RESET_TEST_STATE_REPLY = 'Тестовое состояние сброшено. Отправьте /start, чтобы выбрать роль заново.';
+const DASHBOARD_PROPERTIES_URL = 'https://asi-global.ru/dashboard/properties';
 
 type ParsedRoutingCallback =
   | { kind: 'role'; role: Exclude<TelegramRoutingRole, 'unknown'> }
@@ -155,8 +156,12 @@ function buildOwnerNextStepReply(contact: CrmContactViewModel | null): string {
   const base = 'Понял, вы владелец или управляющий.';
   const property = contact?.propertySummary ?? null;
 
+  if (contact?.status === 'pilot_selected' && !property) {
+    return `Вы выбраны в пилот ASI. Следующий шаг: создать первый объект в личном кабинете.\n${DASHBOARD_PROPERTIES_URL}`;
+  }
+
   if (!property) {
-    return `${base}\n\nСледующий шаг: создайте объект в личном кабинете или выберите уже созданный.\n${appHref('/dashboard/properties')}`;
+    return `${base}\n\nСледующий шаг: создайте объект в личном кабинете или выберите уже созданный.\n${DASHBOARD_PROPERTIES_URL}`;
   }
 
   const firstMissing = property.missingOperationalItems[0];
