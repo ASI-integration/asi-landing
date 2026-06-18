@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PilotPropertyOnboardingSection } from '@/components/PilotPropertyOnboardingSection';
-import { TgIcon } from '@/components/TgIcon';
+import { GuestTestLaunchCta } from '@/components/dashboard/GuestTestLaunchCta';
 import { ObjectGuestReadinessBlock } from '@/components/dashboard/ObjectGuestReadinessBlock';
 import type { GuestTestFlowState } from '@/lib/crm/guest-test-flow';
 import type { OpsProperty, PropertyMasterCard, PropertyMedia } from '@/lib/ops-foundation/types';
@@ -145,6 +145,8 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [extrasWarning, setExtrasWarning] = useState(false);
   const [guestTestFlow, setGuestTestFlow] = useState<GuestTestFlowState | null>(null);
+  const [guestTestLaunchMessage, setGuestTestLaunchMessage] = useState<string | null>(null);
+  const [guestTestLaunchError, setGuestTestLaunchError] = useState<string | null>(null);
 
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoTitle, setPhotoTitle] = useState('');
@@ -975,8 +977,21 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
           readiness={guestReadiness}
           guestTestFlow={guestTestFlow}
           onGoToStep={(step) => goToStep(normalizeStepId(step))}
+          onGuestTestFlowChange={setGuestTestFlow}
+          onLaunchMessage={setGuestTestLaunchMessage}
+          onLaunchError={setGuestTestLaunchError}
           showPrimaryCta={readinessPageUi.readinessBlockShowPrimaryCta}
         />
+        {guestTestLaunchMessage ? (
+          <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+            {guestTestLaunchMessage}
+          </p>
+        ) : null}
+        {guestTestLaunchError ? (
+          <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {guestTestLaunchError}
+          </p>
+        ) : null}
         <div className="mt-6 border-t border-slate-100 pt-5">
           <h3 className="text-sm font-semibold text-slate-900">Подготовка карточек каналов</h3>
           <ul className="mt-3 space-y-2">
@@ -1031,15 +1046,15 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
                 {readinessPageUi.stickyPrimaryCta.label}
               </button>
             ) : (
-              <a
-                href={readinessPageUi.stickyPrimaryCta.href ?? '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${primaryBtn} gap-2`}
-              >
-                <TgIcon className="h-5 w-5 shrink-0" />
-                {readinessPageUi.stickyPrimaryCta.label}
-              </a>
+              <GuestTestLaunchCta
+                propertyId={propertyId}
+                nextStep={readinessPageUi.nextStep}
+                cta={readinessPageUi.stickyPrimaryCta}
+                onGuestTestFlowChange={setGuestTestFlow}
+                onLaunchMessage={setGuestTestLaunchMessage}
+                onLaunchError={setGuestTestLaunchError}
+                className={primaryBtn}
+              />
             )
           ) : null}
         </div>

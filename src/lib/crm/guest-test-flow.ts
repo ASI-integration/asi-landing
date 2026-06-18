@@ -1,6 +1,10 @@
 import { patchTelegramRoutingSession } from '@/lib/communication/telegram-routing-session';
 import { patchTelegramIdentityMemory } from '@/lib/communication/telegram-identity-memory';
 import { getAsiFeedbackBotUsername } from '@/config/publicTelegram';
+import {
+  buildGuestTestCommand,
+  buildGuestTestDeepLink,
+} from '@/lib/property-setup/object-guest-readiness';
 import { supabase } from '@/lib/supabase';
 import { replyToTelegram } from '@/lib/telegram';
 import type { CrmContactRow } from './types';
@@ -18,6 +22,16 @@ export type GuestTestFlowState = {
   guestTestReadyRecorded: boolean;
   ownerContactId: string | null;
   telegramBotUrl: string;
+};
+
+export type GuestTestLaunchMode = 'dispatched' | 'deep_link';
+
+export type LaunchGuestTestResult = {
+  mode: GuestTestLaunchMode;
+  deepLink: string;
+  guestTestCommand: string;
+  telegramBotUrl: string;
+  guestTestFlow: GuestTestFlowState;
 };
 
 function chatIdNumber(value: string | null | undefined): number | null {
@@ -84,7 +98,7 @@ export async function dispatchGuestTestToChat(input: {
   telegramUsername?: string | null;
   firstName?: string | null;
   propertyId: string;
-  source: 'auto_ready' | 'telegram_start' | 'telegram_command';
+  source: 'auto_ready' | 'telegram_start' | 'telegram_command' | 'dashboard_launch';
 }): Promise<void> {
   const propertyId = input.propertyId.trim();
   patchTelegramRoutingSession(input.chatId, {
@@ -194,6 +208,54 @@ async function recordGuestTestReadyForContacts(propertyId: string, contacts: Crm
       awaitingReply: false,
     });
   }
+}
+
+export async function launchGuestTestForProperty(propertyId: string): Promise<LaunchGuestTestResult> {
+  const id = propertyId.trim();
+  const deepLink = buildGuestTestDeepLink(id);
+  const guestTestCommand = buildGuestTestCommand(id);
+  const state = await loadGuestTestFlowState(id);
+  const contacts = await listOwnerContactsForProperty(id);
+
+  if (contacts.length > 0) {
+    await recordGuestTestReadyForContacts(id, contacts);
+  }
+
+  const linkedContact = contacts.find((contact) => chatIdNumber(contact.telegram_chat_id));
+  const chatId = chatIdNumber(linkedContact?.telegram_chat_id);
+
+  if (linkedContact && chatId != null && linkedContact.telegram_user_id?.trim()) {
+    await dispatchGuestTestToChat({
+      chatId,
+      telegramUserId: linkedContact.telegram_user_id,
+      telegramUsername: linkedContact.telegram_username,
+      firstName: linkedContact.name,
+      propertyId: id,
+      source: 'dashboard_launch',
+    });
+
+    await updateCrmContact(linkedContact.id, {
+      status: 'testing_communication',
+      nextAction: 'Проверить результат теста гостя',
+      awaitingReply: false,
+    });
+
+    return {
+      mode: 'dispatched',
+      deepLink,
+      guestTestCommand,
+      telegramBotUrl: state.telegramBotUrl,
+      guestTestFlow: await loadGuestTestFlowState(id),
+    };
+  }
+
+  return {
+    mode: 'deep_link',
+    deepLink,
+    guestTestCommand,
+    telegramBotUrl: state.telegramBotUrl,
+    guestTestFlow: await loadGuestTestFlowState(id),
+  };
 }
 
 export async function syncGuestTestOnPropertyReady(propertyId: string): Promise<GuestTestFlowState> {

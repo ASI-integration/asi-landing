@@ -1,14 +1,17 @@
 'use client';
 
-import { TgIcon } from '@/components/TgIcon';
 import type { GuestTestFlowState } from '@/lib/crm/guest-test-flow';
 import type { ObjectGuestReadiness } from '@/lib/property-setup/object-guest-readiness';
 import { resolveSetupNextStep } from '@/lib/property-setup/setup-next-step';
+import { GuestTestLaunchCta, GuestTestLaunchFallback } from '@/components/dashboard/GuestTestLaunchCta';
 
 type ObjectGuestReadinessBlockProps = {
   readiness: ObjectGuestReadiness;
   guestTestFlow?: GuestTestFlowState | null;
   onGoToStep: (step: string) => void;
+  onGuestTestFlowChange?: (flow: GuestTestFlowState) => void;
+  onLaunchMessage?: (message: string | null) => void;
+  onLaunchError?: (message: string | null) => void;
   compact?: boolean;
   showPrimaryCta?: boolean;
 };
@@ -17,6 +20,9 @@ export function ObjectGuestReadinessBlock({
   readiness,
   guestTestFlow = null,
   onGoToStep,
+  onGuestTestFlowChange,
+  onLaunchMessage,
+  onLaunchError,
   compact = false,
   showPrimaryCta = true,
 }: ObjectGuestReadinessBlockProps) {
@@ -76,7 +82,7 @@ export function ObjectGuestReadinessBlock({
       ) : null}
 
       {showPrimaryCta ? (
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           {nextStep.primaryCta.kind === 'setup_step' ? (
             <button
               type="button"
@@ -86,26 +92,31 @@ export function ObjectGuestReadinessBlock({
               {nextStep.primaryCta.label}
             </button>
           ) : (
-            <a
-              href={nextStep.primaryCta.href ?? '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              <TgIcon className="h-5 w-5 shrink-0" />
-              {nextStep.primaryCta.label}
-            </a>
+            <GuestTestLaunchCta
+              propertyId={readiness.propertyId}
+              nextStep={nextStep}
+              cta={nextStep.primaryCta}
+              onGuestTestFlowChange={onGuestTestFlowChange}
+              onLaunchMessage={onLaunchMessage}
+              onLaunchError={onLaunchError}
+            />
           )}
+          {nextStep.secondaryCta ? (
+            <GuestTestLaunchCta
+              propertyId={readiness.propertyId}
+              nextStep={nextStep}
+              cta={nextStep.secondaryCta}
+              onGuestTestFlowChange={onGuestTestFlowChange}
+              onLaunchMessage={onLaunchMessage}
+              onLaunchError={onLaunchError}
+              variant="secondary"
+            />
+          ) : null}
         </div>
       ) : null}
 
       {nextStep.showTelegramFallback && nextStep.guestTestCommand ? (
-        <p className="mt-3 text-xs text-emerald-800">
-          Запасной вариант:{' '}
-          <code className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-950">
-            {nextStep.guestTestCommand}
-          </code>
-        </p>
+        <GuestTestLaunchFallback guestTestCommand={nextStep.guestTestCommand} />
       ) : null}
     </section>
   );

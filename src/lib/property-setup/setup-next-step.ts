@@ -3,11 +3,10 @@ import { getAsiFeedbackBotUsername } from '@/config/publicTelegram';
 
 export type SetupNextStepPhase =
   | 'filling'
-  | 'connect_telegram'
-  | 'telegram_sent'
-  | 'check_result';
+  | 'launch_guest_test'
+  | 'guest_test_started';
 
-export type SetupNextStepCtaKind = 'setup_step' | 'external';
+export type SetupNextStepCtaKind = 'setup_step' | 'external' | 'launch_guest_test';
 
 export type SetupNextStepCta = {
   kind: SetupNextStepCtaKind;
@@ -20,6 +19,7 @@ export type SetupNextStepModel = {
   phase: SetupNextStepPhase;
   statusMessage: string;
   primaryCta: SetupNextStepCta;
+  secondaryCta: SetupNextStepCta | null;
   showTelegramFallback: boolean;
   guestTestCommand: string | null;
   hidePilotTelegramCta: boolean;
@@ -50,6 +50,7 @@ export function resolveSetupNextStep(input: {
         href: next?.actionHref ?? null,
         setupStep: next?.setupStep ?? 'basic',
       },
+      secondaryCta: null,
       showTelegramFallback: false,
       guestTestCommand: null,
       hidePilotTelegramCta: onSetupPage,
@@ -59,12 +60,18 @@ export function resolveSetupNextStep(input: {
 
   if (input.guestTestDispatched) {
     return {
-      phase: input.telegramLinked ? 'telegram_sent' : 'check_result',
-      statusMessage: 'Объект готов. Тест гостя отправлен в Telegram.',
+      phase: 'guest_test_started',
+      statusMessage: 'Тест гостя запущен. Откройте Telegram и задайте вопрос по объекту.',
       primaryCta: {
         kind: 'external',
         label: 'Открыть Telegram',
         href: buildTelegramBotUrl(),
+        setupStep: null,
+      },
+      secondaryCta: {
+        kind: 'launch_guest_test',
+        label: 'Перезапустить тест гостя в Telegram',
+        href: null,
         setupStep: null,
       },
       showTelegramFallback: true,
@@ -75,14 +82,15 @@ export function resolveSetupNextStep(input: {
   }
 
   return {
-    phase: 'connect_telegram',
-    statusMessage: 'Объект готов. Подключите Telegram, чтобы запустить тест гостя.',
+    phase: 'launch_guest_test',
+    statusMessage: 'Объект готов. Запустите тест гостя в Telegram.',
     primaryCta: {
-      kind: 'external',
-      label: 'Подключить Telegram и запустить тест',
-      href: readiness.guestTestDeepLink,
+      kind: 'launch_guest_test',
+      label: 'Запустить тест гостя в Telegram',
+      href: null,
       setupStep: null,
     },
+    secondaryCta: null,
     showTelegramFallback: true,
     guestTestCommand: readiness.guestTestCommand,
     hidePilotTelegramCta: true,

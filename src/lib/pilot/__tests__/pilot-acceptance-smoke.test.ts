@@ -358,8 +358,8 @@ describe('pilot acceptance smoke v1', () => {
         }),
       ).toEqual({ completedStepCount: 10, totalStepCount: 10 });
       expect(ui.primaryCtaPlacements).toEqual(['sticky']);
-      expect(ui.stickyPrimaryCta?.label).toBe('Подключить Telegram и запустить тест');
-      expect(ui.stickyPrimaryCta?.href).toContain(`guest_test_${PROPERTY_ID}`);
+      expect(ui.stickyPrimaryCta?.label).toBe('Запустить тест гостя в Telegram');
+      expect(ui.stickyPrimaryCta?.kind).toBe('launch_guest_test');
 
       const setupPath = `/dashboard/properties/${PROPERTY_ID}/setup?step=readiness`;
       expect(toAppPath(setupPath)).toBe(setupPath);

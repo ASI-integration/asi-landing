@@ -104,9 +104,9 @@ describe('setup next step flow', () => {
     });
 
     expect(readiness.isReady).toBe(true);
-    expect(step.phase).toBe('connect_telegram');
-    expect(step.primaryCta.label).toBe('Подключить Telegram и запустить тест');
-    expect(step.primaryCta.href).toContain('guest_test_prop-1');
+    expect(step.phase).toBe('launch_guest_test');
+    expect(step.primaryCta.label).toBe('Запустить тест гостя в Telegram');
+    expect(step.primaryCta.kind).toBe('launch_guest_test');
     expect(step.hidePilotTelegramCta).toBe(true);
     expect(step.showTelegramFallback).toBe(true);
     expect(step.guestTestCommand).toBe('/guest_test prop-1');
@@ -150,9 +150,9 @@ describe('setup next step flow', () => {
       onSetupPage: true,
     });
 
-    expect(step.phase).toBe('telegram_sent');
-    expect(step.statusMessage).toContain('отправлен в Telegram');
+    expect(step.phase).toBe('guest_test_started');
+    expect(step.statusMessage).toContain('Тест гостя запущен');
     expect(step.primaryCta.label).toBe('Открыть Telegram');
-    expect(step.primaryCta.href).toMatch(/^https:\/\/t\.me\//);
+    expect(step.secondaryCta?.label).toBe('Перезапустить тест гостя в Telegram');
   });
 });

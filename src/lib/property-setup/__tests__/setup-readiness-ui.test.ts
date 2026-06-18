@@ -180,7 +180,7 @@ describe('setup readiness page ui', () => {
     expect(ui.primaryCtaPlacements).toEqual(['sticky']);
     expect(ui.readinessBlockShowPrimaryCta).toBe(false);
     expect(ui.stickyShowsPrimaryCta).toBe(true);
-    expect(ui.stickyPrimaryCta?.label).toBe('Подключить Telegram и запустить тест');
+    expect(ui.stickyPrimaryCta?.label).toBe('Запустить тест гостя в Telegram');
   });
 
   it('does not duplicate readiness block on readiness step', () => {
@@ -226,8 +226,7 @@ describe('setup readiness page ui', () => {
       guestTestDispatched: false,
     });
 
-    expect(ui.stickyPrimaryCta?.kind).toBe('external');
-    expect(ui.stickyPrimaryCta?.href).toContain('guest_test_prop-1');
+    expect(ui.stickyPrimaryCta?.kind).toBe('launch_guest_test');
   });
 
   it('shows open telegram sticky CTA after guest test is dispatched', () => {
@@ -239,6 +238,6 @@ describe('setup readiness page ui', () => {
     });
 
     expect(ui.stickyPrimaryCta?.label).toBe('Открыть Telegram');
-    expect(ui.stickyPrimaryCta?.href).toMatch(/^https:\/\/t\.me\//);
+    expect(ui.stickyPrimaryCta?.kind).toBe('external');
   });
 });
