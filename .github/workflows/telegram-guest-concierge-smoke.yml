@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: Release SHA to test (defaults to current production symlink)
+        description: Optional production release SHA to verify on VPS (/api/version). Smoke assets always come from the workflow branch.
         required: false
         type: string
 
@@ -20,7 +20,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: ${{ inputs.sha || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -40,6 +39,13 @@ jobs:
           REMOTE_PORT="${VPS_PORT:-22}"
           REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
           CASES_FILE="tests/guest-concierge-llm-live-cases.ru.json"
+          if [[ ! -f "$CASES_FILE" ]]; then
+            echo "Missing smoke cases file: $CASES_FILE (checkout ref=${GITHUB_REF}, sha=${GITHUB_SHA})"
+            exit 1
+          fi
+          if [[ -n "${TEST_SHA:-}" ]]; then
+            echo "Requested production release SHA (VPS /api/version check only): ${TEST_SHA}"
+          fi
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
