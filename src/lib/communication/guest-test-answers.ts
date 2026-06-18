@@ -27,9 +27,87 @@ export type GuestTestAnswerResult = {
   needsOperator: boolean;
 };
 
+export type GuestTestAnswerResolutionSource = {
+  table: string;
+  field: string;
+  found: boolean;
+};
+
+export const ASI_GLOBAL_SMOKING_REPLY =
+  'Курить в квартире нельзя. Спасибо, что помогаете сохранить объект чистым и комфортным для следующих гостей.';
+
 function textOrNull(value: unknown): string | null {
   const text = String(value ?? '').trim();
   return text ? text : null;
+}
+
+function hasGuestTestFieldValue(value: unknown): boolean {
+  return textOrNull(value) !== null;
+}
+
+function composeGuestTestDirectionsReplyRu(property: TelegramPropertyObjectV1 | null | undefined): string | null {
+  if (!property) return null;
+  const address = textOrNull(property.address);
+  const directions = textOrNull(property.directions_text);
+  if (!address && !directions) return null;
+  const parts: string[] = [];
+  if (address) parts.push(`Адрес: ${address}.`);
+  if (directions) parts.push(`Как добраться: ${directions}`);
+  if (!parts.length) return null;
+  return sanitizeGuestFacingReply(parts.join(' '));
+}
+
+export function logGuestTestAnswerResolution(input: {
+  propertyId?: string | null;
+  questionType: GuestTestQuestionKind;
+  source: GuestTestAnswerResolutionSource | null;
+  outcome: GuestTestQuestionOutcome;
+}): void {
+  console.info('[guest_test] answer_resolution', {
+    propertyId: input.propertyId ?? null,
+    questionType: input.questionType,
+    sourceTable: input.source?.table ?? null,
+    sourceField: input.source?.field ?? null,
+    found: input.source?.found ?? false,
+    outcome: input.outcome,
+  });
+}
+
+function resolveAddressSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
+  if (textOrNull(property?.address)) {
+    return { table: 'properties/property_setup_profiles', field: 'address', found: true };
+  }
+  if (textOrNull(property?.directions_text)) {
+    return { table: 'property_setup_profiles/property_master_cards', field: 'directions_text', found: true };
+  }
+  return { table: 'properties/property_setup_profiles', field: 'address', found: false };
+}
+
+function resolveWifiSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
+  if (hasGuestTestFieldValue(property?.wifi_name)) {
+    return { table: 'property_setup_profiles/property_master_cards', field: 'wifi_name', found: true };
+  }
+  if (hasGuestTestFieldValue(property?.wifi_password)) {
+    return { table: 'property_setup_profiles/property_master_cards', field: 'wifi_password', found: true };
+  }
+  return { table: 'property_setup_profiles/property_master_cards', field: 'wifi_name', found: false };
+}
+
+function resolveHouseRulesSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
+  if (textOrNull(property?.house_rules_text)) {
+    return { table: 'property_setup_profiles/property_master_cards', field: 'house_rules_text', found: true };
+  }
+  return { table: 'property_setup_profiles/property_master_cards', field: 'house_rules_text', found: false };
+}
+
+function resolveCheckinSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
+  if (textOrNull(property?.check_in_text)) {
+    return { table: 'property_setup_profiles/property_master_cards', field: 'check_in_text', found: true };
+  }
+  if (textOrNull(property?.checkout_time)) {
+    return { table: 'property_setup_profiles', field: 'checkout_time', found: true };
+  }
+  return { table: 'property_setup_profiles/property_master_cards', field: 'check_in_text', found: false };
 }
 
 export function classifyGuestTestQuestion(messageText: string): GuestTestQuestionKind {
@@ -37,7 +115,8 @@ export function classifyGuestTestQuestion(messageText: string): GuestTestQuestio
 
   if (/адрес|как добраться|где наход|как найти/i.test(lower)) return 'address';
   if (/wi-?fi|вай-?фай|парол.*сет|интернет/i.test(lower)) return 'wifi';
-  if (/курить|курени|табач|сигарет/i.test(lower)) return 'smoking';
+  if (/курить|курени|табач|сигарет|вейп|vape|кальян/i.test(lower)) return 'smoking';
+  if (/балкон|окн[аоу]?\b/i.test(lower) && /кур|вейп|vape|кальян|сигарет|табач/i.test(lower)) return 'smoking';
   if (/правил|тишин|животн|шум/i.test(lower)) return 'house_rules';
   if (/заезд|выезд|check.?in|check.?out|время.*заезд/i.test(lower)) return 'checkin';
   if (/парков/i.test(lower)) return 'parking';
@@ -50,19 +129,6 @@ export function classifyGuestTestQuestion(messageText: string): GuestTestQuestio
 function composeHouseRulesReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
   const rules = textOrNull(property?.house_rules_text);
   return rules ? sanitizeGuestFacingReply(`Правила проживания: ${rules}`) : null;
-}
-
-function composeSmokingReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
-  const rules = textOrNull(property?.house_rules_text);
-  if (!rules) return null;
-  const lower = rules.toLowerCase();
-  if (/запрещ|нельзя|не кур/i.test(lower)) {
-    return sanitizeGuestFacingReply('Курение в объекте запрещено.');
-  }
-  if (/можно кур|разреш/i.test(lower)) {
-    return sanitizeGuestFacingReply('Курение разрешено по правилам объекта.');
-  }
-  return composeHouseRulesReply(property);
 }
 
 function composeCheckinReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
@@ -117,75 +183,132 @@ export function answerGuestTestQuestion(input: {
   const property = input.property;
 
   if (intent === 'operator') {
-    return {
+    const result: GuestTestAnswerResult = {
       outcome: 'operator_followup_required',
       reply: OPERATOR_HANDOFF_REPLY,
       intent,
       missingFields: [],
       needsOperator: true,
     };
+    logGuestTestAnswerResolution({
+      propertyId: input.propertyId,
+      questionType: intent,
+      source: null,
+      outcome: result.outcome,
+    });
+    return result;
+  }
+
+  if (intent === 'smoking') {
+    const result: GuestTestAnswerResult = {
+      outcome: 'answered_from_property_data',
+      reply: sanitizeGuestFacingReply(ASI_GLOBAL_SMOKING_REPLY) ?? ASI_GLOBAL_SMOKING_REPLY,
+      intent,
+      missingFields: [],
+      needsOperator: false,
+    };
+    logGuestTestAnswerResolution({
+      propertyId: input.propertyId,
+      questionType: intent,
+      source: { table: 'asi_global_policy', field: 'smoking_ban', found: true },
+      outcome: result.outcome,
+    });
+    return result;
   }
 
   let reply: string | null = null;
   let missingFields: string[] = [];
+  let source: GuestTestAnswerResolutionSource | null = null;
 
   switch (intent) {
     case 'address':
-      reply = composeGuestDirectionsReplyRu(property);
+      reply = composeGuestTestDirectionsReplyRu(property);
+      source = resolveAddressSource(property);
       if (!reply) missingFields = ['object.address', 'object.directionsText'];
       break;
     case 'wifi':
       reply = composeGuestWifiReplyRu({ property, verified: true });
-      if (!property?.wifi_name && !property?.wifi_password) {
+      source = resolveWifiSource(property);
+      if (!hasGuestTestFieldValue(property?.wifi_name) && !hasGuestTestFieldValue(property?.wifi_password)) {
         missingFields = ['object.wifiName', 'object.wifiPassword'];
         reply = null;
+        source = { table: 'property_setup_profiles/property_master_cards', field: 'wifi_name', found: false };
       }
-      break;
-    case 'smoking':
-      reply = composeSmokingReply(property);
-      if (!reply) missingFields = ['object.houseRules'];
       break;
     case 'house_rules':
       reply = composeHouseRulesReply(property);
+      source = resolveHouseRulesSource(property);
       if (!reply) missingFields = ['object.houseRules'];
       break;
     case 'checkin':
       reply = composeCheckinReply(property) ?? composeGuestCheckoutReplyRu(property);
+      source = resolveCheckinSource(property);
       if (!reply) missingFields = ['object.check_in_text', 'booking.checkoutTime'];
       break;
     case 'parking':
       reply = property?.parking_text ? sanitizeGuestFacingReply(`Парковка: ${property.parking_text}`) : null;
+      source = {
+        table: 'property_master_cards',
+        field: 'parking_text',
+        found: Boolean(property?.parking_text),
+      };
       if (!reply) missingFields = ['object.parkingText'];
       break;
     case 'description':
       reply = composeDescriptionReply(property);
+      source = {
+        table: 'properties/property_setup_profiles',
+        field: 'object_name/address',
+        found: Boolean(textOrNull(property?.object_name) || textOrNull(property?.address)),
+      };
       if (!reply) missingFields = ['object.name', 'object.address'];
       break;
     default:
-      return {
+      const operatorResult: GuestTestAnswerResult = {
         outcome: 'operator_followup_required',
         reply: OPERATOR_HANDOFF_REPLY,
         intent,
         missingFields: [],
         needsOperator: true,
       };
+      logGuestTestAnswerResolution({
+        propertyId: input.propertyId,
+        questionType: intent,
+        source: null,
+        outcome: operatorResult.outcome,
+      });
+      return operatorResult;
   }
 
   if (reply) {
-    return {
+    const result: GuestTestAnswerResult = {
       outcome: 'answered_from_property_data',
       reply,
       intent,
       missingFields: [],
       needsOperator: false,
     };
+    logGuestTestAnswerResolution({
+      propertyId: input.propertyId,
+      questionType: intent,
+      source,
+      outcome: result.outcome,
+    });
+    return result;
   }
 
-  return {
+  const result: GuestTestAnswerResult = {
     outcome: 'missing_data',
     reply: missingDataReply(missingFields, input.propertyId),
     intent,
     missingFields,
     needsOperator: false,
   };
+  logGuestTestAnswerResolution({
+    propertyId: input.propertyId,
+    questionType: intent,
+    source,
+    outcome: result.outcome,
+  });
+  return result;
 }

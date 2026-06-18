@@ -10,6 +10,7 @@ const mockDecideAutopilot = vi.fn();
 const mockLookupBooking = vi.fn();
 const mockResolveGuestContext = vi.fn();
 const mockLookupProperty = vi.fn();
+const mockLookupGuestTestProperty = vi.fn();
 const mockUpsertCrmContactFromTelegram = vi.fn();
 const mockRecordCrmCommunicationEvent = vi.fn();
 const mockRecordCrmEventFromOwnerNotification = vi.fn();
@@ -18,6 +19,10 @@ const mockLoadObjectGuestReadiness = vi.fn();
 
 vi.mock('@/lib/crm/property-readiness-sync', () => ({
   loadObjectGuestReadiness: (...args: unknown[]) => mockLoadObjectGuestReadiness(...args),
+}));
+
+vi.mock('@/lib/communication/guest-test-property', () => ({
+  lookup_property_for_guest_test: (...args: unknown[]) => mockLookupGuestTestProperty(...args),
 }));
 
 vi.mock('@/lib/telegram', () => ({
@@ -139,6 +144,7 @@ describe('Telegram routing layer', () => {
     mockLookupBooking.mockReset();
     mockResolveGuestContext.mockReset();
     mockLookupProperty.mockReset();
+    mockLookupGuestTestProperty.mockReset();
     mockUpsertCrmContactFromTelegram.mockReset();
     mockRecordCrmCommunicationEvent.mockReset();
     mockRecordCrmEventFromOwnerNotification.mockReset();
@@ -175,6 +181,17 @@ describe('Telegram routing layer', () => {
       lookup_reason: 'no_match',
     });
     mockLookupProperty.mockResolvedValue({
+      object_id: 'test-prop-tg-live',
+      object_name: 'Тестовая квартира ASI',
+      address: 'Санкт-Петербург, Невский проспект, 24',
+      directions_text: 'Вход со двора.',
+      check_in_text: 'Заезд с 15:00.',
+      checkout_time: '12:00',
+      wifi_name: 'ASI-Nevsky24-Guest',
+      wifi_password: 'test-wifi-nevsky24',
+      house_rules_text: 'Тишина после 22:00.',
+    });
+    mockLookupGuestTestProperty.mockResolvedValue({
       object_id: 'test-prop-tg-live',
       object_name: 'Тестовая квартира ASI',
       address: 'Санкт-Петербург, Невский проспект, 24',
@@ -554,7 +571,7 @@ describe('Telegram routing layer', () => {
     await processTelegramRoutingUpdate(routingUpdate('можно курить?', 2038));
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      expect.stringMatching(/правил|курен/i),
+      expect.stringMatching(/курить.*нельзя/i),
       expect.any(Object),
       expect.any(Object),
     );

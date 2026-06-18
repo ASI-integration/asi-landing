@@ -30,6 +30,7 @@ import {
   lookup_property_by_booking,
   resolveTelegramGuestBookingObjectContext,
 } from '@/lib/communication/telegram-booking-object-memory';
+import { lookup_property_for_guest_test } from '@/lib/communication/guest-test-property';
 import { sanitizeGuestFacingReply, guestReplyContainsForbiddenInternalTokens } from '@/lib/communication/guest-facing-ru';
 import { polishGuestReplyWithLlm } from '@/lib/communication/guest-reply-llm-polish';
 import {
@@ -121,7 +122,7 @@ function logTelegramRoutingDebug(
 }
 
 async function buildGuestTestResumeReply(propertyId: string): Promise<string> {
-  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
+  const property = await lookup_property_for_guest_test(propertyId);
   const name = property?.object_name?.trim() || 'объекта';
   return `Тест гостя уже включён для объекта ${name}. Задайте вопрос по адресу, Wi‑Fi, заезду или правилам.`;
 }
@@ -791,7 +792,7 @@ async function buildGuestAutopilotContext(
 
   if (session?.testGuest) {
     const propertyId = session.testPropertyId || defaultGuestTestPropertyId();
-    const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
+    const property = await lookup_property_for_guest_test(propertyId);
     return {
       session: {
         id: String(user.chat_id),
@@ -876,7 +877,7 @@ async function processGuestTestDeterministicMessage(
   const propertyId =
     session?.testPropertyId ?? memory?.propertyId ?? defaultGuestTestPropertyId();
   logTelegramRoutingDebug(user, 'telegram_routing/guest_test_question', memory);
-  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
+  const property = await lookup_property_for_guest_test(propertyId);
   const contactId = memory?.crmContactId ?? null;
 
   const answer = answerGuestTestQuestion({

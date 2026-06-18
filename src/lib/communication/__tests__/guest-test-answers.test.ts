@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { answerGuestTestQuestion, classifyGuestTestQuestion } from '../guest-test-answers';
+import {
+  answerGuestTestQuestion,
+  ASI_GLOBAL_SMOKING_REPLY,
+  classifyGuestTestQuestion,
+} from '../guest-test-answers';
 import type { TelegramPropertyObjectV1 } from '../telegram-booking-object-memory';
 
 const property: TelegramPropertyObjectV1 = {
@@ -43,14 +47,40 @@ describe('guest test deterministic answers', () => {
     expect(result.reply).toContain('wifi-pass-123');
   });
 
-  it('answers smoking question from house rules', () => {
+  it('answers smoking question with global ASI policy', () => {
     const result = answerGuestTestQuestion({
       messageText: 'Можно курить?',
       property,
       propertyId: 'prop-1',
     });
     expect(result.outcome).toBe('answered_from_property_data');
-    expect(result.reply.toLowerCase()).toContain('запрещ');
+    expect(result.reply).toBe(ASI_GLOBAL_SMOKING_REPLY);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it('classifies balcony smoking questions as smoking', () => {
+    expect(classifyGuestTestQuestion('Можно курить на балконе?')).toBe('smoking');
+  });
+
+  it('treats test placeholder wifi values as present in guest test mode', () => {
+    const result = answerGuestTestQuestion({
+      messageText: 'Какой Wi-Fi?',
+      property: { ...property, wifi_name: 'тест', wifi_password: 'test' },
+      propertyId: 'prop-1',
+    });
+    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.reply).toContain('тест');
+    expect(result.reply).toContain('test');
+  });
+
+  it('answers address with test placeholder values', () => {
+    const result = answerGuestTestQuestion({
+      messageText: 'Какой адрес?',
+      property: { ...property, address: 'тест' },
+      propertyId: 'prop-1',
+    });
+    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.reply).toContain('тест');
   });
 
   it('creates missing_data outcome when property field is absent', () => {
@@ -61,6 +91,16 @@ describe('guest test deterministic answers', () => {
     });
     expect(result.outcome).toBe('missing_data');
     expect(result.missingFields.length).toBeGreaterThan(0);
+  });
+
+  it('smoking question does not create missing_data when house rules are empty', () => {
+    const result = answerGuestTestQuestion({
+      messageText: 'Можно курить?',
+      property: { ...property, house_rules_text: null },
+      propertyId: 'prop-1',
+    });
+    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.missingFields).toEqual([]);
   });
 
   it('creates operator_followup_required for operator-level questions', () => {

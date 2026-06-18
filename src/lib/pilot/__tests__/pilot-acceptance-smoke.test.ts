@@ -34,6 +34,7 @@ const mockDecideAutopilot = vi.fn();
 const mockLookupBooking = vi.fn();
 const mockResolveGuestContext = vi.fn();
 const mockLookupProperty = vi.fn();
+const mockLookupGuestTestProperty = vi.fn();
 const mockUpsertCrmContactFromTelegram = vi.fn();
 const mockRecordCrmCommunicationEvent = vi.fn();
 const mockRecordCrmEventFromOwnerNotification = vi.fn();
@@ -42,6 +43,10 @@ const mockLoadObjectGuestReadiness = vi.fn();
 
 vi.mock('@/lib/crm/property-readiness-sync', () => ({
   loadObjectGuestReadiness: (...args: unknown[]) => mockLoadObjectGuestReadiness(...args),
+}));
+
+vi.mock('@/lib/communication/guest-test-property', () => ({
+  lookup_property_for_guest_test: (...args: unknown[]) => mockLookupGuestTestProperty(...args),
 }));
 
 vi.mock('@/lib/telegram', () => ({
@@ -275,6 +280,7 @@ describe('pilot acceptance smoke v1', () => {
     mockLookupBooking.mockReset();
     mockResolveGuestContext.mockReset();
     mockLookupProperty.mockReset();
+    mockLookupGuestTestProperty.mockReset();
     mockUpsertCrmContactFromTelegram.mockReset();
     mockRecordCrmCommunicationEvent.mockReset();
     mockRecordCrmEventFromOwnerNotification.mockReset();
@@ -311,6 +317,17 @@ describe('pilot acceptance smoke v1', () => {
       lookup_reason: 'no_match',
     });
     mockLookupProperty.mockResolvedValue({
+      object_id: PROPERTY_ID,
+      object_name: 'Пилотный объект ASI',
+      address: 'Казань, ул. Баумана, 1',
+      directions_text: 'Вход со двора.',
+      check_in_text: 'Заезд с 15:00.',
+      checkout_time: '12:00',
+      wifi_name: 'ASI-Guest',
+      wifi_password: 'wifi-secret',
+      house_rules_text: 'Курение запрещено.',
+    });
+    mockLookupGuestTestProperty.mockResolvedValue({
       object_id: PROPERTY_ID,
       object_name: 'Пилотный объект ASI',
       address: 'Казань, ул. Баумана, 1',
@@ -436,7 +453,7 @@ describe('pilot acceptance smoke v1', () => {
 
       await processTelegramRoutingUpdate(routingUpdate('можно курить?', 9023));
       const smokingReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
-      expect(smokingReply).toMatch(/курен|запрещ/i);
+      expect(smokingReply).toMatch(/курить.*нельзя/i);
       expect(smokingReply).not.toMatch(/оператор/i);
     }),
   );
