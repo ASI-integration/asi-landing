@@ -232,7 +232,7 @@ describe('operator follow-up v1', () => {
     expect(eventRows.find((row) => row.id === 'missing-1')?.acknowledged_at).toBeNull();
   });
 
-  it('sends operator reply to telegram and records operator_reply_sent', async () => {
+  it('sends operator reply with related guest question context', async () => {
     contactRows.set('contact-1', {
       id: 'contact-1',
       telegram_chat_id: '8101',
@@ -253,14 +253,20 @@ describe('operator follow-up v1', () => {
 
     const result = await sendOperatorFollowupToTelegram({
       contactId: 'contact-1',
-      replyText: 'Добрый день! Ответ оператора.',
+      replyText: 'Лучше не оставлять в подъезде.',
       operatorId: 'ops@asi.global',
     });
 
     expect(result.ok).toBe(true);
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      'Добрый день! Ответ оператора.',
+      expect.stringContaining('Вы спрашивали'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('Ответ: Лучше не оставлять в подъезде.'),
       expect.any(Object),
       expect.any(Object),
     );
@@ -278,6 +284,71 @@ describe('operator follow-up v1', () => {
         nextAction: 'Продолжить тест гостя',
         awaitingReply: false,
       }),
+    );
+  });
+
+  it('uses fallback wrapper when related guest question is missing', async () => {
+    contactRows.set('contact-1', {
+      id: 'contact-1',
+      telegram_chat_id: '8101',
+      telegram_user_id: '9101',
+      property_id: 'prop-1',
+      name: 'Гость',
+    });
+
+    const result = await sendOperatorReplyToTelegram({
+      contactId: 'contact-1',
+      replyText: 'Можно оставить у стойки администратора.',
+      operatorId: 'ops@asi.global',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      'Уточнили по вашему вопросу:\n\nМожно оставить у стойки администратора.',
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('does not send raw operator text without wrapper', async () => {
+    contactRows.set('contact-1', {
+      id: 'contact-1',
+      telegram_chat_id: '8101',
+      telegram_user_id: '9101',
+      property_id: 'prop-1',
+      name: 'Гость',
+    });
+    eventRows.push({
+      id: 'esc-1',
+      contact_id: 'contact-1',
+      event_type: 'operator_followup_required',
+      message_text: 'а можно поставить велосипед в подъезде?',
+      property_id: 'prop-1',
+      metadata: { intent: 'operator' },
+      acknowledged_at: null,
+      created_at: '2026-06-18T10:00:00.000Z',
+    });
+
+    const rawReply = 'Лучше не оставлять в подъезде.';
+    const result = await sendOperatorReplyToTelegram({
+      contactId: 'contact-1',
+      replyText: rawReply,
+      operatorId: 'ops@asi.global',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockReplyToTelegram).not.toHaveBeenCalledWith(
+      8101,
+      rawReply,
+      expect.any(Object),
+      expect.any(Object),
+    );
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      'Вы спрашивали: «а можно поставить велосипед в подъезде?»\n\nОтвет: Лучше не оставлять в подъезде.',
+      expect.any(Object),
+      expect.any(Object),
     );
   });
 });

@@ -235,6 +235,19 @@ function chooseRelatedEscalation(
   return rows.find((row) => row.event_type === 'operator_followup_required') ?? rows[0] ?? null;
 }
 
+function composeOperatorReplyForGuest(replyText: string, relatedQuestion?: string | null): string {
+  const question = relatedQuestion?.trim();
+  if (question) {
+    return `Вы спрашивали: «${question}»
+
+Ответ: ${replyText}`;
+  }
+
+  return `Уточнили по вашему вопросу:
+
+${replyText}`;
+}
+
 export async function sendOperatorReplyToTelegram(input: {
   contactId?: string | null;
   telegramChatId?: string | number | null;
@@ -278,10 +291,11 @@ export async function sendOperatorReplyToTelegram(input: {
 
     const activeEscalations = (activeRows ?? []) as ActiveCrmEscalationRow[];
     const relatedEscalation = chooseRelatedEscalation(activeEscalations, input.relatedEscalationId);
+    const guestReplyText = composeOperatorReplyForGuest(replyText, relatedEscalation?.message_text);
 
     const sent = await replyToTelegram(
       chatId,
-      replyText,
+      guestReplyText,
       { handler: 'crm/operator_reply_sent' },
       getAsiFeedbackTelegramSendOptions(),
     );
