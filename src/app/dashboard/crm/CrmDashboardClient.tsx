@@ -8,6 +8,11 @@ import {
   CRM_ROLE_LABELS,
   CRM_STATUS_LABELS,
 } from '@/lib/crm/labels';
+import {
+  getActiveOperatorFollowupEvent,
+  OPERATOR_REPLY_MAX_LENGTH,
+  shouldShowOperatorReplyBox,
+} from '@/lib/crm/operator-reply-contract';
 import type {
   CrmContactViewModel,
   CrmFilter,
@@ -89,10 +94,15 @@ export function CrmDashboardClient() {
   const [createNextAction, setCreateNextAction] = useState('');
   const [operatorReplyText, setOperatorReplyText] = useState('');
   const [sendingOperatorReply, setSendingOperatorReply] = useState(false);
+  const [operatorReplySuccess, setOperatorReplySuccess] = useState<string | null>(null);
 
   const selected = useMemo(
     () => contacts.find((contact) => contact.id === selectedId) ?? null,
     [contacts, selectedId],
+  );
+  const activeOperatorFollowup = useMemo(
+    () => (selected ? getActiveOperatorFollowupEvent(selected) : null),
+    [selected],
   );
 
   const load = useCallback(async (activeFilter: CrmFilter) => {
@@ -129,6 +139,7 @@ export function CrmDashboardClient() {
     setEditNextAction(selected.nextActionIsSuggested ? '' : selected.nextAction);
     setEditPropertyId(selected.propertyId ?? '');
     setOperatorReplyText('');
+    setOperatorReplySuccess(null);
   }, [selected]);
 
   async function handleSave() {
@@ -197,22 +208,28 @@ export function CrmDashboardClient() {
     if (!selected || !operatorReplyText.trim()) return;
     setSendingOperatorReply(true);
     setError(null);
+    setOperatorReplySuccess(null);
     try {
-      const res = await fetch('/api/dashboard/crm', {
-        method: 'PATCH',
+      const res = await fetch('/api/dashboard/crm/operator-reply', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: selected.id,
-          operatorFollowupReply: operatorReplyText.trim(),
+          crmContactId: selected.id,
+          telegramChatId: selected.telegramChatId,
+          relatedEscalationId: activeOperatorFollowup?.id ?? undefined,
+          replyText: operatorReplyText.trim(),
         }),
       });
       const json = (await res.json()) as CrmMutationResponse;
-      if (!res.ok || !json.ok || !json.contact) {
+      if (!res.ok || !json.ok) {
         setError(json.error ?? 'Не удалось отправить ответ гостю');
         return;
       }
-      setContacts((prev) => prev.map((item) => (item.id === json.contact!.id ? json.contact! : item)));
+      if (json.contact) {
+        setContacts((prev) => prev.map((item) => (item.id === json.contact!.id ? json.contact! : item)));
+      }
       setOperatorReplyText('');
+      setOperatorReplySuccess('Ответ отправлен гостю. Эскалация закрыта.');
       await load(filter);
     } catch {
       setError('Ошибка сети при отправке ответа');
@@ -765,26 +782,39 @@ export function CrmDashboardClient() {
                 </div>
               )}
 
-              {(selected.awaitingReply || selected.hasOperatorFollowupPending) && selected.telegramChatId && (
+              {shouldShowOperatorReplyBox(selected) && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-                  <h3 className="font-semibold">Ответ оператора гостю</h3>
+                  <h3 className="font-semibold">Нужен ответ оператора</h3>
                   <p className="mt-1 text-amber-900">
                     Гость ждёт ответа в Telegram. Напишите ответ и отправьте в чат.
                   </p>
+                  {activeOperatorFollowup?.messageText && (
+                    <p className="mt-2 rounded-md bg-white/70 px-3 py-2 text-amber-950">
+                      Вопрос гостя: {shortText(activeOperatorFollowup.messageText, 180)}
+                    </p>
+                  )}
+                  {!selected.telegramChatId && (
+                    <p className="mt-2 text-red-800">У контакта нет Telegram-чата. Ответ отправить нельзя.</p>
+                  )}
                   <textarea
                     value={operatorReplyText}
                     onChange={(e) => setOperatorReplyText(e.target.value)}
                     rows={4}
                     placeholder="Текст ответа гостю"
+                    maxLength={OPERATOR_REPLY_MAX_LENGTH}
                     className="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
                   />
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-amber-800">
+                    <span>{operatorReplySuccess ?? ''}</span>
+                    <span>{operatorReplyText.length}/{OPERATOR_REPLY_MAX_LENGTH}</span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void handleSendOperatorReply()}
-                    disabled={sendingOperatorReply || !operatorReplyText.trim()}
+                    disabled={sendingOperatorReply || !operatorReplyText.trim() || !selected.telegramChatId}
                     className="mt-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-60"
                   >
-                    {sendingOperatorReply ? 'Отправляем…' : 'Отправить гостю в Telegram'}
+                    {sendingOperatorReply ? 'Отправляем…' : 'Отправить гостю'}
                   </button>
                 </div>
               )}

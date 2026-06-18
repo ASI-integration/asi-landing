@@ -49,6 +49,7 @@ export const CRM_EVENT_TYPE_LABELS: Record<CrmEventType, string> = {
   guest_test_missing_data: 'В тесте гостя не хватает данных',
   operator_followup_required: 'Нужен ответ оператора',
   operator_followup_sent: 'Ответ оператора отправлен',
+  operator_reply_sent: 'Ответ оператора отправлен',
   pilot_application_submitted: 'Заявка в пилот',
   pilot_selected: 'Выбран в пилот',
   status_change: 'Изменение статуса',

@@ -7,6 +7,7 @@ import {
   recordCrmCommunicationEvent,
   updateCrmContact,
 } from '@/lib/crm/repository';
+import { OPERATOR_REPLY_MAX_LENGTH } from '@/lib/crm/operator-reply-contract';
 import type { GuestTestQuestionOutcome } from '@/lib/crm/types';
 import { replyToTelegram, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
@@ -203,59 +204,132 @@ export async function sendOperatorFollowupToTelegram(input: {
   replyText: string;
   operatorId?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
-  const contactId = input.contactId.trim();
+  return sendOperatorReplyToTelegram(input);
+}
+
+type ActiveCrmEscalationRow = {
+  id: string;
+  event_type: string;
+  message_text: string | null;
+  property_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+function parseTelegramChatId(value: string | number | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const chatId = Number(value);
+  return Number.isFinite(chatId) ? chatId : null;
+}
+
+function hasAsiFeedbackBotToken(): boolean {
+  return Boolean(process.env.ASI_FEEDBACK_BOT_TOKEN?.trim());
+}
+
+function chooseRelatedEscalation(
+  rows: ActiveCrmEscalationRow[],
+  relatedEscalationId?: string | null,
+): ActiveCrmEscalationRow | null {
+  const id = relatedEscalationId?.trim();
+  if (id) return rows.find((row) => row.id === id) ?? null;
+  return rows.find((row) => row.event_type === 'operator_followup_required') ?? rows[0] ?? null;
+}
+
+export async function sendOperatorReplyToTelegram(input: {
+  contactId?: string | null;
+  telegramChatId?: string | number | null;
+  replyText: string;
+  operatorId?: string | null;
+  relatedEscalationId?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  const contactId = input.contactId?.trim() ?? '';
   const replyText = input.replyText.trim();
-  if (!contactId || !replyText) return { ok: false, error: 'invalid_input' };
+  if (!contactId && input.telegramChatId == null) return { ok: false, error: 'invalid_input' };
+  if (!replyText) return { ok: false, error: 'empty_reply' };
+  if (replyText.length > OPERATOR_REPLY_MAX_LENGTH) return { ok: false, error: 'reply_too_long' };
+  if (!hasAsiFeedbackBotToken()) return { ok: false, error: 'bot_token_missing' };
 
   try {
-    const { data, error } = await supabase
+    const contactQuery = supabase
       .from('crm_contacts')
-      .select('telegram_chat_id, telegram_user_id, property_id, name')
-      .eq('id', contactId)
-      .maybeSingle();
+      .select('id, telegram_chat_id, telegram_user_id, property_id, name');
+    const { data, error } = contactId
+      ? await contactQuery.eq('id', contactId).maybeSingle()
+      : await contactQuery.eq('telegram_chat_id', String(input.telegramChatId)).maybeSingle();
     if (error) throw error;
     if (!data) return { ok: false, error: 'contact_not_found' };
 
-    const chatId = Number((data as { telegram_chat_id?: string | null }).telegram_chat_id);
-    if (!Number.isFinite(chatId)) return { ok: false, error: 'telegram_chat_missing' };
+    const resolvedContactId = contactId || (data as { id?: string | null }).id?.trim() || '';
+    if (!resolvedContactId) return { ok: false, error: 'contact_not_found' };
+
+    const chatId = parseTelegramChatId(input.telegramChatId)
+      ?? parseTelegramChatId((data as { telegram_chat_id?: string | null }).telegram_chat_id);
+    if (chatId == null) return { ok: false, error: 'telegram_chat_missing' };
+
+    const { data: activeRows, error: activeError } = await supabase
+      .from('crm_events')
+      .select('id, event_type, message_text, property_id, metadata, created_at')
+      .eq('contact_id', resolvedContactId)
+      .in('event_type', ['escalation', 'missing_data', 'guest_test_missing_data', 'operator_followup_required'])
+      .is('acknowledged_at', null)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (activeError) throw activeError;
+
+    const activeEscalations = (activeRows ?? []) as ActiveCrmEscalationRow[];
+    const relatedEscalation = chooseRelatedEscalation(activeEscalations, input.relatedEscalationId);
 
     const sent = await replyToTelegram(
       chatId,
       replyText,
-      { handler: 'crm/operator_followup_sent' },
+      { handler: 'crm/operator_reply_sent' },
       getAsiFeedbackTelegramSendOptions(),
     );
     if (!sent) return { ok: false, error: 'send_failed' };
 
     const now = nowIso();
     await supabase.from('crm_events').insert({
-      contact_id: contactId,
-      event_type: 'operator_followup_sent',
+      contact_id: resolvedContactId,
+      event_type: 'operator_reply_sent',
       message_text: replyText,
       property_id: (data as { property_id?: string | null }).property_id ?? null,
       metadata: {
         operator_id: input.operatorId ?? null,
+        related_question: relatedEscalation?.message_text ?? null,
+        related_escalation_id: relatedEscalation?.id ?? input.relatedEscalationId ?? null,
+        related_event_type: relatedEscalation?.event_type ?? null,
+        timestamp: now,
+        channel: 'telegram',
         telegram_chat_id: chatId,
         source: 'crm_dashboard',
       },
       created_at: now,
     });
 
-    await updateCrmContact(contactId, {
-      status: 'testing_communication',
-      nextAction: '',
-      awaitingReply: false,
-    });
-
-    const { error: ackError } = await supabase
-      .from('crm_events')
-      .update({ acknowledged_at: now })
-      .eq('contact_id', contactId)
-      .eq('event_type', 'operator_followup_required')
-      .is('acknowledged_at', null);
-    if (ackError) {
-      console.error('[operator-followup] acknowledge failed', { error: ackError.message });
+    if (relatedEscalation) {
+      const { error: ackError } = await supabase
+        .from('crm_events')
+        .update({ acknowledged_at: now })
+        .eq('id', relatedEscalation.id);
+      if (ackError) {
+        console.error('[operator-followup] acknowledge failed', { error: ackError.message });
+      }
     }
+
+    const remainingActive = activeEscalations.filter((row) => row.id !== relatedEscalation?.id);
+    const hasOtherOperatorFollowup = remainingActive.some((row) => row.event_type === 'operator_followup_required');
+
+    await updateCrmContact(resolvedContactId, remainingActive.length > 0
+      ? {
+          status: 'needs_reaction',
+          nextAction: hasOtherOperatorFollowup ? 'Ответить гостю' : 'Разобрать эскалацию',
+          awaitingReply: hasOtherOperatorFollowup,
+        }
+      : {
+          status: 'testing_communication',
+          nextAction: 'Продолжить тест гостя',
+          awaitingReply: false,
+        });
 
     return { ok: true };
   } catch (error) {

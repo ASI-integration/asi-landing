@@ -20,31 +20,68 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'crm_contacts') {
-        return {
-          select: () => ({
-            eq: (_col: string, id: string) => ({
-              maybeSingle: async () => ({
-                data: contactRows.get(id) ?? null,
+        const query = {
+          filter: { col: '', value: '' },
+          select: () => query,
+          eq: (col: string, value: string) => {
+            query.filter = { col, value };
+            return query;
+          },
+          order: () => query,
+          limit: () => query,
+          maybeSingle: async () => {
+            if (query.filter.col === 'telegram_chat_id') {
+              return {
+                data: Array.from(contactRows.values()).find((row) => row.telegram_chat_id === query.filter.value) ?? null,
                 error: null,
-              }),
-            }),
-          }),
+              };
+            }
+            return {
+              data: contactRows.get(query.filter.value) ?? null,
+              error: null,
+            };
+          },
         };
+        return query;
       }
       if (table === 'crm_events') {
-        return {
+        const query = {
+          contactId: '',
+          eventTypes: [] as string[],
+          updatePatch: null as Record<string, unknown> | null,
+          select: () => query,
           insert: async (row: Record<string, unknown>) => {
-            eventRows.push(row);
+            eventRows.push({ id: `inserted-${eventRows.length + 1}`, ...row });
             return { error: null };
           },
-          update: () => ({
-            eq: () => ({
-              eq: () => ({
-                is: async () => ({ error: null }),
-              }),
-            }),
+          update: (patch: Record<string, unknown>) => {
+            query.updatePatch = patch;
+            return query;
+          },
+          eq: (col: string, value: string) => {
+            if (col === 'contact_id') query.contactId = value;
+            if (col === 'id' && query.updatePatch) {
+              const row = eventRows.find((item) => item.id === value);
+              if (row) Object.assign(row, query.updatePatch);
+            }
+            return query;
+          },
+          in: (_col: string, values: string[]) => {
+            query.eventTypes = values;
+            return query;
+          },
+          is: () => query,
+          order: () => query,
+          limit: async () => ({
+            data: eventRows.filter((row) =>
+              row.contact_id === query.contactId &&
+              query.eventTypes.includes(String(row.event_type)) &&
+              !row.acknowledged_at,
+            ),
+            error: null,
           }),
         };
+        return query;
       }
       return {
         select: () => ({
@@ -63,6 +100,7 @@ vi.mock('@/lib/supabase', () => ({
 
 import {
   createOperatorFollowupRequired,
+  sendOperatorReplyToTelegram,
   sendOperatorFollowupToTelegram,
 } from '@/lib/crm/operator-followup';
 
@@ -104,12 +142,113 @@ describe('operator follow-up v1', () => {
     );
   });
 
-  it('sends operator reply to telegram and records operator_followup_sent', async () => {
+  it('does not send empty operator reply', async () => {
     contactRows.set('contact-1', {
+      id: 'contact-1',
       telegram_chat_id: '8101',
       telegram_user_id: '9101',
       property_id: 'prop-1',
       name: 'Гость',
+    });
+
+    const result = await sendOperatorReplyToTelegram({
+      contactId: 'contact-1',
+      replyText: '   ',
+      operatorId: 'ops@asi.global',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('empty_reply');
+    expect(mockReplyToTelegram).not.toHaveBeenCalled();
+  });
+
+  it('does not send operator reply without ASI Feedback bot token', async () => {
+    process.env.ASI_FEEDBACK_BOT_TOKEN = '';
+    contactRows.set('contact-1', {
+      id: 'contact-1',
+      telegram_chat_id: '8101',
+      telegram_user_id: '9101',
+      property_id: 'prop-1',
+      name: 'Гость',
+    });
+
+    const result = await sendOperatorReplyToTelegram({
+      contactId: 'contact-1',
+      replyText: 'Добрый день! Ответ оператора.',
+      operatorId: 'ops@asi.global',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('bot_token_missing');
+    expect(mockReplyToTelegram).not.toHaveBeenCalled();
+  });
+
+  it('keeps needs reaction when another active problem remains', async () => {
+    contactRows.set('contact-1', {
+      id: 'contact-1',
+      telegram_chat_id: '8101',
+      telegram_user_id: '9101',
+      property_id: 'prop-1',
+      name: 'Гость',
+    });
+    eventRows.push(
+      {
+        id: 'esc-1',
+        contact_id: 'contact-1',
+        event_type: 'operator_followup_required',
+        message_text: 'Можно поздний выезд?',
+        property_id: 'prop-1',
+        metadata: { intent: 'operator' },
+        acknowledged_at: null,
+        created_at: '2026-06-18T10:00:00.000Z',
+      },
+      {
+        id: 'missing-1',
+        contact_id: 'contact-1',
+        event_type: 'guest_test_missing_data',
+        message_text: 'Какой Wi-Fi?',
+        property_id: 'prop-1',
+        metadata: { missing_fields: ['object.wifiPassword'] },
+        acknowledged_at: null,
+        created_at: '2026-06-18T10:01:00.000Z',
+      },
+    );
+
+    const result = await sendOperatorReplyToTelegram({
+      contactId: 'contact-1',
+      replyText: 'Поздний выезд возможен до 13:00.',
+      relatedEscalationId: 'esc-1',
+      operatorId: 'ops@asi.global',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(mockUpdateCrmContact).toHaveBeenCalledWith(
+      'contact-1',
+      expect.objectContaining({
+        status: 'needs_reaction',
+        nextAction: 'Разобрать эскалацию',
+      }),
+    );
+    expect(eventRows.find((row) => row.id === 'missing-1')?.acknowledged_at).toBeNull();
+  });
+
+  it('sends operator reply to telegram and records operator_reply_sent', async () => {
+    contactRows.set('contact-1', {
+      id: 'contact-1',
+      telegram_chat_id: '8101',
+      telegram_user_id: '9101',
+      property_id: 'prop-1',
+      name: 'Гость',
+    });
+    eventRows.push({
+      id: 'esc-1',
+      contact_id: 'contact-1',
+      event_type: 'operator_followup_required',
+      message_text: 'Можно поздний выезд?',
+      property_id: 'prop-1',
+      metadata: { intent: 'operator' },
+      acknowledged_at: null,
+      created_at: '2026-06-18T10:00:00.000Z',
     });
 
     const result = await sendOperatorFollowupToTelegram({
@@ -125,10 +264,18 @@ describe('operator follow-up v1', () => {
       expect.any(Object),
       expect.any(Object),
     );
-    expect(eventRows.some((row) => row.event_type === 'operator_followup_sent')).toBe(true);
+    expect(eventRows.some((row) => row.event_type === 'operator_reply_sent')).toBe(true);
+    expect(eventRows.find((row) => row.event_type === 'operator_reply_sent')?.metadata).toMatchObject({
+      related_question: 'Можно поздний выезд?',
+      related_escalation_id: 'esc-1',
+      channel: 'telegram',
+    });
+    expect(eventRows.find((row) => row.id === 'esc-1')?.acknowledged_at).toBeTruthy();
     expect(mockUpdateCrmContact).toHaveBeenCalledWith(
       'contact-1',
       expect.objectContaining({
+        status: 'testing_communication',
+        nextAction: 'Продолжить тест гостя',
         awaitingReply: false,
       }),
     );

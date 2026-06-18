@@ -32,6 +32,52 @@ describe('crm view-model', () => {
     expect(reaction.unresolvedEscalationCount).toBe(1);
   });
 
+  it('does not mark contact as needs reaction after operator reply closes escalation', () => {
+    const contact = normalizeCrmContactRow(
+      {
+        id: 'guest-1',
+        name: 'Гость',
+        role: 'guest',
+        source: 'test',
+        contact: null,
+        telegram_user_id: '9101',
+        telegram_username: null,
+        telegram_chat_id: '8101',
+        status: 'testing_communication',
+        property_id: 'prop-1',
+        property_count: null,
+        notes: '',
+        next_action: 'Продолжить тест гостя',
+        next_action_due_at: null,
+        last_message: 'Ответ оператора',
+        last_activity_at: '2026-06-18T10:10:00.000Z',
+        lead_id: null,
+        awaiting_reply: false,
+        created_at: '2026-06-18T10:00:00.000Z',
+        updated_at: '2026-06-18T10:10:00.000Z',
+      },
+      [
+        event({
+          id: 'esc-1',
+          event_type: 'operator_followup_required',
+          message_text: 'Можно поздний выезд?',
+          acknowledged_at: '2026-06-18T10:05:00.000Z',
+        }),
+        event({
+          id: 'reply-1',
+          event_type: 'operator_reply_sent',
+          message_text: 'Можно выехать до 13:00.',
+          created_at: '2026-06-18T10:05:00.000Z',
+        }),
+      ],
+    );
+
+    expect(contact.hasOperatorFollowupPending).toBe(false);
+    expect(contact.unresolvedEscalationCount).toBe(0);
+    expect(contact.needsReaction).toBe(false);
+    expect(matchesCrmFilter(contact, 'needs_reaction')).toBe(false);
+  });
+
   it('marks contact as needs reaction when next step is empty', () => {
     const reaction = computeNeedsReaction({
       status: 'new',

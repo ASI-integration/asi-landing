@@ -38,6 +38,7 @@ export const CRM_EVENT_TYPES = [
   'guest_test_missing_data',
   'operator_followup_required',
   'operator_followup_sent',
+  'operator_reply_sent',
   'pilot_application_submitted',
   'pilot_selected',
   'status_change',
