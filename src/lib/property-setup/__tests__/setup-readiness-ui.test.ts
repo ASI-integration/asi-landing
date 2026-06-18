@@ -3,7 +3,10 @@ import { computeObjectGuestReadiness } from '@/lib/property-setup/object-guest-r
 import { createEmptySetupData } from '@/lib/property-setup/setup-data';
 import {
   filterSetupStepsForGrid,
+  formatSetupStepHeader,
+  getSetupFillableStepCount,
   isRoutableSetupStepId,
+  resolveSetupProgressCounts,
   resolveSetupReadinessPageUi,
   shouldShowSetupNextButton,
   shouldShowTopReadinessBlock,
@@ -104,6 +107,45 @@ describe('setup readiness page ui', () => {
     expect(gridSteps.map((step) => step.anchor)).not.toContain('readiness');
     expect(gridSteps.map((step) => step.label)).not.toContain('Проверка готовности');
     expect(gridSteps).toHaveLength(SETUP_SECTION_NAV.length - 1);
+    expect(getSetupFillableStepCount(SETUP_SECTION_NAV)).toBe(10);
+  });
+
+  it('counts only fillable setup sections in progress footer', () => {
+    expect(
+      resolveSetupProgressCounts({
+        completedFillableSections: 7,
+        fillableStepCount: getSetupFillableStepCount(SETUP_SECTION_NAV),
+      }),
+    ).toEqual({ completedStepCount: 7, totalStepCount: 10 });
+
+    expect(
+      resolveSetupProgressCounts({
+        completedFillableSections: 10,
+        fillableStepCount: getSetupFillableStepCount(SETUP_SECTION_NAV),
+      }),
+    ).toEqual({ completedStepCount: 10, totalStepCount: 10 });
+  });
+
+  it('formats readiness header without step index', () => {
+    expect(
+      formatSetupStepHeader({
+        propertyTitle: 'Апартаменты',
+        activeStepId: 'readiness',
+        activeStepLabel: 'Проверка готовности',
+        fillableStepIndex: 0,
+        fillableStepCount: 10,
+      }),
+    ).toBe('Апартаменты · Проверка готовности');
+
+    expect(
+      formatSetupStepHeader({
+        propertyTitle: 'Апартаменты',
+        activeStepId: 'channels',
+        activeStepLabel: 'Каналы для подключения',
+        fillableStepIndex: 9,
+        fillableStepCount: 10,
+      }),
+    ).toBe('Апартаменты · Шаг 10 из 10: Каналы для подключения');
   });
 
   it('keeps readiness step routable via ?step=readiness', () => {

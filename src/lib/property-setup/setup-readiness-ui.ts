@@ -11,6 +11,35 @@ export function filterSetupStepsForGrid<T extends { anchor: string }>(steps: rea
   return steps.filter((step) => !SETUP_GRID_HIDDEN_STEP_IDS.has(step.anchor));
 }
 
+export function getSetupFillableStepCount(steps: readonly { anchor: string }[]): number {
+  return filterSetupStepsForGrid(steps).length;
+}
+
+export function resolveSetupProgressCounts(input: {
+  completedFillableSections: number;
+  fillableStepCount: number;
+}): { completedStepCount: number; totalStepCount: number } {
+  return {
+    completedStepCount: input.completedFillableSections,
+    totalStepCount: input.fillableStepCount,
+  };
+}
+
+export function formatSetupStepHeader(input: {
+  propertyTitle: string | null | undefined;
+  activeStepId: string;
+  activeStepLabel: string;
+  fillableStepIndex: number;
+  fillableStepCount: number;
+}): string {
+  const title = input.propertyTitle?.trim() || 'Объект';
+  if (input.activeStepId === 'readiness') {
+    return `${title} · ${input.activeStepLabel}`;
+  }
+
+  return `${title} · Шаг ${input.fillableStepIndex + 1} из ${input.fillableStepCount}: ${input.activeStepLabel}`;
+}
+
 export function isRoutableSetupStepId(stepId: string, allStepIds: readonly string[]): boolean {
   return allStepIds.includes(stepId);
 }

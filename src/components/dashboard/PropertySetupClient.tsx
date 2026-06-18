@@ -32,6 +32,9 @@ import {
 } from '@/lib/property-setup/setup-data';
 import {
   filterSetupStepsForGrid,
+  formatSetupStepHeader,
+  getSetupFillableStepCount,
+  resolveSetupProgressCounts,
   resolveSetupReadinessPageUi,
 } from '@/lib/property-setup/setup-readiness-ui';
 
@@ -418,13 +421,24 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
     [data, mediaCount],
   );
   const completed = checklist.filter((item) => item.done).length;
-  const completedStepCount = completed + (completed === checklist.length ? 1 : 0);
-  const totalStepCount = SECTION_NAV.length;
+  const fillableStepCount = getSetupFillableStepCount(SECTION_NAV);
+  const { completedStepCount, totalStepCount } = resolveSetupProgressCounts({
+    completedFillableSections: completed,
+    fillableStepCount,
+  });
   const activeStepIndex = Math.max(
     SECTION_NAV.findIndex((item) => item.anchor === activeStepId),
     0,
   );
   const activeStep = SECTION_NAV[activeStepIndex];
+  const fillableStepIndex = GRID_NAV.findIndex((item) => item.anchor === activeStepId);
+  const setupStepHeader = formatSetupStepHeader({
+    propertyTitle: property?.title,
+    activeStepId,
+    activeStepLabel: activeStep.label,
+    fillableStepIndex: fillableStepIndex >= 0 ? fillableStepIndex : 0,
+    fillableStepCount,
+  });
   const canGoBack = activeStepIndex > 0;
   const canGoNext = activeStepIndex < SECTION_NAV.length - 1;
 
@@ -545,9 +559,7 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
           Заполните данные один раз — ASI подготовит карточки и проверит готовность.
         </p>
-        <p className="mt-3 text-sm font-medium text-slate-700">
-          {property?.title ?? 'Объект'} · Шаг {activeStepIndex + 1} из {totalStepCount}: {activeStep.label}
-        </p>
+        <p className="mt-3 text-sm font-medium text-slate-700">{setupStepHeader}</p>
       </div>
 
       {readinessPageUi.showTopReadinessBlock ? (
