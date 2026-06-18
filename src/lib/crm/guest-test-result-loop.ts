@@ -53,19 +53,123 @@ export function normalizeGuestTestIntent(intent: string): GuestTestQuestionCateg
   return 'unknown';
 }
 
-function outcomeRank(outcome: GuestTestQuestionOutcome): number {
-  switch (outcome) {
-    case 'answered_from_property_data':
-      return 4;
-    case 'answered_from_global_rule':
-      return 4;
-    case 'missing_data':
-      return 2;
-    case 'operator_followup_required':
-      return 1;
-    default:
-      return 0;
+type LatestIntentState = {
+  outcome: GuestTestQuestionOutcome;
+  missingFields: string[];
+  createdAt: string;
+};
+
+const DEFAULT_MISSING_FIELDS: Record<Exclude<GuestTestQuestionCategory, 'unknown' | 'smoking'>, string[]> = {
+  address: ['object.address', 'object.directionsText'],
+  wifi: ['object.wifiName', 'object.wifiPassword'],
+  checkin: ['object.check_in_text', 'booking.checkoutTime'],
+  rules: ['object.houseRules'],
+};
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => asString(item)).filter(Boolean)
+    : [];
+}
+
+function sortEventsChronologically(events: CrmEventRow[]): CrmEventRow[] {
+  return [...events].sort((left, right) => left.created_at.localeCompare(right.created_at));
+}
+
+export function collectLatestIntentStates(events: CrmEventRow[]): Map<GuestTestQuestionCategory, LatestIntentState> {
+  const latest = new Map<GuestTestQuestionCategory, LatestIntentState>();
+
+  for (const event of sortEventsChronologically(events)) {
+    if (event.event_type !== 'guest_test_question') continue;
+    const meta = asRecord(event.metadata);
+    const intent = normalizeGuestTestIntent(asString(meta.intent));
+    if (intent === 'unknown') continue;
+    const outcome = asString(meta.outcome) as GuestTestQuestionOutcome;
+    if (!outcome) continue;
+
+    latest.set(intent, {
+      outcome,
+      missingFields: asStringArray(meta.missing_fields),
+      createdAt: event.created_at,
+    });
   }
+
+  return latest;
+}
+
+function isSuccessfulOutcome(outcome: GuestTestQuestionOutcome): boolean {
+  return outcome === 'answered_from_property_data' || outcome === 'answered_from_global_rule';
+}
+
+function deriveActiveMissingFields(
+  latestIntentStates: Map<GuestTestQuestionCategory, LatestIntentState>,
+): string[] {
+  const fields = new Set<string>();
+
+  for (const category of ['address', 'wifi', 'checkin', 'rules'] as const) {
+    const state = latestIntentStates.get(category);
+    if (!state || state.outcome !== 'missing_data') continue;
+    const missing = state.missingFields.length > 0 ? state.missingFields : DEFAULT_MISSING_FIELDS[category];
+    for (const field of missing) fields.add(field);
+  }
+
+  return [...fields];
+}
+
+function isMissingDataEventStale(
+  event: CrmEventRow,
+  latestIntentStates: Map<GuestTestQuestionCategory, LatestIntentState>,
+  activeMissingFields: string[],
+): boolean {
+  if (event.acknowledged_at) return true;
+
+  const meta = asRecord(event.metadata);
+  const intent = normalizeGuestTestIntent(asString(meta.intent));
+  if (intent !== 'unknown') {
+    const latest = latestIntentStates.get(intent);
+    if (latest && isSuccessfulOutcome(latest.outcome)) return true;
+    if (intent === 'smoking') return true;
+  }
+
+  const eventFields = asStringArray(meta.missing_fields);
+  if (eventFields.length === 0) return false;
+  return eventFields.every((field) => !activeMissingFields.includes(field));
+}
+
+function isOperatorFollowupSuperseded(
+  event: CrmEventRow,
+  latestIntentStates: Map<GuestTestQuestionCategory, LatestIntentState>,
+): boolean {
+  const meta = asRecord(event.metadata);
+  const intent = normalizeGuestTestIntent(asString(meta.intent));
+  if (intent === 'unknown') return false;
+  const latest = latestIntentStates.get(intent);
+  return Boolean(latest && isSuccessfulOutcome(latest.outcome) && latest.createdAt >= event.created_at);
+}
+
+export function countActiveUnresolvedEscalations(
+  events: CrmEventRow[],
+  latestIntentStates: Map<GuestTestQuestionCategory, LatestIntentState>,
+  activeMissingFields: string[],
+): number {
+  let count = 0;
+
+  for (const event of events) {
+    if (event.acknowledged_at) continue;
+    if (event.event_type === 'escalation') {
+      count += 1;
+      continue;
+    }
+    if (event.event_type === 'operator_followup_required') {
+      if (!isOperatorFollowupSuperseded(event, latestIntentStates)) count += 1;
+      continue;
+    }
+    if (event.event_type === 'missing_data' || event.event_type === 'guest_test_missing_data') {
+      if (!isMissingDataEventStale(event, latestIntentStates, activeMissingFields)) count += 1;
+    }
+  }
+
+  return count;
 }
 
 function categoryStateFromOutcome(
@@ -104,27 +208,20 @@ function defaultCategoryState(category: GuestTestQuestionCategory): GuestTestCat
   return { status: 'not_verified', label: GUEST_TEST_CHECK_STATUS_LABELS.not_verified };
 }
 
-function collectMissingFieldsFromEvents(events: CrmEventRow[]): string[] {
-  const fields = new Set<string>();
-  for (const event of events) {
-    if (event.event_type !== 'missing_data' && event.event_type !== 'guest_test_missing_data') continue;
-    if (event.acknowledged_at) continue;
-    const meta = asRecord(event.metadata);
-    const missing = meta.missing_fields;
-    if (Array.isArray(missing)) {
-      for (const field of missing) {
-        const text = asString(field);
-        if (text) fields.add(text);
-      }
-    }
-  }
-  return [...fields];
+function hasUnacknowledgedOperatorFollowup(
+  events: CrmEventRow[],
+  latestIntentStates: Map<GuestTestQuestionCategory, LatestIntentState>,
+): boolean {
+  return events.some(
+    (event) =>
+      event.event_type === 'operator_followup_required' &&
+      !event.acknowledged_at &&
+      !isOperatorFollowupSuperseded(event, latestIntentStates),
+  );
 }
 
-function hasUnacknowledgedOperatorFollowup(events: CrmEventRow[]): boolean {
-  return events.some(
-    (event) => event.event_type === 'operator_followup_required' && !event.acknowledged_at,
-  );
+export function hasActiveGuestTestOperatorFollowup(events: CrmEventRow[]): boolean {
+  return hasUnacknowledgedOperatorFollowup(events, collectLatestIntentStates(events));
 }
 
 function hasGuestTestStarted(events: CrmEventRow[]): boolean {
@@ -143,45 +240,31 @@ export function computeGuestTestSummary(
   events: CrmEventRow[],
   propertyId?: string | null,
 ): GuestTestSummary {
-  const categoryOutcomes = new Map<GuestTestQuestionCategory, GuestTestQuestionOutcome>();
+  const latestIntentStates = collectLatestIntentStates(events);
 
-  for (const event of [...events].reverse()) {
-    if (event.event_type !== 'guest_test_question') continue;
-    const meta = asRecord(event.metadata);
-    const intent = normalizeGuestTestIntent(asString(meta.intent));
-    if (intent === 'unknown') continue;
-    const outcome = asString(meta.outcome) as GuestTestQuestionOutcome;
-    if (!outcome) continue;
-
-    const current = categoryOutcomes.get(intent);
-    if (!current || outcomeRank(outcome) > outcomeRank(current)) {
-      categoryOutcomes.set(intent, outcome);
-    }
-  }
-
-  const address = categoryOutcomes.has('address')
-    ? categoryStateFromOutcome('address', categoryOutcomes.get('address')!)
+  const address = latestIntentStates.has('address')
+    ? categoryStateFromOutcome('address', latestIntentStates.get('address')!.outcome)
     : defaultCategoryState('address');
-  const wifi = categoryOutcomes.has('wifi')
-    ? categoryStateFromOutcome('wifi', categoryOutcomes.get('wifi')!)
+  const wifi = latestIntentStates.has('wifi')
+    ? categoryStateFromOutcome('wifi', latestIntentStates.get('wifi')!.outcome)
     : defaultCategoryState('wifi');
-  const checkin = categoryOutcomes.has('checkin')
-    ? categoryStateFromOutcome('checkin', categoryOutcomes.get('checkin')!)
+  const checkin = latestIntentStates.has('checkin')
+    ? categoryStateFromOutcome('checkin', latestIntentStates.get('checkin')!.outcome)
     : defaultCategoryState('checkin');
-  const rules = categoryOutcomes.has('rules')
-    ? categoryStateFromOutcome('rules', categoryOutcomes.get('rules')!)
+  const rules = latestIntentStates.has('rules')
+    ? categoryStateFromOutcome('rules', latestIntentStates.get('rules')!.outcome)
     : defaultCategoryState('rules');
-  const smoking = categoryOutcomes.has('smoking')
-    ? categoryStateFromOutcome('smoking', categoryOutcomes.get('smoking')!)
+  const smoking = latestIntentStates.has('smoking')
+    ? categoryStateFromOutcome('smoking', latestIntentStates.get('smoking')!.outcome)
     : defaultCategoryState('smoking');
 
-  const missingFields = collectMissingFieldsFromEvents(events);
+  const missingFields = deriveActiveMissingFields(latestIntentStates);
   const missingDataActions = missingDataActionsForFields(missingFields, propertyId);
   const basicPassed = isVerified(address) && isVerified(wifi) && isVerified(smoking);
   const fullyPassed = basicPassed && isVerified(checkin) && isVerified(rules);
 
   let nextAction = '';
-  if (hasUnacknowledgedOperatorFollowup(events)) {
+  if (hasUnacknowledgedOperatorFollowup(events, latestIntentStates)) {
     nextAction = 'Ответить гостю';
   } else if (missingDataActions.length > 0) {
     nextAction = `Заполнить: ${missingDataActions[0].label}`;
@@ -212,8 +295,9 @@ export function deriveGuestTestListStatus(
   events: CrmEventRow[],
   summary: GuestTestSummary,
 ): GuestTestListStatus {
-  if (hasUnacknowledgedOperatorFollowup(events)) return 'needs_reaction';
-  if (summary.missingFields.length > 0) return 'needs_data';
+  const latestIntentStates = collectLatestIntentStates(events);
+  if (hasUnacknowledgedOperatorFollowup(events, latestIntentStates)) return 'needs_reaction';
+  if (summary.missingDataActions.length > 0) return 'needs_data';
   if (summary.fullyPassed) return 'passed';
   if (summary.basicPassed || summary.hasStarted) {
     const anyVerified =

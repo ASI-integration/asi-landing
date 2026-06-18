@@ -1,9 +1,12 @@
 import { CRM_EVENT_TYPE_LABELS, CRM_ROLE_LABELS, CRM_SOURCE_LABELS, CRM_STATUS_LABELS } from './labels';
 import {
   computeGuestTestSummary,
+  countActiveUnresolvedEscalations,
+  collectLatestIntentStates,
   deriveGuestTestListStatus,
   extractGuestTestQuestions,
   GUEST_TEST_LIST_STATUS_LABELS,
+  hasActiveGuestTestOperatorFollowup,
 } from './guest-test-result-loop';
 import { computePilotOnboardingProgress } from './pilot-onboarding';
 import {
@@ -57,7 +60,17 @@ function formatTelegramDisplay(username: string | null, userId: string | null, c
   return null;
 }
 
-function collectMissingDataFields(events: CrmEventRow[]): string[] {
+function hasGuestTestActivity(events: CrmEventRow[]): boolean {
+  return events.some(
+    (event) => event.event_type === 'guest_test_started' || event.event_type === 'guest_test_question',
+  );
+}
+
+function collectMissingDataFields(events: CrmEventRow[], propertyId?: string | null): string[] {
+  if (hasGuestTestActivity(events)) {
+    return computeGuestTestSummary(events, propertyId).missingFields;
+  }
+
   const fields = new Set<string>();
   for (const event of events) {
     if (event.event_type !== 'missing_data' && event.event_type !== 'guest_test_missing_data') continue;
@@ -80,10 +93,15 @@ export function computeNeedsReaction(input: {
   nextAction: string;
   nextActionDueAt: string | null;
   events: CrmEventRow[];
+  propertyId?: string | null;
 }): { needsReaction: boolean; reasons: string[]; escalationCount: number; unresolvedEscalationCount: number } {
   const reasons: string[] = [];
   let escalationCount = 0;
-  let unresolvedEscalationCount = 0;
+  const guestTestActive = hasGuestTestActivity(input.events);
+  const latestIntentStates = guestTestActive ? collectLatestIntentStates(input.events) : null;
+  const activeMissingFields = guestTestActive
+    ? computeGuestTestSummary(input.events, input.propertyId).missingFields
+    : collectMissingDataFields(input.events, input.propertyId);
 
   for (const event of input.events) {
     if (
@@ -93,20 +111,35 @@ export function computeNeedsReaction(input: {
       event.event_type === 'operator_followup_required'
     ) {
       escalationCount += 1;
-      if (!event.acknowledged_at) unresolvedEscalationCount += 1;
     }
   }
+
+  const unresolvedEscalationCount = guestTestActive && latestIntentStates
+    ? countActiveUnresolvedEscalations(input.events, latestIntentStates, activeMissingFields)
+    : input.events.filter(
+        (event) =>
+          (event.event_type === 'escalation' ||
+            event.event_type === 'missing_data' ||
+            event.event_type === 'guest_test_missing_data' ||
+            event.event_type === 'operator_followup_required') &&
+          !event.acknowledged_at,
+      ).length;
 
   if (unresolvedEscalationCount > 0) {
     reasons.push('Есть неразобранная эскалация');
   }
 
-  const missingFields = collectMissingDataFields(input.events);
-  if (missingFields.length > 0) {
+  if (activeMissingFields.length > 0) {
     reasons.push('Не хватает данных объекта');
   }
 
-  if (input.awaitingReply) {
+  const hasOpenOperatorFollowup = guestTestActive
+    ? hasActiveGuestTestOperatorFollowup(input.events)
+    : input.events.some(
+        (event) => event.event_type === 'operator_followup_required' && !event.acknowledged_at,
+      );
+
+  if (input.awaitingReply && (!guestTestActive || hasOpenOperatorFollowup)) {
     reasons.push('Пользователь ждёт ответа');
   }
 
@@ -182,12 +215,14 @@ export function normalizeCrmContactRow(
   const normalizedEvents = events.map(normalizeCrmEventRow);
   const telegramDisplay = formatTelegramDisplay(row.telegram_username, row.telegram_user_id, row.telegram_chat_id);
   const pilotApplication = latestPilotApplication(events);
-  const missingDataFields = collectMissingDataFields(events);
-  const missingDataActions = missingDataActionsForFields(missingDataFields, row.property_id);
+  const missingDataFields = collectMissingDataFields(events, row.property_id);
   const guestTestResults = extractGuestTestQuestions(events);
   const guestTestSummary = guestTestResults.length > 0 || events.some((e) => e.event_type === 'guest_test_started')
     ? computeGuestTestSummary(events, row.property_id)
     : null;
+  const missingDataActions = guestTestSummary
+    ? guestTestSummary.missingDataActions
+    : missingDataActionsForFields(missingDataFields, row.property_id);
   const guestTestListStatus = guestTestSummary
     ? deriveGuestTestListStatus(events, guestTestSummary)
     : 'not_started';
@@ -201,6 +236,7 @@ export function normalizeCrmContactRow(
     nextAction: row.next_action,
     nextActionDueAt: row.next_action_due_at,
     events,
+    propertyId: row.property_id,
   });
   const automation = deriveCrmAutomationSuggestion({
     role,
