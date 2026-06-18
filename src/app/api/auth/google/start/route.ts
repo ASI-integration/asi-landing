@@ -1,21 +1,25 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { resolveRedirectOrigin } from '@/lib/app-url';
 
 export const runtime = 'nodejs';
 
 const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
 
 function getRequestOrigin(req: Request): string {
-  const u = new URL(req.url);
-  const proto =
-    (req.headers.get('x-forwarded-proto') || u.protocol.replace(':', '') || 'https').split(',')[0]?.trim() ||
-    'https';
-  const host = (req.headers.get('x-forwarded-host') || req.headers.get('host') || u.host || '')
-    .split(',')[0]
-    ?.trim();
-  if (!host) return u.origin;
-  return `${proto}://${host}`;
+  let fallbackOrigin: string | undefined;
+  try {
+    fallbackOrigin = new URL(req.url).origin;
+  } catch {
+    fallbackOrigin = undefined;
+  }
+  return resolveRedirectOrigin({
+    forwardedHost: req.headers.get('x-forwarded-host'),
+    host: req.headers.get('host'),
+    forwardedProto: req.headers.get('x-forwarded-proto'),
+    fallbackOrigin,
+  });
 }
 
 function googleAuthUrl(params: Record<string, string>): string {

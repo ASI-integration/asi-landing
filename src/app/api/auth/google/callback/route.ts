@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import { ensureAccountForUser } from '@/lib/accounts';
+import { resolveRedirectOrigin } from '@/lib/app-url';
 
 export const runtime = 'nodejs';
 
@@ -12,10 +13,18 @@ export const runtime = 'nodejs';
 const GOOGLE_REDIRECT_URI = 'https://www.asi-global.ru/api/auth/google/callback';
 
 function getRequestOrigin(req: Request): string {
-  const u = new URL(req.url);
-  const proto = req.headers.get('x-forwarded-proto') || u.protocol.replace(':', '');
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || u.host;
-  return `${proto}://${host}`;
+  let fallbackOrigin: string | undefined;
+  try {
+    fallbackOrigin = new URL(req.url).origin;
+  } catch {
+    fallbackOrigin = undefined;
+  }
+  return resolveRedirectOrigin({
+    forwardedHost: req.headers.get('x-forwarded-host'),
+    host: req.headers.get('host'),
+    forwardedProto: req.headers.get('x-forwarded-proto'),
+    fallbackOrigin,
+  });
 }
 
 async function exchangeCodeForTokens(opts: {

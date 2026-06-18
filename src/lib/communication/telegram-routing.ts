@@ -1,3 +1,4 @@
+import { toAppAbsoluteUrl } from '@/lib/app-url';
 import { normalizeAsiFeedbackLeadSource, type AsiFeedbackLeadSource } from '@/config/publicTelegram';
 import { decideCommunicationAutopilotResponseWithLlmRouter } from '@/lib/communication/autopilot';
 import type { CommunicationAutopilotContext } from '@/lib/communication/autopilot';
@@ -344,9 +345,7 @@ async function syncCrmGuestTest(user: TelegramRoutingUser, propertyId: string): 
 }
 
 function appHref(pathOrUrl: string): string {
-  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || '').trim().replace(/\/$/, '');
-  return baseUrl ? `${baseUrl}${pathOrUrl}` : pathOrUrl;
+  return toAppAbsoluteUrl(pathOrUrl);
 }
 
 function ownerCabinetUrl(contact: CrmContactViewModel | null): string {

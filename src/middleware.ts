@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { resolveRedirectOrigin } from '@/lib/app-url';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
 
 /** Hostname from Host / X-Forwarded-Host (handles ports, bracketed IPv6). */
@@ -18,32 +19,20 @@ function hostnameFromRequest(request: NextRequest): string {
   return hostnameFromHostHeader(raw);
 }
 
-/**
- * Public origin for redirects. Uses proxy headers + Host so Location never picks up
- * NextURL's localhost normalization of 127.0.0.1 (::1), which would leak
- * `http://localhost:3000/...` behind nginx or when testing with Host overrides.
- */
+/** Public origin for redirects; rejects internal service hosts like `dashboard`. */
 function publicOrigin(request: NextRequest): string {
-  const host =
-    request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ??
-    request.headers.get('host') ??
-    '';
-  if (!host) {
-    try {
-      return new URL(request.url).origin;
-    } catch {
-      return 'http://localhost';
-    }
+  let fallbackOrigin: string | undefined;
+  try {
+    fallbackOrigin = new URL(request.url).origin;
+  } catch {
+    fallbackOrigin = undefined;
   }
-  let proto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  if (proto !== 'http' && proto !== 'https') {
-    try {
-      proto = new URL(request.url).protocol.replace(':', '');
-    } catch {
-      proto = 'http';
-    }
-  }
-  return `${proto}://${host}`;
+  return resolveRedirectOrigin({
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    host: request.headers.get('host'),
+    forwardedProto: request.headers.get('x-forwarded-proto'),
+    fallbackOrigin,
+  });
 }
 
 export function middleware(request: NextRequest) {
