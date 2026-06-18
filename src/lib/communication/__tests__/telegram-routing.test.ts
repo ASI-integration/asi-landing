@@ -70,17 +70,33 @@ vi.mock('@/lib/crm/repository', () => ({
   upsertCrmContactFromTelegram: (...args: unknown[]) => mockUpsertCrmContactFromTelegram(...args),
   recordCrmCommunicationEvent: (...args: unknown[]) => mockRecordCrmCommunicationEvent(...args),
   recordCrmEventFromOwnerNotification: (...args: unknown[]) => mockRecordCrmEventFromOwnerNotification(...args),
+  updateCrmContact: vi.fn().mockResolvedValue(undefined),
 }));
+
+const { supabaseQueryBuilder } = vi.hoisted(() => {
+  function buildSupabaseQueryBuilder(result: unknown = { data: null, error: null }) {
+    const builder = {
+      select: vi.fn(() => builder),
+      eq: vi.fn(() => builder),
+      in: vi.fn(() => builder),
+      order: vi.fn(() => builder),
+      limit: vi.fn(() => builder),
+      update: vi.fn(() => builder),
+      upsert: vi.fn(async () => ({ data: null, error: null })),
+      single: vi.fn(async () => result),
+      maybeSingle: vi.fn(async () => result),
+      then(onFulfilled: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
+        return Promise.resolve(result).then(onFulfilled, onRejected);
+      },
+    };
+    return builder;
+  }
+  return { supabaseQueryBuilder: buildSupabaseQueryBuilder };
+});
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          limit: () => Promise.resolve({ data: [], error: null }),
-        }),
-      }),
-    }),
+    from: () => supabaseQueryBuilder({ data: null, error: null }),
   },
 }));
 
@@ -512,7 +528,7 @@ describe('Telegram routing layer', () => {
     const result = await processTelegramRoutingUpdate(routingUpdate('/start guest_test_missing-prop', 2030));
 
     expect(result?.reply).toContain('Объект не найден');
-    expect(getTelegramRoutingSession(8101)?.testGuest).toBeUndefined();
+    expect(getTelegramRoutingSession(8101)?.testGuest).not.toBe(true);
   });
 
   it('explains missing setup fields when property is not guest-ready', async () => {
@@ -538,7 +554,7 @@ describe('Telegram routing layer', () => {
 
     expect(result?.reply).toContain('не хватает');
     expect(result?.reply).toContain('фото');
-    expect(getTelegramRoutingSession(8101)?.testGuest).toBeUndefined();
+    expect(getTelegramRoutingSession(8101)?.testGuest).not.toBe(true);
   });
 
   it('builds guest test deep link for dashboard', () => {

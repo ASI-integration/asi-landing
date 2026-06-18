@@ -53,7 +53,7 @@ describe('guest test deterministic answers', () => {
       property,
       propertyId: 'prop-1',
     });
-    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.outcome).toBe('answered_from_global_rule');
     expect(result.reply).toBe(ASI_GLOBAL_SMOKING_REPLY);
     expect(result.missingFields).toEqual([]);
   });
@@ -99,7 +99,7 @@ describe('guest test deterministic answers', () => {
       property: { ...property, house_rules_text: null },
       propertyId: 'prop-1',
     });
-    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.outcome).toBe('answered_from_global_rule');
     expect(result.missingFields).toEqual([]);
   });
 

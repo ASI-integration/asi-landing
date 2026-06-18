@@ -201,7 +201,7 @@ export function answerGuestTestQuestion(input: {
 
   if (intent === 'smoking') {
     const result: GuestTestAnswerResult = {
-      outcome: 'answered_from_property_data',
+      outcome: 'answered_from_global_rule',
       reply: sanitizeGuestFacingReply(ASI_GLOBAL_SMOKING_REPLY) ?? ASI_GLOBAL_SMOKING_REPLY,
       intent,
       missingFields: [],

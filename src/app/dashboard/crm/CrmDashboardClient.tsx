@@ -427,11 +427,26 @@ export function CrmDashboardClient() {
                       </td>
                       <td className="px-4 py-3">{contact.roleLabel}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                          contact.needsReaction ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {contact.effectiveStatusLabel}
-                        </span>
+                        <div className="space-y-1">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
+                            contact.needsReaction ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {contact.effectiveStatusLabel}
+                          </span>
+                          {contact.guestTestListStatusLabel && (
+                            <span className={`block text-xs ${
+                              contact.guestTestListStatus === 'needs_reaction'
+                                ? 'text-amber-800'
+                                : contact.guestTestListStatus === 'needs_data'
+                                  ? 'text-red-700'
+                                  : contact.guestTestListStatus === 'passed'
+                                    ? 'text-emerald-700'
+                                    : 'text-slate-600'
+                            }`}>
+                              {contact.guestTestListStatusLabel}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {contact.propertySummary?.title ?? (contact.propertyId ? shortText(contact.propertyId, 16) : '—')}
@@ -774,12 +789,64 @@ export function CrmDashboardClient() {
                 </div>
               )}
 
-              {selected.guestTestResults.length > 0 && (
+              {selected.guestTestSummary && (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
-                  <h3 className="font-semibold text-slate-800">Результаты guest_test</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold text-slate-800">Результат теста гостя</h3>
+                    {selected.guestTestListStatusLabel && (
+                      <span className="text-xs font-medium text-slate-600">{selected.guestTestListStatusLabel}</span>
+                    )}
+                  </div>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-slate-500">Адрес</dt>
+                      <dd className="font-medium capitalize text-slate-800">{selected.guestTestSummary.address.label}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Wi-Fi</dt>
+                      <dd className="font-medium capitalize text-slate-800">{selected.guestTestSummary.wifi.label}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Заезд</dt>
+                      <dd className="font-medium capitalize text-slate-800">{selected.guestTestSummary.checkin.label}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Правила</dt>
+                      <dd className="font-medium capitalize text-slate-800">{selected.guestTestSummary.rules.label}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-slate-500">Курение</dt>
+                      <dd className="font-medium text-slate-800">{selected.guestTestSummary.smoking.label}</dd>
+                    </div>
+                  </dl>
+                  {selected.guestTestSummary.nextAction && (
+                    <p className="mt-3 text-slate-700">
+                      Следующий шаг: <span className="font-medium">{selected.guestTestSummary.nextAction}</span>
+                    </p>
+                  )}
+                  {selected.guestTestSummary.missingDataActions.length > 0 && (
+                    <ul className="mt-3 space-y-1">
+                      {selected.guestTestSummary.missingDataActions.map((action) => (
+                        <li key={`${action.setupStep}:${action.label}`} className="flex items-center justify-between gap-2">
+                          <span className="text-red-800">{action.label}</span>
+                          {action.setupHref ? (
+                            <Link href={action.setupHref} className="text-blue-700 hover:underline">
+                              Открыть setup
+                            </Link>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {selected.guestTestResults.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm">
+                  <h3 className="font-semibold text-slate-800">Вопросы теста</h3>
                   <ul className="mt-2 space-y-2">
                     {selected.guestTestResults.map((item, index) => (
-                      <li key={`${item.createdAt}-${index}`} className="rounded-md border border-slate-100 bg-white px-3 py-2">
+                      <li key={`${item.createdAt}-${index}`} className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2">
                         <div className="flex justify-between gap-2 text-xs text-slate-500">
                           <span>{item.intent || 'вопрос'}</span>
                           <span>{formatDateRu(item.createdAt)}</span>
@@ -789,6 +856,8 @@ export function CrmDashboardClient() {
                           Исход:{' '}
                           {item.outcome === 'answered_from_property_data'
                             ? 'ответ из данных объекта'
+                            : item.outcome === 'answered_from_global_rule'
+                              ? 'глобальное правило ASI'
                             : item.outcome === 'missing_data'
                               ? 'не хватает данных'
                               : item.outcome === 'operator_followup_required'

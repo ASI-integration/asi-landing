@@ -781,7 +781,7 @@ export async function recordCrmCommunicationEvent(input: RecordCrmEventInput): P
     contactPatch.status = 'needs_reaction';
     contactPatch.awaiting_reply = true;
   }
-  if (input.eventType === 'missing_data') {
+  if (input.eventType === 'missing_data' || input.eventType === 'guest_test_missing_data') {
     const missingFields = Array.isArray(input.metadata?.missing_fields)
       ? (input.metadata?.missing_fields as string[])
       : [];

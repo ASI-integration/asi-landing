@@ -34,6 +34,8 @@ export const CRM_EVENT_TYPES = [
   'guest_test_ready',
   'guest_test_started',
   'guest_test_question',
+  'guest_test_passed_basic',
+  'guest_test_missing_data',
   'operator_followup_required',
   'operator_followup_sent',
   'pilot_application_submitted',
@@ -44,8 +46,26 @@ export const CRM_EVENT_TYPES = [
 
 export type GuestTestQuestionOutcome =
   | 'answered_from_property_data'
+  | 'answered_from_global_rule'
   | 'missing_data'
   | 'operator_followup_required';
+
+export type GuestTestQuestionCategory = 'address' | 'wifi' | 'smoking' | 'checkin' | 'rules' | 'unknown';
+
+export type GuestTestCheckStatus = 'verified' | 'not_verified' | 'no_data';
+
+export type GuestTestCategoryState = {
+  status: GuestTestCheckStatus | 'verified_global_rule';
+  label: string;
+};
+
+export type GuestTestListStatus =
+  | 'not_started'
+  | 'started'
+  | 'partial_pass'
+  | 'passed'
+  | 'needs_data'
+  | 'needs_reaction';
 export type CrmEventType = (typeof CRM_EVENT_TYPES)[number];
 
 export type CrmFilter =
@@ -128,6 +148,20 @@ export type CrmMissingDataAction = {
   setupHref: string | null;
 };
 
+export type GuestTestSummary = {
+  address: GuestTestCategoryState;
+  wifi: GuestTestCategoryState;
+  checkin: GuestTestCategoryState;
+  rules: GuestTestCategoryState;
+  smoking: GuestTestCategoryState;
+  hasStarted: boolean;
+  basicPassed: boolean;
+  fullyPassed: boolean;
+  missingFields: string[];
+  missingDataActions: CrmMissingDataAction[];
+  nextAction: string;
+};
+
 export type CrmPropertyReadinessItem = {
   id: string;
   label: string;
@@ -197,6 +231,9 @@ export type CrmContactViewModel = {
     intent: string;
     createdAt: string;
   }>;
+  guestTestSummary: GuestTestSummary | null;
+  guestTestListStatus: GuestTestListStatus;
+  guestTestListStatusLabel: string;
   hasOperatorFollowupPending: boolean;
 };
 

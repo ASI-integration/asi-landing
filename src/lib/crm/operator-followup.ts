@@ -1,5 +1,9 @@
 import { missingDataActionsForFields } from '@/lib/crm/automation-loop';
 import {
+  normalizeGuestTestIntent,
+  reconcileGuestTestResultLoop,
+} from '@/lib/crm/guest-test-result-loop';
+import {
   recordCrmCommunicationEvent,
   updateCrmContact,
 } from '@/lib/crm/repository';
@@ -48,11 +52,22 @@ export async function recordGuestTestQuestionOutcome(input: {
     },
     metadata: {
       outcome: input.outcome,
-      intent: input.intent,
+      intent: normalizeGuestTestIntent(input.intent),
       reply_preview: input.replyText,
       missing_fields: input.missingFields ?? [],
       missing_data_actions: missingDataActionsForFields(input.missingFields ?? [], input.propertyId),
     },
+  });
+
+  await reconcileGuestTestResultLoop({
+    telegramUserId: input.telegramUserId,
+    telegramChatId: input.telegramChatId,
+    propertyId: input.propertyId,
+    contactId: input.contactId,
+  }).catch((error) => {
+    console.error('[operator-followup] guest test reconcile failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   });
 }
 
@@ -133,7 +148,7 @@ export async function createGuestTestMissingDataEvent(input: {
       contactId: input.contactId ?? undefined,
       telegramUserId: input.telegramUserId,
       telegramChatId: input.telegramChatId,
-      eventType: 'missing_data',
+      eventType: 'guest_test_missing_data',
       messageText: input.guestQuestion,
       propertyId: input.propertyId ?? undefined,
       allowCreateContact: true,
@@ -248,21 +263,4 @@ export async function sendOperatorFollowupToTelegram(input: {
     console.error('[operator-followup] send failed', { error: message });
     return { ok: false, error: message };
   }
-}
-
-export function extractGuestTestResults(
-  events: Array<{ event_type: string; message_text: string | null; metadata: Record<string, unknown> | null; created_at: string }>,
-): Array<{ question: string; outcome: string; intent: string; createdAt: string }> {
-  return events
-    .filter((event) => event.event_type === 'guest_test_question')
-    .slice(0, 8)
-    .map((event) => {
-      const meta = event.metadata ?? {};
-      return {
-        question: event.message_text ?? '',
-        outcome: String(meta.outcome ?? 'unknown'),
-        intent: String(meta.intent ?? ''),
-        createdAt: event.created_at,
-      };
-    });
 }

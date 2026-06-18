@@ -1,5 +1,10 @@
 import { CRM_EVENT_TYPE_LABELS, CRM_ROLE_LABELS, CRM_SOURCE_LABELS, CRM_STATUS_LABELS } from './labels';
-import { extractGuestTestResults } from './operator-followup';
+import {
+  computeGuestTestSummary,
+  deriveGuestTestListStatus,
+  extractGuestTestQuestions,
+  GUEST_TEST_LIST_STATUS_LABELS,
+} from './guest-test-result-loop';
 import { computePilotOnboardingProgress } from './pilot-onboarding';
 import {
   deriveCrmAutomationSuggestion,
@@ -55,7 +60,7 @@ function formatTelegramDisplay(username: string | null, userId: string | null, c
 function collectMissingDataFields(events: CrmEventRow[]): string[] {
   const fields = new Set<string>();
   for (const event of events) {
-    if (event.event_type !== 'missing_data') continue;
+    if (event.event_type !== 'missing_data' && event.event_type !== 'guest_test_missing_data') continue;
     if (event.acknowledged_at) continue;
     const meta = asRecord(event.metadata);
     const missing = meta.missing_fields;
@@ -84,6 +89,7 @@ export function computeNeedsReaction(input: {
     if (
       event.event_type === 'escalation' ||
       event.event_type === 'missing_data' ||
+      event.event_type === 'guest_test_missing_data' ||
       event.event_type === 'operator_followup_required'
     ) {
       escalationCount += 1;
@@ -178,7 +184,14 @@ export function normalizeCrmContactRow(
   const pilotApplication = latestPilotApplication(events);
   const missingDataFields = collectMissingDataFields(events);
   const missingDataActions = missingDataActionsForFields(missingDataFields, row.property_id);
-  const guestTestResults = extractGuestTestResults(events);
+  const guestTestResults = extractGuestTestQuestions(events);
+  const guestTestSummary = guestTestResults.length > 0 || events.some((e) => e.event_type === 'guest_test_started')
+    ? computeGuestTestSummary(events, row.property_id)
+    : null;
+  const guestTestListStatus = guestTestSummary
+    ? deriveGuestTestListStatus(events, guestTestSummary)
+    : 'not_started';
+  const guestTestListStatusLabel = GUEST_TEST_LIST_STATUS_LABELS[guestTestListStatus];
   const hasOperatorFollowupPending = events.some(
     (event) => event.event_type === 'operator_followup_required' && !event.acknowledged_at,
   );
@@ -250,6 +263,9 @@ export function normalizeCrmContactRow(
     missingDataFields,
     missingDataActions,
     guestTestResults,
+    guestTestSummary,
+    guestTestListStatus,
+    guestTestListStatusLabel,
     hasOperatorFollowupPending,
   };
 }
