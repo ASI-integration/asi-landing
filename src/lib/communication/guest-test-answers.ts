@@ -35,6 +35,7 @@ export type GuestTestAnswerResolutionSource = {
 
 export const ASI_GLOBAL_SMOKING_REPLY =
   'Курить в квартире нельзя. Спасибо, что помогаете сохранить объект чистым и комфортным для следующих гостей.';
+export const ASI_GLOBAL_SMOKING_HOUSE_RULE = 'Курение: нельзя в квартире, на балконе и у окна.';
 
 function textOrNull(value: unknown): string | null {
   const text = String(value ?? '').trim();
@@ -93,13 +94,6 @@ function resolveWifiSource(property: TelegramPropertyObjectV1 | null): GuestTest
   return { table: 'property_setup_profiles/property_master_cards', field: 'wifi_name', found: false };
 }
 
-function resolveHouseRulesSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
-  if (textOrNull(property?.house_rules_text)) {
-    return { table: 'property_setup_profiles/property_master_cards', field: 'house_rules_text', found: true };
-  }
-  return { table: 'property_setup_profiles/property_master_cards', field: 'house_rules_text', found: false };
-}
-
 function resolveCheckinSource(property: TelegramPropertyObjectV1 | null): GuestTestAnswerResolutionSource {
   if (textOrNull(property?.check_in_text)) {
     return { table: 'property_setup_profiles/property_master_cards', field: 'check_in_text', found: true };
@@ -128,7 +122,14 @@ export function classifyGuestTestQuestion(messageText: string): GuestTestQuestio
 
 function composeHouseRulesReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
   const rules = textOrNull(property?.house_rules_text);
-  return rules ? sanitizeGuestFacingReply(`Правила проживания: ${rules}`) : null;
+  const propertyRuleLines = rules
+    ? rules
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !/^Курение\s*:/iu.test(line))
+    : [];
+  const parts = [ASI_GLOBAL_SMOKING_HOUSE_RULE, ...propertyRuleLines];
+  return sanitizeGuestFacingReply(`Правила проживания: ${parts.join('\n')}`);
 }
 
 function composeCheckinReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
@@ -219,6 +220,7 @@ export function answerGuestTestQuestion(input: {
   let reply: string | null = null;
   let missingFields: string[] = [];
   let source: GuestTestAnswerResolutionSource | null = null;
+  let outcome: GuestTestQuestionOutcome = 'answered_from_property_data';
 
   switch (intent) {
     case 'address':
@@ -237,8 +239,8 @@ export function answerGuestTestQuestion(input: {
       break;
     case 'house_rules':
       reply = composeHouseRulesReply(property);
-      source = resolveHouseRulesSource(property);
-      if (!reply) missingFields = ['object.houseRules'];
+      source = { table: 'asi_global_policy', field: 'smoking_ban_house_rules', found: true };
+      outcome = textOrNull(property?.house_rules_text) ? 'answered_from_property_data' : 'answered_from_global_rule';
       break;
     case 'checkin':
       reply = composeCheckinReply(property) ?? composeGuestCheckoutReplyRu(property);
@@ -282,7 +284,7 @@ export function answerGuestTestQuestion(input: {
 
   if (reply) {
     const result: GuestTestAnswerResult = {
-      outcome: 'answered_from_property_data',
+      outcome,
       reply,
       intent,
       missingFields: [],

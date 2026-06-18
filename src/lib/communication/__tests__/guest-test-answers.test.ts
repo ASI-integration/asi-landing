@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   answerGuestTestQuestion,
+  ASI_GLOBAL_SMOKING_HOUSE_RULE,
   ASI_GLOBAL_SMOKING_REPLY,
   classifyGuestTestQuestion,
 } from '../guest-test-answers';
@@ -58,6 +59,21 @@ describe('guest test deterministic answers', () => {
     expect(result.missingFields).toEqual([]);
   });
 
+  it('answers house rules with global ASI smoking policy instead of property smoking value', () => {
+    const result = answerGuestTestQuestion({
+      messageText: 'Какие правила проживания?',
+      property: { ...property, house_rules_text: 'Курение: test\nЖивотные: test' },
+      propertyId: 'prop-1',
+    });
+
+    expect(result.outcome).toBe('answered_from_property_data');
+    expect(result.reply).toContain(ASI_GLOBAL_SMOKING_HOUSE_RULE);
+    expect(result.reply).toContain('Животные: test');
+    expect(result.reply).not.toContain('Курение: test');
+    expect(result.missingFields).toEqual([]);
+    expect(result.needsOperator).toBe(false);
+  });
+
   it('classifies balcony smoking questions as smoking', () => {
     expect(classifyGuestTestQuestion('Можно курить на балконе?')).toBe('smoking');
   });
@@ -101,6 +117,19 @@ describe('guest test deterministic answers', () => {
     });
     expect(result.outcome).toBe('answered_from_global_rule');
     expect(result.missingFields).toEqual([]);
+  });
+
+  it('house rules smoking policy does not create missing_data when property rules are empty', () => {
+    const result = answerGuestTestQuestion({
+      messageText: 'Какие правила проживания?',
+      property: { ...property, house_rules_text: null },
+      propertyId: 'prop-1',
+    });
+
+    expect(result.outcome).toBe('answered_from_global_rule');
+    expect(result.reply).toContain(ASI_GLOBAL_SMOKING_HOUSE_RULE);
+    expect(result.missingFields).toEqual([]);
+    expect(result.needsOperator).toBe(false);
   });
 
   it('creates operator_followup_required for operator-level questions', () => {
