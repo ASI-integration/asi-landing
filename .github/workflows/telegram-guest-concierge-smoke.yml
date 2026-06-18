@@ -1,0 +1,85 @@
+name: Telegram Guest Concierge Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Release SHA to test (defaults to current production symlink)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  telegram_smoke:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout smoke script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run live Telegram acceptance on VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          TEST_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
+          CASES_FILE="tests/guest-concierge-llm-live-cases.ru.json"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" scripts/telegram-live-acceptance.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/telegram-live-acceptance.mjs"
+          scp "${SCP_OPTS[@]}" "$CASES_FILE" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/guest-concierge-llm-live-cases.ru.json"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" bash -lc "set -euo pipefail
+            cd /var/www/asi/current
+            set -a
+            source /var/www/asi/shared/.env.production.live
+            set +a
+            echo '=== production version ==='
+            curl -fsS http://127.0.0.1:3000/api/version
+            echo
+            echo '=== guest concierge env ==='
+            echo GUEST_CONCIERGE_LLM_ENABLED=\${GUEST_CONCIERGE_LLM_ENABLED:-missing}
+            echo GUEST_CONCIERGE_LLM_MODEL=\${GUEST_CONCIERGE_LLM_MODEL:-missing}
+            export TELEGRAM_LIVE_CASES_PATH='${REMOTE_TMP}/guest-concierge-llm-live-cases.ru.json'
+            node '${REMOTE_TMP}/telegram-live-acceptance.mjs'
+          "
