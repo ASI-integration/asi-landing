@@ -54,6 +54,7 @@ export async function recordGuestTestQuestionOutcome(input: {
     metadata: {
       outcome: input.outcome,
       intent: normalizeGuestTestIntent(input.intent),
+      question_type: input.intent,
       reply_preview: input.replyText,
       missing_fields: input.missingFields ?? [],
       missing_data_actions: missingDataActionsForFields(input.missingFields ?? [], input.propertyId),
@@ -205,6 +206,45 @@ export async function sendOperatorFollowupToTelegram(input: {
   operatorId?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   return sendOperatorReplyToTelegram(input);
+}
+
+export async function createGuestConciergeAnsweredEvent(input: {
+  telegramUserId: string;
+  telegramChatId: number;
+  propertyId?: string | null;
+  guestQuestion: string;
+  replyText: string;
+  contactId?: string | null;
+  intent: string;
+}): Promise<void> {
+  await recordCrmCommunicationEvent({
+    contactId: input.contactId ?? undefined,
+    telegramUserId: input.telegramUserId,
+    telegramChatId: input.telegramChatId,
+    eventType: 'guest_concierge_answered',
+    messageText: input.guestQuestion,
+    propertyId: input.propertyId ?? undefined,
+    allowCreateContact: true,
+    contactHints: {
+      name: null,
+      role: 'guest',
+      source: 'test',
+      telegramUserId: input.telegramUserId,
+      telegramChatId: input.telegramChatId,
+      propertyId: input.propertyId ?? undefined,
+      status: 'testing_communication',
+    },
+    metadata: {
+      question: input.guestQuestion,
+      question_type: input.intent,
+      outcome: 'answered_by_concierge_autopilot',
+      property_id: input.propertyId ?? null,
+      telegram_chat_id: input.telegramChatId,
+      reply_preview: input.replyText,
+      timestamp: nowIso(),
+      source: 'guest_test',
+    },
+  });
 }
 
 type ActiveCrmEscalationRow = {

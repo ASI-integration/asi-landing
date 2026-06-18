@@ -57,6 +57,7 @@ import {
   type TelegramConversationMemory,
 } from '@/lib/communication/telegram-identity-memory';
 import {
+  createGuestConciergeAnsweredEvent,
   createGuestTestMissingDataEvent,
   createOperatorFollowupRequired,
   recordGuestTestQuestionOutcome,
@@ -906,6 +907,16 @@ async function processGuestTestDeterministicMessage(
       propertyId,
       guestQuestion: messageText,
       missingFields: answer.missingFields,
+      contactId,
+      intent: answer.intent,
+    });
+  } else if (answer.outcome === 'answered_by_concierge_autopilot') {
+    await createGuestConciergeAnsweredEvent({
+      telegramUserId: user.telegram_user_id,
+      telegramChatId: user.chat_id,
+      propertyId,
+      guestQuestion: messageText,
+      replyText: guestReply,
       contactId,
       intent: answer.intent,
     });

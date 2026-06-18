@@ -500,6 +500,40 @@ describe('Telegram routing layer', () => {
     expect(guestReply).toContain('оператор');
   });
 
+  it('answers nearby restaurant questions as concierge without operator escalation', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2080));
+    mockRecordCrmCommunicationEvent.mockClear();
+    mockSendTelegramMessageToChat.mockClear();
+
+    const result = await processTelegramRoutingUpdate(
+      routingUpdate('вы можете порекомендовать какие-то рестораны недалеко?', 2081),
+    );
+
+    expect(result?.reply).toContain('кафе и рестораны');
+    expect(result?.reply).toContain('Невский');
+    expect(result?.reply).not.toMatch(/Тануки|Шоколадница|Му-Му|Якитория|Хачапури|Додо|Вкусно и точка/i);
+    expect(mockSendTelegramMessageToChat).not.toHaveBeenCalled();
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'guest_concierge_answered',
+      metadata: expect.objectContaining({
+        question_type: 'concierge_food',
+        outcome: 'answered_by_concierge_autopilot',
+        property_id: 'test-prop-tg-live',
+        telegram_chat_id: 8101,
+      }),
+    }));
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'guest_test_question',
+      metadata: expect.objectContaining({
+        outcome: 'answered_by_concierge_autopilot',
+        question_type: 'concierge_food',
+      }),
+    }));
+    expect(mockRecordCrmCommunicationEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'operator_followup_required',
+    }));
+  });
+
   it('sanitizes guest reply when autopilot draft contains forbidden internal tokens', async () => {
     mockDecideAutopilot.mockResolvedValueOnce({
       action: 'escalate',

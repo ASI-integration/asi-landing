@@ -890,6 +890,8 @@ export function CrmDashboardClient() {
                               ? 'глобальное правило ASI'
                             : item.outcome === 'missing_data'
                               ? 'не хватает данных'
+                            : item.outcome === 'answered_by_concierge_autopilot'
+                              ? 'ASI ответила как гостевой консьерж'
                               : item.outcome === 'operator_followup_required'
                                 ? 'нужен оператор'
                                 : item.outcome}

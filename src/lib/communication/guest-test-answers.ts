@@ -16,13 +16,26 @@ export type GuestTestQuestionKind =
   | 'checkin'
   | 'parking'
   | 'description'
+  | 'concierge_food'
+  | 'concierge_grocery'
+  | 'concierge_pharmacy'
+  | 'concierge_transport'
+  | 'concierge_sights'
+  | 'concierge_neutral'
   | 'operator'
   | 'unknown';
+
+export type GuestTestQuestionDecisionLayer =
+  | 'property_data_answer'
+  | 'global_rule_answer'
+  | 'concierge_autopilot_answer'
+  | 'operator_escalation_required';
 
 export type GuestTestAnswerResult = {
   outcome: GuestTestQuestionOutcome;
   reply: string;
   intent: GuestTestQuestionKind;
+  decisionLayer: GuestTestQuestionDecisionLayer;
   missingFields: string[];
   needsOperator: boolean;
 };
@@ -107,6 +120,7 @@ function resolveCheckinSource(property: TelegramPropertyObjectV1 | null): GuestT
 export function classifyGuestTestQuestion(messageText: string): GuestTestQuestionKind {
   const lower = messageText.toLowerCase();
 
+  if (requiresOperatorEscalation(lower)) return 'operator';
   if (/адрес|как добраться|где наход|как найти/i.test(lower)) return 'address';
   if (/wi-?fi|вай-?фай|парол.*сет|интернет/i.test(lower)) return 'wifi';
   if (/курить|курени|табач|сигарет|вейп|vape|кальян/i.test(lower)) return 'smoking';
@@ -115,9 +129,62 @@ export function classifyGuestTestQuestion(messageText: string): GuestTestQuestio
   if (/заезд|выезд|check.?in|check.?out|время.*заезд/i.test(lower)) return 'checkin';
   if (/парков/i.test(lower)) return 'parking';
   if (/описан|квартир|объект|что за жиль/i.test(lower)) return 'description';
-  if (/оплат|возврат|жалоб|счет|бронь.*номер|оператор|человек/i.test(lower)) return 'operator';
+  if (/ресторан|кафе|кофейн|поесть|завтрак|обед|ужин|грузинск|итальянск|еда|перекус/i.test(lower)) return 'concierge_food';
+  if (/продукт|магазин|супермаркет|вода|молок|хлеб|купить/i.test(lower)) return 'concierge_grocery';
+  if (/аптек|лекарств|таблет|пластыр|градусник/i.test(lower)) return 'concierge_pharmacy';
+  if (/транспорт|метро|такси|автобус|трамва|как доехать|маршрут|остановк/i.test(lower)) return 'concierge_transport';
+  if (/посмотреть|достопримеч|погулять|рядом интересн|музе|парк|куда сходить/i.test(lower)) return 'concierge_sights';
+  if (/рядом|поблизости|недалеко|около объекта|в районе/i.test(lower)) return 'concierge_neutral';
 
   return 'unknown';
+}
+
+function requiresOperatorEscalation(lower: string): boolean {
+  return /возврат|вернуть деньги|компенсац|скидк|жалоб|конфликт|спор|претензи|продл.*прожив|продлен|измен.*брон|перенести брон|отмен.*брон|ранн.*заезд|поздн.*выезд|сломал|сломалось|поломк|не работает|протеч|затоп|безопасн|опасн|угроз|пожар|дым|полици|юрист|закон|паспорт|персональн|личные данные|банковск.*карт|картой|карта.*оплат|платеж|оплат|счет|чек|обязательств|обеща|оператор|человек/i.test(lower);
+}
+
+function composeLocationContext(property: TelegramPropertyObjectV1 | null | undefined): string {
+  const address = textOrNull(property?.address);
+  if (address) return `в районе: ${address}`;
+  return 'рядом с объектом';
+}
+
+function composeConciergeAutopilotReply(
+  intent: GuestTestQuestionKind,
+  property: TelegramPropertyObjectV1 | null | undefined,
+): string {
+  const location = composeLocationContext(property);
+  const suffix = 'Перед визитом лучше проверить часы работы и рейтинг в картах.';
+
+  if (intent === 'concierge_food') {
+    return sanitizeGuestFacingReply(
+      `Да, конечно. Рядом с объектом можно поискать кафе и рестораны ${location}. Подскажите, что вам удобнее: завтрак, недорогой обед, кофейня, итальянская, грузинская или что-то другое? ${suffix}`,
+    )!;
+  }
+  if (intent === 'concierge_grocery') {
+    return sanitizeGuestFacingReply(
+      `Да. Продукты удобнее искать ${location}: супермаркет, магазин у дома или доставку. ${suffix}`,
+    )!;
+  }
+  if (intent === 'concierge_pharmacy') {
+    return sanitizeGuestFacingReply(
+      `Да. Аптеку лучше искать ${location} в картах. Проверьте часы работы перед выходом.`,
+    )!;
+  }
+  if (intent === 'concierge_transport') {
+    return sanitizeGuestFacingReply(
+      `Да. Для транспорта рядом с объектом проверьте маршрут ${location} в картах: метро, остановки и такси могут зависеть от времени дня.`,
+    )!;
+  }
+  if (intent === 'concierge_sights') {
+    return sanitizeGuestFacingReply(
+      `Да. Можно посмотреть места для прогулки и достопримечательности ${location}. Лучше выбрать по картам и отзывам то, что ближе и удобно по времени.`,
+    )!;
+  }
+
+  return sanitizeGuestFacingReply(
+    `Да. Я могу подсказать по нейтральным вопросам рядом с объектом ${location}. Для точных адресов и часов работы лучше проверить карты.`,
+  )!;
 }
 
 function composeHouseRulesReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
@@ -188,6 +255,7 @@ export function answerGuestTestQuestion(input: {
       outcome: 'operator_followup_required',
       reply: OPERATOR_HANDOFF_REPLY,
       intent,
+      decisionLayer: 'operator_escalation_required',
       missingFields: [],
       needsOperator: true,
     };
@@ -205,6 +273,7 @@ export function answerGuestTestQuestion(input: {
       outcome: 'answered_from_global_rule',
       reply: sanitizeGuestFacingReply(ASI_GLOBAL_SMOKING_REPLY) ?? ASI_GLOBAL_SMOKING_REPLY,
       intent,
+      decisionLayer: 'global_rule_answer',
       missingFields: [],
       needsOperator: false,
     };
@@ -265,11 +334,34 @@ export function answerGuestTestQuestion(input: {
       };
       if (!reply) missingFields = ['object.name', 'object.address'];
       break;
+    case 'concierge_food':
+    case 'concierge_grocery':
+    case 'concierge_pharmacy':
+    case 'concierge_transport':
+    case 'concierge_sights':
+    case 'concierge_neutral': {
+      const result: GuestTestAnswerResult = {
+        outcome: 'answered_by_concierge_autopilot',
+        reply: composeConciergeAutopilotReply(intent, property),
+        intent,
+        decisionLayer: 'concierge_autopilot_answer',
+        missingFields: [],
+        needsOperator: false,
+      };
+      logGuestTestAnswerResolution({
+        propertyId: input.propertyId,
+        questionType: intent,
+        source: { table: 'guest_concierge_autopilot', field: 'safe_template', found: true },
+        outcome: result.outcome,
+      });
+      return result;
+    }
     default:
       const operatorResult: GuestTestAnswerResult = {
         outcome: 'operator_followup_required',
         reply: OPERATOR_HANDOFF_REPLY,
         intent,
+        decisionLayer: 'operator_escalation_required',
         missingFields: [],
         needsOperator: true,
       };
@@ -287,6 +379,7 @@ export function answerGuestTestQuestion(input: {
       outcome,
       reply,
       intent,
+      decisionLayer: outcome === 'answered_from_global_rule' ? 'global_rule_answer' : 'property_data_answer',
       missingFields: [],
       needsOperator: false,
     };
@@ -303,6 +396,7 @@ export function answerGuestTestQuestion(input: {
     outcome: 'missing_data',
     reply: missingDataReply(missingFields, input.propertyId),
     intent,
+    decisionLayer: 'property_data_answer',
     missingFields,
     needsOperator: false,
   };

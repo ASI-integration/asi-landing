@@ -36,6 +36,7 @@ export const CRM_EVENT_TYPES = [
   'guest_test_question',
   'guest_test_passed_basic',
   'guest_test_missing_data',
+  'guest_concierge_answered',
   'operator_followup_required',
   'operator_followup_sent',
   'operator_reply_sent',
@@ -48,6 +49,7 @@ export const CRM_EVENT_TYPES = [
 export type GuestTestQuestionOutcome =
   | 'answered_from_property_data'
   | 'answered_from_global_rule'
+  | 'answered_by_concierge_autopilot'
   | 'missing_data'
   | 'operator_followup_required';
 

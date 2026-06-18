@@ -47,6 +47,7 @@ export const CRM_EVENT_TYPE_LABELS: Record<CrmEventType, string> = {
   guest_test_question: 'Вопрос тестового гостя',
   guest_test_passed_basic: 'Базовый тест гостя пройден',
   guest_test_missing_data: 'В тесте гостя не хватает данных',
+  guest_concierge_answered: 'ASI ответила как гостевой консьерж',
   operator_followup_required: 'Нужен ответ оператора',
   operator_followup_sent: 'Ответ оператора отправлен',
   operator_reply_sent: 'Ответ оператора отправлен',

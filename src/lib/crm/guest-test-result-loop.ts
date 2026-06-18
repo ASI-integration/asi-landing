@@ -98,7 +98,11 @@ export function collectLatestIntentStates(events: CrmEventRow[]): Map<GuestTestQ
 }
 
 function isSuccessfulOutcome(outcome: GuestTestQuestionOutcome): boolean {
-  return outcome === 'answered_from_property_data' || outcome === 'answered_from_global_rule';
+  return (
+    outcome === 'answered_from_property_data' ||
+    outcome === 'answered_from_global_rule' ||
+    outcome === 'answered_by_concierge_autopilot'
+  );
 }
 
 function deriveActiveMissingFields(
@@ -189,7 +193,11 @@ function categoryStateFromOutcome(
     return { status: 'not_verified', label: GUEST_TEST_CHECK_STATUS_LABELS.not_verified };
   }
 
-  if (outcome === 'answered_from_property_data' || outcome === 'answered_from_global_rule') {
+  if (
+    outcome === 'answered_from_property_data' ||
+    outcome === 'answered_from_global_rule' ||
+    outcome === 'answered_by_concierge_autopilot'
+  ) {
     return { status: 'verified', label: GUEST_TEST_CHECK_STATUS_LABELS.verified };
   }
   if (outcome === 'missing_data') {
