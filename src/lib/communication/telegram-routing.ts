@@ -881,7 +881,7 @@ async function processGuestTestDeterministicMessage(
   const property = await lookup_property_for_guest_test(propertyId);
   const contactId = memory?.crmContactId ?? null;
 
-  const answer = answerGuestTestQuestion({
+  const answer = await answerGuestTestQuestion({
     messageText,
     property,
     propertyId,

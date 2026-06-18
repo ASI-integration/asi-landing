@@ -195,6 +195,8 @@ jobs:
     env:
       TWOGIS_CATALOG_API_KEY: ${{ secrets.TWOGIS_CATALOG_API_KEY }}
       GOOGLE_MAPS_SERVER_API_KEY: ${{ secrets.GOOGLE_MAPS_SERVER_API_KEY }}
+      GUEST_CONCIERGE_LLM_ENABLED: 'true'
+      GUEST_CONCIERGE_LLM_MODEL: 'gpt-4o-mini'
     steps:
       - name: Checkout deploy script (same SHA as artifact)
         uses: actions/checkout@v4
@@ -328,7 +330,7 @@ jobs:
             "ls -lh ${REMOTE_TMP}/asi-release-*.tgz | tail -5"
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
+            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' GUEST_CONCIERGE_LLM_ENABLED='${GUEST_CONCIERGE_LLM_ENABLED:-}' GUEST_CONCIERGE_LLM_MODEL='${GUEST_CONCIERGE_LLM_MODEL:-}' bash -lc 'set -euo pipefail
               echo \"Deploying SHA: ${SHA}\"
 
               chmod +x ${REMOTE_TMP}/asi-deploy-artifact.sh || true

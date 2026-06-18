@@ -5,6 +5,10 @@ import {
   type TelegramPropertyObjectV1,
 } from './telegram-booking-object-memory';
 import { sanitizeGuestFacingReply } from './guest-facing-ru';
+import {
+  classifyGuestConciergeMessage,
+} from './guest-concierge-operating-domain';
+import { composeGuestConciergeReplyWithLlm } from './guest-concierge-llm-reply';
 import type {
   CommunicationAutopilotContext,
   CommunicationAutopilotDecision,
@@ -22,7 +26,10 @@ export type CommunicationAutopilotPassportScenario =
   | 'property_problem'
   | 'emergency'
   | 'outside_object_data'
-  | 'prompt_injection';
+  | 'prompt_injection'
+  | 'nearby_recommendation'
+  | 'off_topic_safe'
+  | 'disallowed_request';
 
 type PassportScenario = CommunicationAutopilotPassportScenario;
 
@@ -48,9 +55,6 @@ const MISSING_DATA_REPLY_CHECKIN =
 const MISSING_DATA_REPLY_WIFI =
   'Сейчас уточню данные Wi-Fi у оператора и напишу вам здесь.';
 
-const PROBLEM_REPLY =
-  'Понял, есть проблема в объекте. Передаю оператору — команда проверит и поможет.';
-
 const EMERGENCY_REPLY =
   'Понял, это срочно. Передаю оператору. Если есть угроза жизни, пожар, газ или сильное затопление — звоните 112.';
 
@@ -59,6 +63,42 @@ const BLOCKED_REPLY =
 
 function guestTemplate(text: string): string {
   return sanitizeGuestFacingReply(text) ?? text;
+}
+
+function contextToProperty(context: CommunicationAutopilotContext | undefined): TelegramPropertyObjectV1 | null {
+  const object = context?.object;
+  if (!object) return null;
+  return {
+    object_id: object.id ?? '',
+    object_name: object.name ?? null,
+    address: object.address ?? null,
+    directions_text: object.directionsText ?? object.accessInstructions ?? null,
+    parking_text: object.parkingText ?? null,
+    trash_bins_location: object.trashBinsLocation ?? null,
+    waste_disposal_text: object.wasteDisposalText ?? null,
+    wifi_name: object.wifiName ?? null,
+    wifi_password: object.wifiPassword ?? null,
+    baby_crib_available: object.babyCribAvailable ?? null,
+    baby_crib_note: object.babyCribNote ?? null,
+    check_in_text: object.accessInstructions ?? null,
+    checkout_time: context?.booking?.checkoutTime ?? null,
+    house_rules_text: object.houseRules ?? null,
+    door_code_notes: context?.booking?.verified || context?.bookingVerified ? (object.accessCode ?? null) : null,
+    knowledge_status: object.knowledgeStatus,
+  };
+}
+
+async function operatingDomainReply(
+  messageText: string,
+  context: CommunicationAutopilotContext | undefined,
+): Promise<string> {
+  const classification = classifyGuestConciergeMessage(messageText);
+  const { reply } = await composeGuestConciergeReplyWithLlm(
+    classification,
+    { property: contextToProperty(context), addressHint: context?.object?.address ?? null },
+    messageText,
+  );
+  return reply;
 }
 
 function normalizeRu(text: string): string {
@@ -199,34 +239,37 @@ function classifyPassportScenario(messageText: string): PassportClassification {
     };
   }
 
+  const concierge = classifyGuestConciergeMessage(messageText);
+  if (concierge.domain === 'disallowed_or_sensitive') {
+    return {
+      scenario: 'disallowed_request',
+      intent: 'unknown',
+      confidence: concierge.confidence,
+      signals: [...concierge.signals, 'passport_v1_disallowed'],
+    };
+  }
+  if (concierge.domain === 'off_topic_safe' && concierge.situation === 'off_topic_safe') {
+    return {
+      scenario: 'off_topic_safe',
+      intent: 'unknown',
+      confidence: concierge.confidence,
+      signals: [...concierge.signals, 'passport_v1_off_topic'],
+    };
+  }
+  if (concierge.domain === 'nearby_area' || concierge.domain === 'weather_local_plans') {
+    return {
+      scenario: 'nearby_recommendation',
+      intent: 'unknown',
+      confidence: concierge.confidence,
+      signals: [...concierge.signals, 'passport_v1_nearby_recommendation'],
+    };
+  }
+
   return {
     scenario: 'outside_object_data',
     intent: 'unknown',
     confidence: 0.6,
     signals: ['passport_v1_outside_object_data'],
-  };
-}
-
-function contextToProperty(context: CommunicationAutopilotContext | undefined): TelegramPropertyObjectV1 | null {
-  const object = context?.object;
-  if (!object) return null;
-  return {
-    object_id: object.id ?? '',
-    object_name: object.name ?? null,
-    address: object.address ?? null,
-    directions_text: object.directionsText ?? object.accessInstructions ?? null,
-    parking_text: object.parkingText ?? null,
-    trash_bins_location: object.trashBinsLocation ?? null,
-    waste_disposal_text: object.wasteDisposalText ?? null,
-    wifi_name: object.wifiName ?? null,
-    wifi_password: object.wifiPassword ?? null,
-    baby_crib_available: object.babyCribAvailable ?? null,
-    baby_crib_note: object.babyCribNote ?? null,
-    check_in_text: object.accessInstructions ?? null,
-    checkout_time: context?.booking?.checkoutTime ?? null,
-    house_rules_text: object.houseRules ?? null,
-    door_code_notes: context?.booking?.verified || context?.bookingVerified ? (object.accessCode ?? null) : null,
-    knowledge_status: object.knowledgeStatus,
   };
 }
 
@@ -313,14 +356,18 @@ function missingForScenario(
     case 'emergency':
     case 'outside_object_data':
     case 'prompt_injection':
+    case 'nearby_recommendation':
+    case 'off_topic_safe':
+    case 'disallowed_request':
       return [];
   }
 }
 
-function safeReplyForScenario(
+async function safeReplyForScenario(
   classification: PassportClassification,
   context: CommunicationAutopilotContext | undefined,
-): string | null {
+  messageText: string,
+): Promise<string | null> {
   switch (classification.scenario) {
     case 'address_directions':
       return composeGuestDirectionsReplyRu(contextToProperty(context));
@@ -337,11 +384,15 @@ function safeReplyForScenario(
     case 'price_payment':
       return guestTemplate(MONEY_OR_LEGAL_REPLY);
     case 'property_problem':
-      return guestTemplate(PROBLEM_REPLY);
+      return operatingDomainReply(messageText, context);
     case 'emergency':
       return guestTemplate(EMERGENCY_REPLY);
     case 'prompt_injection':
       return guestTemplate(BLOCKED_REPLY);
+    case 'nearby_recommendation':
+    case 'off_topic_safe':
+    case 'disallowed_request':
+      return operatingDomainReply(messageText, context);
     case 'outside_object_data':
       return guestTemplate(MISSING_DATA_REPLY_GENERAL);
   }
@@ -371,14 +422,14 @@ function shouldEscalate(classification: PassportClassification, missingContext: 
   ].includes(classification.scenario);
 }
 
-export function decideCommunicationAutopilotPassportV1(input: {
+export async function decideCommunicationAutopilotPassportV1(input: {
   messageText: string;
   context?: CommunicationAutopilotContext;
   baseDecision: CommunicationAutopilotDecision;
-}): CommunicationAutopilotDecision {
+}): Promise<CommunicationAutopilotDecision> {
   const classification = classifyPassportScenario(input.messageText);
   const missingContext = missingForScenario(classification, input.context);
-  const safeReply = safeReplyForScenario(classification, input.context);
+  const safeReply = await safeReplyForScenario(classification, input.context, input.messageText);
   const replyText = sanitizeGuestFacingReply(
     missingContext.length > 0
       ? missingDataGuestReply(classification)

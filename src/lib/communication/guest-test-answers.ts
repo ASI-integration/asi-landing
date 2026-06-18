@@ -1,6 +1,16 @@
 import { missingDataActionsForFields } from '@/lib/crm/automation-loop';
 import { sanitizeGuestFacingReply } from '@/lib/communication/guest-facing-ru';
 import {
+  classifyGuestConciergeMessage,
+  shouldEscalateGuestConcierge,
+  type GuestConciergeClassification,
+  type GuestConciergeNearbySubtype,
+} from '@/lib/communication/guest-concierge-operating-domain';
+import {
+  composeGuestConciergeReplyWithLlm,
+  type GuestConciergeLlmProvider,
+} from '@/lib/communication/guest-concierge-llm-reply';
+import {
   composeGuestCheckoutReplyRu,
   composeGuestDirectionsReplyRu,
   composeGuestWifiReplyRu,
@@ -117,74 +127,79 @@ function resolveCheckinSource(property: TelegramPropertyObjectV1 | null): GuestT
   return { table: 'property_setup_profiles/property_master_cards', field: 'check_in_text', found: false };
 }
 
+function mapNearbySubtypeToGuestTestKind(subtype: GuestConciergeNearbySubtype | undefined): GuestTestQuestionKind {
+  switch (subtype) {
+    case 'food':
+      return 'concierge_food';
+    case 'grocery':
+      return 'concierge_grocery';
+    case 'pharmacy':
+      return 'concierge_pharmacy';
+    case 'transport':
+      return 'concierge_transport';
+    case 'sights':
+      return 'concierge_sights';
+    default:
+      return 'concierge_neutral';
+  }
+}
+
 export function classifyGuestTestQuestion(messageText: string): GuestTestQuestionKind {
+  const concierge = classifyGuestConciergeMessage(messageText);
   const lower = messageText.toLowerCase();
 
-  if (requiresOperatorEscalation(lower)) return 'operator';
+  if (concierge.domain === 'disallowed_or_sensitive') return 'operator';
+  if (shouldEscalateGuestConcierge(concierge)) return 'operator';
+  if (concierge.domain === 'off_topic_safe' && concierge.situation === 'off_topic_safe') return 'concierge_neutral';
+
   if (/адрес|как добраться|где наход|как найти/i.test(lower)) return 'address';
-  if (/wi-?fi|вай-?фай|парол.*сет|интернет/i.test(lower)) return 'wifi';
+  if (concierge.domain === 'wifi_tech' && concierge.situation === 'informational_question') return 'wifi';
   if (/курить|курени|табач|сигарет|вейп|vape|кальян/i.test(lower)) return 'smoking';
   if (/балкон|окн[аоу]?\b/i.test(lower) && /кур|вейп|vape|кальян|сигарет|табач/i.test(lower)) return 'smoking';
-  if (/правил|тишин|животн|шум/i.test(lower)) return 'house_rules';
-  if (/заезд|выезд|check.?in|check.?out|время.*заезд/i.test(lower)) return 'checkin';
+  if (concierge.domain === 'house_rules') return 'house_rules';
+  if (concierge.domain === 'check_in_access' || concierge.domain === 'check_out') return 'checkin';
   if (/парков/i.test(lower)) return 'parking';
   if (/описан|квартир|объект|что за жиль/i.test(lower)) return 'description';
-  if (/ресторан|кафе|кофейн|поесть|завтрак|обед|ужин|грузинск|итальянск|еда|перекус/i.test(lower)) return 'concierge_food';
-  if (/продукт|магазин|супермаркет|вода|молок|хлеб|купить/i.test(lower)) return 'concierge_grocery';
-  if (/аптек|лекарств|таблет|пластыр|градусник/i.test(lower)) return 'concierge_pharmacy';
-  if (/транспорт|метро|такси|автобус|трамва|как доехать|маршрут|остановк/i.test(lower)) return 'concierge_transport';
-  if (/посмотреть|достопримеч|погулять|рядом интересн|музе|парк|куда сходить/i.test(lower)) return 'concierge_sights';
-  if (/рядом|поблизости|недалеко|около объекта|в районе/i.test(lower)) return 'concierge_neutral';
+  if (concierge.domain === 'nearby_area') return mapNearbySubtypeToGuestTestKind(concierge.nearbySubtype);
+  if (concierge.domain === 'weather_local_plans') return 'concierge_sights';
 
   return 'unknown';
 }
 
-function requiresOperatorEscalation(lower: string): boolean {
-  return /возврат|вернуть деньги|компенсац|скидк|жалоб|конфликт|спор|претензи|продл.*прожив|продлен|измен.*брон|перенести брон|отмен.*брон|ранн.*заезд|поздн.*выезд|сломал|сломалось|поломк|не работает|протеч|затоп|безопасн|опасн|угроз|пожар|дым|полици|юрист|закон|паспорт|персональн|личные данные|банковск.*карт|картой|карта.*оплат|платеж|оплат|счет|чек|обязательств|обеща|оператор|человек/i.test(lower);
-}
 
-function composeLocationContext(property: TelegramPropertyObjectV1 | null | undefined): string {
-  const address = textOrNull(property?.address);
-  if (address) return `в районе: ${address}`;
-  return 'рядом с объектом';
-}
-
-function composeConciergeAutopilotReply(
-  intent: GuestTestQuestionKind,
+async function composeConciergeAutopilotReply(
+  messageText: string,
   property: TelegramPropertyObjectV1 | null | undefined,
-): string {
-  const location = composeLocationContext(property);
-  const suffix = 'Перед визитом лучше проверить часы работы и рейтинг в картах.';
+  llmProvider?: GuestConciergeLlmProvider,
+): Promise<string> {
+  const classification = classifyGuestConciergeMessage(messageText);
+  const context = {
+    property,
+    addressHint: property?.address ?? null,
+  };
+  const { reply } = await composeGuestConciergeReplyWithLlm(
+    classification,
+    context,
+    messageText,
+    llmProvider,
+  );
+  return reply;
+}
 
-  if (intent === 'concierge_food') {
-    return sanitizeGuestFacingReply(
-      `Да, конечно. Рядом с объектом можно поискать кафе и рестораны ${location}. Подскажите, что вам удобнее: завтрак, недорогой обед, кофейня, итальянская, грузинская или что-то другое? ${suffix}`,
-    )!;
-  }
-  if (intent === 'concierge_grocery') {
-    return sanitizeGuestFacingReply(
-      `Да. Продукты удобнее искать ${location}: супермаркет, магазин у дома или доставку. ${suffix}`,
-    )!;
-  }
-  if (intent === 'concierge_pharmacy') {
-    return sanitizeGuestFacingReply(
-      `Да. Аптеку лучше искать ${location} в картах. Проверьте часы работы перед выходом.`,
-    )!;
-  }
-  if (intent === 'concierge_transport') {
-    return sanitizeGuestFacingReply(
-      `Да. Для транспорта рядом с объектом проверьте маршрут ${location} в картах: метро, остановки и такси могут зависеть от времени дня.`,
-    )!;
-  }
-  if (intent === 'concierge_sights') {
-    return sanitizeGuestFacingReply(
-      `Да. Можно посмотреть места для прогулки и достопримечательности ${location}. Лучше выбрать по картам и отзывам то, что ближе и удобно по времени.`,
-    )!;
-  }
-
-  return sanitizeGuestFacingReply(
-    `Да. Я могу подсказать по нейтральным вопросам рядом с объектом ${location}. Для точных адресов и часов работы лучше проверить карты.`,
-  )!;
+async function composeOperatingConciergeReply(
+  classification: GuestConciergeClassification,
+  messageText: string,
+  property: TelegramPropertyObjectV1 | null,
+  llmProvider?: GuestConciergeLlmProvider,
+): Promise<string> {
+  const context = { property, addressHint: property?.address ?? null };
+  const { reply } = await composeGuestConciergeReplyWithLlm(
+    classification,
+    context,
+    messageText,
+    llmProvider,
+  );
+  return reply;
 }
 
 function composeHouseRulesReply(property: TelegramPropertyObjectV1 | null | undefined): string | null {
@@ -242,18 +257,56 @@ const OPERATOR_HANDOFF_REPLY =
 export const OPERATOR_HANDOFF_FAILED_REPLY =
   'Не смог передать оператору. Напишите, пожалуйста, в поддержку.';
 
-export function answerGuestTestQuestion(input: {
+export async function answerGuestTestQuestion(input: {
   messageText: string;
   property: TelegramPropertyObjectV1 | null;
   propertyId?: string | null;
-}): GuestTestAnswerResult {
+  llmProvider?: GuestConciergeLlmProvider;
+}): Promise<GuestTestAnswerResult> {
+  const concierge = classifyGuestConciergeMessage(input.messageText);
   const intent = classifyGuestTestQuestion(input.messageText);
   const property = input.property;
 
-  if (intent === 'operator') {
+  if (concierge.domain === 'disallowed_or_sensitive') {
+    const result: GuestTestAnswerResult = {
+      outcome: 'answered_by_concierge_autopilot',
+      reply: await composeOperatingConciergeReply(concierge, input.messageText, property, input.llmProvider),
+      intent,
+      decisionLayer: 'concierge_autopilot_answer',
+      missingFields: [],
+      needsOperator: false,
+    };
+    logGuestTestAnswerResolution({
+      propertyId: input.propertyId,
+      questionType: intent,
+      source: { table: 'guest_concierge_operating_domain', field: 'disallowed_or_sensitive', found: true },
+      outcome: result.outcome,
+    });
+    return result;
+  }
+
+  if (concierge.domain === 'off_topic_safe' && concierge.situation === 'off_topic_safe') {
+    const result: GuestTestAnswerResult = {
+      outcome: 'answered_by_concierge_autopilot',
+      reply: await composeConciergeAutopilotReply(input.messageText, property, input.llmProvider),
+      intent,
+      decisionLayer: 'concierge_autopilot_answer',
+      missingFields: [],
+      needsOperator: false,
+    };
+    logGuestTestAnswerResolution({
+      propertyId: input.propertyId,
+      questionType: intent,
+      source: { table: 'guest_concierge_operating_domain', field: 'off_topic_safe', found: true },
+      outcome: result.outcome,
+    });
+    return result;
+  }
+
+  if (shouldEscalateGuestConcierge(concierge)) {
     const result: GuestTestAnswerResult = {
       outcome: 'operator_followup_required',
-      reply: OPERATOR_HANDOFF_REPLY,
+      reply: await composeOperatingConciergeReply(concierge, input.messageText, property, input.llmProvider),
       intent,
       decisionLayer: 'operator_escalation_required',
       missingFields: [],
@@ -262,7 +315,7 @@ export function answerGuestTestQuestion(input: {
     logGuestTestAnswerResolution({
       propertyId: input.propertyId,
       questionType: intent,
-      source: null,
+      source: { table: 'guest_concierge_operating_domain', field: concierge.domain, found: true },
       outcome: result.outcome,
     });
     return result;
@@ -342,7 +395,7 @@ export function answerGuestTestQuestion(input: {
     case 'concierge_neutral': {
       const result: GuestTestAnswerResult = {
         outcome: 'answered_by_concierge_autopilot',
-        reply: composeConciergeAutopilotReply(intent, property),
+        reply: await composeConciergeAutopilotReply(input.messageText, property, input.llmProvider),
         intent,
         decisionLayer: 'concierge_autopilot_answer',
         missingFields: [],
@@ -351,7 +404,7 @@ export function answerGuestTestQuestion(input: {
       logGuestTestAnswerResolution({
         propertyId: input.propertyId,
         questionType: intent,
-        source: { table: 'guest_concierge_autopilot', field: 'safe_template', found: true },
+        source: { table: 'guest_concierge_operating_domain', field: 'nearby_area', found: true },
         outcome: result.outcome,
       });
       return result;

@@ -409,6 +409,8 @@ merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 merge_env_kv ASI_RELEASE_PATH "$RELEASE_DIR"
 merge_env_kv TWOGIS_CATALOG_API_KEY "${TWOGIS_CATALOG_API_KEY:-}"
 merge_env_kv GOOGLE_MAPS_SERVER_API_KEY "${GOOGLE_MAPS_SERVER_API_KEY:-}"
+merge_env_kv GUEST_CONCIERGE_LLM_ENABLED "${GUEST_CONCIERGE_LLM_ENABLED:-}"
+merge_env_kv GUEST_CONCIERGE_LLM_MODEL "${GUEST_CONCIERGE_LLM_MODEL:-}"
 
 log "Linking env into release"
 ln -sfn "$LIVE_ENV_FILE" "${RELEASE_DIR}/.env.production.live"

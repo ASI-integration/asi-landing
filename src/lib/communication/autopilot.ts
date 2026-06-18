@@ -631,7 +631,7 @@ export async function decideCommunicationAutopilotResponseWithLlmRouter(input: {
   }
 
   if (input.channel === 'telegram') {
-    return decideCommunicationAutopilotPassportV1({
+    return await decideCommunicationAutopilotPassportV1({
       messageText: input.messageText,
       context: input.context,
       baseDecision: deterministic,

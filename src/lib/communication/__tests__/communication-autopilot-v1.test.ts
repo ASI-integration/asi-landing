@@ -130,12 +130,13 @@ describe('Communication Autopilot v1 for Telegram guest passport questions', () 
     expect(decision.replyText).toContain('112');
   });
 
-  it('escalates questions outside the object passport instead of guessing', async () => {
+  it('answers nearby restaurant questions with concierge autopilot instead of guessing', async () => {
     const decision = await decide('Посоветуйте ресторан рядом с музеем');
 
-    expect(decision.action).toBe('escalate');
-    expect(decision.metadata.intent).toBe('unknown');
-    expect(decision.replyText).toContain('уточню это у оператора');
+    expect(decision.action).toBe('auto_reply');
+    expect(decision.metadata.passportScenario).toBe('nearby_recommendation');
+    expect(decision.replyText).toMatch(/проверенных рекомендаций|пешей доступности/i);
+    expect(decision.replyText).not.toMatch(/Тануки|Шоколадница|Му-Му/i);
     expect(decision.replyText).not.toContain('паспорт');
   });
 
