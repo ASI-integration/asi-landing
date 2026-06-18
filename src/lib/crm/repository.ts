@@ -764,6 +764,7 @@ export async function recordCrmCommunicationEvent(input: RecordCrmEventInput): P
   const isReactionEvent =
     input.eventType === 'escalation' ||
     input.eventType === 'missing_data' ||
+    input.eventType === 'operator_followup_required' ||
     input.eventType === 'message_inbound';
 
   const contactPatch: Record<string, unknown> = {
@@ -772,9 +773,23 @@ export async function recordCrmCommunicationEvent(input: RecordCrmEventInput): P
   };
   if (input.messageText?.trim()) contactPatch.last_message = input.messageText.trim();
   if (input.propertyId) contactPatch.property_id = input.propertyId;
-  if (input.eventType === 'escalation' || input.eventType === 'missing_data') {
+  if (
+    input.eventType === 'escalation' ||
+    input.eventType === 'missing_data' ||
+    input.eventType === 'operator_followup_required'
+  ) {
     contactPatch.status = 'needs_reaction';
     contactPatch.awaiting_reply = true;
+  }
+  if (input.eventType === 'missing_data') {
+    const missingFields = Array.isArray(input.metadata?.missing_fields)
+      ? (input.metadata?.missing_fields as string[])
+      : [];
+    const firstAction = missingDataActionsForFields(missingFields, input.propertyId)[0];
+    if (firstAction) contactPatch.next_action = `Заполнить: ${firstAction.label}`;
+  }
+  if (input.eventType === 'operator_followup_required') {
+    contactPatch.next_action = 'Ответить гостю';
   }
   if (isReactionEvent && input.eventType === 'message_inbound') {
     contactPatch.awaiting_reply = true;

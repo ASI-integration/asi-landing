@@ -1,4 +1,5 @@
 import { CRM_EVENT_TYPE_LABELS, CRM_ROLE_LABELS, CRM_SOURCE_LABELS, CRM_STATUS_LABELS } from './labels';
+import { extractGuestTestResults } from './operator-followup';
 import { computePilotOnboardingProgress } from './pilot-onboarding';
 import {
   deriveCrmAutomationSuggestion,
@@ -80,7 +81,11 @@ export function computeNeedsReaction(input: {
   let unresolvedEscalationCount = 0;
 
   for (const event of input.events) {
-    if (event.event_type === 'escalation' || event.event_type === 'missing_data') {
+    if (
+      event.event_type === 'escalation' ||
+      event.event_type === 'missing_data' ||
+      event.event_type === 'operator_followup_required'
+    ) {
       escalationCount += 1;
       if (!event.acknowledged_at) unresolvedEscalationCount += 1;
     }
@@ -173,6 +178,10 @@ export function normalizeCrmContactRow(
   const pilotApplication = latestPilotApplication(events);
   const missingDataFields = collectMissingDataFields(events);
   const missingDataActions = missingDataActionsForFields(missingDataFields, row.property_id);
+  const guestTestResults = extractGuestTestResults(events);
+  const hasOperatorFollowupPending = events.some(
+    (event) => event.event_type === 'operator_followup_required' && !event.acknowledged_at,
+  );
   const reaction = computeNeedsReaction({
     status,
     awaitingReply: row.awaiting_reply,
@@ -240,6 +249,8 @@ export function normalizeCrmContactRow(
     recentEvents: normalizedEvents.slice(0, 20),
     missingDataFields,
     missingDataActions,
+    guestTestResults,
+    hasOperatorFollowupPending,
   };
 }
 

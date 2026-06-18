@@ -39,6 +39,25 @@ import {
   type TelegramCommunicationMode,
   type TelegramRoutingRole,
 } from '@/lib/communication/telegram-routing-session';
+import {
+  answerGuestTestQuestion,
+  OPERATOR_HANDOFF_FAILED_REPLY,
+} from '@/lib/communication/guest-test-answers';
+import {
+  applyMemoryToRoutingSession,
+  clearTelegramIdentityGuestTest,
+  ensureTelegramIdentityWithCrm,
+  hydrateTelegramRoutingSessionFromMemory,
+  loadTelegramConversationMemory,
+  patchTelegramIdentityMemory,
+  routingRoleToMemoryRole,
+  type TelegramConversationMemory,
+} from '@/lib/communication/telegram-identity-memory';
+import {
+  createGuestTestMissingDataEvent,
+  createOperatorFollowupRequired,
+  recordGuestTestQuestionOutcome,
+} from '@/lib/crm/operator-followup';
 import { emergencyTestReply, resolveTelegramEmergencyProtocol } from '@/lib/communication/telegram-emergency-protocol';
 import { notifyTelegramOwner } from '@/lib/communication/telegram-owner-notifications';
 import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegram-owner-notifications';
@@ -66,6 +85,9 @@ const DRAFT_PREPARED_REPLY =
 const MISSING_DATA_GUEST_FALLBACK =
   'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
+const GUEST_TEST_CONTINUE_REPLY =
+  'Продолжаем тест гостя. Задайте вопрос по объекту — адрес, заезд, Wi‑Fi, правила.';
+
 const RESET_TEST_STATE_REPLY = 'Тестовое состояние сброшено. Отправьте /start, чтобы выбрать роль заново.';
 
 type ParsedRoutingCallback =
@@ -83,6 +105,120 @@ function crmNotifyOptionsForGuest(
     crmSource: testGuest ? 'test' : 'telegram',
     crmRole: 'guest',
   };
+}
+
+async function persistRoutingIdentity(
+  user: TelegramRoutingUser,
+  patch?: {
+    role?: TelegramRoutingRole;
+    testGuest?: boolean;
+    testPropertyId?: string | null;
+    leadSource?: string;
+    activeScenario?: 'owner_onboarding' | 'guest_test' | 'support' | 'emergency' | null;
+  },
+): Promise<TelegramConversationMemory | null> {
+  const session = getTelegramRoutingSession(user.chat_id);
+  const role = routingRoleToMemoryRole(
+    patch?.role ?? session?.role ?? 'unknown',
+    patch?.testGuest ?? session?.testGuest,
+  );
+
+  try {
+    const memory = await patchTelegramIdentityMemory({
+      telegramUserId: user.telegram_user_id,
+      chatId: user.chat_id,
+      telegramUsername: user.telegram_username,
+      displayName: user.first_name,
+      role,
+      activeScenario:
+        patch?.activeScenario ??
+        (patch?.testGuest || session?.testGuest ? 'guest_test' : null),
+      propertyId: patch?.testPropertyId ?? session?.testPropertyId ?? null,
+      guestTestActive: patch?.testGuest ?? session?.testGuest ?? false,
+      communicationMode: session?.communicationMode,
+      leadSource: patch?.leadSource ?? session?.leadSource ?? null,
+    });
+
+    return memory;
+  } catch (error) {
+    console.error('[telegram-identity] persist routing failed', {
+      error: error instanceof Error ? error.message : String(error),
+      telegram_user_id: user.telegram_user_id,
+    });
+    return null;
+  }
+}
+
+async function continueFromKnownIdentity(
+  user: TelegramRoutingUser,
+  updateId: number,
+  memory: TelegramConversationMemory,
+): Promise<ProcessResult | null> {
+  applyMemoryToRoutingSession(user.chat_id, memory);
+
+  if (memory.guestTestActive) {
+    await replyToTelegram(user.chat_id, GUEST_TEST_CONTINUE_REPLY, {
+      handler: 'telegram_routing/guest_test_resume',
+      update_id: updateId,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: updateId,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: GUEST_TEST_CONTINUE_REPLY,
+    };
+  }
+
+  if (memory.role === 'owner' || memory.role === 'operator') {
+    const contact = await syncCrmRoleSelection(user, 'owner', memory.propertyId);
+    const reply = buildOwnerNextStepReply(contact);
+    await replyToTelegram(user.chat_id, reply, {
+      handler: 'telegram_routing/role_owner_resume',
+      update_id: updateId,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: updateId,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply,
+    };
+  }
+
+  if (memory.role === 'guest') {
+    await replyToTelegram(user.chat_id, GUEST_WELCOME_REPLY, {
+      handler: 'telegram_routing/role_guest_resume',
+      update_id: updateId,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: updateId,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: GUEST_WELCOME_REPLY,
+    };
+  }
+
+  if (memory.role === 'lead') {
+    const leadSource = normalizeAsiFeedbackLeadSource(memory.leadSource ?? 'unknown');
+    patchTelegramRoutingSession(user.chat_id, { role: 'lead', leadSource });
+    return beginTelegramLeadIntakeFromRouting(
+      { update_id: updateId, message: { chat: { id: user.chat_id }, text: '/start' } } as TelegramUpdate,
+      user,
+      leadSource,
+    );
+  }
+
+  if (memory.role === 'support') {
+    patchTelegramRoutingSession(user.chat_id, { role: 'support' });
+    return beginTelegramSupportFromRouting(
+      { update_id: updateId, message: { chat: { id: user.chat_id }, text: '/start' } } as TelegramUpdate,
+      user,
+    );
+  }
+
+  return null;
 }
 
 async function syncCrmRoleSelection(
@@ -115,6 +251,16 @@ async function syncCrmRoleSelection(
         role,
         source: 'telegram_role_selection',
       },
+    });
+    void patchTelegramIdentityMemory({
+      telegramUserId: user.telegram_user_id,
+      chatId: user.chat_id,
+      telegramUsername: user.telegram_username,
+      displayName: user.first_name,
+      role: routingRoleToMemoryRole(role),
+      activeScenario: role === 'owner' ? 'owner_onboarding' : null,
+      propertyId: propertyId ?? null,
+      crmContactId: contact?.id ?? null,
     });
     return contact;
   } catch (error) {
@@ -327,6 +473,7 @@ async function sendRoleSelection(
     role: 'unknown',
     leadSource: leadSource ?? undefined,
   });
+  void persistRoutingIdentity(user, { role: 'unknown', leadSource });
   const reply = intro?.trim() || ROLE_SELECTION_REPLY;
   await replyToTelegram(user.chat_id, reply, {
     handler: 'telegram_routing/role_selection',
@@ -441,6 +588,24 @@ async function activateGuestTestMode(
     source: explicitPropertyId ? 'telegram_start' : 'telegram_command',
   });
 
+  await persistRoutingIdentity(user, {
+    role: 'guest',
+    testGuest: true,
+    testPropertyId: resolvedPropertyId,
+    activeScenario: 'guest_test',
+  });
+
+  await ensureTelegramIdentityWithCrm({
+    telegramUserId: user.telegram_user_id,
+    chatId: user.chat_id,
+    telegramUsername: user.telegram_username,
+    displayName: user.first_name,
+    role: 'tester',
+    source: 'test',
+    propertyId: resolvedPropertyId,
+    status: 'testing_communication',
+  });
+
   void syncCrmGuestTest(user, resolvedPropertyId);
 
   return {
@@ -470,6 +635,10 @@ async function handleRoleSelectionCallback(
   patchTelegramRoutingSession(user.chat_id, {
     role,
     selectedRole: role,
+  });
+  void persistRoutingIdentity(user, {
+    role,
+    activeScenario: role === 'owner' ? 'owner_onboarding' : role === 'support' ? 'support' : null,
   });
 
   if (role === 'guest') {
@@ -580,12 +749,86 @@ function classifyOwnerNotificationType(decision: Awaited<ReturnType<typeof decid
   return 'escalation_created' as const;
 }
 
-function resolveGuestFacingReply(rawReply: string | null | undefined): string {
+function resolveGuestFacingReply(
+  rawReply: string | null | undefined,
+  options?: { allowOperatorDeferral?: boolean },
+): string {
   const sanitized = sanitizeGuestFacingReply(rawReply)?.trim();
   if (sanitized && !guestReplyContainsForbiddenInternalTokens(sanitized)) {
     return sanitized;
   }
+  if (options?.allowOperatorDeferral === false) {
+    return OPERATOR_HANDOFF_FAILED_REPLY;
+  }
   return MISSING_DATA_GUEST_FALLBACK;
+}
+
+async function processGuestTestDeterministicMessage(
+  update: TelegramUpdate,
+  user: TelegramRoutingUser,
+  messageText: string,
+): Promise<ProcessResult> {
+  const session = getTelegramRoutingSession(user.chat_id);
+  const propertyId = session?.testPropertyId || defaultGuestTestPropertyId();
+  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
+  const memory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  const contactId = memory?.crmContactId ?? null;
+
+  const answer = answerGuestTestQuestion({
+    messageText,
+    property,
+    propertyId,
+  });
+
+  let guestReply = answer.reply;
+
+  if (answer.outcome === 'operator_followup_required') {
+    const created = await createOperatorFollowupRequired({
+      telegramUserId: user.telegram_user_id,
+      telegramChatId: user.chat_id,
+      propertyId,
+      guestQuestion: messageText,
+      contactId,
+      updateId: update.update_id,
+      intent: answer.intent,
+    });
+    guestReply = created.ok ? answer.reply : OPERATOR_HANDOFF_FAILED_REPLY;
+  } else if (answer.outcome === 'missing_data') {
+    await createGuestTestMissingDataEvent({
+      telegramUserId: user.telegram_user_id,
+      telegramChatId: user.chat_id,
+      propertyId,
+      guestQuestion: messageText,
+      missingFields: answer.missingFields,
+      contactId,
+      intent: answer.intent,
+    });
+  }
+
+  await recordGuestTestQuestionOutcome({
+    telegramUserId: user.telegram_user_id,
+    telegramChatId: user.chat_id,
+    propertyId,
+    questionText: messageText,
+    replyText: guestReply,
+    outcome: answer.outcome,
+    intent: answer.intent,
+    missingFields: answer.missingFields,
+    contactId,
+  });
+
+  await replyToTelegram(user.chat_id, guestReply, {
+    handler: `telegram_routing/guest_test/${answer.outcome}`,
+    update_id: update.update_id,
+  }, getAsiFeedbackTelegramSendOptions());
+
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: update.update_id,
+    chat_id: user.chat_id,
+    category: MessageCategory.GuestMessage,
+    reply: guestReply,
+  };
 }
 
 async function processEmergencyProtocolMessage(
@@ -689,6 +932,13 @@ async function processGuestAutopilotMessage(
   messageText: string,
 ): Promise<ProcessResult> {
   const session = getTelegramRoutingSession(user.chat_id);
+  if (session?.testGuest) {
+    const context = await buildGuestAutopilotContext(user, messageText);
+    const emergencyResult = await processEmergencyProtocolMessage(update, user, messageText, context);
+    if (emergencyResult) return emergencyResult;
+    return processGuestTestDeterministicMessage(update, user, messageText);
+  }
+
   const mode: TelegramCommunicationMode = resolveTelegramCommunicationMode(session);
   const context = await buildGuestAutopilotContext(user, messageText);
   const emergencyResult = await processEmergencyProtocolMessage(update, user, messageText, context);
@@ -893,6 +1143,11 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
   const user = getTelegramRoutingUser(update);
   if (!user) return null;
 
+  await hydrateTelegramRoutingSessionFromMemory({
+    telegramUserId: user.telegram_user_id,
+    chatId: user.chat_id,
+  });
+
   const message = extractMessage(update);
   const text = (message?.text ?? message?.caption ?? '').trim();
   const routingCallback = parseRoutingCallbackData(update.callback_query?.data);
@@ -907,6 +1162,10 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
 
   if (RESET_TEST_STATE_COMMAND_RE.test(text)) {
     clearTelegramRoutingSession(user.chat_id);
+    await clearTelegramIdentityGuestTest({
+      telegramUserId: user.telegram_user_id,
+      chatId: user.chat_id,
+    });
     await replyToTelegram(user.chat_id, RESET_TEST_STATE_REPLY, {
       handler: 'telegram_routing/reset_test_state',
       update_id: update.update_id,
@@ -973,6 +1232,11 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
     }
 
     const leadSource = parseAsiFeedbackStartSource(text) ?? 'unknown';
+    const memory = await loadTelegramConversationMemory(user.telegram_user_id);
+    if (memory && memory.role !== 'unknown' && !startPayload) {
+      const continued = await continueFromKnownIdentity(user, update.update_id, memory);
+      if (continued) return continued;
+    }
     return sendRoleSelection(user, update.update_id, leadSource);
   }
 

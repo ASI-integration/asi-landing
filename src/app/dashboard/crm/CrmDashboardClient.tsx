@@ -87,6 +87,8 @@ export function CrmDashboardClient() {
   const [createStatus, setCreateStatus] = useState<CrmStatus>('new');
   const [createNotes, setCreateNotes] = useState('');
   const [createNextAction, setCreateNextAction] = useState('');
+  const [operatorReplyText, setOperatorReplyText] = useState('');
+  const [sendingOperatorReply, setSendingOperatorReply] = useState(false);
 
   const selected = useMemo(
     () => contacts.find((contact) => contact.id === selectedId) ?? null,
@@ -126,6 +128,7 @@ export function CrmDashboardClient() {
     setEditNotes(selected.notes);
     setEditNextAction(selected.nextActionIsSuggested ? '' : selected.nextAction);
     setEditPropertyId(selected.propertyId ?? '');
+    setOperatorReplyText('');
   }, [selected]);
 
   async function handleSave() {
@@ -187,6 +190,34 @@ export function CrmDashboardClient() {
       setError('Ошибка сети при обновлении решения по пилоту');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSendOperatorReply() {
+    if (!selected || !operatorReplyText.trim()) return;
+    setSendingOperatorReply(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/dashboard/crm', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: selected.id,
+          operatorFollowupReply: operatorReplyText.trim(),
+        }),
+      });
+      const json = (await res.json()) as CrmMutationResponse;
+      if (!res.ok || !json.ok || !json.contact) {
+        setError(json.error ?? 'Не удалось отправить ответ гостю');
+        return;
+      }
+      setContacts((prev) => prev.map((item) => (item.id === json.contact!.id ? json.contact! : item)));
+      setOperatorReplyText('');
+      await load(filter);
+    } catch {
+      setError('Ошибка сети при отправке ответа');
+    } finally {
+      setSendingOperatorReply(false);
     }
   }
 
@@ -713,6 +744,57 @@ export function CrmDashboardClient() {
                             Открыть setup
                           </Link>
                         ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(selected.awaitingReply || selected.hasOperatorFollowupPending) && selected.telegramChatId && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                  <h3 className="font-semibold">Ответ оператора гостю</h3>
+                  <p className="mt-1 text-amber-900">
+                    Гость ждёт ответа в Telegram. Напишите ответ и отправьте в чат.
+                  </p>
+                  <textarea
+                    value={operatorReplyText}
+                    onChange={(e) => setOperatorReplyText(e.target.value)}
+                    rows={4}
+                    placeholder="Текст ответа гостю"
+                    className="mt-3 w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendOperatorReply()}
+                    disabled={sendingOperatorReply || !operatorReplyText.trim()}
+                    className="mt-2 rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-60"
+                  >
+                    {sendingOperatorReply ? 'Отправляем…' : 'Отправить гостю в Telegram'}
+                  </button>
+                </div>
+              )}
+
+              {selected.guestTestResults.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                  <h3 className="font-semibold text-slate-800">Результаты guest_test</h3>
+                  <ul className="mt-2 space-y-2">
+                    {selected.guestTestResults.map((item, index) => (
+                      <li key={`${item.createdAt}-${index}`} className="rounded-md border border-slate-100 bg-white px-3 py-2">
+                        <div className="flex justify-between gap-2 text-xs text-slate-500">
+                          <span>{item.intent || 'вопрос'}</span>
+                          <span>{formatDateRu(item.createdAt)}</span>
+                        </div>
+                        <p className="mt-1 text-slate-800">{shortText(item.question, 100)}</p>
+                        <p className="mt-1 text-slate-600">
+                          Исход:{' '}
+                          {item.outcome === 'answered_from_property_data'
+                            ? 'ответ из данных объекта'
+                            : item.outcome === 'missing_data'
+                              ? 'не хватает данных'
+                              : item.outcome === 'operator_followup_required'
+                                ? 'нужен оператор'
+                                : item.outcome}
+                        </p>
                       </li>
                     ))}
                   </ul>

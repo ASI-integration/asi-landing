@@ -33,11 +33,19 @@ export const CRM_EVENT_TYPES = [
   'role_selected_guest',
   'guest_test_ready',
   'guest_test_started',
+  'guest_test_question',
+  'operator_followup_required',
+  'operator_followup_sent',
   'pilot_application_submitted',
   'pilot_selected',
   'status_change',
   'note',
 ] as const;
+
+export type GuestTestQuestionOutcome =
+  | 'answered_from_property_data'
+  | 'missing_data'
+  | 'operator_followup_required';
 export type CrmEventType = (typeof CRM_EVENT_TYPES)[number];
 
 export type CrmFilter =
@@ -183,6 +191,13 @@ export type CrmContactViewModel = {
   recentEvents: CrmEventViewModel[];
   missingDataFields: string[];
   missingDataActions: CrmMissingDataAction[];
+  guestTestResults: Array<{
+    question: string;
+    outcome: string;
+    intent: string;
+    createdAt: string;
+  }>;
+  hasOperatorFollowupPending: boolean;
 };
 
 export type CreateCrmContactInput = {

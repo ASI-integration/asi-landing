@@ -1,4 +1,5 @@
 import { patchTelegramRoutingSession } from '@/lib/communication/telegram-routing-session';
+import { patchTelegramIdentityMemory } from '@/lib/communication/telegram-identity-memory';
 import { getAsiFeedbackBotUsername } from '@/config/publicTelegram';
 import { supabase } from '@/lib/supabase';
 import { replyToTelegram } from '@/lib/telegram';
@@ -93,6 +94,18 @@ export async function dispatchGuestTestToChat(input: {
     testPropertyId: propertyId,
     communicationMode: 'autopilot',
   });
+
+  void patchTelegramIdentityMemory({
+    telegramUserId: input.telegramUserId,
+    chatId: input.chatId,
+    telegramUsername: input.telegramUsername,
+    displayName: input.firstName,
+    role: 'tester',
+    activeScenario: 'guest_test',
+    propertyId,
+    guestTestActive: true,
+    communicationMode: 'autopilot',
+  }).catch(() => undefined);
 
   await replyToTelegram(
     input.chatId,

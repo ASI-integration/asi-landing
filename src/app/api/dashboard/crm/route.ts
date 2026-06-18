@@ -4,11 +4,13 @@ import { isDashboardInternalUser } from '@/lib/dashboard/internal-access';
 import {
   applyPilotCrmDecision,
   createCrmContact,
+  getCrmContactById,
   listCrmContacts,
   listCrmPropertyOptions,
   updateCrmContact,
   type PilotCrmDecision,
 } from '@/lib/crm/repository';
+import { sendOperatorFollowupToTelegram } from '@/lib/crm/operator-followup';
 import { isCrmRole, isCrmSource, isCrmStatus, matchesCrmFilter } from '@/lib/crm/view-model';
 import type { CrmFilter } from '@/lib/crm/types';
 
@@ -127,6 +129,30 @@ export async function PATCH(req: NextRequest) {
 
   const contactId = typeof body.id === 'string' ? body.id.trim() : '';
   if (!contactId) return jsonError('Не указан id записи', 400);
+
+  if (typeof body.operatorFollowupReply === 'string') {
+    const replyText = body.operatorFollowupReply.trim();
+    if (!replyText) return jsonError('Введите ответ оператора', 400);
+    try {
+      const result = await sendOperatorFollowupToTelegram({
+        contactId,
+        replyText,
+        operatorId: auth.session.email,
+      });
+      if (!result.ok) {
+        return jsonError(result.error === 'telegram_chat_missing'
+          ? 'У контакта нет Telegram-чата'
+          : 'Не удалось отправить ответ в Telegram', 400);
+      }
+      const updated = await getCrmContactById(contactId);
+      if (!updated) return jsonError('Запись не найдена', 404);
+      return NextResponse.json({ ok: true, contact: updated });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[dashboard/crm] operator followup failed', { error: message, id: contactId });
+      return jsonError('Не удалось отправить ответ в Telegram', 500);
+    }
+  }
 
   if (typeof body.pilotDecision === 'string') {
     if (!PILOT_DECISIONS.has(body.pilotDecision as PilotCrmDecision)) {

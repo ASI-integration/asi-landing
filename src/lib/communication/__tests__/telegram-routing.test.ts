@@ -43,16 +43,22 @@ vi.mock('@/lib/communication/persistence', () => ({
   saveCommunicationAutopilotDecision: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('@/lib/communication/telegram-booking-object-memory', () => ({
-  lookup_booking_by_telegram: (...args: unknown[]) => mockLookupBooking(...args),
-  resolveTelegramGuestBookingObjectContext: (...args: unknown[]) => mockResolveGuestContext(...args),
-  lookup_property_by_booking: (...args: unknown[]) => mockLookupProperty(...args),
-  bookingObjectContextToAutopilotFields: () => ({
-    bookingVerified: true,
-    propertyResolved: true,
-    object: { id: 'test-prop-tg-live', name: 'Тестовая квартира ASI', address: 'Невский 24' },
-  }),
-}));
+vi.mock('@/lib/communication/telegram-booking-object-memory', async () => {
+  const actual = await vi.importActual<typeof import('../telegram-booking-object-memory')>(
+    '../telegram-booking-object-memory',
+  );
+  return {
+    ...actual,
+    lookup_booking_by_telegram: (...args: unknown[]) => mockLookupBooking(...args),
+    resolveTelegramGuestBookingObjectContext: (...args: unknown[]) => mockResolveGuestContext(...args),
+    lookup_property_by_booking: (...args: unknown[]) => mockLookupProperty(...args),
+    bookingObjectContextToAutopilotFields: () => ({
+      bookingVerified: true,
+      propertyResolved: true,
+      object: { id: 'test-prop-tg-live', name: 'Тестовая квартира ASI', address: 'Невский 24' },
+    }),
+  };
+});
 
 vi.mock('@/lib/crm/repository', () => ({
   attachTelegramToPilotContact: (...args: unknown[]) => mockAttachTelegramToPilotContact(...args),
@@ -77,6 +83,7 @@ import {
   __resetTelegramRoutingSessionsForTests,
   getTelegramRoutingSession,
 } from '../telegram-routing-session';
+import { __resetTelegramIdentityMemoryForTests } from '../telegram-identity-memory';
 import {
   buildGuestTestDeepLink,
   processTelegramRoutingUpdate,
@@ -122,6 +129,7 @@ function roleCallback(role: string, update_id = 2001) {
 describe('Telegram routing layer', () => {
   beforeEach(() => {
     __resetTelegramRoutingSessionsForTests();
+    __resetTelegramIdentityMemoryForTests();
     mockReplyToTelegram.mockReset();
     mockAnswerTelegramCallbackQuery.mockReset();
     mockSendTelegramMessageToChat.mockReset();
@@ -366,7 +374,7 @@ describe('Telegram routing layer', () => {
     );
   });
 
-  it('activates guest test mode and answers passport questions in autopilot', async () => {
+  it('activates guest test mode and answers passport questions from property data', async () => {
     await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2005));
     await Promise.resolve();
     expect(getTelegramRoutingSession(8101)?.testGuest).toBe(true);
@@ -374,16 +382,22 @@ describe('Telegram routing layer', () => {
       eventType: 'guest_test_started',
     }));
 
+    mockRecordCrmCommunicationEvent.mockClear();
     await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2006));
 
-    expect(mockDecideAutopilot).toHaveBeenCalled();
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(mockReplyToTelegram).toHaveBeenCalledWith(
       8101,
-      'Адрес: Санкт-Петербург, Невский проспект, 24.',
+      expect.stringContaining('Невский проспект, 24'),
       expect.any(Object),
       expect.any(Object),
     );
-    expect(mockSendTelegramMessageToChat).toHaveBeenCalled();
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'guest_test_question',
+      metadata: expect.objectContaining({
+        outcome: 'answered_from_property_data',
+      }),
+    }));
   });
 
   it('handles real emergency as CRM escalation and guest safety reply', async () => {
@@ -436,35 +450,21 @@ describe('Telegram routing layer', () => {
     expect(getTelegramRoutingSession(8101)).toBeUndefined();
   });
 
-  it('does not leak operator notification into guest chat when admin chat matches guest chat', async () => {
+  it('creates operator follow-up when guest test question needs a human', async () => {
     process.env.ASI_FEEDBACK_ADMIN_CHAT_ID = '8101';
-    mockDecideAutopilot.mockResolvedValueOnce({
-      action: 'escalate',
-      confidence: 0.9,
-      replyText: 'Сейчас уточню точный адрес у оператора и напишу вам здесь.',
-      escalationReason: 'address_directions',
-      metadata: {
-        intent: 'address_instruction',
-        missingContext: ['object.address', 'object.directionsText'],
-        matchedSignals: [],
-        policy: [],
-      },
-    });
-
     await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2010));
-    await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2011));
+    mockRecordCrmCommunicationEvent.mockClear();
+    mockSendTelegramMessageToChat.mockClear();
 
+    await processTelegramRoutingUpdate(routingUpdate('Хочу вернуть деньги за бронь', 2011));
+
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(mockSendTelegramMessageToChat).not.toHaveBeenCalled();
-    expect(mockReplyToTelegram).toHaveBeenCalledWith(
-      8101,
-      'Сейчас уточню точный адрес у оператора и напишу вам здесь.',
-      expect.any(Object),
-      expect.any(Object),
-    );
+    expect(mockRecordCrmCommunicationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'operator_followup_required',
+    }));
     const guestReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
-    expect(guestReply).not.toContain('Намерение:');
-    expect(guestReply).not.toContain('object.address');
-    expect(guestReply).not.toContain('prop_A');
+    expect(guestReply).toContain('оператор');
   });
 
   it('sanitizes guest reply when autopilot draft contains forbidden internal tokens', async () => {
@@ -481,7 +481,7 @@ describe('Telegram routing layer', () => {
       },
     });
 
-    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2012));
+    await processTelegramRoutingUpdate(roleCallback('guest', 2012));
     await processTelegramRoutingUpdate(routingUpdate('Какой адрес?', 2013));
 
     const guestReply = String(mockReplyToTelegram.mock.calls.at(-1)?.[1] ?? '');
