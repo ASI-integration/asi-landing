@@ -255,4 +255,48 @@ describe('Telegram webhook route', () => {
     expect(mockProcessUpdate).toHaveBeenCalledTimes(1);
     expect(mockReplyToTelegram).toHaveBeenCalledTimes(0);
   });
+
+  it('routes /start through ASI Feedback pipeline on operational webhook secret when feedback bot is configured', async () => {
+    process.env.TELEGRAM_WEBHOOK_SECRET = 'operational-secret';
+    process.env.ASI_FEEDBACK_WEBHOOK_SECRET = 'feedback-secret';
+    process.env.ASI_FEEDBACK_BOT_TOKEN = 'feedback-token';
+    process.env.TELEGRAM_BOT_TOKEN = 'operational-token';
+
+    const update = tgTextUpdate({ chat_id: 338, update_id: 9011, message_id: 51, text: '/start' });
+    mockProcessTelegramRoutingUpdate.mockResolvedValue({
+      outcome: 'replied',
+      update_id: 9011,
+      chat_id: 338,
+      reply: 'role selection',
+    });
+
+    const res = await POST(telegramRequest(update, {
+      'x-telegram-bot-api-secret-token': 'operational-secret',
+    }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, path: 'telegram_routing' });
+    expect(mockProcessTelegramRoutingUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
+  });
+
+  it('sends fallback reply when /start routing throws', async () => {
+    process.env.ASI_FEEDBACK_BOT_TOKEN = 'feedback-token';
+    const update = tgTextUpdate({ chat_id: 339, update_id: 9012, message_id: 52, text: '/start' });
+    mockProcessTelegramRoutingUpdate.mockRejectedValue(new Error('routing exploded'));
+    mockReplyToTelegram.mockResolvedValue(true);
+
+    const res = await POST(telegramRequest(update));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true, path: 'telegram_routing_fallback' });
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      339,
+      expect.stringContaining('техническая ошибка'),
+      expect.objectContaining({ handler: 'telegram_routing/error_boundary' }),
+      expect.any(Object),
+    );
+  });
 });

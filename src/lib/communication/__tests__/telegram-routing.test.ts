@@ -598,4 +598,31 @@ describe('Telegram routing layer', () => {
     expect(result?.reply).toContain('test-prop-tg-live');
     expect(result?.reply).not.toMatch(/password|ASI-Nevsky24/i);
   });
+
+  it('returns technical fallback on /start when reply send throws', async () => {
+    mockReplyToTelegram
+      .mockRejectedValueOnce(new Error('telegram send failed'))
+      .mockResolvedValue(true);
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/start', 2070));
+
+    expect(result?.reply).toContain('техническая ошибка');
+    expect(mockReplyToTelegram.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('plain /start without payload always returns role selection reply', async () => {
+    const result = await processTelegramRoutingUpdate(routingUpdate('/start', 2071));
+
+    expect(result?.reply).toContain('Подскажите, пожалуйста, кто вы');
+    expect(result?.outcome).toBe('replied');
+  });
+
+  it('/start guest_test payload activates guest test flow', async () => {
+    const result = await processTelegramRoutingUpdate(
+      routingUpdate('/start guest_test_test-prop-tg-live', 2072),
+    );
+
+    expect(result?.outcome).toBe('replied');
+    expect(mockReplyToTelegram).toHaveBeenCalled();
+  });
 });

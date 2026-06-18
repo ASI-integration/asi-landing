@@ -66,6 +66,11 @@ import type { TelegramOwnerNotificationInput } from '@/lib/communication/telegra
 import type { CrmContactViewModel } from '@/lib/crm/types';
 import { replyToTelegram, answerTelegramCallbackQuery, type TelegramSendOptions } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
+import {
+  logTelegramWebhookHandlerError,
+  sendTelegramWebhookFallbackReply,
+} from '@/lib/communication/telegram-webhook-fallback';
+import { isAsiFeedbackRoutingUpdate, TELEGRAM_TECHNICAL_ERROR_REPLY } from '@/lib/communication/telegram-webhook-scope';
 import { MessageCategory, ProcessOutcome, type ProcessResult, type TelegramUpdate } from './types';
 
 const START_RE = /^\/start(?:@\w+)?(?:\s+(.+))?$/i;
@@ -1239,14 +1244,19 @@ export function buildGuestTestDeepLink(propertyId?: string | null): string {
   return `https://t.me/${username}?start=${encodeURIComponent(payload)}`;
 }
 
-export async function processTelegramRoutingUpdate(update: TelegramUpdate): Promise<ProcessResult | null> {
-  const user = getTelegramRoutingUser(update);
-  if (!user) return null;
-
-  await hydrateTelegramRoutingSessionFromMemory({
-    telegramUserId: user.telegram_user_id,
-    chatId: user.chat_id,
-  });
+async function processTelegramRoutingUpdateImpl(update: TelegramUpdate, user: TelegramRoutingUser): Promise<ProcessResult | null> {
+  try {
+    await hydrateTelegramRoutingSessionFromMemory({
+      telegramUserId: user.telegram_user_id,
+      chatId: user.chat_id,
+    });
+  } catch (error) {
+    console.error('[telegram-routing] memory hydrate failed; continuing without DB memory', {
+      error: error instanceof Error ? error.message : String(error),
+      telegram_user_id: user.telegram_user_id,
+      chat_id: user.chat_id,
+    });
+  }
 
   const hydratedMemory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
   logTelegramRoutingDebug(user, 'telegram_routing/inbound', hydratedMemory);
@@ -1392,4 +1402,44 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
   }
 
   return null;
+}
+
+export async function processTelegramRoutingUpdate(update: TelegramUpdate): Promise<ProcessResult | null> {
+  const user = getTelegramRoutingUser(update);
+  if (!user) return null;
+
+  try {
+    return await processTelegramRoutingUpdateImpl(update, user);
+  } catch (error) {
+    logTelegramWebhookHandlerError(error, {
+      handler: 'telegram_routing/uncaught',
+      update_id: update.update_id,
+      telegram_user_id: user.telegram_user_id,
+      chat_id: user.chat_id,
+      telegram_event_type: update.callback_query
+        ? 'callback_query'
+        : update.message
+          ? 'message'
+          : 'unknown',
+    });
+
+    if (!isAsiFeedbackRoutingUpdate(update)) {
+      throw error;
+    }
+
+    await sendTelegramWebhookFallbackReply({
+      chatId: user.chat_id,
+      updateId: update.update_id,
+      handler: 'telegram_routing/fallback_reply',
+      sendOptions: getAsiFeedbackTelegramSendOptions(),
+    });
+
+    return {
+      outcome: ProcessOutcome.Error,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply: TELEGRAM_TECHNICAL_ERROR_REPLY,
+    };
+  }
 }

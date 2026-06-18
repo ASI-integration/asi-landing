@@ -22,6 +22,7 @@
     "lighthouse": "node scripts/lighthouse.mjs",
     "test:telegram:live": "node scripts/telegram-live-acceptance.mjs",
     "smoke:pilot": "node scripts/pilot-acceptance-smoke.mjs",
+    "smoke:telegram-live": "node scripts/telegram-webhook-live-smoke.mjs",
     "location:golden": "npx tsx scripts/location-golden-trace.ts",
     "location:golden:assert": "vitest run src/lib/location/__tests__/location-golden-assertions.test.ts",
     "location-pdf:check-chromium": "node scripts/check-location-pdf-chromium.mjs",
