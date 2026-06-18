@@ -1046,15 +1046,29 @@ export function PropertySetupClient({ propertyId }: { propertyId: string }) {
                 {readinessPageUi.stickyPrimaryCta.label}
               </button>
             ) : (
-              <GuestTestLaunchCta
-                propertyId={propertyId}
-                nextStep={readinessPageUi.nextStep}
-                cta={readinessPageUi.stickyPrimaryCta}
-                onGuestTestFlowChange={setGuestTestFlow}
-                onLaunchMessage={setGuestTestLaunchMessage}
-                onLaunchError={setGuestTestLaunchError}
-                className={primaryBtn}
-              />
+              <>
+                <GuestTestLaunchCta
+                  propertyId={propertyId}
+                  nextStep={readinessPageUi.nextStep}
+                  cta={readinessPageUi.stickyPrimaryCta}
+                  onGuestTestFlowChange={setGuestTestFlow}
+                  onLaunchMessage={setGuestTestLaunchMessage}
+                  onLaunchError={setGuestTestLaunchError}
+                  className={primaryBtn}
+                />
+                {readinessPageUi.nextStep.secondaryCta ? (
+                  <GuestTestLaunchCta
+                    propertyId={propertyId}
+                    nextStep={readinessPageUi.nextStep}
+                    cta={readinessPageUi.nextStep.secondaryCta}
+                    onGuestTestFlowChange={setGuestTestFlow}
+                    onLaunchMessage={setGuestTestLaunchMessage}
+                    onLaunchError={setGuestTestLaunchError}
+                    variant="secondary"
+                    className={ghostBtn}
+                  />
+                ) : null}
+              </>
             )
           ) : null}
         </div>
