@@ -261,9 +261,12 @@ export async function ensureTelegramIdentityWithCrm(input: {
     displayName: input.displayName ?? existing?.displayName ?? null,
     crmContactId,
     role,
-    activeScenario: existing?.activeScenario ?? null,
+    activeScenario:
+      role === 'tester' || existing?.guestTestActive
+        ? (existing?.activeScenario ?? 'guest_test')
+        : (existing?.activeScenario ?? null),
     propertyId: input.propertyId ?? existing?.propertyId ?? null,
-    guestTestActive: existing?.guestTestActive ?? false,
+    guestTestActive: role === 'tester' ? true : (existing?.guestTestActive ?? false),
     communicationMode: existing?.communicationMode ?? 'autopilot',
     leadSource: existing?.leadSource ?? null,
     metadata: existing?.metadata ?? {},
@@ -311,7 +314,7 @@ export async function upsertTelegramConversationMemory(input: {
 
   if (!isDryRun()) {
     try {
-      await supabase.from('tg_telegram_conversation_memory').upsert({
+      const { error } = await supabase.from('tg_telegram_conversation_memory').upsert({
         telegram_user_id: memory.telegramUserId,
         chat_id: memory.chatId,
         telegram_username: memory.telegramUsername,
@@ -327,8 +330,19 @@ export async function upsertTelegramConversationMemory(input: {
         last_seen_at: memory.lastSeenAt,
         updated_at: memory.updatedAt,
       });
+      if (error) {
+        console.error('[telegram-identity] persist failed', {
+          error: error.message,
+          code: error.code,
+          telegram_user_id: telegramUserId,
+          chat_id: memory.chatId,
+          active_scenario: memory.activeScenario,
+          property_id: memory.propertyId,
+          guest_test_active: memory.guestTestActive,
+        });
+      }
     } catch (error) {
-      console.error('[telegram-identity] persist failed', {
+      console.error('[telegram-identity] persist threw', {
         error: error instanceof Error ? error.message : String(error),
         telegram_user_id: telegramUserId,
       });
@@ -422,4 +436,8 @@ export function routingRoleToMemoryRole(
   if (role === 'guest') return 'guest';
   if (role === 'support') return 'support';
   return 'unknown';
+}
+
+export function isGuestTestMemoryActive(memory: TelegramConversationMemory | null | undefined): boolean {
+  return Boolean(memory?.guestTestActive && memory.propertyId);
 }

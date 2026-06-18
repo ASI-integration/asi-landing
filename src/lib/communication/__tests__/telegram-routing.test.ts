@@ -83,7 +83,7 @@ import {
   __resetTelegramRoutingSessionsForTests,
   getTelegramRoutingSession,
 } from '../telegram-routing-session';
-import { __resetTelegramIdentityMemoryForTests } from '../telegram-identity-memory';
+import { __resetTelegramIdentityMemoryForTests, loadTelegramConversationMemory } from '../telegram-identity-memory';
 import {
   buildGuestTestDeepLink,
   processTelegramRoutingUpdate,
@@ -527,5 +527,75 @@ describe('Telegram routing layer', () => {
   it('builds guest test deep link for dashboard', () => {
     expect(buildGuestTestDeepLink('obj-123')).toContain('guest_test_obj-123');
     expect(buildGuestTestDeepLink()).toContain('guest_test');
+  });
+
+  it('persists guest_test memory from deep link', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2035));
+    await Promise.resolve();
+
+    const memory = await loadTelegramConversationMemory('9101');
+    expect(memory?.guestTestActive).toBe(true);
+    expect(memory?.activeScenario).toBe('guest_test');
+    expect(memory?.propertyId).toBe('test-prop-tg-live');
+  });
+
+  it('answers wifi and smoking from property data after deep link', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2036));
+    mockReplyToTelegram.mockClear();
+
+    await processTelegramRoutingUpdate(routingUpdate('какой Wi-Fi?', 2037));
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('ASI-Nevsky24-Guest'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+
+    await processTelegramRoutingUpdate(routingUpdate('можно курить?', 2038));
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringMatching(/правил|курен/i),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('does not reset guest_test on plain /start after deep link', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2040));
+    __resetTelegramRoutingSessionsForTests();
+    mockReplyToTelegram.mockClear();
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/start', 2041));
+
+    expect(result?.reply).toContain('Тест гостя уже включён');
+    expect(result?.reply).toContain('Тестовая квартира ASI');
+    expect(JSON.stringify(mockReplyToTelegram.mock.calls.at(-1)?.[3] ?? {})).not.toContain('Я гость по бронированию');
+    expect(getTelegramRoutingSession(8101)?.testGuest).toBe(true);
+  });
+
+  it('does not override active guest_test when guest role is selected', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2050));
+    __resetTelegramRoutingSessionsForTests();
+    mockReplyToTelegram.mockClear();
+
+    await processTelegramRoutingUpdate(roleCallback('guest', 2051));
+
+    expect(getTelegramRoutingSession(8101)?.testGuest).toBe(true);
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      8101,
+      expect.stringContaining('Тест гостя уже включён'),
+      expect.any(Object),
+      expect.any(Object),
+    );
+  });
+
+  it('shows guest_test memory via /debug_memory in test mode', async () => {
+    await processTelegramRoutingUpdate(routingUpdate('/start guest_test_test-prop-tg-live', 2060));
+
+    const result = await processTelegramRoutingUpdate(routingUpdate('/debug_memory', 2061));
+
+    expect(result?.reply).toContain('guest_test');
+    expect(result?.reply).toContain('test-prop-tg-live');
+    expect(result?.reply).not.toMatch(/password|ASI-Nevsky24/i);
   });
 });

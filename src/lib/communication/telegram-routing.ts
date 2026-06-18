@@ -48,6 +48,7 @@ import {
   clearTelegramIdentityGuestTest,
   ensureTelegramIdentityWithCrm,
   hydrateTelegramRoutingSessionFromMemory,
+  isGuestTestMemoryActive,
   loadTelegramConversationMemory,
   patchTelegramIdentityMemory,
   routingRoleToMemoryRole,
@@ -70,6 +71,7 @@ const START_RE = /^\/start(?:@\w+)?(?:\s+(.+))?$/i;
 const SUPPORT_COMMAND_RE = /^\/support(?:@\w+)?$/i;
 const GUEST_TEST_COMMAND_RE = /^\/guest_test(?:@\w+)?(?:\s+(.+))?$/i;
 const RESET_TEST_STATE_COMMAND_RE = /^\/reset_test_state(?:@\w+)?$/i;
+const DEBUG_MEMORY_COMMAND_RE = /^\/debug_memory(?:@\w+)?$/i;
 const EMERGENCY_TEST_COMMAND_RE = /^\/emergency_test(?:@\w+)?(?:\s+(.+))?$/i;
 const ROUTING_CALLBACK_PREFIX = 'tr';
 
@@ -85,10 +87,61 @@ const DRAFT_PREPARED_REPLY =
 const MISSING_DATA_GUEST_FALLBACK =
   'Сейчас уточню этот вопрос у оператора и напишу вам здесь.';
 
-const GUEST_TEST_CONTINUE_REPLY =
-  'Продолжаем тест гостя. Задайте вопрос по объекту — адрес, заезд, Wi‑Fi, правила.';
-
 const RESET_TEST_STATE_REPLY = 'Тестовое состояние сброшено. Отправьте /start, чтобы выбрать роль заново.';
+
+function isTelegramInternalDebugMode(user: TelegramRoutingUser): boolean {
+  if (process.env.TELEGRAM_DEBUG === '1' || process.env.COMM_PIPELINE_DEBUG === '1') return true;
+  const testChatId = process.env.TELEGRAM_TEST_CHAT_ID?.trim();
+  if (testChatId && String(user.chat_id) === testChatId) return true;
+  return process.env.NODE_ENV === 'test';
+}
+
+function logTelegramRoutingDebug(
+  user: TelegramRoutingUser,
+  handler: string,
+  memory?: TelegramConversationMemory | null,
+): void {
+  const session = getTelegramRoutingSession(user.chat_id);
+  console.info('[telegram-routing:context]', {
+    handler,
+    telegram_user_id: user.telegram_user_id,
+    chat_id: user.chat_id,
+    activeScenario: memory?.activeScenario ?? (session?.testGuest ? 'guest_test' : null),
+    propertyId: memory?.propertyId ?? session?.testPropertyId ?? null,
+    guestTestActive: memory?.guestTestActive ?? session?.testGuest ?? false,
+    role: memory?.role ?? session?.role ?? 'unknown',
+    session_test_guest: session?.testGuest ?? false,
+  });
+}
+
+async function buildGuestTestResumeReply(propertyId: string): Promise<string> {
+  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
+  const name = property?.object_name?.trim() || 'объекта';
+  return `Тест гостя уже включён для объекта ${name}. Задайте вопрос по адресу, Wi‑Fi, заезду или правилам.`;
+}
+
+async function resumeActiveGuestTest(
+  user: TelegramRoutingUser,
+  updateId: number,
+  memory: TelegramConversationMemory,
+  handler = 'telegram_routing/guest_test_resume',
+): Promise<ProcessResult> {
+  applyMemoryToRoutingSession(user.chat_id, memory);
+  const propertyId = memory.propertyId || defaultGuestTestPropertyId();
+  const reply = await buildGuestTestResumeReply(propertyId);
+  logTelegramRoutingDebug(user, handler, memory);
+  await replyToTelegram(user.chat_id, reply, {
+    handler,
+    update_id: updateId,
+  }, getAsiFeedbackTelegramSendOptions());
+  return {
+    outcome: ProcessOutcome.Replied,
+    update_id: updateId,
+    chat_id: user.chat_id,
+    category: MessageCategory.Start,
+    reply,
+  };
+}
 
 type ParsedRoutingCallback =
   | { kind: 'role'; role: Exclude<TelegramRoutingRole, 'unknown'> }
@@ -156,18 +209,8 @@ async function continueFromKnownIdentity(
 ): Promise<ProcessResult | null> {
   applyMemoryToRoutingSession(user.chat_id, memory);
 
-  if (memory.guestTestActive) {
-    await replyToTelegram(user.chat_id, GUEST_TEST_CONTINUE_REPLY, {
-      handler: 'telegram_routing/guest_test_resume',
-      update_id: updateId,
-    }, getAsiFeedbackTelegramSendOptions());
-    return {
-      outcome: ProcessOutcome.Replied,
-      update_id: updateId,
-      chat_id: user.chat_id,
-      category: MessageCategory.Start,
-      reply: GUEST_TEST_CONTINUE_REPLY,
-    };
+  if (isGuestTestMemoryActive(memory)) {
+    return resumeActiveGuestTest(user, updateId, memory);
   }
 
   if (memory.role === 'owner' || memory.role === 'operator') {
@@ -252,14 +295,21 @@ async function syncCrmRoleSelection(
         source: 'telegram_role_selection',
       },
     });
+    const existing = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+    const guestTestActive = isGuestTestMemoryActive(existing);
     void patchTelegramIdentityMemory({
       telegramUserId: user.telegram_user_id,
       chatId: user.chat_id,
       telegramUsername: user.telegram_username,
       displayName: user.first_name,
-      role: routingRoleToMemoryRole(role),
-      activeScenario: role === 'owner' ? 'owner_onboarding' : null,
-      propertyId: propertyId ?? null,
+      role: guestTestActive ? 'tester' : routingRoleToMemoryRole(role),
+      activeScenario: guestTestActive
+        ? 'guest_test'
+        : role === 'owner'
+          ? 'owner_onboarding'
+          : null,
+      propertyId: guestTestActive ? existing?.propertyId ?? null : propertyId ?? null,
+      guestTestActive: guestTestActive ? true : false,
       crmContactId: contact?.id ?? null,
     });
     return contact;
@@ -452,9 +502,19 @@ function isKnownOwner(user: TelegramRoutingUser): boolean {
 
 export async function resolveTelegramRoutingRole(
   user: TelegramRoutingUser,
+  memory?: TelegramConversationMemory | null,
 ): Promise<{ role: TelegramRoutingRole; reason: string }> {
   const session = getTelegramRoutingSession(user.chat_id);
   if (session?.testGuest) return { role: 'guest', reason: 'session:guest_test' };
+
+  const resolvedMemory =
+    memory ??
+    (await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null));
+  if (isGuestTestMemoryActive(resolvedMemory)) {
+    if (resolvedMemory) applyMemoryToRoutingSession(user.chat_id, resolvedMemory);
+    return { role: 'guest', reason: 'memory:guest_test' };
+  }
+
   if (session?.role && session.role !== 'unknown') {
     return { role: session.role, reason: 'session:selected_role' };
   }
@@ -469,11 +529,17 @@ async function sendRoleSelection(
   leadSource?: AsiFeedbackLeadSource,
   intro?: string,
 ): Promise<ProcessResult> {
+  const memory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  if (isGuestTestMemoryActive(memory)) {
+    return resumeActiveGuestTest(user, updateId, memory!, 'telegram_routing/guest_test_block_role_selection');
+  }
+
   patchTelegramRoutingSession(user.chat_id, {
     role: 'unknown',
     leadSource: leadSource ?? undefined,
   });
   void persistRoutingIdentity(user, { role: 'unknown', leadSource });
+  logTelegramRoutingDebug(user, 'telegram_routing/role_selection', memory);
   const reply = intro?.trim() || ROLE_SELECTION_REPLY;
   await replyToTelegram(user.chat_id, reply, {
     handler: 'telegram_routing/role_selection',
@@ -595,6 +661,9 @@ async function activateGuestTestMode(
     activeScenario: 'guest_test',
   });
 
+  const savedMemory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  logTelegramRoutingDebug(user, 'telegram_routing/guest_test_activated', savedMemory);
+
   await ensureTelegramIdentityWithCrm({
     telegramUserId: user.telegram_user_id,
     chatId: user.chat_id,
@@ -630,6 +699,36 @@ async function handleRoleSelectionCallback(
   }
 
   const session = getTelegramRoutingSession(user.chat_id);
+  const memory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  if (role === 'guest' && (session?.testGuest || isGuestTestMemoryActive(memory))) {
+    const activeMemory = memory && isGuestTestMemoryActive(memory)
+      ? memory
+      : {
+          telegramUserId: user.telegram_user_id,
+          chatId: user.chat_id,
+          telegramUsername: user.telegram_username,
+          displayName: user.first_name,
+          crmContactId: memory?.crmContactId ?? null,
+          role: 'tester' as const,
+          activeScenario: 'guest_test' as const,
+          propertyId: session?.testPropertyId ?? memory?.propertyId ?? null,
+          guestTestActive: true,
+          communicationMode: session?.communicationMode ?? 'autopilot',
+          leadSource: memory?.leadSource ?? null,
+          metadata: memory?.metadata ?? {},
+          lastSeenAt: memory?.lastSeenAt ?? new Date().toISOString(),
+          updatedAt: memory?.updatedAt ?? new Date().toISOString(),
+        };
+    if (activeMemory.propertyId) {
+      return resumeActiveGuestTest(
+        user,
+        update.update_id,
+        activeMemory,
+        'telegram_routing/guest_test_preserve_on_role_guest',
+      );
+    }
+  }
+
   const leadSource = normalizeAsiFeedbackLeadSource(session?.leadSource ?? 'unknown');
 
   patchTelegramRoutingSession(user.chat_id, {
@@ -769,9 +868,11 @@ async function processGuestTestDeterministicMessage(
   messageText: string,
 ): Promise<ProcessResult> {
   const session = getTelegramRoutingSession(user.chat_id);
-  const propertyId = session?.testPropertyId || defaultGuestTestPropertyId();
-  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
   const memory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  const propertyId =
+    session?.testPropertyId ?? memory?.propertyId ?? defaultGuestTestPropertyId();
+  logTelegramRoutingDebug(user, 'telegram_routing/guest_test_question', memory);
+  const property = await lookup_property_by_booking({ booking: null, object_id: propertyId });
   const contactId = memory?.crmContactId ?? null;
 
   const answer = answerGuestTestQuestion({
@@ -1148,6 +1249,9 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
     chatId: user.chat_id,
   });
 
+  const hydratedMemory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+  logTelegramRoutingDebug(user, 'telegram_routing/inbound', hydratedMemory);
+
   const message = extractMessage(update);
   const text = (message?.text ?? message?.caption ?? '').trim();
   const routingCallback = parseRoutingCallbackData(update.callback_query?.data);
@@ -1158,6 +1262,33 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
 
   if (SUPPORT_COMMAND_RE.test(text)) {
     return beginTelegramSupportFromRouting(update, user);
+  }
+
+  if (DEBUG_MEMORY_COMMAND_RE.test(text)) {
+    if (!isTelegramInternalDebugMode(user)) {
+      return null;
+    }
+    const memory = await loadTelegramConversationMemory(user.telegram_user_id).catch(() => null);
+    const session = getTelegramRoutingSession(user.chat_id);
+    const reply = [
+      'debug memory',
+      `scenario: ${memory?.activeScenario ?? (session?.testGuest ? 'guest_test' : 'none')}`,
+      `propertyId: ${memory?.propertyId ?? session?.testPropertyId ?? 'none'}`,
+      `role: ${memory?.role ?? session?.role ?? 'unknown'}`,
+      `guestTestActive: ${memory?.guestTestActive ?? session?.testGuest ?? false}`,
+    ].join('\n');
+    logTelegramRoutingDebug(user, 'telegram_routing/debug_memory', memory);
+    await replyToTelegram(user.chat_id, reply, {
+      handler: 'telegram_routing/debug_memory',
+      update_id: update.update_id,
+    }, getAsiFeedbackTelegramSendOptions());
+    return {
+      outcome: ProcessOutcome.Replied,
+      update_id: update.update_id,
+      chat_id: user.chat_id,
+      category: MessageCategory.Start,
+      reply,
+    };
   }
 
   if (RESET_TEST_STATE_COMMAND_RE.test(text)) {
@@ -1232,15 +1363,19 @@ export async function processTelegramRoutingUpdate(update: TelegramUpdate): Prom
     }
 
     const leadSource = parseAsiFeedbackStartSource(text) ?? 'unknown';
-    const memory = await loadTelegramConversationMemory(user.telegram_user_id);
-    if (memory && memory.role !== 'unknown' && !startPayload) {
+    const memory = hydratedMemory ?? (await loadTelegramConversationMemory(user.telegram_user_id));
+    if (!startPayload && isGuestTestMemoryActive(memory)) {
+      return resumeActiveGuestTest(user, update.update_id, memory!);
+    }
+    if (memory && !startPayload && memory.role !== 'unknown') {
       const continued = await continueFromKnownIdentity(user, update.update_id, memory);
       if (continued) return continued;
     }
     return sendRoleSelection(user, update.update_id, leadSource);
   }
 
-  const resolved = await resolveTelegramRoutingRole(user);
+  const resolved = await resolveTelegramRoutingRole(user, hydratedMemory);
+  logTelegramRoutingDebug(user, `telegram_routing/resolve/${resolved.reason}`, hydratedMemory);
 
   if (resolved.role === 'unknown') {
     if (!text && !update.callback_query) return null;
