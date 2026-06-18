@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
@@ -267,7 +268,7 @@ export default function RuHowItWorksPage() {
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 text-sm">
               <a
-                href="https://t.me/ASI_core_bot"
+                href={buildAsiFeedbackTelegramLink('site')}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"

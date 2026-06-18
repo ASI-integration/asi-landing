@@ -6,57 +6,74 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export const metadata: Metadata = {
-  title: 'Ранний доступ ASI для посуточной аренды',
-  description: 'Ранний доступ ASI для владельцев посуточных объектов: ответы гостям, меньше рутины в переписке.',
+  title: 'Закрытый пилот ASI для объектов посуточной аренды',
+  description:
+    'Бесплатное пилотное подключение объекта к ASI: сбор данных, подготовка карточки и постепенная настройка управления.',
 };
 
-const featureItems = [
+const pilotItems = [
+  'Собираем основные данные объекта',
+  'Готовим карточку для каналов размещения',
+  'Помогаем настроить ответы гостям',
+  'Показываем ручной и полуавтоматический режим работы',
+  'Постепенно подключаем цены, доступность и каналы',
+];
+
+const roadmapItems = [
   {
-    title: 'Круглосуточные ответы гостям без постоянного сидения в телефоне',
-    label: 'Уже можно подключить',
-    text: 'Сервис помогает отвечать гостям в Telegram текстом и голосом круглосуточно: про заселение, Wi-Fi, парковку, правила объекта, заезд, выезд, уборку и бытовые вопросы. Владелец подключается только к срочным, важным или нестандартным ситуациям, где нужно решение человека.',
+    title: 'Ответы гостям',
+    text: 'Сервис помогает готовить ответы на частые вопросы гостей и постепенно сокращать ручную переписку.',
   },
   {
-    title: 'Работа с площадками в одном месте',
-    text: 'Синхронизация Avito, Островка, Суточно.ру и других площадок — внутри ASI, без отдельных подписок на сторонние сервисы.',
+    title: 'Каналы размещения',
+    text: 'Данные объекта готовятся в одном месте, чтобы их было проще переносить и обновлять на подключённых площадках.',
   },
   {
-    title: 'Автоматические цены на ночь',
-    text: 'Подсказки по тарифам на основе спроса, сезона и особенностей района — чтобы не держать цены в голове и в таблицах.',
+    title: 'Цены и доступность',
+    text: 'Постепенно добавляем рекомендации по ценам, календарь доступности и защиту от конфликтов бронирований.',
   },
   {
-    title: 'Оценка района и локации',
-    text: 'Понятная оценка, насколько выгодна локация для посуточной аренды или покупки объекта — с прицелом на ближайшие годы.',
-  },
-  {
-    title: 'Рутина под контролем',
-    text: 'Уборки, отзывы, бронирования и электронные замки — в одной связке, без постоянного ручного контроля.',
-  },
-  {
-    title: 'Меньше ручной работы',
-    text: 'После базовой настройки и подключения площадок сервис постепенно берёт на себя переписку и повседневные задачи. Цель — чтобы большинство типовых вопросов гостей закрывалось без вашего участия.',
+    title: 'Операционные задачи',
+    text: 'В дальнейшем появятся задачи по уборке, подготовке к заезду, проверке объекта и другим действиям.',
   },
 ];
 
 const securityItems = [
   {
-    mark: '🔐',
-    text: 'Нам не нужны ваши пароли от личных кабинетов Avito, Островок, Суточно.ру или Циан.',
+    title: 'Не нужны пароли от личных кабинетов',
+    text: 'Для пилотного подключения не требуется передавать пароли от Авито, Островка, Суточно, Циан или других площадок.',
   },
   {
-    mark: '❌',
-    text: 'Нам не нужен доступ к вашим деньгам, расчетным счетам или картам.',
+    title: 'Нет доступа к вашим деньгам',
+    text: 'ASI не запрашивает доступ к расчётным счетам, картам и выплатам.',
   },
   {
-    mark: '🤖',
-    text: 'Для проверки сервиса достаточно открытых данных: памятка для гостя, Wi-Fi, адрес и основная информация по объектам. Если вопрос окажется сложным, гость сразу получит понятный ответ текстом — помощь не пропадёт.',
+    title: 'Пилот начинается с открытых данных',
+    text: 'Для старта достаточно информации об объекте: описание, правила, фото, Wi-Fi, заселение, базовые цены и ограничения.',
   },
 ];
 
 const pricingRows = [
-  ['Первые 7–14 дней', '0 ₽ (пробный период)'],
-  ['До 31 августа 2026 года', '1 000 ₽ / мес. за объект'],
-  ['С 1 сентября 2026 года', '3 000 ₽ за объект / мес. на 12 месяцев (всего 100 ₽ в сутки — цена чашки кофе)'],
+  {
+    id: 'first-month',
+    period: 'Первый месяц',
+    price: '0 ₽',
+  },
+  {
+    id: 'group-members',
+    period: (
+      <>
+        Для участников групп <strong className="font-bold">Анатолия Брагина</strong> и{' '}
+        <strong className="font-bold">Ярослава Стригунова</strong>
+      </>
+    ),
+    price: 'после бесплатного месяца 1 000 ₽ за объект в месяц в течение первого года',
+  },
+  {
+    id: 'after-first-year',
+    period: 'После первого года',
+    price: 'условия согласуем отдельно с учётом подключённых функций и количества объектов',
+  },
 ];
 
 export default function RuEarlyAccessPage() {
@@ -68,43 +85,41 @@ export default function RuEarlyAccessPage() {
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Первые подключения</p>
+              <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Закрытый пилот</p>
               <h1 className="mt-4 max-w-4xl text-3xl font-bold leading-tight tracking-tight text-[var(--t-text)] sm:text-5xl">
-                Умные ответы гостям для посуточной аренды
+                Подключите объект к ASI для бесплатного пилотного тестирования
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-8 text-[var(--t-text-2)] sm:text-lg">
-                Сервис помогает отвечать на частые вопросы гостей, не пропускать важные сообщения и сокращать рутину в переписке.
+                Мы помогаем собрать данные объекта, подготовить карточку для каналов размещения и постепенно подключать
+                управление сообщениями, ценами, доступностью и операционными задачами.
               </p>
               <div className="mt-7">
                 <div className="flex flex-wrap gap-3">
                   <a
                     href="#pilot-form"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-7 py-3 text-base font-bold text-white transition hover:bg-[var(--t-accent-hover)]"
                   >
                     Подключить объект
                   </a>
                   <a
-                    href="#pilot-form"
-                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
+                    href="#pricing"
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-base font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
                   >
-                    1000 ₽/мес за объект
+                    Бесплатный пилот
                   </a>
                 </div>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
-                  Подключаем ограниченное количество объектов, чтобы спокойно проверить работу сервиса на реальных гостях и подстроить ответы под ваш объект.
+                <p className="mt-4 max-w-2xl text-base leading-8 text-[var(--t-muted)]">
+                  Пилот открыт для первых участников. Подключение проходит аккуратно, без передачи паролей от личных
+                  кабинетов площадок и без доступа к вашим деньгам.
                 </p>
               </div>
             </div>
 
             <div className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 shadow-sm">
-              <h2 className="text-xl font-bold text-[var(--t-text)]">Что делает сервис</h2>
+              <h2 className="text-xl font-bold text-[var(--t-text)]">Что входит в пилот</h2>
               <ul className="mt-5 space-y-3">
-                {[
-                  'Отвечает на частые вопросы гостей',
-                  'Помогает сократить рутину в переписке',
-                  'Если голосом ответить нельзя, гость получит ответ текстом',
-                ].map((item) => (
-                  <li key={item} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
+                {pilotItems.map((item) => (
+                  <li key={item} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-base leading-7 text-[var(--t-text-2)]">
                     {item}
                   </li>
                 ))}
@@ -115,32 +130,35 @@ export default function RuEarlyAccessPage() {
 
         <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Главное</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Главное</p>
             <h2 className="mt-4 text-2xl font-bold leading-tight text-[var(--t-text)] sm:text-4xl">
-              ASI — это не ещё одна программа для учёта, не простой бот в переписке и не набор разрозненных подсказок.
+              ASI помогает собрать управление объектом в один рабочий контур
             </h2>
             <p className="mt-5 text-base leading-8 text-[var(--t-text-2)] sm:text-lg">
-              Это помощник, который берёт на себя большую часть переписки и рутины по объектам. Не нужно связывать между собой пять разных сервисов и круглосуточно сидеть в телефоне — всё собрано в одном месте.
+              На старте мы не обещаем мгновенный автопилот. Пилот нужен, чтобы спокойно подключить первые объекты,
+              проверить данные, сценарии ответов, подготовку к каналам размещения и дальнейшую автоматизацию на реальных
+              условиях.
+            </p>
+            <p className="mt-4 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
+              Сначала подключаем базовые данные объекта и ручной режим. Затем постепенно добавляем полуавтоматические
+              действия, рекомендации по ценам, календарь, доступность и управление каналами.
             </p>
           </div>
         </section>
 
         <section className="px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Что ещё будет в сервисе</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {featureItems.map((item, index) => (
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Что ещё будет в сервисе</p>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              {roadmapItems.map((item, index) => (
                 <article key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
                   <div className="flex items-start gap-3">
-                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--t-surface-2)] text-base font-bold text-[var(--t-text)]">
                       {index + 1}
                     </span>
-                    <div>
-                      <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
-                      {item.label ? <p className="mt-1 text-xs font-semibold text-[var(--t-muted)]">({item.label})</p> : null}
-                    </div>
+                    <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
                   </div>
-                  <p className="mt-4 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
+                  <p className="mt-4 text-base leading-8 text-[var(--t-text-2)]">{item.text}</p>
                 </article>
               ))}
             </div>
@@ -149,37 +167,38 @@ export default function RuEarlyAccessPage() {
 
         <section className="border-y border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-6xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Безопасность</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Безопасность</p>
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {securityItems.map((item) => (
-                <div key={item.text} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
-                  <span className="text-2xl" aria-hidden="true">
-                    {item.mark}
-                  </span>
-                  <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">{item.text}</p>
-                </div>
+                <article key={item.title} className="rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
+                  <h2 className="text-lg font-bold text-[var(--t-text)]">{item.title}</h2>
+                  <p className="mt-3 text-base leading-8 text-[var(--t-text-2)]">{item.text}</p>
+                </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="px-4 py-12 sm:px-6 sm:py-16">
+        <section id="pricing" className="scroll-mt-24 px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Стоимость и прозрачные условия</p>
+            <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Стоимость пилотного подключения</p>
             <div className="mt-6 overflow-hidden rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)]">
-              <div className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
+              <div className="grid border-b border-[var(--t-border)] bg-[var(--t-surface-2)] text-base font-bold text-[var(--t-text)] sm:grid-cols-[0.9fr_1.1fr]">
                 <div className="px-4 py-3">Период</div>
-                <div className="border-l border-[var(--t-border)] px-4 py-3">Стоимость за 1 объект</div>
+                <div className="border-t border-[var(--t-border)] px-4 py-3 sm:border-l sm:border-t-0">Стоимость</div>
               </div>
-              {pricingRows.map(([period, price]) => (
-                <div key={period} className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] text-sm leading-6 text-[var(--t-text-2)] last:border-b-0">
-                  <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{period}</div>
-                  <div className="border-l border-[var(--t-border)] px-4 py-4">{price}</div>
+              {pricingRows.map((row) => (
+                <div key={row.id} className="grid border-b border-[var(--t-border)] text-base leading-7 text-[var(--t-text-2)] last:border-b-0 sm:grid-cols-[0.9fr_1.1fr]">
+                  <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{row.period}</div>
+                  <div className="border-t border-[var(--t-border)] px-4 py-4 sm:border-l sm:border-t-0">{row.price}</div>
                 </div>
               ))}
             </div>
-            <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-sm leading-7 text-[var(--t-text-2)]">
-              🛡 Полная свобода и никаких обязательств. Если по какой-либо причине система вам не подошла, вы можете отменить подписку в один клик. Сервис продолжит полноценно работать на ваших объектах до окончания уже оплаченного периода.
+            <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
+              Пока продукт проходит пилотную обкатку, мы подключаем первые объекты в спокойном режиме и не берём оплату
+              за первый месяц. Для участников групп <strong className="font-bold text-[var(--t-text)]">Анатолия Брагина</strong> и{' '}
+              <strong className="font-bold text-[var(--t-text)]">Ярослава Стригунова</strong> сохраняется льготное
+              условие на первый год после подключения.
             </p>
           </div>
         </section>
@@ -187,12 +206,17 @@ export default function RuEarlyAccessPage() {
         <section className="border-t border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-12 sm:px-6 sm:py-16">
           <div className="mx-auto max-w-4xl">
             <div className="mb-8">
-              <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
+              <p className="text-[15px] font-bold uppercase leading-6 tracking-[0.18em] text-[var(--t-muted)]">Заявка</p>
               <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)] sm:text-3xl">
-                Подключить объект
+                Подключить объект к пилоту
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--t-text-2)]">
-                Оставьте контакты — свяжемся и поможем с подключением.
+              <p className="mt-3 max-w-2xl text-base leading-8 text-[var(--t-text-2)]">
+                Оставьте контакты и краткую информацию об объекте. Мы свяжемся, уточним данные и поможем пройти первые
+                шаги подключения.
+              </p>
+              <p className="mt-3 max-w-3xl rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-base leading-8 text-[var(--t-text-2)]">
+                Для старта понадобятся: адрес или район, тип объекта, фото, описание, правила проживания, условия
+                заселения, Wi-Fi, базовая цена и список площадок, где объект уже размещён.
               </p>
             </div>
             <EarlyAccessObjectForm />

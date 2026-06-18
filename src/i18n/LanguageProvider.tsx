@@ -41,6 +41,8 @@ function getLocaleFromUrl(): Locale {
   const { hostname, pathname } = window.location;
   // Prefer explicit path locale (used on asi-global.ru/ru).
   if (pathname?.startsWith('/ru')) return 'ru';
+  // Owner cabinet is RU-only.
+  if (pathname?.startsWith('/dashboard')) return 'ru';
   // Fallback: dedicated RU host.
   if (hostname?.endsWith('.ru')) return 'ru';
   return 'en';

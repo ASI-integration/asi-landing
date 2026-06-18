@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { buildAsiFeedbackTelegramLink } from '@/config/publicTelegram';
 import { HeroSection } from '@/components/HeroSection';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { TgIcon } from '@/components/TgIcon';
@@ -33,7 +34,7 @@ export default function HomeRu() {
           detailsLabel: 'Контакты',
           loginLabel: 'Войти',
           loginHref: '/login',
-          offerHeadline: 'ASI: ваш объект недвижимости на 99% на автопилоте',
+          offerHeadline: 'ASI: ваш объект недвижимости работает почти на автопилоте',
           offerSub: 'Пассивный доход практически без вашего участия.',
         }} telegramVariant="icon" showTopRow={false} />
 
@@ -202,7 +203,7 @@ export default function HomeRu() {
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 text-sm">
               <a
-                href="https://t.me/ASI_core_bot"
+                href={buildAsiFeedbackTelegramLink('site')}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"

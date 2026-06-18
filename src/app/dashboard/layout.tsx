@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard', key: 'overview' },
   { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
+  { href: '/dashboard/channel-manager', key: 'channelManager' },
   { href: '/dashboard/properties', key: 'properties' },
   { href: '/dashboard/communication', key: 'communication' },
   { href: '/dashboard/operations', key: 'operations' },
@@ -22,6 +23,8 @@ const navItems = [
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const pathname = usePathname();
+  const { session } = useSession();
+  const visibleNavItems = navItems.filter((item) => !('internalOnly' in item && item.internalOnly) || session?.isInternal);
 
   return (
     <>
@@ -45,7 +48,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           ASI
         </Link>
         <nav className="flex-1 px-4 py-4 space-y-1.5">
-          {navItems.map(({ href, key }) => {
+          {visibleNavItems.map(({ href, key }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
               <Link

@@ -46,6 +46,12 @@ const modules = [
     description: 'Свяжите ASI с RealtyCalendar, Bnovo, TravelLine или другой системой.',
   },
   {
+    title: 'Менеджер каналов',
+    href: '/dashboard/channel-manager',
+    status: 'скелет v1',
+    description: 'Проверьте каналы, готовность объекта, очередь обновлений и режим тарифа.',
+  },
+  {
     title: 'Аналитика локации',
     href: '/dashboard/reports',
     status: 'в подписке',

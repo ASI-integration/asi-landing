@@ -5,13 +5,13 @@ import { useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { PilotObjectSummary } from '@/lib/communication/pilot-object-intake';
 
-type CommunityStatus = 'community_member' | 'standard_terms' | 'community_info';
+type PilotReadiness = 'ready_to_start' | 'need_help_collecting' | 'want_to_discuss';
 
 type FormState = {
   name: string;
   contact: string;
   objectsCount: string;
-  communityStatus: CommunityStatus;
+  pilotReadiness: PilotReadiness;
 };
 
 type SaveResponse = {
@@ -24,7 +24,7 @@ const initialState: FormState = {
   name: '',
   contact: '',
   objectsCount: '',
-  communityStatus: 'community_member',
+  pilotReadiness: 'ready_to_start',
 };
 
 const objectCountOptions = [
@@ -35,26 +35,25 @@ const objectCountOptions = [
   'Более 20 объектов',
 ];
 
-const communityOptions: Array<{ value: CommunityStatus; label: string }> = [
+const pilotReadinessOptions: Array<{ value: PilotReadiness; label: string }> = [
   {
-    value: 'community_member',
-    label: 'Участник сообщества Стригунова или Брагина — 1 000 ₽/мес на год',
+    value: 'ready_to_start',
+    label: 'Есть базовые данные объекта, можно начинать пилотное подключение',
   },
   {
-    value: 'standard_terms',
-    label: 'Стандартные условия',
+    value: 'need_help_collecting',
+    label: 'Нужно помочь собрать описание, правила, фото и условия заселения',
   },
   {
-    value: 'community_info',
-    label: 'Хочу узнать про сообщество и скидку',
+    value: 'want_to_discuss',
+    label: 'Сначала хочу обсудить формат пилота',
   },
 ];
 
-const communitySubmissionLabels: Record<CommunityStatus, string> = {
-  community_member:
-    'Участник сообщества Ярослава Стригунова или Анатолия Брагина. Зафиксировать стартовую цену на 1 год.',
-  standard_terms: 'Стандартные условия участия.',
-  community_info: 'Хочет узнать, как вступить в сообщество и получить скидку на год.',
+const pilotReadinessSubmissionLabels: Record<PilotReadiness, string> = {
+  ready_to_start: 'Есть базовые данные объекта, можно начинать пилотное подключение.',
+  need_help_collecting: 'Нужно помочь собрать описание, правила, фото и условия заселения.',
+  want_to_discuss: 'Сначала хочет обсудить формат пилота.',
 };
 
 export function EarlyAccessObjectForm() {
@@ -73,7 +72,8 @@ export function EarlyAccessObjectForm() {
 
     const details = [
       `Количество объектов: ${form.objectsCount}`,
-      `Условия участия: ${communitySubmissionLabels[form.communityStatus]}`,
+      `Готовность к пилоту: ${pilotReadinessSubmissionLabels[form.pilotReadiness]}`,
+      'Для старта нужны: адрес или район, тип объекта, фото, описание, правила проживания, условия заселения, Wi-Fi, базовая цена и список площадок размещения.',
     ].join('\n');
 
     try {
@@ -81,7 +81,7 @@ export function EarlyAccessObjectForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          city: 'Заявка раннего доступа',
+          city: 'Заявка на пилотное подключение',
           objectName: form.name,
           addressOrArea: '',
           wifiName: '',
@@ -103,7 +103,7 @@ export function EarlyAccessObjectForm() {
       setStatus('Заявка отправлена. Свяжемся с вами в ближайшее время.');
       setForm(initialState);
     } catch {
-      setStatus('Ошибка сети. Попробуйте еще раз.');
+      setStatus('Ошибка сети. Попробуйте ещё раз.');
     } finally {
       setSaving(false);
     }
@@ -113,52 +113,66 @@ export function EarlyAccessObjectForm() {
     <div id="pilot-form" className="scroll-mt-24">
       <form onSubmit={handleSubmit} className="grid gap-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5">
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Ваше имя</span>
+          <span className="block text-base font-semibold text-[var(--t-text)]">Ваше имя</span>
           <input
             value={form.name}
             onChange={(event) => updateField('name', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           />
         </label>
 
         <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Телефон / Telegram</span>
+          <span className="block text-base font-semibold text-[var(--t-text)]">Телефон / Telegram</span>
           <input
             value={form.contact}
             onChange={(event) => updateField('contact', event.target.value)}
             required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
+            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
           />
         </label>
 
-        <label>
-          <span className="block text-sm font-semibold text-[var(--t-text)]">Сколько у вас объектов?</span>
-          <select
-            value={form.objectsCount}
-            onChange={(event) => updateField('objectsCount', event.target.value)}
-            required
-            className="mt-1 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm text-[var(--t-text)] outline-none transition focus:border-[var(--t-accent)] focus:ring-2 focus:ring-[color:var(--t-accent)]/20"
-          >
-            <option value="">Выберите количество</option>
-            {objectCountOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+        <fieldset className="grid gap-3">
+          <legend className="text-base font-semibold text-[var(--t-text)]">Сколько у вас объектов?</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {objectCountOptions.map((option) => {
+              const selected = form.objectsCount === option;
+
+              return (
+                <label
+                  key={option}
+                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-base leading-6 transition ${
+                    selected
+                      ? 'border-[var(--t-accent)] bg-[var(--t-surface-2)] font-bold text-[var(--t-text)] ring-2 ring-[color:var(--t-accent)]/20'
+                      : 'border-[var(--t-border)] bg-[var(--t-surface)] text-[var(--t-text-2)] hover:bg-[var(--t-surface-2)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="objectsCount"
+                    value={option}
+                    checked={selected}
+                    onChange={() => updateField('objectsCount', option)}
+                    required
+                    className="h-4 w-4 shrink-0 accent-[var(--t-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--t-accent)]"
+                  />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
 
         <fieldset className="grid gap-3">
-          <legend className="text-sm font-semibold text-[var(--t-text)]">Условия участия</legend>
-          {communityOptions.map((option) => (
-            <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-sm leading-6 text-[var(--t-text-2)]">
+          <legend className="text-base font-semibold text-[var(--t-text)]">Готовность к подключению</legend>
+          {pilotReadinessOptions.map((option) => (
+            <label key={option.value} className="flex gap-3 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface-2)] px-4 py-3 text-base leading-7 text-[var(--t-text-2)]">
               <input
                 type="radio"
-                name="communityStatus"
+                name="pilotReadiness"
                 value={option.value}
-                checked={form.communityStatus === option.value}
-                onChange={() => updateField('communityStatus', option.value)}
+                checked={form.pilotReadiness === option.value}
+                onChange={() => updateField('pilotReadiness', option.value)}
                 className="mt-1 h-4 w-4"
               />
               <span>{option.label}</span>
@@ -169,14 +183,14 @@ export function EarlyAccessObjectForm() {
         <button
           type="submit"
           disabled={saving}
-          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-sm font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[var(--t-accent)] px-6 py-3 text-base font-bold text-white transition hover:bg-[var(--t-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {saving ? 'Отправляем...' : 'Отправить заявку'}
         </button>
       </form>
 
       {status ? (
-        <div className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-sm font-medium text-[var(--t-text)]" aria-live="polite">
+        <div className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-4 py-3 text-base font-medium text-[var(--t-text)]" aria-live="polite">
           {status}
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
+import { getAsiFeedbackBotHandle } from '@/config/publicTelegram';
 import { ruCompliance } from '@/config/ruCompliance';
 
 export const metadata: Metadata = {
@@ -95,7 +96,7 @@ export default function RuOfferPage() {
             rel="noopener noreferrer"
             className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)] break-all"
           >
-            @ASI_core_bot
+            {getAsiFeedbackBotHandle()}
           </a>
         </p>
       </section>

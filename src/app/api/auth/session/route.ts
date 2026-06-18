@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
+import { isDashboardInternalUser } from '@/lib/dashboard/internal-access';
 import { supabase } from '@/lib/supabase';
 
 const emptySessionPayload = { user: null, subscription: null, account: null };
@@ -54,5 +55,6 @@ export async function GET() {
     user: { id: session.userId, email: session.email },
     subscription: sub,
     account,
+    isInternal: isDashboardInternalUser(session.email),
   });
 }
