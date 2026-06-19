@@ -25,7 +25,7 @@ const mockDecideAutopilot = vi.fn().mockResolvedValue({
 });
 const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: null });
 const crmRows = new Map<string, { id: string; role: string | null }>();
-const insertedCrmRows: Array<Record<string, unknown>> = [];
+const insertedRows: Array<{ table: string; row: Record<string, unknown> }> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
   'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 const GUEST_SELECTED_REPLY_RU =
@@ -58,11 +58,12 @@ function supabaseQuery(table: string) {
       return { data: null, error: null };
     }),
     insert: vi.fn((row: Record<string, unknown>) => {
-      insertedCrmRows.push(row);
+      insertedRows.push({ table, row });
       return {
         select: () => ({
           single: async () => ({ data: { id: 'crm-created' }, error: null }),
         }),
+        single: async () => ({ data: { id: 'crm-created' }, error: null }),
       };
     }),
     single: vi.fn(async () => ({ data: null, error: null })),
@@ -209,7 +210,7 @@ describe('communication identity routing v1', () => {
     mockDecideAutopilot.mockClear();
     mockCreateOpsTask.mockClear();
     crmRows.clear();
-    insertedCrmRows.length = 0;
+    insertedRows.length = 0;
   });
 
   it('routes known test_guest into Guest Concierge', async () => {
@@ -457,13 +458,31 @@ describe('communication identity routing v1', () => {
     );
 
     expect(result.reply).toBe(LEAD_REPLY_RU);
-    expect(insertedCrmRows[0]).toMatchObject({
+    expect(insertedRows.find((item) => item.table === 'crm_contacts')?.row).toMatchObject({
       telegram_username: 'new_owner',
       source: 'telegram',
       status: 'new_lead',
       communication_status: 'wrote_first',
     });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('answers guest restaurant questions through Guest Concierge before broad autopilot', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(
+      envelope({
+        messageText: 'вы можете порекомендовать какие-то рестораны недалеко?',
+        metadata: { senderIdentity: 'guest', providerMessageId: 'guest-restaurants' },
+      }),
+    );
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.reply).toContain('кафе и рестораны');
+    expect(result.reply).toContain('проверить часы работы и рейтинг в картах');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' })).toHaveLength(0);
+    expect(insertedRows.some((item) => item.table === 'crm_events' && item.row.event_type === 'guest_concierge_answered')).toBe(true);
+    expect(insertedRows.some((item) => item.table === 'crm_events' && item.row.event_type === 'operator_followup_required')).toBe(false);
   });
 
   it('routes guest Wi-Fi problem to Guest Concierge with escalation path available', async () => {
@@ -543,8 +562,8 @@ describe('communication identity routing v1', () => {
     const review = listEscalationReviews({ status: 'pending' }).at(0);
     expect(review).toMatchObject({
       detail: expect.stringContaining('⚠️ ASI: нужна проверка оператора'),
-      suggestedReply: expect.stringContaining('Передаю оператору'),
+      suggestedReply: expect.stringContaining('Передал вопрос оператору'),
     });
-    expect(review?.detail).toContain('Причина эскалации: booking_payment_support');
+    expect(review?.detail).toContain('Причина эскалации: Вопрос требует проверки оператора');
   });
 });

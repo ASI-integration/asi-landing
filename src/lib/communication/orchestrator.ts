@@ -135,6 +135,13 @@ import {
   resolveEmailGuestBookingObjectContext,
   resolveTelegramGuestBookingObjectContext,
 } from './telegram-booking-object-memory';
+import { answerGuestTestQuestion, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
+import {
+  createGuestConciergeAnsweredEvent,
+  createGuestTestMissingDataEvent,
+  createOperatorFollowupRequired,
+  recordGuestTestQuestionOutcome,
+} from '@/lib/crm/operator-followup';
 import {
   audit_object_knowledge_reply,
   type ObjectKnowledgeStatus,
@@ -1802,6 +1809,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       text.trim()
     ) {
       let bookingMemoryFields: ReturnType<typeof bookingObjectContextToAutopilotFields> | undefined;
+      let telegramBookingObjectCtx: Awaited<ReturnType<typeof resolveTelegramGuestBookingObjectContext>> | null = null;
       if (envelope.channel === 'telegram') {
         const bookingObjectCtx = await withAwaitCheckpoint(
           'memory/booking_object.resolve.await',
@@ -1813,6 +1821,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           { chat_id: chatId },
           15_000,
         );
+        telegramBookingObjectCtx = bookingObjectCtx;
         bookingMemoryFields = bookingObjectContextToAutopilotFields(bookingObjectCtx);
         if (ruDebug) {
           console.log('[ru:tg] booking_object_memory', {
@@ -1849,6 +1858,113 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             access_verified: bookingObjectCtx.access_verified,
             wifi_verified: bookingObjectCtx.wifi_verified,
           });
+        }
+      }
+
+      if (envelope.channel === 'telegram' && telegramBookingObjectCtx) {
+        const propertyId =
+          telegramBookingObjectCtx.property?.object_id ??
+          commContext.reservation.propertyId ??
+          identity.propertyId ??
+          null;
+        const answer = answerGuestTestQuestion({
+          messageText: text,
+          property: telegramBookingObjectCtx.property,
+          propertyId,
+        });
+        if (answer.intent !== 'unknown') {
+          const telegramUserId = String(
+            envelope.metadata?.telegram_user_id ??
+              envelope.metadata?.telegramUserId ??
+              envelope.externalUserId ??
+              chatId,
+          );
+          const recorded = await recordGuestTestQuestionOutcome({
+            telegramUserId,
+            telegramChatId: chatId,
+            propertyId,
+            questionText: text,
+            replyText: answer.reply,
+            outcome: answer.outcome,
+            intent: answer.intent,
+            missingFields: answer.missingFields,
+          });
+
+          let deterministicReplyText = answer.reply;
+          if (answer.outcome === 'answered_by_concierge_autopilot') {
+            await createGuestConciergeAnsweredEvent({
+              telegramUserId,
+              telegramChatId: chatId,
+              propertyId,
+              guestQuestion: text,
+              replyText: answer.reply,
+              contactId: recorded.contactId,
+              intent: answer.intent,
+            });
+          } else if (answer.outcome === 'missing_data') {
+            await createGuestTestMissingDataEvent({
+              telegramUserId,
+              telegramChatId: chatId,
+              propertyId,
+              guestQuestion: text,
+              missingFields: answer.missingFields,
+              contactId: recorded.contactId,
+              intent: answer.intent,
+            });
+          } else if (answer.outcome === 'operator_followup_required') {
+            const created = await createOperatorFollowupRequired({
+              telegramUserId,
+              telegramChatId: chatId,
+              propertyId,
+              guestQuestion: text,
+              contactId: recorded.contactId,
+              updateId: update_id,
+              intent: answer.intent,
+            });
+            if (!created.ok) deterministicReplyText = OPERATOR_HANDOFF_FAILED_REPLY;
+            persistEscalationReview({
+              reason: 'operator_followup_required',
+              escalationSummary: `guest_test:${answer.intent}`,
+              confidence: 1,
+              suggestedReply: deterministicReplyText,
+              source: {
+                route: 'guest_test_deterministic_v1',
+                intent: answer.intent,
+                outcome: answer.outcome,
+              },
+              detail: buildOperatorNotificationText({
+                role: senderRoute.senderIdentity,
+                topic: String(answer.intent),
+                message: text,
+                reason: 'Вопрос требует проверки оператора или создает обязательство владельца.',
+                recommendedReply: deterministicReplyText,
+              }),
+            });
+            await withAwaitCheckpoint(
+              'session.transition.operator_review_required_guest_test',
+              () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+              { chat_id: chatId },
+              15_000,
+            );
+          }
+
+          const targetId = resolveOutboundTargetId(envelope, identity.guestId);
+          if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          const sent = await adapter.sendMessage(String(targetId), deterministicReplyText, {
+            reply_handler: `orchestrator:guest_test_deterministic_v1:${answer.outcome}`,
+            update_id,
+            sender_identity: senderRoute.senderIdentity,
+            guest_test_outcome: answer.outcome,
+            guest_test_intent: answer.intent,
+          });
+          if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          return {
+            outcome: ProcessOutcome.Replied,
+            update_id,
+            chat_id: chatId,
+            category: MessageCategory.GuestMessage,
+            reply: deterministicReplyText,
+          };
         }
       }
 

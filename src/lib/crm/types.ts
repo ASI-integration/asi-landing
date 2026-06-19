@@ -68,6 +68,13 @@ export type CrmContactInput = {
   nextActionAt?: unknown;
 };
 
+export type GuestTestQuestionOutcome =
+  | 'answered_from_property_data'
+  | 'answered_from_global_rule'
+  | 'answered_by_concierge_autopilot'
+  | 'missing_data'
+  | 'operator_followup_required';
+
 export const CRM_ROLE_LABELS: Record<CrmRole, string> = {
   owner: 'владелец',
   manager: 'управляющий',
