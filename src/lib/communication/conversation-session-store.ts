@@ -302,6 +302,35 @@ export function markAutonomousSessionStatus(
   return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
 }
 
+export function patchAutonomousSessionCollectedData(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  set?: Record<string, string | null | undefined>;
+  clear?: string[];
+}): AutonomousConversationSession {
+  const prev = store.get(params.chatId) ?? baseSession(params.chatId, params.channel);
+  const nextCollected: Record<string, string | undefined> = { ...prev.collected_data };
+  for (const key of params.clear ?? []) {
+    delete nextCollected[key];
+  }
+  for (const [key, value] of Object.entries(params.set ?? {})) {
+    const normalized = value == null ? '' : String(value).trim();
+    if (normalized) {
+      nextCollected[key] = normalized;
+    } else {
+      delete nextCollected[key];
+    }
+  }
+  const next = {
+    ...prev,
+    channel: params.channel,
+    collected_data: nextCollected,
+    updated_at: new Date().toISOString(),
+  };
+  store.set(params.chatId, next);
+  return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
+}
+
 export function getAutonomousSessionOperationalCaseV1(chatId: number): TelegramOperationalSessionCaseV1 | undefined {
   const prev = store.get(chatId);
   return prev?.operational_case ? JSON.parse(JSON.stringify(prev.operational_case)) : undefined;

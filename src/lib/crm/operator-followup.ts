@@ -238,6 +238,7 @@ export async function createOperatorFollowupRequired(input: {
   updateId?: number;
   intent?: string | null;
   internalDetail?: string | null;
+  lookupData?: Record<string, unknown> | null;
 }): Promise<{ ok: boolean; contactId?: string | null; error?: string }> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -259,6 +260,7 @@ export async function createOperatorFollowupRequired(input: {
       telegram_user_id: input.telegramUserId,
       update_id: input.updateId ?? null,
       internal_detail: input.internalDetail ?? null,
+      lookup_data: input.lookupData ?? null,
       source: 'guest_test',
     },
   });

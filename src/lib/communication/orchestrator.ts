@@ -51,6 +51,7 @@ import { getContext, updateContext } from './memory';
 import {
   loadAutonomousSession,
   mergeAutonomousSessionFromInbound,
+  patchAutonomousSessionCollectedData,
   resetAutonomousSessionSnapshot,
   savePendingIdentityMessage,
   setAutonomousSessionIdentity,
@@ -177,6 +178,16 @@ import {
   TELEGRAM_IDENTITY_CALLBACKS,
   UNKNOWN_IDENTITY_INLINE_KEYBOARD,
 } from './communication-identity-routing';
+
+const GUEST_MISSING_BOOKING_CONTEXT = 'after_missing_booking_or_object_data';
+const GUEST_BOOKING_IDENTIFIER_STATE = 'awaiting_guest_booking_identifier';
+const GUEST_BOOKING_LOOKUP_DATA_STATE = 'awaiting_guest_booking_lookup_data';
+
+const GUEST_BOOKING_LOOKUP_BY_NAME_REPLY =
+  'Да, можно. Напишите, пожалуйста, имя и фамилию, дату заезда и, если есть, последние 4 цифры телефона из брони. Я передам это оператору для проверки.';
+
+const GUEST_BOOKING_LOOKUP_RECEIVED_REPLY =
+  'Спасибо, передал данные оператору для проверки. Вернусь с ответом здесь.';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -749,6 +760,53 @@ function rememberedTelegramIdentityForRoute(chatId: number): 'guest' | 'owner' |
   const role = loadAutonomousSession(chatId)?.identity_role;
   if (role === 'guest' || role === 'owner' || role === 'manager' || role === 'lead') return role;
   return null;
+}
+
+function normalizeRuText(value: string): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[ё]/g, 'е')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isGuestBookingLookupByNameQuestion(messageText: string): boolean {
+  const normalized = normalizeRuText(messageText);
+  if (!normalized) return false;
+  return [
+    'можно по имени',
+    'по фамилии',
+    'номера нет',
+    'нет номера бронирования',
+    'могу назвать имя',
+    'по имени и фамилии',
+  ].some((needle) => normalized.includes(needle));
+}
+
+function extractGuestBookingLookupData(messageText: string): Record<string, string | null> {
+  const textValue = String(messageText ?? '').trim();
+  const normalized = normalizeRuText(textValue);
+  const phoneLast4 = normalized.match(/(?:\b|\D)(\d{4})(?:\b|\D)/)?.[1] ?? null;
+  const dateMatch =
+    textValue.match(/\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?/)?.[0] ??
+    textValue.match(/\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i)?.[0] ??
+    null;
+  const nameMatch =
+    textValue.match(/(?:имя(?:\s+и\s+фамилия)?|зовут|гость)\s*[:\-]?\s*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})/)?.[1] ??
+    textValue.match(/([А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+)/)?.[1] ??
+    null;
+  return {
+    guest_name: nameMatch,
+    check_in_date: dateMatch,
+    phone_last4: phoneLast4,
+    raw_text: textValue,
+  };
+}
+
+function hasGuestBookingLookupData(messageText: string): boolean {
+  const data = extractGuestBookingLookupData(messageText);
+  return Boolean(data.guest_name && data.check_in_date);
 }
 
 function hasAutopilotOperationsContext(context: CommunicationAutopilotContext): boolean {
@@ -1917,6 +1975,100 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           commContext.reservation.propertyId ??
           identity.propertyId ??
           null;
+        const sessionCollectedData = loadAutonomousSession(chatId)?.collected_data ?? {};
+        const guestLookupState = sessionCollectedData.guest_missing_reservation_followup_state;
+        const isGuestMissingBookingFollowup =
+          sessionCollectedData.guest_missing_reservation_followup === GUEST_MISSING_BOOKING_CONTEXT &&
+          senderRoute.senderIdentity === 'guest';
+
+        if (
+          isGuestMissingBookingFollowup &&
+          guestLookupState === GUEST_BOOKING_IDENTIFIER_STATE &&
+          isGuestBookingLookupByNameQuestion(text)
+        ) {
+          patchAutonomousSessionCollectedData({
+            chatId,
+            channel: envelope.channel,
+            set: {
+              guest_missing_reservation_followup_state: GUEST_BOOKING_LOOKUP_DATA_STATE,
+              guest_missing_reservation_lookup_offer: text,
+            },
+          });
+          const targetId = resolveOutboundTargetId(envelope, identity.guestId);
+          if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          const sent = await adapter.sendMessage(String(targetId), GUEST_BOOKING_LOOKUP_BY_NAME_REPLY, {
+            reply_handler: 'orchestrator:guest_booking_lookup_followup:ask_lookup_data',
+            update_id,
+            sender_identity: senderRoute.senderIdentity,
+          });
+          if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          return {
+            outcome: ProcessOutcome.Replied,
+            update_id,
+            chat_id: chatId,
+            category: MessageCategory.GuestMessage,
+            reply: GUEST_BOOKING_LOOKUP_BY_NAME_REPLY,
+          };
+        }
+
+        if (
+          isGuestMissingBookingFollowup &&
+          guestLookupState === GUEST_BOOKING_LOOKUP_DATA_STATE &&
+          hasGuestBookingLookupData(text)
+        ) {
+          const telegramUserId = String(
+            envelope.metadata?.telegram_user_id ??
+              envelope.metadata?.telegramUserId ??
+              envelope.externalUserId ??
+              chatId,
+          );
+          const lookupData = extractGuestBookingLookupData(text);
+          const created = await createOperatorFollowupRequired({
+            telegramUserId,
+            telegramChatId: chatId,
+            propertyId,
+            guestQuestion: text,
+            updateId: update_id,
+            intent: 'booking_lookup_missing_details',
+            internalDetail:
+              'Гость прислал минимальные данные для поиска бронирования: имя/фамилия, дата заезда и последние 4 цифры телефона при наличии.',
+            lookupData,
+          });
+          const deterministicReplyText = created.ok
+            ? GUEST_BOOKING_LOOKUP_RECEIVED_REPLY
+            : OPERATOR_HANDOFF_FAILED_REPLY;
+          if (created.ok) {
+            patchAutonomousSessionCollectedData({
+              chatId,
+              channel: envelope.channel,
+              clear: [
+                'guest_missing_reservation_followup',
+                'guest_missing_reservation_followup_state',
+                'guest_missing_reservation_lookup_offer',
+                'guest_missing_reservation_intent',
+              ],
+              set: {
+                guest_booking_lookup_data_raw: lookupData.raw_text,
+              },
+            });
+          }
+          const targetId = resolveOutboundTargetId(envelope, identity.guestId);
+          if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          const sent = await adapter.sendMessage(String(targetId), deterministicReplyText, {
+            reply_handler: 'orchestrator:guest_booking_lookup_followup:operator_required',
+            update_id,
+            sender_identity: senderRoute.senderIdentity,
+          });
+          if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          return {
+            outcome: ProcessOutcome.Replied,
+            update_id,
+            chat_id: chatId,
+            category: MessageCategory.GuestMessage,
+            reply: deterministicReplyText,
+          };
+        }
+
         const answer = answerGuestTestQuestion({
           messageText: text,
           property: telegramBookingObjectCtx.property,
@@ -1974,6 +2126,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               updateId: update_id,
               intent: answer.intent,
               internalDetail: internalMissingDataDetail,
+            });
+            patchAutonomousSessionCollectedData({
+              chatId,
+              channel: envelope.channel,
+              set: {
+                guest_missing_reservation_followup: GUEST_MISSING_BOOKING_CONTEXT,
+                guest_missing_reservation_followup_state: GUEST_BOOKING_IDENTIFIER_STATE,
+                guest_missing_reservation_intent: answer.intent,
+              },
             });
           } else if (answer.outcome === 'operator_followup_required') {
             const created = await createOperatorFollowupRequired({

@@ -324,6 +324,67 @@ describe('communication identity routing v1', () => {
     expect(String((operatorEvent?.row.metadata as Record<string, unknown> | undefined)?.internal_detail ?? '')).toContain('Владельцу нужно');
   });
 
+  it('keeps missing booking/object context for guest lookup follow-up by name', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate({
+      update_id: 61_014,
+      message: {
+        message_id: 14,
+        chat: { id: 9114 },
+        from: { id: 9114, language_code: 'ru', username: 'pending_guest_lookup' },
+        text: 'здравствуйте, мы хотим заехать в вашу квартиру',
+      },
+    });
+    const replay = await processUpdate(callbackUpdate('identity:guest', 9114));
+    expect(replay.reply).toBe(GUEST_MISSING_DATA_OPERATOR_REPLY);
+    expect(loadAutonomousSession(9114)?.collected_data).toMatchObject({
+      guest_missing_reservation_followup: 'after_missing_booking_or_object_data',
+      guest_missing_reservation_followup_state: 'awaiting_guest_booking_identifier',
+    });
+
+    const byName = await processUpdate({
+      update_id: 61_015,
+      message: {
+        message_id: 15,
+        chat: { id: 9114 },
+        from: { id: 9114, language_code: 'ru', username: 'pending_guest_lookup' },
+        text: 'в данный момент нет номера бронирования, можно по имени и фамилии?',
+      },
+    });
+
+    expect(byName.reply).toBe(
+      'Да, можно. Напишите, пожалуйста, имя и фамилию, дату заезда и, если есть, последние 4 цифры телефона из брони. Я передам это оператору для проверки.',
+    );
+    expect(byName.reply).not.toMatch(/владелец|внутрен|оператору нужно|паспорт|документ|фото|банк|карта/i);
+    expect(loadAutonomousSession(9114)?.collected_data).toMatchObject({
+      guest_missing_reservation_followup_state: 'awaiting_guest_booking_lookup_data',
+    });
+
+    const lookupData = await processUpdate({
+      update_id: 61_016,
+      message: {
+        message_id: 16,
+        chat: { id: 9114 },
+        from: { id: 9114, language_code: 'ru', username: 'pending_guest_lookup' },
+        text: 'Иван Петров, дата заезда 24 июня, последние 4 цифры телефона 1234',
+      },
+    });
+
+    expect(lookupData.reply).toBe('Спасибо, передал данные оператору для проверки. Вернусь с ответом здесь.');
+    const operatorEvent = insertedRows
+      .filter((item) => item.table === 'crm_events')
+      .find((item) => item.row.event_type === 'operator_followup_required' && item.row.message_text === 'Иван Петров, дата заезда 24 июня, последние 4 цифры телефона 1234');
+    expect(operatorEvent?.row.metadata).toMatchObject({
+      intent: 'booking_lookup_missing_details',
+      source: 'guest_test',
+      lookup_data: {
+        guest_name: 'Иван Петров',
+        check_in_date: '24 июня',
+        phone_last4: '1234',
+      },
+    });
+  });
+
   it('replays pending owner message through owner route after owner callback', async () => {
     const { processUpdate } = await import('../orchestrator');
     await processUpdate({
