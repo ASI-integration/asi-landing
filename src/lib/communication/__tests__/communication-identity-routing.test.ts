@@ -26,6 +26,8 @@ const mockDecideAutopilot = vi.fn().mockResolvedValue({
 const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: null });
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedCrmRows: Array<Record<string, unknown>> = [];
+const UNKNOWN_IDENTITY_CLARIFY_RU =
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -189,7 +191,7 @@ describe('communication identity routing v1', () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(envelope({ messageText: 'Здравствуйте' }));
 
-    expect(result.reply).toContain('вы гость по бронированию');
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -208,7 +210,7 @@ describe('communication identity routing v1', () => {
     const result = await processUpdate(update);
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
-    expect(result.reply).toContain('вы гость по бронированию');
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(result.reply).not.toContain('Hi! Send a guest message');
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
