@@ -73,6 +73,7 @@ export default function CrmPageClient() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -166,6 +167,34 @@ export default function CrmPageClient() {
     () => getCrmSuggestions(suggestionContacts, 'nextStep', draft.nextStep),
     [draft.nextStep, suggestionContacts]
   );
+
+  async function deleteContact(contact: CrmContact) {
+    const confirmed = window.confirm(`Удалить лида «${contact.name}»? Это действие нельзя отменить.`);
+    if (!confirmed) return;
+
+    setDeletingId(contact.id);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/crm/${encodeURIComponent(contact.id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await readResponseJson(res, { ok: false, message: '' });
+      if (!res.ok || !data.ok) {
+        setMessage(data.message || 'Не удалось удалить лида.');
+        return;
+      }
+      setContacts((prev) => prev.filter((item) => item.id !== contact.id));
+      setSuggestionContacts((prev) => prev.filter((item) => item.id !== contact.id));
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[contact.id];
+        return next;
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function patchContact(id: string, patch: Partial<CrmContact> & { nextActionAt?: string | null }) {
     setSavingId(id);
@@ -418,6 +447,14 @@ export default function CrmPageClient() {
                       <h2 className="text-base font-semibold text-slate-950">{contact.name}</h2>
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{CRM_ROLE_LABELS[contact.role]}</span>
                       <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">{CRM_SOURCE_LABELS[contact.source]}</span>
+                      <button
+                        type="button"
+                        disabled={deletingId === contact.id || savingId === contact.id}
+                        onClick={() => void deleteContact(contact)}
+                        className="rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:text-red-300"
+                      >
+                        {deletingId === contact.id ? 'Удаление...' : 'Удалить'}
+                      </button>
                     </div>
                     <div className="mt-2 grid gap-1 text-sm text-slate-600">
                       <div>{contact.phone || 'телефон не указан'}</div>

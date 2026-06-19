@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { normalizeCrmContactInput } from '@/lib/crm/normalize';
-import { updateCrmContact } from '@/lib/crm/repository';
+import { deleteCrmContact, updateCrmContact } from '@/lib/crm/repository';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,5 +44,22 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
     return NextResponse.json({ ok: true, contact });
   } catch {
     return NextResponse.json({ ok: false, message: 'Не удалось сохранить изменения.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, context: { params: { id: string } }): Promise<NextResponse> {
+  const authError = await requireDashboardSession();
+  if (authError) return authError;
+
+  const id = context.params.id?.trim();
+  if (!id) {
+    return NextResponse.json({ ok: false, message: 'Лид не найден.' }, { status: 404 });
+  }
+
+  try {
+    await deleteCrmContact(id);
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, message: 'Не удалось удалить лида.' }, { status: 500 });
   }
 }

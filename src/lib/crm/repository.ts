@@ -239,3 +239,8 @@ export async function updateCrmContact(id: string, input: Partial<NormalizedCrmC
   if (error) throw error;
   return toContact(data as CrmContactRow);
 }
+
+export async function deleteCrmContact(id: string): Promise<void> {
+  const { error } = await supabase.from('crm_contacts').delete().eq('id', id);
+  if (error) throw error;
+}
