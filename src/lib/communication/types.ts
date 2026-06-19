@@ -376,6 +376,12 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: {
+    id: string;
+    from?: TelegramMessage['from'];
+    message?: TelegramMessage;
+    data?: string;
+  };
 }
 
 /**

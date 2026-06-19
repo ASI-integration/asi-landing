@@ -27,13 +27,15 @@ const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: 
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedCrmRows: Array<Record<string, unknown>> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите подключить ASI?';
+  'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 const GUEST_SELECTED_REPLY_RU =
-  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или другой вопрос.';
+  'Понял, вы гость по бронированию. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 const OWNER_MANAGER_REPLY_RU =
   'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
 const LEAD_REPLY_RU =
   'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
+const SUPPORT_PROBLEM_REPLY_RU =
+  'Понял. Опишите, пожалуйста, что случилось. Если это связано с проживанием, укажите объект или бронь. Если это вопрос владельца/управляющего, напишите объект и ситуацию.';
 const PROBLEM_IDENTITY_CLARIFY_RU = 'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 
 function supabaseQuery(table: string) {
@@ -83,6 +85,7 @@ vi.mock('../channels', () => ({
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockSendMessage(...args),
+  answerTelegramCallbackQuery: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/lib/openai', () => ({
@@ -156,7 +159,7 @@ vi.mock('../reservation', () => ({
   matchReservation: vi.fn().mockResolvedValue({ status: 'unmatched', confidence: 0 }),
 }));
 
-import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
+import { __resetAutonomousSessionStoreForTests, loadAutonomousSession } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
 import { __resetSessionStatusStoreForTests } from '../session-status';
@@ -175,6 +178,23 @@ function envelope(params: Partial<InboundMessageEnvelope>): InboundMessageEnvelo
       ...params.metadata,
     },
     ...params,
+  };
+}
+
+function callbackUpdate(data: string, chatId = 9001): TelegramUpdate {
+  return {
+    update_id: Math.floor(Math.random() * 1_000_000),
+    callback_query: {
+      id: `cb-${Math.random()}`,
+      from: { id: chatId, language_code: 'ru', username: 'callback_user' },
+      message: {
+        message_id: 42,
+        chat: { id: chatId },
+        from: { id: 100, is_bot: true, first_name: 'ASI Support' },
+        text: UNKNOWN_IDENTITY_CLARIFY_RU,
+      },
+      data,
+    },
   };
 }
 
@@ -207,12 +227,19 @@ describe('communication identity routing v1', () => {
     expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_markup: {
-        keyboard: [
-          ['Я гость', 'Я владелец/управляющий'],
-          ['Хочу подключить ASI', 'Проблема по объекту'],
+        inline_keyboard: [
+          [
+            { text: 'Я гость по бронированию', callback_data: 'identity:guest' },
+            { text: 'Я владелец / управляющий объекта', callback_data: 'identity:owner_manager' },
+          ],
+          [
+            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
+            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+          ],
         ],
       },
     });
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).not.toHaveProperty('keyboard');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -237,7 +264,9 @@ describe('communication identity routing v1', () => {
       reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
       sender_identity: 'unknown',
       reply_markup: expect.objectContaining({
-        keyboard: expect.arrayContaining([expect.arrayContaining(['Я гость'])]),
+        inline_keyboard: expect.arrayContaining([
+          expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:guest' })]),
+        ]),
       }),
     });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
@@ -261,8 +290,64 @@ describe('communication identity routing v1', () => {
     expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_markup: expect.objectContaining({
-        keyboard: expect.arrayContaining([expect.arrayContaining(['Я гость'])]),
+        inline_keyboard: expect.arrayContaining([
+          expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:guest' })]),
+        ]),
       }),
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes guest inline callback to guest selection and saves identity', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const result = await processUpdate(callbackUpdate('identity:guest', 9101));
+
+    expect(result.reply).toBe(GUEST_SELECTED_REPLY_RU);
+    expect(loadAutonomousSession(9101)?.identity_role).toBe('guest');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:guest_selected',
+      sender_identity: 'guest',
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes owner inline callback to owner manager route and saves identity', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const result = await processUpdate(callbackUpdate('identity:owner_manager', 9102));
+
+    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(loadAutonomousSession(9102)?.identity_role).toBe('owner');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:owner_manager',
+      sender_identity: 'owner',
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes lead inline callback to lead route and saves identity', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const result = await processUpdate(callbackUpdate('identity:lead', 9103));
+
+    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(loadAutonomousSession(9103)?.identity_role).toBe('lead');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:lead',
+      sender_identity: 'lead',
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes support inline callback to support route and overrides previous identity', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate(callbackUpdate('identity:guest', 9104));
+
+    const result = await processUpdate(callbackUpdate('identity:support_problem', 9104));
+
+    expect(result.reply).toBe(SUPPORT_PROBLEM_REPLY_RU);
+    expect(loadAutonomousSession(9104)?.identity_role).toBe('operator');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:support_problem',
+      sender_identity: 'support_problem',
     });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });

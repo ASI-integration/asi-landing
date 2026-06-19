@@ -6,6 +6,7 @@ export type SenderIdentity =
   | 'owner'
   | 'manager'
   | 'lead'
+  | 'support_problem'
   | 'unknown'
   | 'test_guest'
   | 'internal_operator';
@@ -15,9 +16,19 @@ export type CommunicationIdentityRoute =
   | 'guest_selected'
   | 'owner_manager'
   | 'lead'
+  | 'support_problem'
   | 'unknown_clarify'
   | 'object_problem_clarify'
   | 'internal_operator';
+
+export type TelegramInlineKeyboardButton = {
+  text: string;
+  callback_data: string;
+};
+
+export type TelegramInlineKeyboardMarkup = {
+  inline_keyboard: TelegramInlineKeyboardButton[][];
+};
 
 export type TelegramReplyKeyboardMarkup = {
   keyboard: string[][];
@@ -31,7 +42,7 @@ export type CommunicationIdentityRoutingDecision = {
   route: CommunicationIdentityRoute;
   shouldRunGuestConcierge: boolean;
   replyText?: string;
-  replyMarkup?: TelegramReplyKeyboardMarkup;
+  replyMarkup?: TelegramInlineKeyboardMarkup | TelegramReplyKeyboardMarkup;
   selectedIdentity?: SenderIdentity;
   crmContactId?: string;
   reason: string;
@@ -39,13 +50,13 @@ export type CommunicationIdentityRoutingDecision = {
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите подключить ASI?';
+  'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 
 const PROBLEM_IDENTITY_CLARIFY_RU =
   'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 
 const GUEST_SELECTED_REPLY_RU =
-  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или другой вопрос.';
+  'Понял, вы гость по бронированию. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 
 const LEAD_REPLY_RU =
   'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
@@ -53,17 +64,30 @@ const LEAD_REPLY_RU =
 const OWNER_MANAGER_REPLY_RU =
   'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
 
+const SUPPORT_PROBLEM_REPLY_RU =
+  'Понял. Опишите, пожалуйста, что случилось. Если это связано с проживанием, укажите объект или бронь. Если это вопрос владельца/управляющего, напишите объект и ситуацию.';
+
 const INTERNAL_OPERATOR_REPLY_RU =
   'Операторский контекст принят. Гостевой автопилот для этого сообщения не запущен.';
 
-export const UNKNOWN_IDENTITY_REPLY_KEYBOARD: TelegramReplyKeyboardMarkup = {
-  keyboard: [
-    ['Я гость', 'Я владелец/управляющий'],
-    ['Хочу подключить ASI', 'Проблема по объекту'],
+export const TELEGRAM_IDENTITY_CALLBACKS = {
+  guest: 'identity:guest',
+  ownerManager: 'identity:owner_manager',
+  lead: 'identity:lead',
+  supportProblem: 'identity:support_problem',
+} as const;
+
+export const UNKNOWN_IDENTITY_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
+  inline_keyboard: [
+    [
+      { text: 'Я гость по бронированию', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
+      { text: 'Я владелец / управляющий объекта', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
+    ],
+    [
+      { text: 'Хочу подключить ASI', callback_data: TELEGRAM_IDENTITY_CALLBACKS.lead },
+      { text: 'Нужна поддержка', callback_data: TELEGRAM_IDENTITY_CALLBACKS.supportProblem },
+    ],
   ],
-  resize_keyboard: true,
-  one_time_keyboard: true,
-  input_field_placeholder: 'Выберите сценарий',
 };
 
 export const PROBLEM_IDENTITY_REPLY_KEYBOARD: TelegramReplyKeyboardMarkup = {
@@ -122,8 +146,10 @@ function metadataIdentity(envelope: InboundMessageEnvelope): SenderIdentity | nu
   const value = norm(envelope.metadata?.senderIdentity ?? envelope.metadata?.sender_identity ?? envelope.metadata?.role);
   if (value === 'guest') return 'guest';
   if (value === 'owner') return 'owner';
+  if (value === 'owner_manager') return 'owner';
   if (value === 'manager') return 'manager';
   if (value === 'lead') return 'lead';
+  if (value === 'support_problem' || value === 'support/problem') return 'support_problem';
   if (value === 'test_guest') return 'test_guest';
   if (value === 'internal_operator' || value === 'operator') return 'internal_operator';
   return null;
@@ -297,6 +323,18 @@ export async function resolveCommunicationIdentityRoute(params: {
     };
   }
 
+  if (senderIdentity === 'support_problem') {
+    return {
+      senderIdentity,
+      route: 'support_problem',
+      shouldRunGuestConcierge: false,
+      replyText: SUPPORT_PROBLEM_REPLY_RU,
+      selectedIdentity: 'support_problem',
+      reason: 'support_problem_selected',
+      audit: { identityStatus: identity.status, identityReason: identity.reason },
+    };
+  }
+
   if (senderIdentity === 'lead') {
     const crmContactId = crmByUsername?.id ?? (await createLeadIfSafe(envelope));
     return {
@@ -316,7 +354,7 @@ export async function resolveCommunicationIdentityRoute(params: {
     route: 'unknown_clarify',
     shouldRunGuestConcierge: false,
     replyText: UNKNOWN_IDENTITY_CLARIFY_RU,
-    replyMarkup: UNKNOWN_IDENTITY_REPLY_KEYBOARD,
+    replyMarkup: UNKNOWN_IDENTITY_INLINE_KEYBOARD,
     reason: 'unknown_sender_needs_role',
     audit: { identityStatus: identity.status, identityReason: identity.reason },
   };

@@ -218,3 +218,16 @@ export async function replyToTelegram(
   });
   return sent;
 }
+
+export async function answerTelegramCallbackQuery(callbackQueryId: string): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for callback answer');
+    return false;
+  }
+
+  if (isTelegramOutboundDryRun()) return true;
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
+  return sendOnce(url, { callback_query_id: callbackQueryId });
+}

@@ -28,6 +28,7 @@ vi.mock('../channels', () => ({
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockSendMessage(...args),
+  answerTelegramCallbackQuery: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/lib/openai', () => ({
@@ -147,11 +148,18 @@ describe('telegram /reset_identity acceptance tooling', () => {
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
       reply_markup: {
-        keyboard: [
-          ['Я гость', 'Я владелец/управляющий'],
-          ['Хочу подключить ASI', 'Проблема по объекту'],
+        inline_keyboard: [
+          [
+            { text: 'Я гость по бронированию', callback_data: 'identity:guest' },
+            { text: 'Я владелец / управляющий объекта', callback_data: 'identity:owner_manager' },
+          ],
+          [
+            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
+            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+          ],
         ],
       },
     });
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).not.toHaveProperty('keyboard');
   });
 });

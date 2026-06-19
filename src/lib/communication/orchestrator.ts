@@ -99,7 +99,7 @@ import { runInBackground } from './background';
 import { retry, sha256Base64Url } from './reliability';
 import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
-import { replyToTelegram } from '@/lib/telegram';
+import { answerTelegramCallbackQuery, replyToTelegram } from '@/lib/telegram';
 import {
   evaluateTelegramPromptInjectionGuard,
   TELEGRAM_PROMPT_INJECTION_BLOCKED_REPLY,
@@ -161,7 +161,7 @@ import {
   type CommunicationOperationsAction,
   type CommunicationOperationsActionSourceChannel,
 } from './operations-action';
-import { resolveCommunicationIdentityRoute } from './communication-identity-routing';
+import { resolveCommunicationIdentityRoute, TELEGRAM_IDENTITY_CALLBACKS } from './communication-identity-routing';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -703,6 +703,8 @@ function roleLabelRu(role: unknown): string {
       return 'владелец / управляющий';
     case 'lead':
       return 'лид';
+    case 'support_problem':
+      return 'поддержка';
     default:
       return 'unknown';
   }
@@ -1125,11 +1127,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     senderRoute.selectedIdentity === 'guest' ||
     senderRoute.selectedIdentity === 'owner' ||
     senderRoute.selectedIdentity === 'manager' ||
-    senderRoute.selectedIdentity === 'lead'
+    senderRoute.selectedIdentity === 'lead' ||
+    senderRoute.selectedIdentity === 'support_problem'
   )
     ? ({
         ...identity,
-        role: senderRoute.selectedIdentity,
+        role: senderRoute.selectedIdentity === 'support_problem' ? 'operator' : senderRoute.selectedIdentity,
         entityType: senderRoute.selectedIdentity === 'lead' ? 'lead' : identity.entityType,
         confidence: Math.max(identity.confidence, 0.9),
         status: 'resolved',
@@ -1406,9 +1409,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const adapter = getChannelAdapter(envelope.channel);
     const targetId = resolveOutboundTargetId(envelope, identity.guestId);
     if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
-    if (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead') {
-      const reviewReason = senderRoute.route === 'lead' ? 'lead_connection_request' : 'owner_manager_message';
-      const reviewTopic = senderRoute.route === 'lead' ? 'Заявка на подключение ASI' : 'Внутреннее обращение по объекту';
+    if (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead' || senderRoute.route === 'support_problem') {
+      const reviewReason =
+        senderRoute.route === 'lead'
+          ? 'lead_connection_request'
+          : senderRoute.route === 'support_problem'
+            ? 'support_problem_message'
+            : 'owner_manager_message';
+      const reviewTopic =
+        senderRoute.route === 'lead'
+          ? 'Заявка на подключение ASI'
+          : senderRoute.route === 'support_problem'
+            ? 'Обращение в поддержку'
+            : 'Внутреннее обращение по объекту';
       createOrUpdateEscalationReview({
         sessionId: convSession.sessionId,
         channel: envelope.channel,
@@ -1431,9 +1444,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           role: senderRoute.senderIdentity,
           topic: reviewTopic,
           message: text,
-          reason: senderRoute.route === 'lead'
-            ? 'Пользователь хочет подключить ASI.'
-            : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.',
+          reason:
+            senderRoute.route === 'lead'
+              ? 'Пользователь хочет подключить ASI.'
+              : senderRoute.route === 'support_problem'
+                ? 'Пользователь выбрал поддержку.'
+                : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.',
           recommendedReply: senderRoute.replyText,
         }),
       });
@@ -3950,7 +3966,88 @@ async function handleTelegramPromptInjectionGuard(params: {
   };
 }
 
+function telegramIdentityCallbackToRoute(data: unknown): {
+  messageText: string;
+  senderIdentity: 'guest' | 'owner_manager' | 'lead' | 'support_problem';
+} | null {
+  switch (String(data ?? '').trim()) {
+    case TELEGRAM_IDENTITY_CALLBACKS.guest:
+      return { messageText: 'Я гость по бронированию', senderIdentity: 'guest' };
+    case TELEGRAM_IDENTITY_CALLBACKS.ownerManager:
+      return { messageText: 'Я владелец / управляющий объекта', senderIdentity: 'owner_manager' };
+    case TELEGRAM_IDENTITY_CALLBACKS.lead:
+      return { messageText: 'Хочу подключить ASI', senderIdentity: 'lead' };
+    case TELEGRAM_IDENTITY_CALLBACKS.supportProblem:
+      return { messageText: 'Нужна поддержка', senderIdentity: 'support_problem' };
+    default:
+      return null;
+  }
+}
+
+async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<ProcessResult | null> {
+  const callback = update.callback_query;
+  if (!callback) return null;
+  const selected = telegramIdentityCallbackToRoute(callback.data);
+  const message = callback.message;
+  const chatId = message?.chat?.id;
+  if (!selected || typeof chatId !== 'number') {
+    return { outcome: ProcessOutcome.Ignored, update_id: update.update_id, chat_id: typeof chatId === 'number' ? chatId : undefined };
+  }
+
+  const inboundKey = ['telegram', 'callback_query', callback.id].join(':');
+  if (checkAndMarkKey({
+    scope: 'inbound',
+    key: inboundKey,
+    meta: {
+      update_id: update.update_id,
+      chat_id: chatId,
+      telegram_callback_query_id: callback.id,
+      telegram_callback_data: callback.data,
+    },
+  })) {
+    auditDuplicate({ chat_id: chatId, update_id: update.update_id });
+    auditDecision({
+      type: 'ignore',
+      chat_id: chatId,
+      update_id: update.update_id,
+      detail: `duplicate_inbound key=${inboundKey}`,
+    });
+    return { outcome: ProcessOutcome.Duplicate, update_id: update.update_id, chat_id: chatId };
+  }
+
+  void answerTelegramCallbackQuery(callback.id).catch(() => undefined);
+
+  const envelope: InboundMessageEnvelope = {
+    channel: 'telegram',
+    externalUserId: (callback.from?.id ?? chatId).toString(),
+    chatId: chatId.toString(),
+    messageText: selected.messageText,
+    receivedAt: new Date(),
+    update_id: update.update_id,
+    metadata: {
+      telegram_chat_id: chatId.toString(),
+      providerMessageId: `callback_query:${callback.id}`,
+      externalMessageId: `callback_query:${callback.id}`,
+      inboundIdempotencyKey: inboundKey,
+      inboundIdempotencyAlreadyMarked: true,
+      telegram_event_type: 'callback_query',
+      telegram_callback_query_id: callback.id,
+      telegram_callback_data: callback.data,
+      senderIdentity: selected.senderIdentity,
+      telegram_user_language_code: callback.from?.language_code,
+      telegram_user_id: callback.from?.id,
+      telegram_username: callback.from?.username,
+      telegram_first_name: callback.from?.first_name,
+    },
+  };
+
+  return processMessage(envelope);
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
+  const callbackResult = await processTelegramCallbackQuery(update);
+  if (callbackResult) return callbackResult;
+
   const event = getTelegramUpdateEvent(update);
   const message = event.message;
   if (!message) return { outcome: ProcessOutcome.Ignored, update_id: update.update_id };
