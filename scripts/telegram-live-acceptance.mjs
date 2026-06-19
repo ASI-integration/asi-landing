@@ -271,14 +271,13 @@ async function main() {
       [
         'Refusing to run against TELEGRAM_CHAT_ID (manual/main chat).',
         'Set TELEGRAM_TEST_CHAT_ID to a dedicated acceptance test chat id (separate from main).',
-        `Current TELEGRAM_TEST_CHAT_ID=${chatIdRaw}`,
       ].join('\n'),
     );
   }
 
   const chatIdNum = Number(chatIdRaw);
   if (!Number.isFinite(chatIdNum)) {
-    throw new Error(`TELEGRAM_TEST_CHAT_ID must be numeric chat id. Got: ${chatIdRaw}`);
+    throw new Error('TELEGRAM_TEST_CHAT_ID must be numeric chat id.');
   }
 
   const casesPath =
