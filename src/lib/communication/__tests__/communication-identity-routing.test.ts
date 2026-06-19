@@ -145,6 +145,10 @@ vi.mock('@/lib/payments/factory', () => ({
   createPaymentRequest: vi.fn(),
 }));
 
+vi.mock('../reservation', () => ({
+  matchReservation: vi.fn().mockResolvedValue({ status: 'unmatched', confidence: 0 }),
+}));
+
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests } from '../operator-review';
@@ -216,6 +220,56 @@ describe('communication identity routing v1', () => {
       reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
       sender_identity: 'unknown',
     });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes Telegram здравствуйте to identity clarification for unknown senders', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const update: TelegramUpdate = {
+      update_id: 61_002,
+      message: {
+        message_id: 8,
+        chat: { id: 9002 },
+        from: { id: 9002, language_code: 'ru', username: 'fresh_user' },
+        text: 'здравствуйте',
+      },
+    };
+
+    const result = await processUpdate(update);
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(result.reply).not.toContain('заселение, доступ, бронь');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes self-declared guest into Guest Concierge without identity clarify', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(envelope({ messageText: 'я гость' }));
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.reply).not.toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockDecideAutopilot).toHaveBeenCalled();
+  });
+
+  it('routes self-declared owner away from Guest Concierge', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(envelope({ messageText: 'я владелец' }));
+
+    expect(result.reply).toContain('не буду отвечать как гостю');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes ASI lead intent to CRM lead path', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(
+      envelope({
+        messageText: 'хочу подключить ASI',
+        metadata: { telegram_username: 'lead_user' },
+      }),
+    );
+
+    expect(result.reply).toContain('интерес к ASI');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 

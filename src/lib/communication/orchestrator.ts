@@ -1,5 +1,6 @@
 import { getChannelAdapter } from './channels';
 import { bindIdentity } from './identity-binding';
+import { evictIdentityCacheForTelegramChatId } from './identity';
 import { appendTimelineEvent } from './timeline';
 import {
   auditDuplicate,
@@ -86,6 +87,7 @@ import {
   SessionStatus,
   setPaymentExpiry,
   transitionSessionStatus,
+  forceResetSessionStatusForAcceptance,
 } from './session-status';
 import { getPropertyTemplates } from './templates';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
@@ -106,7 +108,7 @@ import {
   isNoActionTelegramGuestCanonIntent,
   resolveTelegramGuestIntentCanon,
 } from './telegram-guest-intent-canon';
-import { processTelegramOperationalIntakeWithSessionMemory } from './telegram-session-memory';
+import { processTelegramOperationalIntakeWithSessionMemory, clearDurableTelegramSessionForAcceptance } from './telegram-session-memory';
 import { linkReservationOrPropertyDeterministicV1 } from './reservation-property-linking';
 import {
   composeTelegramOperationalReply,
@@ -1227,6 +1229,98 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
       return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: 'Session reset for acceptance testing.' };
+    }
+
+    const RESET_IDENTITY_REPLY_RU = 'Идентичность и сессия сброшены для acceptance-тестирования.';
+    const resetIdentityMatch = matchTelegramCommand(text, 'reset_identity');
+    const resetIdentityAllowed = resetIdentityMatch.matched && allowlisted && prod_reset_enabled;
+
+    if (resetIdentityMatch.matched) {
+      const denialReason = !allowlisted
+        ? 'deny:not_allowlisted'
+        : !prod_reset_enabled
+          ? 'deny:prod_reset_disabled'
+          : 'allow';
+      logSessionResetOrCaseReopen({
+        previous_status: convSession.state,
+        new_status: resetIdentityAllowed ? 'inquiry' : convSession.state,
+        reason: denialReason,
+        update_id,
+        command_raw_text: cmdNorm?.raw_text ?? text,
+        command_raw: cmdNorm?.raw_command ?? (resetIdentityMatch.raw || undefined),
+        normalized_command: cmdNorm?.normalized_command ?? 'reset_identity',
+        chat_id: chatIdForAllow,
+        allowlisted,
+        prod_reset_enabled,
+        matched: true,
+        intercepted_before_escalation: resetIdentityAllowed ? true : false,
+        final_reply: resetIdentityAllowed ? RESET_IDENTITY_REPLY_RU : null,
+      });
+      if (!resetIdentityAllowed) {
+        console.warn('[comm:routing] telegram reset_identity denied', {
+          route: 'identity_reset',
+          command_raw_text: cmdNorm?.raw_text ?? text,
+          normalized_command: cmdNorm?.normalized_command ?? null,
+          update_id,
+          chat_id: chatIdForAllow,
+          allowlisted,
+          prod_reset_enabled,
+          matched: true,
+          reason: denialReason,
+          raw_command: resetIdentityMatch.raw || null,
+        });
+      }
+    }
+
+    if (resetIdentityAllowed) {
+      const previous = convSession.state;
+
+      forceCloseActiveReviewForSession({
+        sessionId: convSession.sessionId,
+        operatorId: 'acceptance_reset_identity',
+        reason: 'telegram_reset_identity',
+      });
+
+      const actorId = resolveActorId(envelope, identity);
+      resetConversationSessionForAcceptance({
+        channel: envelope.channel,
+        actorId,
+        reason: `telegram:/reset_identity update_id=${update_id}`,
+      });
+
+      resetAutonomousSessionSnapshot({
+        chatId: chatIdForAllow,
+        channel: envelope.channel,
+        preserveIdentity: false,
+      });
+
+      evictIdentityCacheForTelegramChatId(String(chatIdForAllow));
+      await clearDurableTelegramSessionForAcceptance(chatIdForAllow);
+      forceResetSessionStatusForAcceptance(chatIdForAllow);
+
+      logSessionResetOrCaseReopen({
+        previous_status: previous,
+        new_status: 'inquiry',
+        reason: 'reset_identity_command',
+        update_id,
+        command_raw_text: cmdNorm?.raw_text ?? text,
+        command_raw: cmdNorm?.raw_command ?? (resetIdentityMatch.raw || undefined),
+        normalized_command: cmdNorm?.normalized_command ?? 'reset_identity',
+        chat_id: chatIdForAllow,
+        allowlisted: true,
+        prod_reset_enabled: true,
+        matched: true,
+        intercepted_before_escalation: true,
+        final_reply: RESET_IDENTITY_REPLY_RU,
+      });
+
+      const adapter = getChannelAdapter(envelope.channel);
+      const sent = await adapter.sendMessage(String(chatIdForAllow), RESET_IDENTITY_REPLY_RU, {
+        reply_handler: 'acceptance_reset_identity',
+        update_id,
+      });
+      if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
+      return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: RESET_IDENTITY_REPLY_RU };
     }
   }
 
@@ -3811,6 +3905,24 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       : null;
 
   if (guestCanon && isNoActionTelegramGuestCanonIntent(guestCanon.intent)) {
+    const preEnvelope: InboundMessageEnvelope = {
+      channel: 'telegram',
+      externalUserId: (message.from?.id ?? message.chat.id).toString(),
+      chatId: message.chat.id.toString(),
+      messageText: baseText,
+      receivedAt: new Date(),
+      update_id: update.update_id,
+      metadata: {
+        telegram_chat_id: message.chat.id.toString(),
+        telegram_user_language_code: message.from?.language_code,
+        telegram_user_id: message.from?.id,
+        telegram_username: message.from?.username,
+        telegram_first_name: message.from?.first_name,
+      },
+    };
+    const preIdentity = await bindIdentity(preEnvelope);
+    const preRoute = await resolveCommunicationIdentityRoute({ envelope: preEnvelope, identity: preIdentity });
+    if (preRoute.shouldRunGuestConcierge) {
     const outboundKey = sha256Base64Url(
       [
         'tg_guest_intent_canon_v1',
@@ -3843,6 +3955,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       telegram_event_occurrence_id: eventOccurrenceId,
     });
     return result;
+    }
   }
 
   const envelope: InboundMessageEnvelope = {

@@ -231,3 +231,35 @@ export async function sweepExpiredPaymentSessions(): Promise<number> {
 
   return swept;
 }
+
+/** Acceptance/admin escape hatch: force session back to inquiry, bypassing transition guards. */
+export function forceResetSessionStatusForAcceptance(chatId: number): void {
+  const now = new Date();
+  sessionStore.set(chatId, { status: SessionStatus.Inquiry, updatedAt: now });
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
+  runInBackground(
+    {
+      correlationId: String(chatId),
+      module: 'session-status',
+      taskName: 'forceResetSessionStatusForAcceptance_db',
+      triggerId: String(chatId),
+    },
+    async () => {
+      const { error } = await supabase.from('tg_conversation_sessions').upsert(
+        {
+          chat_id: chatId,
+          status: SessionStatus.Inquiry,
+          status_updated_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        },
+        { onConflict: 'chat_id', ignoreDuplicates: false },
+      );
+      if (error) throw new Error(`Supabase write failed chatId=${chatId}: ${error.message}`);
+    },
+  );
+}
+
+/** @internal tests only */
+export function __resetSessionStatusStoreForTests(): void {
+  sessionStore.clear();
+}

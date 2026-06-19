@@ -1,0 +1,43 @@
+{
+  "reset_command": "/reset_identity",
+  "reset_expected_reply": "Идентичность и сессия сброшены для acceptance-тестирования.",
+  "cases": [
+    {
+      "name": "unknown_greeting_ru",
+      "input": "здравствуйте",
+      "assertions": {
+        "should_include_any": ["вы гость по бронированию", "владелец", "подключение ASI"],
+        "must_not_include_any": ["заселение, доступ, бронь, уборка или поломка"]
+      }
+    },
+    {
+      "name": "unknown_greeting_en",
+      "input": "hi",
+      "assertions": {
+        "should_include_any": ["вы гость по бронированию", "владелец", "подключение ASI"],
+        "must_not_include_any": ["заселение, доступ, бронь, уборка или поломка"]
+      }
+    },
+    {
+      "name": "self_declared_guest",
+      "input": "я гость",
+      "assertions": {
+        "must_not_include_any": ["вы гость по бронированию", "владелец/управляющий", "подключение ASI"]
+      }
+    },
+    {
+      "name": "lead_intent",
+      "input": "хочу подключить ASI",
+      "assertions": {
+        "should_include_any": ["интерес к ASI", "город", "объект"]
+      }
+    },
+    {
+      "name": "self_declared_owner",
+      "input": "я владелец",
+      "assertions": {
+        "should_include_any": ["не буду отвечать как гостю"]
+      }
+    }
+  ]
+}

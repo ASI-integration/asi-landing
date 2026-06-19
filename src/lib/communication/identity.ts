@@ -275,3 +275,27 @@ function normalisePhone(phone: string): string {
   // Strip non-digit characters except leading +
   return phone.replace(/[^\d+]/g, '');
 }
+
+/** Drop in-memory identity indexes for a Telegram chat id (acceptance/admin tooling). */
+export function evictIdentityCacheForTelegramChatId(chatId: string): boolean {
+  const guestId = byTelegramId.get(chatId);
+  if (!guestId) return false;
+  const identity = identityCache.get(guestId);
+  identityCache.delete(guestId);
+  byTelegramId.delete(chatId);
+  if (!identity) return true;
+  for (const id of identity.knownChatIds) byTelegramId.delete(id);
+  for (const id of identity.knownVkIds) byVkId.delete(id);
+  for (const p of identity.knownPhones) byPhone.delete(p);
+  for (const e of identity.knownEmails) byEmail.delete(e);
+  return true;
+}
+
+/** @internal tests only */
+export function __resetIdentityCacheForTests(): void {
+  identityCache.clear();
+  byTelegramId.clear();
+  byVkId.clear();
+  byPhone.clear();
+  byEmail.clear();
+}

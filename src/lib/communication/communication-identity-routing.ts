@@ -65,6 +65,16 @@ function isLeadIntent(messageText: string): boolean {
   );
 }
 
+export function isGuestSelfDeclaration(messageText: string): boolean {
+  const t = text(messageText).toLowerCase();
+  return /я\s+гость/.test(t) || /^гость(?:\s|$|[,.!?;:])/i.test(t);
+}
+
+export function isOwnerSelfDeclaration(messageText: string): boolean {
+  const t = text(messageText).toLowerCase();
+  return /я\s+владелец/.test(t) || /я\s+управляющ/.test(t);
+}
+
 function metadataIdentity(envelope: InboundMessageEnvelope): SenderIdentity | null {
   const value = norm(envelope.metadata?.senderIdentity ?? envelope.metadata?.sender_identity ?? envelope.metadata?.role);
   if (value === 'guest') return 'guest';
@@ -162,15 +172,25 @@ export async function resolveCommunicationIdentityRoute(params: {
   const boundIdentity = identityFromBinding(identity);
   const crmByUsername = await findCrmContactByTelegramUsername(telegramUsername(envelope));
   const crmRole = norm(crmByUsername?.role);
+  const guestSelfDeclared = isGuestSelfDeclaration(messageText);
+  const ownerSelfDeclared = isOwnerSelfDeclaration(messageText);
 
   let senderIdentity: SenderIdentity =
     metaIdentity ??
     (hasTelegramTestMode(envelope) ? 'test_guest' : null) ??
+    (ownerSelfDeclared ? 'owner' : null) ??
     (crmRole === 'owner' ? 'owner' : crmRole === 'manager' ? 'manager' : null) ??
+    (guestSelfDeclared ? 'guest' : null) ??
     boundIdentity ??
     (isLeadIntent(messageText) ? 'lead' : 'unknown');
 
-  if (!metaIdentity && senderIdentity === 'guest' && identity.status !== 'resolved' && !hasTelegramTestMode(envelope)) {
+  if (
+    !metaIdentity &&
+    !guestSelfDeclared &&
+    senderIdentity === 'guest' &&
+    identity.status !== 'resolved' &&
+    !hasTelegramTestMode(envelope)
+  ) {
     senderIdentity = isLeadIntent(messageText) ? 'lead' : 'unknown';
   }
 

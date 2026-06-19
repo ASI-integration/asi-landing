@@ -1,6 +1,7 @@
 import { getAutonomousSessionOperationalCaseV1, setAutonomousSessionOperationalCaseV1 } from './conversation-session-store';
 import type { CommunicationChannel, TelegramOperationalSessionCaseStatusV1, TelegramOperationalSessionCaseV1 } from './types';
 import { supabase } from '@/lib/supabase';
+import { SessionStatus } from './session-status';
 import {
   classifyCheckinTimeBucket,
   tryTelegramOperationalIntake,
@@ -178,6 +179,27 @@ async function persistOperationalCase(params: {
     }
   } catch {
     // best-effort durable persistence; never break operational reply
+  }
+}
+
+/** Acceptance/admin escape hatch: wipe durable Telegram session context for a chat id. */
+export async function clearDurableTelegramSessionForAcceptance(chatId: number): Promise<void> {
+  if (process.env.TELEGRAM_DRY_RUN === '1') return;
+  try {
+    const now = nowIso();
+    await supabase.from('tg_conversation_sessions').upsert(
+      {
+        chat_id: chatId,
+        conversation_context_v1: {},
+        guest_history_context_v1: null,
+        status: SessionStatus.Inquiry,
+        status_updated_at: now,
+        updated_at: now,
+      },
+      { onConflict: 'chat_id', ignoreDuplicates: false },
+    );
+  } catch {
+    // best-effort
   }
 }
 
