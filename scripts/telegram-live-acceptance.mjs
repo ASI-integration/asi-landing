@@ -16,6 +16,20 @@ function requireEnv(name) {
   return v.trim();
 }
 
+function optionalEnv(name) {
+  const v = process.env[name];
+  return v?.trim() || undefined;
+}
+
+function getTelegramToken() {
+  const smokeToken = optionalEnv('TELEGRAM_SMOKE_BOT_TOKEN');
+  if (smokeToken) {
+    return { token: smokeToken, source: 'TELEGRAM_SMOKE_BOT_TOKEN' };
+  }
+
+  return { token: requireEnv('TELEGRAM_BOT_TOKEN'), source: 'TELEGRAM_BOT_TOKEN' };
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -261,7 +275,7 @@ function evaluateCase(caseDef, replyText) {
 }
 
 async function main() {
-  const token = requireEnv('TELEGRAM_BOT_TOKEN');
+  const { token, source: tokenSource } = getTelegramToken();
   const chatIdRaw = requireEnv('TELEGRAM_TEST_CHAT_ID');
   const botUsername = process.env.TELEGRAM_BOT_USERNAME?.trim() || undefined;
 
@@ -290,6 +304,7 @@ async function main() {
   }
 
   const startedAt = new Date();
+  console.log(`Telegram acceptance token source: ${tokenSource}`);
 
   // Drain updates so we don't match old replies.
   let offset = 0;
