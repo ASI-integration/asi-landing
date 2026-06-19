@@ -1,5 +1,5 @@
 import { InboundMessageEnvelope, IdentityResolution } from './types';
-import { createOrMergeIdentity } from './identity';
+import { createOrMergeIdentity, resolveGuestIdentity } from './identity';
 import { matchReservation } from './reservation';
 import { auditIdentityDecision } from './audit';
 
@@ -9,9 +9,17 @@ import { auditIdentityDecision } from './audit';
  */
 export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<IdentityResolution> {
   const resolutionPath: string[] = [];
-  // Resolve or create a guest identity first (best-effort)
-  const guest = await createOrMergeIdentity(envelope).catch(() => null);
-  if (guest) resolutionPath.push('contact:createOrMergeIdentity');
+  const shouldCreateGuestIdentity =
+    envelope.metadata?.guestTestMode === true ||
+    envelope.metadata?.guest_test_mode === true ||
+    String(envelope.messageText ?? '').trim().startsWith('/guest_test');
+  // Resolve first. New Telegram senders must not become guests/leads just
+  // because they wrote to the bot; creation is reserved for an explicit guest
+  // test route or another later verified guest binding.
+  const guest = shouldCreateGuestIdentity
+    ? await createOrMergeIdentity(envelope).catch(() => null)
+    : await resolveGuestIdentity(envelope).catch(() => null);
+  if (guest) resolutionPath.push(shouldCreateGuestIdentity ? 'contact:createOrMergeIdentity' : 'contact:resolveGuestIdentity');
 
   // Prepare reservation match params
   const chatIdNum = envelope.chatId ? Number(envelope.chatId) : undefined;
@@ -56,17 +64,35 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
     envelope.metadata && (envelope.metadata['isOperator'] === true || envelope.metadata['is_operator'] === true);
   const isOwner =
     envelope.metadata && (envelope.metadata['isOwner'] === true || envelope.metadata['is_owner'] === true);
+  const isManager =
+    envelope.metadata && (envelope.metadata['isManager'] === true || envelope.metadata['is_manager'] === true);
+  const isTestGuest = shouldCreateGuestIdentity;
 
   // Telegram group chats are operational staff contexts by default.
   const isTelegramGroup = envelope.channel === 'telegram' && typeof chatIdNum === 'number' && chatIdNum < 0;
 
-  if (isOwner) {
+  if (isTestGuest) {
+    role = 'test_guest';
+    entityType = 'reservation';
+    entityId = reservation?.reservationId;
+    confidence = 1;
+    status = 'resolved';
+    reason = 'telegram_guest_test_mode';
+    resolutionPath.push('role:test_guest');
+  } else if (isOwner) {
     role = 'owner';
     entityType = 'unknown';
     confidence = 1;
     status = 'resolved';
     reason = 'metadata:is_owner';
     resolutionPath.push('role:owner');
+  } else if (isManager) {
+    role = 'manager';
+    entityType = 'unknown';
+    confidence = 1;
+    status = 'resolved';
+    reason = 'metadata:is_manager';
+    resolutionPath.push('role:manager');
   } else if (isOperator || isTelegramGroup) {
     role = 'operator';
     entityType = 'unknown';
@@ -90,14 +116,12 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
     reason = 'reservation:ambiguous';
     resolutionPath.push('entity:reservation_ambiguous');
   } else if (guest) {
-    // Best-effort: if we know the contact but can't bind to a reservation,
-    // treat as a lead-like contact instead of pretending it's a reservation.
-    role = 'lead';
+    role = 'unknown';
     entityType = 'unknown';
-    confidence = 0.55;
+    confidence = 0.4;
     status = 'unresolved';
     reason = 'contact_known_no_reservation';
-    resolutionPath.push('role:lead');
+    resolutionPath.push('role:unknown_known_contact');
   } else {
     role = 'unknown';
     entityType = 'unknown';

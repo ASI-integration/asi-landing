@@ -157,6 +157,7 @@ import {
   type CommunicationOperationsAction,
   type CommunicationOperationsActionSourceChannel,
 } from './operations-action';
+import { resolveCommunicationIdentityRoute } from './communication-identity-routing';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -1057,6 +1058,24 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const chatId = stableNumericChatId(envelope, identity.guestId);
   cp('channel.resolved', { chat_id: chatId });
   cp('text.extracted', { chat_id: chatId, text_len: text.length });
+  const senderRoute = await withAwaitCheckpoint(
+    'identity.route.resolve',
+    () => resolveCommunicationIdentityRoute({ envelope, identity }),
+    { chat_id: chatId, identity_role: identity.role, identity_status: identity.status },
+    15_000,
+  );
+  cp('identity.route.done', {
+    chat_id: chatId,
+    sender_identity: senderRoute.senderIdentity,
+    route: senderRoute.route,
+    guest_concierge: senderRoute.shouldRunGuestConcierge,
+  });
+  auditDecision({
+    type: senderRoute.shouldRunGuestConcierge ? 'reply' : 'ignore',
+    chat_id: chatId,
+    update_id,
+    detail: `communication_identity_route sender=${senderRoute.senderIdentity} route=${senderRoute.route} reason=${senderRoute.reason}`,
+  });
 
   // Conversation session engine: resolve/create session by channel + actor identity.
   const { session: baseSession, key: sessionKey } = getOrCreateConversationSession({
@@ -1209,6 +1228,46 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
       return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: 'Session reset for acceptance testing.' };
     }
+  }
+
+  if (!senderRoute.shouldRunGuestConcierge && senderRoute.replyText) {
+    const adapter = getChannelAdapter(envelope.channel);
+    const targetId = resolveOutboundTargetId(envelope, identity.guestId);
+    if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+    if (senderRoute.route === 'owner_manager') {
+      createOrUpdateEscalationReview({
+        sessionId: convSession.sessionId,
+        channel: envelope.channel,
+        targetId: String(targetId),
+        actorId: convSession.actorId,
+        role: identity.role,
+        reservationId: identity.reservationId,
+        propertyId: identity.propertyId,
+        leadId: identity.leadId,
+        escalationReason: 'owner_manager_message',
+        confidence: identity.confidence,
+        source: {
+          route: 'communication_identity_route',
+          sender_identity: senderRoute.senderIdentity,
+          reason: senderRoute.reason,
+        },
+        latestMessages: convSession.memory.lastMessages,
+        suggestedReply: senderRoute.replyText,
+        detail: 'owner_manager_route_no_guest_autopilot',
+      });
+    }
+    const sent = await adapter.sendMessage(
+      String(targetId),
+      senderRoute.replyText,
+      {
+        reply_handler: `orchestrator:communication_identity_route:${senderRoute.route}`,
+        update_id,
+        sender_identity: senderRoute.senderIdentity,
+        crm_contact_id: senderRoute.crmContactId,
+      },
+    );
+    if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+    return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatId, reply: senderRoute.replyText };
   }
 
   // Harden session memory with identity binding (safe defaults when unknown).
@@ -1538,6 +1597,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     if (
       !replyText &&
+      senderRoute.shouldRunGuestConcierge &&
       isLiveAutopilotInboundChannel(envelope.channel) &&
       classification.lang === 'ru' &&
       text.trim()
@@ -2051,6 +2111,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
     if (
       !replyText &&
+      senderRoute.shouldRunGuestConcierge &&
       !telegramGuestAgentLlmUsed &&
       isCanonicalGuestCommunicationChannel(envelope.channel) &&
       text.trim()
@@ -3838,7 +3899,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
 
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
-    externalUserId: message.chat.id.toString(),
+    externalUserId: (message.from?.id ?? message.chat.id).toString(),
     chatId: message.chat.id.toString(),
     messageText,
     receivedAt: new Date(),
@@ -3853,6 +3914,9 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
       telegram_event_type: event.type,
       telegram_event_occurrence_id: eventOccurrenceId,
       telegram_user_language_code: message.from?.language_code,
+      telegram_user_id: message.from?.id,
+      telegram_username: message.from?.username,
+      telegram_first_name: message.from?.first_name,
     },
   };
 

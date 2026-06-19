@@ -27,7 +27,7 @@ export interface Conversation {
 export type ConversationSession = {
   sessionId: string;
   actorId?: string;
-  role: 'guest' | 'lead' | 'operator' | 'owner' | 'unknown';
+  role: Role;
   propertyId?: string;
   reservationId?: string;
   leadId?: string;
@@ -228,7 +228,7 @@ export interface ConversationContext {
 }
 
 // Role and identity resolution types
-export type Role = 'guest' | 'lead' | 'operator' | 'owner' | 'unknown';
+export type Role = 'guest' | 'lead' | 'operator' | 'owner' | 'manager' | 'test_guest' | 'unknown';
 
 export type ReservationPropertyLinkingOutcomeV1 =
   | 'linked_to_property'
