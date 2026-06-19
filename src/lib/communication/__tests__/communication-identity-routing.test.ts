@@ -27,14 +27,14 @@ const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: 
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedCrmRows: Array<Record<string, unknown>> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите подключить ASI?';
 const GUEST_SELECTED_REPLY_RU =
-  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или рекомендация рядом.';
+  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или другой вопрос.';
 const OWNER_MANAGER_REPLY_RU =
   'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
 const LEAD_REPLY_RU =
-  'Спасибо за интерес к ASI. Напишите, пожалуйста, город, тип объекта и сколько у вас объектов. Я сохраню заявку для пилота.';
-const PROBLEM_IDENTITY_CLARIFY_RU = 'Вы пишете как гость или как владелец/управляющий?';
+  'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
+const PROBLEM_IDENTITY_CLARIFY_RU = 'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -158,7 +158,8 @@ vi.mock('../reservation', () => ({
 
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
-import { __resetEscalationReviewStoreForTests } from '../operator-review';
+import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
+import { __resetSessionStatusStoreForTests } from '../session-status';
 
 function envelope(params: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
   return {
@@ -183,6 +184,7 @@ describe('communication identity routing v1', () => {
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
     __resetEscalationReviewStoreForTests();
+    __resetSessionStatusStoreForTests();
     mockSendMessage.mockClear();
     mockDecideAutopilot.mockClear();
     mockCreateOpsTask.mockClear();
@@ -300,6 +302,11 @@ describe('communication identity routing v1', () => {
     expect(result.reply).not.toContain('не буду отвечать как гостю');
     expect(result.reply).not.toContain('оператор увидит');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
+      escalationReason: 'owner_manager_message',
+      detail: expect.stringContaining('⚠️ ASI: нужна проверка оператора'),
+      suggestedReply: OWNER_MANAGER_REPLY_RU,
+    });
   });
 
   it('routes button/text Хочу подключить ASI to CRM lead path', async () => {
@@ -313,6 +320,11 @@ describe('communication identity routing v1', () => {
 
     expect(result.reply).toBe(LEAD_REPLY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
+      escalationReason: 'lead_connection_request',
+      detail: expect.stringContaining('Роль: лид'),
+      suggestedReply: LEAD_REPLY_RU,
+    });
   });
 
   it('asks guest vs owner/manager for object problem from unknown sender', async () => {
@@ -381,5 +393,73 @@ describe('communication identity routing v1', () => {
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.reply).not.toContain('вы гость по бронированию');
     expect(mockSendMessage).toHaveBeenCalled();
+  });
+
+  it('escalates guest question when verified data is missing', async () => {
+    mockDecideAutopilot.mockResolvedValueOnce({
+      action: 'needs_context',
+      replyText: undefined,
+      confidence: 0.72,
+      escalationReason: null,
+      metadata: {
+        intent: 'baby_crib_request',
+        urgent: false,
+        missingContext: ['object.id', 'object.babyCribAvailable'],
+        matchedSignals: ['baby_crib_request'],
+        contextKeys: [],
+        channelMode: 'active',
+        policy: 'deterministic_mvp_v1',
+      },
+    });
+    const { processMessage } = await import('../orchestrator');
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'Можно поставить детскую кроватку?',
+        metadata: { senderIdentity: 'guest', providerMessageId: 'guest-crib-missing' },
+      }),
+    );
+
+    expect(result.reply).toBe('Сейчас не вижу точных данных по этому вопросу. Уточню у оператора и вернусь с ответом.');
+    const review = listEscalationReviews({ status: 'pending' }).at(0);
+    expect(review).toMatchObject({
+      escalationReason: 'missing_verified_data',
+      detail: expect.stringContaining('Роль: гость'),
+    });
+    expect(review?.detail).toContain('Причина эскалации: Нет проверенных данных: object.id, object.babyCribAvailable.');
+  });
+
+  it('escalates guest refund/payment questions to operator notification', async () => {
+    mockDecideAutopilot.mockResolvedValueOnce({
+      action: 'escalate',
+      replyText: 'Понял запрос по возврату. Передаю оператору, чтобы проверить бронирование и оплату.',
+      confidence: 0.91,
+      escalationReason: 'booking_payment_support',
+      metadata: {
+        intent: 'booking_payment_support',
+        urgent: false,
+        missingContext: [],
+        matchedSignals: ['refund'],
+        contextKeys: [],
+        channelMode: 'active',
+        policy: 'deterministic_mvp_v1',
+      },
+    });
+    const { processMessage } = await import('../orchestrator');
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'Мне нужен возврат оплаты',
+        metadata: { senderIdentity: 'guest', providerMessageId: 'guest-refund' },
+      }),
+    );
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    const review = listEscalationReviews({ status: 'pending' }).at(0);
+    expect(review).toMatchObject({
+      detail: expect.stringContaining('⚠️ ASI: нужна проверка оператора'),
+      suggestedReply: expect.stringContaining('Передаю оператору'),
+    });
+    expect(review?.detail).toContain('Причина эскалации: booking_payment_support');
   });
 });

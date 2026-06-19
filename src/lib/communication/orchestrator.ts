@@ -49,6 +49,7 @@ import {
 
 import { getContext, updateContext } from './memory';
 import {
+  loadAutonomousSession,
   mergeAutonomousSessionFromInbound,
   resetAutonomousSessionSnapshot,
   setAutonomousSessionIdentity,
@@ -692,6 +693,45 @@ function composeAutopilotHandoffReply(params: {
     : 'I am passing this to an operator so we do not answer without verified booking or property context.';
 }
 
+function roleLabelRu(role: unknown): string {
+  switch (role) {
+    case 'guest':
+    case 'test_guest':
+      return 'гость';
+    case 'owner':
+    case 'manager':
+      return 'владелец / управляющий';
+    case 'lead':
+      return 'лид';
+    default:
+      return 'unknown';
+  }
+}
+
+function buildOperatorNotificationText(params: {
+  role: unknown;
+  topic: string;
+  message: string;
+  reason: string;
+  recommendedReply?: string | null;
+}): string {
+  const recommended = String(params.recommendedReply ?? '').trim() || 'Проверить контекст и ответить вручную.';
+  return [
+    '⚠️ ASI: нужна проверка оператора',
+    `Роль: ${roleLabelRu(params.role)}`,
+    `Тема: ${params.topic}`,
+    `Сообщение: ${String(params.message ?? '').trim() || 'Нет текста сообщения'}`,
+    `Причина эскалации: ${params.reason}`,
+    `Рекомендуемый ответ: ${recommended}`,
+  ].join('\n');
+}
+
+function rememberedTelegramIdentityForRoute(chatId: number): 'guest' | 'owner' | 'manager' | 'lead' | null {
+  const role = loadAutonomousSession(chatId)?.identity_role;
+  if (role === 'guest' || role === 'owner' || role === 'manager' || role === 'lead') return role;
+  return null;
+}
+
 function hasAutopilotOperationsContext(context: CommunicationAutopilotContext): boolean {
   return Boolean(
     context.booking?.id ||
@@ -1061,10 +1101,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   const chatId = stableNumericChatId(envelope, identity.guestId);
   cp('channel.resolved', { chat_id: chatId });
   cp('text.extracted', { chat_id: chatId, text_len: text.length });
+  const rememberedIdentity = envelope.channel === 'telegram' ? rememberedTelegramIdentityForRoute(chatId) : null;
   const senderRoute = await withAwaitCheckpoint(
     'identity.route.resolve',
-    () => resolveCommunicationIdentityRoute({ envelope, identity }),
-    { chat_id: chatId, identity_role: identity.role, identity_status: identity.status },
+    () => resolveCommunicationIdentityRoute({ envelope, identity, rememberedIdentity }),
+    { chat_id: chatId, identity_role: identity.role, remembered_identity: rememberedIdentity, identity_status: identity.status },
     15_000,
   );
   cp('identity.route.done', {
@@ -1365,17 +1406,19 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const adapter = getChannelAdapter(envelope.channel);
     const targetId = resolveOutboundTargetId(envelope, identity.guestId);
     if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
-    if (senderRoute.route === 'owner_manager') {
+    if (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead') {
+      const reviewReason = senderRoute.route === 'lead' ? 'lead_connection_request' : 'owner_manager_message';
+      const reviewTopic = senderRoute.route === 'lead' ? 'Заявка на подключение ASI' : 'Внутреннее обращение по объекту';
       createOrUpdateEscalationReview({
         sessionId: convSession.sessionId,
         channel: envelope.channel,
         targetId: String(targetId),
         actorId: convSession.actorId,
-        role: identity.role,
+        role: senderRoute.senderIdentity === 'lead' ? 'lead' : senderRoute.senderIdentity === 'manager' ? 'manager' : senderRoute.senderIdentity === 'owner' ? 'owner' : identity.role,
         reservationId: identity.reservationId,
         propertyId: identity.propertyId,
         leadId: identity.leadId,
-        escalationReason: 'owner_manager_message',
+        escalationReason: reviewReason,
         confidence: identity.confidence,
         source: {
           route: 'communication_identity_route',
@@ -1384,7 +1427,15 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         },
         latestMessages: convSession.memory.lastMessages,
         suggestedReply: senderRoute.replyText,
-        detail: 'owner_manager_route_no_guest_autopilot',
+        detail: buildOperatorNotificationText({
+          role: senderRoute.senderIdentity,
+          topic: reviewTopic,
+          message: text,
+          reason: senderRoute.route === 'lead'
+            ? 'Пользователь хочет подключить ASI.'
+            : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.',
+          recommendedReply: senderRoute.replyText,
+        }),
       });
     }
     const sent = await adapter.sendMessage(
@@ -2060,22 +2111,56 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           detail: `communication_autopilot:auto_reply intent=${autopilotDecision.metadata.intent}`,
         });
       } else if (canUseAutopilotReply && autopilotDecision.action === 'needs_context') {
+        const recommendedReply = composeCommunicationAutopilotContextReply({ decision: autopilotDecision, lang: classification.lang });
         replyText = adapter.formatResponse(
-          composeCommunicationAutopilotContextReply({ decision: autopilotDecision, lang: classification.lang }),
+          classification.lang === 'ru'
+            ? 'Сейчас не вижу точных данных по этому вопросу. Уточню у оператора и вернусь с ответом.'
+            : recommendedReply,
           commContext as unknown as Record<string, unknown>,
         );
         llmSucceeded = true;
         usedPath = 'communication_autopilot';
         convSession = transitionConversationSessionState(
           convSession,
-          'awaiting_input',
+          'escalated',
           `communication_autopilot:needs_context:${autopilotDecision.metadata.intent}`,
         );
+        persistEscalationReview({
+          reason: 'missing_verified_data',
+          escalationSummary: `communication_autopilot:needs_context:${autopilotDecision.metadata.intent}`,
+          confidence: autopilotDecision.confidence,
+          source: {
+            route: 'communication_autopilot',
+            channel: envelope.channel,
+            intent: autopilotDecision.metadata.intent,
+            missing_context: autopilotDecision.metadata.missingContext,
+            ...(voiceSourceBase ?? {}),
+          },
+          suggestedReply: recommendedReply,
+          detail: buildOperatorNotificationText({
+            role: senderRoute.senderIdentity,
+            topic: String(autopilotDecision.metadata.intent),
+            message: text,
+            reason: `Нет проверенных данных: ${autopilotDecision.metadata.missingContext.join(', ') || 'контекст не найден'}.`,
+            recommendedReply,
+          }),
+        });
+        await withAwaitCheckpoint(
+          'session.transition.operator_review_required_missing_context',
+          () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+          { chat_id: chatId },
+          15_000,
+        );
+        auditEscalation({
+          chat_id: chatId,
+          update_id,
+          detail: `communication_autopilot:missing_verified_data intent=${autopilotDecision.metadata.intent}`,
+        });
         auditDecision({
           type: 'reply',
           chat_id: chatId,
           update_id,
-          detail: `communication_autopilot:needs_context intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
+          detail: `communication_autopilot:needs_context_escalated intent=${autopilotDecision.metadata.intent} missing=${autopilotDecision.metadata.missingContext.join(',')}`,
         });
         antiLoopEligible = autopilotDecision.metadata.intent === 'unknown';
       } else if (
@@ -2113,11 +2198,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             ...(voiceSourceBase ?? {}),
           },
           suggestedReply: replyText,
-          detail: JSON.stringify({
-            intent: autopilotDecision.metadata.intent,
-            matchedSignals: autopilotDecision.metadata.matchedSignals,
-            missingContext: autopilotDecision.metadata.missingContext,
-            urgent,
+          detail: buildOperatorNotificationText({
+            role: senderRoute.senderIdentity,
+            topic: String(autopilotDecision.metadata.intent),
+            message: text,
+            reason: autopilotDecision.escalationReason ?? (urgent ? 'Срочная ситуация.' : 'Нужна проверка оператора.'),
+            recommendedReply: replyText,
           }),
         });
         auditEscalation({

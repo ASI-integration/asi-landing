@@ -39,16 +39,16 @@ export type CommunicationIdentityRoutingDecision = {
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите подключить ASI?';
 
 const PROBLEM_IDENTITY_CLARIFY_RU =
-  'Вы пишете как гость или как владелец/управляющий?';
+  'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 
 const GUEST_SELECTED_REPLY_RU =
-  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или рекомендация рядом.';
+  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или другой вопрос.';
 
 const LEAD_REPLY_RU =
-  'Спасибо за интерес к ASI. Напишите, пожалуйста, город, тип объекта и сколько у вас объектов. Я сохраню заявку для пилота.';
+  'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
 
 const OWNER_MANAGER_REPLY_RU =
   'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
@@ -208,6 +208,7 @@ async function createLeadIfSafe(envelope: InboundMessageEnvelope): Promise<strin
 export async function resolveCommunicationIdentityRoute(params: {
   envelope: InboundMessageEnvelope;
   identity: IdentityResolution;
+  rememberedIdentity?: SenderIdentity | null;
 }): Promise<CommunicationIdentityRoutingDecision> {
   const { envelope, identity } = params;
   const messageText = text(envelope.messageText);
@@ -237,6 +238,7 @@ export async function resolveCommunicationIdentityRoute(params: {
     (ownerSelfDeclared ? 'owner' : null) ??
     (crmRole === 'owner' ? 'owner' : crmRole === 'manager' ? 'manager' : null) ??
     (guestSelfDeclared ? 'guest' : null) ??
+    params.rememberedIdentity ??
     boundIdentity ??
     (isLeadIntent(messageText) ? 'lead' : 'unknown');
 

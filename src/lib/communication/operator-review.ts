@@ -44,6 +44,7 @@ export type EscalationReview = {
     createdAt: string;
   }>;
   suggestedReply?: string;
+  detail?: string;
   status: EscalationReviewStatus;
   createdAt: string;
   updatedAt: string;
@@ -269,6 +270,7 @@ export function createOrUpdateEscalationReview(input: {
         source: input.source ?? existing.source,
         latestMessages: input.latestMessages ? summariseMessages(input.latestMessages) : existing.latestMessages,
         suggestedReply: input.suggestedReply ?? existing.suggestedReply,
+        detail: input.detail ?? existing.detail,
         updatedAt: ts,
       }
     : {
@@ -286,6 +288,7 @@ export function createOrUpdateEscalationReview(input: {
         source: input.source,
         latestMessages: summariseMessages(input.latestMessages),
         suggestedReply: input.suggestedReply,
+        detail: input.detail,
         status: 'pending',
         createdAt: ts,
         updatedAt: ts,
