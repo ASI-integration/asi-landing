@@ -120,6 +120,25 @@ async function insertEvent(input: {
   if (error) console.error('[operator-followup] crm event insert failed', { eventType: input.eventType, error: error.message });
 }
 
+type BrainEventMetadata = {
+  role?: string | null;
+  detectedIntent?: string | null;
+  responseMode?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  decisionSource?: string | null;
+  originalMessage?: string | null;
+  safeGuestReply?: string | null;
+  internalDetail?: string | null;
+};
+
+function brainMetadata(input: BrainEventMetadata & Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...input,
+    source: 'minigpt_brain_v1',
+  };
+}
+
 export async function recordGuestTestQuestionOutcome(input: {
   telegramUserId: string;
   telegramChatId: number;
@@ -130,6 +149,12 @@ export async function recordGuestTestQuestionOutcome(input: {
   intent: string;
   missingFields?: string[];
   contactId?: string | null;
+  role?: string | null;
+  detectedIntent?: string | null;
+  responseMode?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
+  decisionSource?: string | null;
 }): Promise<{ contactId: string | null }> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -146,15 +171,23 @@ export async function recordGuestTestQuestionOutcome(input: {
     eventType: 'guest_test_question',
     messageText: input.questionText,
     propertyId: input.propertyId,
-    metadata: {
+    metadata: brainMetadata({
       outcome: input.outcome,
       intent: input.intent,
       question_type: input.intent,
       reply_preview: input.replyText,
       missing_fields: input.missingFields ?? [],
       missing_data_actions: missingDataActionsForFields(input.missingFields ?? [], input.propertyId),
-      source: 'guest_test',
-    },
+      role: input.role ?? null,
+      detectedIntent: input.detectedIntent ?? input.intent,
+      responseMode: input.responseMode ?? null,
+      confidence: input.confidence ?? null,
+      reason: input.reason ?? null,
+      decisionSource: input.decisionSource ?? 'deterministic',
+      telegram_chat_id: input.telegramChatId,
+      original_message: input.questionText,
+      safeGuestReply: input.replyText,
+    }),
   });
   return { contactId };
 }
@@ -167,6 +200,11 @@ export async function createGuestConciergeAnsweredEvent(input: {
   replyText: string;
   contactId?: string | null;
   intent: string;
+  role?: string | null;
+  detectedIntent?: string | null;
+  responseMode?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
 }): Promise<void> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -182,13 +220,19 @@ export async function createGuestConciergeAnsweredEvent(input: {
     eventType: 'guest_concierge_answered',
     messageText: input.guestQuestion,
     propertyId: input.propertyId,
-    metadata: {
+    metadata: brainMetadata({
       question_type: input.intent,
       outcome: 'answered_by_concierge_autopilot',
       telegram_chat_id: input.telegramChatId,
       reply_preview: input.replyText,
-      source: 'guest_test',
-    },
+      role: input.role ?? null,
+      detectedIntent: input.detectedIntent ?? input.intent,
+      responseMode: input.responseMode ?? 'answer_from_concierge',
+      confidence: input.confidence ?? null,
+      reason: input.reason ?? null,
+      original_message: input.guestQuestion,
+      safeGuestReply: input.replyText,
+    }),
   });
 }
 
@@ -201,6 +245,11 @@ export async function createGuestTestMissingDataEvent(input: {
   contactId?: string | null;
   intent?: string | null;
   internalDetail?: string | null;
+  role?: string | null;
+  detectedIntent?: string | null;
+  responseMode?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
 }): Promise<{ ok: boolean; contactId?: string | null }> {
   const actions = missingDataActionsForFields(input.missingFields, input.propertyId);
   const firstAction = actions[0];
@@ -218,13 +267,19 @@ export async function createGuestTestMissingDataEvent(input: {
     eventType: 'missing_data',
     messageText: input.guestQuestion,
     propertyId: input.propertyId,
-    metadata: {
+    metadata: brainMetadata({
       intent: input.intent ?? null,
       missing_fields: input.missingFields,
       missing_data_actions: actions,
       internal_detail: input.internalDetail ?? null,
-      source: 'guest_test',
-    },
+      role: input.role ?? null,
+      detectedIntent: input.detectedIntent ?? input.intent ?? null,
+      responseMode: input.responseMode ?? 'operator_escalation',
+      confidence: input.confidence ?? null,
+      reason: input.reason ?? null,
+      telegram_chat_id: input.telegramChatId,
+      original_message: input.guestQuestion,
+    }),
   });
   return { ok: Boolean(contactId), contactId };
 }
@@ -239,6 +294,11 @@ export async function createOperatorFollowupRequired(input: {
   intent?: string | null;
   internalDetail?: string | null;
   lookupData?: Record<string, unknown> | null;
+  role?: string | null;
+  detectedIntent?: string | null;
+  responseMode?: string | null;
+  confidence?: number | null;
+  reason?: string | null;
 }): Promise<{ ok: boolean; contactId?: string | null; error?: string }> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -254,15 +314,20 @@ export async function createOperatorFollowupRequired(input: {
     eventType: 'operator_followup_required',
     messageText: input.guestQuestion,
     propertyId: input.propertyId,
-    metadata: {
+    metadata: brainMetadata({
       intent: input.intent ?? null,
       telegram_chat_id: input.telegramChatId,
       telegram_user_id: input.telegramUserId,
       update_id: input.updateId ?? null,
       internal_detail: input.internalDetail ?? null,
       lookup_data: input.lookupData ?? null,
-      source: 'guest_test',
-    },
+      role: input.role ?? null,
+      detectedIntent: input.detectedIntent ?? input.intent ?? null,
+      responseMode: input.responseMode ?? 'operator_escalation',
+      confidence: input.confidence ?? null,
+      reason: input.reason ?? null,
+      original_message: input.guestQuestion,
+    }),
   });
   return { ok: Boolean(contactId), contactId };
 }

@@ -312,14 +312,14 @@ describe('communication identity routing v1', () => {
     const missingDataEvent = crmEvents.find((item) => item.row.event_type === 'missing_data');
     expect(missingDataEvent?.row.metadata).toMatchObject({
       intent: 'description',
-      source: 'guest_test',
+      source: 'minigpt_brain_v1',
     });
     expect(String((missingDataEvent?.row.metadata as Record<string, unknown> | undefined)?.internal_detail ?? '')).toContain('Владельцу нужно');
 
     const operatorEvent = crmEvents.find((item) => item.row.event_type === 'operator_followup_required');
     expect(operatorEvent?.row.metadata).toMatchObject({
       intent: 'description',
-      source: 'guest_test',
+      source: 'minigpt_brain_v1',
     });
     expect(String((operatorEvent?.row.metadata as Record<string, unknown> | undefined)?.internal_detail ?? '')).toContain('Владельцу нужно');
   });
@@ -376,7 +376,7 @@ describe('communication identity routing v1', () => {
       .find((item) => item.row.event_type === 'operator_followup_required' && item.row.message_text === 'Иван Петров, дата заезда 24 июня, последние 4 цифры телефона 1234');
     expect(operatorEvent?.row.metadata).toMatchObject({
       intent: 'booking_lookup_missing_details',
-      source: 'guest_test',
+      source: 'minigpt_brain_v1',
       lookup_data: {
         guest_name: 'Иван Петров',
         check_in_date: '24 июня',
@@ -856,8 +856,8 @@ describe('communication identity routing v1', () => {
     const review = listEscalationReviews({ status: 'pending' }).at(0);
     expect(review).toMatchObject({
       detail: expect.stringContaining('⚠️ ASI: нужна проверка оператора'),
-      suggestedReply: expect.stringContaining('Передал вопрос оператору'),
+      suggestedReply: expect.stringContaining('нужна проверка оператора'),
     });
-    expect(review?.detail).toContain('Причина эскалации: Вопрос требует проверки оператора');
+    expect(review?.detail).toContain('Причина эскалации: Вопрос про оплату, возврат, скидку или изменение брони');
   });
 });

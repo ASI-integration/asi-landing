@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { classifyGuestCommunicationIntent } from './guest-intent-router';
+import { classifyGuestCommunicationIntent, isGuestConciergeIntent } from './guest-intent-router';
 import type { InboundMessageEnvelope, IdentityResolution } from './types';
 
 export type SenderIdentity =
@@ -360,7 +360,7 @@ export async function resolveCommunicationIdentityRoute(params: {
   if (
     !metaIdentity &&
     (senderIdentity === 'owner' || senderIdentity === 'manager') &&
-    intentRoute.detectedIntent === 'guest_stay_question' &&
+    isGuestConciergeIntent(intentRoute.detectedIntent) &&
     intentRoute.shouldAskRoleConfirmation
   ) {
     return {

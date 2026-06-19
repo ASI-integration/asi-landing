@@ -3,9 +3,11 @@ import { classifyGuestCommunicationIntent } from '../guest-intent-router';
 
 describe('guest communication intent router', () => {
   it.each([
-    ['вы можете порекомендовать рестораны рядом?', 'guest_stay_question'],
-    ['где аптека рядом?', 'guest_stay_question'],
-    ['как заселиться?', 'guest_stay_question'],
+    ['вы можете порекомендовать рестораны рядом?', 'guest_local_recommendation'],
+    ['где аптека рядом?', 'guest_local_recommendation'],
+    ['как заселиться?', 'guest_checkin'],
+    ['какой пароль от Wi-Fi?', 'guest_property_question'],
+    ['можно курить?', 'guest_rules_question'],
     ['Нужно проверить объект на Авито', 'owner_internal_request'],
     ['Хочу подключить ASI', 'lead_connection'],
   ] as const)('classifies safe routing intent: %s', (messageText, expectedIntent) => {
@@ -33,7 +35,7 @@ describe('guest communication intent router', () => {
       currentIdentity: 'owner',
     });
 
-    expect(result.detectedIntent).toBe('guest_stay_question');
+    expect(result.detectedIntent).toBe('guest_local_recommendation');
     expect(result.roleConflict).toBe(true);
     expect(result.shouldAskRoleConfirmation).toBe(true);
     expect(result.suggestedRoute).toBe('identity_confirmation');

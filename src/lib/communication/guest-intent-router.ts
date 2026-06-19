@@ -1,11 +1,17 @@
 import type { SenderIdentity } from './communication-identity-routing';
 
 export type GuestCommunicationIntent =
-  | 'guest_stay_question'
+  | 'guest_checkin'
+  | 'guest_property_question'
+  | 'guest_local_recommendation'
+  | 'guest_rules_question'
+  | 'guest_booking_lookup'
   | 'owner_internal_request'
   | 'lead_connection'
   | 'money_sensitive'
   | 'emergency_or_damage'
+  | 'complaint_or_conflict'
+  | 'personal_data_sensitive'
   | 'unclear_role';
 
 export type GuestIntentSuggestedRoute =
@@ -26,6 +32,27 @@ export type GuestIntentRouterResult = {
   suggestedRoute: GuestIntentSuggestedRoute;
 };
 
+const GUEST_CONCIERGE_INTENTS = new Set<GuestCommunicationIntent>([
+  'guest_checkin',
+  'guest_property_question',
+  'guest_local_recommendation',
+  'guest_rules_question',
+  'guest_booking_lookup',
+]);
+
+export function isGuestConciergeIntent(intent: GuestCommunicationIntent): boolean {
+  return GUEST_CONCIERGE_INTENTS.has(intent);
+}
+
+export function isSensitiveEscalationIntent(intent: GuestCommunicationIntent): boolean {
+  return (
+    intent === 'money_sensitive' ||
+    intent === 'emergency_or_damage' ||
+    intent === 'complaint_or_conflict' ||
+    intent === 'personal_data_sensitive'
+  );
+}
+
 function normalizeRu(text: string): string {
   return String(text ?? '')
     .toLowerCase()
@@ -38,12 +65,24 @@ function has(text: string, ...patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function isPersonalDataSensitive(text: string): boolean {
+  return has(
+    text,
+    /персональн|личн(ые|ых)\s+данн|паспорт|банковск.*карт|cvv|cvc|снилс|инн/,
+  );
+}
+
+function isComplaintOrConflict(text: string): boolean {
+  return has(text, /конфликт|жалоб|претензи|спор|оскорб|угроз/i);
+}
+
 function isMoneySensitive(text: string): boolean {
   return has(
     text,
     /возврат|верн(ите|уть)\s+деньг|компенсац|скидк|оплат|платеж|залог|штраф|счет|чек|деньг/,
-    /измен(ить|ение).*брон|перенести\s+брон|отмен(ить|а).*брон/,
-    /конфликт|жалоб|претензи|спор|юрист|закон|персональн|личн(ые|ых)\s+данн/,
+    /измен(ить|ение).*брон|перенести\s+брон|отмен(ить|а).*брон|продл.*прожив|продлен/,
+    /ранн.*заезд|поздн.*выезд|наличн.*оплат/,
+    /юрист|закон|обязательств|обеща/,
   );
 }
 
@@ -69,18 +108,79 @@ function isLeadConnection(text: string): boolean {
     text,
     /\basi\b.*(подключ|услов|стоим|цен|пилот|начать|демо)|подключ(ить|иться).*asi/,
     /хочу\s+подключить\s+asi|как\s+начать|сколько\s+стоит|условия\s+пилот/,
+    /хочу\s+попробовать|у\s+меня\s+\d+\s+объект/,
   );
 }
 
-function isGuestStayQuestion(text: string): boolean {
+function isGuestBookingLookup(text: string): boolean {
   return has(
     text,
-    /заезд|засел|выезд|адрес|как\s+добраться|wi-?fi|вай-?фай|интернет|парол.*сет/,
-    /правил|курить|курени|парков|ресторан|кафе|кофейн|поесть|завтрак|обед|ужин/,
+    /можно\s+по\s+имени|по\s+фамилии|номера\s+нет|нет\s+номера\s+брон|по\s+имени\s+и\s+фамилии/,
+    /у\s+меня\s+нет\s+номера\s+бронирования|могу\s+назвать\s+имя/,
+  );
+}
+
+function isGuestCheckin(text: string): boolean {
+  return has(text, /заезд|засел|выезд|check.?in|check.?out|время.*заезд|хотим\s+заехать|хочу\s+заехать/);
+}
+
+function isGuestPropertyQuestion(text: string): boolean {
+  return has(
+    text,
+    /адрес|как\s+добраться|где\s+наход|как\s+найти|wi-?fi|вай-?фай|интернет|парол.*сет|парков/,
+    /описан|квартир|объект|что\s+за\s+жиль/,
+  );
+}
+
+function isGuestRulesQuestion(text: string): boolean {
+  return has(text, /правил|курить|курени|тишин|животн|шум|табач|сигарет|вейп|vape|кальян/);
+}
+
+function isGuestLocalRecommendation(text: string): boolean {
+  return has(
+    text,
+    /ресторан|кафе|кофейн|поесть|завтрак|обед|ужин|грузинск|итальянск|еда|перекус/,
     /продукт|магазин|супермаркет|аптек|лекарств|такси|метро|транспорт|остановк/,
     /что\s+рядом|рядом|поблизости|недалеко|посмотреть|достопримеч|погулять|куда\s+сходить/,
-    /бытов|мусор|полотенц|белье/,
+    /порекоменд|подскаж.*рядом|где\s+купить|как\s+вызвать\s+такси/,
   );
+}
+
+function classifyGuestIntent(text: string): { intent: GuestCommunicationIntent; confidence: number; reason: string } {
+  if (isEmergencyOrDamage(text)) {
+    return { intent: 'emergency_or_damage', confidence: 0.94, reason: 'safety_or_damage_requires_operator' };
+  }
+  if (isPersonalDataSensitive(text)) {
+    return { intent: 'personal_data_sensitive', confidence: 0.92, reason: 'personal_data_requires_operator' };
+  }
+  if (isComplaintOrConflict(text)) {
+    return { intent: 'complaint_or_conflict', confidence: 0.91, reason: 'complaint_or_conflict_requires_operator' };
+  }
+  if (isMoneySensitive(text)) {
+    return { intent: 'money_sensitive', confidence: 0.93, reason: 'money_booking_or_legal_requires_operator' };
+  }
+  if (isLeadConnection(text)) {
+    return { intent: 'lead_connection', confidence: 0.9, reason: 'lead_connection_detected' };
+  }
+  if (isOwnerInternalRequest(text)) {
+    return { intent: 'owner_internal_request', confidence: 0.88, reason: 'owner_internal_request_detected' };
+  }
+  if (isGuestBookingLookup(text)) {
+    return { intent: 'guest_booking_lookup', confidence: 0.87, reason: 'guest_booking_lookup_detected' };
+  }
+  if (isGuestCheckin(text)) {
+    return { intent: 'guest_checkin', confidence: 0.88, reason: 'guest_checkin_detected' };
+  }
+  if (isGuestPropertyQuestion(text)) {
+    return { intent: 'guest_property_question', confidence: 0.87, reason: 'guest_property_question_detected' };
+  }
+  if (isGuestRulesQuestion(text)) {
+    return { intent: 'guest_rules_question', confidence: 0.86, reason: 'guest_rules_question_detected' };
+  }
+  if (isGuestLocalRecommendation(text)) {
+    return { intent: 'guest_local_recommendation', confidence: 0.86, reason: 'guest_local_recommendation_detected' };
+  }
+  return { intent: 'unclear_role', confidence: 0.45, reason: 'intent_unclear' };
 }
 
 function identityGroup(identity?: SenderIdentity | null): 'guest' | 'owner' | 'lead' | 'support' | 'unknown' {
@@ -97,55 +197,32 @@ export function classifyGuestCommunicationIntent(input: {
 }): GuestIntentRouterResult {
   const text = normalizeRu(input.messageText);
   const currentIdentity = identityGroup(input.currentIdentity);
+  const classified = classifyGuestIntent(text);
+  const detectedIntent = classified.intent;
 
-  let detectedIntent: GuestCommunicationIntent = 'unclear_role';
-  let confidence = 0.45;
-  let reason = 'intent_unclear';
-
-  if (isEmergencyOrDamage(text)) {
-    detectedIntent = 'emergency_or_damage';
-    confidence = 0.94;
-    reason = 'safety_or_damage_requires_operator';
-  } else if (isMoneySensitive(text)) {
-    detectedIntent = 'money_sensitive';
-    confidence = 0.93;
-    reason = 'money_booking_or_legal_requires_operator';
-  } else if (isLeadConnection(text)) {
-    detectedIntent = 'lead_connection';
-    confidence = 0.9;
-    reason = 'lead_connection_detected';
-  } else if (isOwnerInternalRequest(text)) {
-    detectedIntent = 'owner_internal_request';
-    confidence = 0.88;
-    reason = 'owner_internal_request_detected';
-  } else if (isGuestStayQuestion(text)) {
-    detectedIntent = 'guest_stay_question';
-    confidence = 0.88;
-    reason = 'guest_stay_question_detected';
-  }
-
-  const shouldEscalate = detectedIntent === 'money_sensitive' || detectedIntent === 'emergency_or_damage';
+  const shouldEscalate = isSensitiveEscalationIntent(detectedIntent);
   const roleConflict =
-    (currentIdentity === 'owner' && detectedIntent === 'guest_stay_question') ||
-    (currentIdentity === 'guest' && (detectedIntent === 'owner_internal_request' || detectedIntent === 'lead_connection')) ||
-    (currentIdentity === 'lead' && detectedIntent === 'guest_stay_question');
+    (currentIdentity === 'owner' && isGuestConciergeIntent(detectedIntent)) ||
+    (currentIdentity === 'guest' &&
+      (detectedIntent === 'owner_internal_request' || detectedIntent === 'lead_connection')) ||
+    (currentIdentity === 'lead' && isGuestConciergeIntent(detectedIntent));
   const shouldAskRoleConfirmation = roleConflict && !shouldEscalate;
 
   let suggestedRoute: GuestIntentSuggestedRoute = 'identity_confirmation';
   if (shouldEscalate) suggestedRoute = 'operator_review';
   else if (shouldAskRoleConfirmation) suggestedRoute = 'identity_confirmation';
-  else if (detectedIntent === 'guest_stay_question') suggestedRoute = 'guest_concierge';
+  else if (isGuestConciergeIntent(detectedIntent)) suggestedRoute = 'guest_concierge';
   else if (detectedIntent === 'owner_internal_request') suggestedRoute = 'owner_manager';
   else if (detectedIntent === 'lead_connection') suggestedRoute = 'lead';
 
   return {
     detectedIntent,
-    confidence,
+    confidence: classified.confidence,
     roleConflict,
     shouldAskRoleConfirmation,
-    canAnswerAutomatically: detectedIntent === 'guest_stay_question' && !shouldEscalate,
+    canAnswerAutomatically: isGuestConciergeIntent(detectedIntent) && !shouldEscalate,
     shouldEscalate,
-    reason,
+    reason: classified.reason,
     suggestedRoute,
   };
 }

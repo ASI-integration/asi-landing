@@ -30,7 +30,8 @@ describe('guest test concierge deterministic answers', () => {
 
     expect(result.outcome).toBe('answered_by_concierge_autopilot');
     expect(result.needsOperator).toBe(false);
-    expect(result.reply).toContain('Москва, Тверская 10');
+    expect(result.reply).toContain('Яндекс Картах');
+    expect(result.reply).toContain('2ГИС');
     expect(result.reply).toContain('проверить часы работы и рейтинг в картах');
     expect(result.reply).not.toMatch(/ресторан\s+["«]/i);
   });

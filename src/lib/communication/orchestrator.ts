@@ -138,7 +138,13 @@ import {
   resolveEmailGuestBookingObjectContext,
   resolveTelegramGuestBookingObjectContext,
 } from './telegram-booking-object-memory';
-import { answerGuestTestQuestion, GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
+import {
+  buildOperatorEscalationDetail,
+  decideGuestCommunication,
+  patchCommunicationMemoryFromDecision,
+  loadCommunicationMemoryFromSession,
+} from './guest-communication-brain';
+import { GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
 import {
   createGuestConciergeAnsweredEvent,
   createGuestTestMissingDataEvent,
@@ -1204,6 +1210,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       messageText: text,
       metadata: envelope.metadata ?? null,
     });
+    if (senderRoute.route === 'role_conflict_guest_question') {
+      patchAutonomousSessionCollectedData({
+        chatId,
+        channel: envelope.channel,
+        set: { pending_role_conflict_message: text },
+      });
+    }
   }
 
   auditDecision({
@@ -2069,34 +2082,47 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           };
         }
 
-        const answer = answerGuestTestQuestion({
+        const commMemory = loadCommunicationMemoryFromSession(loadAutonomousSession(chatId));
+        const commDecision = decideGuestCommunication({
           messageText: text,
+          currentIdentity: senderRoute.senderIdentity,
           property: telegramBookingObjectCtx.property,
           propertyId,
+          conversationMemory: commMemory,
         });
-        if (answer.intent !== 'unknown') {
+        const answer = commDecision.guestTestResult;
+        const brainIntent = commDecision.detectedIntent;
+        const brainOutcome = commDecision.outcome ?? answer?.outcome;
+        if ((answer && answer.intent !== 'unknown') || commDecision.shouldEscalate) {
           const telegramUserId = String(
             envelope.metadata?.telegram_user_id ??
               envelope.metadata?.telegramUserId ??
               envelope.externalUserId ??
               chatId,
           );
-          const internalMissingDataDetail = answer.outcome === 'missing_data' ? answer.reply : null;
+          const internalMissingDataDetail = brainOutcome === 'missing_data' ? answer?.reply ?? null : null;
           const guestReplyText =
-            answer.outcome === 'missing_data' ? GUEST_MISSING_DATA_OPERATOR_REPLY : answer.reply;
+            commDecision.safeGuestReply ??
+            (brainOutcome === 'missing_data' ? GUEST_MISSING_DATA_OPERATOR_REPLY : answer?.reply ?? '');
           const recorded = await recordGuestTestQuestionOutcome({
             telegramUserId,
             telegramChatId: chatId,
             propertyId,
             questionText: text,
             replyText: guestReplyText,
-            outcome: answer.outcome,
-            intent: answer.intent,
-            missingFields: answer.missingFields,
+            outcome: brainOutcome ?? 'operator_followup_required',
+            intent: answer?.intent ?? brainIntent,
+            missingFields: commDecision.missingFields ?? answer?.missingFields ?? [],
+            role: senderRoute.senderIdentity,
+            detectedIntent: brainIntent,
+            responseMode: commDecision.responseMode,
+            confidence: commDecision.confidence,
+            reason: commDecision.reason,
+            decisionSource: commDecision.decisionSource,
           });
 
           let deterministicReplyText = guestReplyText;
-          if (answer.outcome === 'answered_by_concierge_autopilot') {
+          if (brainOutcome === 'answered_by_concierge_autopilot' && answer) {
             await createGuestConciergeAnsweredEvent({
               telegramUserId,
               telegramChatId: chatId,
@@ -2105,8 +2131,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               replyText: answer.reply,
               contactId: recorded.contactId,
               intent: answer.intent,
+              role: senderRoute.senderIdentity,
+              detectedIntent: brainIntent,
+              responseMode: commDecision.responseMode,
+              confidence: commDecision.confidence,
+              reason: commDecision.reason,
             });
-          } else if (answer.outcome === 'missing_data') {
+          } else if (brainOutcome === 'missing_data' && answer) {
             await createGuestTestMissingDataEvent({
               telegramUserId,
               telegramChatId: chatId,
@@ -2116,6 +2147,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               contactId: recorded.contactId,
               intent: answer.intent,
               internalDetail: internalMissingDataDetail,
+              role: senderRoute.senderIdentity,
+              detectedIntent: brainIntent,
+              responseMode: commDecision.responseMode,
+              confidence: commDecision.confidence,
+              reason: commDecision.reason,
             });
             await createOperatorFollowupRequired({
               telegramUserId,
@@ -2126,17 +2162,35 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               updateId: update_id,
               intent: answer.intent,
               internalDetail: internalMissingDataDetail,
+              role: senderRoute.senderIdentity,
+              detectedIntent: brainIntent,
+              responseMode: commDecision.responseMode,
+              confidence: commDecision.confidence,
+              reason: commDecision.reason,
             });
             patchAutonomousSessionCollectedData({
               chatId,
               channel: envelope.channel,
               set: {
+                ...patchCommunicationMemoryFromDecision({
+                  collectedData: {},
+                  decision: commDecision,
+                  messageText: text,
+                  activeRole: senderRoute.senderIdentity,
+                }),
                 guest_missing_reservation_followup: GUEST_MISSING_BOOKING_CONTEXT,
                 guest_missing_reservation_followup_state: GUEST_BOOKING_IDENTIFIER_STATE,
                 guest_missing_reservation_intent: answer.intent,
               },
             });
-          } else if (answer.outcome === 'operator_followup_required') {
+          } else if (brainOutcome === 'operator_followup_required' || commDecision.shouldEscalate) {
+            const escalationDetail = buildOperatorEscalationDetail({
+              role: senderRoute.senderIdentity,
+              intent: brainIntent,
+              message: text,
+              reason: commDecision.operatorReason ?? commDecision.reason,
+              recommendedStep: deterministicReplyText,
+            });
             const created = await createOperatorFollowupRequired({
               telegramUserId,
               telegramChatId: chatId,
@@ -2144,27 +2198,27 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               guestQuestion: text,
               contactId: recorded.contactId,
               updateId: update_id,
-              intent: answer.intent,
+              intent: answer?.intent ?? brainIntent,
+              internalDetail: escalationDetail,
+              role: senderRoute.senderIdentity,
+              detectedIntent: brainIntent,
+              responseMode: commDecision.responseMode,
+              confidence: commDecision.confidence,
+              reason: commDecision.reason,
             });
             if (!created.ok) deterministicReplyText = OPERATOR_HANDOFF_FAILED_REPLY;
             persistEscalationReview({
               reason: 'operator_followup_required',
-              escalationSummary: `guest_test:${answer.intent}`,
-              confidence: 1,
+              escalationSummary: `minigpt:${brainIntent}`,
+              confidence: commDecision.confidence,
               suggestedReply: deterministicReplyText,
               source: {
-                route: 'guest_test_deterministic_v1',
-                intent: answer.intent,
-                outcome: answer.outcome,
+                route: 'minigpt_guest_communication_brain_v1',
+                intent: brainIntent,
+                outcome: brainOutcome ?? 'operator_followup_required',
+                responseMode: commDecision.responseMode,
               },
-              detail: buildOperatorNotificationText({
-                role: senderRoute.senderIdentity,
-                intent: String(answer.intent),
-                topic: String(answer.intent),
-                message: text,
-                reason: 'Вопрос требует проверки оператора или создает обязательство владельца.',
-                recommendedReply: deterministicReplyText,
-              }),
+              detail: escalationDetail,
             });
             await withAwaitCheckpoint(
               'session.transition.operator_review_required_guest_test',
@@ -2172,16 +2226,45 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               { chat_id: chatId },
               15_000,
             );
+            patchAutonomousSessionCollectedData({
+              chatId,
+              channel: envelope.channel,
+              set: patchCommunicationMemoryFromDecision({
+                collectedData: {},
+                decision: commDecision,
+                messageText: text,
+                activeRole: senderRoute.senderIdentity,
+              }),
+            });
+          }
+
+          if (
+            brainOutcome !== 'missing_data' &&
+            brainOutcome !== 'operator_followup_required' &&
+            !commDecision.shouldEscalate
+          ) {
+            patchAutonomousSessionCollectedData({
+              chatId,
+              channel: envelope.channel,
+              set: patchCommunicationMemoryFromDecision({
+                collectedData: {},
+                decision: commDecision,
+                messageText: text,
+                activeRole: senderRoute.senderIdentity,
+              }),
+            });
           }
 
           const targetId = resolveOutboundTargetId(envelope, identity.guestId);
           if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
           const sent = await adapter.sendMessage(String(targetId), deterministicReplyText, {
-            reply_handler: `orchestrator:guest_test_deterministic_v1:${answer.outcome}`,
+            reply_handler: `orchestrator:minigpt_brain_v1:${brainOutcome ?? 'escalation'}`,
             update_id,
             sender_identity: senderRoute.senderIdentity,
-            guest_test_outcome: answer.outcome,
-            guest_test_intent: answer.intent,
+            guest_test_outcome: brainOutcome,
+            guest_test_intent: answer?.intent ?? brainIntent,
+            minigpt_intent: brainIntent,
+            minigpt_response_mode: commDecision.responseMode,
           });
           if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
           return {
