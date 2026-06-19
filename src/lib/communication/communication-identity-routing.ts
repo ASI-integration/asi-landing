@@ -92,8 +92,8 @@ export const TELEGRAM_IDENTITY_CALLBACKS = {
 export const UNKNOWN_IDENTITY_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
   inline_keyboard: [
     [
-      { text: 'Я гость по бронированию', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
-      { text: 'Я владелец / управляющий объекта', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
+      { text: 'Я гость', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
+      { text: 'Владелец/управляющий', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
     ],
     [
       { text: 'Хочу подключить ASI', callback_data: TELEGRAM_IDENTITY_CALLBACKS.lead },

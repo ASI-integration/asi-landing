@@ -325,8 +325,8 @@ describe('communication identity routing v1', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость по бронированию', callback_data: 'identity:guest' },
-            { text: 'Я владелец / управляющий объекта', callback_data: 'identity:owner_manager' },
+            { text: 'Я гость', callback_data: 'identity:guest' },
+            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
           ],
           [
             { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
