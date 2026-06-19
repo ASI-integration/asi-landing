@@ -33,6 +33,7 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}
+          TELEGRAM_SMOKE_BOT_TOKEN: ${{ secrets.TELEGRAM_SMOKE_BOT_TOKEN }}
           TEST_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
@@ -40,6 +41,7 @@ jobs:
           REMOTE_PORT="${VPS_PORT:-22}"
           REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
           REMOTE_TEST_CHAT_ID_FILE="${REMOTE_TMP}/telegram-test-chat-id"
+          REMOTE_SMOKE_BOT_TOKEN_FILE="${REMOTE_TMP}/telegram-smoke-bot-token"
           CASES_FILE="tests/guest-concierge-llm-live-cases.ru.json"
           if [[ ! -f "$CASES_FILE" ]]; then
             echo "Missing smoke cases file: $CASES_FILE (checkout ref=${GITHUB_REF}, sha=${GITHUB_SHA})"
@@ -47,6 +49,10 @@ jobs:
           fi
           if [[ -z "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
             echo "::error::Missing required GitHub secret TELEGRAM_TEST_CHAT_ID=<id тестового Telegram-чата>"
+            exit 1
+          fi
+          if [[ -z "${TELEGRAM_SMOKE_BOT_TOKEN:-}" ]]; then
+            echo "::error::Missing required GitHub secret TELEGRAM_SMOKE_BOT_TOKEN=<token smoke Telegram bot without webhook>. Refusing to use production TELEGRAM_BOT_TOKEN with getUpdates."
             exit 1
           fi
           if [[ -n "${TEST_SHA:-}" ]]; then
@@ -81,10 +87,11 @@ jobs:
           scp "${SCP_OPTS[@]}" scripts/telegram-live-acceptance.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/telegram-live-acceptance.mjs"
           scp "${SCP_OPTS[@]}" "$CASES_FILE" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/guest-concierge-llm-live-cases.ru.json"
           printf '%s' "$TELEGRAM_TEST_CHAT_ID" | ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "umask 077 && cat > '${REMOTE_TEST_CHAT_ID_FILE}'"
+          printf '%s' "$TELEGRAM_SMOKE_BOT_TOKEN" | ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "umask 077 && cat > '${REMOTE_SMOKE_BOT_TOKEN_FILE}'"
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" bash -lc "set -euo pipefail
             cd /var/www/asi/current
-            trap \"rm -f '${REMOTE_TEST_CHAT_ID_FILE}'\" EXIT
+            trap \"rm -f '${REMOTE_TEST_CHAT_ID_FILE}' '${REMOTE_SMOKE_BOT_TOKEN_FILE}'\" EXIT
             set -a
             source /var/www/asi/shared/.env.production.live
             set +a
@@ -96,5 +103,6 @@ jobs:
             echo GUEST_CONCIERGE_LLM_MODEL=\${GUEST_CONCIERGE_LLM_MODEL:-missing}
             export TELEGRAM_LIVE_CASES_PATH='${REMOTE_TMP}/guest-concierge-llm-live-cases.ru.json'
             export TELEGRAM_TEST_CHAT_ID=\"\$(cat '${REMOTE_TEST_CHAT_ID_FILE}')\"
+            export TELEGRAM_SMOKE_BOT_TOKEN=\"\$(cat '${REMOTE_SMOKE_BOT_TOKEN_FILE}')\"
             node '${REMOTE_TMP}/telegram-live-acceptance.mjs'
           "
