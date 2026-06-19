@@ -37,6 +37,8 @@ const LEAD_REPLY_RU =
 const SUPPORT_PROBLEM_REPLY_RU =
   'Понял. Опишите, пожалуйста, что случилось. Если это связано с проживанием, укажите объект или бронь. Если это вопрос владельца/управляющего, напишите объект и ситуацию.';
 const PROBLEM_IDENTITY_CLARIFY_RU = 'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
+const ROLE_CONFLICT_GUEST_QUESTION_RU =
+  'Похоже, это вопрос гостя по проживанию. Переключить этот диалог в гостевой сценарий?';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -556,6 +558,93 @@ describe('communication identity routing v1', () => {
 
     expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('asks saved owner to confirm before switching a guest restaurant question', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Я владелец/управляющий', metadata: { providerMessageId: 'owner-save' } }));
+    mockSendMessage.mockClear();
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'вы можете порекомендовать рестораны рядом?',
+        metadata: { providerMessageId: 'owner-restaurant-conflict' },
+      }),
+    );
+
+    expect(result.reply).toBe(ROLE_CONFLICT_GUEST_QUESTION_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(loadAutonomousSession(9001)?.pending_identity_message).toBe('вы можете порекомендовать рестораны рядом?');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:role_conflict_guest_question',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Да, я гость', callback_data: 'identity:guest' },
+            { text: 'Нет, я владелец/управляющий', callback_data: 'identity:owner_manager' },
+          ],
+        ],
+      },
+    });
+  });
+
+  it('keeps saved owner on owner route for owner internal requests', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Я владелец/управляющий', metadata: { providerMessageId: 'owner-save-2' } }));
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'Нужно проверить объект на Авито',
+        metadata: { providerMessageId: 'owner-avito' },
+      }),
+    );
+
+    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(-1)).toMatchObject({
+      escalationReason: 'owner_manager_message',
+      detail: expect.stringContaining('Нужно проверить объект на Авито'),
+    });
+  });
+
+  it('routes saved guest lead connection text to lead flow', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Я гость', metadata: { providerMessageId: 'guest-save-lead' } }));
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'хочу подключить ASI',
+        metadata: { providerMessageId: 'guest-lead-switch', telegram_username: 'guest_lead' },
+      }),
+    );
+
+    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(-1)).toMatchObject({
+      escalationReason: 'lead_connection_request',
+    });
+  });
+
+  it('replays owner-conflict pending restaurant question through concierge after guest callback', async () => {
+    const { processMessage, processUpdate } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Я владелец/управляющий', metadata: { providerMessageId: 'owner-save-3' } }));
+    await processMessage(
+      envelope({
+        messageText: 'вы можете порекомендовать рестораны рядом?',
+        metadata: { providerMessageId: 'owner-restaurant-conflict-2' },
+      }),
+    );
+    mockDecideAutopilot.mockClear();
+
+    const result = await processUpdate(callbackUpdate('identity:guest', 9001));
+
+    expect(result.reply).toContain('кафе и рестораны');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(loadAutonomousSession(9001)?.pending_identity_message).toBeNull();
+    expect(insertedRows.some((item) => item.table === 'crm_events' && item.row.event_type === 'guest_concierge_answered')).toBe(true);
   });
 
   it('answers guest restaurant questions through Guest Concierge before broad autopilot', async () => {

@@ -727,6 +727,7 @@ function roleLabelRu(role: unknown): string {
 
 function buildOperatorNotificationText(params: {
   role: unknown;
+  intent?: string | null;
   topic: string;
   message: string;
   reason: string;
@@ -736,6 +737,7 @@ function buildOperatorNotificationText(params: {
   return [
     '⚠️ ASI: нужна проверка оператора',
     `Роль: ${roleLabelRu(params.role)}`,
+    `Интент: ${String(params.intent ?? params.topic).trim() || 'неясно'}`,
     `Тема: ${params.topic}`,
     `Сообщение: ${String(params.message ?? '').trim() || 'Нет текста сообщения'}`,
     `Причина эскалации: ${params.reason}`,
@@ -1133,7 +1135,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   });
 
   if (
-    senderRoute.route === 'unknown_clarify' &&
+    (senderRoute.route === 'unknown_clarify' || senderRoute.route === 'role_conflict_guest_question') &&
     envelope.channel === 'telegram' &&
     shouldSavePendingIdentityMessage(text) &&
     !(envelope.metadata as Record<string, unknown> | undefined)?.pending_identity_replay
@@ -1496,6 +1498,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         suggestedReply: senderRoute.replyText,
         detail: buildOperatorNotificationText({
           role: senderRoute.senderIdentity,
+          intent: String(senderRoute.audit?.detectedIntent ?? senderRoute.route),
           topic: reviewTopic,
           message: text,
           reason:
@@ -1981,6 +1984,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               },
               detail: buildOperatorNotificationText({
                 role: senderRoute.senderIdentity,
+                intent: String(answer.intent),
                 topic: String(answer.intent),
                 message: text,
                 reason: 'Вопрос требует проверки оператора или создает обязательство владельца.',
@@ -2318,6 +2322,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           suggestedReply: recommendedReply,
           detail: buildOperatorNotificationText({
             role: senderRoute.senderIdentity,
+            intent: String(autopilotDecision.metadata.intent),
             topic: String(autopilotDecision.metadata.intent),
             message: text,
             reason: `Нет проверенных данных: ${autopilotDecision.metadata.missingContext.join(', ') || 'контекст не найден'}.`,
@@ -2379,6 +2384,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           suggestedReply: replyText,
           detail: buildOperatorNotificationText({
             role: senderRoute.senderIdentity,
+            intent: String(autopilotDecision.metadata.intent),
             topic: String(autopilotDecision.metadata.intent),
             message: text,
             reason: autopilotDecision.escalationReason ?? (urgent ? 'Срочная ситуация.' : 'Нужна проверка оператора.'),

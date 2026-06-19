@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { classifyGuestCommunicationIntent } from './guest-intent-router';
 import type { InboundMessageEnvelope, IdentityResolution } from './types';
 
 export type SenderIdentity =
@@ -18,6 +19,7 @@ export type CommunicationIdentityRoute =
   | 'lead'
   | 'support_problem'
   | 'unknown_clarify'
+  | 'role_conflict_guest_question'
   | 'object_problem_clarify'
   | 'internal_operator';
 
@@ -82,6 +84,9 @@ const SUPPORT_PROBLEM_REPLY_RU =
 const INTERNAL_OPERATOR_REPLY_RU =
   'Операторский контекст принят. Гостевой автопилот для этого сообщения не запущен.';
 
+export const ROLE_CONFLICT_GUEST_QUESTION_RU =
+  'Похоже, это вопрос гостя по проживанию. Переключить этот диалог в гостевой сценарий?';
+
 export const TELEGRAM_IDENTITY_CALLBACKS = {
   guest: 'identity:guest',
   ownerManager: 'identity:owner_manager',
@@ -98,6 +103,15 @@ export const UNKNOWN_IDENTITY_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
     [
       { text: 'Хочу подключить ASI', callback_data: TELEGRAM_IDENTITY_CALLBACKS.lead },
       { text: 'Нужна поддержка', callback_data: TELEGRAM_IDENTITY_CALLBACKS.supportProblem },
+    ],
+  ],
+};
+
+export const ROLE_CONFLICT_GUEST_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
+  inline_keyboard: [
+    [
+      { text: 'Да, я гость', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
+      { text: 'Нет, я владелец/управляющий', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
     ],
   ],
 };
@@ -336,6 +350,54 @@ export async function resolveCommunicationIdentityRoute(params: {
     !hasTelegramTestMode(envelope)
   ) {
     senderIdentity = isLeadIntent(messageText) ? 'lead' : 'unknown';
+  }
+
+  const intentRoute = classifyGuestCommunicationIntent({
+    messageText,
+    currentIdentity: senderIdentity,
+  });
+
+  if (
+    (senderIdentity === 'owner' || senderIdentity === 'manager') &&
+    intentRoute.detectedIntent === 'guest_stay_question' &&
+    intentRoute.shouldAskRoleConfirmation
+  ) {
+    return {
+      senderIdentity,
+      route: 'role_conflict_guest_question',
+      shouldRunGuestConcierge: false,
+      replyText: ROLE_CONFLICT_GUEST_QUESTION_RU,
+      replyMarkup: ROLE_CONFLICT_GUEST_INLINE_KEYBOARD,
+      reason: intentRoute.reason,
+      audit: {
+        crmContactId: crmByUsername?.id ?? null,
+        detectedIntent: intentRoute.detectedIntent,
+        confidence: intentRoute.confidence,
+        roleConflict: intentRoute.roleConflict,
+      },
+    };
+  }
+
+  if (
+    (senderIdentity === 'guest' || senderIdentity === 'test_guest') &&
+    intentRoute.detectedIntent === 'lead_connection'
+  ) {
+    const crmContactId = crmByUsername?.id ?? (await createLeadIfSafe(envelope));
+    return {
+      senderIdentity: 'lead',
+      route: 'lead',
+      shouldRunGuestConcierge: false,
+      replyText: LEAD_REPLY_RU,
+      selectedIdentity: 'lead',
+      crmContactId,
+      reason: crmContactId ? 'lead_intent_from_guest_crm_linked' : 'lead_intent_from_guest_no_safe_crm_key',
+      audit: {
+        crmContactId: crmContactId ?? null,
+        telegramUsername: telegramUsername(envelope) || null,
+        detectedIntent: intentRoute.detectedIntent,
+        previousIdentity: senderIdentity,
+      },
+    };
   }
 
   if (senderIdentity === 'guest' || senderIdentity === 'test_guest') {
