@@ -174,6 +174,9 @@ function missingDataReply(missingFields: string[], propertyId?: string | null): 
 const OPERATOR_HANDOFF_REPLY =
   'Передал вопрос оператору. Ответ придёт в этот чат, как только оператор проверит запрос.';
 
+export const GUEST_MISSING_DATA_OPERATOR_REPLY =
+  'Понял, вы хотите заехать. Сейчас у меня не хватает данных по объекту, поэтому я уточню информацию у оператора. Напишите, пожалуйста, номер бронирования или адрес/название объекта, если они у вас есть.';
+
 export const OPERATOR_HANDOFF_FAILED_REPLY =
   'Не смог передать оператору. Напишите, пожалуйста, в поддержку.';
 

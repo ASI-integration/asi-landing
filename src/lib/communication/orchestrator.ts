@@ -137,7 +137,7 @@ import {
   resolveEmailGuestBookingObjectContext,
   resolveTelegramGuestBookingObjectContext,
 } from './telegram-booking-object-memory';
-import { answerGuestTestQuestion, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
+import { answerGuestTestQuestion, GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
 import {
   createGuestConciergeAnsweredEvent,
   createGuestTestMissingDataEvent,
@@ -1929,18 +1929,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               envelope.externalUserId ??
               chatId,
           );
+          const internalMissingDataDetail = answer.outcome === 'missing_data' ? answer.reply : null;
+          const guestReplyText =
+            answer.outcome === 'missing_data' ? GUEST_MISSING_DATA_OPERATOR_REPLY : answer.reply;
           const recorded = await recordGuestTestQuestionOutcome({
             telegramUserId,
             telegramChatId: chatId,
             propertyId,
             questionText: text,
-            replyText: answer.reply,
+            replyText: guestReplyText,
             outcome: answer.outcome,
             intent: answer.intent,
             missingFields: answer.missingFields,
           });
 
-          let deterministicReplyText = answer.reply;
+          let deterministicReplyText = guestReplyText;
           if (answer.outcome === 'answered_by_concierge_autopilot') {
             await createGuestConciergeAnsweredEvent({
               telegramUserId,
@@ -1960,6 +1963,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               missingFields: answer.missingFields,
               contactId: recorded.contactId,
               intent: answer.intent,
+              internalDetail: internalMissingDataDetail,
+            });
+            await createOperatorFollowupRequired({
+              telegramUserId,
+              telegramChatId: chatId,
+              propertyId,
+              guestQuestion: text,
+              contactId: recorded.contactId,
+              updateId: update_id,
+              intent: answer.intent,
+              internalDetail: internalMissingDataDetail,
             });
           } else if (answer.outcome === 'operator_followup_required') {
             const created = await createOperatorFollowupRequired({

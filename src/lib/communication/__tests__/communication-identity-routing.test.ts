@@ -166,6 +166,7 @@ import { __resetAutonomousSessionStoreForTests, loadAutonomousSession } from '..
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
 import { __resetSessionStatusStoreForTests } from '../session-status';
+import { GUEST_MISSING_DATA_OPERATOR_REPLY } from '../guest-test-answers';
 
 function envelope(params: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
   return {
@@ -269,6 +270,58 @@ describe('communication identity routing v1', () => {
     expect(listEscalationReviews({ status: 'pending' })).toHaveLength(0);
     expect(loadAutonomousSession(9110)?.pending_identity_message).toBeNull();
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('replays pending check-in question after guest callback with guest-facing missing data handoff', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const first = await processUpdate({
+      update_id: 61_013,
+      message: {
+        message_id: 13,
+        chat: { id: 9113 },
+        from: { id: 9113, language_code: 'ru', username: 'pending_guest_missing_data' },
+        text: 'здравствуйте, мы хотим заехать в вашу квартиру',
+      },
+    });
+
+    expect(first.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).toMatchObject({
+      inline_keyboard: expect.arrayContaining([
+        expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:guest' })]),
+      ]),
+    });
+    expect(loadAutonomousSession(9113)?.pending_identity_message).toBe('здравствуйте, мы хотим заехать в вашу квартиру');
+
+    const result = await processUpdate(callbackUpdate('identity:guest', 9113));
+
+    expect(result.reply).toBe(GUEST_MISSING_DATA_OPERATOR_REPLY);
+    expect(result.reply).not.toContain('Владельцу нужно');
+    expect(result.reply).not.toContain('заполнить раздел в личном кабинете');
+    expect(result.reply).toContain('номер бронирования');
+    expect(result.reply).toContain('адрес/название объекта');
+    expect(loadAutonomousSession(9113)?.pending_identity_message).toBeNull();
+
+    const crmEvents = insertedRows.filter((item) => item.table === 'crm_events');
+    const guestQuestionEvent = crmEvents.find((item) => item.row.event_type === 'guest_test_question');
+    expect(guestQuestionEvent?.row.metadata).toMatchObject({
+      outcome: 'missing_data',
+      reply_preview: GUEST_MISSING_DATA_OPERATOR_REPLY,
+    });
+    expect(String((guestQuestionEvent?.row.metadata as Record<string, unknown> | undefined)?.reply_preview ?? '')).not.toContain('Владельцу нужно');
+
+    const missingDataEvent = crmEvents.find((item) => item.row.event_type === 'missing_data');
+    expect(missingDataEvent?.row.metadata).toMatchObject({
+      intent: 'description',
+      source: 'guest_test',
+    });
+    expect(String((missingDataEvent?.row.metadata as Record<string, unknown> | undefined)?.internal_detail ?? '')).toContain('Владельцу нужно');
+
+    const operatorEvent = crmEvents.find((item) => item.row.event_type === 'operator_followup_required');
+    expect(operatorEvent?.row.metadata).toMatchObject({
+      intent: 'description',
+      source: 'guest_test',
+    });
+    expect(String((operatorEvent?.row.metadata as Record<string, unknown> | undefined)?.internal_detail ?? '')).toContain('Владельцу нужно');
   });
 
   it('replays pending owner message through owner route after owner callback', async () => {

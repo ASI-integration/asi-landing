@@ -200,6 +200,7 @@ export async function createGuestTestMissingDataEvent(input: {
   missingFields: string[];
   contactId?: string | null;
   intent?: string | null;
+  internalDetail?: string | null;
 }): Promise<{ ok: boolean; contactId?: string | null }> {
   const actions = missingDataActionsForFields(input.missingFields, input.propertyId);
   const firstAction = actions[0];
@@ -221,6 +222,7 @@ export async function createGuestTestMissingDataEvent(input: {
       intent: input.intent ?? null,
       missing_fields: input.missingFields,
       missing_data_actions: actions,
+      internal_detail: input.internalDetail ?? null,
       source: 'guest_test',
     },
   });
@@ -235,6 +237,7 @@ export async function createOperatorFollowupRequired(input: {
   contactId?: string | null;
   updateId?: number;
   intent?: string | null;
+  internalDetail?: string | null;
 }): Promise<{ ok: boolean; contactId?: string | null; error?: string }> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -255,6 +258,7 @@ export async function createOperatorFollowupRequired(input: {
       telegram_chat_id: input.telegramChatId,
       telegram_user_id: input.telegramUserId,
       update_id: input.updateId ?? null,
+      internal_detail: input.internalDetail ?? null,
       source: 'guest_test',
     },
   });

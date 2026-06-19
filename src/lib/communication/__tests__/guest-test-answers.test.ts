@@ -68,5 +68,6 @@ describe('guest test concierge deterministic answers', () => {
     expect(result.outcome).toBe('missing_data');
     expect(result.missingFields).toEqual(['object.wifiName', 'object.wifiPassword']);
     expect(result.reply).toContain('Название Wi-Fi');
+    expect(result.reply).toContain('Владельцу нужно');
   });
 });
