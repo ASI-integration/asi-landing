@@ -1,4 +1,4 @@
-name: Telegram Guest Concierge Smoke
+name: Telegram Guest Concierge Integration Smoke (not quality gate)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  telegram_smoke:
+  telegram_integration_smoke:
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run live Telegram acceptance on VPS
+      - name: Run live Telegram integration smoke on VPS
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

@@ -1,0 +1,46 @@
+name: Guest Concierge HTTP Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: Production URL to verify
+        required: false
+        default: https://asi-global.ru
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  http_acceptance:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ACCEPTANCE_BASE_URL: ${{ inputs.production_url }}
+      INTERNAL_TEST_SECRET: ${{ secrets.INTERNAL_TEST_SECRET }}
+      GUEST_CONCIERGE_LLM_ENABLED: "true"
+      GUEST_CONCIERGE_LLM_MODEL: gpt-4o-mini
+    steps:
+      - name: Checkout acceptance script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check acceptance script syntax
+        run: node --check scripts/guest-concierge-http-acceptance.mjs
+
+      - name: Run HTTP acceptance against production
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${INTERNAL_TEST_SECRET:-}" ]]; then
+            echo "::error::Missing required GitHub secret INTERNAL_TEST_SECRET"
+            exit 1
+          fi
+          node scripts/guest-concierge-http-acceptance.mjs

@@ -481,6 +481,28 @@ export function decideCommunicationAutopilotResponse(input: {
   }
 
   if (classification.intent === 'urgent_access_problem') {
+    if (classification.matchedSignals.includes('safety_emergency')) {
+      return {
+        action: 'escalate',
+        confidence: classification.confidence,
+        replyText:
+          '\u0415\u0441\u043b\u0438 \u0435\u0441\u0442\u044c \u043f\u043e\u0436\u0430\u0440 \u0438\u043b\u0438 \u0434\u044b\u043c, \u0441\u0440\u0430\u0437\u0443 \u0432\u044b\u0439\u0434\u0438\u0442\u0435 \u0438\u0437 \u043a\u0432\u0430\u0440\u0442\u0438\u0440\u044b \u0438 \u0437\u0432\u043e\u043d\u0438\u0442\u0435 112. \u041c\u044b \u043f\u0435\u0440\u0435\u0434\u0430\u0451\u043c \u0441\u0438\u0442\u0443\u0430\u0446\u0438\u044e \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443.',
+        escalationReason: 'safety_emergency',
+        metadata: { ...baseMetadata, urgent: true },
+      };
+    }
+
+    if (classification.matchedSignals.includes('protected_access_bypass')) {
+      return {
+        action: 'escalate',
+        confidence: classification.confidence,
+        replyText:
+          '\u041d\u0435 \u043c\u043e\u0433\u0443 \u043f\u043e\u043c\u043e\u0433\u0430\u0442\u044c \u0441 \u043e\u0431\u0445\u043e\u0434\u043e\u043c \u0437\u0430\u043c\u043a\u0430. \u0415\u0441\u043b\u0438 \u0432\u044b \u0433\u043e\u0441\u0442\u044c \u0438 \u043d\u0435 \u043c\u043e\u0436\u0435\u0442\u0435 \u0432\u043e\u0439\u0442\u0438, \u043d\u0430\u043f\u0438\u0448\u0438\u0442\u0435 \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438 \u0438\u043b\u0438 \u0430\u0434\u0440\u0435\u0441, \u043f\u0435\u0440\u0435\u0434\u0430\u043c \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u0443.',
+        escalationReason: 'protected_access_bypass',
+        metadata: { ...baseMetadata, urgent: true },
+      };
+    }
+
     if (missingContext.length === 0) {
       return {
         action: 'auto_reply',
@@ -966,6 +988,23 @@ function classifyIntent(
     /(\u043a\u043e\u0434|\u0437\u0430\u043c\u043e\u043a|\u0434\u0432\u0435\u0440\u044c|\u043a\u043b\u044e\u0447).{0,28}(\u043d\u0435\s+\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442|\u043d\u0435\s+\u043f\u043e\u0434\u0445\u043e\u0434\u0438\u0442|\u043d\u0435\s+\u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442|\u043d\u0435\s+\u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442\u0441\u044f|\u0441\u043b\u043e\u043c\u0430\u043b[\u0430\u043e]?\u0441[\u044c\u044f]|\u0437\u0430\u043a\u043b\u0438\u043d\u0438\u043b[\u0430\u043e]?)/i,
     /(\u0441\u0440\u043e\u0447\u043d\u043e|\u044d\u043a\u0441\u0442\u0440\u0435\u043d\u043d\u043e|\u043d\u0430\s+\u0443\u043b\u0438\u0446\u0435|\u0437\u0430\u0441\u0442\u0440\u044f\u043b[\u0430\u0438]?|\u0437\u0430\u0441\u0442\u0440\u044f\u043b\u0438).{0,40}(\u0434\u043e\u0441\u0442\u0443\u043f|\u0437\u0430\u043c\u043e\u043a|\u0434\u0432\u0435\u0440\u044c|\u043a\u043e\u0434|\u043a\u043b\u044e\u0447|\u0432\u043e\u0439\u0442\u0438|\u043f\u043e\u043f\u0430\u0441\u0442\u044c)/i,
   ];
+
+  if (isSafetyEmergencyText(originalText)) {
+    return {
+      intent: 'urgent_access_problem',
+      confidence: 0.99,
+      matchedSignals: ['safety_emergency'],
+    };
+  }
+
+  if (isProtectedAccessBypassText(originalText)) {
+    return {
+      intent: 'urgent_access_problem',
+      confidence: 0.99,
+      matchedSignals: ['protected_access_bypass'],
+    };
+  }
+
   const urgentMatches = urgentAccessSignals
     .filter((pattern) => pattern.test(normalizedText))
     .map((pattern) => pattern.source);
@@ -996,6 +1035,16 @@ function classifyIntent(
     confidence: 0.38,
     matchedSignals: [],
   };
+}
+
+function isSafetyEmergencyText(text: string): boolean {
+  return /(\u043f\u043e\u0436\u0430\u0440|\u0434\u044b\u043c|\u0433\u0430\u0437|fire|smoke|gas\s+leak)/i.test(text);
+}
+
+function isProtectedAccessBypassText(text: string): boolean {
+  return /(\u0432\u0437\u043b\u043e\u043c|\u0432\u0441\u043a\u0440\u044b\u0442|\u043e\u0431\u043e\u0439\u0442\u0438|\u0441\u043b\u043e\u043c\u0430\u0442\u044c|hack|break\s+in|pick).{0,40}(\u0437\u0430\u043c\u043e\u043a|\u0434\u0432\u0435\u0440|\u0434\u043e\u043c\u043e\u0444\u043e\u043d|lock|door)/i.test(
+    text,
+  );
 }
 
 function getMissingContext(
@@ -1517,6 +1566,14 @@ function buildOperationsAction(
 
   switch (intent) {
     case 'urgent_access_problem':
+      if (matchedSignals.includes('safety_emergency')) {
+        return {
+          category: 'operator_access_support',
+          priority: 'high',
+          title: 'Communication autopilot: safety emergency',
+          shortReason: 'safety_emergency',
+        };
+      }
       return {
         category: 'operator_access_support',
         priority: 'high',
