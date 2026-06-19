@@ -138,6 +138,7 @@ export type TelegramReplyLogContext = {
   /** Stable tag for logs: which code path produced this outbound (e.g. orchestrator:llm). */
   handler: string;
   update_id?: number;
+  reply_markup?: Record<string, unknown>;
 };
 
 export async function sendTelegramMessage(text: string): Promise<boolean> {
@@ -206,7 +207,7 @@ export async function replyToTelegram(
     chat_id: chatId,
     text,
     disable_web_page_preview: true,
-    reply_markup: { remove_keyboard: true },
+    reply_markup: logCtx?.reply_markup ?? { remove_keyboard: true },
   });
   console.info('[tg:latency] telegram.send', {
     chat_id: String(chatId),

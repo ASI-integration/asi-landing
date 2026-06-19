@@ -27,7 +27,14 @@ const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: 
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedCrmRows: Array<Record<string, unknown>> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, с чем вы обращаетесь?';
+const GUEST_SELECTED_REPLY_RU =
+  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или рекомендация рядом.';
+const OWNER_MANAGER_REPLY_RU =
+  'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
+const LEAD_REPLY_RU =
+  'Спасибо за интерес к ASI. Напишите, пожалуйста, город, тип объекта и сколько у вас объектов. Я сохраню заявку для пилота.';
+const PROBLEM_IDENTITY_CLARIFY_RU = 'Вы пишете как гость или как владелец/управляющий?';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -196,6 +203,14 @@ describe('communication identity routing v1', () => {
     const result = await processMessage(envelope({ messageText: 'Здравствуйте' }));
 
     expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_markup: {
+        keyboard: [
+          ['Я гость', 'Я владелец/управляющий'],
+          ['Хочу подключить ASI', 'Проблема по объекту'],
+        ],
+      },
+    });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -239,37 +254,83 @@ describe('communication identity routing v1', () => {
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
-    expect(result.reply).not.toContain('заселение, доступ, бронь');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_markup: expect.objectContaining({
+        keyboard: expect.arrayContaining([expect.arrayContaining(['Я гость'])]),
+      }),
+    });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
-  it('routes self-declared guest into Guest Concierge without identity clarify', async () => {
+  it('routes button/text Я гость to guest selection reply without running Guest Concierge first', async () => {
     const { processMessage } = await import('../orchestrator');
-    const result = await processMessage(envelope({ messageText: 'я гость' }));
+    const result = await processMessage(envelope({ messageText: 'Я гость' }));
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.reply).toBe(GUEST_SELECTED_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:guest_selected',
+      sender_identity: 'guest',
+    });
+  });
+
+  it('keeps selected guest route for the next message after button/text Я гость', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Я гость', metadata: { providerMessageId: 'guest-select' } }));
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(envelope({ messageText: 'не работает Wi-Fi', metadata: { providerMessageId: 'guest-wifi' } }));
 
     expect(result.outcome).toBe(ProcessOutcome.Replied);
     expect(result.reply).not.toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
-    expect(mockDecideAutopilot).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).not.toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
+    });
   });
 
-  it('routes self-declared owner away from Guest Concierge', async () => {
+  it('routes button/text Я владелец/управляющий away from Guest Concierge with new copy', async () => {
     const { processMessage } = await import('../orchestrator');
-    const result = await processMessage(envelope({ messageText: 'я владелец' }));
+    const result = await processMessage(envelope({ messageText: 'Я владелец/управляющий' }));
 
-    expect(result.reply).toContain('не буду отвечать как гостю');
+    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).not.toContain('не буду отвечать как гостю');
+    expect(result.reply).not.toContain('оператор увидит');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
-  it('routes ASI lead intent to CRM lead path', async () => {
+  it('routes button/text Хочу подключить ASI to CRM lead path', async () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(
       envelope({
-        messageText: 'хочу подключить ASI',
+        messageText: 'Хочу подключить ASI',
         metadata: { telegram_username: 'lead_user' },
       }),
     );
 
-    expect(result.reply).toContain('интерес к ASI');
+    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('asks guest vs owner/manager for object problem from unknown sender', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(envelope({ messageText: 'Проблема по объекту' }));
+
+    expect(result.reply).toBe(PROBLEM_IDENTITY_CLARIFY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:object_problem_clarify',
+      reply_markup: {
+        keyboard: [['Я гость', 'Я владелец/управляющий']],
+      },
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('does not let guest canon run before identity routing for unknown operational text', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(envelope({ messageText: 'не работает Wi-Fi' }));
+
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -282,7 +343,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toContain('не буду отвечать как гостю');
+    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -295,7 +356,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toContain('интерес к ASI');
+    expect(result.reply).toBe(LEAD_REPLY_RU);
     expect(insertedCrmRows[0]).toMatchObject({
       telegram_username: 'new_owner',
       source: 'telegram',

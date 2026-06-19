@@ -12,32 +12,66 @@ export type SenderIdentity =
 
 export type CommunicationIdentityRoute =
   | 'guest_concierge'
+  | 'guest_selected'
   | 'owner_manager'
   | 'lead'
   | 'unknown_clarify'
+  | 'object_problem_clarify'
   | 'internal_operator';
+
+export type TelegramReplyKeyboardMarkup = {
+  keyboard: string[][];
+  resize_keyboard?: boolean;
+  one_time_keyboard?: boolean;
+  input_field_placeholder?: string;
+};
 
 export type CommunicationIdentityRoutingDecision = {
   senderIdentity: SenderIdentity;
   route: CommunicationIdentityRoute;
   shouldRunGuestConcierge: boolean;
   replyText?: string;
+  replyMarkup?: TelegramReplyKeyboardMarkup;
+  selectedIdentity?: SenderIdentity;
   crmContactId?: string;
   reason: string;
   audit: Record<string, unknown>;
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, с чем вы обращаетесь?';
+
+const PROBLEM_IDENTITY_CLARIFY_RU =
+  'Вы пишете как гость или как владелец/управляющий?';
+
+const GUEST_SELECTED_REPLY_RU =
+  'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или рекомендация рядом.';
 
 const LEAD_REPLY_RU =
-  'Спасибо за интерес к ASI. Напишите, пожалуйста, город, тип объекта и сколько у вас объектов. Мы передадим заявку команде пилота.';
+  'Спасибо за интерес к ASI. Напишите, пожалуйста, город, тип объекта и сколько у вас объектов. Я сохраню заявку для пилота.';
 
 const OWNER_MANAGER_REPLY_RU =
-  'Принято. Я не буду отвечать как гостю. Передайте, пожалуйста, объект и что нужно проверить, оператор увидит это как внутреннее обращение.';
+  'Понял, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
 
 const INTERNAL_OPERATOR_REPLY_RU =
   'Операторский контекст принят. Гостевой автопилот для этого сообщения не запущен.';
+
+export const UNKNOWN_IDENTITY_REPLY_KEYBOARD: TelegramReplyKeyboardMarkup = {
+  keyboard: [
+    ['Я гость', 'Я владелец/управляющий'],
+    ['Хочу подключить ASI', 'Проблема по объекту'],
+  ],
+  resize_keyboard: true,
+  one_time_keyboard: true,
+  input_field_placeholder: 'Выберите сценарий',
+};
+
+export const PROBLEM_IDENTITY_REPLY_KEYBOARD: TelegramReplyKeyboardMarkup = {
+  keyboard: [['Я гость', 'Я владелец/управляющий']],
+  resize_keyboard: true,
+  one_time_keyboard: true,
+  input_field_placeholder: 'Выберите роль',
+};
 
 function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -60,6 +94,7 @@ function hasTelegramTestMode(envelope: InboundMessageEnvelope): boolean {
 function isLeadIntent(messageText: string): boolean {
   const t = messageText.toLowerCase();
   return (
+    /^хочу\s+подключить\s+asi$/i.test(text(messageText)) ||
     /\basi\b/i.test(messageText) ||
     /подключ|пилот|ранн(ий|его) доступ|автоматизац|сервис|демо|заявк/.test(t)
   );
@@ -67,12 +102,20 @@ function isLeadIntent(messageText: string): boolean {
 
 export function isGuestSelfDeclaration(messageText: string): boolean {
   const t = text(messageText).toLowerCase();
-  return /я\s+гость/.test(t) || /^гость(?:\s|$|[,.!?;:])/i.test(t);
+  return /^я\s+гость$/i.test(text(messageText)) || /я\s+гость/.test(t) || /^гость(?:\s|$|[,.!?;:])/i.test(t);
 }
 
 export function isOwnerSelfDeclaration(messageText: string): boolean {
   const t = text(messageText).toLowerCase();
-  return /я\s+владелец/.test(t) || /я\s+управляющ/.test(t);
+  return (
+    /^я\s+владелец\/управляющий$/i.test(text(messageText)) ||
+    /я\s+владелец/.test(t) ||
+    /я\s+управляющ/.test(t)
+  );
+}
+
+function isObjectProblemButton(messageText: string): boolean {
+  return /^проблема\s+по\s+объекту$/i.test(text(messageText));
 }
 
 function metadataIdentity(envelope: InboundMessageEnvelope): SenderIdentity | null {
@@ -174,6 +217,19 @@ export async function resolveCommunicationIdentityRoute(params: {
   const crmRole = norm(crmByUsername?.role);
   const guestSelfDeclared = isGuestSelfDeclaration(messageText);
   const ownerSelfDeclared = isOwnerSelfDeclaration(messageText);
+  const objectProblemButton = isObjectProblemButton(messageText);
+
+  if (!metaIdentity && !boundIdentity && !crmRole && objectProblemButton) {
+    return {
+      senderIdentity: 'unknown',
+      route: 'object_problem_clarify',
+      shouldRunGuestConcierge: false,
+      replyText: PROBLEM_IDENTITY_CLARIFY_RU,
+      replyMarkup: PROBLEM_IDENTITY_REPLY_KEYBOARD,
+      reason: 'object_problem_needs_role',
+      audit: { identityStatus: identity.status, identityReason: identity.reason },
+    };
+  }
 
   let senderIdentity: SenderIdentity =
     metaIdentity ??
@@ -195,6 +251,18 @@ export async function resolveCommunicationIdentityRoute(params: {
   }
 
   if (senderIdentity === 'guest' || senderIdentity === 'test_guest') {
+    if (guestSelfDeclared && senderIdentity === 'guest') {
+      return {
+        senderIdentity,
+        route: 'guest_selected',
+        shouldRunGuestConcierge: false,
+        replyText: GUEST_SELECTED_REPLY_RU,
+        selectedIdentity: 'guest',
+        reason: 'guest_self_selected',
+        audit: { identityStatus: identity.status, identityReason: identity.reason },
+      };
+    }
+
     return {
       senderIdentity,
       route: 'guest_concierge',
@@ -210,6 +278,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       route: 'owner_manager',
       shouldRunGuestConcierge: false,
       replyText: OWNER_MANAGER_REPLY_RU,
+      selectedIdentity: senderIdentity,
       reason: `${senderIdentity}_route`,
       audit: { crmContactId: crmByUsername?.id ?? null },
     };
@@ -233,6 +302,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       route: 'lead',
       shouldRunGuestConcierge: false,
       replyText: LEAD_REPLY_RU,
+      selectedIdentity: 'lead',
       crmContactId,
       reason: crmContactId ? 'lead_intent_crm_linked' : 'lead_intent_no_safe_crm_key',
       audit: { crmContactId: crmContactId ?? null, telegramUsername: telegramUsername(envelope) || null },
@@ -244,6 +314,7 @@ export async function resolveCommunicationIdentityRoute(params: {
     route: 'unknown_clarify',
     shouldRunGuestConcierge: false,
     replyText: UNKNOWN_IDENTITY_CLARIFY_RU,
+    replyMarkup: UNKNOWN_IDENTITY_REPLY_KEYBOARD,
     reason: 'unknown_sender_needs_role',
     audit: { identityStatus: identity.status, identityReason: identity.reason },
   };

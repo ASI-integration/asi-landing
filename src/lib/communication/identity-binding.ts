@@ -2,6 +2,7 @@ import { InboundMessageEnvelope, IdentityResolution } from './types';
 import { createOrMergeIdentity, resolveGuestIdentity } from './identity';
 import { matchReservation } from './reservation';
 import { auditIdentityDecision } from './audit';
+import { loadAutonomousSession } from './conversation-session-store';
 
 /**
  * Bind an inbound envelope to business entities (reservation/property/lead)
@@ -67,6 +68,10 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
   const isManager =
     envelope.metadata && (envelope.metadata['isManager'] === true || envelope.metadata['is_manager'] === true);
   const isTestGuest = shouldCreateGuestIdentity;
+  const selectedSessionRole =
+    typeof chatIdNum === 'number' && Number.isFinite(chatIdNum)
+      ? loadAutonomousSession(chatIdNum)?.identity_role
+      : undefined;
 
   // Telegram group chats are operational staff contexts by default.
   const isTelegramGroup = envelope.channel === 'telegram' && typeof chatIdNum === 'number' && chatIdNum < 0;
@@ -93,6 +98,18 @@ export async function bindIdentity(envelope: InboundMessageEnvelope): Promise<Id
     status = 'resolved';
     reason = 'metadata:is_manager';
     resolutionPath.push('role:manager');
+  } else if (
+    selectedSessionRole === 'guest' ||
+    selectedSessionRole === 'owner' ||
+    selectedSessionRole === 'manager' ||
+    selectedSessionRole === 'lead'
+  ) {
+    role = selectedSessionRole;
+    entityType = selectedSessionRole === 'lead' ? 'lead' : 'unknown';
+    confidence = 0.9;
+    status = 'resolved';
+    reason = 'telegram_button_selected_role';
+    resolutionPath.push(`role:${selectedSessionRole}:session_selection`);
   } else if (isOperator || isTelegramGroup) {
     role = 'operator';
     entityType = 'unknown';

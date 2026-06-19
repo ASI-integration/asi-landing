@@ -6,7 +6,7 @@
       "name": "unknown_greeting_ru",
       "input": "здравствуйте",
       "assertions": {
-        "should_include_any": ["вы гость по бронированию", "владелец", "подключение ASI"],
+        "should_include_any": ["Здравствуйте! Я помощник ASI", "с чем вы обращаетесь"],
         "must_not_include_any": ["заселение, доступ, бронь, уборка или поломка"]
       }
     },
@@ -14,29 +14,31 @@
       "name": "unknown_greeting_en",
       "input": "hi",
       "assertions": {
-        "should_include_any": ["вы гость по бронированию", "владелец", "подключение ASI"],
+        "should_include_any": ["Здравствуйте! Я помощник ASI", "с чем вы обращаетесь"],
         "must_not_include_any": ["заселение, доступ, бронь, уборка или поломка"]
       }
     },
     {
       "name": "self_declared_guest",
-      "input": "я гость",
+      "input": "Я гость",
       "assertions": {
+        "should_include_any": ["Понял, вы гость", "заселение", "Wi-Fi"],
         "must_not_include_any": ["вы гость по бронированию", "владелец/управляющий", "подключение ASI"]
       }
     },
     {
       "name": "lead_intent",
-      "input": "хочу подключить ASI",
+      "input": "Хочу подключить ASI",
       "assertions": {
-        "should_include_any": ["интерес к ASI", "город", "объект"]
+        "should_include_any": ["Спасибо за интерес к ASI", "город", "пилота"]
       }
     },
     {
       "name": "self_declared_owner",
-      "input": "я владелец",
+      "input": "Я владелец/управляющий",
       "assertions": {
-        "should_include_any": ["не буду отвечать как гостю"]
+        "should_include_any": ["Понял, вы владелец/управляющий", "внутреннее обращение"],
+        "must_not_include_any": ["не буду отвечать как гостю", "оператор увидит"]
       }
     }
   ]

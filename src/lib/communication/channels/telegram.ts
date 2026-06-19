@@ -50,7 +50,11 @@ export class TelegramAdapter implements ChannelAdapter {
           : 'telegram_adapter:unspecified_handler';
       const updateIdRaw = metadata?.update_id;
       const update_id = typeof updateIdRaw === 'number' && Number.isFinite(updateIdRaw) ? updateIdRaw : undefined;
-      return await replyToTelegram(chatId, textFallback, { handler, update_id });
+      const replyMarkup =
+        metadata?.reply_markup && typeof metadata.reply_markup === 'object'
+          ? (metadata.reply_markup as Record<string, unknown>)
+          : undefined;
+      return await replyToTelegram(chatId, textFallback, { handler, update_id, reply_markup: replyMarkup });
     } catch (e) {
       console.error('[TelegramAdapter] Failed to send message', e);
       return false;

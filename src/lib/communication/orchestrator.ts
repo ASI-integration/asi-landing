@@ -41,6 +41,7 @@ import {
   EscalationReason,
   CommunicationContext,
   InboundMessageEnvelope,
+  IdentityResolution,
   IntentCategory,
   Lang,
   MessageCategory,
@@ -1079,6 +1080,42 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     detail: `communication_identity_route sender=${senderRoute.senderIdentity} route=${senderRoute.route} reason=${senderRoute.reason}`,
   });
 
+  const selectedIdentity = (
+    senderRoute.selectedIdentity === 'guest' ||
+    senderRoute.selectedIdentity === 'owner' ||
+    senderRoute.selectedIdentity === 'manager' ||
+    senderRoute.selectedIdentity === 'lead'
+  )
+    ? ({
+        ...identity,
+        role: senderRoute.selectedIdentity,
+        entityType: senderRoute.selectedIdentity === 'lead' ? 'lead' : identity.entityType,
+        confidence: Math.max(identity.confidence, 0.9),
+        status: 'resolved',
+        reason: 'telegram_button_selected_role',
+        resolutionPath: [...(identity.resolutionPath ?? []), `role:${senderRoute.selectedIdentity}:button_selection`],
+      } satisfies IdentityResolution)
+    : null;
+
+  if (selectedIdentity) {
+    try {
+      setAutonomousSessionIdentity({ chatId, channel: envelope.channel, identity: selectedIdentity });
+      updateContext(chatId, {
+        role: selectedIdentity.role,
+        entityType: selectedIdentity.entityType,
+        entityId: selectedIdentity.entityId,
+        propertyId: selectedIdentity.propertyId,
+        reservationId: selectedIdentity.reservationId,
+        leadId: selectedIdentity.leadId,
+        identityConfidence: selectedIdentity.confidence,
+        identityResolutionStatus: selectedIdentity.status,
+        identityReason: selectedIdentity.reason,
+      });
+    } catch {
+      // best-effort: the current route still replies correctly even if role memory is unavailable.
+    }
+  }
+
   // Conversation session engine: resolve/create session by channel + actor identity.
   const { session: baseSession, key: sessionKey } = getOrCreateConversationSession({
     envelope,
@@ -1358,6 +1395,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         update_id,
         sender_identity: senderRoute.senderIdentity,
         crm_contact_id: senderRoute.crmContactId,
+        reply_markup: senderRoute.replyMarkup,
       },
     );
     if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
