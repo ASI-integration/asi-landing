@@ -7,8 +7,25 @@ import { useTranslation } from '@/i18n/useTranslation';
 import { SessionProvider, useSession } from '@/contexts/SessionContext';
 import { DashboardAuthGuard } from '@/components/DashboardAuthGuard';
 
-const navItems = [
+type DashboardNavItem = {
+  href: string;
+  key:
+    | 'overview'
+    | 'crm'
+    | 'reports'
+    | 'channelConnections'
+    | 'properties'
+    | 'communication'
+    | 'operations'
+    | 'bookings'
+    | 'automations'
+    | 'settings';
+  label?: string;
+};
+
+const navItems: DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard/crm', key: 'crm', label: 'CRM' },
   { href: '/dashboard/reports', key: 'reports' },
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
   { href: '/dashboard/properties', key: 'properties' },
@@ -45,7 +62,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           ASI
         </Link>
         <nav className="flex-1 px-4 py-4 space-y-1.5">
-          {navItems.map(({ href, key }) => {
+          {navItems.map(({ href, key, label }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
               <Link
@@ -58,7 +75,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                     : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
                 }`}
               >
-                {t(`dashboard.sidebar.${key}`)}
+                {label ?? t(`dashboard.sidebar.${key}`)}
               </Link>
             );
           })}
