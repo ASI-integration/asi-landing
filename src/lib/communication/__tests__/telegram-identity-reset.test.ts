@@ -144,5 +144,14 @@ describe('telegram /reset_identity acceptance tooling', () => {
     const greet = await processUpdate(makeUpdate('здравствуйте'));
     expect(greet.outcome).toBe(ProcessOutcome.Replied);
     expect(greet.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
+      reply_markup: {
+        keyboard: [
+          ['Я гость', 'Я владелец/управляющий'],
+          ['Хочу подключить ASI', 'Проблема по объекту'],
+        ],
+      },
+    });
   });
 });

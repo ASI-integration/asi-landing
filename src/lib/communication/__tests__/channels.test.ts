@@ -5,8 +5,9 @@ import {
   getCommunicationChannelFoundation,
 } from '../channel-foundation';
 
+const mockReplyToTelegram = vi.fn().mockResolvedValue(true);
 vi.mock('../../telegram', () => ({
-  replyToTelegram: vi.fn().mockResolvedValue(true),
+  replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
 }));
 
 describe('Channel Adapters', () => {
@@ -14,6 +15,40 @@ describe('Channel Adapters', () => {
     const adapter = getChannelAdapter('telegram');
     const result = adapter.formatResponse('  Hello! We have received your request.  ', {});
     expect(result).toBe('Hello! We have received your request.');
+  });
+
+  it('passes Telegram reply keyboard markup through to sendMessage payload', async () => {
+    mockReplyToTelegram.mockClear();
+    const adapter = getChannelAdapter('telegram');
+
+    const sent = await adapter.sendMessage('4242', 'Здравствуйте!', {
+      reply_handler: 'test:unknown_identity',
+      update_id: 123,
+      reply_markup: {
+        keyboard: [
+          ['Я гость', 'Я владелец/управляющий'],
+          ['Хочу подключить ASI', 'Проблема по объекту'],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    });
+
+    expect(sent).toBe(true);
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      4242,
+      'Здравствуйте!',
+      expect.objectContaining({
+        handler: 'test:unknown_identity',
+        update_id: 123,
+        reply_markup: expect.objectContaining({
+          keyboard: [
+            ['Я гость', 'Я владелец/управляющий'],
+            ['Хочу подключить ASI', 'Проблема по объекту'],
+          ],
+        }),
+      }),
+    );
   });
 
   it('formats email responses with professional signatures', () => {

@@ -27,7 +27,7 @@ const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: 
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedCrmRows: Array<Record<string, unknown>> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, с чем вы обращаетесь?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
 const GUEST_SELECTED_REPLY_RU =
   'Понял, вы гость. Напишите, пожалуйста, что нужно: заселение, доступ, Wi-Fi, правила, поздний выезд, проблема в квартире или рекомендация рядом.';
 const OWNER_MANAGER_REPLY_RU =
@@ -234,6 +234,9 @@ describe('communication identity routing v1', () => {
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
       sender_identity: 'unknown',
+      reply_markup: expect.objectContaining({
+        keyboard: expect.arrayContaining([expect.arrayContaining(['Я гость'])]),
+      }),
     });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });

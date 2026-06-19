@@ -39,7 +39,7 @@ export type CommunicationIdentityRoutingDecision = {
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, с чем вы обращаетесь?';
+  'Здравствуйте! Я помощник ASI. Подскажите, пожалуйста, вы гость по бронированию, владелец/управляющий объекта или хотите узнать про подключение ASI?';
 
 const PROBLEM_IDENTITY_CLARIFY_RU =
   'Вы пишете как гость или как владелец/управляющий?';
