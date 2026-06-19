@@ -5,26 +5,26 @@ import {
   CRM_COMMUNICATION_STATUS_LABELS,
   CRM_COMMUNICATION_STATUS_VALUES,
   CRM_ROLE_LABELS,
-  CRM_ROLE_VALUES,
   CRM_SOURCE_LABELS,
   CRM_SOURCE_VALUES,
   CRM_STATUS_LABELS,
   CRM_STATUS_VALUES,
   CrmCommunicationStatus,
   CrmContact,
-  CrmRole,
   CrmSource,
   CrmStatus,
 } from '@/lib/crm/types';
+import { getCrmSuggestions, resolveCrmRoleInput, resolveCrmSourceInput } from '@/lib/crm/suggestions';
 import { readResponseJson } from '@/lib/safeResponseJson';
+import { CrmSuggestInput } from './CrmSuggestInput';
 
 type Draft = {
   name: string;
   phone: string;
   telegramUsername: string;
   email: string;
-  role: CrmRole;
-  source: CrmSource;
+  role: string;
+  source: string;
   objectsCount: string;
   city: string;
   note: string;
@@ -39,8 +39,8 @@ const emptyDraft: Draft = {
   phone: '',
   telegramUsername: '',
   email: '',
-  role: 'unknown',
-  source: 'manual',
+  role: CRM_ROLE_LABELS.unknown,
+  source: CRM_SOURCE_LABELS.manual,
   objectsCount: '0',
   city: '',
   note: '',
@@ -67,6 +67,7 @@ function toInputDate(value: string | null): string {
 
 export default function CrmPageClient() {
   const [contacts, setContacts] = useState<CrmContact[]>([]);
+  const [suggestionContacts, setSuggestionContacts] = useState<CrmContact[]>([]);
   const [statusFilter, setStatusFilter] = useState<CrmStatus | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState<CrmSource | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -84,6 +85,18 @@ export default function CrmPageClient() {
     if (search.trim()) query.set('search', search.trim());
     return query.toString();
   }, [search, sourceFilter, statusFilter]);
+
+  const loadSuggestionContacts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dashboard/crm', { credentials: 'include' });
+      const data = await readResponseJson(res, { ok: false, contacts: [] as CrmContact[], message: '' });
+      if (res.ok && data.ok) {
+        setSuggestionContacts(data.contacts);
+      }
+    } catch {
+      // Подсказки не блокируют основной экран CRM.
+    }
+  }, []);
 
   const loadContacts = useCallback(async () => {
     setLoading(true);
@@ -116,6 +129,43 @@ export default function CrmPageClient() {
   useEffect(() => {
     void loadContacts();
   }, [loadContacts]);
+
+  useEffect(() => {
+    void loadSuggestionContacts();
+  }, [loadSuggestionContacts]);
+
+  const nameSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'name', draft.name),
+    [draft.name, suggestionContacts]
+  );
+  const phoneSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'phone', draft.phone),
+    [draft.phone, suggestionContacts]
+  );
+  const telegramSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'telegramUsername', draft.telegramUsername),
+    [draft.telegramUsername, suggestionContacts]
+  );
+  const emailSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'email', draft.email),
+    [draft.email, suggestionContacts]
+  );
+  const roleSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'role', draft.role),
+    [draft.role, suggestionContacts]
+  );
+  const sourceSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'source', draft.source),
+    [draft.source, suggestionContacts]
+  );
+  const citySuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'city', draft.city),
+    [draft.city, suggestionContacts]
+  );
+  const nextStepSuggestions = useMemo(
+    () => getCrmSuggestions(suggestionContacts, 'nextStep', draft.nextStep),
+    [draft.nextStep, suggestionContacts]
+  );
 
   async function patchContact(id: string, patch: Partial<CrmContact> & { nextActionAt?: string | null }) {
     setSavingId(id);
@@ -157,6 +207,8 @@ export default function CrmPageClient() {
         credentials: 'include',
         body: JSON.stringify({
           ...draft,
+          role: resolveCrmRoleInput(draft.role),
+          source: resolveCrmSourceInput(draft.source),
           objectsCount: Number.parseInt(draft.objectsCount || '0', 10),
           nextActionAt: draft.nextActionAt || null,
         }),
@@ -168,7 +220,7 @@ export default function CrmPageClient() {
       }
       setDraft(emptyDraft);
       setShowForm(false);
-      await loadContacts();
+      await Promise.all([loadContacts(), loadSuggestionContacts()]);
     } finally {
       setSavingId(null);
     }
@@ -215,50 +267,111 @@ export default function CrmPageClient() {
       {showForm ? (
         <form onSubmit={createContact} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-name">
               Имя
-              <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              <CrmSuggestInput
+                id="crm-draft-name"
+                listId="crm-suggest-name"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.name}
+                onChange={(name) => setDraft({ ...draft, name })}
+                suggestions={nameSuggestions}
+                autoComplete="name"
+              />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-phone">
               Телефон
-              <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+              <CrmSuggestInput
+                id="crm-draft-phone"
+                listId="crm-suggest-phone"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.phone}
+                onChange={(phone) => setDraft({ ...draft, phone })}
+                suggestions={phoneSuggestions}
+                autoComplete="tel"
+              />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-telegram">
               Telegram
-              <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.telegramUsername} onChange={(e) => setDraft({ ...draft, telegramUsername: e.target.value })} />
+              <CrmSuggestInput
+                id="crm-draft-telegram"
+                listId="crm-suggest-telegram"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.telegramUsername}
+                onChange={(telegramUsername) => setDraft({ ...draft, telegramUsername })}
+                suggestions={telegramSuggestions}
+                autoComplete="off"
+              />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-email">
               Email
-              <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+              <CrmSuggestInput
+                id="crm-draft-email"
+                listId="crm-suggest-email"
+                type="email"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.email}
+                onChange={(email) => setDraft({ ...draft, email })}
+                suggestions={emailSuggestions}
+                autoComplete="email"
+              />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-role">
               Роль
-              <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value as CrmRole })}>
-                {CRM_ROLE_VALUES.map((value) => <option key={value} value={value}>{CRM_ROLE_LABELS[value]}</option>)}
-              </select>
+              <CrmSuggestInput
+                id="crm-draft-role"
+                listId="crm-suggest-role"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.role}
+                onChange={(role) => setDraft({ ...draft, role })}
+                suggestions={roleSuggestions}
+                autoComplete="off"
+              />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-source">
               Источник
-              <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value as CrmSource })}>
-                {CRM_SOURCE_VALUES.map((value) => <option key={value} value={value}>{CRM_SOURCE_LABELS[value]}</option>)}
-              </select>
+              <CrmSuggestInput
+                id="crm-draft-source"
+                listId="crm-suggest-source"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.source}
+                onChange={(source) => setDraft({ ...draft, source })}
+                suggestions={sourceSuggestions}
+                autoComplete="off"
+              />
             </label>
             <label className="text-sm font-medium text-slate-700">
               Объектов
               <input type="number" min="0" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.objectsCount} onChange={(e) => setDraft({ ...draft, objectsCount: e.target.value })} />
             </label>
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-slate-700" htmlFor="crm-draft-city">
               Город
-              <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} />
+              <CrmSuggestInput
+                id="crm-draft-city"
+                listId="crm-suggest-city"
+                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+                value={draft.city}
+                onChange={(city) => setDraft({ ...draft, city })}
+                suggestions={citySuggestions}
+                autoComplete="address-level2"
+              />
             </label>
             <label className="text-sm font-medium text-slate-700">
               Дата следующего действия
               <input type="datetime-local" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.nextActionAt} onChange={(e) => setDraft({ ...draft, nextActionAt: e.target.value })} />
             </label>
           </div>
-          <label className="mt-3 block text-sm font-medium text-slate-700">
+          <label className="mt-3 block text-sm font-medium text-slate-700" htmlFor="crm-draft-next-step">
             Следующий шаг
-            <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.nextStep} onChange={(e) => setDraft({ ...draft, nextStep: e.target.value })} />
+            <CrmSuggestInput
+              id="crm-draft-next-step"
+              listId="crm-suggest-next-step"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"
+              value={draft.nextStep}
+              onChange={(nextStep) => setDraft({ ...draft, nextStep })}
+              suggestions={nextStepSuggestions}
+              autoComplete="off"
+            />
           </label>
           <label className="mt-3 block text-sm font-medium text-slate-700">
             Заметка
@@ -331,9 +444,17 @@ export default function CrmPageClient() {
                   </div>
 
                   <div className="space-y-3">
-                    <label className="block text-xs font-medium uppercase text-slate-500">
+                    <label className="block text-xs font-medium uppercase text-slate-500" htmlFor={`crm-edit-next-step-${contact.id}`}>
                       Следующий шаг
-                      <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={edit.nextStep} onChange={(e) => setEdits((prev) => ({ ...prev, [contact.id]: { ...edit, nextStep: e.target.value } }))} />
+                      <CrmSuggestInput
+                        id={`crm-edit-next-step-${contact.id}`}
+                        listId={`crm-suggest-next-step-${contact.id}`}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={edit.nextStep}
+                        onChange={(nextStep) => setEdits((prev) => ({ ...prev, [contact.id]: { ...edit, nextStep } }))}
+                        suggestions={getCrmSuggestions(suggestionContacts, 'nextStep', edit.nextStep)}
+                        autoComplete="off"
+                      />
                     </label>
                     <label className="block text-xs font-medium uppercase text-slate-500">
                       Когда написать
