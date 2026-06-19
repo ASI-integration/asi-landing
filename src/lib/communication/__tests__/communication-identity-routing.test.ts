@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { _resetForTesting } from '../idempotency';
-import { ProcessOutcome, type InboundMessageEnvelope } from '../types';
+import { ProcessOutcome, type InboundMessageEnvelope, type TelegramUpdate } from '../types';
 
 const mockSendMessage = vi.fn().mockResolvedValue(true);
 const mockDecideAutopilot = vi.fn().mockResolvedValue({
@@ -190,6 +190,30 @@ describe('communication identity routing v1', () => {
     const result = await processMessage(envelope({ messageText: 'Здравствуйте' }));
 
     expect(result.reply).toContain('вы гость по бронированию');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('routes Telegram hi through envelope identity before any meta greeting reply', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    const update: TelegramUpdate = {
+      update_id: 61_001,
+      message: {
+        message_id: 7,
+        chat: { id: 9001 },
+        from: { id: 9001, language_code: 'en', username: 'unknown_user' },
+        text: 'hi',
+      },
+    };
+
+    const result = await processUpdate(update);
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.reply).toContain('вы гость по бронированию');
+    expect(result.reply).not.toContain('Hi! Send a guest message');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:unknown_clarify',
+      sender_identity: 'unknown',
+    });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 

@@ -173,9 +173,9 @@ function unifiedLanguageCapabilityReply(surface: MetaSurfaceLang): string {
     return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
   }
   if (surface === 'es') {
-    return 'Sí, entiendo mensajes en inglés y ruso. Envíe su solicitud por texto, por favor.';
+    return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
   }
-  return 'Yes, I understand English and Russian. Please send your request as text.';
+  return 'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.';
 }
 
 function telegramMetaStartReply(surface: MetaSurfaceLang): string {
@@ -183,9 +183,9 @@ function telegramMetaStartReply(surface: MetaSurfaceLang): string {
     return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
   }
   if (surface === 'es') {
-    return 'ASI online.\nEnvíe el mensaje del huésped, el problema o la solicitud.';
+    return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
   }
-  return 'ASI online.\nSend a guest message, issue, or request.';
+  return 'ASI online.\nОтправьте сообщение гостя, проблему или запрос.';
 }
 
 function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
@@ -193,9 +193,9 @@ function telegramMetaGreetingReply(surface: MetaSurfaceLang): string {
     return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
   }
   if (surface === 'es') {
-    return 'Hola. Envíe el mensaje del huésped, el problema o los datos de entrada.';
+    return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
   }
-  return 'Hi! Send a guest message, issue, or check-in details.';
+  return 'Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.';
 }
 
 function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): string {
@@ -212,14 +212,14 @@ function telegramMetaSmalltalkReply(rawText: string, surface: MetaSurfaceLang): 
   }
   if (surface === 'es') {
     if (isAck) {
-      return 'Con gusto. Si aparece una solicitud del huésped o una pregunta sobre el alojamiento, envíela aquí.';
+      return 'Пожалуйста! Если появится запрос гостя или вопрос по объекту, пришлите сюда.';
     }
-    return 'Sí, soy el bot de ASI. Ayudo con mensajes de huéspedes, check-in y problemas del alojamiento.';
+    return 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.';
   }
   if (isAck) {
-    return 'You’re welcome. Send any guest request or property question here when it comes up.';
+    return 'Пожалуйста! Если появится запрос гостя или вопрос по объекту, пришлите сюда.';
   }
-  return 'Yes, I’m the ASI bot. I help with guest messages, check-in questions, and property issues.';
+  return 'Да, я бот ASI. Помогаю быстро разобрать сообщения гостей, вопросы по заезду и проблемы с объектом.';
 }
 
 function telegramMetaIdentityReply(surface: MetaSurfaceLang): string {
@@ -227,14 +227,14 @@ function telegramMetaIdentityReply(surface: MetaSurfaceLang): string {
     return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
   }
   if (surface === 'es') {
-    return 'Sí, soy el asistente oficial de ASI. Ayudo con check-in, acceso, reservas, limpieza y averías. Escriba qué pasó y revisaré la solicitud o la pasaré a un operador si necesita una persona.';
+    return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
   }
-  return 'Yes, I am the official ASI assistant. I help with check-in, access, bookings, cleaning, and maintenance. Send what happened and I will handle it or pass it to an operator if a person is needed.';
+  return 'Да, я официальный ассистент ASI. Помогаю с заселением, доступом, бронью, уборкой и поломками. Напишите, что случилось, я разберу запрос или передам оператору, если нужен человек.';
 }
 
 function telegramMetaTestPingReply(surface: MetaSurfaceLang): string {
   if (surface === 'ru') return 'Бот на связи.';
-  return 'Bot is online.';
+  return 'Бот на связи.';
 }
 
 function hasSubstantiveOperationalContent(rawText: string): boolean {

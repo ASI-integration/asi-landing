@@ -25,13 +25,13 @@ describe('resolveTelegramTextMeta', () => {
     delete process.env.RU_TELEGRAM_FORCE_RU;
   });
 
-  it('returns exact EN / RU / ES capability strings for the Telegram smoke matrix', () => {
+  it('returns Russian product copy for Telegram meta smoke lines', () => {
     const enHello = resolveTelegramTextMeta({ baseText: 'hello', telegramLangCode: 'ru' });
-    expect(enHello?.reply).toBe('Hi! Send a guest message, issue, or check-in details.');
+    expect(enHello?.reply).toBe('Здравствуйте! Пришлите запрос гостя, проблему или детали заезда.');
 
     const enCap = resolveTelegramTextMeta({ baseText: 'can u understand me?', telegramLangCode: 'ru' });
     expect(enCap?.reply).toBe(
-      'Yes, I understand English and Russian. Please send your request as text.',
+      'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.',
     );
 
     const ruCap = resolveTelegramTextMeta({ baseText: 'ты понимаешь русский?', telegramLangCode: 'en' });
@@ -39,7 +39,7 @@ describe('resolveTelegramTextMeta', () => {
 
     const esCap = resolveTelegramTextMeta({ baseText: 'te habla espanol?', telegramLangCode: 'en' });
     expect(esCap?.reply).toBe(
-      'Sí, entiendo mensajes en inglés y ruso. Envíe su solicitud por texto, por favor.',
+      'Да, понимаю русский и английский. Пришлите, пожалуйста, запрос текстом.',
     );
   });
 
@@ -61,7 +61,7 @@ describe('resolveTelegramTextMeta', () => {
       const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' });
 
       expect(meta?.kind).toBe('test_ping');
-      expect(meta?.reply).toMatch(/бот на связи|bot is online/i);
+      expect(meta?.reply).toMatch(/бот на связи/i);
       expect(meta?.category).toBe('language-check');
     }
   });

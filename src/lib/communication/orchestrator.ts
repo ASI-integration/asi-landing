@@ -3845,58 +3845,6 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     return result;
   }
 
-  // Deterministic Telegram-only social/meta lines (must not touch LLM / scenario engine).
-  const meta =
-    message.chat?.id && baseText
-      ? resolveTelegramTextMeta({
-          baseText,
-          telegramLangCode: message.from?.language_code,
-        })
-      : null;
-  if (meta) {
-    const preview = baseText.length > 120 ? `${baseText.slice(0, 120)}…` : baseText;
-    console.info('[comm:routing]', {
-      path: 'telegram_text',
-      route: 'telegram_text_meta_short',
-      handler: `${meta.handler}/${meta.kind}`,
-      update_id: update.update_id,
-      chat_id: message.chat.id,
-      text_preview: preview,
-    });
-    const outboundKey = sha256Base64Url(
-      [
-        'tg_text_meta',
-        event.type,
-        String(message.chat.id),
-        String(message.message_id),
-        eventOccurrenceId,
-        meta.reply,
-      ].join('|'),
-    );
-    if (!checkAndMarkKey({ scope: 'outbound', key: outboundKey, meta: { update_id: update.update_id, chatId: message.chat.id } })) {
-      await replyToTelegram(message.chat.id, meta.reply, {
-        handler: `${meta.handler}/${meta.kind}`,
-        update_id: update.update_id,
-      });
-    }
-    const result = {
-      outcome: ProcessOutcome.Replied,
-      update_id: update.update_id,
-      chat_id: message.chat.id,
-      category: meta.category,
-      reply: meta.reply,
-    };
-    console.info('[comm:routing]', {
-      path: 'telegram_text',
-      outcome: event.type === 'edited_message' ? 'edited_message_processed' : 'replied',
-      update_id: update.update_id,
-      chat_id: message.chat.id,
-      telegram_event_type: event.type,
-      telegram_event_occurrence_id: eventOccurrenceId,
-    });
-    return result;
-  }
-
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
     externalUserId: (message.from?.id ?? message.chat.id).toString(),
