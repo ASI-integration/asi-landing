@@ -170,6 +170,37 @@ describe('communication autopilot MVP', () => {
     );
   });
 
+  it('escalates water leaks under a sink as maintenance', () => {
+    const decision = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: '\u043f\u043e\u0442\u0435\u043a\u043b\u0430 \u0432\u043e\u0434\u0430 \u043f\u043e\u0434 \u0440\u0430\u043a\u043e\u0432\u0438\u043d\u043e\u0439',
+      context: fullContext,
+    });
+
+    expect(decision.action).toBe('escalate');
+    expect(decision.escalationReason).toBe('maintenance_issue');
+    expect(decision.metadata.intent).toBe('maintenance_issue');
+    expect(decision.metadata.operationsAction).toEqual(
+      expect.objectContaining({
+        category: 'maintenance',
+        shortReason: 'maintenance_issue',
+      }),
+    );
+  });
+
+  it('asks a concrete follow-up for neighbor noise instead of generic context', () => {
+    const decision = decideCommunicationAutopilotResponse({
+      channel: 'telegram',
+      messageText: '\u0441\u043e\u0441\u0435\u0434\u0438 \u0448\u0443\u043c\u044f\u0442',
+      context: fullContext,
+    });
+
+    expect(decision.action).toBe('needs_context');
+    expect(decision.metadata.intent).toBe('unknown');
+    expect(decision.replyText).toMatch(/\u0441\u043e\u0441\u0435\u0434|\u0448\u0443\u043c/i);
+    expect(decision.replyText).toMatch(/\u043d\u0430\u043f\u0438\u0448\u0438\u0442\u0435|\u043f\u0435\u0440\u0435\u0434\u0430\u043c/i);
+  });
+
   it('asks for context before creating cleaning or maintenance actions without booking/object context', () => {
     const cleaning = decideCommunicationAutopilotResponse({
       channel: 'telegram',
