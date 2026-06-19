@@ -91,9 +91,9 @@ import { __resetConversationSessionEngineForTests } from '../conversation-sessio
 import { __resetEscalationReviewStoreForTests } from '../operator-review';
 import { __resetIdentityCacheForTests, createOrMergeIdentity } from '../identity';
 import { __resetSessionStatusStoreForTests, getSessionStatusSync } from '../session-status';
-import { UNKNOWN_IDENTITY_CLARIFY_RU } from '../communication-identity-routing';
+import { UNKNOWN_IDENTITY_CLARIFY_RU, RESET_IDENTITY_CLARIFY_RU } from '../communication-identity-routing';
 
-const RESET_IDENTITY_REPLY_RU = 'Идентичность и сессия сброшены для acceptance-тестирования.';
+const RESET_IDENTITY_REPLY_RU = RESET_IDENTITY_CLARIFY_RU;
 
 let nextUpdateId = 71_000;
 function makeUpdate(text: string, chatId = 4242): TelegramUpdate {
@@ -121,7 +121,7 @@ describe('telegram /reset_identity acceptance tooling', () => {
     delete process.env.COMM_TELEGRAM_RESET_ALLOWLIST_PROD;
   });
 
-  it('allows /reset_identity for allowlisted chat ids and returns unknown clarify after reset', async () => {
+  it('allows /reset_identity for allowlisted chat ids and returns identity clarify with inline keyboard immediately', async () => {
     process.env.COMM_TELEGRAM_RESET_ALLOWLIST = '4242';
     const { processUpdate } = await import('../orchestrator');
 
@@ -139,6 +139,21 @@ describe('telegram /reset_identity acceptance tooling', () => {
 
     const reset = await processUpdate(makeUpdate('/reset_identity'));
     expect(reset.reply).toBe(RESET_IDENTITY_REPLY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'acceptance_reset_identity',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Я гость по бронированию', callback_data: 'identity:guest' },
+            { text: 'Я владелец / управляющий объекта', callback_data: 'identity:owner_manager' },
+          ],
+          [
+            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
+            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+          ],
+        ],
+      },
+    });
     expect(loadAutonomousSession(4242)?.identity_role).toBeUndefined();
     expect(getSessionStatusSync(4242)).toBe('inquiry');
 

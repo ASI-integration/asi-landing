@@ -221,6 +221,101 @@ describe('communication identity routing v1', () => {
     expect(result.reply).not.toContain('вы гость по бронированию');
   });
 
+  it('asks unknown Telegram users to identify themselves for check-in questions', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(envelope({ messageText: 'как заселиться?' }));
+
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).toMatchObject({
+      inline_keyboard: expect.arrayContaining([
+        expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:guest' })]),
+      ]),
+    });
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('asks unknown Telegram users to identify themselves for restaurant questions and saves pending message', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(
+      envelope({
+        messageText: 'вы можете порекомендовать рестораны рядом?',
+        metadata: { providerMessageId: 'unknown-restaurants' },
+      }),
+    );
+
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(loadAutonomousSession(9001)?.pending_identity_message).toBe('вы можете порекомендовать рестораны рядом?');
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('replays pending restaurant question through Guest Concierge after guest callback', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate({
+      update_id: 61_010,
+      message: {
+        message_id: 10,
+        chat: { id: 9110 },
+        from: { id: 9110, language_code: 'ru', username: 'pending_guest' },
+        text: 'вы можете порекомендовать рестораны рядом?',
+      },
+    });
+
+    mockDecideAutopilot.mockClear();
+    const result = await processUpdate(callbackUpdate('identity:guest', 9110));
+
+    expect(result.reply).toContain('кафе и рестораны');
+    expect(listEscalationReviews({ status: 'pending' })).toHaveLength(0);
+    expect(loadAutonomousSession(9110)?.pending_identity_message).toBeNull();
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+  });
+
+  it('replays pending owner message through owner route after owner callback', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate({
+      update_id: 61_011,
+      message: {
+        message_id: 11,
+        chat: { id: 9111 },
+        from: { id: 9111, language_code: 'ru', username: 'pending_owner' },
+        text: 'Нужно проверить объект на Авито',
+      },
+    });
+
+    mockDecideAutopilot.mockClear();
+    const result = await processUpdate(callbackUpdate('identity:owner_manager', 9111));
+
+    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
+      escalationReason: 'owner_manager_message',
+      detail: expect.stringContaining('Нужно проверить объект на Авито'),
+    });
+    expect(loadAutonomousSession(9111)?.pending_identity_message).toBeNull();
+  });
+
+  it('replays pending message through lead route after lead callback', async () => {
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate({
+      update_id: 61_012,
+      message: {
+        message_id: 12,
+        chat: { id: 9112 },
+        from: { id: 9112, language_code: 'ru', username: 'pending_lead' },
+        text: 'хочу подключить ASI для трёх объектов в Казани',
+      },
+    });
+
+    mockDecideAutopilot.mockClear();
+    const result = await processUpdate(callbackUpdate('identity:lead', 9112));
+
+    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
+      escalationReason: 'lead_connection_request',
+    });
+    expect(loadAutonomousSession(9112)?.pending_identity_message).toBeNull();
+  });
+
   it('asks unknown Telegram users to identify themselves without Guest Concierge', async () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(envelope({ messageText: 'Здравствуйте' }));
@@ -395,7 +490,7 @@ describe('communication identity routing v1', () => {
     });
   });
 
-  it('routes button/text Хочу подключить ASI to CRM lead path', async () => {
+  it('shows identity clarification for lead-like text from unknown sender', async () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(
       envelope({
@@ -404,13 +499,28 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
-    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
-      escalationReason: 'lead_connection_request',
-      detail: expect.stringContaining('Роль: лид'),
-      suggestedReply: LEAD_REPLY_RU,
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).toMatchObject({
+      inline_keyboard: expect.arrayContaining([
+        expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:lead' })]),
+      ]),
     });
+    expect(listEscalationReviews({ status: 'pending' })).toHaveLength(0);
+  });
+
+  it('shows identity clarification for connect ASI questions from unknown sender', async () => {
+    const { processMessage } = await import('../orchestrator');
+    const result = await processMessage(
+      envelope({
+        messageText: 'как подключить ASI?',
+        metadata: { telegram_username: 'new_owner' },
+      }),
+    );
+
+    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(insertedRows.find((item) => item.table === 'crm_contacts')).toBeUndefined();
   });
 
   it('asks guest vs owner/manager for object problem from unknown sender', async () => {
@@ -445,25 +555,6 @@ describe('communication identity routing v1', () => {
     );
 
     expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
-    expect(mockDecideAutopilot).not.toHaveBeenCalled();
-  });
-
-  it('routes lead intent to CRM lead path without mixing it with guest', async () => {
-    const { processMessage } = await import('../orchestrator');
-    const result = await processMessage(
-      envelope({
-        messageText: 'как подключить ASI?',
-        metadata: { telegram_username: 'new_owner' },
-      }),
-    );
-
-    expect(result.reply).toBe(LEAD_REPLY_RU);
-    expect(insertedRows.find((item) => item.table === 'crm_contacts')?.row).toMatchObject({
-      telegram_username: 'new_owner',
-      source: 'telegram',
-      status: 'new_lead',
-      communication_status: 'wrote_first',
-    });
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 

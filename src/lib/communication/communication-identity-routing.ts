@@ -52,6 +52,18 @@ export type CommunicationIdentityRoutingDecision = {
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
   'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 
+export const RESET_IDENTITY_CLARIFY_RU =
+  'Идентичность и сессия сброшены. Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
+
+const IDENTITY_SELECTION_TEXTS = new Set([
+  'Я гость по бронированию',
+  'Я владелец / управляющий объекта',
+  'Хочу подключить ASI',
+  'Нужна поддержка',
+  'Я гость',
+  'Я владелец/управляющий',
+]);
+
 const PROBLEM_IDENTITY_CLARIFY_RU =
   'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 
@@ -140,6 +152,33 @@ export function isOwnerSelfDeclaration(messageText: string): boolean {
 
 function isObjectProblemButton(messageText: string): boolean {
   return /^проблема\s+по\s+объекту$/i.test(text(messageText));
+}
+
+export function shouldSavePendingIdentityMessage(messageText: string): boolean {
+  const normalized = text(messageText);
+  if (!normalized) return false;
+  if (normalized.startsWith('/')) return false;
+  if (IDENTITY_SELECTION_TEXTS.has(normalized)) return false;
+  if (isGuestSelfDeclaration(normalized) || isOwnerSelfDeclaration(normalized)) return false;
+  return true;
+}
+
+function isIdentityEstablished(params: {
+  envelope: InboundMessageEnvelope;
+  identity: IdentityResolution;
+  rememberedIdentity?: SenderIdentity | null;
+  crmRole: string;
+  guestSelfDeclared: boolean;
+  ownerSelfDeclared: boolean;
+}): boolean {
+  if (metadataIdentity(params.envelope)) return true;
+  if (hasTelegramTestMode(params.envelope)) return true;
+  if (params.rememberedIdentity) return true;
+  if (params.guestSelfDeclared || params.ownerSelfDeclared) return true;
+  if (params.crmRole === 'owner' || params.crmRole === 'manager') return true;
+  const boundIdentity = identityFromBinding(params.identity);
+  if (boundIdentity && params.identity.status === 'resolved') return true;
+  return false;
 }
 
 function metadataIdentity(envelope: InboundMessageEnvelope): SenderIdentity | null {
@@ -254,6 +293,27 @@ export async function resolveCommunicationIdentityRoute(params: {
       replyText: PROBLEM_IDENTITY_CLARIFY_RU,
       replyMarkup: PROBLEM_IDENTITY_REPLY_KEYBOARD,
       reason: 'object_problem_needs_role',
+      audit: { identityStatus: identity.status, identityReason: identity.reason },
+    };
+  }
+
+  if (
+    !isIdentityEstablished({
+      envelope,
+      identity,
+      rememberedIdentity: params.rememberedIdentity,
+      crmRole,
+      guestSelfDeclared,
+      ownerSelfDeclared,
+    })
+  ) {
+    return {
+      senderIdentity: 'unknown',
+      route: 'unknown_clarify',
+      shouldRunGuestConcierge: false,
+      replyText: UNKNOWN_IDENTITY_CLARIFY_RU,
+      replyMarkup: UNKNOWN_IDENTITY_INLINE_KEYBOARD,
+      reason: 'unknown_sender_needs_role',
       audit: { identityStatus: identity.status, identityReason: identity.reason },
     };
   }

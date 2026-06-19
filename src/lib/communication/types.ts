@@ -538,6 +538,9 @@ export interface AutonomousConversationSession {
   updated_at: string;
   /** Last 10 turns used for context-aware decision and escalation logic. */
   timeline: SessionTimelineEntry[];
+  /** First substantive message from unknown sender, replayed after identity selection. */
+  pending_identity_message?: string | null;
+  pending_identity_metadata?: Record<string, unknown> | null;
   /**
    * Canonical channel memory for the current operational hospitality case.
    * Used to merge follow-up messages that provide missing facts (e.g.,

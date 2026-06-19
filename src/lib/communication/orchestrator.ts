@@ -52,7 +52,9 @@ import {
   loadAutonomousSession,
   mergeAutonomousSessionFromInbound,
   resetAutonomousSessionSnapshot,
+  savePendingIdentityMessage,
   setAutonomousSessionIdentity,
+  takePendingIdentityMessage,
 } from './conversation-session-store';
 import {
   appendSessionMessage,
@@ -168,7 +170,13 @@ import {
   type CommunicationOperationsAction,
   type CommunicationOperationsActionSourceChannel,
 } from './operations-action';
-import { resolveCommunicationIdentityRoute, TELEGRAM_IDENTITY_CALLBACKS } from './communication-identity-routing';
+import {
+  RESET_IDENTITY_CLARIFY_RU,
+  resolveCommunicationIdentityRoute,
+  shouldSavePendingIdentityMessage,
+  TELEGRAM_IDENTITY_CALLBACKS,
+  UNKNOWN_IDENTITY_INLINE_KEYBOARD,
+} from './communication-identity-routing';
 
 type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
@@ -1123,6 +1131,21 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     route: senderRoute.route,
     guest_concierge: senderRoute.shouldRunGuestConcierge,
   });
+
+  if (
+    senderRoute.route === 'unknown_clarify' &&
+    envelope.channel === 'telegram' &&
+    shouldSavePendingIdentityMessage(text) &&
+    !(envelope.metadata as Record<string, unknown> | undefined)?.pending_identity_replay
+  ) {
+    savePendingIdentityMessage({
+      chatId,
+      channel: envelope.channel,
+      messageText: text,
+      metadata: envelope.metadata ?? null,
+    });
+  }
+
   auditDecision({
     type: senderRoute.shouldRunGuestConcierge ? 'reply' : 'ignore',
     chat_id: chatId,
@@ -1319,7 +1342,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: 'Session reset for acceptance testing.' };
     }
 
-    const RESET_IDENTITY_REPLY_RU = 'Идентичность и сессия сброшены для acceptance-тестирования.';
+    const RESET_IDENTITY_REPLY_RU = RESET_IDENTITY_CLARIFY_RU;
     const resetIdentityMatch = matchTelegramCommand(text, 'reset_identity');
     const resetIdentityAllowed = resetIdentityMatch.matched && allowlisted && prod_reset_enabled;
 
@@ -1406,6 +1429,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       const sent = await adapter.sendMessage(String(chatIdForAllow), RESET_IDENTITY_REPLY_RU, {
         reply_handler: 'acceptance_reset_identity',
         update_id,
+        reply_markup: UNKNOWN_IDENTITY_INLINE_KEYBOARD,
       });
       if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
       return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: RESET_IDENTITY_REPLY_RU };
@@ -1413,6 +1437,29 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
   }
 
   if (!senderRoute.shouldRunGuestConcierge && senderRoute.replyText) {
+    if (
+      selectedIdentity &&
+      senderRoute.route !== 'unknown_clarify' &&
+      senderRoute.route !== 'object_problem_clarify'
+    ) {
+      const pending = takePendingIdentityMessage(chatId);
+      if (pending?.text) {
+        const replayEnvelope: InboundMessageEnvelope = {
+          ...envelope,
+          messageText: pending.text,
+          receivedAt: new Date(),
+          metadata: {
+            ...(pending.metadata ?? {}),
+            ...(envelope.metadata ?? {}),
+            pending_identity_replay: true,
+            providerMessageId: `pending_identity_replay:${chatId}:${String(update_id)}`,
+            externalMessageId: `pending_identity_replay:${chatId}:${String(update_id)}`,
+          },
+        };
+        return processMessage(replayEnvelope);
+      }
+    }
+
     const adapter = getChannelAdapter(envelope.channel);
     const targetId = resolveOutboundTargetId(envelope, identity.guestId);
     if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };

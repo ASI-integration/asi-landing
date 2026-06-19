@@ -175,6 +175,42 @@ export function setAutonomousSessionIdentity(params: {
   return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
 }
 
+export function savePendingIdentityMessage(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+  messageText: string;
+  metadata?: Record<string, unknown> | null;
+}): void {
+  const messageText = String(params.messageText ?? '').trim();
+  if (!messageText) return;
+  const prev = store.get(params.chatId) ?? baseSession(params.chatId, params.channel);
+  if (prev.pending_identity_message) return;
+  store.set(params.chatId, {
+    ...prev,
+    channel: params.channel,
+    pending_identity_message: messageText,
+    pending_identity_metadata: params.metadata ?? null,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export function takePendingIdentityMessage(chatId: number): {
+  text: string;
+  metadata: Record<string, unknown> | null;
+} | null {
+  const prev = store.get(chatId);
+  const text = String(prev?.pending_identity_message ?? '').trim();
+  if (!text) return null;
+  const metadata = prev?.pending_identity_metadata ?? null;
+  store.set(chatId, {
+    ...(prev ?? baseSession(chatId, 'telegram')),
+    pending_identity_message: null,
+    pending_identity_metadata: null,
+    updated_at: new Date().toISOString(),
+  });
+  return { text, metadata };
+}
+
 /**
  * Append a turn (user or assistant) to the session's short-term timeline.
  * Caps at MAX_TIMELINE entries (oldest dropped first).
@@ -312,7 +348,11 @@ export function resetAutonomousSessionSnapshot(params: {
         identity_resolution_status: prev.identity_resolution_status,
         identity_reason: prev.identity_reason,
       }
-    : base;
+    : {
+        ...base,
+        pending_identity_message: null,
+        pending_identity_metadata: null,
+      };
   store.set(params.chatId, next);
   return { ...next, collected_data: { ...next.collected_data }, timeline: [...next.timeline] };
 }
