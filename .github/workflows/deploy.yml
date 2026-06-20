@@ -317,6 +317,10 @@ jobs:
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
             "mkdir -p \"${REMOTE_TMP}\" && chmod 700 \"${REMOTE_TMP}\""
 
+          echo "Cleaning stale remote deploy temp artifacts..."
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
+
           echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
           scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
           scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/${ARTIFACT_FILE}"
