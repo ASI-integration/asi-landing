@@ -121,6 +121,7 @@ async function insertEvent(input: {
 }
 
 type BrainEventMetadata = {
+  source?: string | null;
   role?: string | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
@@ -135,7 +136,7 @@ type BrainEventMetadata = {
 function brainMetadata(input: BrainEventMetadata & Record<string, unknown>): Record<string, unknown> {
   return {
     ...input,
-    source: 'minigpt_brain_v1',
+    source: typeof input.source === 'string' && input.source.trim() ? input.source : 'minigpt_brain_v1',
   };
 }
 
@@ -205,6 +206,12 @@ export async function createGuestConciergeAnsweredEvent(input: {
   responseMode?: string | null;
   confidence?: number | null;
   reason?: string | null;
+  source?: string | null;
+  domainZone?: string | null;
+  llmDetectedIntent?: string | null;
+  llmProvider?: string | null;
+  llmModelName?: string | null;
+  suggestedReply?: string | null;
 }): Promise<void> {
   const contactId = await ensureContact({
     contactId: input.contactId,
@@ -221,16 +228,23 @@ export async function createGuestConciergeAnsweredEvent(input: {
     messageText: input.guestQuestion,
     propertyId: input.propertyId,
     metadata: brainMetadata({
+      source: input.source ?? null,
       question_type: input.intent,
       outcome: 'answered_by_concierge_autopilot',
       telegram_chat_id: input.telegramChatId,
       reply_preview: input.replyText,
+      domainZone: input.domainZone ?? null,
+      llmDetectedIntent: input.llmDetectedIntent ?? null,
+      llmProvider: input.llmProvider ?? null,
+      llmModelName: input.llmModelName ?? null,
       role: input.role ?? null,
       detectedIntent: input.detectedIntent ?? input.intent,
       responseMode: input.responseMode ?? 'answer_from_concierge',
       confidence: input.confidence ?? null,
       reason: input.reason ?? null,
       original_message: input.guestQuestion,
+      originalMessage: input.guestQuestion,
+      suggestedReply: input.suggestedReply ?? input.replyText,
       safeGuestReply: input.replyText,
     }),
   });

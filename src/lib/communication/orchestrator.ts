@@ -140,7 +140,7 @@ import {
 } from './telegram-booking-object-memory';
 import {
   buildOperatorEscalationDetail,
-  decideGuestCommunication,
+  decideGuestCommunicationWithLlmSafeDomainLayer,
   patchCommunicationMemoryFromDecision,
   loadCommunicationMemoryFromSession,
 } from './guest-communication-brain';
@@ -2083,17 +2083,18 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
 
         const commMemory = loadCommunicationMemoryFromSession(loadAutonomousSession(chatId));
-        const commDecision = decideGuestCommunication({
+        const commDecision = await decideGuestCommunicationWithLlmSafeDomainLayer({
           messageText: text,
           currentIdentity: senderRoute.senderIdentity,
           property: telegramBookingObjectCtx.property,
           propertyId,
           conversationMemory: commMemory,
+          telegramChatId: chatId,
         });
         const answer = commDecision.guestTestResult;
         const brainIntent = commDecision.detectedIntent;
         const brainOutcome = commDecision.outcome ?? answer?.outcome;
-        if ((answer && answer.intent !== 'unknown') || commDecision.shouldEscalate) {
+        if ((answer && answer.intent !== 'unknown') || commDecision.llmSafeDomain || commDecision.shouldEscalate) {
           const telegramUserId = String(
             envelope.metadata?.telegram_user_id ??
               envelope.metadata?.telegramUserId ??
@@ -2122,20 +2123,26 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           });
 
           let deterministicReplyText = guestReplyText;
-          if (brainOutcome === 'answered_by_concierge_autopilot' && answer) {
+          if (brainOutcome === 'answered_by_concierge_autopilot') {
             await createGuestConciergeAnsweredEvent({
               telegramUserId,
               telegramChatId: chatId,
               propertyId,
               guestQuestion: text,
-              replyText: answer.reply,
+              replyText: guestReplyText,
               contactId: recorded.contactId,
-              intent: answer.intent,
+              intent: answer?.intent ?? commDecision.llmSafeDomain?.detectedIntent ?? brainIntent,
               role: senderRoute.senderIdentity,
               detectedIntent: brainIntent,
               responseMode: commDecision.responseMode,
               confidence: commDecision.confidence,
               reason: commDecision.reason,
+              source: commDecision.llmSafeDomain?.source,
+              domainZone: commDecision.llmSafeDomain?.domainZone,
+              llmDetectedIntent: commDecision.llmSafeDomain?.detectedIntent,
+              llmProvider: commDecision.llmSafeDomain?.provider,
+              llmModelName: commDecision.llmSafeDomain?.modelName,
+              suggestedReply: commDecision.llmSafeDomain?.suggestedReply,
             });
           } else if (brainOutcome === 'missing_data' && answer) {
             await createGuestTestMissingDataEvent({

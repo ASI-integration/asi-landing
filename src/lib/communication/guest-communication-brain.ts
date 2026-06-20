@@ -14,6 +14,11 @@ import {
 import type { TelegramPropertyObjectV1 } from './telegram-booking-object-memory';
 import { detectTelegramPromptInjection } from './telegram-prompt-injection-guard';
 import type { GuestTestQuestionOutcome } from '@/lib/crm/types';
+import {
+  runLlmSafeDomainLayer,
+  type LlmSafeDomainLayerResult,
+  type LlmSafeDomainProvider,
+} from './llm-safe-domain-layer';
 
 export type CommunicationResponseMode =
   | 'answer_from_property'
@@ -45,6 +50,20 @@ export type CommunicationDecision = {
   outcome?: GuestTestQuestionOutcome;
   missingFields?: string[];
   decisionSource: 'deterministic' | 'llm_fallback' | 'prompt_injection_guard';
+  llmSafeDomain?: {
+    used: boolean;
+    source: 'llm_safe_domain_layer_v1' | 'llm_safe_domain_local_guard_v1';
+    provider: string;
+    modelName?: string;
+    domainZone: 'core' | 'adjacent' | 'out_of_domain';
+    detectedIntent: string;
+    confidence: number;
+    safeToAnswer: boolean;
+    escalationRequired: boolean;
+    suggestedReply: string;
+    reason: string;
+    validation: 'accepted' | 'local_redirect';
+  };
 };
 
 export type CommunicationMemorySnapshot = {
@@ -316,6 +335,65 @@ export function decideGuestCommunication(input: {
     outcome: guestTestResult.outcome,
     missingFields: guestTestResult.missingFields,
     decisionSource: 'deterministic',
+  };
+}
+
+export async function decideGuestCommunicationWithLlmSafeDomainLayer(input: {
+  messageText: string;
+  currentIdentity?: SenderIdentity | null;
+  property?: TelegramPropertyObjectV1 | null;
+  propertyId?: string | null;
+  conversationMemory?: CommunicationMemorySnapshot;
+  llmSafeDomainProvider?: LlmSafeDomainProvider;
+  telegramChatId?: number | string | null;
+}): Promise<CommunicationDecision> {
+  const base = decideGuestCommunication(input);
+  const guard = await runLlmSafeDomainLayer({
+    messageText: input.messageText,
+    detectedIntent: base.detectedIntent,
+    responseMode: base.responseMode,
+    propertyId: input.propertyId,
+    propertyAddress: input.property?.address ?? null,
+    telegramChatId: input.telegramChatId,
+    provider: input.llmSafeDomainProvider,
+  });
+
+  if (!guard.applied) return base;
+
+  return mapLlmSafeDomainResultToCommunicationDecision(base, guard);
+}
+
+function mapLlmSafeDomainResultToCommunicationDecision(
+  base: CommunicationDecision,
+  result: Extract<LlmSafeDomainLayerResult, { applied: true }>,
+): CommunicationDecision {
+  return {
+    ...base,
+    confidence: Math.max(base.confidence, result.decision.confidence),
+    suggestedRoute: 'guest',
+    responseMode: 'answer_from_concierge',
+    canAnswerAutomatically: true,
+    shouldEscalate: false,
+    reason: result.decision.reason,
+    safeGuestReply: result.decision.suggestedReply,
+    operatorReason: undefined,
+    outcome: 'answered_by_concierge_autopilot',
+    missingFields: [],
+    decisionSource: result.source === 'llm_safe_domain_layer_v1' ? 'llm_fallback' : 'deterministic',
+    llmSafeDomain: {
+      used: result.source === 'llm_safe_domain_layer_v1',
+      source: result.source,
+      provider: result.provider,
+      modelName: result.modelName,
+      domainZone: result.decision.domainZone,
+      detectedIntent: result.decision.intent,
+      confidence: result.decision.confidence,
+      safeToAnswer: result.decision.safeToAnswer,
+      escalationRequired: result.decision.escalationRequired,
+      suggestedReply: result.decision.suggestedReply,
+      reason: result.decision.reason,
+      validation: result.validation,
+    },
   };
 }
 
