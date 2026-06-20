@@ -350,7 +350,7 @@ jobs:
             echo "Disk after release cleanup:"
             df -h "${BASE_DIR}" || true
             du -sh "${RELEASES_DIR}" 2>/dev/null || true
-REMOTE_RELEASE_CLEANUP
+          REMOTE_RELEASE_CLEANUP
 
           echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
           scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
