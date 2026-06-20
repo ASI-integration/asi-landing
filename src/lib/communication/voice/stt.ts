@@ -8,6 +8,13 @@ export interface SttContext {
   updateId?: number;
 }
 
+export type SttFailureCode =
+  | 'missing_env'
+  | 'stt_auth_failed'
+  | 'unsupported_audio_format'
+  | 'stt_provider_error'
+  | 'empty_transcript';
+
 export interface SttAttemptResult {
   ok: boolean;
   provider: ActiveProviderId;
@@ -16,6 +23,7 @@ export interface SttAttemptResult {
   usedFallback: boolean;
   fail?: {
     kind: 'missing_config' | 'http' | 'timeout' | 'network' | 'empty' | 'unexpected';
+    code?: SttFailureCode;
     status?: number;
     message?: string;
     geoBlocked?: boolean;
@@ -115,17 +123,44 @@ function getFallbackProvider(): SttProviderId {
   return 'disabled';
 }
 
-function getVoiceSttRelayConfig(): { baseUrl: string; apiKey: string; model: string } | null {
+type VoiceSttRelayConfig =
+  | { ok: true; baseUrl: string; apiKey: string; model: string }
+  | { ok: false; fail: NonNullable<SttAttemptResult['fail']> };
+
+function getVoiceSttRelayConfig(): VoiceSttRelayConfig | null {
   const baseUrlRaw = (process.env.VOICE_STT_BASE_URL ?? '').trim();
   if (!baseUrlRaw) return null;
   const baseUrl = normalizeBaseUrl(baseUrlRaw);
-  const apiKey =
-    (process.env.VOICE_STT_API_KEY ?? '').trim() ||
-    (process.env.VOICE_STT_RELAY_TOKEN ?? '').trim() ||
-    (process.env.OPENAI_API_KEY ?? '').trim() ||
-    'relay';
+  const apiKey = (process.env.VOICE_STT_API_KEY ?? '').trim() || (process.env.VOICE_STT_RELAY_TOKEN ?? '').trim();
+  if (!apiKey) {
+    return {
+      ok: false,
+      fail: {
+        kind: 'missing_config',
+        code: 'missing_env',
+        message: 'missing VOICE_STT_RELAY_TOKEN or VOICE_STT_API_KEY',
+      },
+    };
+  }
   const model = (process.env.VOICE_STT_MODEL ?? '').trim() || defaultModelForBaseUrl(baseUrl);
-  return { baseUrl, apiKey, model };
+  return { ok: true, baseUrl, apiKey, model };
+}
+
+function classifyHttpFailure(status: number, body: string): SttFailureCode {
+  if (status === 401 || status === 403) return 'stt_auth_failed';
+  const b = (body ?? '').toLowerCase();
+  if (
+    status === 400 ||
+    status === 415 ||
+    b.includes('unsupported audio') ||
+    b.includes('unsupported file') ||
+    b.includes('invalid file format') ||
+    b.includes('audio format') ||
+    b.includes('could not parse')
+  ) {
+    return 'unsupported_audio_format';
+  }
+  return 'stt_provider_error';
 }
 
 function getProviderConfig(provider: ConfiguredProviderId): { baseUrl: string; apiKey: string; model: string } | null {
@@ -271,14 +306,23 @@ async function transcribeViaOpenRouterChat(params: {
         geo_blocked: geoBlocked,
         body_preview: sanitizeSttLogMessage(body),
       });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: sanitizeSttLogMessage(body), geoBlocked } };
+      return {
+        ok: false,
+        fail: {
+          kind: 'http',
+          code: classifyHttpFailure(res.status, body),
+          status: res.status,
+          message: sanitizeSttLogMessage(body),
+          geoBlocked,
+        },
+      };
     }
 
     const data = (await res.json()) as unknown;
     const text = extractTextFromChatCompletionJson(data);
     if (!text) {
       console.warn('[voice:stt] attempt.fail_empty', { provider: params.provider });
-      return { ok: false, fail: { kind: 'empty' } };
+      return { ok: false, fail: { kind: 'empty', code: 'empty_transcript' } };
     }
 
     if (debugEnabled()) console.log('[voice:stt] attempt.ok', { provider: params.provider, chars: text.length });
@@ -291,14 +335,14 @@ async function transcribeViaOpenRouterChat(params: {
         update_id: params.ctx?.updateId ?? null,
         timeout_ms: timeoutMs,
       });
-      return { ok: false, fail: { kind: 'timeout', message: `timeout_ms=${timeoutMs}` } };
+      return { ok: false, fail: { kind: 'timeout', code: 'stt_provider_error', message: `timeout_ms=${timeoutMs}` } };
     }
     console.error('[voice:stt] attempt.fail_network', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
       message: sanitizeSttLogMessage((err as Error).message),
     });
-    return { ok: false, fail: { kind: 'network', message: sanitizeSttLogMessage((err as Error).message) } };
+    return { ok: false, fail: { kind: 'network', code: 'stt_provider_error', message: sanitizeSttLogMessage((err as Error).message) } };
   } finally {
     clearTimeout(timer);
   }
@@ -360,14 +404,23 @@ async function transcribeOpenAiCompatible(params: {
         geo_blocked: geoBlocked,
         body_preview: sanitizeSttLogMessage(body),
       });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: sanitizeSttLogMessage(body), geoBlocked } };
+      return {
+        ok: false,
+        fail: {
+          kind: 'http',
+          code: classifyHttpFailure(res.status, body),
+          status: res.status,
+          message: sanitizeSttLogMessage(body),
+          geoBlocked,
+        },
+      };
     }
 
     const data = (await res.json()) as { text?: string };
     const text = data.text?.trim();
     if (!text) {
       console.warn('[voice:stt] attempt.fail_empty', { provider: params.provider });
-      return { ok: false, fail: { kind: 'empty' } };
+      return { ok: false, fail: { kind: 'empty', code: 'empty_transcript' } };
     }
 
     console.info('[voice:stt] attempt.ok', {
@@ -386,14 +439,14 @@ async function transcribeOpenAiCompatible(params: {
         update_id: params.ctx?.updateId ?? null,
         timeout_ms: timeoutMs,
       });
-      return { ok: false, fail: { kind: 'timeout', message: `timeout_ms=${timeoutMs}` } };
+      return { ok: false, fail: { kind: 'timeout', code: 'stt_provider_error', message: `timeout_ms=${timeoutMs}` } };
     }
     console.error('[voice:stt] attempt.fail_network', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
       message: sanitizeSttLogMessage((err as Error).message),
     });
-    return { ok: false, fail: { kind: 'network', message: sanitizeSttLogMessage((err as Error).message) } };
+    return { ok: false, fail: { kind: 'network', code: 'stt_provider_error', message: sanitizeSttLogMessage((err as Error).message) } };
   } finally {
     clearTimeout(timer);
   }
@@ -419,11 +472,21 @@ export async function transcribeWithConfiguredStt(params: {
 }): Promise<SttAttemptResult> {
   if (process.env.VOICE_TRANSCRIPTION_DISABLED === '1') {
     if (debugEnabled()) console.info('[voice:stt] transcription.disabled');
-    return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', message: 'VOICE_TRANSCRIPTION_DISABLED' } };
+    return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', code: 'missing_env', message: 'VOICE_TRANSCRIPTION_DISABLED' } };
   }
 
   const relay = getVoiceSttRelayConfig();
   if (relay) {
+    if (!relay.ok) {
+      console.warn('[voice:stt] relay.missing_config', {
+        update_id: params.ctx?.updateId ?? null,
+        has_voice_stt_base_url: Boolean((process.env.VOICE_STT_BASE_URL ?? '').trim()),
+        has_voice_stt_relay_token: Boolean((process.env.VOICE_STT_RELAY_TOKEN ?? process.env.VOICE_STT_API_KEY ?? '').trim()),
+        model: (process.env.VOICE_STT_MODEL ?? '').trim() || null,
+        failure_code: relay.fail.code,
+      });
+      return { ok: false, provider: 'voice_stt_relay', usedFallback: false, fail: relay.fail };
+    }
     console.info('[voice:stt] selection', {
       update_id: params.ctx?.updateId ?? null,
       primary: 'voice_stt_relay',
@@ -458,7 +521,7 @@ export async function transcribeWithConfiguredStt(params: {
   console.info('[voice:stt] selection', { update_id: params.ctx?.updateId ?? null, primary, fallback });
 
   if (primary === 'disabled') {
-    return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', message: 'VOICE_STT_PRIMARY=disabled' } };
+    return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', code: 'missing_env', message: 'VOICE_STT_PRIMARY=disabled' } };
   }
 
   const attemptProviders: Array<{ provider: ConfiguredProviderId; usedFallback: boolean }> = [
@@ -468,12 +531,14 @@ export async function transcribeWithConfiguredStt(params: {
     attemptProviders.push({ provider: fallback as ConfiguredProviderId, usedFallback: true });
   }
 
+  let lastMissingConfig: { provider: ConfiguredProviderId; usedFallback: boolean } | null = null;
   for (const p of attemptProviders) {
     const cfg = getProviderConfig(p.provider);
     if (!cfg) {
       console.warn('[voice:stt] attempt.skip_missing_config', { provider: p.provider });
+      lastMissingConfig = p;
       if (p.usedFallback) {
-        return { ok: false, provider: p.provider, usedFallback: true, fail: { kind: 'missing_config', message: 'missing provider config' } };
+        return { ok: false, provider: p.provider, usedFallback: true, fail: { kind: 'missing_config', code: 'missing_env', message: 'missing provider config' } };
       }
       continue;
     }
@@ -518,6 +583,15 @@ export async function transcribeWithConfiguredStt(params: {
     }
   }
 
-  return { ok: false, provider: primary, usedFallback: false, fail: { kind: 'unexpected' } };
+  if (lastMissingConfig) {
+    return {
+      ok: false,
+      provider: lastMissingConfig.provider,
+      usedFallback: lastMissingConfig.usedFallback,
+      fail: { kind: 'missing_config', code: 'missing_env', message: 'missing provider config' },
+    };
+  }
+
+  return { ok: false, provider: primary, usedFallback: false, fail: { kind: 'unexpected', code: 'stt_provider_error' } };
 }
 

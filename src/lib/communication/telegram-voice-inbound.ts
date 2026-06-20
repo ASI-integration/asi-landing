@@ -136,6 +136,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
       download_success: Boolean(sttFailure?.downloadBytes),
       download_bytes: sttFailure?.downloadBytes ?? null,
       stt_provider: sttFailure?.provider ?? null,
+      stt_failure_code: sttFailure?.stt?.code ?? voiceFailureCode(sttFailure?.reason),
       stt_error_kind: sttFailure?.stt?.kind ?? null,
       stt_error_status: sttFailure?.stt?.status ?? null,
       stt_error_message: sttFailure?.stt?.message ?? sttFailure?.telegram?.message ?? null,
@@ -155,6 +156,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
       extension: sttFailure?.extension ?? null,
       download_success: Boolean(sttFailure?.downloadBytes),
       provider: sttFailure?.provider ?? null,
+      failure_code: sttFailure?.stt?.code ?? voiceFailureCode(sttFailure?.reason),
       error_kind: sttFailure?.stt?.kind ?? null,
       error_status: sttFailure?.stt?.status ?? null,
       error_message: sttFailure?.stt?.message ?? sttFailure?.telegram?.message ?? null,
@@ -294,5 +296,11 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     });
     return sendVoiceFallback({ updateId, chatId, messageId, lang, reason: 'processing_failed' });
   }
+}
+
+function voiceFailureCode(reason?: string): string {
+  if (reason === 'missing_telegram_bot_token' || reason === 'transcription_disabled') return 'missing_env';
+  if (reason === 'get_file_failed' || reason === 'download_failed') return 'telegram_download_failed';
+  return 'stt_provider_error';
 }
 

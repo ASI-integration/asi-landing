@@ -4,6 +4,7 @@ import { tgAudioUpdate, tgTextUpdate, tgVoiceUpdate } from '../dev/telegram-fixt
 import { MessageCategory, MessageDirection, MessageType } from '../types';
 
 const mocks = vi.hoisted(() => ({
+  transcribeDetailed: vi.fn<() => Promise<any>>(),
   transcribe: vi.fn<(fileId: string, mimeType?: string, ctx?: { updateId?: number }) => Promise<string | null>>(),
   sendMessage: vi.fn().mockResolvedValue(true),
   replyToTelegram: vi.fn().mockResolvedValue(true),
@@ -24,6 +25,8 @@ vi.mock('../voice-transcription', async () => {
   return {
     ...actual,
     transcribeVoiceMessageDetailed: async (fileId: string, mimeType?: string, ctx?: { updateId?: number }) => {
+      const detailed = await mocks.transcribeDetailed();
+      if (detailed) return detailed;
       const text = await mocks.transcribe(fileId, mimeType, ctx);
       if (!text) return { ok: false, reason: 'stt_failed', provider: 'voice_stt_relay', stt: { kind: 'empty' } };
       return {
@@ -135,6 +138,7 @@ describe('telegram voice inbound session continuity', () => {
     __resetAutonomousSessionStoreForTests();
     __resetConversationSessionEngineForTests();
     __resetEscalationReviewStoreForTests();
+    mocks.transcribeDetailed.mockReset();
     mocks.transcribe.mockReset();
     mocks.sendMessage.mockClear();
     mocks.replyToTelegram.mockClear();
@@ -224,6 +228,40 @@ describe('telegram voice inbound session continuity', () => {
     expect(String(mocks.replyToTelegram.mock.calls[0][1])).toBe(
       'Не удалось разобрать голосовое сообщение. Напишите, пожалуйста, текстом или отправьте голосовое ещё раз.',
     );
+  });
+
+  it('logs sanitized STT auth failures while keeping the voice fallback text', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.transcribeDetailed.mockResolvedValue({
+      ok: false,
+      reason: 'stt_failed',
+      provider: 'voice_stt_relay',
+      filename: 'voice_message.ogg',
+      mimeType: 'audio/ogg',
+      extension: '.ogg',
+      filePath: 'voice/file.oga',
+      downloadBytes: 12,
+      stt: {
+        kind: 'http',
+        code: 'stt_auth_failed',
+        status: 401,
+        message: 'Bearer [redacted]',
+      },
+    });
+
+    const result = await processTelegramVoiceUpdate(
+      tgVoiceUpdate({ chat_id: 507, user_id: 9007, update_id: 7202, message_id: 8202, language_code: 'ru' }),
+    );
+
+    expect(result.outcome).toBe('voice_fallback_sent');
+    expect(mocks.replyToTelegram).toHaveBeenCalledTimes(1);
+    expect(String(mocks.replyToTelegram.mock.calls[0][1])).toBe(
+      'Не удалось разобрать голосовое сообщение. Напишите, пожалуйста, текстом или отправьте голосовое ещё раз.',
+    );
+    const logs = JSON.stringify(warnSpy.mock.calls);
+    expect(logs).toContain('stt_auth_failed');
+    expect(logs).toContain('Bearer [redacted]');
+    expect(logs).not.toContain('sk-liveSecret');
   });
 
   it('classifies a voice transcript like the same Telegram text', async () => {

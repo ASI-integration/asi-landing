@@ -109,4 +109,40 @@ describe('Telegram voice transcription transport', () => {
     expect(logs).not.toContain('supersecret');
     expect(logs).toContain('[redacted]');
   });
+
+  it('returns missing_env when the STT relay auth env is absent', async () => {
+    delete process.env.VOICE_STT_RELAY_TOKEN;
+    delete process.env.VOICE_STT_API_KEY;
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/getFile')) {
+        return Response.json({
+          ok: true,
+          result: { file_path: 'voice/file_3.oga', file_size: 4 },
+        });
+      }
+      if (url.includes('/file/bot')) {
+        return audioResponse([1, 2, 3, 4]);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await transcribeVoiceMessageDetailed('voice-file-3', 'audio/ogg', { updateId: 103 });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'stt_failed',
+      provider: 'voice_stt_relay',
+      stt: { kind: 'missing_config', code: 'missing_env' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const logs = JSON.stringify(warnSpy.mock.calls);
+    expect(logs).toContain('missing_env');
+    expect(logs).not.toContain('relay-secret');
+  });
 });

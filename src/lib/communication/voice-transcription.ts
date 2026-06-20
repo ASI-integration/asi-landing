@@ -8,7 +8,13 @@
  *   3) transcribeWithWhisper() — OpenAI Whisper (audio/transcriptions)
  */
 
-import { sanitizeSttLogMessage, transcribeWithConfiguredStt, type SttAttemptResult, type SttContext } from './voice/stt';
+import {
+  sanitizeSttLogMessage,
+  transcribeWithConfiguredStt,
+  type SttAttemptResult,
+  type SttContext,
+  type SttFailureCode,
+} from './voice/stt';
 
 type TelegramFileResolveResult =
   | { ok: true; info: TelegramFileInfo }
@@ -56,6 +62,7 @@ export type TelegramVoiceTranscriptionResult =
       };
       stt?: {
         kind?: NonNullable<SttAttemptResult['fail']>['kind'];
+        code?: SttFailureCode;
         status?: number;
         message?: string;
         geoBlocked?: boolean;
@@ -229,7 +236,7 @@ export async function transcribeVoiceMessageDetailed(
 
   if (!token) {
     console.warn('[tg:voice] missing_env.TELEGRAM_BOT_TOKEN');
-    return { ok: false, reason: 'missing_telegram_bot_token' };
+    return { ok: false, reason: 'missing_telegram_bot_token', stt: { kind: 'missing_config', code: 'missing_env' } };
   }
 
   const retries = getTelegramFetchRetries();
@@ -293,6 +300,7 @@ export async function transcribeVoiceMessageDetailed(
         extension: ext,
         download_success: true,
         fail_kind: stt.fail?.kind ?? null,
+        failure_code: stt.fail?.code ?? null,
         fail_status: stt.fail?.status ?? null,
         fail_message: stt.fail?.message ? sanitizeSttLogMessage(stt.fail.message) : null,
         geo_blocked: stt.fail?.geoBlocked ?? null,
@@ -300,6 +308,21 @@ export async function transcribeVoiceMessageDetailed(
       });
       // Geo-block is deterministic; retries won't help and just delay the operator-review path.
       if (stt.fail?.geoBlocked) {
+        return sttFailureResult(stt, {
+          filename,
+          mimeType: resolvedMimeType,
+          extension: ext,
+          filePath: fileInfo.info.file_path,
+          fileSize: fileInfo.info.file_size,
+          downloadBytes: audio.bytes,
+        });
+      }
+      if (
+        stt.fail?.code === 'missing_env' ||
+        stt.fail?.code === 'stt_auth_failed' ||
+        stt.fail?.code === 'unsupported_audio_format' ||
+        stt.fail?.code === 'empty_transcript'
+      ) {
         return sttFailureResult(stt, {
           filename,
           mimeType: resolvedMimeType,
@@ -394,6 +417,7 @@ function sttFailureResult(
     ...meta,
     stt: {
       kind: stt.fail?.kind,
+      code: stt.fail?.code,
       status: stt.fail?.status,
       message: stt.fail?.message ? sanitizeSttLogMessage(stt.fail.message) : undefined,
       geoBlocked: stt.fail?.geoBlocked,

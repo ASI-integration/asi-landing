@@ -1,0 +1,185 @@
+name: Telegram Voice STT Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: Optional Telegram voice file_id. If empty, use the latest file_id found in PM2 voice logs.
+        required: false
+        type: string
+      log_lines:
+        description: PM2 log lines to scan
+        required: false
+        default: "500"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout diagnostic script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run sanitized voice STT diagnostics on VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          INPUT_FILE_ID: ${{ inputs.file_id }}
+          LOG_LINES: ${{ inputs.log_lines }}
+        run: |
+          set -euo pipefail
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-deploy-tmp"
+          REMOTE_SCRIPT="${REMOTE_TMP}/telegram-voice-stt-dry-run.mjs"
+
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing required production SSH secrets"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" scripts/telegram-voice-stt-dry-run.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_SCRIPT}"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "INPUT_FILE_ID='${INPUT_FILE_ID}' LOG_LINES='${LOG_LINES:-500}' REMOTE_SCRIPT='${REMOTE_SCRIPT}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR="/var/www/asi/current"
+          ENV_FILE="/var/www/asi/shared/.env.production.live"
+          PM2_APP="${PM2_APP:-asi-landing}"
+          LINES="${LOG_LINES:-500}"
+          if ! [[ "${LINES}" =~ ^[0-9]+$ ]]; then LINES=500; fi
+
+          redact() {
+            sed -E \
+              -e 's/Bearer [A-Za-z0-9._~+\/=-]+/Bearer [redacted]/g' \
+              -e 's/sk-[A-Za-z0-9_-]{8,}/sk-[redacted]/g' \
+              -e 's/(token|secret|authorization|api[_-]?key)(["'\'']?[[:space:]]*[:=][[:space:]]*["'\'']?)[^"'\'' ,}]+/\1\2[redacted]/gi'
+          }
+
+          cd "${APP_DIR}"
+
+          echo "=== production version ==="
+          curl -fsS http://127.0.0.1:3000/api/version
+          echo
+
+          echo "=== shared env whitelist ==="
+          set -a
+          # shellcheck disable=SC1090
+          source "${ENV_FILE}"
+          set +a
+          node - <<'NODE'
+          const keys = [
+            'TELEGRAM_BOT_TOKEN',
+            'VOICE_STT_BASE_URL',
+            'VOICE_STT_MODEL',
+            'VOICE_STT_RELAY_TOKEN',
+            'VOICE_STT_API_KEY',
+            'VOICE_STT_PRIMARY',
+            'VOICE_STT_FALLBACK',
+            'VOICE_STT_TIMEOUT_MS',
+          ];
+          function safeUrl(v) {
+            if (!v) return null;
+            try {
+              const u = new URL(v);
+              u.username = '';
+              u.password = '';
+              u.search = '';
+              u.hash = '';
+              return u.toString().replace(/\/$/, '');
+            } catch {
+              return '[invalid-url]';
+            }
+          }
+          const out = {};
+          for (const key of keys) {
+            const value = process.env[key] || '';
+            out[key] = {
+              present: value.trim().length > 0,
+              length: key.includes('TOKEN') || key.includes('KEY') ? value.trim().length : undefined,
+              value: key.includes('TOKEN') || key.includes('KEY') ? undefined : key === 'VOICE_STT_BASE_URL' ? safeUrl(value) : value || null,
+            };
+          }
+          console.log(JSON.stringify(out, null, 2));
+          NODE
+
+          echo "=== pm2 node env whitelist ==="
+          PM2_JSON="$(pm2 jlist)"
+          PM2_JSON="${PM2_JSON}" node - <<'NODE'
+          const apps = JSON.parse(process.env.PM2_JSON || '[]');
+          const app = apps.find(a => a.name === 'asi-landing') || apps.find(a => a.pm2_env?.pm_exec_path?.includes('/var/www/asi'));
+          const env = app?.pm2_env?.env || {};
+          const keys = ['TELEGRAM_BOT_TOKEN', 'VOICE_STT_BASE_URL', 'VOICE_STT_MODEL', 'VOICE_STT_RELAY_TOKEN', 'VOICE_STT_API_KEY'];
+          const out = { app_name: app?.name || null, pm_id: app?.pm_id ?? null, status: app?.pm2_env?.status || null, keys: {} };
+          for (const key of keys) {
+            const value = String(env[key] || '');
+            out.keys[key] = {
+              present: value.trim().length > 0,
+              length: key.includes('TOKEN') || key.includes('KEY') ? value.trim().length : undefined,
+              value: key.includes('TOKEN') || key.includes('KEY') ? undefined : value || null,
+            };
+          }
+          console.log(JSON.stringify(out, null, 2));
+          NODE
+
+          echo "=== recent voice logs sanitized ==="
+          LOG_CAPTURE="$(mktemp)"
+          pm2 logs "${PM2_APP}" --lines "${LINES}" --nostream 2>&1 \
+            | grep -E '\[tg:voice\]|\[voice:stt\]|\[tg:webhook\]' \
+            | redact \
+            | tee "${LOG_CAPTURE}" || true
+
+          FILE_ID="${INPUT_FILE_ID:-}"
+          if [[ -z "${FILE_ID}" ]]; then
+            FILE_ID="$(grep -oE "file_id: '[^']+'" "${LOG_CAPTURE}" | tail -1 | sed -E "s/file_id: '([^']+)'/\1/" || true)"
+          fi
+          if [[ -z "${FILE_ID}" ]]; then
+            FILE_ID="$(grep -oE '"telegram_file_id":"[^"]+"' "${LOG_CAPTURE}" | tail -1 | sed -E 's/"telegram_file_id":"([^"]+)"/\1/' || true)"
+          fi
+          rm -f "${LOG_CAPTURE}"
+
+          echo "=== dry-run file_id source ==="
+          if [[ -z "${FILE_ID}" ]]; then
+            echo "No Telegram voice file_id found in the scanned logs; rerun with file_id input after a fresh voice message."
+            exit 0
+          fi
+          echo "file_id=${FILE_ID}"
+
+          echo "=== stt dry run ==="
+          node "${REMOTE_SCRIPT}" --file-id "${FILE_ID}" || true
+          REMOTE
