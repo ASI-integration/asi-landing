@@ -104,6 +104,34 @@ touch "$LIVE_ENV_FILE"
 RELEASE_DIR="${RELEASES_DIR}/${SHA}"
 STAGING_DIR="${RELEASE_DIR}.tmp.$$"
 
+cleanup_old_release_artifacts() {
+  local current_target=""
+  current_target="$(readlink -f "$CURRENT_LINK" 2>/dev/null || true)"
+
+  log "Disk before release cleanup:"
+  df -h "$BASE_DIR" || true
+  du -sh "$RELEASES_DIR" 2>/dev/null || true
+
+  log "Cleaning failed staging dirs (*.tmp.*)"
+  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -name '*.tmp.*' -exec rm -rf -- {} + 2>/dev/null || true
+
+  log "Cleaning old non-current release dirs"
+  while IFS= read -r release_path; do
+    [[ -z "$release_path" ]] && continue
+    if [[ -n "$current_target" && "$release_path" == "$current_target" ]]; then
+      continue
+    fi
+    if [[ "$release_path" == "$RELEASE_DIR" ]]; then
+      continue
+    fi
+    rm -rf -- "$release_path"
+  done < <(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '*.tmp.*' -print 2>/dev/null || true)
+
+  log "Disk after release cleanup:"
+  df -h "$BASE_DIR" || true
+  du -sh "$RELEASES_DIR" 2>/dev/null || true
+}
+
 merge_env_kv() {
   local key="$1"
   local val="$2"
@@ -269,6 +297,8 @@ NODE
 log "Artifact file: $ARTIFACT_PATH"
 log "Deploy argument SHA (CI): $SHA"
 log "Base dir: $BASE_DIR"
+
+cleanup_old_release_artifacts
 
 log "Preparing staging dir: $STAGING_DIR"
 rm -rf "$STAGING_DIR"
