@@ -364,6 +364,9 @@ function extensionFromPath(filePath: string): string {
 }
 
 function resolveAudioMimeType(inputMimeType?: string, contentType?: string | null, filePath?: string): string {
+  const ext = filePath ? extensionFromPath(filePath) : '';
+  if (ext === '.ogg' || ext === '.oga') return 'audio/ogg';
+
   const candidates = [inputMimeType, contentType].map(v => (v ?? '').split(';')[0].trim().toLowerCase()).filter(Boolean);
   const direct = candidates.find(v => v.startsWith('audio/') && v !== 'audio/octet-stream');
   if (direct) {
@@ -371,8 +374,6 @@ function resolveAudioMimeType(inputMimeType?: string, contentType?: string | nul
     return direct;
   }
 
-  const ext = filePath ? extensionFromPath(filePath) : '';
-  if (ext === '.ogg' || ext === '.oga') return 'audio/ogg';
   if (ext === '.opus') return 'audio/opus';
   if (ext === '.m4a' || ext === '.mp4') return 'audio/mp4';
   if (ext === '.mp3' || ext === '.mpeg' || ext === '.mpga') return 'audio/mpeg';
