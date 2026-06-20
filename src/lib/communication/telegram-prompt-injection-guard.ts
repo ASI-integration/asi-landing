@@ -157,6 +157,12 @@ export function evaluateTelegramPromptInjectionGuard(params: {
   };
 }
 
+export function clearTelegramPromptInjectionGuardForChat(chatId: number | string): void {
+  loadOnce();
+  delete store[String(chatId)];
+  persist();
+}
+
 export function __resetTelegramPromptInjectionGuardForTests(): void {
   loaded = true;
   store = {};

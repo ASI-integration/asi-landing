@@ -104,6 +104,8 @@ import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
 import { answerTelegramCallbackQuery, replyToTelegram } from '@/lib/telegram';
 import {
+  clearTelegramPromptInjectionGuardForChat,
+  detectTelegramPromptInjection,
   evaluateTelegramPromptInjectionGuard,
   TELEGRAM_PROMPT_INJECTION_BLOCKED_REPLY,
   TELEGRAM_PROMPT_INJECTION_FIRST_REPLY,
@@ -1417,18 +1419,13 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
     const RESET_IDENTITY_REPLY_RU = RESET_IDENTITY_CLARIFY_RU;
     const resetIdentityMatch = matchTelegramCommand(text, 'reset_identity');
-    const resetIdentityAllowed = resetIdentityMatch.matched && allowlisted && prod_reset_enabled;
+    const resetIdentityAllowed = resetIdentityMatch.matched;
 
     if (resetIdentityMatch.matched) {
-      const denialReason = !allowlisted
-        ? 'deny:not_allowlisted'
-        : !prod_reset_enabled
-          ? 'deny:prod_reset_disabled'
-          : 'allow';
       logSessionResetOrCaseReopen({
         previous_status: convSession.state,
         new_status: resetIdentityAllowed ? 'inquiry' : convSession.state,
-        reason: denialReason,
+        reason: 'allow',
         update_id,
         command_raw_text: cmdNorm?.raw_text ?? text,
         command_raw: cmdNorm?.raw_command ?? (resetIdentityMatch.raw || undefined),
@@ -1440,20 +1437,6 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         intercepted_before_escalation: resetIdentityAllowed ? true : false,
         final_reply: resetIdentityAllowed ? RESET_IDENTITY_REPLY_RU : null,
       });
-      if (!resetIdentityAllowed) {
-        console.warn('[comm:routing] telegram reset_identity denied', {
-          route: 'identity_reset',
-          command_raw_text: cmdNorm?.raw_text ?? text,
-          normalized_command: cmdNorm?.normalized_command ?? null,
-          update_id,
-          chat_id: chatIdForAllow,
-          allowlisted,
-          prod_reset_enabled,
-          matched: true,
-          reason: denialReason,
-          raw_command: resetIdentityMatch.raw || null,
-        });
-      }
     }
 
     if (resetIdentityAllowed) {
@@ -1479,6 +1462,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
 
       evictIdentityCacheForTelegramChatId(String(chatIdForAllow));
+      clearTelegramPromptInjectionGuardForChat(chatIdForAllow);
       await clearDurableTelegramSessionForAcceptance(chatIdForAllow);
       forceResetSessionStatusForAcceptance(chatIdForAllow);
 
@@ -4478,6 +4462,29 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
   return processMessage(envelope);
 }
 
+async function shouldRouteTelegramIdentityBeforePromptGuard(params: {
+  envelope: InboundMessageEnvelope;
+  chatId: number;
+}): Promise<boolean> {
+  const identity = await bindIdentity(params.envelope);
+  const rememberedIdentity = rememberedTelegramIdentityForRoute(params.chatId);
+  const route = await resolveCommunicationIdentityRoute({
+    envelope: params.envelope,
+    identity,
+    rememberedIdentity,
+  });
+
+  return (
+    !route.shouldRunGuestConcierge &&
+    Boolean(route.replyText) &&
+    (
+      route.route === 'unknown_clarify' ||
+      route.route === 'role_conflict_guest_question' ||
+      route.route === 'object_problem_clarify'
+    )
+  );
+}
+
 export async function processUpdate(update: TelegramUpdate): Promise<ProcessResult> {
   const callbackResult = await processTelegramCallbackQuery(update);
   if (callbackResult) return callbackResult;
@@ -4531,6 +4538,65 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
 
   const { textHint, refs } = extractAttachments(message);
   const baseText = message.text ?? message.caption ?? '';
+  // If message has attachments but no text, synthesise a description so the
+  // orchestrator can still classify and create an ops task.
+  const messageText = baseText || textHint || '';
+  const envelope: InboundMessageEnvelope = {
+    channel: 'telegram',
+    externalUserId: (message.from?.id ?? message.chat.id).toString(),
+    chatId: message.chat.id.toString(),
+    messageText,
+    receivedAt: new Date(),
+    update_id: update.update_id,
+    metadata: {
+      ...(refs.length > 0 ? { attachments: refs } : {}),
+      telegram_chat_id: message.chat.id.toString(),
+      providerMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
+      externalMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
+      inboundIdempotencyKey: inboundKey,
+      inboundIdempotencyAlreadyMarked: true,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+      telegram_user_language_code: message.from?.language_code,
+      telegram_user_id: message.from?.id,
+      telegram_username: message.from?.username,
+      telegram_first_name: message.from?.first_name,
+    },
+  };
+
+  const resetIdentityMatch = matchTelegramCommand(messageText, 'reset_identity');
+  if (resetIdentityMatch.matched) {
+    const result = await processMessage(envelope);
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      route: 'telegram_identity_reset_before_prompt_guard',
+      outcome: result.outcome,
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    return result;
+  }
+
+  if (
+    messageText.trim() &&
+    !detectTelegramPromptInjection(messageText).detected &&
+    await shouldRouteTelegramIdentityBeforePromptGuard({ envelope, chatId: message.chat.id })
+  ) {
+    const result = await processMessage(envelope);
+    console.info('[comm:routing]', {
+      path: 'telegram_text',
+      route: 'telegram_identity_clarification_before_prompt_guard',
+      outcome: result.outcome,
+      update_id: update.update_id,
+      chat_id: message.chat.id,
+      telegram_event_type: event.type,
+      telegram_event_occurrence_id: eventOccurrenceId,
+    });
+    return result;
+  }
+
   const promptInjectionGuardResult = await handleTelegramPromptInjectionGuard({
     update,
     message,
@@ -4550,9 +4616,6 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     });
     return promptInjectionGuardResult;
   }
-  // If message has attachments but no text, synthesise a description so the
-  // orchestrator can still classify and create an ops task.
-  const messageText = baseText || textHint || '';
 
   const guestCanon =
     message.chat?.id && baseText
@@ -4612,29 +4675,6 @@ export async function processUpdate(update: TelegramUpdate): Promise<ProcessResu
     return result;
     }
   }
-
-  const envelope: InboundMessageEnvelope = {
-    channel: 'telegram',
-    externalUserId: (message.from?.id ?? message.chat.id).toString(),
-    chatId: message.chat.id.toString(),
-    messageText,
-    receivedAt: new Date(),
-    update_id: update.update_id,
-    metadata: {
-      ...(refs.length > 0 ? { attachments: refs } : {}),
-      telegram_chat_id: message.chat.id.toString(),
-      providerMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
-      externalMessageId: `${event.type}:${message.message_id}:${eventOccurrenceId}`,
-      inboundIdempotencyKey: inboundKey,
-      inboundIdempotencyAlreadyMarked: true,
-      telegram_event_type: event.type,
-      telegram_event_occurrence_id: eventOccurrenceId,
-      telegram_user_language_code: message.from?.language_code,
-      telegram_user_id: message.from?.id,
-      telegram_username: message.from?.username,
-      telegram_first_name: message.from?.first_name,
-    },
-  };
 
   const result = await processMessage(envelope);
   console.info('[comm:routing]', {

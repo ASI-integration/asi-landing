@@ -348,6 +348,14 @@ export async function decideGuestCommunicationWithLlmSafeDomainLayer(input: {
   telegramChatId?: number | string | null;
 }): Promise<CommunicationDecision> {
   const base = decideGuestCommunication(input);
+  if (
+    base.shouldEscalate ||
+    base.outcome === 'missing_data' ||
+    base.outcome === 'operator_followup_required'
+  ) {
+    return base;
+  }
+
   const guard = await runLlmSafeDomainLayer({
     messageText: input.messageText,
     detectedIntent: base.detectedIntent,
