@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getLocalTimeParts, isWithinNightWindow, resolvePropertyTimezone } from '../property-timezone';
 import { evaluateVoiceResponsePolicy, prepareVoiceTextForTts } from '../voice-response-policy';
-import { DEFAULT_PROPERTY_VOICE_POLICY } from '../voice-response-settings';
+import { DEFAULT_PROPERTY_VOICE_POLICY, VOICE_SAFE_URGENT_HANDOFF_RU } from '../voice-response-settings';
 
 const baseInput = {
   inboundTransport: 'telegram_text' as const,
@@ -30,6 +30,51 @@ describe('evaluateVoiceResponsePolicy', () => {
     expect(decision.shouldSendVoice).toBe(true);
     expect(decision.reason).toBe('urgent_intent');
     expect(decision.voiceText).toBeTruthy();
+  });
+
+  it('enables voice with safe handoff for urgent operator escalation', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      detectedIntent: 'emergency_or_damage',
+      domainZone: 'core',
+      responseMode: 'operator_escalation',
+      messageRisk: 'sensitive_internal',
+      isUrgent: true,
+      replyText: 'Передаю оператору. reviewId=abc123 sessionId=deadbeef. Позвоните на +7999.',
+    });
+    expect(decision.shouldSendVoice).toBe(true);
+    expect(decision.reason).toBe('urgent_intent');
+    expect(decision.voiceText).toContain('срочная ситуация');
+    expect(decision.voiceText).not.toMatch(/reviewid|deadbeef|7999/i);
+    expect(decision.voiceText).toBe(
+      prepareVoiceTextForTts(VOICE_SAFE_URGENT_HANDOFF_RU, DEFAULT_PROPERTY_VOICE_POLICY.maxVoiceTextChars),
+    );
+  });
+
+  it('disables voice for non-urgent operator escalation', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      detectedIntent: 'general_question',
+      domainZone: 'core',
+      responseMode: 'operator_escalation',
+      messageRisk: 'sensitive_internal',
+      isUrgent: false,
+    });
+    expect(decision.shouldSendVoice).toBe(false);
+    expect(decision.reason).toBe('sensitive_internal');
+  });
+
+  it('disables voice for daytime sensitive money text inbound', () => {
+    const decision = evaluateVoiceResponsePolicy({
+      ...baseInput,
+      inboundTransport: 'telegram_text',
+      detectedIntent: 'money_sensitive',
+      messageRisk: 'sensitive_money',
+      domainZone: 'core',
+      now: new Date('2026-06-20T10:00:00.000Z'),
+    });
+    expect(decision.shouldSendVoice).toBe(false);
+    expect(decision.reason).toBe('sensitive_internal');
   });
 
   it('enables voice for night core stay issue in property timezone', () => {

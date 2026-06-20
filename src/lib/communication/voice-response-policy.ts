@@ -1,6 +1,7 @@
 import { formatVoiceSafeText } from './voice/formatter';
 import {
   VOICE_SAFE_MONEY_HANDOFF_RU,
+  VOICE_SAFE_URGENT_HANDOFF_RU,
   type PropertyVoicePolicySettings,
   type ChatVoiceUserSettings,
 } from './voice-response-settings';
@@ -106,6 +107,37 @@ function estimateVoiceSeconds(text: string): number {
   return Math.min(45, Math.max(3, Math.ceil(chars / 14)));
 }
 
+function isOperatorEscalation(input: VoiceResponsePolicyInput): boolean {
+  return INTERNAL_RESPONSE_MODES.has(String(input.responseMode ?? '').trim());
+}
+
+function needsUrgentSafeHandoff(input: VoiceResponsePolicyInput): boolean {
+  return input.messageRisk === 'sensitive_internal' || isOperatorEscalation(input);
+}
+
+function buildUrgentVoiceDecision(
+  input: VoiceResponsePolicyInput,
+  settings: PropertyVoicePolicySettings,
+  maxDurationSeconds: number,
+  timezoneSource: 'property' | 'fallback' | undefined,
+): VoiceResponseDecision | null {
+  if (!settings.voiceForUrgent || !isUrgentIntent(input)) return null;
+
+  const sourceText = needsUrgentSafeHandoff(input)
+    ? VOICE_SAFE_URGENT_HANDOFF_RU
+    : input.replyText;
+  const voiceText = prepareVoiceTextForTts(sourceText, settings.maxVoiceTextChars);
+  if (voiceText.length < 8) return null;
+
+  return {
+    shouldSendVoice: true,
+    reason: 'urgent_intent',
+    voiceText,
+    maxDurationSeconds,
+    timezoneSource,
+  };
+}
+
 export function prepareVoiceTextForTts(replyText: string, maxChars: number): string {
   return formatVoiceSafeText(replyText, { maxChars: Math.min(maxChars, 700) });
 }
@@ -131,16 +163,19 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
     return { shouldSendVoice: false, reason: 'budget_cap_reached', timezoneSource };
   }
 
-  if (
-    input.messageRisk === 'prompt_injection' ||
-    input.messageRisk === 'sensitive_internal' ||
-    INTERNAL_RESPONSE_MODES.has(String(input.responseMode ?? ''))
-  ) {
+  if (input.messageRisk === 'prompt_injection') {
     return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
   }
 
   if (input.messageRisk === 'out_of_domain' || input.domainZone === 'out_of_domain') {
     return { shouldSendVoice: false, reason: 'out_of_domain', timezoneSource };
+  }
+
+  const urgentDecision = buildUrgentVoiceDecision(input, settings, maxDurationSeconds, timezoneSource);
+  if (urgentDecision) return urgentDecision;
+
+  if (input.messageRisk === 'sensitive_internal' || isOperatorEscalation(input)) {
+    return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
   }
 
   if (isStaffRole(input.role)) {
@@ -164,19 +199,6 @@ export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): Vo
       };
     }
     return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
-  }
-
-  if (settings.voiceForUrgent && isUrgentIntent(input)) {
-    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
-    if (voiceText.length >= 8) {
-      return {
-        shouldSendVoice: true,
-        reason: 'urgent_intent',
-        voiceText,
-        maxDurationSeconds,
-        timezoneSource,
-      };
-    }
   }
 
   if (settings.voiceForNightCoreIssues && isNight && isCoreStayTopic(input)) {

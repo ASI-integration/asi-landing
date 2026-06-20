@@ -32,6 +32,9 @@ export const VOICE_FIRST_NOTICE_RU =
 export const VOICE_SAFE_MONEY_HANDOFF_RU =
   'Понял вопрос. Здесь нужна проверка оператора, чтобы не дать неверную информацию. Я передам обращение и вернусь с ответом здесь.';
 
+export const VOICE_SAFE_URGENT_HANDOFF_RU =
+  'Понял, это срочная ситуация. Я передам обращение оператору. Оставайтесь на связи, ответ придёт здесь.';
+
 const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
 export function parseTimeOfDay(value: string): { hours: number; minutes: number } | null {
