@@ -1,0 +1,217 @@
+import { formatVoiceSafeText } from './voice/formatter';
+import {
+  VOICE_SAFE_MONEY_HANDOFF_RU,
+  type PropertyVoicePolicySettings,
+  type ChatVoiceUserSettings,
+} from './voice-response-settings';
+import { getLocalTimeParts, isWithinNightWindow, type PropertyTimezoneResolution } from './property-timezone';
+import type { VoiceBudgetSnapshot } from './voice-budget-store';
+
+export type VoiceResponseDecisionReason =
+  | 'urgent_intent'
+  | 'night_core_stay_issue'
+  | 'inbound_voice_allowed'
+  | 'disabled_by_user'
+  | 'out_of_domain'
+  | 'sensitive_internal'
+  | 'budget_cap_reached'
+  | 'not_needed'
+  | 'tts_missing_env';
+
+export type VoiceResponseDecision = {
+  shouldSendVoice: boolean;
+  reason: VoiceResponseDecisionReason;
+  voiceText?: string;
+  maxDurationSeconds?: number;
+  timezoneSource?: 'property' | 'fallback';
+};
+
+export type VoiceInboundTransport = 'telegram_text' | 'telegram_voice';
+
+export type VoiceMessageRisk =
+  | 'normal'
+  | 'sensitive_money'
+  | 'sensitive_internal'
+  | 'prompt_injection'
+  | 'out_of_domain';
+
+export type VoiceResponsePolicyInput = {
+  role?: string;
+  detectedIntent?: string;
+  domainZone?: 'core' | 'adjacent' | 'out_of_domain';
+  responseMode?: string;
+  propertyId?: string | null;
+  propertyTimezone?: PropertyTimezoneResolution;
+  inboundTransport: VoiceInboundTransport;
+  messageRisk?: VoiceMessageRisk;
+  userVoiceSettings: ChatVoiceUserSettings;
+  propertyVoiceSettings: PropertyVoicePolicySettings;
+  budget: VoiceBudgetSnapshot;
+  replyText: string;
+  ttsConfigured: boolean;
+  isUrgent?: boolean;
+  now?: Date;
+};
+
+const URGENT_INTENTS = new Set([
+  'emergency_or_damage',
+  'complaint_or_conflict',
+]);
+
+const CORE_STAY_INTENTS = new Set([
+  'guest_checkin',
+  'guest_property_question',
+  'guest_rules_question',
+  'guest_booking_lookup',
+]);
+
+const CORE_STAY_RESPONSE_MODES = new Set([
+  'answer_from_property',
+  'answer_from_global_rule',
+  'ask_clarifying_question',
+]);
+
+const INTERNAL_RESPONSE_MODES = new Set(['operator_escalation']);
+
+const MONEY_INTENT = 'money_sensitive';
+
+function isUrgentIntent(input: VoiceResponsePolicyInput): boolean {
+  if (input.isUrgent) return true;
+  const intent = String(input.detectedIntent ?? '').trim();
+  if (URGENT_INTENTS.has(intent)) return true;
+  if (intent === MONEY_INTENT) return false;
+  return false;
+}
+
+function isCoreStayTopic(input: VoiceResponsePolicyInput): boolean {
+  const intent = String(input.detectedIntent ?? '').trim();
+  if (CORE_STAY_INTENTS.has(intent)) return true;
+  if (input.domainZone === 'core') return true;
+  const mode = String(input.responseMode ?? '').trim();
+  if (CORE_STAY_RESPONSE_MODES.has(mode) && input.domainZone !== 'out_of_domain') return true;
+  return false;
+}
+
+function isAdjacentTopic(input: VoiceResponsePolicyInput): boolean {
+  return input.domainZone === 'adjacent';
+}
+
+function isStaffRole(role?: string): boolean {
+  const r = String(role ?? '').trim().toLowerCase();
+  return r === 'staff' || r === 'owner' || r === 'operator';
+}
+
+function estimateVoiceSeconds(text: string): number {
+  const chars = text.length;
+  return Math.min(45, Math.max(3, Math.ceil(chars / 14)));
+}
+
+export function prepareVoiceTextForTts(replyText: string, maxChars: number): string {
+  return formatVoiceSafeText(replyText, { maxChars: Math.min(maxChars, 700) });
+}
+
+export function evaluateVoiceResponsePolicy(input: VoiceResponsePolicyInput): VoiceResponseDecision {
+  const settings = input.propertyVoiceSettings;
+  const maxDurationSeconds = settings.maxVoiceReplySeconds;
+  const timezoneSource = input.propertyTimezone?.timezoneSource;
+
+  if (!input.ttsConfigured) {
+    return { shouldSendVoice: false, reason: 'tts_missing_env', timezoneSource };
+  }
+
+  if (!settings.voiceRepliesEnabled) {
+    return { shouldSendVoice: false, reason: 'not_needed', timezoneSource };
+  }
+
+  if (!input.userVoiceSettings.voiceRepliesEnabled) {
+    return { shouldSendVoice: false, reason: 'disabled_by_user', timezoneSource };
+  }
+
+  if (input.budget.dailyCapReached || input.budget.monthlyCapReached) {
+    return { shouldSendVoice: false, reason: 'budget_cap_reached', timezoneSource };
+  }
+
+  if (
+    input.messageRisk === 'prompt_injection' ||
+    input.messageRisk === 'sensitive_internal' ||
+    INTERNAL_RESPONSE_MODES.has(String(input.responseMode ?? ''))
+  ) {
+    return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
+  }
+
+  if (input.messageRisk === 'out_of_domain' || input.domainZone === 'out_of_domain') {
+    return { shouldSendVoice: false, reason: 'out_of_domain', timezoneSource };
+  }
+
+  if (isStaffRole(input.role)) {
+    return { shouldSendVoice: false, reason: 'not_needed', timezoneSource };
+  }
+
+  const tz = input.propertyTimezone?.timezone ?? settings.timezone;
+  const localParts = getLocalTimeParts(tz, input.now);
+  const isNight = isWithinNightWindow(localParts, settings.nightStart, settings.nightEnd);
+
+  const moneySensitive = input.messageRisk === 'sensitive_money' || input.detectedIntent === MONEY_INTENT;
+  if (moneySensitive) {
+    if ((isNight || input.inboundTransport === 'telegram_voice') && settings.voiceForUrgent) {
+      const voiceText = prepareVoiceTextForTts(VOICE_SAFE_MONEY_HANDOFF_RU, settings.maxVoiceTextChars);
+      return {
+        shouldSendVoice: true,
+        reason: isNight ? 'night_core_stay_issue' : 'inbound_voice_allowed',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
+    return { shouldSendVoice: false, reason: 'sensitive_internal', timezoneSource };
+  }
+
+  if (settings.voiceForUrgent && isUrgentIntent(input)) {
+    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+    if (voiceText.length >= 8) {
+      return {
+        shouldSendVoice: true,
+        reason: 'urgent_intent',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
+  }
+
+  if (settings.voiceForNightCoreIssues && isNight && isCoreStayTopic(input)) {
+    const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+    if (voiceText.length >= 8) {
+      return {
+        shouldSendVoice: true,
+        reason: 'night_core_stay_issue',
+        voiceText,
+        maxDurationSeconds,
+        timezoneSource,
+      };
+    }
+  }
+
+  if (input.inboundTransport === 'telegram_voice') {
+    const allowedByPolicy = settings.voiceForAllInboundVoice
+      ? isCoreStayTopic(input) || isAdjacentTopic(input)
+      : isCoreStayTopic(input);
+
+    if (allowedByPolicy) {
+      const voiceText = prepareVoiceTextForTts(input.replyText, settings.maxVoiceTextChars);
+      if (voiceText.length >= 8 && voiceText.length <= settings.maxVoiceTextChars) {
+        return {
+          shouldSendVoice: true,
+          reason: 'inbound_voice_allowed',
+          voiceText,
+          maxDurationSeconds,
+          timezoneSource,
+        };
+      }
+    }
+  }
+
+  return { shouldSendVoice: false, reason: 'not_needed', timezoneSource };
+}
+
+export { estimateVoiceSeconds };

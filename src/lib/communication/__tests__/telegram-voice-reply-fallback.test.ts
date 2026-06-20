@@ -22,17 +22,20 @@ describe('Telegram voice reply text fallback', () => {
     mockReplyToTelegram.mockResolvedValue(true);
     mockSendVoiceReply.mockReset();
     process.env.VOICE_REPLY_ENABLED = '1';
-    process.env.VOICE_REPLY_MODE = 'mirror';
   });
 
-  it('sends text when TTS or sendVoice fails for an inbound voice reply', async () => {
+  it('always sends text when TTS or sendVoice fails', async () => {
     mockSendVoiceReply.mockResolvedValue(false);
     const adapter = new TelegramAdapter();
 
     const sent = await adapter.sendMessage('42', 'Здравствуйте! Wi-Fi: сеть ASI, пароль отправлен в бронировании.', {
       update_id: 1001,
       reply_handler: 'test:voice',
-      voice_reply_source: 'inbound_voice',
+      voice_response_decision: {
+        shouldSendVoice: true,
+        reason: 'inbound_voice_allowed',
+        voiceText: 'Здравствуйте! Wi-Fi: сеть ASI.',
+      },
     });
 
     expect(sent).toBe(true);
@@ -44,18 +47,38 @@ describe('Telegram voice reply text fallback', () => {
     );
   });
 
-  it('does not duplicate text when voice was sent successfully', async () => {
+  it('sends text and voice when voice succeeds (text is mandatory)', async () => {
     mockSendVoiceReply.mockResolvedValue(true);
     const adapter = new TelegramAdapter();
 
     const sent = await adapter.sendMessage('42', 'Здравствуйте! Инструкцию отправил.', {
       update_id: 1002,
       reply_handler: 'test:voice',
-      voice_reply_source: 'inbound_voice',
+      voice_response_decision: {
+        shouldSendVoice: true,
+        reason: 'urgent_intent',
+        voiceText: 'Здравствуйте! Инструкцию отправил.',
+      },
     });
 
     expect(sent).toBe(true);
     expect(mockSendVoiceReply).toHaveBeenCalledOnce();
-    expect(mockReplyToTelegram).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledWith(
+      42,
+      'Здравствуйте! Инструкцию отправил.',
+      { handler: 'test:voice', update_id: 1002 },
+    );
+  });
+
+  it('skips voice attempt when policy decision is absent', async () => {
+    const adapter = new TelegramAdapter();
+    const sent = await adapter.sendMessage('42', 'Только текст.', {
+      update_id: 1003,
+      reply_handler: 'test:text_only',
+    });
+
+    expect(sent).toBe(true);
+    expect(mockSendVoiceReply).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
   });
 });

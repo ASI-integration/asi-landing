@@ -146,6 +146,9 @@ import {
   patchCommunicationMemoryFromDecision,
   loadCommunicationMemoryFromSession,
 } from './guest-communication-brain';
+import { buildVoiceOutboundMetadata, inferDomainZoneForVoice } from './voice-outbound';
+import { loadChatVoiceUserSettings } from './voice-response-settings';
+import { loadPropertyTimezone } from './telegram-property-knowledge';
 import { GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
 import {
   createGuestConciergeAnsweredEvent,
@@ -427,24 +430,20 @@ function buildOutboundTransportMetadata(params: {
   category: MessageCategory;
   telegramMetaRouteKind?: TelegramTextMetaKind | null;
   isEscalation?: boolean;
+  voiceExtras?: Record<string, unknown>;
 }): Record<string, unknown> | undefined {
   const replyHandler = `orchestrator:${params.usedPath}${
     params.telegramMetaRouteKind ? `:telegram_meta=${params.telegramMetaRouteKind}` : ''
   }:category=${params.category}`;
 
   if (params.envelope.channel === 'telegram') {
-    const metadata = params.envelope.metadata;
-    const originalMessageType =
-      metadataString(metadata, ['originalMessageType']) ??
-      metadataString((metadata as any)?.voice, ['originalMessageType', 'source']);
-    const isInboundVoice = Boolean((metadata as any)?.voice) || originalMessageType === 'voice' || originalMessageType === 'audio';
     return {
       reply_handler: replyHandler,
       update_id: params.update_id,
-      ...(isInboundVoice ? { voice_reply_source: 'inbound_voice' } : {}),
       ...(params.isEscalation ? { voice_reply_is_escalation: true } : {}),
       ...(params.usedPath.includes('payment') ? { voice_reply_is_payment: true } : {}),
       ...(params.usedPath.includes('checkin') || params.usedPath.includes('check_in') ? { voice_reply_is_checkin_instructions: true } : {}),
+      ...(params.voiceExtras ?? {}),
     };
   }
 
@@ -474,6 +473,34 @@ function buildOutboundTransportMetadata(params: {
   }
 
   return undefined;
+}
+
+async function buildTelegramVoiceExtras(params: {
+  envelope: InboundMessageEnvelope;
+  replyText: string;
+  chatId: number;
+  detectedIntent?: string;
+  domainZone?: 'core' | 'adjacent' | 'out_of_domain';
+  responseMode?: string;
+  role?: string;
+  propertyId?: string | null;
+  isUrgent?: boolean;
+  isEscalation?: boolean;
+}): Promise<Record<string, unknown>> {
+  const propertyTimezone = params.propertyId ? await loadPropertyTimezone(params.propertyId) : null;
+  return buildVoiceOutboundMetadata({
+    envelope: params.envelope,
+    replyText: params.replyText,
+    chatId: params.chatId,
+    detectedIntent: params.detectedIntent,
+    domainZone: params.domainZone,
+    responseMode: params.responseMode,
+    role: params.role,
+    propertyId: params.propertyId,
+    propertyTimezone,
+    isUrgent: params.isUrgent,
+    isEscalation: params.isEscalation,
+  });
 }
 
 function firstUsefulText(...values: unknown[]): string | undefined {
@@ -1491,6 +1518,41 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForAllow };
       return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForAllow, reply: RESET_IDENTITY_REPLY_RU };
     }
+
+    const voiceOnMatch = matchTelegramCommand(text, 'voice_on');
+    const voiceOffMatch = matchTelegramCommand(text, 'voice_off');
+    const voiceStatusMatch = matchTelegramCommand(text, 'voice_status');
+    if (voiceOnMatch.matched || voiceOffMatch.matched || voiceStatusMatch.matched) {
+      const chatIdForVoice = chatIdForAllow;
+      let voiceCommandReply = '';
+      if (voiceOnMatch.matched) {
+        patchAutonomousSessionCollectedData({
+          chatId: chatIdForVoice,
+          channel: envelope.channel,
+          set: { voice_replies_enabled: 'true' },
+        });
+        voiceCommandReply = 'Голосовые ответы включены для этого чата.';
+      } else if (voiceOffMatch.matched) {
+        patchAutonomousSessionCollectedData({
+          chatId: chatIdForVoice,
+          channel: envelope.channel,
+          set: { voice_replies_enabled: 'false' },
+        });
+        voiceCommandReply = 'Голосовые ответы отключены. Чтобы включить снова — /voice_on.';
+      } else {
+        const voiceSettings = loadChatVoiceUserSettings(loadAutonomousSession(chatIdForVoice)?.collected_data);
+        voiceCommandReply = voiceSettings.voiceRepliesEnabled
+          ? 'Голосовые ответы: включены.'
+          : 'Голосовые ответы: выключены.';
+      }
+      const adapter = getChannelAdapter(envelope.channel);
+      const sent = await adapter.sendMessage(String(chatIdForVoice), voiceCommandReply, {
+        reply_handler: `telegram_voice_command:${voiceOnMatch.matched ? 'on' : voiceOffMatch.matched ? 'off' : 'status'}`,
+        update_id,
+      });
+      if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatIdForVoice };
+      return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatIdForVoice, reply: voiceCommandReply };
+    }
   }
 
   if (!senderRoute.shouldRunGuestConcierge && senderRoute.replyText) {
@@ -1846,6 +1908,11 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     let currentAutopilotIntent: string | null = null;
     let antiLoopEligible = false;
     let telegramGuestAgentShadowAudit: CommunicationAutopilotDecision['metadata']['guestAgentShadow'] | null = null;
+    let voiceOutboundHint: {
+      detectedIntent?: string;
+      domainZone?: 'core' | 'adjacent' | 'out_of_domain';
+      responseMode?: string;
+    } = {};
     const adapter = getChannelAdapter(envelope.channel);
     cp('channel.adapter.resolved', { chat_id: chatId });
 
@@ -2285,6 +2352,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
           const targetId = resolveOutboundTargetId(envelope, identity.guestId);
           if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          voiceOutboundHint = {
+            detectedIntent: brainIntent,
+            domainZone: commDecision.llmSafeDomain?.domainZone,
+            responseMode: commDecision.responseMode,
+          };
+          const voiceExtras = await buildTelegramVoiceExtras({
+            envelope,
+            replyText: deterministicReplyText,
+            chatId,
+            detectedIntent: brainIntent,
+            domainZone: commDecision.llmSafeDomain?.domainZone,
+            responseMode: commDecision.responseMode,
+            role: senderRoute.senderIdentity,
+            propertyId,
+            isUrgent: classification.slots.isUrgent || classification.slots.isAccessRelated,
+            isEscalation: Boolean(commDecision.shouldEscalate),
+          });
           const sent = await adapter.sendMessage(String(targetId), deterministicReplyText, {
             reply_handler: `orchestrator:minigpt_brain_v1:${brainOutcome ?? 'escalation'}`,
             update_id,
@@ -2293,6 +2377,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             guest_test_intent: answer?.intent ?? brainIntent,
             minigpt_intent: brainIntent,
             minigpt_response_mode: commDecision.responseMode,
+            ...voiceExtras,
           });
           if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
           return {
@@ -4158,8 +4243,26 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                     detail: `outbound_retry attempt=${info.attempt} decision=${info.decision?.reason ?? 'n/a'}`,
                   });
                 },
-                fn: () =>
-                  adapter.sendMessage(
+                fn: async () => {
+                  const voiceExtras =
+                    envelope.channel === 'telegram'
+                      ? await buildTelegramVoiceExtras({
+                          envelope,
+                          replyText,
+                          chatId,
+                          detectedIntent: voiceOutboundHint.detectedIntent ?? String(intentResult.intent),
+                          domainZone: inferDomainZoneForVoice({
+                            detectedIntent: voiceOutboundHint.detectedIntent ?? String(intentResult.intent),
+                            domainZone: voiceOutboundHint.domainZone,
+                          }),
+                          responseMode: voiceOutboundHint.responseMode,
+                          role: identity.role,
+                          propertyId,
+                          isUrgent: classification.slots.isUrgent || classification.slots.isAccessRelated,
+                          isEscalation: Boolean(escalation),
+                        })
+                      : {};
+                  return adapter.sendMessage(
                     targetId,
                     replyText,
                     buildOutboundTransportMetadata({
@@ -4169,8 +4272,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                       category: classification.category,
                       telegramMetaRouteKind,
                       isEscalation: Boolean(escalation),
+                      voiceExtras,
                     }),
-                  ),
+                  );
+                },
               });
               if (!res.ok) {
                 const reason = res.lastDecision?.reason ?? 'unknown';

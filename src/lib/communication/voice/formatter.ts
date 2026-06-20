@@ -49,6 +49,7 @@ export function formatVoiceSafeText(input: string, opts?: VoiceFormatOptions): s
   text = stripInternalIds(text);
 
   // Avoid visual-only constructs for voice: lists, multiple paragraphs, etc.
+  text = text.replace(/^#+\s*/gm, '');
   text = text.replace(/\n\n+/g, '. ');
   text = shortenSentences(text);
 

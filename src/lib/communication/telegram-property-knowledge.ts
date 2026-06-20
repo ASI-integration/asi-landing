@@ -22,6 +22,7 @@ export type TelegramPropertyKnowledgeFields = {
   checkout_notes: string | null;
   late_checkout_policy: string | null;
   early_checkin_policy: string | null;
+  timezone: string | null;
 };
 
 export type TelegramPropertyKnowledgeLookupResultV1 = {
@@ -50,6 +51,7 @@ const KNOWLEDGE_FIELD_KEYS: (keyof TelegramPropertyKnowledgeFields)[] = [
   'checkout_notes',
   'late_checkout_policy',
   'early_checkin_policy',
+  'timezone',
 ];
 
 function emptyKnowledge(): TelegramPropertyKnowledgeFields {
@@ -70,6 +72,7 @@ function emptyKnowledge(): TelegramPropertyKnowledgeFields {
     checkout_notes: null,
     late_checkout_policy: null,
     early_checkin_policy: null,
+    timezone: null,
   };
 }
 
@@ -162,6 +165,26 @@ export async function loadTelegramPropertyKnowledgeV1(params: {
       knowledge: emptyKnowledge(),
       available_fields: [],
     };
+  }
+}
+
+/** Load IANA timezone for a property from tg_property_knowledge. */
+export async function loadPropertyTimezone(propertyId: string | null | undefined): Promise<string | null> {
+  const id = propertyId ? String(propertyId).trim() : '';
+  if (!id) return null;
+
+  const db = supabase as unknown as SupabaseLike;
+  try {
+    const { data, error } = await db
+      .from('tg_property_knowledge')
+      .select('timezone')
+      .eq('property_id', id)
+      .maybeSingle();
+    if (error || !data) return null;
+    const tz = stringOrNull((data as { timezone?: unknown }).timezone);
+    return tz;
+  } catch {
+    return null;
   }
 }
 
