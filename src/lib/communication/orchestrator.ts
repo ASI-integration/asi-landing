@@ -4390,7 +4390,7 @@ function telegramIdentityCallbackToRoute(data: unknown): {
 } | null {
   switch (String(data ?? '').trim()) {
     case TELEGRAM_IDENTITY_CALLBACKS.guest:
-      return { messageText: 'Я гость по бронированию', senderIdentity: 'guest' };
+      return { messageText: 'Я гость', senderIdentity: 'guest' };
     case TELEGRAM_IDENTITY_CALLBACKS.ownerManager:
       return { messageText: 'Я владелец / управляющий объекта', senderIdentity: 'owner_manager' };
     case TELEGRAM_IDENTITY_CALLBACKS.lead:
