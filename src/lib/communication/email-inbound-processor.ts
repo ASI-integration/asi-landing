@@ -122,6 +122,13 @@ export async function processEmailInbound(params: {
   };
 }
 
+export async function processEmailInboundMessage(params: {
+  payload: EmailInboundPayload;
+  adapter?: EmailAdapter;
+}): Promise<EmailInboundProcessingResult> {
+  return processEmailInbound(params);
+}
+
 async function createEmailOperatorDraft(params: {
   envelope: InboundMessageEnvelope;
   payload: EmailInboundPayload;

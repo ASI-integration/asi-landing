@@ -122,6 +122,11 @@ async function insertEvent(input: {
 
 type BrainEventMetadata = {
   source?: string | null;
+  transport?: string | null;
+  original_message_type?: string | null;
+  transcription?: string | null;
+  duration?: number | null;
+  telegram_user_id?: string | number | null;
   role?: string | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
@@ -151,6 +156,11 @@ export async function recordGuestTestQuestionOutcome(input: {
   missingFields?: string[];
   contactId?: string | null;
   role?: string | null;
+  transport?: string | null;
+  original_message_type?: string | null;
+  transcription?: string | null;
+  duration?: number | null;
+  telegram_user_id?: string | number | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
   confidence?: number | null;
@@ -180,6 +190,11 @@ export async function recordGuestTestQuestionOutcome(input: {
       missing_fields: input.missingFields ?? [],
       missing_data_actions: missingDataActionsForFields(input.missingFields ?? [], input.propertyId),
       role: input.role ?? null,
+      transport: input.transport ?? 'telegram_text',
+      original_message_type: input.original_message_type ?? 'text',
+      transcription: input.transcription ?? null,
+      duration: input.duration ?? null,
+      telegram_user_id: input.telegram_user_id ?? input.telegramUserId,
       detectedIntent: input.detectedIntent ?? input.intent,
       responseMode: input.responseMode ?? null,
       confidence: input.confidence ?? null,
@@ -202,6 +217,11 @@ export async function createGuestConciergeAnsweredEvent(input: {
   contactId?: string | null;
   intent: string;
   role?: string | null;
+  transport?: string | null;
+  original_message_type?: string | null;
+  transcription?: string | null;
+  duration?: number | null;
+  telegram_user_id?: string | number | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
   confidence?: number | null;
@@ -238,6 +258,11 @@ export async function createGuestConciergeAnsweredEvent(input: {
       llmProvider: input.llmProvider ?? null,
       llmModelName: input.llmModelName ?? null,
       role: input.role ?? null,
+      transport: input.transport ?? 'telegram_text',
+      original_message_type: input.original_message_type ?? 'text',
+      transcription: input.transcription ?? null,
+      duration: input.duration ?? null,
+      telegram_user_id: input.telegram_user_id ?? input.telegramUserId,
       detectedIntent: input.detectedIntent ?? input.intent,
       responseMode: input.responseMode ?? 'answer_from_concierge',
       confidence: input.confidence ?? null,
@@ -260,6 +285,11 @@ export async function createGuestTestMissingDataEvent(input: {
   intent?: string | null;
   internalDetail?: string | null;
   role?: string | null;
+  transport?: string | null;
+  original_message_type?: string | null;
+  transcription?: string | null;
+  duration?: number | null;
+  telegram_user_id?: string | number | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
   confidence?: number | null;
@@ -287,6 +317,11 @@ export async function createGuestTestMissingDataEvent(input: {
       missing_data_actions: actions,
       internal_detail: input.internalDetail ?? null,
       role: input.role ?? null,
+      transport: input.transport ?? 'telegram_text',
+      original_message_type: input.original_message_type ?? 'text',
+      transcription: input.transcription ?? null,
+      duration: input.duration ?? null,
+      telegram_user_id: input.telegram_user_id ?? input.telegramUserId,
       detectedIntent: input.detectedIntent ?? input.intent ?? null,
       responseMode: input.responseMode ?? 'operator_escalation',
       confidence: input.confidence ?? null,
@@ -309,6 +344,11 @@ export async function createOperatorFollowupRequired(input: {
   internalDetail?: string | null;
   lookupData?: Record<string, unknown> | null;
   role?: string | null;
+  transport?: string | null;
+  original_message_type?: string | null;
+  transcription?: string | null;
+  duration?: number | null;
+  telegram_user_id?: string | number | null;
   detectedIntent?: string | null;
   responseMode?: string | null;
   confidence?: number | null;
@@ -331,11 +371,15 @@ export async function createOperatorFollowupRequired(input: {
     metadata: brainMetadata({
       intent: input.intent ?? null,
       telegram_chat_id: input.telegramChatId,
-      telegram_user_id: input.telegramUserId,
       update_id: input.updateId ?? null,
       internal_detail: input.internalDetail ?? null,
       lookup_data: input.lookupData ?? null,
       role: input.role ?? null,
+      transport: input.transport ?? 'telegram_text',
+      original_message_type: input.original_message_type ?? 'text',
+      transcription: input.transcription ?? null,
+      duration: input.duration ?? null,
+      telegram_user_id: input.telegram_user_id ?? input.telegramUserId,
       detectedIntent: input.detectedIntent ?? input.intent ?? null,
       responseMode: input.responseMode ?? 'operator_escalation',
       confidence: input.confidence ?? null,

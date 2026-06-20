@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { processUpdate } from '@/lib/communication/orchestrator';
 import { processTelegramVoiceUpdate } from '@/lib/communication/telegram-voice-inbound';
 import type { TelegramUpdate } from '@/lib/communication/types';
+import { sendTelegramChatAction } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
 // Production Telegram webhook entrypoint. The active production bot is determined only by runtime TELEGRAM_BOT_TOKEN;
@@ -16,6 +17,14 @@ function getHeader(req: Request, name: string): string | null {
 function preview(text: string, max = 120): string {
   const t = String(text ?? '');
   return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+function sendTypingIndicator(chatId: number | undefined, updateId: number | undefined, path: string): void {
+  if (typeof chatId !== 'number') return;
+  void sendTelegramChatAction(chatId, 'typing', {
+    handler: `telegram_webhook:${path}`,
+    update_id: updateId,
+  }).catch(() => undefined);
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -83,6 +92,7 @@ export async function POST(req: Request): Promise<Response> {
 
   try {
     if (update && (hasVoice || hasAudio) && chatId) {
+      sendTypingIndicator(chatId, update.update_id, 'voice');
       console.info('[comm:routing]', {
         path: 'telegram_voice',
         update_id: update.update_id,
@@ -96,6 +106,9 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     // processUpdate → session store → LLM intent → rule-based decision/escalation → reply | ask | escalate (see orchestrator)
+    if (hasText && typeof chatId === 'number') {
+      sendTypingIndicator(chatId, update?.update_id, 'text');
+    }
     const result = await processUpdate(update);
     if (process.env.COMM_PIPELINE_DEBUG === '1' || process.env.TELEGRAM_DEBUG === '1') {
       console.log('[tg:webhook] processed', {

@@ -190,6 +190,7 @@ function mergeFacts(prev: Record<string, unknown>, next: Record<string, unknown>
 }
 
 function inferMessageType(meta?: Record<string, unknown>): MessageType {
+  if (meta?.transport === 'telegram_voice') return MessageType.Voice;
   const originalType =
     typeof meta?.originalMessageType === 'string'
       ? meta.originalMessageType

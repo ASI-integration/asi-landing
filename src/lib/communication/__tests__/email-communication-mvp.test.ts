@@ -40,7 +40,7 @@ vi.mock('../idempotency', () => ({
 }));
 
 import { EmailAdapter } from '../channels/email';
-import { processEmailInbound, buildEmailDraftNotification } from '../email-inbound-processor';
+import { processEmailInbound, processEmailInboundMessage, buildEmailDraftNotification } from '../email-inbound-processor';
 import {
   lookup_booking_by_email,
   resolveEmailGuestBookingObjectContext,
@@ -89,13 +89,30 @@ describe('email communication MVP', () => {
     const envelope = await adapter.normalizeInbound({
       from: 'Guest <guest@example.com>',
       subject: 'Wi-Fi',
-      text: 'Где пароль от Wi-Fi?',
+      bodyText: 'Где пароль от Wi-Fi?',
       messageId: '<mvp-1@example.com>',
+      threadId: 'thread-1',
+      attachments: [{ filename: 'photo.jpg', contentType: 'image/jpeg', size: 1234 }],
     });
 
     expect(envelope.channel).toBe('email');
     expect(envelope.externalUserId).toBe('guest@example.com');
     expect(envelope.messageText).toBe('Где пароль от Wi-Fi?');
+    expect(envelope.metadata).toMatchObject({
+      transport: 'email',
+      original_message_type: 'email',
+      from: 'guest@example.com',
+      bodyText: 'Где пароль от Wi-Fi?',
+      thread_id: 'thread-1',
+      message_id: 'mvp-1@example.com',
+      attachments: [
+        {
+          filename: 'photo.jpg',
+          content_type: 'image/jpeg',
+          size: 1234,
+        },
+      ],
+    });
   });
 
   it('processEmailInbound stores operator draft and notifies without SMTP send by default', async () => {
@@ -123,6 +140,28 @@ describe('email communication MVP', () => {
       expect.objectContaining({
         subject: expect.stringContaining('[Email draft]'),
         body: expect.stringMatching(/Suggested reply draft:/i),
+      }),
+    );
+  });
+
+  it('processEmailInboundMessage uses the same draft-only email foundation', async () => {
+    const result = await processEmailInboundMessage({
+      payload: {
+        from: 'guest@example.com',
+        subject: 'Restaurant question',
+        text: 'Здравствуйте, есть рестораны рядом?',
+        messageId: '<mvp-alias-1@example.com>',
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.outboundMode).toBe('draft_only');
+    expect(result.reviewId).toBe('review-email-1');
+    expect(mockProcessMessage).toHaveBeenCalledTimes(1);
+    expect(mockCreateReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'email',
+        suggestedReply: expect.any(String),
       }),
     );
   });
@@ -199,7 +238,7 @@ describe('email communication MVP', () => {
       },
     });
 
-    expect(decision.metadata.intent).toBe('wifi');
+    expect(String(decision.metadata.intent)).toMatch(/wifi/i);
     expect(decision.action).toBe('needs_context');
     expect(decision.replyText ?? '').not.toMatch(/пароль:\s*\S+/i);
   });

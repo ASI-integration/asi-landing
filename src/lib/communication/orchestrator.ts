@@ -1898,6 +1898,37 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           language: (voiceMeta as any).language ?? undefined,
         }
       : null;
+    const transportEventMeta = {
+      transport: String((envelope.metadata as any)?.transport ?? (voiceMeta ? 'telegram_voice' : envelope.channel === 'telegram' ? 'telegram_text' : envelope.channel)),
+      original_message_type: String(
+        (envelope.metadata as any)?.original_message_type ??
+          (envelope.metadata as any)?.originalMessageType ??
+          (voiceMeta as any)?.original_message_type ??
+          (voiceMeta as any)?.originalMessageType ??
+          'text',
+      ),
+      transcription: voiceMeta
+        ? String(
+            (envelope.metadata as any)?.transcription ??
+              (envelope.metadata as any)?.transcriptText ??
+              (voiceMeta as any).transcription ??
+              (voiceMeta as any).transcriptText ??
+              envelope.messageText ??
+              '',
+          )
+        : null,
+      duration:
+        typeof (envelope.metadata as any)?.duration === 'number'
+          ? (envelope.metadata as any).duration
+          : typeof (voiceMeta as any)?.duration === 'number'
+            ? (voiceMeta as any).duration
+            : null,
+      telegram_user_id:
+        (envelope.metadata as any)?.telegram_user_id ??
+        (envelope.metadata as any)?.telegramUserId ??
+        (voiceMeta as any)?.telegramUserId ??
+        null,
+    };
 
     if (envelope.channel === 'telegram' && telegramMetaStoredReply) {
       cp('branch.telegram_text_meta_deterministic.pre_operational', { chat_id: chatId, kind: telegramMetaRouteKind });
@@ -2030,6 +2061,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             internalDetail:
               'Гость прислал минимальные данные для поиска бронирования: имя/фамилия, дата заезда и последние 4 цифры телефона при наличии.',
             lookupData,
+            ...transportEventMeta,
           });
           const deterministicReplyText = created.ok
             ? GUEST_BOOKING_LOOKUP_RECEIVED_REPLY
@@ -2104,6 +2136,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             confidence: commDecision.confidence,
             reason: commDecision.reason,
             decisionSource: commDecision.decisionSource,
+            ...transportEventMeta,
           });
 
           let deterministicReplyText = guestReplyText;
@@ -2127,6 +2160,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               llmProvider: commDecision.llmSafeDomain?.provider,
               llmModelName: commDecision.llmSafeDomain?.modelName,
               suggestedReply: commDecision.llmSafeDomain?.suggestedReply,
+              ...transportEventMeta,
             });
           } else if (brainOutcome === 'missing_data' && answer) {
             await createGuestTestMissingDataEvent({
@@ -2143,6 +2177,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               responseMode: commDecision.responseMode,
               confidence: commDecision.confidence,
               reason: commDecision.reason,
+              ...transportEventMeta,
             });
             await createOperatorFollowupRequired({
               telegramUserId,
@@ -2158,6 +2193,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               responseMode: commDecision.responseMode,
               confidence: commDecision.confidence,
               reason: commDecision.reason,
+              ...transportEventMeta,
             });
             patchAutonomousSessionCollectedData({
               chatId,
@@ -2196,6 +2232,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               responseMode: commDecision.responseMode,
               confidence: commDecision.confidence,
               reason: commDecision.reason,
+              ...transportEventMeta,
             });
             if (!created.ok) deterministicReplyText = OPERATOR_HANDOFF_FAILED_REPLY;
             persistEscalationReview({

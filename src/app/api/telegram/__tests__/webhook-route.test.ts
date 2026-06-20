@@ -12,8 +12,10 @@ vi.mock('@/lib/communication/telegram-voice-inbound', () => ({
 }));
 
 const mockReplyToTelegram = vi.fn();
+const mockSendTelegramChatAction = vi.fn();
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mockReplyToTelegram(...args),
+  sendTelegramChatAction: (...args: unknown[]) => mockSendTelegramChatAction(...args),
 }));
 
 import { POST } from '../webhook/route';
@@ -31,6 +33,8 @@ describe('Telegram webhook route', () => {
     mockProcessUpdate.mockReset();
     mockProcessTelegramVoiceUpdate.mockReset();
     mockReplyToTelegram.mockReset();
+    mockSendTelegramChatAction.mockReset();
+    mockSendTelegramChatAction.mockResolvedValue(true);
     delete process.env.TELEGRAM_WEBHOOK_SECRET;
     vi.useRealTimers();
   });
@@ -51,6 +55,11 @@ describe('Telegram webhook route', () => {
     expect(body).toMatchObject({ ok: true, path: 'voice_transcript_processed' });
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledWith(update);
     expect(mockProcessUpdate).toHaveBeenCalledTimes(0);
+    expect(mockSendTelegramChatAction).toHaveBeenCalledWith(
+      111,
+      'typing',
+      expect.objectContaining({ handler: 'telegram_webhook:voice', update_id: 9001 }),
+    );
   });
 
   it('detects Telegram audio messages and uses the voice inbound path', async () => {
@@ -82,6 +91,11 @@ describe('Telegram webhook route', () => {
     expect(body).toMatchObject({ ok: true });
     expect(mockProcessUpdate).toHaveBeenCalledWith(update);
     expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
+    expect(mockSendTelegramChatAction).toHaveBeenCalledWith(
+      333,
+      'typing',
+      expect.objectContaining({ handler: 'telegram_webhook:text', update_id: 9003 }),
+    );
   });
 
   it('does not send an extra slow acknowledgement while waiting for final processing', async () => {

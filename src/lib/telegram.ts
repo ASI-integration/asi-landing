@@ -141,6 +141,14 @@ export type TelegramReplyLogContext = {
   reply_markup?: Record<string, unknown>;
 };
 
+export type TelegramChatActionLogContext = {
+  handler?: string;
+  update_id?: number;
+  throttleMs?: number;
+};
+
+const chatActionLastSentAt = new Map<string, number>();
+
 export async function sendTelegramMessage(text: string): Promise<boolean> {
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   const TELEGRAM_CHAT_ID = getTelegramChatId();
@@ -214,6 +222,48 @@ export async function replyToTelegram(
     update_id: logCtx?.update_id ?? null,
     handler: logCtx?.handler ?? null,
     stage_ms: Date.now() - sendStartedAt,
+    sent,
+  });
+  return sent;
+}
+
+export async function sendTelegramChatAction(
+  chatId: number | string,
+  action: 'typing' = 'typing',
+  logCtx?: TelegramChatActionLogContext,
+): Promise<boolean> {
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for chat action');
+    return false;
+  }
+
+  const throttleMs = Number.isFinite(logCtx?.throttleMs) ? Number(logCtx?.throttleMs) : 4_000;
+  const key = `${chatId}:${action}`;
+  const now = Date.now();
+  const last = chatActionLastSentAt.get(key) ?? 0;
+  if (last > 0 && now - last < throttleMs) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] chat action throttled', {
+        chat_id: String(chatId),
+        action,
+        handler: logCtx?.handler ?? null,
+        update_id: logCtx?.update_id ?? null,
+      });
+    }
+    return true;
+  }
+  chatActionLastSentAt.set(key, now);
+
+  if (shouldSuppressTelegramOutbound(chatId)) return true;
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendChatAction`;
+  const sent = await sendOnce(url, { chat_id: chatId, action });
+  console.info('[tg:latency] telegram.chat_action', {
+    chat_id: String(chatId),
+    update_id: logCtx?.update_id ?? null,
+    handler: logCtx?.handler ?? null,
+    action,
     sent,
   });
   return sent;

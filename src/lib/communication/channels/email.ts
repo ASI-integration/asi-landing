@@ -23,9 +23,12 @@ export interface EmailInboundPayload {
   cc?: EmailAddressInput;
   subject?: string;
   text?: string;
+  bodyText?: string;
   html?: string;
   messageId?: string;
   message_id?: string;
+  threadId?: string;
+  thread_id?: string;
   uid?: string | number;
   inReplyTo?: string;
   in_reply_to?: string;
@@ -34,6 +37,16 @@ export interface EmailInboundPayload {
   reply_to?: EmailAddressInput;
   date?: string;
   headers?: Record<string, string | string[] | undefined>;
+  attachments?: Array<{
+    filename?: string;
+    name?: string;
+    contentType?: string;
+    content_type?: string;
+    size?: number;
+    bytes?: number;
+    contentId?: string;
+    content_id?: string;
+  }>;
 }
 
 export type ResendInboundPayload = EmailInboundPayload;
@@ -53,7 +66,7 @@ export class EmailAdapter implements ChannelAdapter {
 
   async normalizeInbound(rawPayload: EmailInboundPayload): Promise<InboundMessageEnvelope> {
     const fromEmail = getPrimaryEmailAddress(rawPayload.from);
-    const body = rawPayload.text ?? stripHtml(rawPayload.html ?? '');
+    const body = rawPayload.bodyText ?? rawPayload.text ?? stripHtml(rawPayload.html ?? '');
     const messageId =
       normalizeMessageId(rawPayload.messageId) ??
       normalizeMessageId(rawPayload.message_id) ??
@@ -67,6 +80,13 @@ export class EmailAdapter implements ChannelAdapter {
       normalizeMessageId(rawPayload.in_reply_to) ??
       normalizeMessageId(headerValue(rawPayload.headers, 'in-reply-to'));
     const references = rawPayload.references ?? headerValue(rawPayload.headers, 'references') ?? inReplyTo;
+    const threadId =
+      normalizeMessageId(rawPayload.threadId) ??
+      normalizeMessageId(rawPayload.thread_id) ??
+      inReplyTo ??
+      messageId ??
+      providerMessageId;
+    const attachments = normalizeAttachments(rawPayload.attachments);
 
     return {
       channel: 'email',
@@ -77,17 +97,24 @@ export class EmailAdapter implements ChannelAdapter {
       receivedAt: parseDate(rawPayload.date),
       update_id: stablePositiveInt(providerMessageId),
       metadata: {
+        transport: 'email',
+        original_message_type: 'email',
         provider: 'email',
+        from: fromEmail,
+        bodyText: body.trim(),
         providerMessageId,
         externalMessageId: providerMessageId,
         message_id: messageId ?? providerMessageId,
         messageId: messageId ?? providerMessageId,
+        thread_id: threadId,
+        threadId,
         uid: rawPayload.uid ?? null,
         in_reply_to: inReplyTo ?? null,
         references: references ?? null,
         reply_to: normalizeEmailAddressList(rawPayload.replyTo ?? rawPayload.reply_to),
         to: normalizeEmailAddressList(rawPayload.to),
         cc: normalizeEmailAddressList(rawPayload.cc),
+        attachments,
         subject: rawPayload.subject ?? null,
       },
     };
@@ -219,6 +246,16 @@ function normalizeReplySubject(value: unknown): string {
   const subject = String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
   if (!subject) return 'Re: Your request';
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+}
+
+function normalizeAttachments(input: EmailInboundPayload['attachments']): Array<Record<string, unknown>> {
+  if (!Array.isArray(input)) return [];
+  return input.map((item) => ({
+    filename: item.filename ?? item.name ?? null,
+    content_type: item.contentType ?? item.content_type ?? null,
+    size: typeof item.size === 'number' ? item.size : typeof item.bytes === 'number' ? item.bytes : null,
+    content_id: item.contentId ?? item.content_id ?? null,
+  }));
 }
 
 function stringOrUndefined(value: unknown): string | undefined {

@@ -101,6 +101,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   const messageId = message.message_id;
   const lang = message.from?.language_code;
   const telegramUserId = message.from?.id;
+  const duration = typeof media?.duration === 'number' ? media.duration : undefined;
 
   const inboundKey = `tg_voice:${updateId}:${messageId}:${fileId}`;
   if (checkAndMarkKey({ scope: 'inbound', key: inboundKey, meta: { update_id: updateId, chat_id: chatId, message_id: messageId } })) {
@@ -143,11 +144,15 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
   try {
     const audioRef = `telegram:${kind}:${messageId}:file:${fileId}`;
     const metadata: InboundMessageEnvelope['metadata'] = {
+      transport: 'telegram_voice',
       source: kind,
+      original_message_type: kind,
       originalMessageType: kind,
       sttStatus: 'success',
       sttSuccess: true,
+      transcription: transcript,
       transcriptText: transcript,
+      duration: duration ?? null,
       providerMessageId: String(messageId),
       externalMessageId: String(messageId),
       telegram_user_language_code: lang,
@@ -159,9 +164,12 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
         source: 'voice',
         voiceChannel: 'telegram_voice',
         originalMessageType: kind,
+        original_message_type: kind,
         sttStatus: 'success',
         sttSuccess: true,
+        transcription: transcript,
         transcriptText: transcript,
+        duration: duration ?? null,
         audioRef,
         providerMessageId: String(messageId),
         providerMediaId: fileId,
@@ -189,7 +197,7 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
 
     const envelope: InboundMessageEnvelope = {
       channel: 'telegram',
-      externalUserId: String(chatId),
+      externalUserId: String(telegramUserId ?? chatId),
       chatId: String(chatId),
       messageText: transcript,
       receivedAt: new Date(),

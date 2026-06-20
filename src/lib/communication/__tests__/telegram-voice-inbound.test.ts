@@ -42,6 +42,7 @@ vi.mock('../channels', () => ({
 
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: (...args: unknown[]) => mocks.replyToTelegram(...args),
+  answerTelegramCallbackQuery: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('@/lib/openai', () => ({
@@ -73,7 +74,13 @@ vi.mock('@/lib/ops/checkin-gate', () => ({
 function makeSupabaseQuery() {
   const q: any = {};
   q.upsert = vi.fn(async () => ({ data: null, error: null }));
-  q.insert = vi.fn(async () => ({ data: null, error: null }));
+  q.insert = vi.fn(() => ({
+    select: () => ({
+      single: async () => ({ data: { id: 'row_mock' }, error: null }),
+    }),
+    single: async () => ({ data: { id: 'row_mock' }, error: null }),
+    then: (resolve: (value: { data: null; error: null }) => void) => resolve({ data: null, error: null }),
+  }));
   q.update = vi.fn(() => q);
   q.select = vi.fn(() => q);
   q.eq = vi.fn(() => q);
@@ -97,7 +104,7 @@ import {
   __listConversationSessionsForTests,
   __resetConversationSessionEngineForTests,
 } from '../conversation-session-engine';
-import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
+import { __resetAutonomousSessionStoreForTests, loadAutonomousSession } from '../conversation-session-store';
 import { __resetEscalationReviewStoreForTests } from '../operator-review';
 
 function telegramSessions() {
@@ -152,10 +159,14 @@ describe('telegram voice inbound session continuity', () => {
     expect(inbound[1].content).toBe('the wifi is not working');
     expect(inbound[1].type).toBe(MessageType.Voice);
     expect(inbound[1].meta).toMatchObject({
+      transport: 'telegram_voice',
       source: 'voice',
+      original_message_type: 'voice',
       originalMessageType: 'voice',
       sttStatus: 'success',
+      transcription: 'the wifi is not working',
       transcriptText: 'the wifi is not working',
+      duration: 3,
       telegram_chat_id: 501,
       telegram_user_id: 9001,
     });
@@ -201,6 +212,20 @@ describe('telegram voice inbound session continuity', () => {
   });
 
   it('classifies a voice transcript like the same Telegram text', async () => {
+    await processUpdate({
+      update_id: 7299,
+      callback_query: {
+        id: 'voice-classify-guest',
+        from: { id: 9004, language_code: 'en' },
+        message: {
+          message_id: 8299,
+          chat: { id: 504 },
+          text: 'identity',
+        },
+        data: 'identity:guest',
+      },
+    });
+    mocks.sendMessage.mockClear();
     mocks.transcribe.mockResolvedValue('urgent lock failed access');
 
     const result = await processTelegramVoiceUpdate(
@@ -210,9 +235,9 @@ describe('telegram voice inbound session continuity', () => {
     expect(result.outcome).toBe('voice_transcript_processed');
     if (result.outcome !== 'voice_transcript_processed') throw new Error('expected voice transcript processing');
     expect(result.category).toBe(MessageCategory.Issue);
-    const [inbound] = inboundMessages();
-    expect(inbound.content).toBe('urgent lock failed access');
-    expect(inbound.type).toBe(MessageType.Voice);
+    const inbound = inboundMessages().at(-1);
+    expect(inbound?.content).toBe('urgent lock failed access');
+    expect(inbound?.type).toBe(MessageType.Voice);
   });
 
   it('transcribes Telegram audio messages with audio source metadata', async () => {
@@ -228,15 +253,53 @@ describe('telegram voice inbound session continuity', () => {
     expect(inbound.type).toBe(MessageType.Voice);
     expect(inbound.meta).toMatchObject({
       source: 'audio',
+      transport: 'telegram_voice',
+      original_message_type: 'audio',
       originalMessageType: 'audio',
       voice: {
         voiceChannel: 'telegram_voice',
+        original_message_type: 'audio',
         originalMessageType: 'audio',
         sttStatus: 'success',
+        transcription: 'audio transcript',
         transcriptText: 'audio transcript',
+        duration: 12,
         telegramChatId: 505,
         telegramUserId: 9005,
       },
     });
+  });
+
+  it('saves an unknown voice transcript as pending first message and replays it after guest selection', async () => {
+    mocks.transcribe.mockResolvedValue('вы можете порекомендовать рестораны рядом?');
+
+    const first = await processTelegramVoiceUpdate(
+      tgVoiceUpdate({ chat_id: 506, user_id: 9006, update_id: 7501, message_id: 8501, language_code: 'ru' }),
+    );
+
+    expect(first.outcome).toBe('voice_transcript_processed');
+    expect(loadAutonomousSession(506)?.pending_identity_message).toBe('вы можете порекомендовать рестораны рядом?');
+    expect(mocks.sendMessage.mock.calls.at(-1)?.[2]?.reply_markup).toMatchObject({
+      inline_keyboard: expect.arrayContaining([
+        expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:guest' })]),
+      ]),
+    });
+
+    const replay = await processUpdate({
+      update_id: 7502,
+      callback_query: {
+        id: 'voice-pending-guest',
+        from: { id: 9006, language_code: 'ru' },
+        message: {
+          message_id: 8502,
+          chat: { id: 506 },
+          text: 'identity',
+        },
+        data: 'identity:guest',
+      },
+    });
+
+    expect(replay.reply).toContain('кафе и рестораны');
+    expect(loadAutonomousSession(506)?.pending_identity_message).toBeNull();
   });
 });
