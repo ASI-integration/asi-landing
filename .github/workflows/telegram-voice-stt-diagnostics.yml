@@ -1,12 +1,6 @@
 name: Telegram Voice STT Diagnostics
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/telegram-voice-stt-diagnostics.yml
-      - scripts/telegram-voice-stt-dry-run.mjs
   workflow_dispatch:
     inputs:
       file_id:
