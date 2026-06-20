@@ -1,6 +1,8 @@
 const STT_TIMEOUT_MS_DEFAULT = 30_000;
 
-export type SttProviderId = 'openai' | 'llm_primary' | 'llm_fallback' | 'disabled';
+export type SttProviderId = 'voice_stt_relay' | 'openai' | 'llm_primary' | 'llm_fallback' | 'disabled';
+type ConfiguredProviderId = Exclude<SttProviderId, 'disabled' | 'voice_stt_relay'>;
+type ActiveProviderId = Exclude<SttProviderId, 'disabled'>;
 
 export interface SttContext {
   updateId?: number;
@@ -8,7 +10,7 @@ export interface SttContext {
 
 export interface SttAttemptResult {
   ok: boolean;
-  provider: Exclude<SttProviderId, 'disabled'>;
+  provider: ActiveProviderId;
   text?: string;
   confidence?: number;
   usedFallback: boolean;
@@ -32,6 +34,28 @@ function getTimeoutMs(): number {
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/$/, '');
+}
+
+export function sanitizeSttLogMessage(value: unknown, maxLength = 500): string {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  return raw
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-[redacted]')
+    .replace(/(api[_-]?key|token|secret|authorization)(["']?\s*[:=]\s*["']?)[^"',\s}]+/gi, '$1$2[redacted]')
+    .slice(0, maxLength);
+}
+
+function safeBaseUrlForLog(baseUrl: string): string {
+  try {
+    const u = new URL(baseUrl);
+    u.username = '';
+    u.password = '';
+    u.search = '';
+    u.hash = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return sanitizeSttLogMessage(baseUrl, 200);
+  }
 }
 
 function isGeoBlockedStt(status: number, body: string): boolean {
@@ -104,7 +128,7 @@ function getVoiceSttRelayConfig(): { baseUrl: string; apiKey: string; model: str
   return { baseUrl, apiKey, model };
 }
 
-function getProviderConfig(provider: Exclude<SttProviderId, 'disabled'>): { baseUrl: string; apiKey: string; model: string } | null {
+function getProviderConfig(provider: ConfiguredProviderId): { baseUrl: string; apiKey: string; model: string } | null {
   if (provider === 'openai') {
     const apiKey = (process.env.OPENAI_API_KEY ?? '').trim();
     if (!apiKey) return null;
@@ -179,12 +203,13 @@ function extractTextFromChatCompletionJson(data: unknown): string | null {
 }
 
 async function transcribeViaOpenRouterChat(params: {
-  provider: Exclude<SttProviderId, 'disabled'>;
+  provider: ActiveProviderId;
   baseUrl: string;
   apiKey: string;
   model: string;
   audioBuffer: ArrayBuffer;
   filename: string;
+  mimeType?: string;
   ctx?: SttContext;
 }): Promise<{ ok: true; text: string } | { ok: false; fail: SttAttemptResult['fail'] }> {
   const timeoutMs = getTimeoutMs();
@@ -195,9 +220,10 @@ async function transcribeViaOpenRouterChat(params: {
     console.log('[voice:stt] attempt.start_openrouter_audio', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
-      baseUrl: params.baseUrl,
+      baseUrl: safeBaseUrlForLog(params.baseUrl),
       model: params.model,
       filename: params.filename,
+      mime_type: params.mimeType ?? null,
       timeout_ms: timeoutMs,
       bytes: params.audioBuffer.byteLength,
     });
@@ -239,13 +265,13 @@ async function transcribeViaOpenRouterChat(params: {
       console.error('[voice:stt] attempt.fail_http', {
         provider: params.provider,
         update_id: params.ctx?.updateId ?? null,
-        baseUrl: params.baseUrl,
+        baseUrl: safeBaseUrlForLog(params.baseUrl),
         model: params.model,
         status: res.status,
         geo_blocked: geoBlocked,
-        body,
+        body_preview: sanitizeSttLogMessage(body),
       });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: body, geoBlocked } };
+      return { ok: false, fail: { kind: 'http', status: res.status, message: sanitizeSttLogMessage(body), geoBlocked } };
     }
 
     const data = (await res.json()) as unknown;
@@ -270,21 +296,22 @@ async function transcribeViaOpenRouterChat(params: {
     console.error('[voice:stt] attempt.fail_network', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
-      message: (err as Error).message,
+      message: sanitizeSttLogMessage((err as Error).message),
     });
-    return { ok: false, fail: { kind: 'network', message: (err as Error).message } };
+    return { ok: false, fail: { kind: 'network', message: sanitizeSttLogMessage((err as Error).message) } };
   } finally {
     clearTimeout(timer);
   }
 }
 
 async function transcribeOpenAiCompatible(params: {
-  provider: Exclude<SttProviderId, 'disabled'>;
+  provider: ActiveProviderId;
   baseUrl: string;
   apiKey: string;
   model: string;
   audioBuffer: ArrayBuffer;
   filename: string;
+  mimeType?: string;
   ctx?: SttContext;
 }): Promise<{ ok: true; text: string; confidence?: number } | { ok: false; fail: SttAttemptResult['fail'] }> {
   // OpenRouter does NOT implement the OpenAI Whisper `/audio/transcriptions` endpoint.
@@ -300,15 +327,16 @@ async function transcribeOpenAiCompatible(params: {
   console.info('[voice:stt] attempt.start', {
     provider: params.provider,
     update_id: params.ctx?.updateId ?? null,
-    baseUrl: params.baseUrl,
+    baseUrl: safeBaseUrlForLog(params.baseUrl),
     model: params.model,
     filename: params.filename,
+    mime_type: params.mimeType ?? mimeTypeForFilename(params.filename),
     timeout_ms: timeoutMs,
     bytes: params.audioBuffer.byteLength,
   });
 
   try {
-    const blob = new Blob([params.audioBuffer]);
+    const blob = new Blob([params.audioBuffer], { type: params.mimeType ?? mimeTypeForFilename(params.filename) });
     const form = new FormData();
     form.append('file', blob, params.filename);
     form.append('model', params.model);
@@ -326,13 +354,13 @@ async function transcribeOpenAiCompatible(params: {
       console.error('[voice:stt] attempt.fail_http', {
         provider: params.provider,
         update_id: params.ctx?.updateId ?? null,
-        baseUrl: params.baseUrl,
+        baseUrl: safeBaseUrlForLog(params.baseUrl),
         model: params.model,
         status: res.status,
         geo_blocked: geoBlocked,
-        body,
+        body_preview: sanitizeSttLogMessage(body),
       });
-      return { ok: false, fail: { kind: 'http', status: res.status, message: body, geoBlocked } };
+      return { ok: false, fail: { kind: 'http', status: res.status, message: sanitizeSttLogMessage(body), geoBlocked } };
     }
 
     const data = (await res.json()) as { text?: string };
@@ -345,7 +373,7 @@ async function transcribeOpenAiCompatible(params: {
     console.info('[voice:stt] attempt.ok', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
-      baseUrl: params.baseUrl,
+      baseUrl: safeBaseUrlForLog(params.baseUrl),
       model: params.model,
       chars: text.length,
     });
@@ -363,17 +391,30 @@ async function transcribeOpenAiCompatible(params: {
     console.error('[voice:stt] attempt.fail_network', {
       provider: params.provider,
       update_id: params.ctx?.updateId ?? null,
-      message: (err as Error).message,
+      message: sanitizeSttLogMessage((err as Error).message),
     });
-    return { ok: false, fail: { kind: 'network', message: (err as Error).message } };
+    return { ok: false, fail: { kind: 'network', message: sanitizeSttLogMessage((err as Error).message) } };
   } finally {
     clearTimeout(timer);
   }
 }
 
+function mimeTypeForFilename(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.ogg') || lower.endsWith('.oga')) return 'audio/ogg';
+  if (lower.endsWith('.opus')) return 'audio/opus';
+  if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) return 'audio/mp4';
+  if (lower.endsWith('.mp3') || lower.endsWith('.mpeg') || lower.endsWith('.mpga')) return 'audio/mpeg';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  if (lower.endsWith('.flac')) return 'audio/flac';
+  return 'application/octet-stream';
+}
+
 export async function transcribeWithConfiguredStt(params: {
   audioBuffer: ArrayBuffer;
   filename: string;
+  mimeType?: string;
   ctx?: SttContext;
 }): Promise<SttAttemptResult> {
   if (process.env.VOICE_TRANSCRIPTION_DISABLED === '1') {
@@ -385,25 +426,27 @@ export async function transcribeWithConfiguredStt(params: {
   if (relay) {
     console.info('[voice:stt] selection', {
       update_id: params.ctx?.updateId ?? null,
-      primary: 'google_stt_relay',
-      baseUrl: relay.baseUrl,
+      primary: 'voice_stt_relay',
+      baseUrl: safeBaseUrlForLog(relay.baseUrl),
       model: relay.model,
+      mime_type: params.mimeType ?? mimeTypeForFilename(params.filename),
     });
     const relayAttempt = await transcribeOpenAiCompatible({
-      provider: 'openai',
+      provider: 'voice_stt_relay',
       baseUrl: relay.baseUrl,
       apiKey: relay.apiKey,
       model: relay.model,
       audioBuffer: params.audioBuffer,
       filename: params.filename,
+      mimeType: params.mimeType,
       ctx: params.ctx,
     });
     if (relayAttempt.ok) {
-      return { ok: true, provider: 'openai', usedFallback: false, text: relayAttempt.text };
+      return { ok: true, provider: 'voice_stt_relay', usedFallback: false, text: relayAttempt.text };
     }
     return {
       ok: false,
-      provider: 'openai',
+      provider: 'voice_stt_relay',
       usedFallback: false,
       fail: relayAttempt.fail ?? { kind: 'unexpected' },
     };
@@ -418,11 +461,11 @@ export async function transcribeWithConfiguredStt(params: {
     return { ok: false, provider: 'llm_primary', usedFallback: false, fail: { kind: 'missing_config', message: 'VOICE_STT_PRIMARY=disabled' } };
   }
 
-  const attemptProviders: Array<{ provider: Exclude<SttProviderId, 'disabled'>; usedFallback: boolean }> = [
-    { provider: primary, usedFallback: false },
+  const attemptProviders: Array<{ provider: ConfiguredProviderId; usedFallback: boolean }> = [
+    { provider: primary as ConfiguredProviderId, usedFallback: false },
   ];
   if (fallback !== 'disabled' && fallback !== primary) {
-    attemptProviders.push({ provider: fallback, usedFallback: true });
+    attemptProviders.push({ provider: fallback as ConfiguredProviderId, usedFallback: true });
   }
 
   for (const p of attemptProviders) {
@@ -442,6 +485,7 @@ export async function transcribeWithConfiguredStt(params: {
       model: cfg.model,
       audioBuffer: params.audioBuffer,
       filename: params.filename,
+      mimeType: params.mimeType,
       ctx: params.ctx,
     });
     if (r.ok) return { ok: true, provider: p.provider, usedFallback: p.usedFallback, text: r.text };
@@ -464,6 +508,7 @@ export async function transcribeWithConfiguredStt(params: {
           model: fallbackCfg.model,
           audioBuffer: params.audioBuffer,
           filename: params.filename,
+          mimeType: params.mimeType,
           ctx: params.ctx,
         });
         if (fr.ok) return { ok: true, provider: 'llm_fallback', usedFallback: true, text: fr.text };

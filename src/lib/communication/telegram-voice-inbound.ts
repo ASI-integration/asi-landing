@@ -3,7 +3,7 @@ import { auditDecision, auditDuplicate, auditError } from './audit';
 import { checkAndMarkKey } from './idempotency';
 import { processMessage } from './orchestrator';
 import { sha256Base64Url } from './reliability';
-import { transcribeVoiceMessage } from './voice-transcription';
+import { transcribeVoiceMessageDetailed } from './voice-transcription';
 import { ProcessOutcome } from './types';
 import { replyToTelegram } from '../telegram';
 
@@ -12,9 +12,7 @@ function debugEnabled(): boolean {
 }
 
 function sttFailText(lang?: string): string {
-  return lang === 'ru'
-    ? 'Не удалось распознать голосовое. Пришлите, пожалуйста, текстом.'
-    : "I couldn't transcribe the voice message. Please send it as text.";
+  return 'Не удалось разобрать голосовое сообщение. Напишите, пожалуйста, текстом или отправьте голосовое ещё раз.';
 }
 
 export type TelegramVoiceInboundResult =
@@ -120,23 +118,48 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
     file_size: media?.file_size ?? null,
   });
 
-  const transcript = (
-    await transcribeVoiceMessage(fileId, media?.mime_type, {
-      updateId,
-    })
-  )?.trim();
+  const transcriptionResult = await transcribeVoiceMessageDetailed(fileId, media?.mime_type, {
+    updateId,
+  });
+  const transcript = transcriptionResult.ok ? transcriptionResult.text.trim() : null;
 
   if (!transcript) {
+    const sttFailure = transcriptionResult.ok ? null : transcriptionResult;
     const detail = JSON.stringify({
       event: 'telegram_voice_stt_failed',
       original_message_type: kind,
       stt_success: false,
+      fallback_reason: sttFailure?.reason ?? 'stt_failed',
+      duration: duration ?? null,
+      mime_type: media?.mime_type ?? sttFailure?.mimeType ?? null,
+      extension: sttFailure?.extension ?? null,
+      download_success: Boolean(sttFailure?.downloadBytes),
+      download_bytes: sttFailure?.downloadBytes ?? null,
+      stt_provider: sttFailure?.provider ?? null,
+      stt_error_kind: sttFailure?.stt?.kind ?? null,
+      stt_error_status: sttFailure?.stt?.status ?? null,
+      stt_error_message: sttFailure?.stt?.message ?? sttFailure?.telegram?.message ?? null,
       telegram_chat_id: chatId,
       telegram_user_id: telegramUserId ?? null,
       telegram_message_id: messageId,
       telegram_file_id: fileId,
     });
-    console.warn('[tg:voice] stt.failed', { update_id: updateId, chat_id: chatId, message_id: messageId, kind });
+    console.warn('[tg:voice] stt.failed', {
+      update_id: updateId,
+      chat_id: chatId,
+      message_id: messageId,
+      kind,
+      file_id: fileId,
+      duration: duration ?? null,
+      mime_type: media?.mime_type ?? sttFailure?.mimeType ?? null,
+      extension: sttFailure?.extension ?? null,
+      download_success: Boolean(sttFailure?.downloadBytes),
+      provider: sttFailure?.provider ?? null,
+      error_kind: sttFailure?.stt?.kind ?? null,
+      error_status: sttFailure?.stt?.status ?? null,
+      error_message: sttFailure?.stt?.message ?? sttFailure?.telegram?.message ?? null,
+      fallback_reason: sttFailure?.reason ?? 'stt_failed',
+    });
     auditError({ chat_id: chatId, update_id: updateId, detail });
     return sendVoiceFallback({ updateId, chatId, messageId, lang, reason: 'stt_failed' });
   }
@@ -150,9 +173,14 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
       originalMessageType: kind,
       sttStatus: 'success',
       sttSuccess: true,
+      sttProvider: transcriptionResult.provider,
+      sttUsedFallback: transcriptionResult.usedFallback,
       transcription: transcript,
       transcriptText: transcript,
       duration: duration ?? null,
+      mime_type: transcriptionResult.mimeType,
+      extension: transcriptionResult.extension,
+      download_bytes: transcriptionResult.downloadBytes,
       providerMessageId: String(messageId),
       externalMessageId: String(messageId),
       telegram_user_language_code: lang,
@@ -167,9 +195,14 @@ export async function processTelegramVoiceUpdate(update: TelegramUpdate): Promis
         original_message_type: kind,
         sttStatus: 'success',
         sttSuccess: true,
+        sttProvider: transcriptionResult.provider,
+        sttUsedFallback: transcriptionResult.usedFallback,
         transcription: transcript,
         transcriptText: transcript,
         duration: duration ?? null,
+        mimeType: transcriptionResult.mimeType,
+        extension: transcriptionResult.extension,
+        downloadBytes: transcriptionResult.downloadBytes,
         audioRef,
         providerMessageId: String(messageId),
         providerMediaId: fileId,

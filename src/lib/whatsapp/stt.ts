@@ -19,7 +19,7 @@ export async function transcribeWhatsAppAudio(params: {
 }): Promise<WhatsAppSttResult | null> {
   const ext = mimeTypeToExt(params.mimeType);
   const filename = `whatsapp_voice${ext}`;
-  const r = await transcribeWithWhisper({ audioBuffer: params.audioBuffer, filename });
+  const r = await transcribeWithWhisper({ audioBuffer: params.audioBuffer, filename, mimeType: params.mimeType });
   if (!r) return null;
   return { transcript: r.text, confidence: r.confidence };
 }

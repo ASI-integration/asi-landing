@@ -23,8 +23,21 @@ vi.mock('../voice-transcription', async () => {
   const actual = await vi.importActual<typeof import('../voice-transcription')>('../voice-transcription');
   return {
     ...actual,
-    transcribeVoiceMessage: (fileId: string, mimeType?: string, ctx?: { updateId?: number }) =>
-      mocks.transcribe(fileId, mimeType, ctx),
+    transcribeVoiceMessageDetailed: async (fileId: string, mimeType?: string, ctx?: { updateId?: number }) => {
+      const text = await mocks.transcribe(fileId, mimeType, ctx);
+      if (!text) return { ok: false, reason: 'stt_failed', provider: 'voice_stt_relay', stt: { kind: 'empty' } };
+      return {
+        ok: true,
+        text,
+        provider: 'voice_stt_relay',
+        usedFallback: false,
+        filename: 'voice_message.ogg',
+        mimeType: mimeType ?? 'audio/ogg',
+        extension: '.ogg',
+        filePath: 'voice/file.oga',
+        downloadBytes: 12,
+      };
+    },
   };
 });
 
@@ -208,7 +221,9 @@ describe('telegram voice inbound session continuity', () => {
     expect((result as any).reason).toBe('stt_failed');
     expect(telegramSessions()).toHaveLength(0);
     expect(mocks.replyToTelegram).toHaveBeenCalledTimes(1);
-    expect(String(mocks.replyToTelegram.mock.calls[0][1])).toMatch(/Не удалось распознать голосовое/i);
+    expect(String(mocks.replyToTelegram.mock.calls[0][1])).toBe(
+      'Не удалось разобрать голосовое сообщение. Напишите, пожалуйста, текстом или отправьте голосовое ещё раз.',
+    );
   });
 
   it('classifies a voice transcript like the same Telegram text', async () => {
