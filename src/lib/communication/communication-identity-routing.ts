@@ -1,6 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { loadAutonomousSession } from './conversation-session-store';
 import { classifyGuestCommunicationIntent, isGuestConciergeIntent } from './guest-intent-router';
+import {
+  extractFactsDeterministic,
+  isIdentitySelectionText,
+  type OwnerOnboardingField,
+} from './owner-onboarding-smart-parser';
 import type { InboundMessageEnvelope, IdentityResolution } from './types';
 
 export type SenderIdentity =
@@ -182,15 +187,23 @@ function activeOwnerOnboarding(envelope: InboundMessageEnvelope): {
 function looksLikeOwnerOnboardingContinuation(messageText: string, missing: string[]): boolean {
   const t = norm(messageText).replace(/ё/g, 'е');
   if (!t) return false;
-  if (missing.includes('address')) {
-    return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|квартир|апартамент|москва|санкт|спб|казань|сочи|\d{1,4})/.test(t);
+  if (isIdentitySelectionText(messageText)) return true;
+
+  const fields = missing.length > 0 ? (missing as OwnerOnboardingField[]) : (['address'] as OwnerOnboardingField[]);
+  const facts = extractFactsDeterministic(messageText, fields, false);
+  const extractedCount =
+    Object.keys(facts).filter((key) => key !== 'city' && key !== 'photos_intent').length + (facts.photos_intent ? 1 : 0);
+  if (extractedCount > 0) return true;
+
+  if (fields.includes('address')) {
+    return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат)/.test(t);
   }
-  if (missing.includes('property_name') && /(квартир|апартамент|студия|дом|объект|лофт|номер)/.test(t)) return true;
-  if (missing.includes('house_rules') && /(правил|курен|животн|тишин|залог|вечерин|нельзя|можно)/.test(t)) return true;
-  if (missing.includes('wifi') && /(wi fi|wi-fi|wifi|вай фай|вайфай|сеть|парол)/.test(t)) return true;
-  if (missing.includes('checkin_checkout') && /(заезд|выезд|check in|check out|\b\d{1,2}[:.]\d{2}\b)/.test(t)) return true;
-  if (missing.includes('photos') && /(фото|изображен|\[photo\])/.test(t)) return true;
-  if (missing.includes('channels') && /(авито|суточн|остров|яндекс|airbnb|booking|букинг|канал|площадк|ota)/.test(t)) return true;
+  if (fields.includes('property_name') && /(квартир|апартамент|студия|дом|объект|лофт|номер|вокзал)/.test(t)) return true;
+  if (fields.includes('house_rules') && /(правил|курен|животн|тишин|залог|вечерин|нельзя|можно|обычн)/.test(t)) return true;
+  if (fields.includes('wifi') && /(wi fi|wi-fi|wifi|вай фай|вайфай|сеть|парол|потом|позже)/.test(t)) return true;
+  if (fields.includes('checkin_checkout') && /(заезд|выезд|check in|check out|\b\d{1,2}[:.]\d{2}\b|после|до)/.test(t)) return true;
+  if (fields.includes('photos') && /(фото|изображен|\[photo\]|позже|потом|пришлю)/.test(t)) return true;
+  if (fields.includes('channels') && /(авито|суточн|остров|яндекс|airbnb|booking|букинг|канал|площадк|ota)/.test(t)) return true;
   return false;
 }
 
