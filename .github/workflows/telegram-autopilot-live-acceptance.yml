@@ -68,10 +68,11 @@ jobs:
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
             "ACCEPTANCE_BASE_URL='${ACCEPTANCE_BASE_URL}' bash -lc 'set -euo pipefail
               cd /var/www/asi/current
+              cp \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\" scripts/telegram-autopilot-live-acceptance.mjs
               set -a
               source /var/www/asi/shared/.env.production.live
               set +a
               export ACCEPTANCE_BASE_URL=\"${ACCEPTANCE_BASE_URL}\"
-              node \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\"
-              rm -f \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\"
+              node scripts/telegram-autopilot-live-acceptance.mjs
+              rm -f scripts/telegram-autopilot-live-acceptance.mjs \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\"
             '"
