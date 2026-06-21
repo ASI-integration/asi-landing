@@ -40,6 +40,10 @@ function withOnboarding(status: CrmOnboardingStatus, missing: string[] = []): Cr
       missing,
       lastMessage: 'тест',
       channelManagerHref: '/dashboard/channel-connections',
+      readinessPercent: null,
+      readinessStatusLabel: null,
+      nextBestStep: null,
+      missingOptional: [],
     },
   };
 }
@@ -121,5 +125,30 @@ describe('crm activity feed', () => {
     });
     expect(line).toMatch(/ASI сохранила адрес объекта/);
     expect(line).not.toMatch(/onboarding_started/);
+  });
+
+  it('maps readiness crm events to russian feed lines', () => {
+    const events: CrmEventRow[] = [
+      {
+        id: 'e-readiness',
+        contact_id: 'c-1',
+        event_type: 'object_readiness_updated',
+        message_text: null,
+        metadata: { readiness_percent: 50 },
+        created_at: '2026-06-19T10:10:00.000Z',
+      },
+      {
+        id: 'e-ready-cm',
+        contact_id: 'c-1',
+        event_type: 'object_readiness_ready_for_cm',
+        message_text: null,
+        metadata: {},
+        created_at: '2026-06-19T10:11:00.000Z',
+      },
+    ];
+
+    const feed = buildActivityFeed([withOnboarding('missing_required_data', ['wifi'])], events, 20);
+    expect(feed.some((entry) => entry.label.includes('готовность объекта: 50%'))).toBe(true);
+    expect(feed.some((entry) => entry.label.includes('Менеджеру каналов'))).toBe(true);
   });
 });

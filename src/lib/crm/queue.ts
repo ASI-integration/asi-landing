@@ -1,6 +1,12 @@
 import type { CrmContact, CrmOnboardingStatus, CrmStatus } from './types';
 import type { CrmActivityItem, CrmOperationalStatus } from './activity-feed';
 import { CRM_OPERATIONAL_STATUS_LABELS, resolveOperationalStatus } from './activity-feed';
+import {
+  computeObjectReadiness,
+  readinessInputFromOnboardingState,
+  REQUIRED_FIELD_LABELS_RU,
+} from '@/lib/object-readiness/engine';
+import type { OwnerOnboardingField } from '@/lib/communication/owner-onboarding-smart-parser';
 
 export const CRM_QUEUE_COLUMN_VALUES = [
   'new_lead',
@@ -82,6 +88,10 @@ export type CrmQueueItem = {
   lastContactAt: string | null;
   updatedAt: string;
   missingFields: string[];
+  missingOptionalFields: string[];
+  readinessPercent: number | null;
+  readinessStatusLabel: string | null;
+  nextBestStep: string | null;
   readyForChannelManager: boolean;
   needsOperator: boolean;
   channelManagerStatus: string | null;
@@ -123,6 +133,47 @@ function channelManagerStatusFor(contact: CrmContact): string | null {
 
 function missingFieldsRu(missing: string[]): string[] {
   return missing.map((field) => ONBOARDING_FIELD_LABELS[field] ?? field);
+}
+
+function fieldKeyFromLabel(label: string): OwnerOnboardingField | null {
+  const normalized = label.trim().toLowerCase();
+  for (const [key, value] of Object.entries(ONBOARDING_FIELD_LABELS)) {
+    if (value === normalized || normalized.includes(value)) return key as OwnerOnboardingField;
+  }
+  for (const [key, value] of Object.entries(REQUIRED_FIELD_LABELS_RU)) {
+    if (value === normalized || normalized.includes(value)) return key as OwnerOnboardingField;
+  }
+  return null;
+}
+
+function readinessForContact(contact: CrmContact) {
+  const onboarding = contact.onboarding;
+  if (!onboarding) return null;
+
+  const missingKeys = new Set<OwnerOnboardingField>();
+  for (const raw of onboarding.missing) {
+    const key = fieldKeyFromLabel(raw);
+    if (key) missingKeys.add(key);
+  }
+
+  let photosIntent: 'later' | undefined;
+  if (onboarding.missing.some((item) => /фото.*позже|позже.*фото/i.test(item))) {
+    photosIntent = 'later';
+  }
+
+  return computeObjectReadiness(
+    readinessInputFromOnboardingState({
+      address: missingKeys.has('address') ? undefined : 'set',
+      property_name: missingKeys.has('property_name') ? undefined : 'set',
+      house_rules: missingKeys.has('house_rules') ? undefined : 'set',
+      wifi: missingKeys.has('wifi') ? undefined : 'set',
+      checkin_checkout: missingKeys.has('checkin_checkout') ? undefined : 'set',
+      photos: missingKeys.has('photos') && !photosIntent ? undefined : photosIntent ? undefined : 'set',
+      photos_intent: photosIntent ?? null,
+      channels: missingKeys.has('channels') ? undefined : 'set',
+      status: onboarding.status,
+    }),
+  );
 }
 
 export function resolveQueueColumn(contact: CrmContact): CrmQueueColumn {
@@ -184,7 +235,9 @@ export function buildQueueItem(
 ): CrmQueueItem {
   const column = resolveQueueColumn(contact);
   const onboardingStatus = contact.onboarding?.status ?? null;
-  const missing = contact.onboarding?.missing ?? [];
+  const onboarding = contact.onboarding;
+  const missing = onboarding?.missing ?? [];
+  const readiness = readinessForContact(contact);
 
   const flags = {
     needsOperator: contactNeedsOperator(contact),
@@ -205,7 +258,14 @@ export function buildQueueItem(
     column,
     lastContactAt: contact.lastContactAt,
     updatedAt: contact.updatedAt,
-    missingFields: missingFieldsRu(missing),
+    missingFields: readiness?.missing_required_labels_ru ?? missingFieldsRu(missing),
+    missingOptionalFields: onboarding?.missingOptional?.length
+      ? onboarding.missingOptional
+      : (readiness?.missing_optional_labels_ru ?? []),
+    readinessPercent: onboarding?.readinessPercent ?? readiness?.readiness_percent ?? null,
+    readinessStatusLabel:
+      onboarding?.readinessStatusLabel ?? readiness?.readiness_status_label_ru ?? null,
+    nextBestStep: onboarding?.nextBestStep ?? readiness?.next_best_step_ru ?? null,
     readyForChannelManager: flags.readyForChannelManager,
     needsOperator: flags.needsOperator,
     channelManagerStatus: channelManagerStatusFor(contact),

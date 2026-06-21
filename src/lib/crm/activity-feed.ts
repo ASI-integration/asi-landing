@@ -139,6 +139,14 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
   escalation: { actor: 'ASI', label: 'эскалировала задачу', tone: 'attention' },
   blocked: { actor: 'ASI', label: 'заблокировала автоответ', tone: 'attention' },
   note: { actor: 'ASI', label: 'добавила заметку', tone: 'processing' },
+  object_readiness_updated: { actor: 'ASI', label: 'обновила готовность объекта', tone: 'processing' },
+  object_readiness_missing_photos: { actor: 'ASI', label: 'обнаружила недостающие фото', tone: 'pending' },
+  object_readiness_ready_for_cm: {
+    actor: 'ASI',
+    label: 'перевела объект в «Готов к Менеджеру каналов»',
+    tone: 'done',
+  },
+  object_readiness_requested_channels: { actor: 'ASI', label: 'запросила каналы бронирования', tone: 'pending' },
 };
 
 function normalizeFieldKey(raw: string): OnboardingFieldKey | null {
@@ -276,6 +284,13 @@ function crmEventToFeedEntry(row: CrmEventRow, contact?: CrmContact): CrmActivit
     const role = typeof metadata.role === 'string' ? metadata.role : '';
     if (role === 'guest') actor = 'Гость';
     else if (role === 'owner' || role === 'manager') actor = 'Владелец';
+  }
+
+  if (row.event_type === 'object_readiness_updated') {
+    const percent = metadata.readiness_percent;
+    if (typeof percent === 'number') {
+      label = `обновила готовность объекта: ${percent}%`;
+    }
   }
 
   return {

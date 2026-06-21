@@ -29,22 +29,39 @@ const baseContact: CrmContact = {
   updatedAt: '2026-06-19T10:00:00.000Z',
 };
 
-function withOnboarding(status: CrmOnboardingStatus, missing: string[] = []): CrmContact {
+function withOnboarding(
+  status: CrmOnboardingStatus,
+  missing: string[] = [],
+  readiness?: Partial<{
+    readinessPercent: number;
+    readinessStatusLabel: string;
+    nextBestStep: string;
+  }>,
+): CrmContact {
   return {
     ...baseContact,
     note: [
       'Онбординг ASI',
       `Статус: ${status}`,
+      readiness?.readinessPercent != null ? `Готовность: ${readiness.readinessPercent}%` : null,
+      readiness?.readinessStatusLabel ? `Статус готовности: ${readiness.readinessStatusLabel}` : null,
       `Не хватает: ${missing.length ? missing.join(', ') : 'ничего'}`,
+      readiness?.nextBestStep ? `Следующий шаг: ${readiness.nextBestStep}` : null,
       'Последнее сообщение: тест',
       'Менеджер каналов: /dashboard/channel-connections',
-    ].join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
     onboarding: {
       status,
       statusLabel: status,
       missing,
       lastMessage: 'тест',
       channelManagerHref: '/dashboard/channel-connections',
+      readinessPercent: readiness?.readinessPercent ?? null,
+      readinessStatusLabel: readiness?.readinessStatusLabel ?? null,
+      nextBestStep: readiness?.nextBestStep ?? null,
+      missingOptional: [],
     },
   };
 }
@@ -60,12 +77,20 @@ describe('crm queue', () => {
   });
 
   it('builds queue cards with russian labels and flags', () => {
-    const item = buildQueueItem(withOnboarding('ready_for_channel_manager'));
+    const item = buildQueueItem(
+      withOnboarding('ready_for_channel_manager', [], {
+        readinessPercent: 100,
+        readinessStatusLabel: 'Готов к Менеджеру каналов',
+        nextBestStep: 'Открыть Менеджер каналов',
+      }),
+    );
     expect(item.objectTitle).toBe('Объект в Москва');
     expect(item.onboardingStatusLabel).toBe('Готов к Менеджеру каналов');
     expect(item.readyForChannelManager).toBe(true);
     expect(item.needsOperator).toBe(false);
     expect(item.channelManagerStatus).toBe('Готов к подключению');
+    expect(item.readinessPercent).toBe(100);
+    expect(item.nextBestStep).toBe('Открыть Менеджер каналов');
   });
 
   it('filters queue items', () => {

@@ -46,6 +46,10 @@ export type CrmOnboarding = {
   missing: string[];
   lastMessage: string;
   channelManagerHref: string | null;
+  readinessPercent: number | null;
+  readinessStatusLabel: string | null;
+  nextBestStep: string | null;
+  missingOptional: string[];
 };
 
 export type CrmContact = {

@@ -27,7 +27,7 @@ function makeQuery(table: string) {
       },
     })),
     insert: vi.fn((row: Record<string, unknown>) => {
-      insertedRows.push(row);
+      insertedRows.push({ table, row });
       const id = `crm-${insertedRows.length}`;
       return {
         select: () => ({
@@ -358,7 +358,7 @@ describe('Telegram owner auto-onboarding v1', () => {
     expect(result.status).toBe('onboarding_started');
     expect(result.missing[0]).toBe('address');
     expect(result.replyText).toContain('Поняла. Помогу подключить объект к ASI');
-    expect(insertedRows.at(-1)).toMatchObject({
+    expect(insertedRows.find((item) => item.table === 'crm_contacts')?.row).toMatchObject({
       contact: 'owner_v1',
       source: 'telegram',
       status: 'contact',
@@ -377,6 +377,8 @@ describe('Telegram owner auto-onboarding v1', () => {
     expect(result.status).toBe('missing_required_data');
     expect(result.missing).not.toContain('address');
     expect(result.replyText).toMatch(/адрес/i);
+    expect(result.state.readiness?.readiness_percent).toBeGreaterThan(0);
+    expect(result.replyText).toMatch(/Готовность объекта/i);
   });
 
   it('moves to ready_for_channel_manager when minimum data is collected', async () => {
@@ -417,6 +419,41 @@ describe('Telegram owner auto-onboarding v1', () => {
     expect(result.replyText).toContain('оператор');
   });
 
+  it('accepts photos_intent=later and asks for the next missing field', async () => {
+    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: 7010, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Адрес: Казань, Баумана 5'),
+      chatId: 7010,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({ envelope: envelope('Апартаменты'), chatId: 7010, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Правила: без курения, тишина после 23:00'),
+      chatId: 7010,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Wi-Fi Guest / pass123'),
+      chatId: 7010,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Заезд с 15:00, выезд до 11:00'),
+      chatId: 7010,
+      senderIdentity: 'lead',
+    });
+    const photosLater = await processTelegramOwnerOnboarding({
+      envelope: envelope('Фото пришлю позже'),
+      chatId: 7010,
+      senderIdentity: 'lead',
+    });
+
+    expect(photosLater.state.photos_intent).toBe('later');
+    expect(photosLater.missing).not.toContain('photos');
+    expect(photosLater.missing[0]).toBe('channels');
+    expect(photosLater.replyText).toMatch(/канал/i);
+  });
+
   it('does not run owner onboarding for guests', async () => {
     const result = await processTelegramOwnerOnboarding({
       envelope: envelope('Я гость, не работает Wi-Fi'),
@@ -425,7 +462,7 @@ describe('Telegram owner auto-onboarding v1', () => {
     });
 
     expect(result.handled).toBe(false);
-    expect(insertedRows).toHaveLength(0);
+    expect(insertedRows.filter((item) => item.table === 'crm_contacts')).toHaveLength(0);
     expect(loadAutonomousSession(7004)).toBeUndefined();
   });
 });

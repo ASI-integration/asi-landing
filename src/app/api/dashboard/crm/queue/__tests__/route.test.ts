@@ -62,6 +62,10 @@ describe('/api/dashboard/crm/queue', () => {
           missing: ['photos'],
           lastMessage: 'нужен оператор',
           channelManagerHref: '/dashboard/channel-connections',
+          readinessPercent: null,
+          readinessStatusLabel: null,
+          nextBestStep: null,
+          missingOptional: [],
         },
       },
     ]);

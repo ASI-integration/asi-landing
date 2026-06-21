@@ -40,6 +40,10 @@ describe('operator inbox filtering', () => {
           missing: ['wifi'],
           lastMessage: '',
           channelManagerHref: null,
+          readinessPercent: null,
+          readinessStatusLabel: null,
+          nextBestStep: null,
+          missingOptional: [],
         },
       }),
     );

@@ -171,6 +171,24 @@ function QueueCard({
         ) : null}
       </div>
 
+      {item.readinessPercent !== null ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-medium text-slate-700">Готовность объекта</span>
+            <span className="font-semibold text-slate-900">{item.readinessPercent}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{ width: `${Math.min(100, Math.max(0, item.readinessPercent))}%` }}
+            />
+          </div>
+          {item.readinessStatusLabel ? (
+            <p className="text-xs text-slate-600">{item.readinessStatusLabel}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       {item.recentActivities.length > 0 ? (
         <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 space-y-1.5">
           <p className="text-xs font-medium text-slate-700">Последние действия</p>
@@ -203,8 +221,19 @@ function QueueCard({
 
       {item.missingFields.length > 0 ? (
         <div>
-          <p className="text-xs font-medium text-slate-700">Не хватает данных</p>
-          <p className="text-xs text-slate-600">{item.missingFields.join(', ')}</p>
+          <p className="text-xs font-medium text-slate-700">Не хватает</p>
+          <ul className="mt-1 list-inside list-disc text-xs text-slate-600">
+            {item.missingFields.map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {item.nextBestStep ? (
+        <div>
+          <p className="text-xs font-medium text-slate-700">Следующий шаг</p>
+          <p className="text-xs text-slate-600">{item.nextBestStep}</p>
         </div>
       ) : null}
 

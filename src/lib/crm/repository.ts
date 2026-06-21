@@ -136,12 +136,23 @@ function parseOnboarding(note: string | null | undefined): CrmOnboarding | null 
     ? []
     : missingRaw.split(',').map((item) => item.trim()).filter(Boolean);
   const href = get('Менеджер каналов:');
+  const readinessRaw = get('Готовность:').replace('%', '').trim();
+  const readinessPercent = readinessRaw && /^\d+$/.test(readinessRaw) ? Number(readinessRaw) : null;
+  const missingOptionalRaw = get('Не хватает (дополнительно):');
+  const missingOptional =
+    !missingOptionalRaw || missingOptionalRaw === 'ничего'
+      ? []
+      : missingOptionalRaw.split(',').map((item) => item.trim()).filter(Boolean);
   return {
     status,
     statusLabel,
     missing,
     lastMessage: get('Последнее сообщение:'),
     channelManagerHref: href || null,
+    readinessPercent,
+    readinessStatusLabel: get('Статус готовности:') || null,
+    nextBestStep: get('Следующий шаг:') || null,
+    missingOptional,
   };
 }
 

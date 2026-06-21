@@ -14,6 +14,12 @@ import {
 } from './owner-onboarding-smart-parser';
 import type { InboundMessageEnvelope } from './types';
 import type { SenderIdentity, TelegramInlineKeyboardMarkup } from './communication-identity-routing';
+import {
+  computeObjectReadiness,
+  readinessInputFromOnboardingState,
+  type ObjectReadinessResult,
+} from '@/lib/object-readiness/engine';
+import { emitObjectReadinessEvents } from '@/lib/object-readiness/crm-events';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -33,6 +39,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   lastMessage: string;
   channelManagerHref: string;
   lastClarificationQuestion?: string;
+  readiness?: ObjectReadinessResult;
 };
 
 export type OwnerOnboardingResult = {
@@ -237,6 +244,7 @@ function buildReply(params: {
   facts: Partial<Record<OwnerOnboardingField, string>>;
   decision: SmartParseDecision;
   photosIntent?: PhotosIntent;
+  readiness?: ObjectReadinessResult;
 }): string {
   if (params.status === 'needs_operator') {
     return 'Похоже, здесь нужна ручная помощь. Я передала диалог оператору: он посмотрит данные объекта и ответит здесь.';
@@ -254,11 +262,14 @@ function buildReply(params: {
 
   const next = params.missing[0] ?? 'address';
   const saved = savedAckRu(params.facts, { photos_intent: params.photosIntent });
+  const readinessLine = params.readiness
+    ? `Готовность объекта: ${params.readiness.readiness_percent}%.`
+    : '';
 
   if (params.decision.clarification_question && params.decision.needs_clarification) {
     const intro = saved ? `Поняла, ${saved} сохранила.` : params.decision.clarification_question;
     if (saved && params.decision.clarification_question) {
-      return [intro, params.decision.clarification_question].join('\n\n');
+      return [intro, readinessLine, params.decision.clarification_question].filter(Boolean).join('\n\n');
     }
     return intro;
   }
@@ -273,14 +284,19 @@ function buildReply(params: {
       : '';
     const question = FIELD_QUESTIONS[next];
     if (params.facts.address && next === 'property_name') {
-      return [`Поняла, адрес сохранила.`, missingHint, `Теперь укажите, пожалуйста, что это за объект: квартира, апартаменты, дом или другой формат.`]
+      return [
+        `Поняла, адрес сохранила.`,
+        readinessLine,
+        missingHint,
+        `Теперь укажите, пожалуйста, что это за объект: квартира, апартаменты, дом или другой формат.`,
+      ]
         .filter(Boolean)
         .join('\n');
     }
     if (params.photosIntent === 'later') {
-      return [`Поняла, фото можно добавить позже.`, missingHint, question].filter(Boolean).join('\n');
+      return [`Поняла, фото можно добавить позже.`, readinessLine, missingHint, question].filter(Boolean).join('\n');
     }
-    return [`Поняла, ${saved} сохранила.`, missingHint, question].filter(Boolean).join('\n');
+    return [`Поняла, ${saved} сохранила.`, readinessLine, missingHint, question].filter(Boolean).join('\n');
   }
 
   return [
@@ -313,12 +329,19 @@ function buildCrmNote(params: {
   state: OwnerOnboardingState;
 }): string {
   const base = noteWithoutOnboardingBlock(params.existingNote ?? '');
+  const readiness = params.state.readiness;
   const block = [
     NOTE_HEADER,
     `Статус: ${params.state.status}`,
+    readiness ? `Готовность: ${readiness.readiness_percent}%` : null,
+    readiness ? `Статус готовности: ${readiness.readiness_status_label_ru}` : null,
     params.state.city ? `Город: ${params.state.city}` : null,
     params.state.photos_intent === 'later' ? 'Фото: обещаны позже' : null,
     `Не хватает: ${params.state.missing.length ? missingListRu(params.state.missing) : 'ничего'}`,
+    readiness && readiness.missing_optional_labels_ru.length
+      ? `Не хватает (дополнительно): ${readiness.missing_optional_labels_ru.join(', ')}`
+      : null,
+    readiness ? `Следующий шаг: ${readiness.next_best_step_ru}` : null,
     `Последнее сообщение: ${params.state.lastMessage || 'нет текста'}`,
     `Менеджер каналов: ${CHANNEL_MANAGER_HREF}`,
   ]
@@ -380,7 +403,8 @@ async function upsertCrmContact(params: {
         ? 'Проверить старт Менеджера каналов.'
         : params.state.status === 'needs_operator'
           ? 'Оператору нужно ответить вручную по онбордингу объекта.'
-          : `Запросить: ${FIELD_LABELS[params.state.missing[0] ?? 'address']}.`;
+          : params.state.readiness?.next_best_step_ru ??
+            `Запросить: ${FIELD_LABELS[params.state.missing[0] ?? 'address']}.`;
   const notes = buildCrmNote({ existingNote: existing?.notes, state: params.state });
 
   try {
@@ -495,6 +519,20 @@ export async function processTelegramOwnerOnboarding(params: {
     clarificationAttempts: merged.clarification_attempts,
   });
 
+  merged.readiness = computeObjectReadiness(
+    readinessInputFromOnboardingState({
+      ...merged,
+      status: merged.status,
+    }),
+  );
+
+  const previousReadinessPercentRaw = text(
+    loadAutonomousSession(params.chatId)?.collected_data?.[`${SESSION_PREFIX}readiness_percent`],
+  );
+  const previousReadinessPercent = previousReadinessPercentRaw
+    ? Number(previousReadinessPercentRaw)
+    : null;
+
   if (smartResult.decision.clarification_question) {
     merged.lastClarificationQuestion = smartResult.decision.clarification_question;
   }
@@ -518,6 +556,7 @@ export async function processTelegramOwnerOnboarding(params: {
       [`${SESSION_PREFIX}last_message`]: merged.lastMessage,
       [`${SESSION_PREFIX}last_clarification`]: merged.lastClarificationQuestion,
       [`${SESSION_PREFIX}channel_manager_href`]: CHANNEL_MANAGER_HREF,
+      [`${SESSION_PREFIX}readiness_percent`]: String(merged.readiness.readiness_percent),
     },
   });
 
@@ -525,6 +564,13 @@ export async function processTelegramOwnerOnboarding(params: {
     envelope: params.envelope,
     senderIdentity: params.senderIdentity,
     state: merged,
+  });
+
+  await emitObjectReadinessEvents({
+    contactId: crmContactId,
+    previousPercent: previousReadinessPercent,
+    readiness: merged.readiness,
+    photosIntentLater: merged.photos_intent === 'later',
   });
 
   return {
@@ -535,6 +581,7 @@ export async function processTelegramOwnerOnboarding(params: {
       facts: fieldFacts,
       decision: smartResult.decision,
       photosIntent: merged.photos_intent,
+      readiness: merged.readiness,
     }),
     replyMarkup: readyMarkup(merged.status),
     status: merged.status,
