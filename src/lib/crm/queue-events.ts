@@ -13,8 +13,18 @@ export type CrmEventRow = {
 const EVENT_AUTHOR_LABELS: Record<string, string> = {
   guest_test_question: 'Гость',
   guest_concierge_answered: 'ASI',
+  autopilot_guest_reply: 'ASI',
+  conversation_resolved: 'ASI',
+  autopilot_clarification_requested: 'ASI',
+  autopilot_operator_handoff: 'ASI',
   missing_data: 'Гость',
   operator_followup_required: 'Гость',
+};
+
+const CONVERSATION_STATUS_LABELS: Record<string, string> = {
+  resolved: 'Закрыто',
+  needs_operator: 'Нужен оператор',
+  clarification: 'Уточнение у владельца',
 };
 
 function authorForEvent(row: CrmEventRow): string {
@@ -35,11 +45,28 @@ function previewText(row: CrmEventRow): string {
 }
 
 function toMessage(row: CrmEventRow): CrmQueueMessage {
+  const metadata = row.metadata ?? {};
+  const guestQuestion =
+    typeof metadata.guest_question === 'string'
+      ? metadata.guest_question
+      : typeof metadata.original_message === 'string'
+        ? metadata.original_message
+        : String(row.message_text ?? '').trim() || null;
+  const asiReply =
+    typeof metadata.reply_preview === 'string'
+      ? metadata.reply_preview
+      : typeof metadata.safeGuestReply === 'string'
+        ? metadata.safeGuestReply
+        : null;
+  const statusRaw = typeof metadata.conversation_status === 'string' ? metadata.conversation_status : null;
   return {
     id: row.id,
     author: authorForEvent(row),
     text: previewText(row) || '—',
     createdAt: row.created_at,
+    status: statusRaw ? (CONVERSATION_STATUS_LABELS[statusRaw] ?? statusRaw) : null,
+    guestQuestion,
+    asiReply,
   };
 }
 

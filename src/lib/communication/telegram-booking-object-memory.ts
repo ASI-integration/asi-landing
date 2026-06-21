@@ -42,6 +42,7 @@ export type TelegramPropertyObjectV1 = {
   checkout_time: string | null;
   house_rules_text: string | null;
   door_code_notes: string | null;
+  communication_autopilot?: 'enabled' | 'disabled' | null;
   knowledge_status?: Partial<Record<string, ObjectKnowledgeStatus>>;
 };
 
@@ -174,6 +175,8 @@ function mapPropertyRow(row: any): TelegramPropertyObjectV1 {
     checkout_time: stringOrNull(row?.check_out_time),
     house_rules_text: stringOrNull(row?.house_rules_text) ?? stringOrNull(row?.house_rules),
     door_code_notes: stringOrNull(row?.door_code_notes),
+    communication_autopilot:
+      String(row?.communication_autopilot ?? '').trim().toLowerCase() === 'enabled' ? 'enabled' : 'disabled',
   };
 }
 

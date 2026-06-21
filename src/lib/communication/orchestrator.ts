@@ -150,6 +150,17 @@ import { buildVoiceOutboundMetadata, inferDomainZoneForVoice } from './voice-out
 import { loadChatVoiceUserSettings } from './voice-response-settings';
 import { loadPropertyTimezone } from './telegram-property-knowledge';
 import { GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
+import { isCommunicationAutopilotEnabled } from './communication-autopilot-settings';
+import {
+  buildAutopilotSessionPatch,
+  runCommunicationAutopilotV1,
+} from './communication-autopilot-v1';
+import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
+import {
+  autopilotSessionFromCollectedData,
+  patchAutopilotSessionCollectedData,
+} from './communication-autopilot-session';
+import { getGroundedKnowledge } from './knowledge';
 import {
   createGuestConciergeAnsweredEvent,
   createGuestTestMissingDataEvent,
@@ -2188,6 +2199,110 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             chat_id: chatId,
             category: MessageCategory.GuestMessage,
             reply: deterministicReplyText,
+          };
+        }
+
+        const autopilotProperty = telegramBookingObjectCtx.property;
+        if (isCommunicationAutopilotEnabled(autopilotProperty)) {
+          const telegramUserId = String(
+            envelope.metadata?.telegram_user_id ??
+              envelope.metadata?.telegramUserId ??
+              envelope.externalUserId ??
+              chatId,
+          );
+          const sessionMemory = autopilotSessionFromCollectedData(sessionCollectedData);
+          const passport = propertyId ? await getGroundedKnowledge(propertyId) : null;
+          const autopilotResult = runCommunicationAutopilotV1({
+            messageText: text,
+            property: autopilotProperty,
+            propertyId,
+            bookingVerified: telegramBookingObjectCtx.access_verified,
+            passport,
+            session: sessionMemory,
+          });
+          const sessionPatch = buildAutopilotSessionPatch({
+            result: autopilotResult,
+            messageText: text,
+            propertyId,
+            propertyName: autopilotProperty?.object_name ?? null,
+            previous: sessionMemory,
+          });
+          patchAutonomousSessionCollectedData({
+            chatId,
+            channel: envelope.channel,
+            set: {
+              ...patchAutopilotSessionCollectedData({
+                collectedData: sessionCollectedData,
+                memory: sessionPatch,
+              }),
+            },
+          });
+          await recordCommunicationAutopilotTurn({
+            telegramUserId,
+            telegramChatId: chatId,
+            propertyId,
+            guestQuestion: text,
+            result: autopilotResult,
+            role: senderRoute.senderIdentity,
+            ...transportEventMeta,
+          });
+          if (autopilotResult.needsOperator) {
+            persistEscalationReview({
+              reason: autopilotResult.escalationReason ?? 'operator_required',
+              escalationSummary: `communication_autopilot_v1:${autopilotResult.intent}`,
+              confidence: 0.9,
+              suggestedReply: autopilotResult.replyText,
+              source: {
+                route: 'communication_autopilot_v1',
+                intent: autopilotResult.intent,
+                needs_operator: true,
+              },
+              detail: buildOperatorEscalationDetail({
+                role: senderRoute.senderIdentity,
+                intent: autopilotResult.intent,
+                message: text,
+                reason: autopilotResult.escalationReason ?? 'Нужна проверка оператора.',
+                recommendedStep: autopilotResult.replyText,
+              }),
+            });
+            await withAwaitCheckpoint(
+              'session.transition.operator_review_required_autopilot_v1',
+              () => transitionSessionStatus(chatId, SessionStatus.OperatorReviewRequired),
+              { chat_id: chatId },
+              15_000,
+            );
+          }
+          const targetId = resolveOutboundTargetId(envelope, identity.guestId);
+          if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          const voiceExtras = await buildTelegramVoiceExtras({
+            envelope,
+            replyText: autopilotResult.replyText,
+            chatId,
+            detectedIntent: autopilotResult.intent,
+            responseMode: autopilotResult.action === 'auto_reply' ? 'answer_from_property' : 'operator_escalation',
+            role: senderRoute.senderIdentity,
+            propertyId,
+            isUrgent: false,
+            isEscalation: autopilotResult.needsOperator,
+          });
+          const sent = await adapter.sendMessage(String(targetId), autopilotResult.replyText, {
+            reply_handler: `orchestrator:communication_autopilot_v1:${autopilotResult.action}`,
+            update_id,
+            sender_identity: senderRoute.senderIdentity,
+            communication_autopilot_v1: true,
+            autopilot_action: autopilotResult.action,
+            autopilot_intent: autopilotResult.intent,
+            needs_operator: autopilotResult.needsOperator,
+            conversation_resolved: autopilotResult.resolved,
+            ...voiceExtras,
+          });
+          if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+          return {
+            outcome: ProcessOutcome.Replied,
+            update_id,
+            chat_id: chatId,
+            category: MessageCategory.GuestMessage,
+            reply: autopilotResult.replyText,
           };
         }
 

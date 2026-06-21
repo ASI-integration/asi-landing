@@ -247,12 +247,28 @@ function QueueCard({
             <p className="text-xs text-slate-500">Сообщений пока нет.</p>
           ) : (
             item.messages.map((message) => (
-              <div key={message.id} className="text-xs">
+              <div key={message.id} className="text-xs space-y-1 border-b border-slate-100 pb-2 last:border-0">
                 <div className="flex items-center justify-between gap-2 text-slate-500">
                   <span className="font-medium text-slate-700">{message.author}</span>
                   <span>{formatDate(message.createdAt)}</span>
                 </div>
-                <p className="text-slate-700">{message.text}</p>
+                {message.guestQuestion ? (
+                  <p className="text-slate-700">
+                    <span className="font-medium text-slate-600">Вопрос:</span> {message.guestQuestion}
+                  </p>
+                ) : null}
+                {message.asiReply ? (
+                  <p className="text-slate-700">
+                    <span className="font-medium text-slate-600">Ответ ASI:</span> {message.asiReply}
+                  </p>
+                ) : (
+                  <p className="text-slate-700">{message.text}</p>
+                )}
+                {message.status ? (
+                  <p className="text-slate-500">
+                    <span className="font-medium">Статус:</span> {message.status}
+                  </p>
+                ) : null}
               </div>
             ))
           )}

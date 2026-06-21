@@ -66,6 +66,9 @@ export type CrmQueueMessage = {
   author: string;
   text: string;
   createdAt: string;
+  status?: string | null;
+  guestQuestion?: string | null;
+  asiReply?: string | null;
 };
 
 export type CrmQueueItem = {
@@ -271,9 +274,17 @@ export function groupQueueByColumn(items: CrmQueueItem[]): Record<CrmQueueColumn
   return grouped;
 }
 
+export function isOperatorInboxItem(item: CrmQueueItem): boolean {
+  if (!item.needsOperator) return false;
+  if (item.column === 'onboarding' || item.column === 'missing_data' || item.column === 'new_lead') {
+    return false;
+  }
+  return item.column === 'needs_operator' || item.operationalStatus === 'needs_attention';
+}
+
 export function buildOperatorInbox(items: CrmQueueItem[]): CrmQueueItem[] {
   return items
-    .filter((item) => item.needsOperator)
+    .filter((item) => isOperatorInboxItem(item))
     .sort((a, b) => {
       const aTime = new Date(a.lastContactAt ?? a.updatedAt).getTime();
       const bTime = new Date(b.lastContactAt ?? b.updatedAt).getTime();

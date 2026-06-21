@@ -114,6 +114,10 @@ const ONBOARDING_STATUS_FEED: Partial<Record<CrmOnboardingStatus, { label: strin
 
 const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; label: string; tone: CrmActivityTone }> = {
   guest_concierge_answered: { actor: 'ASI', label: 'ответила гостю', tone: 'done' },
+  autopilot_guest_reply: { actor: 'ASI', label: 'ответила гостю', tone: 'done' },
+  conversation_resolved: { actor: 'ASI', label: 'закрыла обращение', tone: 'done' },
+  autopilot_clarification_requested: { actor: 'ASI', label: 'запросила уточнение', tone: 'processing' },
+  autopilot_operator_handoff: { actor: 'ASI', label: 'передала оператору', tone: 'attention' },
   auto_reply: { actor: 'ASI', label: 'отправила автоответ', tone: 'done' },
   message_outbound: { actor: 'ASI', label: 'отправила сообщение', tone: 'done' },
   message_inbound: { actor: 'Владелец', label: 'отправил сообщение', tone: 'processing' },
