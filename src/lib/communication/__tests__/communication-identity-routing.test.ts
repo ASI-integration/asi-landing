@@ -27,7 +27,7 @@ const mockCreateOpsTask = vi.fn().mockResolvedValue({ task_id: 'task-1', error: 
 const crmRows = new Map<string, { id: string; role: string | null }>();
 const insertedRows: Array<{ table: string; row: Record<string, unknown> }> = [];
 const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
+  'Здравствуйте! Чем могу помочь?';
 const GUEST_SELECTED_REPLY_RU =
   'Поняла, вы гость. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 const SUPPORT_PROBLEM_REPLY_RU =
@@ -35,7 +35,9 @@ const SUPPORT_PROBLEM_REPLY_RU =
 const PROBLEM_IDENTITY_CLARIFY_RU = 'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 const ROLE_CONFLICT_GUEST_QUESTION_RU =
   'Похоже, это вопрос гостя по проживанию. Переключить этот диалог в гостевой сценарий?';
-const ONBOARDING_START_FRAGMENT = 'Начнём подключение объекта к ASI';
+const ONBOARDING_SWITCH_CONFIRM_RU =
+  'Сейчас мы подключаем объект к ASI. Хотите выйти из этого сценария и перейти к другому вопросу?';
+const ONBOARDING_START_FRAGMENT = 'Помогу подключить объект к ASI';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -406,7 +408,7 @@ describe('communication identity routing v1', () => {
     expect(loadAutonomousSession(9111)?.pending_identity_message).toBeNull();
   });
 
-  it('replays pending message through lead route after lead callback', async () => {
+  it('keeps lead callback in onboarding after direct intent-first start', async () => {
     const { processUpdate } = await import('../orchestrator');
     await processUpdate({
       update_id: 61_012,
@@ -421,12 +423,13 @@ describe('communication identity routing v1', () => {
     mockDecideAutopilot.mockClear();
     const result = await processUpdate(callbackUpdate('identity:lead', 9112));
 
-    expect(result.reply).toContain('Сохранила: название или тип объекта');
+    expect(result.reply).toContain(ONBOARDING_START_FRAGMENT);
+    expect(result.reply).toContain('Для начала укажите адрес объекта');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
       escalationReason: 'lead_connection_request',
     });
-    expect(loadAutonomousSession(9112)?.pending_identity_message).toBeNull();
+    expect(loadAutonomousSession(9112)?.pending_identity_message ?? null).toBeNull();
   });
 
   it('asks unknown Telegram users to identify themselves without Guest Concierge', async () => {
@@ -438,12 +441,12 @@ describe('communication identity routing v1', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость', callback_data: 'identity:guest' },
-            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Подключить объект', callback_data: 'identity:lead' },
+            { text: 'Вопрос по проживанию', callback_data: 'identity:guest' },
           ],
           [
-            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
-            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Другое', callback_data: 'identity:support_problem' },
           ],
         ],
       },
@@ -603,37 +606,37 @@ describe('communication identity routing v1', () => {
     });
   });
 
-  it('shows identity clarification for lead-like text from unknown sender', async () => {
+  it('starts onboarding immediately for high-confidence object connection intent', async () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(
       envelope({
-        messageText: 'Хочу подключить ASI',
+        messageText: 'Хочу подключить квартиру',
         metadata: { telegram_username: 'lead_user' },
       }),
     );
 
-    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(result.reply).toContain('Поняла. Помогу подключить объект к ASI');
+    expect(result.reply).toContain('Для начала укажите адрес объекта');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
-    expect(mockSendMessage.mock.calls.at(-1)?.[2]?.reply_markup).toMatchObject({
-      inline_keyboard: expect.arrayContaining([
-        expect.arrayContaining([expect.objectContaining({ callback_data: 'identity:lead' })]),
-      ]),
+    expect(loadAutonomousSession(9001)?.identity_role).toBe('lead');
+    expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
+      escalationReason: 'lead_connection_request',
     });
-    expect(listEscalationReviews({ status: 'pending' })).toHaveLength(0);
   });
 
-  it('shows identity clarification for connect ASI questions from unknown sender', async () => {
+  it('starts onboarding immediately for owner rental intent', async () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(
       envelope({
-        messageText: 'как подключить ASI?',
+        messageText: 'Сдаю апартаменты',
         metadata: { telegram_username: 'new_owner' },
       }),
     );
 
-    expect(result.reply).toBe(UNKNOWN_IDENTITY_CLARIFY_RU);
+    expect(result.reply).toContain('Поняла. Помогу подключить объект к ASI');
+    expect(result.reply).toContain('Для начала укажите адрес объекта');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
-    expect(insertedRows.find((item) => item.table === 'crm_contacts')).toBeUndefined();
+    expect(loadAutonomousSession(9001)?.identity_role).toBe('lead');
   });
 
   it('asks guest vs owner/manager for object problem from unknown sender', async () => {
@@ -684,7 +687,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toBe(ROLE_CONFLICT_GUEST_QUESTION_RU);
+    expect(result.reply).toBe(ONBOARDING_SWITCH_CONFIRM_RU);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(loadAutonomousSession(9001)?.pending_identity_message).toBe('вы можете порекомендовать рестораны рядом?');
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
@@ -692,8 +695,8 @@ describe('communication identity routing v1', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Да, я гость', callback_data: 'identity:guest' },
-            { text: 'Нет, я владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Перейти к вопросу', callback_data: 'identity:guest' },
+            { text: 'Продолжить подключение', callback_data: 'identity:owner_manager' },
           ],
         ],
       },
@@ -736,6 +739,55 @@ describe('communication identity routing v1', () => {
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(-1)).toMatchObject({
       escalationReason: 'lead_connection_request',
+    });
+  });
+
+  it('keeps object address inside active onboarding instead of switching to guest flow', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Хочу подключить квартиру', metadata: { providerMessageId: 'lead-start-address' } }));
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'Лиговский 108',
+        metadata: { providerMessageId: 'lead-address' },
+      }),
+    );
+
+    expect(result.reply).toContain('Сохранила: адрес объекта');
+    expect(result.reply).toContain('название или тип объекта');
+    expect(result.reply).not.toBe(ROLE_CONFLICT_GUEST_QUESTION_RU);
+    expect(result.reply).not.toBe(ONBOARDING_SWITCH_CONFIRM_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(loadAutonomousSession(9001)?.identity_role).toBe('lead');
+  });
+
+  it('requires confirmation before switching away from active onboarding', async () => {
+    const { processMessage } = await import('../orchestrator');
+    await processMessage(envelope({ messageText: 'Хочу подключить квартиру', metadata: { providerMessageId: 'lead-start-switch' } }));
+    mockSendMessage.mockClear();
+    mockDecideAutopilot.mockClear();
+
+    const result = await processMessage(
+      envelope({
+        messageText: 'Я гость, не работает Wi-Fi',
+        metadata: { providerMessageId: 'lead-switch-attempt' },
+      }),
+    );
+
+    expect(result.reply).toBe(ONBOARDING_SWITCH_CONFIRM_RU);
+    expect(mockDecideAutopilot).not.toHaveBeenCalled();
+    expect(loadAutonomousSession(9001)?.identity_role).toBe('lead');
+    expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
+      reply_handler: 'orchestrator:communication_identity_route:role_conflict_guest_question',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Перейти к вопросу', callback_data: 'identity:guest' },
+            { text: 'Продолжить подключение', callback_data: 'identity:owner_manager' },
+          ],
+        ],
+      },
     });
   });
 

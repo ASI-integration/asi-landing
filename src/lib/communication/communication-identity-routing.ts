@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { loadAutonomousSession } from './conversation-session-store';
 import { classifyGuestCommunicationIntent, isGuestConciergeIntent } from './guest-intent-router';
 import type { InboundMessageEnvelope, IdentityResolution } from './types';
 
@@ -53,10 +54,10 @@ export type CommunicationIdentityRoutingDecision = {
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
+  'Здравствуйте! Чем могу помочь?';
 
 export const RESET_IDENTITY_CLARIFY_RU =
-  'Идентичность и сессия сброшены. Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
+  'Идентичность и сессия сброшены. Чем могу помочь?';
 
 const IDENTITY_SELECTION_TEXTS = new Set([
   'Я владелец / управляющий объекта',
@@ -73,7 +74,7 @@ const GUEST_SELECTED_REPLY_RU =
   'Поняла, вы гость. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 
 const LEAD_REPLY_RU =
-  'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
+  'Поняла. Помогу подключить объект к ASI.\n\nДля начала укажите адрес объекта.';
 
 const OWNER_MANAGER_REPLY_RU =
   'Поняла, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
@@ -87,6 +88,9 @@ const INTERNAL_OPERATOR_REPLY_RU =
 export const ROLE_CONFLICT_GUEST_QUESTION_RU =
   'Похоже, это вопрос гостя по проживанию. Переключить этот диалог в гостевой сценарий?';
 
+export const ONBOARDING_SCENARIO_SWITCH_CONFIRM_RU =
+  'Сейчас мы подключаем объект к ASI. Хотите выйти из этого сценария и перейти к другому вопросу?';
+
 export const TELEGRAM_IDENTITY_CALLBACKS = {
   guest: 'identity:guest',
   ownerManager: 'identity:owner_manager',
@@ -97,12 +101,12 @@ export const TELEGRAM_IDENTITY_CALLBACKS = {
 export const UNKNOWN_IDENTITY_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
   inline_keyboard: [
     [
-      { text: 'Я гость', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
-      { text: 'Владелец/управляющий', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
+      { text: 'Подключить объект', callback_data: TELEGRAM_IDENTITY_CALLBACKS.lead },
+      { text: 'Вопрос по проживанию', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
     ],
     [
-      { text: 'Хочу подключить ASI', callback_data: TELEGRAM_IDENTITY_CALLBACKS.lead },
-      { text: 'Нужна поддержка', callback_data: TELEGRAM_IDENTITY_CALLBACKS.supportProblem },
+      { text: 'Поддержка', callback_data: TELEGRAM_IDENTITY_CALLBACKS.supportProblem },
+      { text: 'Другое', callback_data: TELEGRAM_IDENTITY_CALLBACKS.supportProblem },
     ],
   ],
 };
@@ -110,8 +114,8 @@ export const UNKNOWN_IDENTITY_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
 export const ROLE_CONFLICT_GUEST_INLINE_KEYBOARD: TelegramInlineKeyboardMarkup = {
   inline_keyboard: [
     [
-      { text: 'Да, я гость', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
-      { text: 'Нет, я владелец/управляющий', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
+      { text: 'Перейти к вопросу', callback_data: TELEGRAM_IDENTITY_CALLBACKS.guest },
+      { text: 'Продолжить подключение', callback_data: TELEGRAM_IDENTITY_CALLBACKS.ownerManager },
     ],
   ],
 };
@@ -146,8 +150,48 @@ function isLeadIntent(messageText: string): boolean {
   return (
     /^хочу\s+подключить\s+asi$/i.test(text(messageText)) ||
     /\basi\b/i.test(messageText) ||
-    /подключ|пилот|ранн(ий|его) доступ|автоматизац|сервис|демо|заявк/.test(t)
+    /подключ|пилот|ранн(ий|его) доступ|автоматизац|сервис|демо|заявк/.test(t) ||
+    /хочу\s+(подключить|добавить|настроить).*(квартир|объект|апартамент)/.test(t) ||
+    /(сдаю|управляю).*(квартир|апартамент|объект).*(посуточ|краткосрочн)?/.test(t) ||
+    /хочу\s+начать\s+пользоваться/.test(t)
   );
+}
+
+function activeOwnerOnboarding(envelope: InboundMessageEnvelope): {
+  active: boolean;
+  senderIdentity: SenderIdentity | null;
+  missing: string[];
+} {
+  if (envelope.channel !== 'telegram') return { active: false, senderIdentity: null, missing: [] };
+  const chatId = Number(envelope.chatId ?? envelope.metadata?.telegram_chat_id);
+  if (!Number.isFinite(chatId)) return { active: false, senderIdentity: null, missing: [] };
+  const session = loadAutonomousSession(chatId);
+  const collected = session?.collected_data ?? {};
+  const status = norm(collected.owner_onboarding_status);
+  if (!status || status === 'ready_for_channel_manager' || status === 'channel_manager_started') {
+    return { active: false, senderIdentity: null, missing: [] };
+  }
+  const identity = session?.identity_role === 'owner' || session?.identity_role === 'manager' ? session.identity_role : 'lead';
+  return {
+    active: true,
+    senderIdentity: identity,
+    missing: text(collected.owner_onboarding_missing).split(',').map((item) => item.trim()).filter(Boolean),
+  };
+}
+
+function looksLikeOwnerOnboardingContinuation(messageText: string, missing: string[]): boolean {
+  const t = norm(messageText).replace(/ё/g, 'е');
+  if (!t) return false;
+  if (missing.includes('address')) {
+    return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|квартир|апартамент|москва|санкт|спб|казань|сочи|\d{1,4})/.test(t);
+  }
+  if (missing.includes('property_name') && /(квартир|апартамент|студия|дом|объект|лофт|номер)/.test(t)) return true;
+  if (missing.includes('house_rules') && /(правил|курен|животн|тишин|залог|вечерин|нельзя|можно)/.test(t)) return true;
+  if (missing.includes('wifi') && /(wi fi|wi-fi|wifi|вай фай|вайфай|сеть|парол)/.test(t)) return true;
+  if (missing.includes('checkin_checkout') && /(заезд|выезд|check in|check out|\b\d{1,2}[:.]\d{2}\b)/.test(t)) return true;
+  if (missing.includes('photos') && /(фото|изображен|\[photo\])/.test(t)) return true;
+  if (missing.includes('channels') && /(авито|суточн|остров|яндекс|airbnb|booking|букинг|канал|площадк|ota)/.test(t)) return true;
+  return false;
 }
 
 export function isGuestSelfDeclaration(messageText: string): boolean {
@@ -298,6 +342,32 @@ export async function resolveCommunicationIdentityRoute(params: {
   const guestSelfDeclared = isGuestSelfDeclaration(messageText);
   const ownerSelfDeclared = isOwnerSelfDeclaration(messageText);
   const objectProblemButton = isObjectProblemButton(messageText);
+  const onboarding = activeOwnerOnboarding(envelope);
+  const intentRoute = classifyGuestCommunicationIntent({
+    messageText,
+    currentIdentity: onboarding.active ? onboarding.senderIdentity : undefined,
+  });
+
+  if (!metaIdentity && !boundIdentity && !crmRole && !params.rememberedIdentity && !onboarding.active) {
+    if (intentRoute.detectedIntent === 'lead_connection' && intentRoute.confidence >= 0.85) {
+      const crmContactId = crmByUsername?.id ?? (await createLeadIfSafe(envelope));
+      return {
+        senderIdentity: 'lead',
+        route: 'lead',
+        shouldRunGuestConcierge: false,
+        replyText: LEAD_REPLY_RU,
+        selectedIdentity: 'lead',
+        crmContactId,
+        reason: crmContactId ? 'lead_intent_first_crm_linked' : 'lead_intent_first_no_safe_crm_key',
+        audit: {
+          crmContactId: crmContactId ?? null,
+          telegramUsername: telegramUsername(envelope) || null,
+          detectedIntent: intentRoute.detectedIntent,
+          confidence: intentRoute.confidence,
+        },
+      };
+    }
+  }
 
   if (!metaIdentity && !boundIdentity && !crmRole && objectProblemButton) {
     return {
@@ -320,6 +390,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       guestSelfDeclared,
       ownerSelfDeclared,
     })
+    && !onboarding.active
   ) {
     return {
       senderIdentity: 'unknown',
@@ -337,8 +408,9 @@ export async function resolveCommunicationIdentityRoute(params: {
     (hasTelegramTestMode(envelope) ? 'test_guest' : null) ??
     (ownerSelfDeclared ? 'owner' : null) ??
     (crmRole === 'owner' ? 'owner' : crmRole === 'manager' ? 'manager' : null) ??
-    (guestSelfDeclared ? 'guest' : null) ??
+    (guestSelfDeclared && !onboarding.active ? 'guest' : null) ??
     params.rememberedIdentity ??
+    onboarding.senderIdentity ??
     boundIdentity ??
     (isLeadIntent(messageText) ? 'lead' : 'unknown');
 
@@ -352,7 +424,7 @@ export async function resolveCommunicationIdentityRoute(params: {
     senderIdentity = isLeadIntent(messageText) ? 'lead' : 'unknown';
   }
 
-  const intentRoute = classifyGuestCommunicationIntent({
+  const currentIntentRoute = classifyGuestCommunicationIntent({
     messageText,
     currentIdentity: senderIdentity,
   });
@@ -360,28 +432,54 @@ export async function resolveCommunicationIdentityRoute(params: {
   if (
     !metaIdentity &&
     (senderIdentity === 'owner' || senderIdentity === 'manager') &&
-    isGuestConciergeIntent(intentRoute.detectedIntent) &&
-    intentRoute.shouldAskRoleConfirmation
+    isGuestConciergeIntent(currentIntentRoute.detectedIntent) &&
+    currentIntentRoute.shouldAskRoleConfirmation &&
+    (!onboarding.active || !looksLikeOwnerOnboardingContinuation(messageText, onboarding.missing))
   ) {
     return {
       senderIdentity,
       route: 'role_conflict_guest_question',
       shouldRunGuestConcierge: false,
-      replyText: ROLE_CONFLICT_GUEST_QUESTION_RU,
+      replyText: onboarding.active ? ONBOARDING_SCENARIO_SWITCH_CONFIRM_RU : ROLE_CONFLICT_GUEST_QUESTION_RU,
       replyMarkup: ROLE_CONFLICT_GUEST_INLINE_KEYBOARD,
-      reason: intentRoute.reason,
+      reason: currentIntentRoute.reason,
       audit: {
         crmContactId: crmByUsername?.id ?? null,
-        detectedIntent: intentRoute.detectedIntent,
-        confidence: intentRoute.confidence,
-        roleConflict: intentRoute.roleConflict,
+        detectedIntent: currentIntentRoute.detectedIntent,
+        confidence: currentIntentRoute.confidence,
+        roleConflict: currentIntentRoute.roleConflict,
+      },
+    };
+  }
+
+  if (
+    !metaIdentity &&
+    onboarding.active &&
+    senderIdentity === 'lead' &&
+    isGuestConciergeIntent(currentIntentRoute.detectedIntent) &&
+    currentIntentRoute.shouldAskRoleConfirmation &&
+    !looksLikeOwnerOnboardingContinuation(messageText, onboarding.missing)
+  ) {
+    return {
+      senderIdentity,
+      route: 'role_conflict_guest_question',
+      shouldRunGuestConcierge: false,
+      replyText: ONBOARDING_SCENARIO_SWITCH_CONFIRM_RU,
+      replyMarkup: ROLE_CONFLICT_GUEST_INLINE_KEYBOARD,
+      reason: currentIntentRoute.reason,
+      audit: {
+        crmContactId: crmByUsername?.id ?? null,
+        detectedIntent: currentIntentRoute.detectedIntent,
+        confidence: currentIntentRoute.confidence,
+        roleConflict: currentIntentRoute.roleConflict,
+        activeOwnerOnboarding: true,
       },
     };
   }
 
   if (
     (senderIdentity === 'guest' || senderIdentity === 'test_guest') &&
-    intentRoute.detectedIntent === 'lead_connection'
+    currentIntentRoute.detectedIntent === 'lead_connection'
   ) {
     const crmContactId = crmByUsername?.id ?? (await createLeadIfSafe(envelope));
     return {
@@ -395,7 +493,7 @@ export async function resolveCommunicationIdentityRoute(params: {
       audit: {
         crmContactId: crmContactId ?? null,
         telegramUsername: telegramUsername(envelope) || null,
-        detectedIntent: intentRoute.detectedIntent,
+        detectedIntent: currentIntentRoute.detectedIntent,
         previousIdentity: senderIdentity,
       },
     };

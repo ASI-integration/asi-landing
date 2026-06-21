@@ -149,12 +149,12 @@ describe('telegram /reset_identity acceptance tooling', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость', callback_data: 'identity:guest' },
-            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Подключить объект', callback_data: 'identity:lead' },
+            { text: 'Вопрос по проживанию', callback_data: 'identity:guest' },
           ],
           [
-            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
-            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Другое', callback_data: 'identity:support_problem' },
           ],
         ],
       },
@@ -170,12 +170,12 @@ describe('telegram /reset_identity acceptance tooling', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость', callback_data: 'identity:guest' },
-            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Подключить объект', callback_data: 'identity:lead' },
+            { text: 'Вопрос по проживанию', callback_data: 'identity:guest' },
           ],
           [
-            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
-            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Другое', callback_data: 'identity:support_problem' },
           ],
         ],
       },
@@ -196,12 +196,12 @@ describe('telegram /reset_identity acceptance tooling', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость', callback_data: 'identity:guest' },
-            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Подключить объект', callback_data: 'identity:lead' },
+            { text: 'Вопрос по проживанию', callback_data: 'identity:guest' },
           ],
           [
-            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
-            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Другое', callback_data: 'identity:support_problem' },
           ],
         ],
       },
@@ -215,12 +215,12 @@ describe('telegram /reset_identity acceptance tooling', () => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: 'Я гость', callback_data: 'identity:guest' },
-            { text: 'Владелец/управляющий', callback_data: 'identity:owner_manager' },
+            { text: 'Подключить объект', callback_data: 'identity:lead' },
+            { text: 'Вопрос по проживанию', callback_data: 'identity:guest' },
           ],
           [
-            { text: 'Хочу подключить ASI', callback_data: 'identity:lead' },
-            { text: 'Нужна поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Поддержка', callback_data: 'identity:support_problem' },
+            { text: 'Другое', callback_data: 'identity:support_problem' },
           ],
         ],
       },

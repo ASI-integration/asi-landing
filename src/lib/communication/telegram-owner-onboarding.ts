@@ -129,7 +129,7 @@ function missingFields(state: Partial<Record<OwnerOnboardingField, string | unde
 }
 
 function looksLikeAddress(normalized: string): boolean {
-  return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|дом|квартир|апартамент|москва|санкт|спб|казань|сочи|\d{1,4})/.test(normalized);
+  return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|квартир|апартамент|москва|санкт|спб|казань|сочи|\d{1,4})/.test(normalized);
 }
 
 function extractChannels(raw: string): string | undefined {
@@ -162,7 +162,7 @@ function extractFacts(messageText: string, missing: OwnerOnboardingField[], hasP
   const channels = extractChannels(raw);
   if (channels) facts.channels = channels;
 
-  if ((missing.includes('address') || /адрес/.test(n)) && looksLikeAddress(n)) {
+  if ((missing.includes('address') || /адрес/.test(n)) && looksLikeAddress(n) && !isIdentitySelectionText(raw)) {
     facts.address = raw;
   }
 
@@ -186,6 +186,9 @@ function isIdentitySelectionText(messageText: string): boolean {
   const n = normalizeRu(messageText);
   return (
     n === 'хочу подключить asi' ||
+    /хочу (подключить|добавить|настроить).*(квартир|объект|апартамент)/.test(n) ||
+    /(сдаю|управляю).*(квартир|апартамент|объект)/.test(n) ||
+    /хочу начать пользоваться/.test(n) ||
     n === 'я владелец / управляющий объекта' ||
     n === 'я владелец / управляющий' ||
     n === 'я владелец/управляющий объекта' ||
@@ -266,6 +269,9 @@ function buildReply(params: {
 
   const next = params.missing[0] ?? 'address';
   const saved = savedListRu(params.facts);
+  if (!saved && params.status === 'onboarding_started' && next === 'address') {
+    return 'Поняла. Помогу подключить объект к ASI.\n\nДля начала укажите адрес объекта.';
+  }
   const intro = saved
     ? `Сохранила: ${saved}.`
     : 'Начнём подключение объекта к ASI. Я буду спрашивать только то, чего не хватает.';

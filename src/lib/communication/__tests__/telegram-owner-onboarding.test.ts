@@ -93,11 +93,11 @@ describe('Telegram owner auto-onboarding v1', () => {
 
     expect(route.route).toBe('unknown_clarify');
     expect(route.shouldRunGuestConcierge).toBe(false);
-    expect(route.replyText).toContain('кто вы');
+    expect(route.replyText).toContain('Чем могу помочь');
     expect(route.replyMarkup).toMatchObject({
       inline_keyboard: expect.arrayContaining([
-        expect.arrayContaining([expect.objectContaining({ text: 'Я гость', callback_data: 'identity:guest' })]),
-        expect.arrayContaining([expect.objectContaining({ text: 'Хочу подключить ASI', callback_data: 'identity:lead' })]),
+        expect.arrayContaining([expect.objectContaining({ text: 'Подключить объект', callback_data: 'identity:lead' })]),
+        expect.arrayContaining([expect.objectContaining({ text: 'Вопрос по проживанию', callback_data: 'identity:guest' })]),
       ]),
     });
   });
@@ -138,7 +138,8 @@ describe('Telegram owner auto-onboarding v1', () => {
 
     expect(result.status).toBe('onboarding_started');
     expect(result.missing[0]).toBe('address');
-    expect(result.replyText).toContain('Пришлите адрес объекта');
+    expect(result.replyText).toContain('Поняла. Помогу подключить объект к ASI');
+    expect(result.replyText).toContain('Для начала укажите адрес объекта');
     expect(insertedRows.at(-1)).toMatchObject({
       contact: 'owner_v1',
       source: 'telegram',
