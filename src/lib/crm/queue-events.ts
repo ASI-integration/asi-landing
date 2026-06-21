@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { CrmQueueMessage } from './queue';
 
-type CrmEventRow = {
+export type CrmEventRow = {
   id: string;
   contact_id: string;
   event_type: string;
@@ -41,6 +41,21 @@ function toMessage(row: CrmEventRow): CrmQueueMessage {
     text: previewText(row) || '—',
     createdAt: row.created_at,
   };
+}
+
+export async function listRecentCrmEventsForFeed(limit = 50): Promise<CrmEventRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from('crm_events')
+      .select('id,contact_id,event_type,message_text,metadata,created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error || !data) return [];
+    return data as CrmEventRow[];
+  } catch {
+    return [];
+  }
 }
 
 export async function listCrmEventsByContactIds(

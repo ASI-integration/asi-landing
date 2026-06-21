@@ -1,7 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  activityToneEmoji,
+  CrmActivityFeedEntry,
+  operationalStatusEmoji,
+} from '@/lib/crm/activity-feed';
 import {
   CRM_QUEUE_COLUMN_LABELS,
   CRM_QUEUE_COLUMN_VALUES,
@@ -15,6 +20,8 @@ import {
 } from '@/lib/crm/queue';
 import { readResponseJson } from '@/lib/safeResponseJson';
 
+const POLL_MS = 8000;
+
 type QueueResponse = {
   ok: boolean;
   message?: string;
@@ -23,6 +30,8 @@ type QueueResponse = {
   operatorInbox: CrmQueueItem[];
   columns: Record<CrmQueueColumn, CrmQueueItem[]>;
   items: CrmQueueItem[];
+  activityFeed: CrmActivityFeedEntry[];
+  refreshedAt?: string;
 };
 
 function formatDate(value: string | null): string {
@@ -50,9 +59,76 @@ function columnBadgeClass(column: CrmQueueColumn): string {
   }
 }
 
+function operationalBadgeClass(status: CrmQueueItem['operationalStatus']): string {
+  switch (status) {
+    case 'ready':
+      return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+    case 'waiting_owner':
+      return 'bg-amber-50 text-amber-800 border-amber-200';
+    case 'needs_attention':
+      return 'bg-rose-50 text-rose-800 border-rose-200';
+    default:
+      return 'bg-violet-50 text-violet-800 border-violet-200';
+  }
+}
+
 function objectHref(item: CrmQueueItem): string {
   if (item.propertyId) return `/dashboard/properties/${item.propertyId}/setup`;
   return '/dashboard/properties';
+}
+
+function ActivityFeedPanel({
+  entries,
+  loading,
+  refreshedAt,
+}: {
+  entries: CrmActivityFeedEntry[];
+  loading: boolean;
+  refreshedAt: string | null;
+}) {
+  return (
+    <section className="rounded-2xl border-2 border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-4 md:p-5 shadow-sm space-y-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Что сейчас делает ASI</h2>
+          <p className="text-sm text-slate-600">Последние действия системы в режиме, близком к реальному времени.</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+          {refreshedAt ? `Обновлено ${formatDate(refreshedAt)}` : 'Загрузка...'}
+        </div>
+      </div>
+
+      {loading && entries.length === 0 ? (
+        <p className="text-sm text-slate-500">Загрузка ленты...</p>
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-slate-500">Пока нет действий. Когда ASI начнёт работу с объектами, они появятся здесь.</p>
+      ) : (
+        <ol className="max-h-80 space-y-2 overflow-y-auto pr-1">
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="rounded-xl border border-white/80 bg-white/90 px-3 py-2 text-sm shadow-sm"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="font-mono text-xs text-violet-700">
+                  {new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(
+                    new Date(entry.createdAt)
+                  )}
+                </span>
+                <span className="text-slate-900">
+                  {entry.actor} {entry.label}
+                </span>
+                {entry.objectTitle ? (
+                  <span className="text-xs text-slate-500">· {entry.objectTitle}</span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
 }
 
 function QueueCard({
@@ -75,6 +151,11 @@ function QueueCard({
       </div>
 
       <div className="flex flex-wrap gap-2">
+        <span
+          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${operationalBadgeClass(item.operationalStatus)}`}
+        >
+          {operationalStatusEmoji(item.operationalStatus)} {item.operationalStatusLabel}
+        </span>
         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${columnBadgeClass(item.column)}`}>
           {item.onboardingStatusLabel}
         </span>
@@ -89,6 +170,19 @@ function QueueCard({
           </span>
         ) : null}
       </div>
+
+      {item.recentActivities.length > 0 ? (
+        <div className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 space-y-1.5">
+          <p className="text-xs font-medium text-slate-700">Последние действия</p>
+          <ul className="space-y-1">
+            {item.recentActivities.map((activity) => (
+              <li key={activity.id} className="text-xs text-slate-700">
+                {activityToneEmoji(activity.tone)} {activity.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <dl className="grid grid-cols-1 gap-1 text-xs text-slate-600">
         <div className="flex justify-between gap-2">
@@ -180,13 +274,17 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 export default function CrmQueuePageClient() {
   const [filter, setFilter] = useState<CrmQueueFilter>('all');
   const [loading, setLoading] = useState(true);
+  const [polling, setPolling] = useState(false);
   const [message, setMessage] = useState('');
   const [data, setData] = useState<QueueResponse | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const initialLoadDone = useRef(false);
 
-  const loadQueue = useCallback(async () => {
-    setLoading(true);
-    setMessage('');
+  const loadQueue = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
+    else setPolling(true);
+    if (!silent) setMessage('');
     try {
       const res = await fetch(`/api/dashboard/crm/queue?filter=${filter}`, { credentials: 'include' });
       const payload = await readResponseJson(res, {
@@ -202,15 +300,18 @@ export default function CrmQueuePageClient() {
         operatorInbox: [],
         columns: emptyQueueColumns(),
         items: [],
+        activityFeed: [],
         message: '',
       });
       if (!res.ok || !payload.ok) {
-        setMessage(payload.message || 'Не удалось загрузить очередь CRM.');
+        if (!silent) setMessage(payload.message || 'Не удалось загрузить очередь CRM.');
         return;
       }
       setData(payload);
+      initialLoadDone.current = true;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      else setPolling(false);
     }
   }, [filter]);
 
@@ -218,9 +319,17 @@ export default function CrmQueuePageClient() {
     void loadQueue();
   }, [loadQueue]);
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (initialLoadDone.current) void loadQueue({ silent: true });
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [loadQueue]);
+
   const metrics = data?.metrics;
   const operatorInbox = data?.operatorInbox ?? [];
   const columns = data?.columns;
+  const activityFeed = data?.activityFeed ?? [];
 
   const visibleColumns = useMemo(() => {
     if (!columns) return [];
@@ -239,7 +348,8 @@ export default function CrmQueuePageClient() {
             Единый экран объектов, лидов и подключений для пилота.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {polling ? <span className="text-xs text-slate-500">Обновление...</span> : null}
           <Link
             href="/dashboard/crm"
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -257,6 +367,12 @@ export default function CrmQueuePageClient() {
       </div>
 
       {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+
+      <ActivityFeedPanel
+        entries={activityFeed}
+        loading={loading}
+        refreshedAt={data?.refreshedAt ?? null}
+      />
 
       {metrics ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">

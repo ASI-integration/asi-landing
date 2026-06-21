@@ -7,6 +7,7 @@ vi.mock('@/lib/auth', () => ({
 
 const listCrmContacts = vi.fn();
 const listCrmEventsByContactIds = vi.fn();
+const listRecentCrmEventsForFeed = vi.fn();
 
 vi.mock('@/lib/crm/repository', () => ({
   listCrmContacts,
@@ -14,12 +15,14 @@ vi.mock('@/lib/crm/repository', () => ({
 
 vi.mock('@/lib/crm/queue-events', () => ({
   listCrmEventsByContactIds,
+  listRecentCrmEventsForFeed,
 }));
 
 beforeEach(() => {
   vi.resetModules();
   listCrmContacts.mockReset();
   listCrmEventsByContactIds.mockReset();
+  listRecentCrmEventsForFeed.mockReset();
 });
 
 afterEach(() => {
@@ -72,6 +75,16 @@ describe('/api/dashboard/crm/queue', () => {
         },
       ],
     });
+    listRecentCrmEventsForFeed.mockResolvedValueOnce([
+      {
+        id: 'e-2',
+        contact_id: 'c-1',
+        event_type: 'operator_followup_required',
+        message_text: 'нужен оператор',
+        metadata: {},
+        created_at: '2026-06-19T09:15:00.000Z',
+      },
+    ]);
 
     const mod = await import('../route');
     const res = await mod.GET(new Request('http://localhost/api/dashboard/crm/queue?filter=needs_operator'));
@@ -85,5 +98,9 @@ describe('/api/dashboard/crm/queue', () => {
     expect(body.items).toHaveLength(1);
     expect(body.items[0].needsOperator).toBe(true);
     expect(body.items[0].messages).toHaveLength(1);
+    expect(body.items[0].operationalStatus).toBe('needs_attention');
+    expect(body.items[0].recentActivities.length).toBeGreaterThan(0);
+    expect(body.activityFeed.length).toBeGreaterThan(0);
+    expect(body.refreshedAt).toBeTruthy();
   });
 });
