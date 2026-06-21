@@ -48,6 +48,7 @@ const TEST_BOOKING: TelegramGuestBookingV1 = {
 
 function makeDb(seed: {
   properties?: any[];
+  objectKnowledgeEntries?: any[];
   reservations?: any[];
   identities?: any[];
   profiles?: any[];
@@ -55,6 +56,7 @@ function makeDb(seed: {
 }) {
   const rows: Record<string, any[]> = {
     tg_property_knowledge: seed.properties ?? [],
+    object_knowledge_entries: seed.objectKnowledgeEntries ?? [],
     tg_guest_reservations: seed.reservations ?? [],
     tg_guest_identities: seed.identities ?? [],
     tg_guest_profiles: seed.profiles ?? [],
@@ -65,12 +67,15 @@ function makeDb(seed: {
     from: (table: string) => {
       const q: any = {
         _table: table,
-        _filters: [] as Array<{ col: string; val: any }>,
+        _filters: [] as Array<{ col: string; val: any; in?: boolean }>,
         _limit: null as number | null,
         _order: null as { col: string; asc: boolean } | null,
         select: () => q,
         ilike: () => q,
-        in: () => q,
+        in: (col: string, vals: any[]) => {
+          q._filters.push({ col, val: vals, in: true });
+          return q;
+        },
         gte: () => q,
         lte: () => q,
         order: (col: string, opts?: { ascending?: boolean }) => {
@@ -101,7 +106,12 @@ function makeDb(seed: {
   function materialize(q: any): any[] {
     let data = [...(rows[q._table] ?? [])];
     for (const filter of q._filters) {
-      data = data.filter((row) => String(row[filter.col] ?? '') === String(filter.val));
+      if (filter.in) {
+        const vals = new Set((filter.val ?? []).map((v: any) => String(v)));
+        data = data.filter((row) => vals.has(String(row[filter.col] ?? '')));
+      } else {
+        data = data.filter((row) => String(row[filter.col] ?? '') === String(filter.val));
+      }
     }
     if (q._order) {
       data.sort((a, b) => {
@@ -235,6 +245,57 @@ describe('telegram booking/object memory layer', () => {
     const reply = composeGuestWifiReplyRu({ property: ctx.property, verified: ctx.wifi_verified });
     expect(reply).toMatch(/ASI-Nevsky24-Guest/);
     expect(reply).toMatch(/test-wifi-nevsky24/);
+  });
+
+  it('merges partial object knowledge with tg_property_knowledge fallback', async () => {
+    const db = makeDb({
+      properties: [
+        {
+          ...propertyRowFromFixture(),
+          property_id: 'prop_A',
+          object_name: 'Тестовый объект Communication Autopilot',
+          wifi_name: 'ASI-Test-WiFi',
+          wifi_password: 'test12345',
+          parking_text: 'парковка во дворе по возможности, место не гарантируется',
+          check_in_text: 'после 14:00; бесконтактное заселение',
+          communication_autopilot: 'enabled',
+        },
+      ],
+      objectKnowledgeEntries: [
+        {
+          object_id: 'prop_A',
+          category: 'waste',
+          key: 'trash_bins_location',
+          value_text: 'Мусорные баки находятся во дворе.',
+          visibility: 'guest_public',
+          sensitivity: 'normal',
+          confidence: 'high',
+          updated_at: '2026-06-02T17:43:43.431928+00:00',
+        },
+      ],
+      reservations: [
+        reservationRowFromFixture({
+          id: 'ASI-LIVE-PROP-A',
+          property_id: 'prop_A',
+          chat_id: 931919812,
+          guest_id: 'tg_931919812',
+        }),
+      ],
+    });
+
+    const ctx = await resolveTelegramGuestBookingObjectContext({
+      telegram_chat_id: 931919812,
+      text: 'Какой Wi-Fi?',
+      db,
+    });
+
+    expect(ctx.property?.object_id).toBe('prop_A');
+    expect(ctx.property?.trash_bins_location).toMatch(/Мусорные баки/);
+    expect(ctx.property?.wifi_name).toBe('ASI-Test-WiFi');
+    expect(ctx.property?.wifi_password).toBe('test12345');
+    expect(ctx.property?.parking_text).toMatch(/парковка во дворе/);
+    expect(ctx.property?.check_in_text).toMatch(/после 14:00/);
+    expect(ctx.property?.communication_autopilot).toBe('enabled');
   });
 
   it('does not return Wi-Fi without verified booking', async () => {

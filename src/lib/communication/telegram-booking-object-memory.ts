@@ -231,6 +231,39 @@ function mapObjectKnowledgeEntriesToProperty(objectId: string, entries: ObjectKn
   };
 }
 
+function mergeObjectKnowledgeWithPropertyRow(params: {
+  objectId: string;
+  objectKnowledgeProperty: TelegramPropertyObjectV1 | null;
+  propertyRow: any | null;
+}): TelegramPropertyObjectV1 | null {
+  const rowProperty = params.propertyRow ? mapPropertyRow(params.propertyRow) : null;
+  const objectProperty = params.objectKnowledgeProperty;
+  if (!objectProperty) return rowProperty;
+  if (!rowProperty) return objectProperty;
+
+  return {
+    ...rowProperty,
+    ...objectProperty,
+    object_id: params.objectId,
+    object_name: objectProperty.object_name ?? rowProperty.object_name,
+    address: objectProperty.address ?? rowProperty.address,
+    directions_text: objectProperty.directions_text ?? rowProperty.directions_text,
+    parking_text: objectProperty.parking_text ?? rowProperty.parking_text,
+    trash_bins_location: objectProperty.trash_bins_location ?? rowProperty.trash_bins_location,
+    waste_disposal_text: objectProperty.waste_disposal_text ?? rowProperty.waste_disposal_text,
+    wifi_name: objectProperty.wifi_name ?? rowProperty.wifi_name,
+    wifi_password: objectProperty.wifi_password ?? rowProperty.wifi_password,
+    baby_crib_available: objectProperty.baby_crib_available ?? rowProperty.baby_crib_available,
+    baby_crib_note: objectProperty.baby_crib_note ?? rowProperty.baby_crib_note,
+    check_in_text: objectProperty.check_in_text ?? rowProperty.check_in_text,
+    checkout_time: objectProperty.checkout_time ?? rowProperty.checkout_time,
+    house_rules_text: objectProperty.house_rules_text ?? rowProperty.house_rules_text,
+    door_code_notes: objectProperty.door_code_notes ?? rowProperty.door_code_notes,
+    communication_autopilot: objectProperty.communication_autopilot ?? rowProperty.communication_autopilot,
+    knowledge_status: objectProperty.knowledge_status,
+  };
+}
+
 function mapBookingRow(row: any, chatId: number | null): TelegramGuestBookingV1 {
   const verified =
     Boolean(row?.access_verified) ||
@@ -368,12 +401,15 @@ export async function lookup_property_by_booking(params: {
     db,
   });
   const objectKnowledgeProperty = mapObjectKnowledgeEntriesToProperty(objectId, objectKnowledgeEntries);
-  if (objectKnowledgeProperty) return objectKnowledgeProperty;
 
   const row = await maybeOne(
     db.from('tg_property_knowledge').select('*').eq('property_id', objectId).limit(1),
   );
-  return row ? mapPropertyRow(row) : null;
+  return mergeObjectKnowledgeWithPropertyRow({
+    objectId,
+    objectKnowledgeProperty,
+    propertyRow: row,
+  });
 }
 
 export function get_property_directions(property: TelegramPropertyObjectV1 | null | undefined): {
