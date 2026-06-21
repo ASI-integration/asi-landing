@@ -1,0 +1,77 @@
+name: Telegram Autopilot Live Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: Production URL to verify
+        required: false
+        default: https://asi-global.ru
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live_acceptance:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ACCEPTANCE_BASE_URL: ${{ inputs.production_url }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+    steps:
+      - name: Checkout acceptance script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run autopilot live acceptance on production VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-acceptance-tmp"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" scripts/telegram-autopilot-live-acceptance.mjs "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "ACCEPTANCE_BASE_URL='${ACCEPTANCE_BASE_URL}' bash -lc 'set -euo pipefail
+              cd /var/www/asi/current
+              set -a
+              source /var/www/asi/shared/.env.production.live
+              set +a
+              export ACCEPTANCE_BASE_URL=\"${ACCEPTANCE_BASE_URL}\"
+              node \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\"
+              rm -f \"${REMOTE_TMP}/telegram-autopilot-live-acceptance.mjs\"
+            '"
