@@ -676,7 +676,7 @@ function composeAutopilotContextClarifier(params: {
       return buildGuestMissingContextReplyRu();
     }
     if (params.decision.metadata.intent === 'unknown') {
-      return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
+      return 'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
     }
     if (params.decision.metadata.intent === 'booking_lookup_missing_details') {
       return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
@@ -689,12 +689,12 @@ function composeAutopilotContextClarifier(params: {
     }
     if (params.decision.metadata.intent === 'check_in_access') {
       if (params.decision.metadata.matchedSignals.some((signal) => signal === 'checkin_readiness_access')) {
-        return 'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.';
+        return 'Поняла, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.';
       }
-      return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+      return 'Поняла, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
     }
     if (params.decision.metadata.intent === 'address_instruction') {
-      return 'Понял, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.';
+      return 'Поняла, нужно подсказать маршрут до квартиры. Напишите, пожалуйста, адрес объекта или номер бронирования, и я подскажу, как добраться. Если адрес уже привязан к брони, сейчас найду его по бронированию.';
     }
     if (missing.some((field) => field.startsWith('object.'))) {
       return '\u0423\u0442\u043e\u0447\u043d\u0438\u0442\u0435, \u043f\u043e\u0436\u0430\u043b\u0443\u0439\u0441\u0442\u0430, \u043e\u0431\u044a\u0435\u043a\u0442 \u0438\u043b\u0438 \u043d\u043e\u043c\u0435\u0440 \u0431\u0440\u043e\u043d\u0438, \u0438 \u044f \u043f\u0440\u043e\u0432\u0435\u0440\u044e \u0442\u043e\u0447\u043d\u044b\u0435 \u0434\u0435\u0442\u0430\u043b\u0438.';
@@ -719,7 +719,7 @@ function composeAutopilotOperationsRegisteredReply(params: {
     case 'maintenance_issue':
       return 'Принял, поломку зарегистрировал. Передаю команде.';
     case 'check_in_access':
-      return 'Понял, помогаю с заселением и доступом. Проверяю детали.';
+      return 'Поняла, помогаю с заселением и доступом. Проверяю детали.';
     default:
       return null;
   }
@@ -3517,7 +3517,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         usedPath = 'deterministic';
       } else if (decision.scenario === 'invoice_receipt_request') {
         const msg = lang === 'ru'
-          ? 'Понял запрос на чек/квитанцию. Если хотите получить документ на email — пришлите email, и укажите дату заезда/имя гостя (если ещё не указано).'
+          ? 'Поняла запрос на чек/квитанцию. Если хотите получить документ на email — пришлите email, и укажите дату заезда/имя гостя (если ещё не указано).'
           : 'Got it — you’re requesting an invoice/receipt. If you want it by email, please share the email and confirm the guest name / check-in date (if not already provided).';
         replyText = adapter.formatResponse(msg, commContext as unknown as Record<string, unknown>);
         llmSucceeded = true;
@@ -3575,7 +3575,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     if (escalation && stopAutoReplyOnEscalation && !replyText) {
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Понял. Передал запрос команде — вернёмся с ответом.'
+          ? 'Поняла. Передала запрос команде — вернёмся с ответом.'
           : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -3675,7 +3675,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       );
       const escalationBase =
         classification.lang === 'ru'
-          ? 'Понял. Передал запрос команде — вернёмся с ответом.'
+          ? 'Поняла. Передала запрос команде — вернёмся с ответом.'
           : 'Understood. I’m passing this to the team now.';
       const escalationMsg = templates?.escalation_contact_text
         ? `${escalationBase} ${templates.escalation_contact_text}`
@@ -3896,7 +3896,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     ) {
       cp('branch.telegram_guest_agent.safe_fallback', { chat_id: chatId });
       replyText = adapter.formatResponse(
-        'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+        'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
         commContext as unknown as Record<string, unknown>,
       );
       llmSucceeded = true;
@@ -3913,7 +3913,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       });
       const base =
         classification.lang === 'ru'
-          ? 'Понял, оператор уже подключён. Спасибо, мы проверяем детали и вернёмся с ответом.'
+          ? 'Поняла, оператор уже подключён. Спасибо, мы проверяем детали и вернёмся с ответом.'
           : 'This conversation is already escalated to a human operator. We will follow up shortly.';
       replyText = adapter.formatResponse(base, commContext as unknown as Record<string, unknown>);
       llmSucceeded = true;

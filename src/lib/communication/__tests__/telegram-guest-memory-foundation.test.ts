@@ -199,7 +199,7 @@ describe('telegram guest memory foundation', () => {
     expect(result.handled).toBe(true);
     if (!result.handled) throw new Error('expected handled');
     expect(result.hit.finalAction).toBe('escalate_urgent');
-    expect(result.hit.reply).toBe('Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.');
+    expect(result.hit.reply).toBe('Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.');
     expect(result.hit.reply).not.toMatch(/mock-door-code|door-code|код:\s*\d/i);
     expect(db.__rows.tg_conversation_sessions[0].guest_history_context_v1.identity_status).toBe('unknown');
   });

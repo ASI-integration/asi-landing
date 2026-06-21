@@ -172,7 +172,7 @@ describe('Telegram LLM router autopilot fallback', () => {
     expect(result.metadata.intent).toBe('unknown');
     expect(result.metadata.llmRouter?.validation).toBe('low_confidence');
     expect(result.replyText).toBe(
-      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+      'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
     );
   });
 
@@ -295,7 +295,7 @@ describe('Telegram LLM router autopilot fallback', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.metadata.intent).toBe('unknown');
     expect(result.replyText).toBe(
-      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+      'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
     );
   });
 

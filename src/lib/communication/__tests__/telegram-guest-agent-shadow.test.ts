@@ -34,7 +34,7 @@ function shadowProvider(): LlmRouterProvider {
       if (text.includes('двери') || text.includes('домофон')) {
         return decision({
           intent: 'access_problem',
-          reply: 'Понял, это срочно. Передаю оператору по доступу.',
+          reply: 'Поняла, это срочно. Передаю оператору по доступу.',
           actionType: 'access_support',
           shouldEscalate: true,
         });
@@ -77,7 +77,7 @@ function shadowProvider(): LlmRouterProvider {
       }
       return decision({
         intent: 'general_question',
-        reply: 'Понял вопрос. Пришлите номер брони или объект - проверю точные данные.',
+        reply: 'Поняла вопрос. Пришлите номер брони или объект - проверю точные данные.',
       });
     }),
   };

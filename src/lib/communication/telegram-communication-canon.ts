@@ -513,7 +513,7 @@ export function buildCanonicalRuCheckinTimeReply(params: {
   greet?: boolean;
 }): string {
   const time = params.time ?? 'Это время';
-  const prefix = params.greet ? 'Здравствуйте! ' : 'Понял. ';
+  const prefix = params.greet ? 'Здравствуйте! ' : 'Поняла. ';
   const missingObjectQuestion = params.hasProperty ? '' : ' Уточните, пожалуйста, для какого это объекта или брони?';
 
   if (params.bucket === 'very_early_checkin') {

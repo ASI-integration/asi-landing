@@ -35,7 +35,7 @@ function rejectsUnsafeReply(reply: string): boolean {
 }
 
 export function safeLlmRouterFallbackReply(): string {
-  return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
+  return 'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
 }
 
 export function safeCheckinCodeRequestReply(): string {

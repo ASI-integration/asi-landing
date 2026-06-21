@@ -30,10 +30,10 @@ export const WIFI_DIAGNOSTIC_FAILED_OBJECT_RESOLVED_RU =
   'Зафиксирую проблему по интернету для этого объекта. Напишите, пожалуйста, сеть Wi-Fi видна в списке и показывает ли устройство подключение без интернета.';
 
 export const WIFI_ESCALATION_OPERATOR_OBJECT_RESOLVED_RU =
-  'Понял. Передаю проблему с Wi-Fi оператору для проверки и решения.';
+  'Поняла. Передаю проблему с Wi-Fi оператору для проверки и решения.';
 
 export const WIFI_ESCALATION_OPERATOR_OBJECT_UNKNOWN_RU =
-  'Понял. Передаю проблему с Wi-Fi оператору. Чтобы проверить именно ваш объект, напишите, пожалуйста, адрес или номер бронирования.';
+  'Поняла. Передаю проблему с Wi-Fi оператору. Чтобы проверить именно ваш объект, напишите, пожалуйста, адрес или номер бронирования.';
 
 const WIFI_PROBLEM_SUBTYPE_REPLIES: Record<WifiProblemSubtype, string> = {
   worked_then_stopped:

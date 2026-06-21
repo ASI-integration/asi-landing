@@ -77,7 +77,7 @@ export type CommunicationMemorySnapshot = {
 };
 
 export const MINIGPT_OPERATOR_HANDOFF_REPLY =
-  'Понял вопрос. Здесь нужна проверка оператора, чтобы не дать вам неверную информацию. Я передам обращение и вернусь с ответом здесь.';
+  'Поняла вопрос. Здесь нужна проверка оператора, чтобы не дать вам неверную информацию. Я передам обращение и вернусь с ответом здесь.';
 
 export function buildOperatorEscalationDetail(params: {
   role: unknown;

@@ -22,7 +22,7 @@
       "name": "self_declared_guest",
       "input": "Я гость",
       "assertions": {
-        "should_include_any": ["Понял, вы гость", "заселение", "Wi-Fi"],
+        "should_include_any": ["Поняла, вы гость", "заселение", "Wi-Fi"],
         "must_not_include_any": ["вы гость по бронированию", "владелец/управляющий", "подключение ASI"]
       }
     },
@@ -37,7 +37,7 @@
       "name": "self_declared_owner",
       "input": "Я владелец/управляющий",
       "assertions": {
-        "should_include_any": ["Понял, вы владелец/управляющий", "внутреннее обращение"],
+        "should_include_any": ["Поняла, вы владелец/управляющий", "внутреннее обращение"],
         "must_not_include_any": ["не буду отвечать как гостю", "оператор увидит"]
       }
     }

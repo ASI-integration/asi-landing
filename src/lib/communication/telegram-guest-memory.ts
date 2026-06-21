@@ -110,7 +110,7 @@ export function canRevealTelegramAccessDetails(identity: TelegramGuestIdentityRe
 }
 
 export function buildUnverifiedAccessReplyRu(): string {
-  return 'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.';
+  return 'Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.';
 }
 
 export async function resolveTelegramGuestIdentityV1(params: {

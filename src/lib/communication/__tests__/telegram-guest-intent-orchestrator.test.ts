@@ -124,7 +124,7 @@ describe('Telegram guest intent canon in orchestrator', () => {
     expect(mockReplyToTelegram).not.toHaveBeenCalled();
     expect(mockSendMessage).toHaveBeenCalledOnce();
     const [, sentText] = mockSendMessage.mock.calls[0];
-    expect(String(sentText)).toBe('Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.');
+    expect(String(sentText)).toBe('Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.');
     expect(__listCommunicationOperationsActionsForTests()).toMatchObject([
       { category: 'operator_access_support', priority: 'high' },
     ]);

@@ -430,7 +430,7 @@ export function decideCommunicationAutopilotResponse(input: {
         action: 'escalate',
         confidence: classification.confidence,
         replyText:
-          'Понял запрос по отмене/возврату. Передаю оператору — сверим бронь и оплату без автоматических обещаний.',
+          'Поняла запрос по отмене/возврату. Передаю оператору — сверим бронь и оплату без автоматических обещаний.',
         escalationReason: 'booking_payment_support',
         metadata: baseMetadata,
       };
@@ -507,7 +507,7 @@ export function decideCommunicationAutopilotResponse(input: {
       return {
         action: 'auto_reply',
         confidence: classification.confidence,
-        replyText: 'Понял, доступом занимаемся срочно. Передаю команде.',
+        replyText: 'Поняла, доступом занимаемся срочно. Передаю команде.',
         metadata: baseMetadata,
       };
     }
@@ -845,7 +845,7 @@ export function composeCommunicationAutopilotContextReply(input: {
   if (input.lang === 'ru') {
     switch (input.decision.metadata.intent) {
       case 'unknown':
-        return 'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
+        return 'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.';
       case 'booking_lookup_missing_details':
         return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
       case 'checkin_code_request':
@@ -855,7 +855,7 @@ export function composeCommunicationAutopilotContextReply(input: {
       case 'maintenance_issue':
         return 'Принял, поломку зарегистрировал. Напишите, пожалуйста, объект или номер брони.';
       case 'check_in_access':
-        return 'Понял, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
+        return 'Поняла, помогаю с заселением. Напишите, пожалуйста, объект или номер брони.';
       case 'address_instruction':
         return PROPERTY_DIRECTIONS_MISSING_CONTEXT_REPLY;
     case 'wifi':
@@ -1347,7 +1347,7 @@ function composeRuReply(
     case 'checkin_code_request':
       return 'Напишите, пожалуйста, телефон или имя гостя, дату заезда и объект - найдем бронь.';
   }
-  return 'Понял вопрос по брони или оплате. Пришлите номер брони, имя гостя или телефон в брони.';
+  return 'Поняла вопрос по брони или оплате. Пришлите номер брони, имя гостя или телефон в брони.';
 }
 
 function composeRuOperationsReply(intent: 'cleaning_issue' | 'maintenance_issue'): string {
@@ -1504,7 +1504,7 @@ function mapLlmRouterDecisionToAutopilotDecision(
         action: 'escalate',
         confidence: decision.confidence,
         replyText:
-          'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
+          'Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
         escalationReason: 'urgent_access_problem',
         metadata: {
           ...base.metadata,

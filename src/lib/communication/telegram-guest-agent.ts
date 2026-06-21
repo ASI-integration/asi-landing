@@ -81,7 +81,7 @@ export function buildTelegramGuestAgentShadowDraft(
     required_data: requiredDataForAgentDecision(decision),
     safe_reply_draft:
       decision.reply_text ??
-      'Понял. Пришлите номер брони или адрес объекта, и я проверю точные данные.',
+      'Поняла. Пришлите номер брони или адрес объекта, и я проверю точные данные.',
     escalation_needed: decision.needs_operator || decision.action === 'escalate' || decision.action === 'policy_handoff',
     can_auto_reply: decision.can_auto_reply,
     safety_flags: decision.safety_flags,
@@ -410,7 +410,7 @@ function resolvePolicyGuardDecision(input: {
       safety_flags: ['urgent_access', 'door_code', 'no_invented_facts'],
       reply_text:
         input.deterministic.replyText ??
-        'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
+        'Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
       source: 'policy_guard',
       llmRouter: { used: false, provider: 'policy_guard', validation: 'skipped' },
     };
@@ -579,7 +579,7 @@ function mapLlmRouterToAgentDecision(
       can_auto_reply: false,
       safety_flags: ['urgent_access', 'door_code', 'no_invented_facts'],
       reply_text:
-        'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
+        'Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
       source: 'llm_router',
       llmRouter,
     };

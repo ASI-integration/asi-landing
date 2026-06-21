@@ -94,7 +94,7 @@ describe('Telegram guest autopilot MVP', () => {
         action: 'escalate_urgent',
       }),
     ).toBe(
-      'Понял, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
+      'Поняла, это срочно. Уже передаю оператору по доступу. В целях безопасности код двери отправим только после проверки брони.',
     );
   });
 
@@ -125,7 +125,7 @@ describe('Telegram guest autopilot MVP', () => {
     expect(d.metadata.operationsAction?.category).toBe('operator_access_support');
     const reply = composeCommunicationAutopilotContextReply({ decision: d, lang: 'ru' });
     expect(reply).toBe(
-      'Понял, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.',
+      'Поняла, проверю готовность квартиры и доступ к ключу. Напишите, пожалуйста, номер бронирования или адрес объекта, чтобы я сразу нашёл нужную бронь. Если данных не хватит, передам оператору.',
     );
     expect(reply).not.toMatch(/что случилось: заселение, доступ, уборка/i);
   });
@@ -135,7 +135,7 @@ describe('Telegram guest autopilot MVP', () => {
     expect(d.metadata.intent).toBe('unknown');
     expect(d.action).toBe('needs_context');
     expect(composeCommunicationAutopilotContextReply({ decision: d, lang: 'ru' })).toBe(
-      'Понял. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
+      'Поняла. Подскажите, вы про заселение, оплату, доступ к квартире или уже текущее проживание? Я помогу с нужным шагом.',
     );
     expect(d.metadata.operationsAction).toBeUndefined();
   });

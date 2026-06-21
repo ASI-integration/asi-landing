@@ -216,7 +216,7 @@ describe('Telegram multi-intent operational acceptance runner', () => {
 
     expect(reply).toContain('1.');
     expect(reply).toContain('2.');
-    expect(reply).not.toContain('Понял, уже разбираюсь с запросом. Вернусь с ответом через пару секунд.');
+    expect(reply).not.toContain('Поняла, уже разбираюсь с запросом. Вернусь с ответом через пару секунд.');
     for (const keyword of fixture.expectedSections) {
       expect(reply.toLowerCase()).toContain(keyword.toLowerCase());
     }
@@ -257,6 +257,6 @@ describe('Telegram multi-intent operational acceptance runner', () => {
     expect(mockSendMessage).toHaveBeenCalledTimes(1);
     const reply = lastReplyText();
     expect(reply).toContain('По пунктам:\n1.');
-    expect(reply).not.toMatch(/Понял, уже разбираюсь с запросом|через пару секунд|slow[_\s-]?ack/i);
+    expect(reply).not.toMatch(/Поняла, уже разбираюсь с запросом|через пару секунд|slow[_\s-]?ack/i);
   });
 });
