@@ -25,7 +25,8 @@ export type CommunicationIdentityRoute =
 
 export type TelegramInlineKeyboardButton = {
   text: string;
-  callback_data: string;
+  callback_data?: string;
+  url?: string;
 };
 
 export type TelegramInlineKeyboardMarkup = {

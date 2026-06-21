@@ -189,6 +189,7 @@ import {
   TELEGRAM_IDENTITY_CALLBACKS,
   UNKNOWN_IDENTITY_INLINE_KEYBOARD,
 } from './communication-identity-routing';
+import { processTelegramOwnerOnboarding } from './telegram-owner-onboarding';
 
 const GUEST_MISSING_BOOKING_CONTEXT = 'after_missing_booking_or_object_data';
 const GUEST_BOOKING_IDENTIFIER_STATE = 'awaiting_guest_booking_identifier';
@@ -1582,9 +1583,22 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const adapter = getChannelAdapter(envelope.channel);
     const targetId = resolveOutboundTargetId(envelope, identity.guestId);
     if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
+    const ownerOnboarding =
+      senderRoute.route === 'owner_manager' || senderRoute.route === 'lead'
+        ? await processTelegramOwnerOnboarding({
+            envelope,
+            chatId,
+            senderIdentity: senderRoute.senderIdentity,
+          })
+        : null;
+    const routeReplyText = ownerOnboarding?.replyText || senderRoute.replyText;
+    const routeReplyMarkup = ownerOnboarding?.replyMarkup ?? senderRoute.replyMarkup;
+    const routeCrmContactId = ownerOnboarding?.crmContactId ?? senderRoute.crmContactId;
     if (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead' || senderRoute.route === 'support_problem') {
       const reviewReason =
-        senderRoute.route === 'lead'
+        ownerOnboarding?.status === 'needs_operator'
+          ? 'owner_onboarding_needs_operator'
+          : senderRoute.route === 'lead'
           ? 'lead_connection_request'
           : senderRoute.route === 'support_problem'
             ? 'support_problem_message'
@@ -1595,6 +1609,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           : senderRoute.route === 'support_problem'
             ? 'Обращение в поддержку'
             : 'Внутреннее обращение по объекту';
+      const reviewReasonText = ownerOnboarding?.status === 'needs_operator'
+        ? 'Пользователь застрял в онбординге объекта или написал вне сценария.'
+        : ownerOnboarding?.status === 'ready_for_channel_manager'
+          ? 'Минимальные данные объекта собраны, можно переходить к Менеджеру каналов.'
+          : ownerOnboarding?.status === 'missing_required_data' || ownerOnboarding?.status === 'onboarding_started'
+            ? `Онбординг объекта идет. Не хватает: ${ownerOnboarding.missing.join(', ') || 'ничего'}.`
+            : senderRoute.route === 'lead'
+              ? 'Пользователь хочет подключить ASI.'
+              : senderRoute.route === 'support_problem'
+                ? 'Пользователь выбрал поддержку.'
+                : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.';
       createOrUpdateEscalationReview({
         sessionId: convSession.sessionId,
         channel: envelope.channel,
@@ -1610,37 +1635,38 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           route: 'communication_identity_route',
           sender_identity: senderRoute.senderIdentity,
           reason: senderRoute.reason,
+          onboarding_status: ownerOnboarding?.status,
+          onboarding_missing: ownerOnboarding?.missing,
         },
         latestMessages: convSession.memory.lastMessages,
-        suggestedReply: senderRoute.replyText,
+        suggestedReply: routeReplyText,
         detail: buildOperatorNotificationText({
           role: senderRoute.senderIdentity,
-          intent: String(senderRoute.audit?.detectedIntent ?? senderRoute.route),
+          intent: ownerOnboarding?.status
+            ? `onboarding:${ownerOnboarding.status}`
+            : String(senderRoute.audit?.detectedIntent ?? senderRoute.route),
           topic: reviewTopic,
           message: text,
-          reason:
-            senderRoute.route === 'lead'
-              ? 'Пользователь хочет подключить ASI.'
-              : senderRoute.route === 'support_problem'
-                ? 'Пользователь выбрал поддержку.'
-                : 'Пользователь пишет как владелец или управляющий, это не гостевой автопилот.',
-          recommendedReply: senderRoute.replyText,
+          reason: reviewReasonText,
+          recommendedReply: routeReplyText,
         }),
       });
     }
     const sent = await adapter.sendMessage(
       String(targetId),
-      senderRoute.replyText,
+      routeReplyText,
       {
         reply_handler: `orchestrator:communication_identity_route:${senderRoute.route}`,
         update_id,
         sender_identity: senderRoute.senderIdentity,
-        crm_contact_id: senderRoute.crmContactId,
-        reply_markup: senderRoute.replyMarkup,
+        crm_contact_id: routeCrmContactId,
+        onboarding_status: ownerOnboarding?.status,
+        onboarding_missing: ownerOnboarding?.missing,
+        reply_markup: routeReplyMarkup,
       },
     );
     if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
-    return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatId, reply: senderRoute.replyText };
+    return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatId, reply: routeReplyText };
   }
 
   // Harden session memory with identity binding (safe defaults when unknown).

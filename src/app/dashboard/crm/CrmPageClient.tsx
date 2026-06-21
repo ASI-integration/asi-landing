@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CRM_COMMUNICATION_STATUS_LABELS,
   CRM_COMMUNICATION_STATUS_VALUES,
+  CRM_ONBOARDING_STATUS_LABELS,
   CRM_ROLE_LABELS,
   CRM_SOURCE_LABELS,
   CRM_SOURCE_VALUES,
@@ -63,6 +64,20 @@ function toInputDate(value: string | null): string {
   if (Number.isNaN(date.getTime())) return '';
   const pad = (num: number) => String(num).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function onboardingBadgeClass(status: string): string {
+  switch (status) {
+    case 'ready_for_channel_manager':
+    case 'channel_manager_started':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'needs_operator':
+      return 'bg-rose-50 text-rose-700 border-rose-200';
+    case 'missing_required_data':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    default:
+      return 'bg-slate-50 text-slate-700 border-slate-200';
+  }
 }
 
 export default function CrmPageClient() {
@@ -462,6 +477,26 @@ export default function CrmPageClient() {
                       <div>{contact.email || 'email не указан'}</div>
                       <div>{contact.city || 'город не указан'} · объектов: {contact.objectsCount}</div>
                     </div>
+                    {contact.onboarding ? (
+                      <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full border px-2 py-1 text-xs font-medium ${onboardingBadgeClass(contact.onboarding.status)}`}>
+                            {CRM_ONBOARDING_STATUS_LABELS[contact.onboarding.status]}
+                          </span>
+                          {contact.onboarding.channelManagerHref ? (
+                            <a className="text-xs font-semibold text-blue-700 hover:text-blue-900" href={contact.onboarding.channelManagerHref}>
+                              Открыть Менеджер каналов
+                            </a>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">
+                          Не хватает: {contact.onboarding.missing.length ? contact.onboarding.missing.join(', ') : 'ничего'}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Последнее сообщение: {contact.onboarding.lastMessage || 'нет текста'}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-3">

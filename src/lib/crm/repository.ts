@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
-import { CrmContact, CrmSource, CrmStatus } from './types';
+import { CrmContact, CrmOnboarding, CrmOnboardingStatus, CrmSource, CrmStatus } from './types';
 
 type CrmContactRow = {
   id: string;
@@ -99,6 +99,39 @@ function toCommunicationStatus(row: CrmContactRow): CrmContact['communicationSta
   return 'no_contact';
 }
 
+const ONBOARDING_STATUS_BY_LABEL: Record<string, CrmOnboardingStatus> = {
+  'онбординг начат': 'onboarding_started',
+  'не хватает данных': 'missing_required_data',
+  'готов к Менеджеру каналов': 'ready_for_channel_manager',
+  'Менеджер каналов открыт': 'channel_manager_started',
+  'нужна реакция оператора': 'needs_operator',
+};
+
+function parseOnboarding(note: string | null | undefined): CrmOnboarding | null {
+  const lines = String(note ?? '').split('\n').map((line) => line.trim());
+  const start = lines.findIndex((line) => line === 'Онбординг ASI');
+  if (start === -1) return null;
+  const get = (prefix: string): string => {
+    const line = lines.slice(start + 1).find((item) => item.startsWith(prefix));
+    return line ? line.slice(prefix.length).trim() : '';
+  };
+  const statusLabel = get('Статус:');
+  const status = ONBOARDING_STATUS_BY_LABEL[statusLabel];
+  if (!status) return null;
+  const missingRaw = get('Не хватает:');
+  const missing = !missingRaw || missingRaw === 'ничего'
+    ? []
+    : missingRaw.split(',').map((item) => item.trim()).filter(Boolean);
+  const href = get('Менеджер каналов:');
+  return {
+    status,
+    statusLabel,
+    missing,
+    lastMessage: get('Последнее сообщение:'),
+    channelManagerHref: href || null,
+  };
+}
+
 function toContact(row: CrmContactRow): CrmContact {
   return {
     id: row.id,
@@ -118,6 +151,7 @@ function toContact(row: CrmContactRow): CrmContact {
     nextActionAt: row.next_action_due_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    onboarding: parseOnboarding(row.notes),
   };
 }
 

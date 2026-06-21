@@ -30,15 +30,12 @@ const UNKNOWN_IDENTITY_CLARIFY_RU =
   'Здравствуйте! Подскажите, пожалуйста, кто вы — так я смогу ответить правильно:';
 const GUEST_SELECTED_REPLY_RU =
   'Поняла, вы гость. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
-const OWNER_MANAGER_REPLY_RU =
-  'Поняла, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
-const LEAD_REPLY_RU =
-  'Отлично. Напишите, пожалуйста, сколько у вас объектов, в каком городе и через какие площадки вы сейчас принимаете бронирования. Я передам заявку на подключение ASI.';
 const SUPPORT_PROBLEM_REPLY_RU =
   'Поняла. Опишите, пожалуйста, что случилось. Если это связано с проживанием, укажите объект или бронь. Если это вопрос владельца/управляющего, напишите объект и ситуацию.';
 const PROBLEM_IDENTITY_CLARIFY_RU = 'Проблема связана с вашим проживанием как гостя или с объектом, которым вы управляете?';
 const ROLE_CONFLICT_GUEST_QUESTION_RU =
   'Похоже, это вопрос гостя по проживанию. Переключить этот диалог в гостевой сценарий?';
+const ONBOARDING_START_FRAGMENT = 'Начнём подключение объекта к ASI';
 
 function supabaseQuery(table: string) {
   const query: any = {
@@ -400,7 +397,7 @@ describe('communication identity routing v1', () => {
     mockDecideAutopilot.mockClear();
     const result = await processUpdate(callbackUpdate('identity:owner_manager', 9111));
 
-    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).toContain('Сохранила: каналы бронирования');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
       escalationReason: 'owner_manager_message',
@@ -424,7 +421,7 @@ describe('communication identity routing v1', () => {
     mockDecideAutopilot.mockClear();
     const result = await processUpdate(callbackUpdate('identity:lead', 9112));
 
-    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(result.reply).toContain('Сохранила: название или тип объекта');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
       escalationReason: 'lead_connection_request',
@@ -527,7 +524,7 @@ describe('communication identity routing v1', () => {
     const { processUpdate } = await import('../orchestrator');
     const result = await processUpdate(callbackUpdate('identity:owner_manager', 9102));
 
-    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).toContain(ONBOARDING_START_FRAGMENT);
     expect(loadAutonomousSession(9102)?.identity_role).toBe('owner');
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_handler: 'orchestrator:communication_identity_route:owner_manager',
@@ -540,7 +537,7 @@ describe('communication identity routing v1', () => {
     const { processUpdate } = await import('../orchestrator');
     const result = await processUpdate(callbackUpdate('identity:lead', 9103));
 
-    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(result.reply).toContain(ONBOARDING_START_FRAGMENT);
     expect(loadAutonomousSession(9103)?.identity_role).toBe('lead');
     expect(mockSendMessage.mock.calls.at(-1)?.[2]).toMatchObject({
       reply_handler: 'orchestrator:communication_identity_route:lead',
@@ -595,14 +592,14 @@ describe('communication identity routing v1', () => {
     const { processMessage } = await import('../orchestrator');
     const result = await processMessage(envelope({ messageText: 'Я владелец/управляющий' }));
 
-    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).toContain(ONBOARDING_START_FRAGMENT);
     expect(result.reply).not.toContain('не буду отвечать как гостю');
     expect(result.reply).not.toContain('оператор увидит');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(0)).toMatchObject({
       escalationReason: 'owner_manager_message',
       detail: expect.stringContaining('⚠️ ASI: нужна проверка оператора'),
-      suggestedReply: OWNER_MANAGER_REPLY_RU,
+      suggestedReply: expect.stringContaining(ONBOARDING_START_FRAGMENT),
     });
   });
 
@@ -670,7 +667,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).toContain('Сохранила: Wi-Fi');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
   });
 
@@ -715,7 +712,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toBe(OWNER_MANAGER_REPLY_RU);
+    expect(result.reply).toContain('Сохранила: каналы бронирования');
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(-1)).toMatchObject({
       escalationReason: 'owner_manager_message',
@@ -735,7 +732,7 @@ describe('communication identity routing v1', () => {
       }),
     );
 
-    expect(result.reply).toBe(LEAD_REPLY_RU);
+    expect(result.reply).toContain(ONBOARDING_START_FRAGMENT);
     expect(mockDecideAutopilot).not.toHaveBeenCalled();
     expect(listEscalationReviews({ status: 'pending' }).at(-1)).toMatchObject({
       escalationReason: 'lead_connection_request',

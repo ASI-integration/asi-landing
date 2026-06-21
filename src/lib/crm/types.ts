@@ -31,6 +31,23 @@ export const CRM_COMMUNICATION_STATUS_VALUES = [
 ] as const;
 export type CrmCommunicationStatus = (typeof CRM_COMMUNICATION_STATUS_VALUES)[number];
 
+export const CRM_ONBOARDING_STATUS_VALUES = [
+  'onboarding_started',
+  'missing_required_data',
+  'ready_for_channel_manager',
+  'channel_manager_started',
+  'needs_operator',
+] as const;
+export type CrmOnboardingStatus = (typeof CRM_ONBOARDING_STATUS_VALUES)[number];
+
+export type CrmOnboarding = {
+  status: CrmOnboardingStatus;
+  statusLabel: string;
+  missing: string[];
+  lastMessage: string;
+  channelManagerHref: string | null;
+};
+
 export type CrmContact = {
   id: string;
   name: string;
@@ -49,6 +66,7 @@ export type CrmContact = {
   nextActionAt: string | null;
   createdAt: string;
   updatedAt: string;
+  onboarding?: CrmOnboarding | null;
 };
 
 export type CrmContactInput = {
@@ -113,4 +131,12 @@ export const CRM_COMMUNICATION_STATUS_LABELS: Record<CrmCommunicationStatus, str
   needs_manual_reaction: 'нужна ручная реакция',
   has_problem: 'есть проблема',
   escalation_closed: 'эскалация закрыта',
+};
+
+export const CRM_ONBOARDING_STATUS_LABELS: Record<CrmOnboardingStatus, string> = {
+  onboarding_started: 'онбординг начат',
+  missing_required_data: 'не хватает данных',
+  ready_for_channel_manager: 'готов к Менеджеру каналов',
+  channel_manager_started: 'Менеджер каналов открыт',
+  needs_operator: 'нужна реакция оператора',
 };
