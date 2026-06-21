@@ -23,22 +23,22 @@ export function autopilotSessionFromCollectedData(
   collected: Record<string, unknown> | null | undefined,
 ): CommunicationAutopilotSessionMemory {
   const raw = collected?.communication_autopilot_session;
-  if (!raw || typeof raw !== 'object') return {};
-  return raw as CommunicationAutopilotSessionMemory;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      return JSON.parse(raw) as CommunicationAutopilotSessionMemory;
+    } catch {
+      return {};
+    }
+  }
+  if (raw && typeof raw === 'object') return raw as CommunicationAutopilotSessionMemory;
+  return {};
 }
 
 export function patchAutopilotSessionCollectedData(input: {
-  collectedData: Record<string, unknown>;
   memory: CommunicationAutopilotSessionMemory;
-}): Record<string, string | null | undefined | CommunicationAutopilotSessionMemory> {
+}): Record<string, string | null | undefined> {
   return {
-    ...Object.fromEntries(
-      Object.entries(input.collectedData).map(([key, value]) => [
-        key,
-        typeof value === 'string' || value === null || value === undefined ? value : undefined,
-      ]),
-    ),
-    communication_autopilot_session: input.memory,
+    communication_autopilot_session: JSON.stringify(input.memory),
     communication_autopilot_property_id: input.memory.property_id ?? null,
   };
 }

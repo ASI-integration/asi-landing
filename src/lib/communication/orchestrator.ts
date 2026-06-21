@@ -2230,12 +2230,9 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
           patchAutonomousSessionCollectedData({
             chatId,
             channel: envelope.channel,
-            set: {
-              ...patchAutopilotSessionCollectedData({
-                collectedData: sessionCollectedData,
-                memory: sessionPatch,
-              }),
-            },
+            set: patchAutopilotSessionCollectedData({
+              memory: sessionPatch,
+            }),
           });
           await recordCommunicationAutopilotTurn({
             telegramUserId,
