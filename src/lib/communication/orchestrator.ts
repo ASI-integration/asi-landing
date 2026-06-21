@@ -3040,7 +3040,8 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         commContext,
         transportEventMeta,
         persistEscalationReview,
-        resolveOutboundTargetId,
+        resolveOutboundTargetId: (envelope, guestId) =>
+          resolveOutboundTargetId(envelope, guestId ?? undefined) ?? null,
         withAwaitCheckpoint,
       });
       if (autopilotV1Result) return autopilotV1Result;
