@@ -27,11 +27,13 @@ export async function POST(req: Request): Promise<Response> {
   const chatId = String(body.chatId ?? '').trim();
   const objectName = String(body.objectName ?? '').trim();
   const bookingId = String(body.bookingId ?? '').trim();
+  const senderIdentity = String(body.senderIdentity ?? body.sender_identity ?? '').trim();
+  const guestTestMode = body.guestTestMode === true || body.guest_test_mode === true;
 
   if (!text || !chatId) {
     return NextResponse.json({ ok: false, error: 'text_and_chatId_required' }, { status: 400 });
   }
 
-  const result = await runTelegramDryRun({ text, chatId, objectName, bookingId });
+  const result = await runTelegramDryRun({ text, chatId, objectName, bookingId, senderIdentity, guestTestMode });
   return NextResponse.json(result, { status: 200 });
 }

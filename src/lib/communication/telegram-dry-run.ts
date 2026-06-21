@@ -8,6 +8,8 @@ export type TelegramDryRunInput = {
   chatId: string;
   objectName?: string;
   bookingId?: string;
+  senderIdentity?: string;
+  guestTestMode?: boolean;
 };
 
 export type TelegramDryRunOutput = {
@@ -44,6 +46,8 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
   const chatId = String(input.chatId ?? '').trim();
   const objectName = String(input.objectName ?? '').trim();
   const bookingId = String(input.bookingId ?? '').trim();
+  const senderIdentity = String(input.senderIdentity ?? '').trim();
+  const guestTestMode = Boolean(input.guestTestMode);
   const meta = resolveTelegramTextMeta({ baseText: text, telegramLangCode: 'ru' });
 
   const policyInput = {
@@ -81,6 +85,8 @@ export async function runTelegramDryRun(input: TelegramDryRunInput): Promise<Tel
       providerMessageId: `dryrun-${Date.now()}`,
       externalMessageId: `dryrun-${Date.now()}`,
       telegram_user_language_code: 'ru',
+      ...(senderIdentity ? { senderIdentity } : {}),
+      ...(guestTestMode ? { guestTestMode: true, guest_test_mode: true } : {}),
     },
   };
 

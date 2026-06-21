@@ -110,14 +110,26 @@ async function findLinkedReservation(sb) {
       .eq('guest_id', row.guest_id)
       .maybeSingle();
     if (identityError) throw new Error(`identity lookup failed: ${identityError.message}`);
-    if (identity?.telegram_chat_id) return { ...row, chat_id: identity.telegram_chat_id, identity };
+    if (identity?.telegram_chat_id) return { ...row, chat_id: identity.telegram_chat_id, identity, needsChatLink: true };
   }
   return null;
 }
 
 async function ensureLinkedReservation(sb) {
   const existing = await findLinkedReservation(sb);
-  if (existing) return { row: existing, created: false };
+  if (existing) {
+    if (existing.needsChatLink && existing.id && existing.chat_id) {
+      const { data, error } = await sb
+        .from('tg_guest_reservations')
+        .update({ chat_id: Number(existing.chat_id), updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+      if (error) throw new Error(`reservation chat_id link update failed: ${error.message}`);
+      return { row: data, created: false, updated: true };
+    }
+    return { row: existing, created: false, updated: false };
+  }
 
   const chatId = optionalEnv('TELEGRAM_AUTOPILOT_TEST_CHAT_ID') ?? optionalEnv('TELEGRAM_TEST_CHAT_ID');
   if (!chatId) {
@@ -155,7 +167,7 @@ async function ensureLinkedReservation(sb) {
     .select('*')
     .single();
   if (error) throw new Error(`reservation upsert failed: ${error.message}`);
-  return { row: data, created: true };
+  return { row: data, created: true, updated: false };
 }
 
 async function postDryRun({ baseUrl, secret, chatId, text }) {
@@ -165,7 +177,12 @@ async function postDryRun({ baseUrl, secret, chatId, text }) {
       'content-type': 'application/json',
       'x-internal-test-secret': secret,
     },
-    body: JSON.stringify({ chatId: String(chatId), text }),
+    body: JSON.stringify({
+      chatId: String(chatId),
+      text,
+      senderIdentity: 'test_guest',
+      guestTestMode: true,
+    }),
   });
   const bodyText = await response.text();
   let json;
@@ -243,6 +260,7 @@ async function main() {
     reservationRef: link.row.reservation_ref ?? link.row.booking_id ?? null,
     guestId: link.row.guest_id ?? null,
     linkCreated: link.created,
+    linkUpdated: link.updated,
     property: {
       communication_autopilot: property.communication_autopilot ?? null,
       wifi_name: property.wifi_name ?? null,
