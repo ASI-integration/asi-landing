@@ -101,10 +101,20 @@ function toCommunicationStatus(row: CrmContactRow): CrmContact['communicationSta
 
 const ONBOARDING_STATUS_BY_LABEL: Record<string, CrmOnboardingStatus> = {
   'онбординг начат': 'onboarding_started',
+  'идёт подключение': 'onboarding_started',
   'не хватает данных': 'missing_required_data',
   'готов к Менеджеру каналов': 'ready_for_channel_manager',
   'Менеджер каналов открыт': 'channel_manager_started',
   'нужна реакция оператора': 'needs_operator',
+  'требует внимания': 'needs_operator',
+};
+
+const ONBOARDING_STATUS_BY_SLUG: Record<string, CrmOnboardingStatus> = {
+  onboarding_started: 'onboarding_started',
+  missing_required_data: 'missing_required_data',
+  ready_for_channel_manager: 'ready_for_channel_manager',
+  channel_manager_started: 'channel_manager_started',
+  needs_operator: 'needs_operator',
 };
 
 function parseOnboarding(note: string | null | undefined): CrmOnboarding | null {
@@ -116,7 +126,10 @@ function parseOnboarding(note: string | null | undefined): CrmOnboarding | null 
     return line ? line.slice(prefix.length).trim() : '';
   };
   const statusLabel = get('Статус:');
-  const status = ONBOARDING_STATUS_BY_LABEL[statusLabel];
+  const status =
+    ONBOARDING_STATUS_BY_LABEL[statusLabel.toLowerCase()] ??
+    ONBOARDING_STATUS_BY_LABEL[statusLabel] ??
+    ONBOARDING_STATUS_BY_SLUG[statusLabel];
   if (!status) return null;
   const missingRaw = get('Не хватает:');
   const missing = !missingRaw || missingRaw === 'ничего'

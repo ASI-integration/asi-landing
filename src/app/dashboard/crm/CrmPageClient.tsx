@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CRM_COMMUNICATION_STATUS_LABELS,
@@ -284,13 +285,21 @@ export default function CrmPageClient() {
             Лиды, владельцы, объекты, этап подключения и следующий ручной шаг.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowForm((value) => !value)}
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          {showForm ? 'Закрыть форму' : 'Добавить лида'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/crm/queue"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+          >
+            Очередь CRM
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowForm((value) => !value)}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            {showForm ? 'Закрыть форму' : 'Добавить лида'}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
