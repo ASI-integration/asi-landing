@@ -161,6 +161,33 @@ describe('communication autopilot v1', () => {
     expect(session.last_topic).toBe('wifi');
   });
 
+  it('classifies guest phrasing for check-in, checkout, wifi and rules', () => {
+    expect(classifyKnowledgeTopic('во сколько можно заехать?')).toBe('checkin_time');
+    expect(classifyKnowledgeTopic('можно ли приехать раньше?')).toBe('checkin_time');
+    expect(classifyKnowledgeTopic('можно ли выехать позже?')).toBe('checkout_time');
+    expect(classifyKnowledgeTopic('пароль?')).toBe('wifi');
+    expect(classifyKnowledgeTopic('можно ли пригласить гостей?')).toBe('house_rules');
+    expect(requiresAutopilotOperatorEscalation('очень недоволен сервисом')).toBe('complaint');
+  });
+
+  it('answers pets and short password follow-ups from property rules', () => {
+    const pets = runCommunicationAutopilotV1({
+      messageText: 'Можно ли с животными?',
+      property,
+      bookingVerified: true,
+    });
+    expect(pets.action).toBe('auto_reply');
+    expect(pets.replyText).toMatch(/животн|правил/i);
+
+    const password = runCommunicationAutopilotV1({
+      messageText: 'пароль?',
+      property,
+      bookingVerified: true,
+    });
+    expect(password.action).toBe('auto_reply');
+    expect(password.replyText).toMatch(/test12345|welcome24/i);
+  });
+
   it('classifies knowledge topics and escalation keywords', () => {
     expect(classifyKnowledgeTopic('какой wi-fi')).toBe('wifi');
     expect(classifyKnowledgeTopic('во сколько заезд')).toBe('checkin_time');

@@ -179,6 +179,18 @@ export async function replyToTelegram(
   logCtx?: TelegramReplyLogContext,
 ): Promise<boolean> {
   const sendStartedAt = Date.now();
+
+  if (shouldSuppressTelegramOutbound(chatId)) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] outbound suppressed', {
+        chat_id: String(chatId),
+        dry_run: isTelegramOutboundDryRun(),
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
   const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
   if (!TELEGRAM_BOT_TOKEN) {
     console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for reply');
@@ -191,17 +203,6 @@ export async function replyToTelegram(
       chat_id: String(chatId),
       update_id: logCtx.update_id ?? null,
     });
-  }
-
-  if (shouldSuppressTelegramOutbound(chatId)) {
-    if (outboundDebugEnabled()) {
-      console.log('[Telegram] outbound suppressed', {
-        chat_id: String(chatId),
-        dry_run: isTelegramOutboundDryRun(),
-        text_preview: safePreview(String(text ?? ''), 160),
-      });
-    }
-    return true;
   }
 
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;

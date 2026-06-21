@@ -155,6 +155,7 @@ import {
   buildAutopilotSessionPatch,
   runCommunicationAutopilotV1,
 } from './communication-autopilot-v1';
+import { tryCommunicationAutopilotV1OrchestratorTurn } from './communication-autopilot-v1-orchestrator';
 import { recordCommunicationAutopilotTurn } from './communication-autopilot-crm';
 import {
   autopilotSessionFromCollectedData,
@@ -3021,6 +3022,30 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
 
 
     // Deterministic canonical operational intake (guest relay) — before scenario / pre-rule escalation / LLM.
+    if (
+      !replyText &&
+      senderRoute.shouldRunGuestConcierge &&
+      !telegramGuestAgentLlmUsed &&
+      envelope.channel === 'telegram' &&
+      text.trim()
+    ) {
+      const autopilotV1Result = await tryCommunicationAutopilotV1OrchestratorTurn({
+        text,
+        chatId,
+        update_id,
+        envelope,
+        identity,
+        senderRoute,
+        adapter,
+        commContext,
+        transportEventMeta,
+        persistEscalationReview,
+        resolveOutboundTargetId,
+        withAwaitCheckpoint,
+      });
+      if (autopilotV1Result) return autopilotV1Result;
+    }
+
     if (
       !replyText &&
       senderRoute.shouldRunGuestConcierge &&

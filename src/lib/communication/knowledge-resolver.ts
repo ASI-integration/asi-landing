@@ -46,16 +46,28 @@ export function classifyKnowledgeTopic(messageText: string): KnowledgeTopic {
   if (/возврат|вернуть деньги|компенсац|скидк|жалоб|конфликт|отмен.*брон|юрист|закон|угроз|ужасн|плохой сервис/i.test(lower)) {
     return 'unknown';
   }
-  if (/wi-?fi|вай-?фай|вайфа|парол.*сет|интернет/i.test(lower)) return 'wifi';
+  if (/wi-?fi|вай-?фай|вайфа|парол.*(?:сет|wi|вай|интернет)|интернет|^пароль\??$/i.test(lower)) return 'wifi';
   if (/адрес|как добраться|где наход|как найти|как доехать/i.test(lower)) return 'address';
   if (/парков/i.test(lower)) return 'parking';
-  if (/засел|инструкц.*заезд|как попасть|ключ|домофон|код.*двер/i.test(lower)) {
-    if (/ключ|домофон|код/i.test(lower)) return 'keys';
+  if (/засел|инструкц.*(?:заезд|заех)|как попасть|ключ|домофон|код.*двер/i.test(lower)) {
+    if (/ключ|домофон|код/i.test(lower) && !/засел|заех/i.test(lower)) return 'keys';
     return 'checkin_instructions';
   }
-  if (/во сколько.*заезд|время.*заезд|ранн.*заезд/i.test(lower)) return 'checkin_time';
-  if (/во сколько.*выезд|время.*выезд|до скольк.*выезд|поздн.*выезд/i.test(lower)) return 'checkout_time';
-  if (/правил|тишин|шум|курить|курени/i.test(lower)) return 'house_rules';
+  if (
+    /во сколько.*(?:заезд|заех|засел)|(?:когда|во сколько).*(?:можно|можно ли).*(?:заех|засел)|время.*(?:заезд|засел)|раньше|пораньше|ранн.*(?:заезд|заех|приезд|приех)|приех.*раньше/i.test(
+      lower,
+    )
+  ) {
+    return 'checkin_time';
+  }
+  if (
+    /во сколько.*(?:выезд|выех)|(?:когда|до скольк).*(?:выезд|выех)|время.*(?:выезд|выех)|поздн.*(?:выезд|выех)|(?:можно|можно ли).*выех|выех.*позже/i.test(
+      lower,
+    )
+  ) {
+    return 'checkout_time';
+  }
+  if (/правил|тишин|шум|курить|курени|вечерин|приглас.*гост|сторонн.*гост/i.test(lower)) return 'house_rules';
   if (/животн|собак|кошк|питомц/i.test(lower)) return 'pets';
   if (/залог|депозит/i.test(lower)) return 'deposit';
   if (/документ|справк|чек|квитанц|отчетн/i.test(lower)) return 'reporting_documents';
@@ -73,7 +85,9 @@ function replyFromHouseRules(property: TelegramPropertyObjectV1 | null, topic: '
       .find((line) => /животн|собак|кошк|питомц/i.test(line));
     if (petLine) return sanitizeGuestFacingReply(petLine);
     if (/животн|собак|кошк|питомц/i.test(rules)) return sanitizeGuestFacingReply(rules);
-    return null;
+    return sanitizeGuestFacingReply(
+      `В правилах объекта отдельно про животных не указано. Основные правила: ${rules}.`,
+    );
   }
   return sanitizeGuestFacingReply(`Правила проживания: ${rules}`);
 }
@@ -146,7 +160,13 @@ export function resolveKnowledgeAnswer(input: {
     }
     case 'checkin_time': {
       const checkIn = textOrNull(property?.check_in_text);
-      if (checkIn) return found(sanitizeGuestFacingReply(`Заезд: ${checkIn}`), 'instructions');
+      const earlyRequest = /ранн|раньше|пораньше/i.test(input.messageText);
+      if (checkIn) {
+        const reply = earlyRequest
+          ? `Заезд: ${checkIn} Ранний заезд возможен только по согласованию — напишите, если нужно передать запрос.`
+          : `Заезд: ${checkIn}`;
+        return found(sanitizeGuestFacingReply(reply), 'instructions');
+      }
       missingFields.push('object.check_in_text');
       const passportReply = textOrNull(passport?.checkInInstructions);
       if (passportReply && passportReply !== 'Information unavailable.') {
@@ -155,8 +175,14 @@ export function resolveKnowledgeAnswer(input: {
       return found(null, 'instructions', missingFields);
     }
     case 'checkout_time': {
+      const lateRequest = /поздн|позже|подольше/i.test(input.messageText);
       const reply = composeGuestCheckoutReplyRu(property);
-      if (reply) return found(reply, 'object');
+      if (reply) {
+        const enriched = lateRequest
+          ? `${reply} Поздний выезд возможен только по согласованию — напишите, если нужно передать запрос.`
+          : reply;
+        return found(sanitizeGuestFacingReply(enriched), 'object');
+      }
       const checkout = textOrNull(passport?.checkOutInstructions);
       if (checkout && checkout !== 'Information unavailable.') return found(sanitizeGuestFacingReply(checkout), 'passport');
       return found(null, 'object', ['object.checkout_time']);
@@ -211,7 +237,7 @@ export function requiresAutopilotOperatorEscalation(messageText: string): string
   const lower = messageText.toLowerCase();
   if (/возврат|вернуть деньги|компенсац/i.test(lower)) return 'refund_request';
   if (/отмен.*брон/i.test(lower)) return 'cancellation';
-  if (/жалоб|ужасн|плохой сервис|отвратительн|кошмар/i.test(lower)) return 'complaint';
+  if (/жалоб|ужасн|плохой сервис|отвратительн|кошмар|недовол.*(?:сервис|обслуж|номер|прожив)/i.test(lower)) return 'complaint';
   if (/конфликт|спор|претензи|оскорб|агресс/i.test(lower)) return 'conflict';
   if (/негативн.*отзыв|плохой отзыв/i.test(lower)) return 'review_threat';
   if (/юрист|закон|суд/i.test(lower)) return 'legal';
