@@ -12,14 +12,14 @@ import {
   CRM_QUEUE_COLUMN_VALUES,
   CRM_QUEUE_FILTER_LABELS,
   CRM_QUEUE_FILTER_VALUES,
+  CRM_QUEUE_KANBAN_COLUMN_CLASS,
   CRM_QUEUE_KANBAN_ROW_CLASS,
   CrmQueueColumn,
   CrmQueueFilter,
   CrmQueueItem,
   CrmQueueMetrics,
-  computeQueueMetrics,
+  collectQueueItemsForArchive,
   emptyQueueColumns,
-  groupQueueByColumn,
   isQueueItemArchivable,
 } from '@/lib/crm/queue';
 import { readResponseJson } from '@/lib/safeResponseJson';
@@ -358,6 +358,7 @@ export default function CrmQueuePageClient() {
   const [data, setData] = useState<QueueResponse | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [bulkArchiving, setBulkArchiving] = useState(false);
   const initialLoadDone = useRef(false);
   const canArchive = session?.isCrmOperator === true;
 
@@ -400,19 +401,7 @@ export default function CrmQueuePageClient() {
     void loadQueue();
   }, [loadQueue]);
 
-  const removeArchivedItem = useCallback((contactId: string) => {
-    setData((current) => {
-      if (!current) return current;
-      const items = current.items.filter((item) => item.id !== contactId);
-      const operatorInbox = current.operatorInbox.filter((item) => item.id !== contactId);
-      return {
-        ...current,
-        items,
-        operatorInbox,
-        columns: groupQueueByColumn(items),
-        metrics: computeQueueMetrics(items),
-      };
-    });
+  const removeArchivedItemFromState = useCallback((contactId: string) => {
     setExpandedId((current) => (current === contactId || current === `inbox-${contactId}` ? null : current));
   }, []);
 
@@ -436,13 +425,55 @@ export default function CrmQueuePageClient() {
           setMessage(payload.message || 'Не удалось скрыть карточку из очереди.');
           return;
         }
-        removeArchivedItem(item.id);
+        removeArchivedItemFromState(item.id);
+        await loadQueue({ silent: true });
       } finally {
         setArchivingId(null);
       }
     },
-    [canArchive, removeArchivedItem],
+    [canArchive, loadQueue, removeArchivedItemFromState],
   );
+
+  const archivableTestGuests = useMemo(() => {
+    if (!data || !canArchive) return [];
+    return collectQueueItemsForArchive(data).filter(
+      (item) => item.isTestGuest && isQueueItemArchivable(item),
+    );
+  }, [canArchive, data]);
+
+  const handleArchiveTestGuests = useCallback(async () => {
+    if (!canArchive || archivableTestGuests.length === 0) return;
+    const confirmed = window.confirm(
+      `Скрыть ${archivableTestGuests.length} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`,
+    );
+    if (!confirmed) return;
+
+    setBulkArchiving(true);
+    setMessage('');
+    const failed: string[] = [];
+    try {
+      for (const item of archivableTestGuests) {
+        const res = await fetch('/api/dashboard/crm/queue/archive', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contactId: item.id }),
+        });
+        const payload = await readResponseJson(res, { ok: false, message: '' });
+        if (!res.ok || !payload.ok) {
+          failed.push(item.objectTitle);
+          continue;
+        }
+        removeArchivedItemFromState(item.id);
+      }
+      await loadQueue({ silent: true });
+      if (failed.length > 0) {
+        setMessage(`Не удалось скрыть: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`);
+      }
+    } finally {
+      setBulkArchiving(false);
+    }
+  }, [archivableTestGuests, canArchive, loadQueue, removeArchivedItemFromState]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -465,7 +496,7 @@ export default function CrmQueuePageClient() {
   }, [columns, filter]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-2">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Очередь CRM</h1>
@@ -537,7 +568,7 @@ export default function CrmQueuePageClient() {
         )}
       </section>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {CRM_QUEUE_FILTER_VALUES.map((value) => (
           <button
             key={value}
@@ -552,6 +583,16 @@ export default function CrmQueuePageClient() {
             {CRM_QUEUE_FILTER_LABELS[value]}
           </button>
         ))}
+        {canArchive && archivableTestGuests.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => void handleArchiveTestGuests()}
+            disabled={bulkArchiving || archivingId !== null}
+            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-50"
+          >
+            {bulkArchiving ? 'Скрываем тестовые…' : `Скрыть тестовые (${archivableTestGuests.length})`}
+          </button>
+        ) : null}
       </div>
 
       {loading ? (
@@ -562,7 +603,7 @@ export default function CrmQueuePageClient() {
             {visibleColumns.map((column) => {
               const items = columns[column] ?? [];
               return (
-                <section key={column} className="w-80 shrink-0 space-y-3">
+                <section key={column} className={CRM_QUEUE_KANBAN_COLUMN_CLASS}>
                   <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
                     <h2 className="text-sm font-semibold text-slate-900">{CRM_QUEUE_COLUMN_LABELS[column]}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">

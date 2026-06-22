@@ -112,6 +112,7 @@ export type CrmQueueItem = {
   operationalStatus: CrmOperationalStatus;
   operationalStatusLabel: string;
   recentActivities: CrmActivityItem[];
+  isTestGuest: boolean;
 };
 
 export type CrmQueueMetrics = {
@@ -286,6 +287,12 @@ export function contactReadyForChannelManager(contact: CrmContact): boolean {
   return status === 'ready_for_channel_manager' || status === 'channel_manager_started';
 }
 
+export function isQueueTestGuestContact(contact: Pick<CrmContact, 'name' | 'note'>): boolean {
+  const note = contact.note.toLowerCase();
+  if (note.includes('guest_test')) return true;
+  return contact.name.trim().toLowerCase() === 'telegram guest';
+}
+
 export function buildQueueItem(
   contact: CrmContact,
   messages: CrmQueueMessage[] = [],
@@ -346,6 +353,7 @@ export function buildQueueItem(
     operationalStatus,
     operationalStatusLabel: CRM_OPERATIONAL_STATUS_LABELS[operationalStatus],
     recentActivities,
+    isTestGuest: isQueueTestGuestContact(contact),
   };
 }
 
@@ -422,16 +430,28 @@ export function buildOperatorInbox(items: CrmQueueItem[]): CrmQueueItem[] {
 }
 
 export const CRM_QUEUE_ARCHIVABLE_COLUMNS: CrmQueueColumn[] = [
-  'needs_operator',
   'new_lead',
   'onboarding',
+  'missing_data',
   'ready_for_cm',
+  'needs_operator',
 ];
 
 export const CRM_QUEUE_KANBAN_ROW_CLASS = 'flex min-w-max items-start gap-4';
+export const CRM_QUEUE_KANBAN_COLUMN_CLASS = 'w-80 shrink-0 self-start space-y-3';
 
 export function isQueueItemArchivable(item: Pick<CrmQueueItem, 'column'>): boolean {
-  return CRM_QUEUE_ARCHIVABLE_COLUMNS.includes(item.column);
+  return item.column !== 'completed';
+}
+
+export function collectQueueItemsForArchive(data: {
+  items: CrmQueueItem[];
+  operatorInbox: CrmQueueItem[];
+}): CrmQueueItem[] {
+  const byId = new Map<string, CrmQueueItem>();
+  for (const item of data.operatorInbox) byId.set(item.id, item);
+  for (const item of data.items) byId.set(item.id, item);
+  return [...byId.values()];
 }
 
 export function excludeArchivedQueueContacts(contacts: CrmContact[]): CrmContact[] {

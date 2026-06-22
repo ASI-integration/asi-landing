@@ -3,10 +3,13 @@ import { CRM_EVENT_FEED, buildActivityFeed } from '@/lib/crm/activity-feed';
 import { isCrmOperatorEmail } from '@/lib/crm/access';
 import {
   buildQueueItem,
+  collectQueueItemsForArchive,
   computeQueueMetrics,
+  CRM_QUEUE_KANBAN_COLUMN_CLASS,
   CRM_QUEUE_KANBAN_ROW_CLASS,
   excludeArchivedQueueContacts,
   isQueueItemArchivable,
+  isQueueTestGuestContact,
 } from '@/lib/crm/queue';
 import type { CrmContact } from '@/lib/crm/types';
 
@@ -84,7 +87,7 @@ afterEach(() => {
 });
 
 describe('crm queue archive', () => {
-  it('allows archive button columns for operator-facing cards', () => {
+  it('allows archive for all active queue columns except completed', () => {
     const needsOperator = buildQueueItem(baseContact);
     expect(isQueueItemArchivable(needsOperator)).toBe(true);
 
@@ -95,7 +98,40 @@ describe('crm queue archive', () => {
       ...baseContact,
       onboarding: { ...baseContact.onboarding!, status: 'missing_required_data' },
     });
-    expect(isQueueItemArchivable(missingData)).toBe(false);
+    expect(isQueueItemArchivable(missingData)).toBe(true);
+
+    const readyForCm = buildQueueItem({
+      ...baseContact,
+      onboarding: { ...baseContact.onboarding!, status: 'ready_for_channel_manager' },
+    });
+    expect(isQueueItemArchivable(readyForCm)).toBe(true);
+
+    const completed = buildQueueItem({
+      ...baseContact,
+      status: 'pilot',
+      communicationStatus: 'replied',
+      onboarding: null,
+    });
+    expect(completed.column).toBe('completed');
+    expect(isQueueItemArchivable(completed)).toBe(false);
+  });
+
+  it('detects telegram guest_test cards without flagging owners', () => {
+    expect(
+      isQueueTestGuestContact({
+        name: 'Telegram guest',
+        note: 'guest_test property_id=OBJ-123',
+      }),
+    ).toBe(true);
+    expect(
+      isQueueTestGuestContact({
+        name: 'Анна',
+        note: 'Онбординг ASI',
+      }),
+    ).toBe(false);
+    expect(buildQueueItem({ ...baseContact, name: 'Telegram guest', note: 'guest_test' }).isTestGuest).toBe(
+      true,
+    );
   });
 
   it('excludes archived contacts from active queue metrics', () => {
@@ -108,6 +144,17 @@ describe('crm queue archive', () => {
     expect(visible).toHaveLength(1);
     expect(metrics.needsAttention).toBe(1);
     expect(metrics.activeObjects).toBe(1);
+  });
+
+  it('collects unique queue cards from inbox and filtered items for bulk archive', () => {
+    const inboxItem = buildQueueItem({ ...baseContact, id: 'c-inbox' });
+    const kanbanItem = buildQueueItem({ ...baseContact, id: 'c-kanban' });
+    const duplicate = buildQueueItem({ ...baseContact, id: 'c-inbox' });
+    const collected = collectQueueItemsForArchive({
+      operatorInbox: [inboxItem, duplicate],
+      items: [kanbanItem],
+    });
+    expect(collected.map((item) => item.id).sort()).toEqual(['c-inbox', 'c-kanban']);
   });
 
   it('maps archive event to operator activity feed copy', () => {
@@ -135,6 +182,8 @@ describe('crm queue archive', () => {
   it('does not stretch kanban columns with artificial min-height', () => {
     expect(CRM_QUEUE_KANBAN_ROW_CLASS).toContain('items-start');
     expect(CRM_QUEUE_KANBAN_ROW_CLASS).not.toMatch(/min-h/);
+    expect(CRM_QUEUE_KANBAN_COLUMN_CLASS).toContain('self-start');
+    expect(CRM_QUEUE_KANBAN_COLUMN_CLASS).not.toMatch(/min-h/);
   });
 
   it('blocks archive API for non-operator session', async () => {
@@ -160,7 +209,7 @@ describe('crm queue archive', () => {
     expect(archiveCrmContactFromQueue).not.toHaveBeenCalled();
   });
 
-  it('archives contact for operator and records activity event', async () => {
+  it('archives contact and ready_for_cm cards for operator', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('CRM_OPERATOR_EMAILS', 'operator@asi-global.ru');
 
@@ -169,22 +218,28 @@ describe('crm queue archive', () => {
       userId: 'user-1',
       email: 'operator@asi-global.ru',
     } as never);
-    getCrmContactById.mockResolvedValueOnce(baseContact);
-    archiveCrmContactFromQueue.mockResolvedValueOnce({ ...baseContact, crmArchived: true });
+
+    const readyContact: CrmContact = {
+      ...baseContact,
+      id: 'c-ready',
+      onboarding: { ...baseContact.onboarding!, status: 'ready_for_channel_manager' },
+    };
+    getCrmContactById.mockResolvedValueOnce(readyContact);
+    archiveCrmContactFromQueue.mockResolvedValueOnce({ ...readyContact, crmArchived: true });
 
     const mod = await import('@/app/api/dashboard/crm/queue/archive/route');
     const res = await mod.POST(
       new Request('http://localhost/api/dashboard/crm/queue/archive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contactId: 'c-archive' }),
+        body: JSON.stringify({ contactId: 'c-ready' }),
       }),
     );
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(archiveCrmContactFromQueue).toHaveBeenCalledWith('c-archive', 'operator@asi-global.ru');
+    expect(archiveCrmContactFromQueue).toHaveBeenCalledWith('c-ready', 'operator@asi-global.ru');
     expect(recordEventInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         event_type: 'crm_queue_archived',
