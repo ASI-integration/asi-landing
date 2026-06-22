@@ -28,6 +28,7 @@ cookies_ru*.txt
 err.txt
 logs*.txt
 *.ps1
+!scripts/ops-v12-live-acceptance.ps1
 mock_update*.json
 tsc.log
 TELEGRAM_MANUAL_TEST_CHECKLIST.md
