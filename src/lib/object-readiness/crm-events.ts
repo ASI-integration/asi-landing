@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { ObjectReadinessResult } from './engine';
+import { createOpsTaskFromMissingOwnerData } from '@/lib/ops-board/integrations';
 
 export type ObjectReadinessEventType =
   | 'object_readiness_updated'
@@ -58,6 +59,16 @@ export async function emitObjectReadinessEvents(params: {
         readiness_status: readiness.readiness_status,
         missing_required_fields: readiness.missing_required_fields,
       },
+    });
+  }
+
+  if (
+    readiness.readiness_status === 'missing_data' &&
+    readiness.missing_required_fields.length > 0
+  ) {
+    await createOpsTaskFromMissingOwnerData({
+      contactId: params.contactId,
+      missingFields: readiness.missing_required_fields,
     });
   }
 

@@ -2,6 +2,7 @@ import type { CrmContact, CrmOnboardingStatus, CrmStatus } from './types';
 import type { CrmActivityItem, CrmOperationalStatus } from './activity-feed';
 import { CRM_OPERATIONAL_STATUS_LABELS, resolveOperationalStatus } from './activity-feed';
 import { resolveChannelManagerQueueSummary, buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
+import type { OpsTaskPriority } from '@/lib/ops-board/types';
 import {
   computeObjectReadiness,
   readinessInputFromOnboardingState,
@@ -113,6 +114,8 @@ export type CrmQueueItem = {
   operationalStatusLabel: string;
   recentActivities: CrmActivityItem[];
   isTestGuest: boolean;
+  openOpsTaskCount: number;
+  openOpsHighestPriority: OpsTaskPriority | null;
 };
 
 export type CrmQueueMetrics = {
@@ -348,7 +351,8 @@ export function queueTestGuestProbeFromContact(contact: CrmContact): QueueTestGu
 export function buildQueueItem(
   contact: CrmContact,
   messages: CrmQueueMessage[] = [],
-  recentActivities: CrmActivityItem[] = []
+  recentActivities: CrmActivityItem[] = [],
+  opsSummary?: { openCount: number; highestPriority: OpsTaskPriority | null },
 ): CrmQueueItem {
   const column = resolveQueueColumn(contact);
   const onboardingStatus = contact.onboarding?.status ?? null;
@@ -406,16 +410,24 @@ export function buildQueueItem(
     operationalStatusLabel: CRM_OPERATIONAL_STATUS_LABELS[operationalStatus],
     recentActivities,
     isTestGuest: isQueueTestGuestContact(queueTestGuestProbeFromContact(contact)),
+    openOpsTaskCount: opsSummary?.openCount ?? 0,
+    openOpsHighestPriority: opsSummary?.highestPriority ?? null,
   };
 }
 
 export function buildQueueItems(
   contacts: CrmContact[],
   messagesByContact: Record<string, CrmQueueMessage[]> = {},
-  activitiesByContact: Record<string, CrmActivityItem[]> = {}
+  activitiesByContact: Record<string, CrmActivityItem[]> = {},
+  opsSummaryByContact: Record<string, { openCount: number; highestPriority: OpsTaskPriority | null }> = {},
 ): CrmQueueItem[] {
   return contacts.map((contact) =>
-    buildQueueItem(contact, messagesByContact[contact.id] ?? [], activitiesByContact[contact.id] ?? [])
+    buildQueueItem(
+      contact,
+      messagesByContact[contact.id] ?? [],
+      activitiesByContact[contact.id] ?? [],
+      opsSummaryByContact[contact.id],
+    ),
   );
 }
 

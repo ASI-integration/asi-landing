@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { createOpsTaskFromAutopilotEscalation } from '@/lib/ops-board/integrations';
 import type { CommunicationAutopilotV1Result } from './communication-autopilot-v1';
 
 type EventInput = {
@@ -269,6 +270,13 @@ export async function recordCommunicationAutopilotTurn(input: {
     status: 'needs_reaction',
     next_action: 'Ответить гостю',
     last_activity_at: now,
+  });
+  await createOpsTaskFromAutopilotEscalation({
+    contactId,
+    propertyId: input.propertyId,
+    guestName: 'Гость',
+    escalationReason: input.result.escalationReason ?? input.result.intent,
+    guestQuestion: input.guestQuestion,
   });
   return { contactId };
 }

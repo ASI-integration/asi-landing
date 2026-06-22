@@ -27,6 +27,7 @@ import {
   isQueueItemArchivable,
   resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
+import { OPS_TASK_PRIORITY_LABELS } from '@/lib/ops-board/types';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { useSession } from '@/contexts/SessionContext';
 
@@ -255,6 +256,23 @@ function QueueCard({
               <li key={field}>{field}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {item.openOpsTaskCount > 0 ? (
+        <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2">
+          <p className="text-xs font-medium text-violet-900">
+            Открытые OPS-задачи: {item.openOpsTaskCount}
+            {item.openOpsHighestPriority
+              ? ` · ${OPS_TASK_PRIORITY_LABELS[item.openOpsHighestPriority]}`
+              : ''}
+          </p>
+          <Link
+            href="/dashboard/operations"
+            className="mt-1 inline-block text-xs font-semibold text-violet-800 hover:text-violet-950"
+          >
+            Открыть в Operations
+          </Link>
         </div>
       ) : null}
 

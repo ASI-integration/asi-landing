@@ -16,6 +16,7 @@ import {
 } from '@/lib/crm/queue';
 import type { CrmEventRow } from '@/lib/crm/queue-events';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { summarizeOpenOpsTasksByContactIds } from '@/lib/ops-board/repository';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,21 @@ export async function GET(req: Request): Promise<NextResponse> {
       ])
     );
 
-    const items = buildQueueItems(contacts, messagesByContact, activitiesByContact);
+    const opsSummaries = await summarizeOpenOpsTasksByContactIds(contactIds);
+    const opsSummaryByContact = Object.fromEntries(
+      contactIds.map((contactId) => {
+        const summary = opsSummaries[contactId];
+        return [
+          contactId,
+          {
+            openCount: summary?.openCount ?? 0,
+            highestPriority: summary?.highestPriority ?? null,
+          },
+        ];
+      }),
+    );
+
+    const items = buildQueueItems(contacts, messagesByContact, activitiesByContact, opsSummaryByContact);
     const filtered = filterQueueItems(items, filter);
     const activityFeed = buildActivityFeed(contacts, feedEvents);
 

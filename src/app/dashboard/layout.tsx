@@ -44,7 +44,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { session } = useSession();
 
   const visibleNavItems = navItems.filter((item) => {
-    if (item.key === 'crm' || item.key === 'crmQueue') {
+    if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations') {
       return session?.isCrmOperator === true;
     }
     return true;

@@ -188,6 +188,26 @@ export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor
     label: 'скрыл тестовые обращения из очереди CRM',
     tone: 'processing',
   },
+  ops_task_created: {
+    actor: 'ASI',
+    label: 'создала операционную задачу',
+    tone: 'attention',
+  },
+  ops_task_in_progress: {
+    actor: 'Оператор',
+    label: 'взял задачу в работу',
+    tone: 'processing',
+  },
+  ops_task_waiting_owner: {
+    actor: 'ASI',
+    label: 'отметила задачу как ждущую владельца',
+    tone: 'pending',
+  },
+  ops_task_closed: {
+    actor: 'Оператор',
+    label: 'закрыл операционную задачу',
+    tone: 'done',
+  },
 };
 
 function normalizeFieldKey(raw: string): OnboardingFieldKey | null {

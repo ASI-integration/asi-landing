@@ -21,6 +21,7 @@ import {
   emitChannelManagerMethodSelected,
   emitChannelManagerNeedsOperator,
 } from './crm-events';
+import { createOpsTaskFromChannelManager } from '@/lib/ops-board/integrations';
 import type {
   ChannelManagerAccessSituation,
   ChannelManagerConnectionAction,
@@ -195,6 +196,24 @@ export async function handleChannelManagerConnectionAction(
       }
       if (input.method === 'none_yet') {
         await emitChannelManagerNeedsOperator({ contactId: contact.id, objectId, method: input.method });
+        await createOpsTaskFromChannelManager({
+          contactId: contact.id,
+          objectId,
+          objectLabel: flowContext.objectTitle,
+          ownerName: contact.name,
+          method: input.method,
+          reason: 'Нужна помощь с первичной настройкой',
+        });
+      }
+      if (input.method === 'other') {
+        await createOpsTaskFromChannelManager({
+          contactId: contact.id,
+          objectId,
+          objectLabel: flowContext.objectTitle,
+          ownerName: contact.name,
+          method: input.method,
+          reason: 'Другой Менеджер Каналов',
+        });
       }
       break;
     }
@@ -216,6 +235,14 @@ export async function handleChannelManagerConnectionAction(
       });
       if (input.access === 'needs_help') {
         await emitChannelManagerNeedsOperator({ contactId: contact.id, objectId, method: selectedMethod });
+        await createOpsTaskFromChannelManager({
+          contactId: contact.id,
+          objectId,
+          objectLabel: flowContext.objectTitle,
+          ownerName: contact.name,
+          method: selectedMethod,
+          reason: 'Нужна помощь с подключением',
+        });
       }
       if (input.access === 'has_access') {
         await emitChannelManagerConnectionPrepared({ contactId: contact.id, objectId, method: selectedMethod });
@@ -236,6 +263,14 @@ export async function handleChannelManagerConnectionAction(
         customManagerName: customName,
       });
       await emitChannelManagerConnectionPrepared({ contactId: contact.id, objectId, method: 'other' });
+      await createOpsTaskFromChannelManager({
+        contactId: contact.id,
+        objectId,
+        objectLabel: flowContext.objectTitle,
+        ownerName: contact.name,
+        method: 'other',
+        reason: `Другой Менеджер Каналов: ${customName}`,
+      });
       break;
     }
     default:
