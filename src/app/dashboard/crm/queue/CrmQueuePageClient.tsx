@@ -20,8 +20,8 @@ import {
   CrmQueueItem,
   CrmQueueMetrics,
   collectQueueItemsForArchive,
+  collectArchivableTestGuestContactIds,
   emptyQueueColumns,
-  filterArchivableTestGuestQueueItems,
   isQueueItemArchivable,
   resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
@@ -358,6 +358,7 @@ export default function CrmQueuePageClient() {
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'error' | 'success'>('error');
   const [data, setData] = useState<QueueResponse | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
@@ -372,7 +373,10 @@ export default function CrmQueuePageClient() {
     const seq = ++loadSeqRef.current;
     if (!silent) setLoading(true);
     else setPolling(true);
-    if (!silent) setMessage('');
+    if (!silent) {
+      setMessage('');
+      setMessageTone('error');
+    }
     try {
       const res = await fetch(`/api/dashboard/crm/queue?filter=${filter}`, { credentials: 'include' });
       const payload = await readResponseJson(res, {
@@ -428,6 +432,7 @@ export default function CrmQueuePageClient() {
 
       setArchivingId(item.id);
       setMessage('');
+      setMessageTone('error');
       try {
         const res = await fetch('/api/dashboard/crm/queue/archive', {
           method: 'POST',
@@ -449,14 +454,14 @@ export default function CrmQueuePageClient() {
     [canArchive, loadQueue, removeArchivedItemFromState],
   );
 
-  const archivableTestGuests = useMemo(() => {
+  const archivableTestGuestIds = useMemo(() => {
     if (!data || !canArchive) return [];
-    return filterArchivableTestGuestQueueItems(collectQueueItemsForArchive(data));
+    return collectArchivableTestGuestContactIds(data);
   }, [canArchive, data]);
 
   const handleArchiveTestGuests = useCallback(async () => {
-    if (!canArchive || archivableTestGuests.length === 0) return;
-    const count = archivableTestGuests.length;
+    if (!canArchive || archivableTestGuestIds.length === 0) return;
+    const count = archivableTestGuestIds.length;
     const confirmed = window.confirm(
       `Скрыть ${count} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`,
     );
@@ -465,30 +470,43 @@ export default function CrmQueuePageClient() {
     setBulkArchiving(true);
     pollPausedRef.current = true;
     setMessage('');
+    setMessageTone('error');
     try {
       const res = await fetch('/api/dashboard/crm/queue/archive-test-guests', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactIds: archivableTestGuestIds }),
       });
       const payload = await readResponseJson(res, {
         ok: false,
         message: '',
         archivedIds: [] as string[],
         archivedCount: 0,
+        foundCount: 0,
+        skippedCount: 0,
       });
       if (!res.ok || !payload.ok) {
+        setMessageTone('error');
         setMessage(
           payload.message || 'Не удалось скрыть тестовые карточки. Попробуйте обновить страницу.',
         );
         return;
       }
 
+      const archivedCount =
+        typeof payload.archivedCount === 'number'
+          ? payload.archivedCount
+          : Array.isArray(payload.archivedIds)
+            ? payload.archivedIds.length
+            : 0;
       const archivedIds = new Set(
         Array.isArray(payload.archivedIds) ? payload.archivedIds.map((id) => String(id)) : [],
       );
-      if (archivedIds.size === 0) {
-        setMessage('Тестовые карточки уже скрыты или не найдены.');
+
+      if (archivedCount <= 0 || archivedIds.size === 0) {
+        setMessageTone('error');
+        setMessage('Тестовые карточки не найдены для архивации. Обновите страницу или проверьте фильтр.');
         return;
       }
 
@@ -501,12 +519,14 @@ export default function CrmQueuePageClient() {
         if (!current) return current;
         return { ...current, ...applyBulkArchivedContactsToQueueState(current, archivedIds, filter) };
       });
+      setMessageTone('success');
+      setMessage(`Скрыто тестовых: ${archivedCount}`);
       void loadQueue({ silent: true });
     } finally {
       pollPausedRef.current = false;
       setBulkArchiving(false);
     }
-  }, [archivableTestGuests, canArchive, filter, loadQueue]);
+  }, [archivableTestGuestIds, canArchive, filter, loadQueue]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -552,7 +572,9 @@ export default function CrmQueuePageClient() {
         </div>
       </div>
 
-      {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+      {message ? (
+        <p className={`text-sm ${messageTone === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>{message}</p>
+      ) : null}
 
       <ActivityFeedPanel
         entries={activityFeed}
@@ -613,14 +635,14 @@ export default function CrmQueuePageClient() {
             {CRM_QUEUE_FILTER_LABELS[value]}
           </button>
         ))}
-        {canArchive && archivableTestGuests.length > 0 ? (
+        {canArchive && archivableTestGuestIds.length > 0 ? (
           <button
             type="button"
             onClick={() => void handleArchiveTestGuests()}
             disabled={bulkArchiving || archivingId !== null}
             className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-50"
           >
-            {bulkArchiving ? 'Скрываем тестовые…' : `Скрыть тестовые (${archivableTestGuests.length})`}
+            {bulkArchiving ? 'Скрываем тестовые…' : `Скрыть тестовые (${archivableTestGuestIds.length})`}
           </button>
         ) : null}
       </div>

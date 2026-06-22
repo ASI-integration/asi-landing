@@ -237,7 +237,7 @@ function readinessForContact(contact: CrmContact) {
 
 export function resolveQueueColumn(contact: CrmContact): CrmQueueColumn {
   // Synthetic Telegram guest sessions must stay in active queue columns, not "completed".
-  if (isQueueTestGuestContact(contact)) {
+  if (isQueueTestGuestContact(queueTestGuestProbeFromContact(contact))) {
     return 'onboarding';
   }
 
@@ -292,10 +292,57 @@ export function contactReadyForChannelManager(contact: CrmContact): boolean {
   return status === 'ready_for_channel_manager' || status === 'channel_manager_started';
 }
 
-export function isQueueTestGuestContact(contact: Pick<CrmContact, 'name' | 'note'>): boolean {
-  const note = contact.note.toLowerCase();
-  if (note.includes('guest_test') || note.includes('guest_autopilot')) return true;
-  return contact.name.trim().toLowerCase() === 'telegram guest';
+export type QueueTestGuestProbe = {
+  name: string;
+  note?: string | null;
+  lastMessage?: string | null;
+  source?: string | null;
+  role?: string | null;
+  status?: string | null;
+};
+
+export function queueTestGuestTextBlob(contact: QueueTestGuestProbe): string {
+  return [contact.note ?? '', contact.lastMessage ?? ''].join('\n').toLowerCase();
+}
+
+export function isQueueTestGuestContact(contact: QueueTestGuestProbe): boolean {
+  const name = contact.name.trim().toLowerCase();
+  const blob = queueTestGuestTextBlob(contact);
+
+  if (
+    blob.includes('guest_test') ||
+    blob.includes('guest_autopilot') ||
+    blob.includes('testing_communication')
+  ) {
+    return true;
+  }
+
+  if (name === 'telegram guest' || name.includes('telegram guest')) {
+    return true;
+  }
+
+  const rawRole = String(contact.role ?? '').trim().toLowerCase();
+  const rawSource = String(contact.source ?? '').trim().toLowerCase();
+  if (rawRole === 'guest') return true;
+  if (rawSource === 'test') return true;
+
+  const status = String(contact.status ?? '').trim().toLowerCase();
+  if (status === 'testing_communication' && (rawRole === 'guest' || name.includes('guest'))) {
+    return true;
+  }
+
+  return false;
+}
+
+export function queueTestGuestProbeFromContact(contact: CrmContact): QueueTestGuestProbe {
+  return {
+    name: contact.name,
+    note: contact.note,
+    lastMessage: contact.onboarding?.lastMessage ?? contact.nextStep,
+    source: contact.source,
+    role: contact.role,
+    status: contact.status,
+  };
 }
 
 export function buildQueueItem(
@@ -358,7 +405,7 @@ export function buildQueueItem(
     operationalStatus,
     operationalStatusLabel: CRM_OPERATIONAL_STATUS_LABELS[operationalStatus],
     recentActivities,
-    isTestGuest: isQueueTestGuestContact(contact),
+    isTestGuest: isQueueTestGuestContact(queueTestGuestProbeFromContact(contact)),
   };
 }
 
@@ -469,13 +516,19 @@ export function resolveVisibleKanbanColumns(
 export function listTestGuestContactsForBulkArchive(contacts: CrmContact[]): CrmContact[] {
   return contacts.filter((contact) => {
     if (contact.crmArchived) return false;
-    if (!isQueueTestGuestContact(contact)) return false;
+    if (!isQueueTestGuestContact(queueTestGuestProbeFromContact(contact))) return false;
     return isQueueItemArchivable(buildQueueItem(contact));
   });
 }
 
 export function filterArchivableTestGuestQueueItems(items: CrmQueueItem[]): CrmQueueItem[] {
   return items.filter((item) => item.isTestGuest && isQueueItemArchivable(item));
+}
+
+export function collectArchivableTestGuestContactIds(
+  data: { items: CrmQueueItem[]; operatorInbox: CrmQueueItem[] },
+): string[] {
+  return filterArchivableTestGuestQueueItems(collectQueueItemsForArchive(data)).map((item) => item.id);
 }
 
 export function applyBulkArchivedContactsToQueueState(

@@ -13,6 +13,7 @@ import {
   filterArchivableTestGuestQueueItems,
   isQueueItemArchivable,
   isQueueTestGuestContact,
+  collectArchivableTestGuestContactIds,
   listTestGuestContactsForBulkArchive,
   resolveQueueColumn,
   resolveVisibleKanbanColumns,
@@ -165,9 +166,12 @@ describe('crm queue archive', () => {
         note: 'Онбординг ASI',
       }),
     ).toBe(false);
-    expect(buildQueueItem({ ...baseContact, name: 'Telegram guest', note: 'guest_test' }).isTestGuest).toBe(
-      true,
-    );
+    expect(
+      isQueueTestGuestContact({
+        name: 'Telegram guest',
+        lastMessage: 'testing_communication session',
+      }),
+    ).toBe(true);
   });
 
   it('excludes archived contacts from active queue metrics', () => {
@@ -262,7 +266,31 @@ describe('crm queue archive', () => {
     });
   });
 
-  it('archives all test guests via bulk API for operator', async () => {
+  it('collects visible archivable test guest ids for bulk archive', () => {
+    const guestA = buildQueueItem({
+      ...baseContact,
+      id: 'c-guest-visible-a',
+      name: 'Telegram guest',
+      note: 'guest_autopilot',
+      onboarding: { ...baseContact.onboarding!, status: 'onboarding_started' },
+    });
+    const guestB = buildQueueItem({
+      ...baseContact,
+      id: 'c-guest-visible-b',
+      name: 'Telegram guest',
+      note: 'guest_test property_id=OBJ-1',
+      onboarding: null,
+      status: 'ready_for_test',
+    });
+    const owner = buildQueueItem({ ...baseContact, id: 'c-owner-visible' });
+    const ids = collectArchivableTestGuestContactIds({
+      operatorInbox: [guestA],
+      items: [guestB, owner],
+    });
+    expect(ids.sort()).toEqual(['c-guest-visible-a', 'c-guest-visible-b']);
+  });
+
+  it('archives requested contactIds via bulk API and skips owner ids', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('CRM_OPERATOR_EMAILS', 'operator@asi-global.ru');
 
@@ -290,12 +318,22 @@ describe('crm queue archive', () => {
     archiveCrmContactsFromQueue.mockResolvedValueOnce(['c-guest-bulk-api']);
 
     const mod = await import('@/app/api/dashboard/crm/queue/archive-test-guests/route');
-    const res = await mod.POST();
+    const res = await mod.POST(
+      new Request('http://localhost/api/dashboard/crm/queue/archive-test-guests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactIds: ['c-guest-bulk-api', 'c-owner-bulk-api'] }),
+      }),
+    );
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.foundCount).toBe(2);
+    expect(body.archivedCount).toBe(1);
     expect(body.archivedIds).toEqual(['c-guest-bulk-api']);
+    expect(body.skippedCount).toBe(1);
+    expect(body.skippedIds).toEqual(['c-owner-bulk-api']);
     expect(archiveCrmContactsFromQueue).toHaveBeenCalledWith(['c-guest-bulk-api'], 'operator@asi-global.ru');
     expect(recordEventInsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -303,6 +341,33 @@ describe('crm queue archive', () => {
         message_text: 'Оператор скрыл тестовые обращения из очереди CRM',
       }),
     );
+  });
+
+  it('returns zero-archive diagnostic payload when no contactIds are provided', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('CRM_OPERATOR_EMAILS', 'operator@asi-global.ru');
+
+    const auth = await import('@/lib/auth');
+    vi.mocked(auth.getSession).mockResolvedValueOnce({
+      userId: 'user-1',
+      email: 'operator@asi-global.ru',
+    } as never);
+
+    const mod = await import('@/app/api/dashboard/crm/queue/archive-test-guests/route');
+    const res = await mod.POST(
+      new Request('http://localhost/api/dashboard/crm/queue/archive-test-guests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactIds: [] }),
+      }),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.archivedCount).toBe(0);
+    expect(body.reason).toBe('no_contact_ids_provided');
+    expect(archiveCrmContactsFromQueue).not.toHaveBeenCalled();
   });
 
   it('maps archive event to operator activity feed copy', () => {

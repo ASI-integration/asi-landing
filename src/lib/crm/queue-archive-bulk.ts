@@ -1,6 +1,21 @@
 import { supabase } from '@/lib/supabase';
 import { archiveCrmContactsFromQueue, listCrmContacts } from './repository';
-import { excludeArchivedQueueContacts, listTestGuestContactsForBulkArchive } from './queue';
+import {
+  buildQueueItem,
+  excludeArchivedQueueContacts,
+  isQueueItemArchivable,
+  isQueueTestGuestContact,
+  queueTestGuestProbeFromContact,
+} from './queue';
+
+export type ArchiveCrmQueueTestGuestsResult = {
+  foundCount: number;
+  archivedCount: number;
+  archivedIds: string[];
+  skippedCount: number;
+  skippedIds: string[];
+  reason?: string;
+};
 
 export async function recordCrmQueueTestGuestsArchivedEvent(input: {
   operatorEmail: string;
@@ -23,13 +38,63 @@ export async function recordCrmQueueTestGuestsArchivedEvent(input: {
   }
 }
 
+function normalizeContactIds(contactIds: string[]): string[] {
+  return [...new Set(contactIds.map((id) => id.trim()).filter(Boolean))];
+}
+
 export async function archiveCrmQueueTestGuests(
   operatorEmail: string,
-): Promise<{ archivedIds: string[] }> {
+  contactIds: string[],
+): Promise<ArchiveCrmQueueTestGuestsResult> {
+  const requestedIds = normalizeContactIds(contactIds);
+  const foundCount = requestedIds.length;
+
+  if (foundCount === 0) {
+    return {
+      foundCount: 0,
+      archivedCount: 0,
+      archivedIds: [],
+      skippedCount: 0,
+      skippedIds: [],
+      reason: 'no_contact_ids_provided',
+    };
+  }
+
   const contacts = excludeArchivedQueueContacts(await listCrmContacts({ excludeArchived: true }));
-  const targets = listTestGuestContactsForBulkArchive(contacts);
-  const ids = targets.map((contact) => contact.id);
-  const archivedIds = await archiveCrmContactsFromQueue(ids, operatorEmail);
+  const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
+
+  const toArchive: string[] = [];
+  const skippedIds: string[] = [];
+
+  for (const contactId of requestedIds) {
+    const contact = contactsById.get(contactId);
+    if (!contact) {
+      skippedIds.push(contactId);
+      continue;
+    }
+    if (!isQueueTestGuestContact(queueTestGuestProbeFromContact(contact))) {
+      skippedIds.push(contactId);
+      continue;
+    }
+    if (!isQueueItemArchivable(buildQueueItem(contact))) {
+      skippedIds.push(contactId);
+      continue;
+    }
+    toArchive.push(contactId);
+  }
+
+  if (toArchive.length === 0) {
+    return {
+      foundCount,
+      archivedCount: 0,
+      archivedIds: [],
+      skippedCount: skippedIds.length,
+      skippedIds,
+      reason: 'no_eligible_test_guest_contacts',
+    };
+  }
+
+  const archivedIds = await archiveCrmContactsFromQueue(toArchive, operatorEmail);
   if (archivedIds.length > 0) {
     await recordCrmQueueTestGuestsArchivedEvent({
       operatorEmail,
@@ -37,5 +102,16 @@ export async function archiveCrmQueueTestGuests(
       sampleContactId: archivedIds[0] ?? null,
     });
   }
-  return { archivedIds };
+
+  const notArchived = toArchive.filter((id) => !archivedIds.includes(id));
+  const allSkipped = [...skippedIds, ...notArchived];
+
+  return {
+    foundCount,
+    archivedCount: archivedIds.length,
+    archivedIds,
+    skippedCount: allSkipped.length,
+    skippedIds: allSkipped,
+    reason: archivedIds.length === 0 ? 'archive_update_matched_zero_rows' : undefined,
+  };
 }

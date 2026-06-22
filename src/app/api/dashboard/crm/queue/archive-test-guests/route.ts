@@ -5,17 +5,35 @@ import { archiveCrmQueueTestGuests } from '@/lib/crm/queue-archive-bulk';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function POST(): Promise<NextResponse> {
+type ArchiveTestGuestsBody = {
+  contactIds?: unknown;
+};
+
+function parseContactIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((id): id is string => typeof id === 'string')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+export async function POST(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
+  let body: ArchiveTestGuestsBody = {};
+  try {
+    body = (await req.json()) as ArchiveTestGuestsBody;
+  } catch {
+    body = {};
+  }
+
   try {
     const operatorEmail = auth.session.email ?? 'operator';
-    const { archivedIds } = await archiveCrmQueueTestGuests(operatorEmail);
+    const result = await archiveCrmQueueTestGuests(operatorEmail, parseContactIds(body.contactIds));
     return NextResponse.json({
       ok: true,
-      archivedIds,
-      archivedCount: archivedIds.length,
+      ...result,
     });
   } catch {
     return NextResponse.json(
