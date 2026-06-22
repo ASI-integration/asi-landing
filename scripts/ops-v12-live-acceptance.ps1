@@ -14,7 +14,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 if ([string]::IsNullOrWhiteSpace($Confirm) -or $Confirm -ne 'RUN_OPS_ACCEPTANCE') {
-  Write-Host '[ops-v12-acceptance] SKIP: no changes. Use -Confirm RUN_OPS_ACCEPTANCE to run live acceptance.'
+  Write-Host '[ops-v12-acceptance] SKIPPED: no changes. Use -Confirm RUN_OPS_ACCEPTANCE to run live acceptance.'
   exit 0
 }
 
@@ -31,4 +31,6 @@ if ($Target -eq 'production') {
 }
 
 npm run acceptance:ops-v12
-exit $LASTEXITCODE
+$exitCode = $LASTEXITCODE
+Write-Host "[ops-v12-acceptance] npm exit code: $exitCode"
+exit $exitCode

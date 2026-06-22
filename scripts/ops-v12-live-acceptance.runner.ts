@@ -10,8 +10,22 @@ import { supabase } from '@/lib/supabase';
 
 const ACCEPTANCE_PREFIX = 'ASI_OPS_ACCEPTANCE_';
 
+function printError(error: unknown, message?: string): void {
+  if (message) {
+    console.error(`[ops-v12-acceptance] FAIL: ${message}`);
+  }
+  if (error instanceof Error) {
+    if (!message || error.message !== message) {
+      console.error(`[ops-v12-acceptance] error: ${error.message}`);
+    }
+    if (error.stack) console.error(error.stack);
+    return;
+  }
+  console.error(`[ops-v12-acceptance] error: ${String(error)}`);
+}
+
 function fail(message: string): never {
-  console.error('[ops-v12-acceptance] FAIL:', message);
+  console.error(`[ops-v12-acceptance] FAIL: ${message}`);
   process.exit(1);
 }
 
@@ -139,10 +153,9 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    console.log('[ops-v12-acceptance] PASS');
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    console.error('[ops-v12-acceptance] FAIL:', detail);
+    printError(error);
+    console.error('[ops-v12-acceptance] FAIL: acceptance runner failed');
     process.exit(1);
   } finally {
     if (contactId) {
@@ -152,7 +165,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  const detail = error instanceof Error ? error.message : String(error);
-  console.error('[ops-v12-acceptance] FAIL:', detail);
+  printError(error);
+  console.error('[ops-v12-acceptance] FAIL: acceptance runner failed');
   process.exit(1);
 });
