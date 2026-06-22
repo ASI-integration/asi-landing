@@ -14,6 +14,8 @@ import {
   isQueueItemArchivable,
   isQueueTestGuestContact,
   collectArchivableTestGuestContactIds,
+  resolveArchiveTestGuestsClick,
+  buildArchiveTestGuestsConfirmMessage,
   listTestGuestContactsForBulkArchive,
   resolveQueueColumn,
   resolveVisibleKanbanColumns,
@@ -288,6 +290,38 @@ describe('crm queue archive', () => {
       items: [guestB, owner],
     });
     expect(ids.sort()).toEqual(['c-guest-visible-a', 'c-guest-visible-b']);
+  });
+
+  it('blocks bulk archive click when operator cannot archive', () => {
+    expect(
+      resolveArchiveTestGuestsClick({ canArchive: false, contactIds: ['c-guest-a'] }),
+    ).toEqual({
+      action: 'error',
+      message: 'Нет прав оператора для скрытия тестовых карточек.',
+    });
+  });
+
+  it('blocks bulk archive click when no visible test guest ids remain', () => {
+    expect(resolveArchiveTestGuestsClick({ canArchive: true, contactIds: [] })).toEqual({
+      action: 'error',
+      message: 'Нет тестовых карточек для скрытия. Обновите страницу.',
+    });
+  });
+
+  it('returns contactIds for confirm when bulk archive click is allowed', () => {
+    expect(
+      resolveArchiveTestGuestsClick({
+        canArchive: true,
+        contactIds: ['c-guest-a', 'c-guest-b'],
+      }),
+    ).toEqual({
+      action: 'confirm',
+      contactIds: ['c-guest-a', 'c-guest-b'],
+    });
+  });
+
+  it('builds bulk archive confirm copy with visible count', () => {
+    expect(buildArchiveTestGuestsConfirmMessage(28)).toContain('Скрыть 28 тестовых');
   });
 
   it('archives requested contactIds via bulk API and skips owner ids', async () => {

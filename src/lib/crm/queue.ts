@@ -531,6 +531,27 @@ export function collectArchivableTestGuestContactIds(
   return filterArchivableTestGuestQueueItems(collectQueueItemsForArchive(data)).map((item) => item.id);
 }
 
+export type ArchiveTestGuestsClickGate =
+  | { action: 'error'; message: string }
+  | { action: 'confirm'; contactIds: string[] };
+
+export function resolveArchiveTestGuestsClick(input: {
+  canArchive: boolean;
+  contactIds: string[];
+}): ArchiveTestGuestsClickGate {
+  if (!input.canArchive) {
+    return { action: 'error', message: 'Нет прав оператора для скрытия тестовых карточек.' };
+  }
+  if (input.contactIds.length === 0) {
+    return { action: 'error', message: 'Нет тестовых карточек для скрытия. Обновите страницу.' };
+  }
+  return { action: 'confirm', contactIds: [...input.contactIds] };
+}
+
+export function buildArchiveTestGuestsConfirmMessage(count: number): string {
+  return `Скрыть ${count} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`;
+}
+
 export function applyBulkArchivedContactsToQueueState(
   data: {
     items: CrmQueueItem[];
