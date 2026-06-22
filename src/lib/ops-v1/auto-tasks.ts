@@ -112,6 +112,8 @@ function collectCrmOnboardingSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
 }
 
 function collectObjectPassportSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
+  // TODO: подключить прямое чтение tg_property_knowledge, когда появится стабильная связь объект ↔ паспорт.
+  // Сейчас недостающие поля берутся из CRM notes (contact.onboarding.missing).
   const seeds: AutoTaskSeed[] = [];
 
   for (const contact of contacts) {
@@ -316,40 +318,22 @@ function warnAutoSyncSourceUnavailable(source: string, error: unknown): void {
   console.warn(`[ops-v1] auto-sync: ${source} source unavailable`, detail);
 }
 
-async function collectCrmOnboardingSeedsSafe(): Promise<AutoTaskSeed[]> {
+async function loadCrmContactsSafe(): Promise<CrmContact[]> {
   try {
-    const contacts = await listCrmContacts({ excludeArchived: true });
-    return collectCrmOnboardingSeeds(contacts);
+    return await listCrmContacts({ excludeArchived: true });
   } catch (error) {
     warnAutoSyncSourceUnavailable('CRM', error);
     return [];
   }
 }
 
-async function collectObjectPassportSeedsSafe(): Promise<AutoTaskSeed[]> {
+function collectCommunicationEscalationSeedsSafe(): AutoTaskSeed[] {
   try {
-    const contacts = await listCrmContacts({ excludeArchived: true });
-    return collectObjectPassportSeeds(contacts);
+    return collectCommunicationSeedsFromEscalations();
   } catch (error) {
-    warnAutoSyncSourceUnavailable('object passport', error);
+    warnAutoSyncSourceUnavailable('communications', error);
     return [];
   }
-}
-
-async function collectCommunicationSeedsSafe(): Promise<AutoTaskSeed[]> {
-  const seeds: AutoTaskSeed[] = [];
-  try {
-    const contacts = await listCrmContacts({ excludeArchived: true });
-    seeds.push(...collectCommunicationSeedsFromContacts(contacts));
-  } catch (error) {
-    warnAutoSyncSourceUnavailable('communications', error);
-  }
-  try {
-    seeds.push(...collectCommunicationSeedsFromEscalations());
-  } catch (error) {
-    warnAutoSyncSourceUnavailable('communications', error);
-  }
-  return seeds;
 }
 
 async function collectBookingSeedsSafe(today: Date): Promise<AutoTaskSeed[]> {
@@ -363,13 +347,23 @@ async function collectBookingSeedsSafe(today: Date): Promise<AutoTaskSeed[]> {
 
 export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: number }> {
   const today = new Date();
+  const contacts = await loadCrmContactsSafe();
 
-  const seeds = [
-    ...(await collectCrmOnboardingSeedsSafe()),
-    ...(await collectObjectPassportSeedsSafe()),
-    ...(await collectCommunicationSeedsSafe()),
-    ...(await collectBookingSeedsSafe(today)),
-  ];
+  const crmSeeds = collectCrmOnboardingSeeds(contacts);
+  const passportSeeds = collectObjectPassportSeeds(contacts);
+  const communicationContactSeeds = collectCommunicationSeedsFromContacts(contacts);
+  const communicationEscalationSeeds = collectCommunicationEscalationSeedsSafe();
+  const communicationSeeds = [...communicationContactSeeds, ...communicationEscalationSeeds];
+  const bookingSeeds = await collectBookingSeedsSafe(today);
+
+  console.info('[ops-v1] auto-sync seed counts', {
+    crm: crmSeeds.length,
+    object_passport: passportSeeds.length,
+    communications: communicationSeeds.length,
+    bookings: bookingSeeds.length,
+  });
+
+  const seeds = [...crmSeeds, ...passportSeeds, ...communicationSeeds, ...bookingSeeds];
 
   let created = 0;
   for (const seed of seeds) {

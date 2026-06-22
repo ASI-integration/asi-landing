@@ -156,6 +156,147 @@ describe('ops v1 auto tasks', () => {
     );
   });
 
+  it('creates communication tasks for manual reaction and pending escalations', async () => {
+    mocks.listCrmContacts.mockResolvedValue([
+      {
+        id: 'c-3',
+        name: 'Владелец 3',
+        status: 'pilot',
+        crmArchived: false,
+        ownerObjects: [],
+        activeObjectTitle: null,
+        communicationStatus: 'needs_manual_reaction',
+        onboarding: null,
+      },
+    ]);
+    mocks.listEscalationReviews.mockReturnValue([
+      {
+        reviewId: 'rev-1',
+        sessionId: 'sess-1',
+        channel: 'telegram',
+        targetId: '123',
+        propertyId: 'OBJ-1',
+        leadId: 'c-3',
+        escalationReason: 'low_confidence',
+        latestMessages: [{ direction: 'inbound', content: 'Помогите', createdAt: '2026-06-22T10:00:00Z' }],
+        status: 'pending',
+        createdAt: '2026-06-22T10:00:00Z',
+        updatedAt: '2026-06-22T10:00:00Z',
+      },
+    ]);
+
+    const first = await syncAutoOpsTasks();
+    const second = await syncAutoOpsTasks();
+
+    expect(first.created).toBe(2);
+    expect(second.created).toBe(0);
+    expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dedupKey: 'auto:communications:crm:c-3:verify_guest_issue',
+        taskType: 'verify_guest_issue',
+        description: 'Требуется ручная проверка сообщения гостя',
+        metadata: expect.objectContaining({
+          integration: 'communications_escalation',
+        }),
+      }),
+    );
+    expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dedupKey: 'auto:communications:rev-1:verify_guest_issue',
+        taskType: 'verify_guest_issue',
+      }),
+    );
+  });
+
+  it('creates booking tasks for check-in today, tomorrow, and cleaning after checkout', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-22T12:00:00'));
+
+    mocks.listCrmContacts.mockResolvedValue([]);
+    mocks.supabaseFrom.mockImplementation(() => ({
+      select: () => ({
+        neq: () => ({
+          limit: async () => ({
+            data: [
+              {
+                id: 'res-today',
+                property_id: 'PROP-1',
+                check_in: '2026-06-22',
+                check_out: '2026-06-25',
+                status: 'confirmed',
+              },
+              {
+                id: 'res-tomorrow',
+                property_id: 'PROP-2',
+                check_in: '2026-06-23',
+                check_out: '2026-06-26',
+                status: 'confirmed',
+              },
+              {
+                id: 'res-cleaning',
+                property_id: 'PROP-3',
+                check_in: '2026-06-18',
+                check_out: '2026-06-21',
+                status: 'confirmed',
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }),
+    }));
+
+    await syncAutoOpsTasks();
+
+    expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskType: 'prepare_checkin',
+        description: 'Заезд сегодня',
+        metadata: expect.objectContaining({ integration: 'booking' }),
+      }),
+    );
+    expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskType: 'prepare_checkin',
+        description: 'Заезд завтра',
+      }),
+    );
+    expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskType: 'verify_cleaning',
+        description: 'Уборка после выезда',
+      }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it('logs per-source seed counts during sync', async () => {
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    mocks.listCrmContacts.mockResolvedValue([
+      {
+        id: 'c-1',
+        name: 'Владелец',
+        status: 'test_object_selected',
+        crmArchived: false,
+        ownerObjects: [],
+        activeObjectTitle: null,
+        communicationStatus: 'no_contact',
+        onboarding: null,
+      },
+    ]);
+
+    await syncAutoOpsTasks();
+
+    expect(infoSpy).toHaveBeenCalledWith('[ops-v1] auto-sync seed counts', {
+      crm: 1,
+      object_passport: 0,
+      communications: 0,
+      bookings: 0,
+    });
+    infoSpy.mockRestore();
+  });
+
   it('continues when CRM source is unavailable', async () => {
     mocks.listCrmContacts.mockRejectedValue(new Error('crm_contacts relation does not exist'));
 
