@@ -175,4 +175,35 @@ describe('ops v1', () => {
     expect(patchResponse.status).toBe(200);
     expect(patchPayload.task.status).toBe('in_progress');
   });
+
+  it('GET /api/ops/tasks returns 200 with empty payload when task list fails', async () => {
+    const { supabase } = await import('@/lib/supabase');
+    const originalFrom = supabase.from;
+    vi.spyOn(supabase, 'from').mockImplementation((table: string) => {
+      if (table === 'ops_operator_tasks') {
+        return {
+          select: () => ({
+            order: () => ({
+              then: (cb: (result: { data: null; error: { message: string } }) => unknown) =>
+                cb({ data: null, error: { message: 'ops_operator_tasks missing' } }),
+            }),
+          }),
+        } as never;
+      }
+      return originalFrom.call(supabase, table);
+    });
+
+    const listResponse = await listTasksRoute();
+    const listPayload = await listResponse.json();
+
+    expect(listResponse.status).toBe(200);
+    expect(listPayload.ok).toBe(true);
+    expect(listPayload.tasks).toEqual([]);
+    expect(listPayload.summary).toEqual({
+      checkinsToday: 0,
+      checkoutsToday: 0,
+      cleaningNeeded: 0,
+      needsAttention: 0,
+    });
+  });
 });

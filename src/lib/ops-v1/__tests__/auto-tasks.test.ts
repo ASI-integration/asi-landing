@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listCrmContacts: vi.fn(),
   listEscalationReviews: vi.fn(),
   createOpsOperatorTask: vi.fn(),
+  supabaseFrom: vi.fn(),
 }));
 
 vi.mock('@/lib/crm/repository', () => ({
@@ -28,13 +29,7 @@ vi.mock('@/lib/ops-board/repository', async () => {
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        neq: () => ({
-          limit: async () => ({ data: [], error: null }),
-        }),
-      }),
-    }),
+    from: (...args: unknown[]) => mocks.supabaseFrom(...args),
   },
 }));
 
@@ -48,6 +43,14 @@ describe('ops v1 auto tasks', () => {
     mocks.listCrmContacts.mockReset();
     mocks.listEscalationReviews.mockReset();
     mocks.createOpsOperatorTask.mockReset();
+    mocks.supabaseFrom.mockReset();
+    mocks.supabaseFrom.mockImplementation(() => ({
+      select: () => ({
+        neq: () => ({
+          limit: async () => ({ data: [], error: null }),
+        }),
+      }),
+    }));
     seenDedupKeys.clear();
     mocks.createOpsOperatorTask.mockImplementation(async (input: { dedupKey?: string | null }) => {
       const dedupKey = String(input.dedupKey ?? '');
@@ -151,5 +154,35 @@ describe('ops v1 auto tasks', () => {
         }),
       }),
     );
+  });
+
+  it('continues when CRM source is unavailable', async () => {
+    mocks.listCrmContacts.mockRejectedValue(new Error('crm_contacts relation does not exist'));
+
+    const result = await syncAutoOpsTasks();
+
+    expect(result).toEqual({ created: 0, scanned: 0 });
+    expect(mocks.createOpsOperatorTask).not.toHaveBeenCalled();
+  });
+
+  it('continues when bookings source is unavailable', async () => {
+    mocks.listCrmContacts.mockResolvedValue([]);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.supabaseFrom.mockImplementation(() => ({
+      select: () => ({
+        neq: () => ({
+          limit: async () => ({ data: null, error: { message: 'tg_guest_reservations missing' } }),
+        }),
+      }),
+    }));
+
+    const result = await syncAutoOpsTasks();
+
+    expect(result).toEqual({ created: 0, scanned: 0 });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ops-v1] auto-sync: bookings source unavailable',
+      'tg_guest_reservations missing',
+    );
+    warnSpy.mockRestore();
   });
 });

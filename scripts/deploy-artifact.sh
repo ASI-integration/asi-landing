@@ -207,6 +207,15 @@ ensure_crm_operator_allowlist() {
   ensure_email_in_env_list CRM_OPERATOR_EMAILS "$required_email"
 }
 
+ensure_ops_admin_allowlist() {
+  local required_email="project.ayfaar@gmail.com"
+  if env_list_has_email "$(read_env_value OPS_ADMIN_EMAILS)" "$required_email"; then
+    log "OPS admin allowlist: ${required_email} already in OPS_ADMIN_EMAILS"
+    return 0
+  fi
+  ensure_email_in_env_list OPS_ADMIN_EMAILS "$required_email"
+}
+
 read_git_sha_from_release_dir() {
   local dir="$1"
   node -e "
@@ -383,6 +392,7 @@ log "Canonical deploy SHA from artifact release-meta.json: $EXPECTED_SHA"
 
 log "Updating shared env metadata + injected secrets (if present)"
 ensure_crm_operator_allowlist
+ensure_ops_admin_allowlist
 remove_env_key ASI_RELEASE_SHA
 merge_env_kv ASI_APP_ROOT "${CURRENT_LINK}"
 merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"

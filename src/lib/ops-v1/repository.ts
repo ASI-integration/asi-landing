@@ -51,27 +51,29 @@ export async function listOpsV1Tasks(options?: { syncAuto?: boolean }): Promise<
   autoSync?: { created: number; scanned: number };
   error?: string;
 }> {
+  let autoSync: { created: number; scanned: number } | undefined;
+
   if (options?.syncAuto !== false) {
     try {
-      const autoSync = await syncAutoOpsTasks();
-      const result = await listOpsOperatorTasks({ status: 'all' });
-      if (!result.ok) {
-        return { ok: false, tasks: [], summary: buildOpsV1Summary([]), autoSync, error: result.error };
-      }
-      const tasks = result.tasks.map(mapOperatorTaskToV1);
-      return { ok: true, tasks, summary: buildOpsV1Summary(tasks), autoSync };
+      autoSync = await syncAutoOpsTasks();
     } catch (error) {
-      console.error('[ops-v1] auto sync failed', error);
+      console.warn('[ops-v1] auto sync failed', error);
     }
   }
 
-  const result = await listOpsOperatorTasks({ status: 'all' });
-  if (!result.ok) {
-    return { ok: false, tasks: [], summary: buildOpsV1Summary([]), error: result.error };
-  }
+  try {
+    const result = await listOpsOperatorTasks({ status: 'all' });
+    if (!result.ok) {
+      console.warn('[ops-v1] list tasks failed, returning empty', result.error);
+      return { ok: true, tasks: [], summary: buildOpsV1Summary([]), autoSync };
+    }
 
-  const tasks = result.tasks.map(mapOperatorTaskToV1);
-  return { ok: true, tasks, summary: buildOpsV1Summary(tasks) };
+    const tasks = result.tasks.map(mapOperatorTaskToV1);
+    return { ok: true, tasks, summary: buildOpsV1Summary(tasks), autoSync };
+  } catch (error) {
+    console.warn('[ops-v1] list tasks error, returning empty', error);
+    return { ok: true, tasks: [], summary: buildOpsV1Summary([]), autoSync };
+  }
 }
 
 export async function createOpsV1Task(

@@ -150,7 +150,7 @@ function collectObjectPassportSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
   return seeds;
 }
 
-function collectCommunicationSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
+function collectCommunicationSeedsFromContacts(contacts: CrmContact[]): AutoTaskSeed[] {
   const seeds: AutoTaskSeed[] = [];
 
   for (const contact of contacts) {
@@ -179,6 +179,11 @@ function collectCommunicationSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
     });
   }
 
+  return seeds;
+}
+
+function collectCommunicationSeedsFromEscalations(): AutoTaskSeed[] {
+  const seeds: AutoTaskSeed[] = [];
   const reviews = listEscalationReviews({ status: 'pending', limit: 100 });
   for (const review of reviews) {
     const latestMessage = review.latestMessages.at(-1)?.content ?? review.detail ?? '';
@@ -225,6 +230,9 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
     .limit(500);
 
   if (error || !data) {
+    if (error) {
+      console.warn('[ops-v1] auto-sync: bookings source unavailable', error.message);
+    }
     return [];
   }
 
@@ -303,21 +311,74 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
   return seeds;
 }
 
+function warnAutoSyncSourceUnavailable(source: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`[ops-v1] auto-sync: ${source} source unavailable`, detail);
+}
+
+async function collectCrmOnboardingSeedsSafe(): Promise<AutoTaskSeed[]> {
+  try {
+    const contacts = await listCrmContacts({ excludeArchived: true });
+    return collectCrmOnboardingSeeds(contacts);
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('CRM', error);
+    return [];
+  }
+}
+
+async function collectObjectPassportSeedsSafe(): Promise<AutoTaskSeed[]> {
+  try {
+    const contacts = await listCrmContacts({ excludeArchived: true });
+    return collectObjectPassportSeeds(contacts);
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('object passport', error);
+    return [];
+  }
+}
+
+async function collectCommunicationSeedsSafe(): Promise<AutoTaskSeed[]> {
+  const seeds: AutoTaskSeed[] = [];
+  try {
+    const contacts = await listCrmContacts({ excludeArchived: true });
+    seeds.push(...collectCommunicationSeedsFromContacts(contacts));
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('communications', error);
+  }
+  try {
+    seeds.push(...collectCommunicationSeedsFromEscalations());
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('communications', error);
+  }
+  return seeds;
+}
+
+async function collectBookingSeedsSafe(today: Date): Promise<AutoTaskSeed[]> {
+  try {
+    return await collectBookingSeeds(today);
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('bookings', error);
+    return [];
+  }
+}
+
 export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: number }> {
-  const contacts = await listCrmContacts({ excludeArchived: true });
   const today = new Date();
 
   const seeds = [
-    ...collectCrmOnboardingSeeds(contacts),
-    ...collectObjectPassportSeeds(contacts),
-    ...collectCommunicationSeeds(contacts),
-    ...(await collectBookingSeeds(today)),
+    ...(await collectCrmOnboardingSeedsSafe()),
+    ...(await collectObjectPassportSeedsSafe()),
+    ...(await collectCommunicationSeedsSafe()),
+    ...(await collectBookingSeedsSafe(today)),
   ];
 
   let created = 0;
   for (const seed of seeds) {
-    const wasCreated = await upsertAutoTask(seed);
-    if (wasCreated) created += 1;
+    try {
+      const wasCreated = await upsertAutoTask(seed);
+      if (wasCreated) created += 1;
+    } catch (error) {
+      console.warn('[ops-v1] auto-sync: failed to upsert task', error);
+    }
   }
 
   return { created, scanned: seeds.length };

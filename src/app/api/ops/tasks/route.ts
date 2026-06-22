@@ -6,25 +6,33 @@ import { OPS_V1_TASK_TYPES, type OpsV1TaskType } from '@/lib/ops-v1/types';
 
 export const dynamic = 'force-dynamic';
 
+function logOpsAdminCheck(email: string | null | undefined, isAdmin: boolean): void {
+  if (isAdmin) return;
+  const normalized = String(email ?? '').trim();
+  if (!normalized) {
+    console.info('OPS admin check: session email missing');
+    return;
+  }
+  console.info('OPS admin check: not in allowlist');
+}
+
 export async function GET(): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
   const result = await listOpsV1Tasks({ syncAuto: true });
-  if (!result.ok) {
-    return NextResponse.json({ ok: false, message: 'Не удалось загрузить задачи.' }, { status: 500 });
-  }
+  const isOpsAdmin = isOpsAdminEmail(auth.session.email);
+  logOpsAdminCheck(auth.session.email, isOpsAdmin);
 
   return NextResponse.json({
     ok: true,
     tasks: result.tasks,
     summary: result.summary,
     refreshedAt: new Date().toISOString(),
-    isOpsAdmin: isOpsAdminEmail(auth.session.email),
+    isOpsAdmin,
     autoSync: result.autoSync ?? null,
   });
 }
-
 export async function POST(req: Request): Promise<NextResponse> {
   const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
