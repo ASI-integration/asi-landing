@@ -466,6 +466,44 @@ export function resolveVisibleKanbanColumns(
   return base;
 }
 
+export function listTestGuestContactsForBulkArchive(contacts: CrmContact[]): CrmContact[] {
+  return contacts.filter((contact) => {
+    if (contact.crmArchived) return false;
+    if (!isQueueTestGuestContact(contact)) return false;
+    return isQueueItemArchivable(buildQueueItem(contact));
+  });
+}
+
+export function filterArchivableTestGuestQueueItems(items: CrmQueueItem[]): CrmQueueItem[] {
+  return items.filter((item) => item.isTestGuest && isQueueItemArchivable(item));
+}
+
+export function applyBulkArchivedContactsToQueueState(
+  data: {
+    items: CrmQueueItem[];
+    operatorInbox: CrmQueueItem[];
+    columns: Record<CrmQueueColumn, CrmQueueItem[]>;
+    metrics: CrmQueueMetrics;
+  },
+  contactIds: ReadonlySet<string>,
+  filter: CrmQueueFilter,
+): {
+  items: CrmQueueItem[];
+  operatorInbox: CrmQueueItem[];
+  columns: Record<CrmQueueColumn, CrmQueueItem[]>;
+  metrics: CrmQueueMetrics;
+} {
+  const remove = (items: CrmQueueItem[]) => items.filter((item) => !contactIds.has(item.id));
+  const remainingUnique = remove(collectQueueItemsForArchive(data));
+  const items = remove(data.items);
+  return {
+    items,
+    operatorInbox: remove(data.operatorInbox),
+    columns: groupQueueByColumn(filterQueueItems(items, filter)),
+    metrics: computeQueueMetrics(remainingUnique),
+  };
+}
+
 export function applyArchivedContactToQueueState(
   data: {
     items: CrmQueueItem[];

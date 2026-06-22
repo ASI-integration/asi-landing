@@ -9,6 +9,7 @@ import {
 } from '@/lib/crm/activity-feed';
 import {
   applyArchivedContactToQueueState,
+  applyBulkArchivedContactsToQueueState,
   CRM_QUEUE_COLUMN_LABELS,
   CRM_QUEUE_FILTER_LABELS,
   CRM_QUEUE_FILTER_VALUES,
@@ -20,6 +21,7 @@ import {
   CrmQueueMetrics,
   collectQueueItemsForArchive,
   emptyQueueColumns,
+  filterArchivableTestGuestQueueItems,
   isQueueItemArchivable,
   resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
@@ -362,6 +364,7 @@ export default function CrmQueuePageClient() {
   const [bulkArchiving, setBulkArchiving] = useState(false);
   const initialLoadDone = useRef(false);
   const loadSeqRef = useRef(0);
+  const pollPausedRef = useRef(false);
   const canArchive = session?.isCrmOperator === true;
 
   const loadQueue = useCallback(async (options?: { silent?: boolean }) => {
@@ -448,48 +451,66 @@ export default function CrmQueuePageClient() {
 
   const archivableTestGuests = useMemo(() => {
     if (!data || !canArchive) return [];
-    return collectQueueItemsForArchive(data).filter(
-      (item) => item.isTestGuest && isQueueItemArchivable(item),
-    );
+    return filterArchivableTestGuestQueueItems(collectQueueItemsForArchive(data));
   }, [canArchive, data]);
 
   const handleArchiveTestGuests = useCallback(async () => {
     if (!canArchive || archivableTestGuests.length === 0) return;
+    const count = archivableTestGuests.length;
     const confirmed = window.confirm(
-      `Скрыть ${archivableTestGuests.length} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`,
+      `Скрыть ${count} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`,
     );
     if (!confirmed) return;
 
     setBulkArchiving(true);
+    pollPausedRef.current = true;
     setMessage('');
-    const failed: string[] = [];
     try {
-      for (const item of archivableTestGuests) {
-        const res = await fetch('/api/dashboard/crm/queue/archive', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contactId: item.id }),
-        });
-        const payload = await readResponseJson(res, { ok: false, message: '' });
-        if (!res.ok || !payload.ok) {
-          failed.push(item.objectTitle);
-          continue;
-        }
-        removeArchivedItemFromState(item.id);
+      const res = await fetch('/api/dashboard/crm/queue/archive-test-guests', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const payload = await readResponseJson(res, {
+        ok: false,
+        message: '',
+        archivedIds: [] as string[],
+        archivedCount: 0,
+      });
+      if (!res.ok || !payload.ok) {
+        setMessage(
+          payload.message || 'Не удалось скрыть тестовые карточки. Попробуйте обновить страницу.',
+        );
+        return;
       }
+
+      const archivedIds = new Set(
+        Array.isArray(payload.archivedIds) ? payload.archivedIds.map((id) => String(id)) : [],
+      );
+      if (archivedIds.size === 0) {
+        setMessage('Тестовые карточки уже скрыты или не найдены.');
+        return;
+      }
+
+      setExpandedId((current) => {
+        if (!current) return null;
+        const plainId = current.startsWith('inbox-') ? current.slice('inbox-'.length) : current;
+        return archivedIds.has(plainId) ? null : current;
+      });
+      setData((current) => {
+        if (!current) return current;
+        return { ...current, ...applyBulkArchivedContactsToQueueState(current, archivedIds, filter) };
+      });
       void loadQueue({ silent: true });
-      if (failed.length > 0) {
-        setMessage(`Не удалось скрыть: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`);
-      }
     } finally {
+      pollPausedRef.current = false;
       setBulkArchiving(false);
     }
-  }, [archivableTestGuests, canArchive, loadQueue, removeArchivedItemFromState]);
+  }, [archivableTestGuests, canArchive, filter, loadQueue]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      if (initialLoadDone.current) void loadQueue({ silent: true });
+      if (initialLoadDone.current && !pollPausedRef.current) void loadQueue({ silent: true });
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [loadQueue]);

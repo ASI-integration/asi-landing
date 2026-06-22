@@ -3,14 +3,17 @@ import { CRM_EVENT_FEED, buildActivityFeed } from '@/lib/crm/activity-feed';
 import { isCrmOperatorEmail } from '@/lib/crm/access';
 import {
   applyArchivedContactToQueueState,
+  applyBulkArchivedContactsToQueueState,
   buildQueueItem,
   collectQueueItemsForArchive,
   computeQueueMetrics,
   CRM_QUEUE_KANBAN_COLUMN_CLASS,
   CRM_QUEUE_KANBAN_ROW_CLASS,
   excludeArchivedQueueContacts,
+  filterArchivableTestGuestQueueItems,
   isQueueItemArchivable,
   isQueueTestGuestContact,
+  listTestGuestContactsForBulkArchive,
   resolveQueueColumn,
   resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
@@ -22,12 +25,16 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 const archiveCrmContactFromQueue = vi.fn();
+const archiveCrmContactsFromQueue = vi.fn();
 const getCrmContactById = vi.fn();
+const listCrmContacts = vi.fn();
 const recordEventInsert = vi.fn();
 
 vi.mock('@/lib/crm/repository', () => ({
   archiveCrmContactFromQueue,
+  archiveCrmContactsFromQueue,
   getCrmContactById,
+  listCrmContacts,
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -80,7 +87,9 @@ const baseContact: CrmContact = {
 beforeEach(() => {
   vi.resetModules();
   archiveCrmContactFromQueue.mockReset();
+  archiveCrmContactsFromQueue.mockReset();
   getCrmContactById.mockReset();
+  listCrmContacts.mockReset();
   recordEventInsert.mockReset();
 });
 
@@ -182,6 +191,118 @@ describe('crm queue archive', () => {
       items: [kanbanItem],
     });
     expect(collected.map((item) => item.id).sort()).toEqual(['c-inbox', 'c-kanban']);
+  });
+
+  it('selects only test guest contacts for bulk archive and skips owners', () => {
+    const guest: CrmContact = {
+      ...baseContact,
+      id: 'c-guest-bulk',
+      name: 'Telegram guest',
+      status: 'ready_for_test',
+      note: 'guest_autopilot property_id=prop_A',
+      onboarding: null,
+    };
+    const owner: CrmContact = {
+      ...baseContact,
+      id: 'c-owner-bulk',
+      name: 'Николай',
+      note: 'Онбординг ASI',
+    };
+    const selected = listTestGuestContactsForBulkArchive([guest, owner]);
+    expect(selected.map((contact) => contact.id)).toEqual(['c-guest-bulk']);
+    const queueItems = filterArchivableTestGuestQueueItems([
+      buildQueueItem(guest),
+      buildQueueItem(owner),
+    ]);
+    expect(queueItems.map((item) => item.id)).toEqual(['c-guest-bulk']);
+  });
+
+  it('removes multiple archived cards from queue state at once', () => {
+    const guestA = buildQueueItem({
+      ...baseContact,
+      id: 'c-guest-a',
+      name: 'Telegram guest',
+      note: 'guest_autopilot',
+      onboarding: { ...baseContact.onboarding!, status: 'onboarding_started' },
+    });
+    const guestB = buildQueueItem({
+      ...baseContact,
+      id: 'c-guest-b',
+      name: 'Telegram guest',
+      note: 'guest_autopilot',
+      onboarding: { ...baseContact.onboarding!, status: 'onboarding_started' },
+    });
+    const owner = buildQueueItem({ ...baseContact, id: 'c-owner' });
+    const next = applyBulkArchivedContactsToQueueState(
+      {
+        items: [guestA, guestB, owner],
+        operatorInbox: [],
+        columns: {
+          new_lead: [],
+          onboarding: [guestA, guestB, owner],
+          missing_data: [],
+          ready_for_cm: [],
+          needs_operator: [],
+          completed: [],
+        },
+        metrics: computeQueueMetrics([guestA, guestB, owner]),
+      },
+      new Set(['c-guest-a', 'c-guest-b']),
+      'all',
+    );
+    expect(next.items.map((item) => item.id)).toEqual(['c-owner']);
+    expect(next.metrics.activeObjects).toBe(1);
+  });
+
+  it('maps bulk archive event to operator activity feed copy', () => {
+    expect(CRM_EVENT_FEED.crm_queue_test_guests_archived).toEqual({
+      actor: 'Оператор',
+      label: 'скрыл тестовые обращения из очереди CRM',
+      tone: 'processing',
+    });
+  });
+
+  it('archives all test guests via bulk API for operator', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('CRM_OPERATOR_EMAILS', 'operator@asi-global.ru');
+
+    const auth = await import('@/lib/auth');
+    vi.mocked(auth.getSession).mockResolvedValueOnce({
+      userId: 'user-1',
+      email: 'operator@asi-global.ru',
+    } as never);
+
+    const guest: CrmContact = {
+      ...baseContact,
+      id: 'c-guest-bulk-api',
+      name: 'Telegram guest',
+      status: 'ready_for_test',
+      note: 'guest_autopilot property_id=prop_A',
+      onboarding: null,
+    };
+    const owner: CrmContact = {
+      ...baseContact,
+      id: 'c-owner-bulk-api',
+      name: 'Николай',
+      note: 'Онбординг ASI',
+    };
+    listCrmContacts.mockResolvedValueOnce([guest, owner]);
+    archiveCrmContactsFromQueue.mockResolvedValueOnce(['c-guest-bulk-api']);
+
+    const mod = await import('@/app/api/dashboard/crm/queue/archive-test-guests/route');
+    const res = await mod.POST();
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.archivedIds).toEqual(['c-guest-bulk-api']);
+    expect(archiveCrmContactsFromQueue).toHaveBeenCalledWith(['c-guest-bulk-api'], 'operator@asi-global.ru');
+    expect(recordEventInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'crm_queue_test_guests_archived',
+        message_text: 'Оператор скрыл тестовые обращения из очереди CRM',
+      }),
+    );
   });
 
   it('maps archive event to operator activity feed copy', () => {

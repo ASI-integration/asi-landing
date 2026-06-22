@@ -390,3 +390,20 @@ export async function archiveCrmContactFromQueue(id: string, archivedBy: string)
   if (error) throw error;
   return toContact(data as CrmContactRow);
 }
+
+export async function archiveCrmContactsFromQueue(ids: string[], archivedBy: string): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .update({
+      crm_archived: true,
+      archived_at: now,
+      archived_by: archivedBy,
+    })
+    .in('id', ids)
+    .eq('crm_archived', false)
+    .select('id');
+  if (error) throw error;
+  return (data ?? []).map((row) => String((row as { id: string }).id));
+}

@@ -183,6 +183,11 @@ export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor
     label: 'скрыл объект из очереди CRM',
     tone: 'processing',
   },
+  crm_queue_test_guests_archived: {
+    actor: 'Оператор',
+    label: 'скрыл тестовые обращения из очереди CRM',
+    tone: 'processing',
+  },
 };
 
 function normalizeFieldKey(raw: string): OnboardingFieldKey | null {
