@@ -1,6 +1,7 @@
 import type { CrmContact, CrmOnboardingStatus, CrmStatus } from './types';
 import type { CrmActivityItem, CrmOperationalStatus } from './activity-feed';
 import { CRM_OPERATIONAL_STATUS_LABELS, resolveOperationalStatus } from './activity-feed';
+import { resolveChannelManagerQueueSummary, buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
 import {
   computeObjectReadiness,
   readinessInputFromOnboardingState,
@@ -100,6 +101,8 @@ export type CrmQueueItem = {
   readyForChannelManager: boolean;
   needsOperator: boolean;
   channelManagerStatus: string | null;
+  channelManagerMethod: string | null;
+  channelManagerNextStep: string | null;
   channelManagerHref: string | null;
   propertyId: string | null;
   crmStatus: CrmStatus;
@@ -132,11 +135,30 @@ function objectTitleFor(contact: CrmContact): string {
   return contact.name.trim() || 'Новый объект';
 }
 
-function channelManagerStatusFor(contact: CrmContact): string | null {
-  const status = contact.onboarding?.status;
-  if (status === 'ready_for_channel_manager') return 'Готов к подключению';
-  if (status === 'channel_manager_started') return 'Менеджер каналов открыт';
-  return null;
+function channelManagerFieldsFor(contact: CrmContact): {
+  status: string | null;
+  method: string | null;
+  nextStep: string | null;
+  href: string;
+} {
+  const summary = resolveChannelManagerQueueSummary(
+    contact.channelManagerConnection,
+    contact.onboarding?.status,
+  );
+  const objectId = extractPropertyId(contact.note);
+  const contactId = contact.id;
+  const href =
+    contact.onboarding?.channelManagerHref ??
+    (objectId
+      ? buildChannelManagerConnectionHref({ objectId, contactId, source: 'crm_queue' })
+      : '/dashboard/channel-connections?source=crm_queue');
+
+  return {
+    status: summary.statusLabel,
+    method: summary.methodLabel,
+    nextStep: summary.nextStep,
+    href,
+  };
 }
 
 function missingFieldsRu(missing: string[]): string[] {
@@ -280,6 +302,7 @@ export function buildQueueItem(
     column,
   };
   const operationalStatus = resolveOperationalStatus(contact, flags);
+  const channelManager = channelManagerFieldsFor(contact);
 
   return {
     id: contact.id,
@@ -302,11 +325,13 @@ export function buildQueueItem(
     readinessPercent: onboarding?.readinessPercent ?? readiness?.readiness_percent ?? null,
     readinessStatusLabel:
       onboarding?.readinessStatusLabel ?? readiness?.readiness_status_label_ru ?? null,
-    nextBestStep: onboarding?.nextBestStep ?? readiness?.next_best_step_ru ?? null,
+    nextBestStep: channelManager.nextStep ?? onboarding?.nextBestStep ?? readiness?.next_best_step_ru ?? null,
     readyForChannelManager: flags.readyForChannelManager,
     needsOperator: flags.needsOperator,
-    channelManagerStatus: channelManagerStatusFor(contact),
-    channelManagerHref: contact.onboarding?.channelManagerHref ?? '/dashboard/channel-connections?source=crm_queue',
+    channelManagerStatus: channelManager.status,
+    channelManagerMethod: channelManager.method,
+    channelManagerNextStep: channelManager.nextStep,
+    channelManagerHref: channelManager.href,
     propertyId: extractPropertyId(contact.note),
     crmStatus: contact.status,
     lastMessagePreview: contact.onboarding?.lastMessage || messages[0]?.text || contact.nextStep || null,

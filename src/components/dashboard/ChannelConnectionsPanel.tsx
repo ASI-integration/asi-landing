@@ -32,7 +32,7 @@ function providerStatusClass(availability: ChannelManagerProviderAvailability): 
   }
 }
 
-export function ChannelConnectionsPanel() {
+export function ChannelConnectionsPanel({ compact = false }: { compact?: boolean }) {
   const primaryProviders = CHANNEL_MANAGER_PROVIDERS.filter((provider) =>
     primaryProviderCodes.includes(provider.code),
   );
@@ -41,7 +41,8 @@ export function ChannelConnectionsPanel() {
   );
 
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className={compact ? 'space-y-6 max-w-5xl' : 'space-y-8 max-w-5xl'}>
+      {!compact ? (
       <header>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
           {CHANNEL_CONNECTIONS_PAGE_TITLE}
@@ -56,7 +57,10 @@ export function ChannelConnectionsPanel() {
           {CHANNEL_CONNECTIONS_LOCATION_ANALYTICS_NOTE}
         </p>
       </header>
+      ) : null}
 
+      {!compact ? (
+      <>
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-sm font-semibold text-slate-900">1. Сначала менеджер каналов</p>
@@ -77,6 +81,8 @@ export function ChannelConnectionsPanel() {
           </p>
         </div>
       </section>
+      </>
+      ) : null}
 
       <section className="bg-white rounded-xl border border-slate-200 p-7">
         <h2 className="text-xl font-bold text-slate-900">Менеджеры каналов и базовый ввод</h2>
@@ -158,6 +164,7 @@ export function ChannelConnectionsPanel() {
         </div>
       </section>
 
+      {!compact ? (
       <section className="bg-slate-50 rounded-xl border border-slate-200 p-7">
         <h2 className="text-lg font-bold text-slate-900">Что дает этот этап</h2>
         <ol className="mt-4 space-y-3 text-base text-slate-600 leading-relaxed list-none">
@@ -181,6 +188,7 @@ export function ChannelConnectionsPanel() {
           </li>
         </ol>
       </section>
+      ) : null}
     </div>
   );
 }

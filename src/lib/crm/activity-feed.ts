@@ -157,6 +157,27 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
   owner_object_created: { actor: 'ASI', label: 'создала новый объект', tone: 'processing' },
   owner_object_switched: { actor: 'ASI', label: 'переключила активный объект', tone: 'processing' },
   owner_object_continued: { actor: 'ASI', label: 'продолжила работу с объектом', tone: 'processing' },
+  channel_manager_flow_prepared: {
+    actor: 'ASI',
+    label: 'подготовила переход к Менеджеру каналов',
+    tone: 'done',
+  },
+  channel_manager_method_selected: {
+    actor: 'ASI',
+    label: 'зафиксировала способ подключения каналов',
+    tone: 'done',
+  },
+  channel_manager_access_requested: { actor: 'ASI', label: 'запросила доступы', tone: 'pending' },
+  channel_manager_needs_operator: {
+    actor: 'ASI',
+    label: 'отметила подключение как требующее оператора',
+    tone: 'attention',
+  },
+  channel_manager_connection_prepared: {
+    actor: 'ASI',
+    label: 'подготовила подключение каналов',
+    tone: 'done',
+  },
 };
 
 function normalizeFieldKey(raw: string): OnboardingFieldKey | null {
@@ -320,6 +341,17 @@ function crmEventToFeedEntry(row: CrmEventRow, contact?: CrmContact): CrmActivit
     if (channelLabel) {
       label = `сохранила канал бронирования: ${channelLabel}`;
     }
+  }
+
+  if (row.event_type === 'channel_manager_method_selected') {
+    const methodLabel = typeof metadata.method_label === 'string' ? metadata.method_label.trim() : '';
+    if (methodLabel) {
+      label = `выбрала способ подключения: ${methodLabel}`;
+    }
+  }
+
+  if (row.event_type === 'channel_manager_connection_prepared') {
+    label = 'подготовила подключение каналов';
   }
 
   return {

@@ -223,6 +223,12 @@ function QueueCard({
             <dd className="text-slate-800">{item.channelManagerStatus}</dd>
           </div>
         ) : null}
+        {item.channelManagerMethod ? (
+          <div className="flex justify-between gap-2">
+            <dt>Способ подключения</dt>
+            <dd className="text-slate-800">{item.channelManagerMethod}</dd>
+          </div>
+        ) : null}
       </dl>
 
       {item.missingFields.length > 0 ? (
@@ -264,7 +270,7 @@ function QueueCard({
           href={item.channelManagerHref ?? '/dashboard/channel-connections'}
           className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
         >
-          Менеджер каналов
+          {item.readyForChannelManager ? 'Открыть Менеджер каналов' : 'Менеджер каналов'}
         </Link>
         <button
           type="button"

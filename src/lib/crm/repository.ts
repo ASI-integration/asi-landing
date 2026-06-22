@@ -1,3 +1,4 @@
+import { parseChannelManagerConnectionBlock } from '@/lib/channel-manager-connection/note-block';
 import { supabase } from '@/lib/supabase';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
@@ -211,6 +212,7 @@ function toContact(row: CrmContactRow): CrmContact {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     onboarding: parseOnboarding(row.notes),
+    channelManagerConnection: parseChannelManagerConnectionBlock(row.notes),
     ownerObjects,
     activeObjectTitle: activeObject?.title ?? null,
   };
@@ -277,6 +279,26 @@ export async function listCrmContacts(filters: CrmContactFilters = {}): Promise<
     return (data ?? []).map((row) => toContact(row as CrmContactRow));
   } catch (error) {
     if (shouldUseDemoFallback(error)) return demoContacts(filters);
+    throw error;
+  }
+}
+
+export async function getCrmContactById(id: string): Promise<CrmContact | null> {
+  try {
+    const { data, error } = await supabase.from('crm_contacts').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      if (process.env.NODE_ENV !== 'production') {
+        const demo = demoCrmContacts.find((contact) => contact.id === id);
+        if (demo) return demo;
+      }
+      return null;
+    }
+    return toContact(data as CrmContactRow);
+  } catch (error) {
+    if (shouldUseDemoFallback(error)) {
+      return demoCrmContacts.find((contact) => contact.id === id) ?? null;
+    }
     throw error;
   }
 }

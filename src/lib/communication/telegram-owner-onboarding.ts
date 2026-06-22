@@ -53,6 +53,7 @@ import {
   readOwnerObjectStateIfExists,
 } from './telegram-owner-object-session';
 import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
+import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -114,11 +115,25 @@ const LEGACY_FIELD_LABELS: Record<OwnerOnboardingField, string> = {
   channels: 'каналы бронирования',
 };
 
-const CHANNEL_MANAGER_HREF = '/dashboard/channel-connections?source=telegram_onboarding';
-const CHANNEL_MANAGER_URL = 'https://asi-global.ru/dashboard/channel-connections?source=telegram_onboarding';
+const CHANNEL_MANAGER_HREF_FALLBACK = '/dashboard/channel-connections?source=telegram_onboarding';
+const CHANNEL_MANAGER_URL_FALLBACK = 'https://asi-global.ru/dashboard/channel-connections?source=telegram_onboarding';
 const SESSION_PREFIX = 'owner_onboarding_';
 const NOTE_HEADER = 'Онбординг ASI';
 const OWNER_OBJECTS_HEADER = 'Объекты владельца';
+
+function channelManagerHrefFor(objectId?: string, contactId?: string): string {
+  if (!objectId) return CHANNEL_MANAGER_HREF_FALLBACK;
+  return buildChannelManagerConnectionHref({
+    objectId,
+    contactId,
+    source: 'telegram_onboarding',
+  });
+}
+
+function channelManagerPublicUrl(href: string): string {
+  if (href.startsWith('http')) return href;
+  return `https://asi-global.ru${href}`;
+}
 
 function text(value: unknown, max = 600): string {
   return String(value ?? '').trim().slice(0, max);
@@ -178,7 +193,7 @@ function readStateFromSession(chatId: number, channel: CommunicationChannel = 't
     status: 'onboarding_started',
     missing: missingFields({ wizard_mode: 'v2' }),
     lastMessage: '',
-    channelManagerHref: CHANNEL_MANAGER_HREF,
+    channelManagerHref: CHANNEL_MANAGER_HREF_FALLBACK,
     wizard_mode: 'v2',
     photos_count: 0,
     channels_draft: [],
@@ -835,12 +850,12 @@ function buildReply(params: {
       text: [
         progress,
         'Минимальные данные по объекту собраны. Объект готов к следующему шагу — Менеджеру каналов.',
-        `Открыть: ${CHANNEL_MANAGER_URL}`,
+        `Открыть: ${channelManagerPublicUrl(params.state.channelManagerHref || CHANNEL_MANAGER_HREF_FALLBACK)}`,
         'Реальных вызовов к площадкам сейчас не делаю: это подготовка к подключению.',
       ]
         .filter(Boolean)
         .join('\n\n'),
-      markup: readyMarkup(params.status),
+      markup: readyMarkup(params.status, params.state.channelManagerHref),
     };
   }
 
@@ -905,10 +920,13 @@ function buildReply(params: {
   };
 }
 
-function readyMarkup(status: OwnerOnboardingStatus): TelegramInlineKeyboardMarkup | undefined {
+function readyMarkup(status: OwnerOnboardingStatus, href?: string): TelegramInlineKeyboardMarkup | undefined {
   if (status !== 'ready_for_channel_manager' && status !== 'channel_manager_started') return undefined;
   return {
-    inline_keyboard: [[{ text: 'Открыть Менеджер каналов', url: CHANNEL_MANAGER_URL }]],
+    inline_keyboard: [[{
+      text: 'Открыть Менеджер каналов',
+      url: channelManagerPublicUrl(href || CHANNEL_MANAGER_HREF_FALLBACK),
+    }]],
   };
 }
 
@@ -947,9 +965,11 @@ function buildCrmNote(params: {
   chatId: number;
   channel: CommunicationChannel;
   objectId: string;
+  contactId?: string;
 }): string {
   const base = noteWithoutStructuredBlocks(params.existingNote ?? '');
   const readiness = params.state.readiness;
+  const href = params.state.channelManagerHref || channelManagerHrefFor(params.objectId, params.contactId);
   const block = [
     NOTE_HEADER,
     `object_id=${params.objectId}`,
@@ -975,7 +995,7 @@ function buildCrmNote(params: {
       : null,
     readiness ? `Следующий шаг: ${readiness.next_best_step_ru}` : null,
     `Последнее сообщение: ${params.state.lastMessage || 'нет текста'}`,
-    `Менеджер каналов: ${CHANNEL_MANAGER_HREF}`,
+    `Менеджер каналов: ${href}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -1043,10 +1063,14 @@ async function upsertCrmContact(params: {
             `Запросить: ${REQUIRED_FIELD_LABELS_RU[params.state.missing[0] ?? 'address']}.`;
   const notes = buildCrmNote({
     existingNote: existing?.notes,
-    state: params.state,
+    state: {
+      ...params.state,
+      channelManagerHref: channelManagerHrefFor(params.objectId, existing?.id),
+    },
     chatId: params.chatId,
     channel: params.envelope.channel,
     objectId: params.objectId,
+    contactId: existing?.id,
   });
 
   try {
@@ -1162,7 +1186,7 @@ export async function processTelegramOwnerOnboarding(params: {
     ...previous,
     wizard_mode: previous.wizard_mode ?? 'v2',
     lastMessage: text(params.envelope.messageText, 600),
-    channelManagerHref: CHANNEL_MANAGER_HREF,
+    channelManagerHref: CHANNEL_MANAGER_HREF_FALLBACK,
   };
 
   const hasPhoto = Array.isArray((params.envelope.metadata as any)?.attachments)
@@ -1352,6 +1376,10 @@ export async function processTelegramOwnerOnboarding(params: {
   if (decision.clarification_question) {
     merged.lastClarificationQuestion = decision.clarification_question;
   }
+
+  merged.channelManagerHref = channelManagerHrefFor(
+    getActiveOwnerObjectId(params.chatId, params.envelope.channel),
+  );
 
   const objectId = persistState(params.chatId, params.envelope.channel, merged);
 

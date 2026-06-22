@@ -47,6 +47,24 @@ export type CrmOwnerObject = {
   isActiveSession: boolean;
 };
 
+export type CrmChannelManagerConnection = {
+  objectId: string | null;
+  contactId: string | null;
+  method: 'realtycalendar' | 'bnovo' | 'manual_import' | 'other' | 'none_yet' | null;
+  customManagerName: string | null;
+  accessSituation: 'has_access' | 'from_scratch' | 'needs_help' | null;
+  status:
+    | 'ready_to_connect'
+    | 'waiting_access'
+    | 'verifying_data'
+    | 'prepared'
+    | 'needs_operator'
+    | 'connected'
+    | 'primary_setup_needed';
+  nextStepRu: string;
+  updatedAt: string | null;
+};
+
 export type CrmOnboarding = {
   status: CrmOnboardingStatus;
   statusLabel: string;
@@ -86,6 +104,7 @@ export type CrmContact = {
   createdAt: string;
   updatedAt: string;
   onboarding?: CrmOnboarding | null;
+  channelManagerConnection?: CrmChannelManagerConnection | null;
   ownerObjects?: CrmOwnerObject[];
   activeObjectTitle?: string | null;
 };
