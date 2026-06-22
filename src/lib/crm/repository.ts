@@ -24,12 +24,16 @@ type CrmContactRow = {
   next_action_due_at: string | null;
   created_at: string;
   updated_at: string;
+  crm_archived?: boolean | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
 };
 
 export type CrmContactFilters = {
   status?: CrmStatus | 'all';
   source?: CrmSource | 'all';
   search?: string;
+  excludeArchived?: boolean;
 };
 
 const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
@@ -213,6 +217,9 @@ function toContact(row: CrmContactRow): CrmContact {
     nextActionAt: row.next_action_due_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    crmArchived: row.crm_archived === true,
+    archivedAt: row.archived_at ?? null,
+    archivedBy: row.archived_by ?? null,
     onboarding: parseOnboarding(row.notes),
     channelManagerConnection: parseChannelManagerConnectionBlock(row.notes),
     ownerObjects,
@@ -243,6 +250,7 @@ function toRow(input: NormalizedCrmContactInput) {
 function demoContacts(filters: CrmContactFilters): CrmContact[] {
   const search = filters.search?.trim().toLowerCase() ?? '';
   return demoCrmContacts.filter((contact) => {
+    if (filters.excludeArchived && contact.crmArchived) return false;
     if (filters.status && filters.status !== 'all' && contact.status !== filters.status) return false;
     if (filters.source && filters.source !== 'all' && contact.source !== filters.source) return false;
     if (!search) return true;
@@ -274,6 +282,9 @@ export async function listCrmContacts(filters: CrmContactFilters = {}): Promise<
     if (filters.search?.trim()) {
       const escaped = filters.search.trim().replace(/[%_]/g, '\\$&');
       query = query.or(`name.ilike.%${escaped}%,phone.ilike.%${escaped}%,contact.ilike.%${escaped}%,telegram_username.ilike.%${escaped}%`);
+    }
+    if (filters.excludeArchived) {
+      query = query.eq('crm_archived', false);
     }
 
     const { data, error } = await query;
@@ -362,4 +373,20 @@ export async function updateCrmContact(id: string, input: Partial<NormalizedCrmC
 export async function deleteCrmContact(id: string): Promise<void> {
   const { error } = await supabase.from('crm_contacts').delete().eq('id', id);
   if (error) throw error;
+}
+
+export async function archiveCrmContactFromQueue(id: string, archivedBy: string): Promise<CrmContact> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .update({
+      crm_archived: true,
+      archived_at: now,
+      archived_by: archivedBy,
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return toContact(data as CrmContactRow);
 }

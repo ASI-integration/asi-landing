@@ -103,6 +103,9 @@ export type CrmContact = {
   nextActionAt: string | null;
   createdAt: string;
   updatedAt: string;
+  crmArchived?: boolean;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
   onboarding?: CrmOnboarding | null;
   channelManagerConnection?: CrmChannelManagerConnection | null;
   ownerObjects?: CrmOwnerObject[];

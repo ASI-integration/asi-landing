@@ -15,7 +15,7 @@ export type CrmActivityItem = {
 };
 
 export type CrmActivityFeedEntry = CrmActivityItem & {
-  actor: 'ASI' | 'Владелец' | 'Гость' | 'Система';
+  actor: 'ASI' | 'Владелец' | 'Гость' | 'Система' | 'Оператор';
   objectTitle: string | null;
   contactId: string | null;
 };
@@ -118,7 +118,7 @@ const ONBOARDING_STATUS_FEED: Partial<Record<CrmOnboardingStatus, { label: strin
   needs_operator: { label: 'передала задачу оператору', tone: 'attention' },
 };
 
-const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; label: string; tone: CrmActivityTone }> = {
+export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; label: string; tone: CrmActivityTone }> = {
   guest_concierge_answered: { actor: 'ASI', label: 'ответила гостю', tone: 'done' },
   autopilot_guest_reply: { actor: 'ASI', label: 'ответила гостю', tone: 'done' },
   conversation_resolved: { actor: 'ASI', label: 'закрыла обращение', tone: 'done' },
@@ -177,6 +177,11 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
     actor: 'ASI',
     label: 'подготовила подключение каналов',
     tone: 'done',
+  },
+  crm_queue_archived: {
+    actor: 'Оператор',
+    label: 'скрыл объект из очереди CRM',
+    tone: 'processing',
   },
 };
 

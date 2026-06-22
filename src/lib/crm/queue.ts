@@ -421,6 +421,23 @@ export function buildOperatorInbox(items: CrmQueueItem[]): CrmQueueItem[] {
     });
 }
 
+export const CRM_QUEUE_ARCHIVABLE_COLUMNS: CrmQueueColumn[] = [
+  'needs_operator',
+  'new_lead',
+  'onboarding',
+  'ready_for_cm',
+];
+
+export const CRM_QUEUE_KANBAN_ROW_CLASS = 'flex min-w-max items-start gap-4';
+
+export function isQueueItemArchivable(item: Pick<CrmQueueItem, 'column'>): boolean {
+  return CRM_QUEUE_ARCHIVABLE_COLUMNS.includes(item.column);
+}
+
+export function excludeArchivedQueueContacts(contacts: CrmContact[]): CrmContact[] {
+  return contacts.filter((contact) => !contact.crmArchived);
+}
+
 export function computeQueueMetrics(items: CrmQueueItem[]): CrmQueueMetrics {
   return {
     activeObjects: items.filter((item) => item.column !== 'completed' && !INACTIVE_STATUSES.includes(item.crmStatus))

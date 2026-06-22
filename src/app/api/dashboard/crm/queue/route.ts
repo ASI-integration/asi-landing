@@ -10,6 +10,7 @@ import {
   CRM_QUEUE_FILTER_VALUES,
   CrmQueueFilter,
   emptyQueueColumns,
+  excludeArchivedQueueContacts,
   filterQueueItems,
   groupQueueByColumn,
 } from '@/lib/crm/queue';
@@ -48,7 +49,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const filter = parseFilter(url.searchParams.get('filter'));
 
   try {
-    const contacts = await listCrmContacts();
+    const contacts = excludeArchivedQueueContacts(await listCrmContacts({ excludeArchived: true }));
     const contactIds = contacts.map((contact) => contact.id);
     const messagesByContact = await listCrmEventsByContactIds(contactIds);
 

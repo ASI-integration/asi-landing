@@ -12,13 +12,18 @@ import {
   CRM_QUEUE_COLUMN_VALUES,
   CRM_QUEUE_FILTER_LABELS,
   CRM_QUEUE_FILTER_VALUES,
+  CRM_QUEUE_KANBAN_ROW_CLASS,
   CrmQueueColumn,
   CrmQueueFilter,
   CrmQueueItem,
   CrmQueueMetrics,
+  computeQueueMetrics,
   emptyQueueColumns,
+  groupQueueByColumn,
+  isQueueItemArchivable,
 } from '@/lib/crm/queue';
 import { readResponseJson } from '@/lib/safeResponseJson';
+import { useSession } from '@/contexts/SessionContext';
 
 const POLL_MS = 8000;
 
@@ -135,10 +140,16 @@ function QueueCard({
   item,
   expanded,
   onToggleHistory,
+  showArchive,
+  archiving,
+  onArchive,
 }: {
   item: CrmQueueItem;
   expanded: boolean;
   onToggleHistory: () => void;
+  showArchive: boolean;
+  archiving: boolean;
+  onArchive: () => void;
 }) {
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
@@ -279,6 +290,16 @@ function QueueCard({
         >
           {expanded ? 'Скрыть историю' : 'История общения'}
         </button>
+        {showArchive ? (
+          <button
+            type="button"
+            onClick={onArchive}
+            disabled={archiving}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+          >
+            {archiving ? 'Архивирование...' : 'Архивировать'}
+          </button>
+        ) : null}
       </div>
 
       {expanded ? (
@@ -329,13 +350,16 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 }
 
 export default function CrmQueuePageClient() {
+  const { session } = useSession();
   const [filter, setFilter] = useState<CrmQueueFilter>('all');
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(false);
   const [message, setMessage] = useState('');
   const [data, setData] = useState<QueueResponse | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const initialLoadDone = useRef(false);
+  const canArchive = session?.isCrmOperator === true;
 
   const loadQueue = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -375,6 +399,50 @@ export default function CrmQueuePageClient() {
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
+
+  const removeArchivedItem = useCallback((contactId: string) => {
+    setData((current) => {
+      if (!current) return current;
+      const items = current.items.filter((item) => item.id !== contactId);
+      const operatorInbox = current.operatorInbox.filter((item) => item.id !== contactId);
+      return {
+        ...current,
+        items,
+        operatorInbox,
+        columns: groupQueueByColumn(items),
+        metrics: computeQueueMetrics(items),
+      };
+    });
+    setExpandedId((current) => (current === contactId || current === `inbox-${contactId}` ? null : current));
+  }, []);
+
+  const handleArchive = useCallback(
+    async (item: CrmQueueItem) => {
+      if (!canArchive || !isQueueItemArchivable(item)) return;
+      const confirmed = window.confirm('Скрыть этот объект из очереди CRM? Данные сохранятся в архиве.');
+      if (!confirmed) return;
+
+      setArchivingId(item.id);
+      setMessage('');
+      try {
+        const res = await fetch('/api/dashboard/crm/queue/archive', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contactId: item.id }),
+        });
+        const payload = await readResponseJson(res, { ok: false, message: '' });
+        if (!res.ok || !payload.ok) {
+          setMessage(payload.message || 'Не удалось скрыть карточку из очереди.');
+          return;
+        }
+        removeArchivedItem(item.id);
+      } finally {
+        setArchivingId(null);
+      }
+    },
+    [canArchive, removeArchivedItem],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -457,6 +525,9 @@ export default function CrmQueuePageClient() {
                 key={`inbox-${item.id}`}
                 item={item}
                 expanded={expandedId === `inbox-${item.id}`}
+                showArchive={canArchive && isQueueItemArchivable(item)}
+                archiving={archivingId === item.id}
+                onArchive={() => void handleArchive(item)}
                 onToggleHistory={() =>
                   setExpandedId((current) => (current === `inbox-${item.id}` ? null : `inbox-${item.id}`))
                 }
@@ -487,7 +558,7 @@ export default function CrmQueuePageClient() {
         <p className="text-sm text-slate-500">Загрузка очереди...</p>
       ) : columns ? (
         <div className="overflow-x-auto pb-2">
-          <div className="flex min-w-max gap-4">
+          <div className={CRM_QUEUE_KANBAN_ROW_CLASS}>
             {visibleColumns.map((column) => {
               const items = columns[column] ?? [];
               return (
@@ -509,6 +580,9 @@ export default function CrmQueuePageClient() {
                           key={item.id}
                           item={item}
                           expanded={expandedId === item.id}
+                          showArchive={canArchive && isQueueItemArchivable(item)}
+                          archiving={archivingId === item.id}
+                          onArchive={() => void handleArchive(item)}
                           onToggleHistory={() => setExpandedId((current) => (current === item.id ? null : item.id))}
                         />
                       ))
