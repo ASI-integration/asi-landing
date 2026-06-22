@@ -1292,6 +1292,14 @@ export async function processTelegramOwnerOnboarding(params: {
     loadAutonomousSession(params.chatId)?.collected_data?.[`${SESSION_PREFIX}readiness_percent`],
   );
   const previousReadinessPercent = previousReadinessPercentRaw ? Number(previousReadinessPercentRaw) : null;
+  const previousReadinessForEvents = computeObjectReadiness(
+    readinessInputFromOnboardingState({
+      ...previous,
+      channels: previous.channels_list ?? previous.channels,
+      rules: previous.rules ?? previous.house_rules,
+      status: previous.status,
+    }),
+  );
 
   if (decision.clarification_question) {
     merged.lastClarificationQuestion = decision.clarification_question;
@@ -1310,6 +1318,7 @@ export async function processTelegramOwnerOnboarding(params: {
   await emitObjectReadinessEvents({
     contactId: crmContactId,
     previousPercent: previousReadinessPercent,
+    previousStatus: previousReadinessForEvents.readiness_status,
     readiness: merged.readiness,
     photosIntentLater: merged.photos_intent === 'later',
   });

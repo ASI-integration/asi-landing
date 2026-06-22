@@ -141,6 +141,7 @@ import {
   DEFAULT_WIZARD_ACCEPTANCE_CHAT_ID,
   formatWizardAcceptanceTable,
   isWizardAcceptanceChatAllowed,
+  isWizardAcceptanceReadinessFeedSignal,
   resetWizardAcceptanceState,
   runWizardAcceptanceScenario,
   runWizardAcceptanceStep,
@@ -193,6 +194,17 @@ describe('telegram wizard acceptance helpers', () => {
   it('allowlists dedicated acceptance chat and blocks protected owner chat by default', () => {
     expect(isWizardAcceptanceChatAllowed(DEFAULT_WIZARD_ACCEPTANCE_CHAT_ID)).toBe(true);
     expect(isWizardAcceptanceChatAllowed(931919812)).toBe(false);
+  });
+
+  it('recognizes readiness feed from channel-manager transition activity', () => {
+    expect(
+      isWizardAcceptanceReadinessFeedSignal({
+        readinessEvents: [],
+        readinessPercent: null,
+        onboardingStatus: 'ready_for_channel_manager',
+        activityEvents: ['Подготовила переход к Менеджеру каналов', 'Каналы сохранены'],
+      }),
+    ).toBe(true);
   });
 
   it('builds callback simulation envelope', () => {

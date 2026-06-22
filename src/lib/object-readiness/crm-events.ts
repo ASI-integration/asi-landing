@@ -36,6 +36,7 @@ async function insertReadinessEvent(input: {
 export async function emitObjectReadinessEvents(params: {
   contactId: string | undefined;
   previousPercent: number | null;
+  previousStatus?: ObjectReadinessResult['readiness_status'] | null;
   readiness: ObjectReadinessResult;
   photosIntentLater?: boolean;
 }): Promise<void> {
@@ -43,6 +44,9 @@ export async function emitObjectReadinessEvents(params: {
 
   const { readiness, previousPercent } = params;
   const percentChanged = previousPercent === null || previousPercent !== readiness.readiness_percent;
+  const statusBecameReadyForCm =
+    readiness.readiness_status === 'ready_for_channel_manager' &&
+    params.previousStatus !== 'ready_for_channel_manager';
 
   if (percentChanged) {
     await insertReadinessEvent({
@@ -57,6 +61,15 @@ export async function emitObjectReadinessEvents(params: {
     });
   }
 
+  if (statusBecameReadyForCm) {
+    await insertReadinessEvent({
+      contactId: params.contactId,
+      eventType: 'object_readiness_ready_for_cm',
+      messageText: 'Объект готов к Менеджеру каналов',
+      metadata: { readiness_percent: readiness.readiness_percent },
+    });
+  }
+
   if (!percentChanged) return;
 
   const nextField = readiness.missing_required_fields[0];
@@ -67,15 +80,6 @@ export async function emitObjectReadinessEvents(params: {
       eventType: 'object_readiness_missing_photos',
       messageText: 'Обнаружены недостающие фото объекта',
       metadata: { missing_field: 'photos' },
-    });
-  }
-
-  if (readiness.readiness_status === 'ready_for_channel_manager') {
-    await insertReadinessEvent({
-      contactId: params.contactId,
-      eventType: 'object_readiness_ready_for_cm',
-      messageText: 'Объект готов к Менеджеру каналов',
-      metadata: { readiness_percent: readiness.readiness_percent },
     });
   }
 

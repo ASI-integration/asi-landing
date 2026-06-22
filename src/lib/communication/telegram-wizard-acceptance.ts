@@ -4,7 +4,7 @@ import { buildQueueItem } from '@/lib/crm/queue';
 import { listCrmEventsByContactIds } from '@/lib/crm/queue-events';
 import type { CrmEventRow } from '@/lib/crm/queue-events';
 import { listCrmContacts } from '@/lib/crm/repository';
-import type { CrmContact } from '@/lib/crm/types';
+import type { CrmContact, CrmOnboardingStatus } from '@/lib/crm/types';
 import {
   resetAutonomousSessionSnapshot,
   patchAutonomousSessionCollectedData,
@@ -510,6 +510,28 @@ async function findAcceptanceCrmContact(chatId: number): Promise<CrmContact | nu
   );
 }
 
+const READINESS_ACTIVITY_FEED_PATTERN =
+  /готовност|готов к менеджеру|подготовила переход к менеджеру|перевела объект в «готов к менеджеру каналов»/i;
+
+export function isWizardAcceptanceReadinessFeedSignal(params: {
+  readinessEvents: string[];
+  readinessPercent: number | null;
+  onboardingStatus: CrmOnboardingStatus | null | undefined;
+  activityEvents: string[];
+}): boolean {
+  if (params.readinessEvents.length > 0) return true;
+  if ((params.readinessPercent ?? 0) >= 100) return true;
+  if (
+    params.onboardingStatus === 'ready_for_channel_manager' ||
+    params.onboardingStatus === 'channel_manager_started'
+  ) {
+    return true;
+  }
+  return params.activityEvents.some((item) =>
+    READINESS_ACTIVITY_FEED_PATTERN.test(item.toLocaleLowerCase('ru-RU')),
+  );
+}
+
 async function listAcceptanceCrmEvents(contactId: string): Promise<CrmEventRow[]> {
   try {
     const { data, error } = await supabase
@@ -583,10 +605,12 @@ export async function validateWizardAcceptanceCrm(params: {
     .filter((row) => row.event_type === 'onboarding_channel_saved' || row.event_type === 'object_readiness_requested_channels')
     .map((row) => text(row.message_text, 120));
 
-  const hasReadinessFeedSignal =
-    readinessEvents.length > 0 ||
-    (contact.onboarding?.readinessPercent ?? 0) >= 100 ||
-    activityEvents.some((item) => /готовност|готов к менеджеру/i.test(item.toLocaleLowerCase('ru-RU')));
+  const hasReadinessFeedSignal = isWizardAcceptanceReadinessFeedSignal({
+    readinessEvents,
+    readinessPercent: queueItem.readinessPercent,
+    onboardingStatus: contact.onboarding?.status,
+    activityEvents,
+  });
   if (!hasReadinessFeedSignal) failures.push('no readiness events in activity feed');
 
   const hasChannelFeedSignal =
