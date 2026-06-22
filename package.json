@@ -28,7 +28,8 @@
     "location:golden": "npx tsx scripts/location-golden-trace.ts",
     "location:golden:assert": "vitest run src/lib/location/__tests__/location-golden-assertions.test.ts",
     "location-pdf:check-chromium": "node scripts/check-location-pdf-chromium.mjs",
-    "location-pdf:verify-production": "node scripts/verify-location-report-pdf-production.mjs"
+    "location-pdf:verify-production": "node scripts/verify-location-report-pdf-production.mjs",
+    "acceptance:ops-v12": "node scripts/ops-v12-live-acceptance.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
