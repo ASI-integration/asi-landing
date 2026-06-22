@@ -117,7 +117,7 @@ function readLegacyState(collected: Record<string, string | undefined>): OwnerOn
     wifi_skipped: text(collected[`${LEGACY_SESSION_PREFIX}wifi_skipped`]) === '1',
     photos_count: Number(collected[`${LEGACY_SESSION_PREFIX}photos_count`] ?? 0) || 0,
     awaiting_custom:
-      awaitingCustomRaw === 'checkin_time' || awaitingCustomRaw === 'checkout_time'
+      awaitingCustomRaw === 'checkin_time' || awaitingCustomRaw === 'checkout_time' || awaitingCustomRaw === 'channels'
         ? awaitingCustomRaw
         : undefined,
     channels_draft: parseJsonArray(collected[`${LEGACY_SESSION_PREFIX}channels_draft`]),

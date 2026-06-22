@@ -90,6 +90,22 @@ describe('object readiness engine', () => {
     expect(result.readiness_percent).toBe(100);
   });
 
+  it('custom booking channels count toward readiness', () => {
+    const result = computeObjectReadiness({
+      address: 'Москва, Тверская 1',
+      object_type: 'квартира',
+      rules: ['без курения'],
+      wifi_name: 'Guest',
+      checkin_time: '15:00',
+      checkout_time: '11:00',
+      photos_intent: 'later',
+      channels: ['TravelLine', 'МирКвартир'],
+      onboardingStatus: 'ready_for_channel_manager',
+    });
+    expect(result.missing_required_fields).not.toContain('channels');
+    expect(result.readiness_percent).toBe(100);
+  });
+
   it('missing fields are displayed in Russian', () => {
     const result = computeObjectReadiness({
       address: 'Екатеринбург, Ленина 1',

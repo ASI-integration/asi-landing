@@ -199,4 +199,31 @@ describe('Telegram wizard v2 multi-select orchestrator delivery', () => {
     expect(mockEditMarkup).toHaveBeenCalledTimes(1);
     expect(mockSendMessage).toHaveBeenCalledTimes(1);
   });
+
+  it('returns to channel markup after custom channel text without editMessageReplyMarkup spam', async () => {
+    const chatId = 7406;
+    await walkToChannelsStep(chatId);
+    const { processUpdate } = await import('../orchestrator');
+    await processUpdate(wizardCallbackUpdate('obv2:ch_custom', chatId, 6));
+
+    mockSendMessage.mockClear();
+    mockEditMarkup.mockClear();
+    mockEditText.mockClear();
+
+    const result = await processUpdate(textUpdate('TravelLine', chatId, 7));
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockEditMarkup).not.toHaveBeenCalled();
+    expect(String(mockSendMessage.mock.calls[0]?.[1] ?? '')).toMatch(/канал/i);
+    expect(
+      (
+        mockSendMessage.mock.calls[0]?.[2] as
+          | { reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> } }
+          | undefined
+      )?.reply_markup?.inline_keyboard
+        ?.flat()
+        .map((button) => button.text),
+    ).toEqual(expect.arrayContaining(['✅ TravelLine', 'Готово']));
+  });
 });

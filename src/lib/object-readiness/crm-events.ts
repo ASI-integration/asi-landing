@@ -5,7 +5,8 @@ export type ObjectReadinessEventType =
   | 'object_readiness_updated'
   | 'object_readiness_missing_photos'
   | 'object_readiness_ready_for_cm'
-  | 'object_readiness_requested_channels';
+  | 'object_readiness_requested_channels'
+  | 'onboarding_channel_saved';
 
 async function insertReadinessEvent(input: {
   contactId: string;
@@ -84,6 +85,24 @@ export async function emitObjectReadinessEvents(params: {
       eventType: 'object_readiness_requested_channels',
       messageText: 'Запрошены каналы бронирования',
       metadata: { missing_field: 'channels' },
+    });
+  }
+}
+
+export async function emitOnboardingChannelSavedEvents(params: {
+  contactId: string | undefined;
+  channelLabels: string[];
+}): Promise<void> {
+  if (!params.contactId || !params.channelLabels.length) return;
+
+  for (const label of params.channelLabels) {
+    const trimmed = label.trim();
+    if (!trimmed) continue;
+    await insertReadinessEvent({
+      contactId: params.contactId,
+      eventType: 'onboarding_channel_saved',
+      messageText: `ASI сохранила канал бронирования: ${trimmed}`,
+      metadata: { channel_label: trimmed },
     });
   }
 }

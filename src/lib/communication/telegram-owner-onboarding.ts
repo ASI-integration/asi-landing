@@ -19,21 +19,24 @@ import {
   REQUIRED_FIELD_LABELS_RU,
   type ObjectReadinessResult,
 } from '@/lib/object-readiness/engine';
-import { emitObjectReadinessEvents } from '@/lib/object-readiness/crm-events';
+import { emitObjectReadinessEvents, emitOnboardingChannelSavedEvents } from '@/lib/object-readiness/crm-events';
 import {
   buildWizardChecklist,
   buildWizardProgressBlock,
   buildWizardStepKeyboard,
   buildWizardStepPrompt,
   CUSTOM_TIME_INPUT_PROMPT_RU,
+  CUSTOM_CHANNEL_INPUT_PROMPT_RU,
   fieldSavedAckRu,
   isWizardCallbackData,
   labelsFromChannelIds,
   labelsFromRuleIds,
   missingWizardFields,
+  parseCustomChannelsInput,
   parseCustomTimeInput,
   parseWifiInput,
   parseWizardCallback,
+  resolveChannelDraftIds,
   wizardCompletedCount,
   type OwnerOnboardingWizardField,
   WIZARD_FIELD_ORDER,
@@ -77,7 +80,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   wifi_skipped?: boolean;
   photos_count?: number;
   channels_list?: string[];
-  awaiting_custom?: 'checkin_time' | 'checkout_time';
+  awaiting_custom?: 'checkin_time' | 'checkout_time' | 'channels';
   channels_draft?: string[];
   rules_draft?: string[];
   last_saved_field?: OwnerOnboardingWizardField;
@@ -376,6 +379,7 @@ type WizardApplyResult = {
   replyMarkup?: TelegramInlineKeyboardMarkup;
   editInPlace?: boolean;
   editInPlaceMode?: OwnerOnboardingEditInPlaceMode;
+  savedCustomChannelLabels?: string[];
 };
 
 function applyWizardCallback(state: OwnerOnboardingState, callbackData: string): WizardApplyResult {
@@ -385,6 +389,16 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
       return { handled: false, extractedCount: 0 };
     case 'await_custom':
       state.awaiting_custom = action.field;
+      if (action.field === 'channels') {
+        return {
+          handled: true,
+          extractedCount: 0,
+          stayOnStep: 'channels',
+          replyOverride: CUSTOM_CHANNEL_INPUT_PROMPT_RU,
+          editInPlace: true,
+          editInPlaceMode: 'text',
+        };
+      }
       return {
         handled: true,
         extractedCount: 0,
@@ -536,8 +550,41 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
   }
 
   if (state.awaiting_custom) {
-    const parsed = parseCustomTimeInput(messageText);
     const field = state.awaiting_custom;
+    if (field === 'channels') {
+      const labels = parseCustomChannelsInput(messageText);
+      if (!labels.length) {
+        return {
+          handled: true,
+          extractedCount: 0,
+          stayOnStep: 'channels',
+          replyOverride: `Не поняла каналы. ${CUSTOM_CHANNEL_INPUT_PROMPT_RU}`,
+        };
+      }
+      const draft = new Set(state.channels_draft ?? []);
+      const before = new Set(draft);
+      for (const id of resolveChannelDraftIds(labels)) {
+        draft.add(id);
+      }
+      state.channels_draft = [...draft];
+      state.awaiting_custom = undefined;
+      const savedCustomChannelLabels = labels.filter((label) => {
+        const ids = resolveChannelDraftIds([label]);
+        return ids.some((id) => id.startsWith('c:') && !before.has(id));
+      });
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'channels',
+        replyMarkup: buildWizardStepKeyboard('channels', {
+          channels_draft: state.channels_draft,
+          rules_draft: state.rules_draft ?? [],
+        }),
+        savedCustomChannelLabels,
+      };
+    }
+
+    const parsed = parseCustomTimeInput(messageText);
     if (!parsed) {
       return {
         handled: true,
@@ -1080,6 +1127,7 @@ export async function processTelegramOwnerOnboarding(params: {
   let replyMarkup: TelegramInlineKeyboardMarkup | undefined;
   let editInPlace: boolean | undefined;
   let editInPlaceMode: OwnerOnboardingEditInPlaceMode | undefined;
+  let savedCustomChannelLabels: string[] | undefined;
   let decision: SmartParseDecision = {
     extracted: {
       address: null,
@@ -1162,6 +1210,14 @@ export async function processTelegramOwnerOnboarding(params: {
         savedField = wizardTextResult.savedField;
         replyOverride = wizardTextResult.replyOverride;
         replyMarkup = wizardTextResult.replyMarkup;
+        savedCustomChannelLabels = wizardTextResult.savedCustomChannelLabels;
+        if (wizardTextResult.stayOnStep) {
+          merged.missing = missingFields(merged);
+          merged.missing = [
+            wizardTextResult.stayOnStep,
+            ...merged.missing.filter((field) => field !== wizardTextResult.stayOnStep),
+          ];
+        }
       } else if (shouldUseLegacyFallback(merged, 0, messageText)) {
         extractedCount = applyLegacyBulkFacts(merged, messageText, hasPhoto);
       } else {
@@ -1256,6 +1312,11 @@ export async function processTelegramOwnerOnboarding(params: {
     previousPercent: previousReadinessPercent,
     readiness: merged.readiness,
     photosIntentLater: merged.photos_intent === 'later',
+  });
+
+  await emitOnboardingChannelSavedEvents({
+    contactId: crmContactId,
+    channelLabels: savedCustomChannelLabels ?? [],
   });
 
   const reply = buildReply({

@@ -153,6 +153,7 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
     tone: 'done',
   },
   object_readiness_requested_channels: { actor: 'ASI', label: 'запросила каналы бронирования', tone: 'pending' },
+  onboarding_channel_saved: { actor: 'ASI', label: 'сохранила канал бронирования', tone: 'done' },
   owner_object_created: { actor: 'ASI', label: 'создала новый объект', tone: 'processing' },
   owner_object_switched: { actor: 'ASI', label: 'переключила активный объект', tone: 'processing' },
   owner_object_continued: { actor: 'ASI', label: 'продолжила работу с объектом', tone: 'processing' },
@@ -311,6 +312,13 @@ function crmEventToFeedEntry(row: CrmEventRow, contact?: CrmContact): CrmActivit
     const objectId = typeof metadata.object_id === 'string' ? metadata.object_id : '';
     if (objectId) {
       label = `${mapped.label} (${objectId})`;
+    }
+  }
+
+  if (row.event_type === 'onboarding_channel_saved') {
+    const channelLabel = typeof metadata.channel_label === 'string' ? metadata.channel_label.trim() : '';
+    if (channelLabel) {
+      label = `сохранила канал бронирования: ${channelLabel}`;
     }
   }
 

@@ -58,7 +58,11 @@ import {
   buildChannelsKeyboard,
   buildRulesKeyboard,
   buildTimeKeyboard,
+  CUSTOM_CHANNEL_INPUT_PROMPT_RU,
   CUSTOM_TIME_INPUT_PROMPT_RU,
+  customChannelIdFromLabel,
+  parseCustomChannelsInput,
+  resolveChannelDraftIds,
   parseCustomTimeInput,
 } from '../telegram-owner-onboarding-wizard';
 
@@ -752,6 +756,189 @@ describe('Telegram owner onboarding wizard v2', () => {
       senderIdentity: 'lead',
     });
     expect(saved.state.checkout_time).toBe('11:00');
+  });
+
+  async function walkToChannelsStep(chatId: number) {
+    await walkToCheckoutStep(chatId);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+  }
+
+  it('includes extended booking channel options and "Свой вариант"', () => {
+    const labels = buildChannelsKeyboard([]).inline_keyboard.flat().map((button) => button.text);
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'Собственный сайт',
+        'Соцсети',
+        'VK',
+        'Telegram',
+        'Прямые брони',
+        'Свой вариант',
+        'Готово',
+      ]),
+    );
+  });
+
+  it.each([
+    ['own_site', 'Собственный сайт', 7311],
+    ['social', 'Соцсети', 7312],
+    ['vk', 'VK', 7313],
+    ['telegram', 'Telegram', 7314],
+    ['direct_bookings', 'Прямые брони', 7315],
+  ])('saves fixed channel %s via multi-select', async (channelId, label, chatId) => {
+    await walkToChannelsStep(chatId);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope(`obv2:ch_t:${channelId}`),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    expect(done.state.channels_list).toEqual(expect.arrayContaining([label]));
+    expect(done.missing[0]).toBe('rules');
+  });
+
+  it('prompts for custom channel input when "Свой вариант" is pressed', async () => {
+    await walkToChannelsStep(7230);
+    const prompt = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7230,
+      senderIdentity: 'lead',
+    });
+    expect(prompt.replyText).toContain(CUSTOM_CHANNEL_INPUT_PROMPT_RU);
+    expect(prompt.state.awaiting_custom).toBe('channels');
+    expect(prompt.editInPlace).toBe(true);
+    expect(prompt.editInPlaceMode).toBe('text');
+  });
+
+  it('saves single custom channel TravelLine and shows it selected', async () => {
+    await walkToChannelsStep(7231);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7231,
+      senderIdentity: 'lead',
+    });
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7231,
+      senderIdentity: 'lead',
+    });
+    expect(saved.state.channels_draft).toEqual(expect.arrayContaining([customChannelIdFromLabel('TravelLine')]));
+    const customButton = saved.replyMarkup?.inline_keyboard
+      ?.flat()
+      .find((button) => button.text === '✅ TravelLine');
+    expect(customButton).toBeTruthy();
+    expect(saved.missing[0]).toBe('channels');
+  });
+
+  it('saves multiple custom channels from comma-separated input', async () => {
+    await walkToChannelsStep(7232);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7232,
+      senderIdentity: 'lead',
+    });
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine, МирКвартир'),
+      chatId: 7232,
+      senderIdentity: 'lead',
+    });
+    expect(saved.state.channels_draft).toEqual(
+      expect.arrayContaining([
+        customChannelIdFromLabel('TravelLine'),
+        customChannelIdFromLabel('МирКвартир'),
+      ]),
+    );
+    const labels = saved.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels).toEqual(expect.arrayContaining(['✅ TravelLine', '✅ МирКвартир']));
+  });
+
+  it('maps "прямые брони" from custom input to fixed channel option', () => {
+    expect(resolveChannelDraftIds(parseCustomChannelsInput('TravelLine, МирКвартир, прямые брони'))).toEqual(
+      expect.arrayContaining(['direct_bookings', customChannelIdFromLabel('TravelLine'), customChannelIdFromLabel('МирКвартир')]),
+    );
+  });
+
+  it('counts custom channels toward readiness after "Готово"', async () => {
+    await walkToChannelsStep(7233);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7233,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7233,
+      senderIdentity: 'lead',
+    });
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7233,
+      senderIdentity: 'lead',
+    });
+    expect(done.state.channels_list).toEqual(expect.arrayContaining(['TravelLine']));
+    expect(done.missing[0]).toBe('rules');
+    expect(done.state.readiness?.missing_required_fields ?? []).not.toContain('channels');
+  });
+
+  it('writes custom channels to CRM notes together with fixed channels', async () => {
+    await walkToChannelsStep(7234);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId: 7234,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7234,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7234,
+      senderIdentity: 'lead',
+    });
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7234,
+      senderIdentity: 'lead',
+    });
+    const crmNotes = [
+      ...insertedRows
+        .filter((item) => item.table === 'crm_contacts')
+        .map((item) => String((item.row as { notes?: string }).notes ?? '')),
+      ...updatedRows.map((item) => String(item.patch.notes ?? '')),
+    ];
+    expect(crmNotes.some((notes) => /Каналы:[\s\S]*Суточно[\s\S]*TravelLine/.test(notes))).toBe(true);
+    expect(done.state.channels_list).toEqual(expect.arrayContaining(['Суточно', 'TravelLine']));
+  });
+
+  it('emits activity feed event for saved custom channel', async () => {
+    await walkToChannelsStep(7235);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7235,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7235,
+      senderIdentity: 'lead',
+    });
+    const channelEvent = insertedRows.find(
+      (item) =>
+        item.table === 'crm_events' &&
+        (item.row as { event_type?: string }).event_type === 'onboarding_channel_saved',
+    );
+    expect((channelEvent?.row as { message_text?: string }).message_text).toBe(
+      'ASI сохранила канал бронирования: TravelLine',
+    );
   });
 
   it('marks channel toggle callbacks for in-place edit without advancing step', async () => {

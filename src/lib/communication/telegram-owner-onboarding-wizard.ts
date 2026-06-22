@@ -55,7 +55,17 @@ export const CHANNEL_OPTIONS = [
   { id: 'otello', label: 'Отелло' },
   { id: 'bronevik', label: 'Броневик' },
   { id: 'kvartirka', label: 'Квартирка' },
+  { id: 'own_site', label: 'Собственный сайт' },
+  { id: 'social', label: 'Соцсети' },
+  { id: 'vk', label: 'VK' },
+  { id: 'telegram', label: 'Telegram' },
+  { id: 'direct_bookings', label: 'Прямые брони' },
 ] as const;
+
+export const CUSTOM_CHANNEL_ID_PREFIX = 'c:';
+
+export const CUSTOM_CHANNEL_INPUT_PROMPT_RU =
+  'Напишите название канала бронирования.\nМожно указать один или несколько через запятую.';
 
 export const RULE_OPTIONS = [
   { id: 'no_smoke', label: 'Не курить' },
@@ -76,7 +86,7 @@ export type WizardStructuredState = {
   wifi_password?: string;
   wifi_skipped?: boolean;
   photos_count: number;
-  awaiting_custom?: 'checkin_time' | 'checkout_time';
+  awaiting_custom?: 'checkin_time' | 'checkout_time' | 'channels';
   channels_draft: string[];
   rules_draft: string[];
 };
@@ -84,7 +94,7 @@ export type WizardStructuredState = {
 export type WizardCallbackResult =
   | { kind: 'noop' }
   | { kind: 'set_field'; field: OwnerOnboardingWizardField; value: string }
-  | { kind: 'await_custom'; field: 'checkin_time' | 'checkout_time' }
+  | { kind: 'await_custom'; field: 'checkin_time' | 'checkout_time' | 'channels' }
   | { kind: 'toggle_channel'; channelId: string }
   | { kind: 'confirm_channels' }
   | { kind: 'toggle_rule'; ruleId: string }
@@ -117,7 +127,9 @@ export function parseWizardCallback(data: unknown): WizardCallbackResult {
       if (parts[1] === 'custom') return { kind: 'await_custom', field: 'checkout_time' };
       return { kind: 'set_field', field: 'checkout_time', value: parts.slice(1).join(':') };
     case 'ch_t':
-      return { kind: 'toggle_channel', channelId: parts[1] ?? '' };
+      return { kind: 'toggle_channel', channelId: parts.slice(1).join(':') };
+    case 'ch_custom':
+      return { kind: 'await_custom', field: 'channels' };
     case 'ch_done':
       return { kind: 'confirm_channels' };
     case 'rl_t':
@@ -133,8 +145,42 @@ export function parseWizardCallback(data: unknown): WizardCallbackResult {
   }
 }
 
+export function isCustomChannelId(id: string): boolean {
+  return id.startsWith(CUSTOM_CHANNEL_ID_PREFIX);
+}
+
+export function customChannelIdFromLabel(label: string): string {
+  return `${CUSTOM_CHANNEL_ID_PREFIX}${text(label, 48)}`;
+}
+
+export function customChannelLabelFromId(id: string): string | undefined {
+  if (!isCustomChannelId(id)) return undefined;
+  const label = id.slice(CUSTOM_CHANNEL_ID_PREFIX.length).trim();
+  return label || undefined;
+}
+
 export function channelLabelById(id: string): string | undefined {
-  return CHANNEL_OPTIONS.find((item) => item.id === id)?.label;
+  const fixed = CHANNEL_OPTIONS.find((item) => item.id === id)?.label;
+  if (fixed) return fixed;
+  return customChannelLabelFromId(id);
+}
+
+export function parseCustomChannelsInput(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((item) => text(item, 80))
+    .filter(Boolean);
+}
+
+export function resolveChannelDraftIds(labels: string[]): string[] {
+  const result: string[] = [];
+  const fixedByLabel = new Map(CHANNEL_OPTIONS.map((item) => [item.label.toLowerCase(), item.id]));
+  for (const label of labels) {
+    const fixedId = fixedByLabel.get(label.toLowerCase());
+    const id = fixedId ?? customChannelIdFromLabel(label);
+    if (!result.includes(id)) result.push(id);
+  }
+  return result;
 }
 
 export function ruleLabelById(id: string): string | undefined {
@@ -258,6 +304,8 @@ export function buildTimeKeyboard(kind: 'checkin_time' | 'checkout_time'): Teleg
 
 export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyboardMarkup {
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = [];
+  const customIds = selectedIds.filter(isCustomChannelId);
+
   for (const item of CHANNEL_OPTIONS) {
     const selected = selectedIds.includes(item.id);
     rows.push([
@@ -267,6 +315,19 @@ export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyb
       },
     ]);
   }
+
+  for (const customId of customIds) {
+    const label = customChannelLabelFromId(customId);
+    if (!label) continue;
+    rows.push([
+      {
+        text: multiSelectButtonLabel(true, label),
+        callback_data: callbackData('ch_t', customId),
+      },
+    ]);
+  }
+
+  rows.push([{ text: 'Свой вариант', callback_data: callbackData('ch_custom') }]);
   rows.push([{ text: 'Готово', callback_data: callbackData('ch_done') }]);
   return { inline_keyboard: rows };
 }
