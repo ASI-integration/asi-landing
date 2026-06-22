@@ -47,7 +47,13 @@ const FIELD_KEY_ALIASES: Record<string, OnboardingFieldKey> = {
   'адрес объекта': 'address',
   property_name: 'property_name',
   'название или тип объекта': 'property_name',
+  object_type: 'property_name',
   'тип объекта': 'property_name',
+  checkin_time: 'checkin_checkout',
+  checkout_time: 'checkin_checkout',
+  'время выезда': 'checkin_checkout',
+  rules: 'house_rules',
+  'правила': 'house_rules',
   'название объекта': 'property_name',
   house_rules: 'house_rules',
   'правила проживания': 'house_rules',
@@ -147,6 +153,9 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
     tone: 'done',
   },
   object_readiness_requested_channels: { actor: 'ASI', label: 'запросила каналы бронирования', tone: 'pending' },
+  owner_object_created: { actor: 'ASI', label: 'создала новый объект', tone: 'processing' },
+  owner_object_switched: { actor: 'ASI', label: 'переключила активный объект', tone: 'processing' },
+  owner_object_continued: { actor: 'ASI', label: 'продолжила работу с объектом', tone: 'processing' },
 };
 
 function normalizeFieldKey(raw: string): OnboardingFieldKey | null {
@@ -164,6 +173,7 @@ function normalizeMissingFields(missing: string[]): Set<OnboardingFieldKey> {
 }
 
 function objectTitleFor(contact: CrmContact): string {
+  if (contact.activeObjectTitle?.trim()) return contact.activeObjectTitle.trim();
   if (contact.city.trim()) return `Объект в ${contact.city.trim()}`;
   if (contact.objectsCount > 0) return `Объект (${contact.objectsCount})`;
   return contact.name.trim() || 'Новый объект';
@@ -290,6 +300,17 @@ function crmEventToFeedEntry(row: CrmEventRow, contact?: CrmContact): CrmActivit
     const percent = metadata.readiness_percent;
     if (typeof percent === 'number') {
       label = `обновила готовность объекта: ${percent}%`;
+    }
+  }
+
+  if (
+    row.event_type === 'owner_object_created' ||
+    row.event_type === 'owner_object_switched' ||
+    row.event_type === 'owner_object_continued'
+  ) {
+    const objectId = typeof metadata.object_id === 'string' ? metadata.object_id : '';
+    if (objectId) {
+      label = `${mapped.label} (${objectId})`;
     }
   }
 

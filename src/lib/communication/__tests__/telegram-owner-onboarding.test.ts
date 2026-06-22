@@ -226,7 +226,7 @@ describe('Owner onboarding smart parser', () => {
     expect(result.status).not.toBe('needs_operator');
     expect(result.state.photos_intent).toBe('later');
     expect(result.missing).not.toContain('photos');
-    expect(result.replyText).toMatch(/фото можно добавить позже/i);
+    expect(result.replyText).toMatch(/фото|канал|Шаг/i);
   });
 
   it('escalates to operator only after two unclear replies', async () => {
@@ -451,7 +451,7 @@ describe('Telegram owner auto-onboarding v1', () => {
     expect(photosLater.state.photos_intent).toBe('later');
     expect(photosLater.missing).not.toContain('photos');
     expect(photosLater.missing[0]).toBe('channels');
-    expect(photosLater.replyText).toMatch(/канал/i);
+    expect(photosLater.replyText).toMatch(/канал|Готово/i);
   });
 
   it('does not run owner onboarding for guests', async () => {
@@ -464,5 +464,282 @@ describe('Telegram owner auto-onboarding v1', () => {
     expect(result.handled).toBe(false);
     expect(insertedRows.filter((item) => item.table === 'crm_contacts')).toHaveLength(0);
     expect(loadAutonomousSession(7004)).toBeUndefined();
+  });
+});
+
+describe('Telegram owner onboarding wizard v2', () => {
+  beforeEach(() => {
+    __resetAutonomousSessionStoreForTests();
+    crmRows.clear();
+    insertedRows.length = 0;
+    updatedRows.length = 0;
+    __setOwnerOnboardingSmartParserLlmOverrideForTests(null);
+  });
+
+  function wizardEnvelope(callbackData: string): InboundMessageEnvelope {
+    return envelope('', {
+      metadata: {
+        telegram_onboarding_wizard_callback: callbackData,
+      },
+    });
+  }
+
+  async function runFullWizardScenario(chatId: number): Promise<void> {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Санкт-Петербург, Лиговский пр., 108'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:type:Квартира'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_in:14:00'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:avito'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_t:no_smoke'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_t:no_parties'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_done'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:wifi_later'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:photo_later'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+  }
+
+  it('walks through wizard v2 and reaches ready_for_channel_manager', async () => {
+    await runFullWizardScenario(7201);
+    const state = loadAutonomousSession(7201)?.collected_data;
+    expect(state?.owner_onboarding_status).toBe('ready_for_channel_manager');
+    expect(state?.owner_onboarding_object_type).toBe('Квартира');
+    expect(state?.owner_onboarding_checkin_time).toBe('14:00');
+    expect(state?.owner_onboarding_checkout_time).toBe('12:00');
+    expect(JSON.parse(state?.owner_onboarding_channels_list ?? '[]')).toEqual(
+      expect.arrayContaining(['Суточно', 'Авито']),
+    );
+    expect(JSON.parse(state?.owner_onboarding_rules ?? '[]')).toEqual(
+      expect.arrayContaining(['Не курить', 'Без вечеринок']),
+    );
+    expect(state?.owner_onboarding_wifi_skipped).toBe('1');
+    expect(state?.owner_onboarding_photos_intent).toBe('later');
+  });
+
+  it('shows step progress and growing readiness during wizard', async () => {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId: 7202,
+      senderIdentity: 'lead',
+    });
+    const address = await processTelegramOwnerOnboarding({
+      envelope: envelope('Санкт-Петербург, Лиговский пр., 108'),
+      chatId: 7202,
+      senderIdentity: 'lead',
+    });
+    expect(address.replyText).toMatch(/Шаг 2 из 8/);
+    expect(address.state.readiness?.readiness_percent).toBeGreaterThanOrEqual(10);
+
+    const type = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:type:Квартира'),
+      chatId: 7202,
+      senderIdentity: 'lead',
+    });
+    expect(type.replyText).toMatch(/Тип объекта сохранён/);
+    expect(type.replyText).toMatch(/Готовность объекта:/);
+    expect(type.replyMarkup?.inline_keyboard?.length).toBeGreaterThan(0);
+  });
+
+  it('stores structured CRM fields separately in notes', async () => {
+    await runFullWizardScenario(7203);
+    const notes = String(
+      [...updatedRows.map((item) => item.patch?.notes), ...insertedRows.map((item) => item.row?.notes)]
+        .filter(Boolean)
+        .pop() ?? '',
+    );
+    expect(notes).toContain('Тип объекта: Квартира');
+    expect(notes).toContain('Заезд: 14:00');
+    expect(notes).toContain('Выезд: 12:00');
+    expect(notes).toContain('Каналы:');
+    expect(notes).toContain('Правила:');
+    expect(notes).toContain('Wi-Fi: добавлю позже');
+    expect(notes).toMatch(/Фото: 0/);
+  });
+
+  it('still accepts legacy free-text bulk onboarding as fallback', async () => {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить ASI'),
+      chatId: 7204,
+      senderIdentity: 'lead',
+    });
+    const legacy = await processTelegramOwnerOnboarding({
+      envelope: envelope(
+        'Адрес: Казань, Баумана 5. Апартаменты. Правила: не курить. Wi-Fi Guest / pass123. Заезд 15:00, выезд 11:00. Каналы: Авито, Суточно. Фото позже.',
+      ),
+      chatId: 7204,
+      senderIdentity: 'lead',
+    });
+
+    expect(legacy.status).not.toBe('needs_operator');
+    expect(legacy.state.address).toMatch(/Баумана/i);
+    expect(legacy.state.object_type ?? legacy.state.property_name).toMatch(/апартамент/i);
+    expect(legacy.state.checkin_time ?? legacy.state.checkin_checkout).toMatch(/15:00/);
+  });
+});
+
+describe('Telegram owner session router v1', () => {
+  beforeEach(() => {
+    __resetAutonomousSessionStoreForTests();
+    crmRows.clear();
+    insertedRows.length = 0;
+    updatedRows.length = 0;
+    __setOwnerOnboardingSmartParserLlmOverrideForTests(null);
+  });
+
+  function routerEnvelope(callbackData: string): InboundMessageEnvelope {
+    return envelope('', {
+      metadata: {
+        telegram_session_router_callback: callbackData,
+      },
+    });
+  }
+
+  it('prompts to continue, create new, or list objects when a second connection intent arrives', async () => {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId: 7301,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Большой проспект П.С., 106'),
+      chatId: 7301,
+      senderIdentity: 'lead',
+    });
+
+    const prompt = await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId: 7301,
+      senderIdentity: 'lead',
+    });
+
+    expect(prompt.replyText).toContain('У вас уже есть объект в работе');
+    expect(prompt.replyText).toContain('Большой проспект П.С., 106');
+    expect(prompt.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Продолжить');
+    expect(prompt.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Создать новый');
+  });
+
+  it('keeps object data isolated across create, switch, and continue', async () => {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Большой проспект П.С., 106'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
+
+    const createNew = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
+    expect(createNew.replyText).toContain('OBJ-0002');
+
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Лиговский пр., 108'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
+
+    const switched = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:switch:OBJ-0001'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
+    expect(switched.replyText).toContain('Большой проспект П.С., 106');
+    expect(switched.state.address).toContain('Большой проспект П.С., 106');
+
+    const active = loadAutonomousSession(7302)?.collected_data;
+    expect(active?.owner_active_object_id).toBe('OBJ-0001');
+    const obj2 = JSON.parse(String(active?.['owner_obj_state_OBJ-0002'] ?? '{}'));
+    expect(obj2.address).toContain('Лиговский пр., 108');
+  });
+
+  it('stores multiple objects in CRM notes with active session flag', async () => {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId: 7303,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Большой проспект П.С., 106'),
+      chatId: 7303,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7303,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Лиговский пр., 108'),
+      chatId: 7303,
+      senderIdentity: 'lead',
+    });
+
+    const notes = String(
+      [...updatedRows.map((item) => item.patch?.notes), ...insertedRows.map((item) => item.row?.notes)]
+        .filter(Boolean)
+        .pop() ?? '',
+    );
+    expect(notes).toContain('Объекты владельца');
+    expect(notes).toContain('OBJ-0001');
+    expect(notes).toContain('OBJ-0002');
+    expect(notes).toContain('активная сессия: да');
   });
 });

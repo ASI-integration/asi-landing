@@ -40,6 +40,13 @@ export const CRM_ONBOARDING_STATUS_VALUES = [
 ] as const;
 export type CrmOnboardingStatus = (typeof CRM_ONBOARDING_STATUS_VALUES)[number];
 
+export type CrmOwnerObject = {
+  objectId: string;
+  title: string;
+  readinessPercent: number | null;
+  isActiveSession: boolean;
+};
+
 export type CrmOnboarding = {
   status: CrmOnboardingStatus;
   statusLabel: string;
@@ -50,6 +57,14 @@ export type CrmOnboarding = {
   readinessStatusLabel: string | null;
   nextBestStep: string | null;
   missingOptional: string[];
+  objectType?: string | null;
+  checkinTime?: string | null;
+  checkoutTime?: string | null;
+  channels?: string[];
+  rules?: string[];
+  wifiName?: string | null;
+  wifiPassword?: string | null;
+  photosCount?: number | null;
 };
 
 export type CrmContact = {
@@ -71,6 +86,8 @@ export type CrmContact = {
   createdAt: string;
   updatedAt: string;
   onboarding?: CrmOnboarding | null;
+  ownerObjects?: CrmOwnerObject[];
+  activeObjectTitle?: string | null;
 };
 
 export type CrmContactInput = {

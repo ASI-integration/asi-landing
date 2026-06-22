@@ -13,6 +13,7 @@ describe('object readiness engine', () => {
     expect(result.readiness_status).toBe('not_started');
     expect(result.readiness_status_label_ru).toBe(READINESS_STATUS_LABELS_RU.not_started);
     expect(result.required_done_count).toBe(0);
+    expect(result.required_total_count).toBe(8);
   });
 
   it('only address → «Не хватает данных»', () => {
@@ -29,26 +30,28 @@ describe('object readiness engine', () => {
     const result = computeObjectReadiness({
       address: 'Москва, Тверская 1',
       wifi: 'GuestNet / pass123',
-      checkin_checkout: 'заезд с 15:00, выезд до 11:00',
+      checkin_time: '15:00',
+      checkout_time: '11:00',
       onboardingStatus: 'missing_required_data',
     });
-    expect(result.required_done_count).toBe(3);
-    expect(result.readiness_percent).toBeGreaterThan(30);
-    expect(result.readiness_percent).toBeLessThan(100);
+    expect(result.required_done_count).toBe(4);
+    expect(result.readiness_percent).toBe(50);
     expect(result.missing_required_fields).toEqual(
-      expect.arrayContaining(['property_name', 'house_rules', 'photos', 'channels']),
+      expect.arrayContaining(['object_type', 'rules', 'photos', 'channels']),
     );
   });
 
   it('all required fields → ready_for_channel_manager', () => {
     const result = computeObjectReadiness({
       address: 'Казань, Баумана 5',
-      property_name: 'апартаменты',
-      house_rules: 'без курения',
-      wifi: 'WiFi / 1234',
-      checkin_checkout: '15:00 / 11:00',
+      object_type: 'апартаменты',
+      checkin_time: '15:00',
+      checkout_time: '11:00',
+      rules: ['Не курить'],
+      wifi_name: 'WiFi',
+      wifi_password: '1234',
       photos: 'photo-1',
-      channels: 'Авито, Суточно',
+      channels: ['Авито', 'Суточно'],
       onboardingStatus: 'ready_for_channel_manager',
     });
     expect(result.readiness_percent).toBe(100);
@@ -56,15 +59,31 @@ describe('object readiness engine', () => {
     expect(result.readiness_status).toBe('ready_for_channel_manager');
   });
 
+  it('legacy combined fields still count toward readiness', () => {
+    const result = computeObjectReadiness({
+      address: 'Казань, Баумана 5',
+      property_name: 'апартаменты',
+      house_rules: 'без курения',
+      wifi: 'WiFi / 1234',
+      checkin_checkout: 'заезд с 15:00, выезд до 11:00',
+      photos: 'photo-1',
+      channels: 'Авито, Суточно',
+      onboardingStatus: 'ready_for_channel_manager',
+    });
+    expect(result.readiness_percent).toBe(100);
+    expect(result.missing_required_fields).toEqual([]);
+  });
+
   it('photos_intent=later counts as acceptable photos state', () => {
     const result = computeObjectReadiness({
       address: 'Сочи, морская 1',
-      property_name: 'дом',
-      house_rules: 'тишина',
-      wifi: 'net / pass',
-      checkin_checkout: '14:00 / 12:00',
+      object_type: 'дом',
+      rules: ['тишина'],
+      wifi_skipped: true,
+      checkin_time: '14:00',
+      checkout_time: '12:00',
       photos_intent: 'later',
-      channels: 'Avito',
+      channels: ['Avito'],
       onboardingStatus: 'ready_for_channel_manager',
     });
     expect(result.missing_required_fields).not.toContain('photos');
@@ -84,10 +103,12 @@ describe('object readiness engine', () => {
   it('suggests next step for the most important missing field', () => {
     const result = computeObjectReadiness({
       address: 'Казань',
-      property_name: 'квартира',
-      house_rules: 'без курения',
-      wifi: 'WiFi',
-      checkin_checkout: '15-11',
+      object_type: 'квартира',
+      rules: ['без курения'],
+      wifi_name: 'WiFi',
+      checkin_time: '15:00',
+      checkout_time: '11:00',
+      channels: ['Avito'],
       onboardingStatus: 'missing_required_data',
     });
     expect(result.next_best_step_ru).toMatch(/фото/i);
@@ -105,12 +126,13 @@ describe('object readiness engine', () => {
   it('channel_manager_started maps to completed', () => {
     const result = computeObjectReadiness({
       address: 'Москва',
-      property_name: 'квартира',
-      house_rules: 'тишина',
+      object_type: 'квартира',
+      rules: ['тишина'],
       wifi: 'WiFi',
-      checkin_checkout: '15-11',
+      checkin_time: '15:00',
+      checkout_time: '11:00',
       photos: 'ok',
-      channels: 'Avito',
+      channels: ['Avito'],
       onboardingStatus: 'channel_manager_started',
     });
     expect(result.readiness_status).toBe('completed');

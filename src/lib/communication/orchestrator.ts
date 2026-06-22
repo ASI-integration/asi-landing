@@ -4711,11 +4711,22 @@ function telegramIdentityCallbackToRoute(data: unknown): {
 async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<ProcessResult | null> {
   const callback = update.callback_query;
   if (!callback) return null;
-  const selected = telegramIdentityCallbackToRoute(callback.data);
   const message = callback.message;
   const chatId = message?.chat?.id;
-  if (!selected || typeof chatId !== 'number') {
-    return { outcome: ProcessOutcome.Ignored, update_id: update.update_id, chat_id: typeof chatId === 'number' ? chatId : undefined };
+  if (typeof chatId !== 'number') {
+    return { outcome: ProcessOutcome.Ignored, update_id: update.update_id, chat_id: undefined };
+  }
+
+  const callbackData = String(callback.data ?? '').trim();
+  const isOnboardingWizardCallback = callbackData.startsWith('obv2:');
+  const isOwnerSessionRouterCallback = callbackData.startsWith('obsr:');
+
+  const selected = isOnboardingWizardCallback || isOwnerSessionRouterCallback
+    ? { messageText: '', senderIdentity: 'lead' as const }
+    : telegramIdentityCallbackToRoute(callback.data);
+
+  if (!selected) {
+    return { outcome: ProcessOutcome.Ignored, update_id: update.update_id, chat_id: chatId };
   }
 
   const inboundKey = ['telegram', 'callback_query', callback.id].join(':');
@@ -4757,6 +4768,8 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
       telegram_event_type: 'callback_query',
       telegram_callback_query_id: callback.id,
       telegram_callback_data: callback.data,
+      telegram_onboarding_wizard_callback: isOnboardingWizardCallback ? callbackData : undefined,
+      telegram_session_router_callback: isOwnerSessionRouterCallback ? callbackData : undefined,
       senderIdentity: selected.senderIdentity,
       telegram_user_language_code: callback.from?.language_code,
       telegram_user_id: callback.from?.id,

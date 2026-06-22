@@ -145,6 +145,12 @@ function QueueCard({
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-slate-900">{item.objectTitle}</h3>
         <p className="text-sm text-slate-600">{item.ownerName}</p>
+        {item.objectsCount > 0 ? (
+          <p className="text-xs text-slate-600">
+            Объектов: {item.objectsCount}
+            {item.activeObjectTitle ? ` · Активный: ${item.activeObjectTitle}` : ''}
+          </p>
+        ) : null}
         {item.telegramUsername ? (
           <p className="text-xs text-slate-500">@{item.telegramUsername.replace(/^@/, '')}</p>
         ) : null}

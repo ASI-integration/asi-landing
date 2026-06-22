@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
-import { CrmContact, CrmOnboarding, CrmOnboardingStatus, CrmSource, CrmStatus } from './types';
+import { CrmContact, CrmOnboarding, CrmOnboardingStatus, CrmOwnerObject, CrmSource, CrmStatus } from './types';
 
 type CrmContactRow = {
   id: string;
@@ -117,6 +117,28 @@ const ONBOARDING_STATUS_BY_SLUG: Record<string, CrmOnboardingStatus> = {
   needs_operator: 'needs_operator',
 };
 
+const OWNER_OBJECTS_HEADER = 'Объекты владельца';
+
+function parseOwnerObjects(note: string | null | undefined): CrmOwnerObject[] {
+  const lines = String(note ?? '').split('\n').map((line) => line.trim());
+  const start = lines.findIndex((line) => line === OWNER_OBJECTS_HEADER);
+  if (start === -1) return [];
+
+  const objects: CrmOwnerObject[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!line) break;
+    const match = line.match(/^(OBJ-\d+)\s*\|\s*(.+?)\s*\|\s*готовность:\s*(\d+)%\s*\|\s*активная сессия:\s*(да|нет)$/i);
+    if (!match) continue;
+    objects.push({
+      objectId: match[1],
+      title: match[2].trim(),
+      readinessPercent: Number(match[3]),
+      isActiveSession: match[4].toLowerCase() === 'да',
+    });
+  }
+  return objects;
+}
+
 function parseOnboarding(note: string | null | undefined): CrmOnboarding | null {
   const lines = String(note ?? '').split('\n').map((line) => line.trim());
   const start = lines.findIndex((line) => line === 'Онбординг ASI');
@@ -143,6 +165,9 @@ function parseOnboarding(note: string | null | undefined): CrmOnboarding | null 
     !missingOptionalRaw || missingOptionalRaw === 'ничего'
       ? []
       : missingOptionalRaw.split(',').map((item) => item.trim()).filter(Boolean);
+  const channelsRaw = get('Каналы:');
+  const rulesRaw = get('Правила:');
+  const photosCountRaw = get('Фото:').replace(/[^\d]/g, '');
   return {
     status,
     statusLabel,
@@ -153,10 +178,20 @@ function parseOnboarding(note: string | null | undefined): CrmOnboarding | null 
     readinessStatusLabel: get('Статус готовности:') || null,
     nextBestStep: get('Следующий шаг:') || null,
     missingOptional,
+    objectType: get('Тип объекта:') || null,
+    checkinTime: get('Заезд:') || null,
+    checkoutTime: get('Выезд:') || null,
+    channels: channelsRaw ? channelsRaw.split(',').map((item) => item.trim()).filter(Boolean) : [],
+    rules: rulesRaw ? rulesRaw.split(',').map((item) => item.trim()).filter(Boolean) : [],
+    wifiName: get('Wi-Fi имя:') || null,
+    wifiPassword: get('Wi-Fi пароль:') || null,
+    photosCount: photosCountRaw && /^\d+$/.test(photosCountRaw) ? Number(photosCountRaw) : null,
   };
 }
 
 function toContact(row: CrmContactRow): CrmContact {
+  const ownerObjects = parseOwnerObjects(row.notes);
+  const activeObject = ownerObjects.find((item) => item.isActiveSession) ?? ownerObjects[0] ?? null;
   return {
     id: row.id,
     name: row.name,
@@ -165,7 +200,7 @@ function toContact(row: CrmContactRow): CrmContact {
     email: row.email,
     role: toRole(row.role),
     source: toSource(row.source),
-    objectsCount: row.property_count ?? 0,
+    objectsCount: ownerObjects.length > 0 ? ownerObjects.length : (row.property_count ?? 0),
     city: row.city ?? '',
     note: row.notes ?? '',
     status: toStatus(row.status),
@@ -176,6 +211,8 @@ function toContact(row: CrmContactRow): CrmContact {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     onboarding: parseOnboarding(row.notes),
+    ownerObjects,
+    activeObjectTitle: activeObject?.title ?? null,
   };
 }
 

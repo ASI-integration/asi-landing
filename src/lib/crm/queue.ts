@@ -6,7 +6,6 @@ import {
   readinessInputFromOnboardingState,
   REQUIRED_FIELD_LABELS_RU,
 } from '@/lib/object-readiness/engine';
-import type { OwnerOnboardingField } from '@/lib/communication/owner-onboarding-smart-parser';
 
 export const CRM_QUEUE_COLUMN_VALUES = [
   'new_lead',
@@ -59,12 +58,16 @@ const INACTIVE_STATUSES: CrmStatus[] = ['paused', 'rejected', 'not_relevant'];
 
 const ONBOARDING_FIELD_LABELS: Record<string, string> = {
   address: 'адрес',
+  object_type: 'тип объекта',
   property_name: 'название объекта',
+  checkin_time: 'время заезда',
+  checkout_time: 'время выезда',
+  checkin_checkout: 'время заезда и выезда',
+  channels: 'каналы',
+  rules: 'правила проживания',
   house_rules: 'правила проживания',
   wifi: 'Wi-Fi',
-  checkin_checkout: 'время заезда и выезда',
   photos: 'фото',
-  channels: 'каналы',
 };
 
 export type CrmQueueMessage = {
@@ -82,6 +85,8 @@ export type CrmQueueItem = {
   objectTitle: string;
   ownerName: string;
   telegramUsername: string | null;
+  objectsCount: number;
+  activeObjectTitle: string | null;
   onboardingStatus: CrmOnboardingStatus | null;
   onboardingStatusLabel: string;
   column: CrmQueueColumn;
@@ -114,11 +119,14 @@ export type CrmQueueMetrics = {
 };
 
 function extractPropertyId(note: string): string | null {
+  const objectMatch = note.match(/object_id=(OBJ-\d+)/);
+  if (objectMatch?.[1]) return objectMatch[1];
   const match = note.match(/property_id=([a-zA-Z0-9_-]+)/);
   return match?.[1] ?? null;
 }
 
 function objectTitleFor(contact: CrmContact): string {
+  if (contact.activeObjectTitle?.trim()) return contact.activeObjectTitle.trim();
   if (contact.city.trim()) return `Объект в ${contact.city.trim()}`;
   if (contact.objectsCount > 0) return `Объект (${contact.objectsCount})`;
   return contact.name.trim() || 'Новый объект';
@@ -135,13 +143,13 @@ function missingFieldsRu(missing: string[]): string[] {
   return missing.map((field) => ONBOARDING_FIELD_LABELS[field] ?? field);
 }
 
-function fieldKeyFromLabel(label: string): OwnerOnboardingField | null {
+function fieldKeyFromLabel(label: string): string | null {
   const normalized = label.trim().toLowerCase();
   for (const [key, value] of Object.entries(ONBOARDING_FIELD_LABELS)) {
-    if (value === normalized || normalized.includes(value)) return key as OwnerOnboardingField;
+    if (value === normalized || normalized.includes(value)) return key;
   }
   for (const [key, value] of Object.entries(REQUIRED_FIELD_LABELS_RU)) {
-    if (value === normalized || normalized.includes(value)) return key as OwnerOnboardingField;
+    if (value === normalized || normalized.includes(value)) return key;
   }
   return null;
 }
@@ -150,15 +158,42 @@ function readinessForContact(contact: CrmContact) {
   const onboarding = contact.onboarding;
   if (!onboarding) return null;
 
-  const missingKeys = new Set<OwnerOnboardingField>();
+  const missingKeys = new Set<string>();
   for (const raw of onboarding.missing) {
     const key = fieldKeyFromLabel(raw);
     if (key) missingKeys.add(key);
   }
 
-  let photosIntent: 'later' | undefined;
-  if (onboarding.missing.some((item) => /фото.*позже|позже.*фото/i.test(item))) {
-    photosIntent = 'later';
+  const photosIntent: 'later' | undefined =
+    onboarding.missing.some((item) => /фото.*позже|позже.*фото/i.test(item)) ||
+    (onboarding.photosCount === 0 && onboarding.missing.some((item) => /фото/i.test(item)))
+      ? 'later'
+      : undefined;
+
+  if (
+    onboarding.objectType ||
+    onboarding.checkinTime ||
+    onboarding.checkoutTime ||
+    onboarding.channels?.length ||
+    onboarding.rules?.length
+  ) {
+    return computeObjectReadiness(
+      readinessInputFromOnboardingState({
+        address: missingKeys.has('address') ? undefined : 'set',
+        object_type: onboarding.objectType ?? (missingKeys.has('object_type') || missingKeys.has('property_name') ? undefined : 'set'),
+        checkin_time: onboarding.checkinTime ?? (missingKeys.has('checkin_time') || missingKeys.has('checkin_checkout') ? undefined : 'set'),
+        checkout_time: onboarding.checkoutTime ?? (missingKeys.has('checkout_time') || missingKeys.has('checkin_checkout') ? undefined : 'set'),
+        channels: onboarding.channels?.length ? onboarding.channels : missingKeys.has('channels') ? undefined : 'set',
+        rules: onboarding.rules?.length ? onboarding.rules : missingKeys.has('rules') || missingKeys.has('house_rules') ? undefined : 'set',
+        wifi_name: onboarding.wifiName ?? undefined,
+        wifi_password: onboarding.wifiPassword ?? undefined,
+        wifi_skipped: onboarding.wifiName ? false : missingKeys.has('wifi') ? undefined : true,
+        photos: (onboarding.photosCount ?? 0) > 0 ? 'set' : undefined,
+        photos_intent: photosIntent ?? null,
+        photos_count: onboarding.photosCount ?? undefined,
+        status: onboarding.status,
+      }),
+    );
   }
 
   return computeObjectReadiness(
@@ -251,6 +286,8 @@ export function buildQueueItem(
     objectTitle: objectTitleFor(contact),
     ownerName: contact.name,
     telegramUsername: contact.telegramUsername.trim() || null,
+    objectsCount: contact.objectsCount,
+    activeObjectTitle: contact.activeObjectTitle ?? null,
     onboardingStatus,
     onboardingStatusLabel: onboardingStatus
       ? CRM_QUEUE_STATUS_LABELS[onboardingStatus]

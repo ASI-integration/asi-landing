@@ -189,8 +189,8 @@ function looksLikeOwnerOnboardingContinuation(messageText: string, missing: stri
   if (!t) return false;
   if (isIdentitySelectionText(messageText)) return true;
 
-  const fields = missing.length > 0 ? (missing as OwnerOnboardingField[]) : (['address'] as OwnerOnboardingField[]);
-  const facts = extractFactsDeterministic(messageText, fields, false);
+  const fields = missing.length > 0 ? missing : ['address'];
+  const facts = extractFactsDeterministic(messageText, fields as OwnerOnboardingField[], false);
   const extractedCount =
     Object.keys(facts).filter((key) => key !== 'city' && key !== 'photos_intent').length + (facts.photos_intent ? 1 : 0);
   if (extractedCount > 0) return true;
@@ -198,10 +198,16 @@ function looksLikeOwnerOnboardingContinuation(messageText: string, missing: stri
   if (fields.includes('address')) {
     return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат)/.test(t);
   }
-  if (fields.includes('property_name') && /(квартир|апартамент|студия|дом|объект|лофт|номер|вокзал)/.test(t)) return true;
-  if (fields.includes('house_rules') && /(правил|курен|животн|тишин|залог|вечерин|нельзя|можно|обычн)/.test(t)) return true;
-  if (fields.includes('wifi') && /(wi fi|wi-fi|wifi|вай фай|вайфай|сеть|парол|потом|позже)/.test(t)) return true;
-  if (fields.includes('checkin_checkout') && /(заезд|выезд|check in|check out|\b\d{1,2}[:.]\d{2}\b|после|до)/.test(t)) return true;
+  if (fields.includes('property_name') || fields.includes('object_type')) {
+    if (/(квартир|апартамент|студия|дом|объект|лофт|номер|вокзал|комната)/.test(t)) return true;
+  }
+  if (fields.includes('house_rules') || fields.includes('rules')) {
+    if (/(правил|курен|животн|тишин|залог|вечерин|нельзя|можно|обычн|дет)/.test(t)) return true;
+  }
+  if (fields.includes('wifi') && /(wi fi|wi-fi|wifi|вай фай|вайфай|сеть|парол|потом|позже|добавлю)/.test(t)) return true;
+  if (fields.includes('checkin_checkout') || fields.includes('checkin_time') || fields.includes('checkout_time')) {
+    if (/(заезд|выезд|check in|check out|\b\d{1,2}[:.]\d{2}\b|после|до)/.test(t)) return true;
+  }
   if (fields.includes('photos') && /(фото|изображен|\[photo\]|позже|потом|пришлю)/.test(t)) return true;
   if (fields.includes('channels') && /(авито|суточн|остров|яндекс|airbnb|booking|букинг|канал|площадк|ota)/.test(t)) return true;
   return false;

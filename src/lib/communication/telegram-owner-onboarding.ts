@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import {
   loadAutonomousSession,
-  patchAutonomousSessionCollectedData,
 } from './conversation-session-store';
 import {
   detectsExplicitOperatorRequest,
@@ -12,14 +11,41 @@ import {
   type PhotosIntent,
   type SmartParseDecision,
 } from './owner-onboarding-smart-parser';
-import type { InboundMessageEnvelope } from './types';
+import type { InboundMessageEnvelope, CommunicationChannel } from './types';
 import type { SenderIdentity, TelegramInlineKeyboardMarkup } from './communication-identity-routing';
 import {
   computeObjectReadiness,
   readinessInputFromOnboardingState,
+  REQUIRED_FIELD_LABELS_RU,
   type ObjectReadinessResult,
 } from '@/lib/object-readiness/engine';
 import { emitObjectReadinessEvents } from '@/lib/object-readiness/crm-events';
+import {
+  buildWizardChecklist,
+  buildWizardProgressBlock,
+  buildWizardStepKeyboard,
+  buildWizardStepPrompt,
+  fieldSavedAckRu,
+  isWizardCallbackData,
+  labelsFromChannelIds,
+  labelsFromRuleIds,
+  missingWizardFields,
+  parseCustomTimeInput,
+  parseWifiInput,
+  parseWizardCallback,
+  wizardCompletedCount,
+  type OwnerOnboardingWizardField,
+  WIZARD_FIELD_ORDER,
+} from './telegram-owner-onboarding-wizard';
+import {
+  ensureOwnerObjectsRegistry,
+  getActiveOwnerObjectId,
+  listOwnerObjectRecords,
+  persistOwnerObjectState,
+  readOwnerObjectState,
+  readOwnerObjectStateIfExists,
+} from './telegram-owner-object-session';
+import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -28,18 +54,32 @@ export type OwnerOnboardingStatus =
   | 'channel_manager_started'
   | 'needs_operator';
 
-export type { OwnerOnboardingField };
+export type { OwnerOnboardingField, OwnerOnboardingWizardField };
 
 export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefined> & {
   city?: string;
   photos_intent?: PhotosIntent;
   clarification_attempts: number;
   status: OwnerOnboardingStatus;
-  missing: OwnerOnboardingField[];
+  missing: OwnerOnboardingWizardField[];
   lastMessage: string;
   channelManagerHref: string;
   lastClarificationQuestion?: string;
   readiness?: ObjectReadinessResult;
+  wizard_mode?: 'v2' | 'legacy';
+  object_type?: string;
+  checkin_time?: string;
+  checkout_time?: string;
+  rules?: string[];
+  wifi_name?: string;
+  wifi_password?: string;
+  wifi_skipped?: boolean;
+  photos_count?: number;
+  channels_list?: string[];
+  awaiting_custom?: 'checkin_time' | 'checkout_time';
+  channels_draft?: string[];
+  rules_draft?: string[];
+  last_saved_field?: OwnerOnboardingWizardField;
 };
 
 export type OwnerOnboardingResult = {
@@ -47,12 +87,12 @@ export type OwnerOnboardingResult = {
   replyText: string;
   replyMarkup?: TelegramInlineKeyboardMarkup;
   status: OwnerOnboardingStatus;
-  missing: OwnerOnboardingField[];
+  missing: OwnerOnboardingWizardField[];
   crmContactId?: string;
   state: OwnerOnboardingState;
 };
 
-const FIELD_LABELS: Record<OwnerOnboardingField, string> = {
+const LEGACY_FIELD_LABELS: Record<OwnerOnboardingField, string> = {
   address: 'адрес объекта',
   property_name: 'название или тип объекта',
   house_rules: 'правила проживания',
@@ -62,33 +102,25 @@ const FIELD_LABELS: Record<OwnerOnboardingField, string> = {
   channels: 'каналы бронирования',
 };
 
-const FIELD_QUESTIONS: Record<OwnerOnboardingField, string> = {
-  address: 'Пришлите адрес объекта одним сообщением: город, улица и номер дома.',
-  property_name: 'Напишите название или тип объекта: квартира, апартаменты, дом или другой формат.',
-  house_rules: 'Пришлите основные правила проживания: курение, животные, тишина, гости, залог.',
-  wifi: 'Пришлите название сети и пароль Wi-Fi. Если Wi-Fi пока нет, так и напишите.',
-  checkin_checkout: 'Напишите время заезда и выезда, например: заезд с 15:00, выезд до 11:00.',
-  photos: 'Отправьте хотя бы одно фото объекта в этот чат или напишите, что добавите позже.',
-  channels: 'Выберите или напишите каналы: Авито, Суточно, Островок, Яндекс Путешествия, Airbnb, Booking.com, свой сайт.',
-};
-
-const FIELD_ACK: Partial<Record<OwnerOnboardingField, string>> = {
-  address: 'адрес',
-  property_name: 'тип объекта',
-  house_rules: 'правила проживания',
-  wifi: 'Wi-Fi',
-  checkin_checkout: 'время заезда и выезда',
-  photos: 'фото',
-  channels: 'каналы',
-};
-
 const CHANNEL_MANAGER_HREF = '/dashboard/channel-connections?source=telegram_onboarding';
 const CHANNEL_MANAGER_URL = 'https://asi-global.ru/dashboard/channel-connections?source=telegram_onboarding';
 const SESSION_PREFIX = 'owner_onboarding_';
 const NOTE_HEADER = 'Онбординг ASI';
+const OWNER_OBJECTS_HEADER = 'Объекты владельца';
 
 function text(value: unknown, max = 600): string {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function parseJsonArray(raw: unknown): string[] {
+  const value = text(raw, 2000);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => text(item, 120)).filter(Boolean) : [];
+  } catch {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
 }
 
 function telegramUsername(envelope: InboundMessageEnvelope): string {
@@ -115,41 +147,84 @@ function telegramDisplayName(envelope: InboundMessageEnvelope): string {
   return 'Telegram лид';
 }
 
-function sessionValue(collected: Record<string, string | undefined>, field: OwnerOnboardingField): string | undefined {
-  return text(collected[`${SESSION_PREFIX}${field}`]).trim() || undefined;
-}
-
-function readStateFromSession(chatId: number): OwnerOnboardingState {
-  const collected = loadAutonomousSession(chatId)?.collected_data ?? {};
-  const photosIntentRaw = text(collected[`${SESSION_PREFIX}photos_intent`]);
-  const photosIntent: PhotosIntent | undefined =
-    photosIntentRaw === 'later' || photosIntentRaw === 'now' ? photosIntentRaw : undefined;
-
-  const state: OwnerOnboardingState = {
-    address: sessionValue(collected, 'address'),
-    property_name: sessionValue(collected, 'property_name'),
-    house_rules: sessionValue(collected, 'house_rules'),
-    wifi: sessionValue(collected, 'wifi'),
-    checkin_checkout: sessionValue(collected, 'checkin_checkout'),
-    photos: sessionValue(collected, 'photos'),
-    channels: sessionValue(collected, 'channels'),
-    city: text(collected[`${SESSION_PREFIX}city`]) || undefined,
-    photos_intent: photosIntent,
-    clarification_attempts: Number(collected[`${SESSION_PREFIX}clarification_attempts`] ?? 0) || 0,
-    status: (text(collected[`${SESSION_PREFIX}status`]) || 'onboarding_started') as OwnerOnboardingStatus,
-    missing: [] as OwnerOnboardingField[],
-    lastMessage: text(collected[`${SESSION_PREFIX}last_message`], 600),
-    lastClarificationQuestion: text(collected[`${SESSION_PREFIX}last_clarification`]) || undefined,
+function readStateFromSession(chatId: number, channel: CommunicationChannel = 'telegram'): OwnerOnboardingState {
+  const existing = readOwnerObjectStateIfExists(chatId, channel);
+  if (existing) {
+    syncLegacyFields(existing);
+    existing.missing = missingFields(existing);
+    return existing;
+  }
+  return {
+    address: undefined,
+    property_name: undefined,
+    house_rules: undefined,
+    wifi: undefined,
+    checkin_checkout: undefined,
+    photos: undefined,
+    channels: undefined,
+    clarification_attempts: 0,
+    status: 'onboarding_started',
+    missing: missingFields({ wizard_mode: 'v2' }),
+    lastMessage: '',
     channelManagerHref: CHANNEL_MANAGER_HREF,
+    wizard_mode: 'v2',
+    photos_count: 0,
+    channels_draft: [],
+    rules_draft: [],
+    rules: [],
+    channels_list: [],
   };
-  state.missing = missingFields(state);
-  return state;
 }
 
-export function missingFields(state: Partial<OwnerOnboardingState>): OwnerOnboardingField[] {
-  return (Object.keys(FIELD_LABELS) as OwnerOnboardingField[]).filter((field) => {
-    if (field === 'photos' && (state.photos || state.photos_intent === 'later')) return false;
-    return !text(state[field]);
+function syncLegacyFields(state: OwnerOnboardingState): void {
+  if (state.object_type) state.property_name = state.object_type;
+  else if (state.property_name && !state.object_type) state.object_type = state.property_name;
+
+  if (state.checkin_time || state.checkout_time) {
+    const parts = [];
+    if (state.checkin_time) parts.push(`заезд ${state.checkin_time}`);
+    if (state.checkout_time) parts.push(`выезд ${state.checkout_time}`);
+    state.checkin_checkout = parts.join(', ');
+  }
+
+  if (state.rules?.length) state.house_rules = state.rules.join(', ');
+  else if (state.house_rules && !state.rules?.length) {
+    state.rules = state.house_rules.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (state.channels_list?.length) state.channels = state.channels_list.join(', ');
+  else if (state.channels && !state.channels_list?.length) {
+    state.channels_list = state.channels.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (state.wifi_name || state.wifi_password) {
+    state.wifi = [state.wifi_name, state.wifi_password].filter(Boolean).join(' / ');
+  } else if (state.wifi_skipped) {
+    state.wifi = 'добавлю позже';
+  }
+}
+
+export function missingFields(state: Partial<OwnerOnboardingState>): OwnerOnboardingWizardField[] {
+  if (state.wizard_mode === 'legacy') {
+    return (Object.keys(LEGACY_FIELD_LABELS) as OwnerOnboardingField[]).filter((field) => {
+      if (field === 'photos' && (state.photos || state.photos_intent === 'later')) return false;
+      return !text(state[field]);
+    }) as OwnerOnboardingWizardField[];
+  }
+
+  return missingWizardFields({
+    address: state.address,
+    object_type: state.object_type ?? state.property_name,
+    checkin_time: state.checkin_time,
+    checkout_time: state.checkout_time,
+    channels: state.channels_list ?? parseJsonArray(state.channels),
+    rules: state.rules ?? parseJsonArray(state.house_rules),
+    wifi_name: state.wifi_name,
+    wifi_password: state.wifi_password,
+    wifi_skipped: state.wifi_skipped,
+    photos: state.photos,
+    photos_intent: state.photos_intent,
+    photos_count: state.photos_count,
   });
 }
 
@@ -175,7 +250,7 @@ function countExtractedFields(
 
 function statusForState(params: {
   previousStatus: OwnerOnboardingStatus;
-  missing: OwnerOnboardingField[];
+  missing: OwnerOnboardingWizardField[];
   extractedCount: number;
   messageText: string;
   decision: SmartParseDecision;
@@ -222,88 +297,498 @@ function nextClarificationAttempts(params: {
   return params.previousAttempts + 1;
 }
 
-function missingListRu(missing: OwnerOnboardingField[]): string {
-  return missing.map((field) => FIELD_LABELS[field]).join(', ');
+function missingListRu(missing: OwnerOnboardingWizardField[]): string {
+  return missing.map((field) => REQUIRED_FIELD_LABELS_RU[field] ?? field).join(', ');
 }
 
-function savedAckRu(
-  facts: Partial<Record<OwnerOnboardingField, string>>,
-  extras?: { photos_intent?: PhotosIntent },
-): string {
-  const saved: string[] = [];
-  for (const field of Object.keys(facts) as OwnerOnboardingField[]) {
-    if (facts[field]) saved.push(FIELD_ACK[field] ?? FIELD_LABELS[field]);
+function applySmartFactsToState(
+  state: OwnerOnboardingState,
+  facts: Partial<Record<OwnerOnboardingField, string>> & { city?: string; photos_intent?: PhotosIntent },
+): number {
+  let extracted = 0;
+  for (const [field, value] of Object.entries(facts) as Array<[OwnerOnboardingField, string | undefined]>) {
+    if (!value) continue;
+    state[field] = value;
+    extracted += 1;
   }
-  if (extras?.photos_intent === 'later' && !facts.photos) saved.push('фото позже');
-  return saved.join(', ');
+  if (facts.city) {
+    state.city = facts.city;
+    if (!facts.address) extracted += 1;
+  }
+  if (facts.photos_intent) {
+    state.photos_intent = facts.photos_intent;
+    extracted += 1;
+  }
+  if (facts.property_name) state.object_type = facts.property_name;
+  if (facts.house_rules) state.rules = facts.house_rules.split(',').map((item) => item.trim()).filter(Boolean);
+  if (facts.channels) state.channels_list = facts.channels.split(',').map((item) => item.trim()).filter(Boolean);
+  if (facts.checkin_checkout) {
+    const checkinMatch = facts.checkin_checkout.match(/заезд[^,.;]*/i);
+    const checkoutMatch = facts.checkin_checkout.match(/выезд[^,.;]*/i);
+    if (checkinMatch) state.checkin_time = checkinMatch[0].replace(/^заезд\s*/i, '').trim();
+    if (checkoutMatch) state.checkout_time = checkoutMatch[0].replace(/^выезд\s*/i, '').trim();
+  }
+  if (facts.wifi) {
+    const parsed = parseWifiInput(facts.wifi);
+    state.wifi_name = parsed.wifi_name;
+    state.wifi_password = parsed.wifi_password;
+  }
+  syncLegacyFields(state);
+  return extracted;
+}
+
+function legacyMissingFields(missing: OwnerOnboardingWizardField[]): OwnerOnboardingField[] {
+  const mapped = missing.map((field): OwnerOnboardingField => {
+    if (field === 'object_type') return 'property_name';
+    if (field === 'checkin_time' || field === 'checkout_time') return 'checkin_checkout';
+    if (field === 'rules') return 'house_rules';
+    return field as OwnerOnboardingField;
+  });
+  return [...new Set(mapped)];
+}
+
+function shouldUseLegacyFallback(state: OwnerOnboardingState, extractedCount: number, messageText: string): boolean {
+  if (state.wizard_mode === 'legacy') return true;
+  if (extractedCount >= 2) return true;
+  const n = text(messageText).toLowerCase();
+  const fieldMarkers = [
+    n.includes('адрес:') && (n.includes('правил') || n.includes('wi-fi') || n.includes('wifi') || n.includes('канал')),
+    /адрес:.*апартамент.*правил/i.test(n),
+    /канал.*,.*авито|правил.*,.*кур/i.test(n),
+    /заезд.*,.*выезд.*,.*канал/i.test(n),
+    (n.match(/\. /g) ?? []).length >= 2 && (n.includes('правил') || n.includes('wi-fi') || n.includes('wifi') || n.includes('канал')),
+  ];
+  return fieldMarkers.some(Boolean);
+}
+
+type WizardApplyResult = {
+  handled: boolean;
+  extractedCount: number;
+  savedField?: OwnerOnboardingWizardField;
+  stayOnStep?: OwnerOnboardingWizardField;
+  replyOverride?: string;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+};
+
+function applyWizardCallback(state: OwnerOnboardingState, callbackData: string): WizardApplyResult {
+  const action = parseWizardCallback(callbackData);
+  switch (action.kind) {
+    case 'noop':
+      return { handled: false, extractedCount: 0 };
+    case 'await_custom':
+      state.awaiting_custom = action.field;
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: action.field,
+        replyOverride: action.field === 'checkin_time' ? 'Введите время заезда' : 'Введите время выезда',
+      };
+    case 'set_field':
+      if (action.field === 'object_type') state.object_type = action.value;
+      if (action.field === 'checkin_time') {
+        state.checkin_time = action.value;
+        state.awaiting_custom = undefined;
+      }
+      if (action.field === 'checkout_time') {
+        state.checkout_time = action.value;
+        state.awaiting_custom = undefined;
+      }
+      syncLegacyFields(state);
+      state.last_saved_field = action.field;
+      return { handled: true, extractedCount: 1, savedField: action.field };
+    case 'toggle_channel': {
+      const draft = new Set(state.channels_draft ?? []);
+      if (draft.has(action.channelId)) draft.delete(action.channelId);
+      else draft.add(action.channelId);
+      state.channels_draft = [...draft];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'channels',
+        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+      };
+    }
+    case 'confirm_channels': {
+      const labels = labelsFromChannelIds(state.channels_draft ?? []);
+      if (!labels.length) {
+        return {
+          handled: true,
+          extractedCount: 0,
+          stayOnStep: 'channels',
+          replyOverride: 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «Готово».',
+          replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+        };
+      }
+      state.channels_list = labels;
+      state.channels = labels.join(', ');
+      state.channels_draft = [];
+      state.last_saved_field = 'channels';
+      syncLegacyFields(state);
+      return { handled: true, extractedCount: 1, savedField: 'channels' };
+    }
+    case 'toggle_rule': {
+      const draft = new Set(state.rules_draft ?? []);
+      if (draft.has(action.ruleId)) draft.delete(action.ruleId);
+      else draft.add(action.ruleId);
+      state.rules_draft = [...draft];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'rules',
+        replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+      };
+    }
+    case 'confirm_rules': {
+      const labels = labelsFromRuleIds(state.rules_draft ?? []);
+      if (!labels.length) {
+        return {
+          handled: true,
+          extractedCount: 0,
+          stayOnStep: 'rules',
+          replyOverride: 'Выберите хотя бы одно правило, затем нажмите «Готово».',
+          replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+        };
+      }
+      state.rules = labels;
+      state.house_rules = labels.join(', ');
+      state.rules_draft = [];
+      state.last_saved_field = 'rules';
+      syncLegacyFields(state);
+      return { handled: true, extractedCount: 1, savedField: 'rules' };
+    }
+    case 'wifi_later':
+      state.wifi_skipped = true;
+      state.wifi = 'добавлю позже';
+      state.last_saved_field = 'wifi';
+      syncLegacyFields(state);
+      return { handled: true, extractedCount: 1, savedField: 'wifi' };
+    case 'photo_later':
+      state.photos_intent = 'later';
+      state.last_saved_field = 'photos';
+      return { handled: true, extractedCount: 1, savedField: 'photos' };
+    default:
+      return { handled: false, extractedCount: 0 };
+  }
+}
+
+function applyLegacyBulkFacts(
+  state: OwnerOnboardingState,
+  messageText: string,
+  hasPhoto: boolean,
+): number {
+  const deterministicFacts = extractFactsDeterministic(
+    messageText,
+    Object.keys(LEGACY_FIELD_LABELS) as OwnerOnboardingField[],
+    hasPhoto,
+  );
+  let extractedCount = applySmartFactsToState(state, {
+    ...deterministicFacts,
+    city: deterministicFacts.city,
+    photos_intent: deterministicFacts.photos_intent ?? undefined,
+  });
+  if (deterministicFacts.city) state.city = deterministicFacts.city;
+  if (deterministicFacts.photos_intent) state.photos_intent = deterministicFacts.photos_intent;
+  if (hasPhoto && !state.photos) {
+    state.photos = 'Фото получено в Telegram';
+    state.photos_count = (state.photos_count ?? 0) + 1;
+    extractedCount += 1;
+  }
+  if (!state.object_type && !state.property_name) {
+    const propertyMatch = messageText.match(/(квартира|апартаменты|апартамент|дом|комната|студия|лофт)/i);
+    if (propertyMatch) {
+      state.object_type = propertyMatch[1];
+      state.property_name = propertyMatch[1];
+      extractedCount += 1;
+    }
+  }
+  syncLegacyFields(state);
+  return extractedCount;
+}
+
+function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, hasPhoto: boolean): WizardApplyResult {
+  const next = state.missing[0];
+
+  if (/правил|курен|животн|тишин|залог|вечерин/i.test(messageText) && !(state.rules?.length ?? 0)) {
+    const facts = extractFactsDeterministic(messageText, ['house_rules'], false);
+    if (facts.house_rules) {
+      state.rules = facts.house_rules.split(',').map((item) => item.trim()).filter(Boolean);
+      state.house_rules = facts.house_rules;
+      syncLegacyFields(state);
+      state.last_saved_field = 'rules';
+      return { handled: true, extractedCount: 1, savedField: 'rules' };
+    }
+  }
+
+  if (state.awaiting_custom) {
+    const parsed = parseCustomTimeInput(messageText);
+    const field = state.awaiting_custom;
+    if (!parsed) {
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: field,
+        replyOverride:
+          field === 'checkin_time'
+            ? 'Не поняла время. Напишите, например: 14:00'
+            : 'Не поняла время. Напишите, например: 11:00',
+      };
+    }
+    if (field === 'checkin_time') state.checkin_time = parsed;
+    else state.checkout_time = parsed;
+    state.awaiting_custom = undefined;
+    syncLegacyFields(state);
+    return { handled: true, extractedCount: 1, savedField: field };
+  }
+
+  if (next === 'address' && text(messageText) && !isIdentitySelectionText(messageText)) {
+    if (/фото.*(позже|потом)|добавлю позже/i.test(messageText) && !/(адрес|ул\.?|улиц|просп)/i.test(messageText)) {
+      return { handled: false, extractedCount: 0 };
+    }
+    const facts = extractFactsDeterministic(messageText, ['address'], false);
+    if (facts.address || /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат|москва|санкт)/i.test(messageText)) {
+      state.address = facts.address ?? text(messageText, 400);
+      if (facts.city) state.city = facts.city;
+      state.last_saved_field = 'address';
+      return { handled: true, extractedCount: 1, savedField: 'address' };
+    }
+    return {
+      handled: true,
+      extractedCount: 0,
+      stayOnStep: 'address',
+      replyOverride: 'Укажите адрес объекта.\nНапример:\nСанкт-Петербург, Лиговский пр., 108',
+    };
+  }
+
+  if (next === 'object_type' && text(messageText) && !isIdentitySelectionText(messageText)) {
+    const facts = extractFactsDeterministic(messageText, ['address', 'property_name'], false);
+    if (!state.address && facts.address) {
+      state.address = facts.address;
+      if (facts.city) state.city = facts.city;
+      syncLegacyFields(state);
+      state.last_saved_field = 'address';
+      return { handled: true, extractedCount: 1, savedField: 'address' };
+    }
+    if (facts.property_name || /(квартира|апартамент|студия|дом|комната|другое|лофт)/i.test(text(messageText, 120))) {
+      state.object_type = facts.property_name ?? text(messageText, 120);
+      syncLegacyFields(state);
+      state.last_saved_field = 'object_type';
+      return { handled: true, extractedCount: 1, savedField: 'object_type' };
+    }
+  }
+
+  if (next === 'checkin_time') {
+    const facts = extractFactsDeterministic(messageText, ['checkin_checkout'], false);
+    if (facts.checkin_checkout) {
+      const checkinMatch = facts.checkin_checkout.match(/заезд[^,.;]*/i);
+      const checkoutMatch = facts.checkin_checkout.match(/выезд[^,.;]*/i);
+      if (checkinMatch) state.checkin_time = checkinMatch[0].replace(/^заезд\s*/i, '').trim();
+      if (checkoutMatch) state.checkout_time = checkoutMatch[0].replace(/^выезд\s*/i, '').trim();
+      syncLegacyFields(state);
+      state.last_saved_field = state.checkout_time ? 'checkout_time' : 'checkin_time';
+      return { handled: true, extractedCount: state.checkout_time ? 2 : 1, savedField: 'checkin_time' };
+    }
+    const parsed = parseCustomTimeInput(messageText);
+    if (parsed) {
+      state.checkin_time = parsed;
+      syncLegacyFields(state);
+      state.last_saved_field = 'checkin_time';
+      return { handled: true, extractedCount: 1, savedField: 'checkin_time' };
+    }
+  }
+
+  if (next === 'checkout_time') {
+    const facts = extractFactsDeterministic(messageText, ['checkin_checkout'], false);
+    if (facts.checkin_checkout) {
+      const checkoutMatch = facts.checkin_checkout.match(/выезд[^,.;]*/i);
+      if (checkoutMatch) {
+        state.checkout_time = checkoutMatch[0].replace(/^выезд\s*/i, '').trim();
+        syncLegacyFields(state);
+        state.last_saved_field = 'checkout_time';
+        return { handled: true, extractedCount: 1, savedField: 'checkout_time' };
+      }
+    }
+    const parsed = parseCustomTimeInput(messageText);
+    if (parsed) {
+      state.checkout_time = parsed;
+      syncLegacyFields(state);
+      state.last_saved_field = 'checkout_time';
+      return { handled: true, extractedCount: 1, savedField: 'checkout_time' };
+    }
+  }
+
+  if (next === 'rules' && text(messageText)) {
+    const facts = extractFactsDeterministic(messageText, ['house_rules'], false);
+    if (facts.house_rules) {
+      state.rules = facts.house_rules.split(',').map((item) => item.trim()).filter(Boolean);
+      state.house_rules = facts.house_rules;
+      syncLegacyFields(state);
+      state.last_saved_field = 'rules';
+      return { handled: true, extractedCount: 1, savedField: 'rules' };
+    }
+  }
+
+  if (next === 'channels' && text(messageText)) {
+    const facts = extractFactsDeterministic(messageText, ['channels'], false);
+    if (facts.channels) {
+      state.channels_list = facts.channels.split(',').map((item) => item.trim()).filter(Boolean);
+      state.channels = facts.channels;
+      syncLegacyFields(state);
+      state.last_saved_field = 'channels';
+      return { handled: true, extractedCount: 1, savedField: 'channels' };
+    }
+  }
+
+  if (next === 'wifi' && text(messageText)) {
+    const parsed = parseWifiInput(messageText);
+    state.wifi_name = parsed.wifi_name;
+    state.wifi_password = parsed.wifi_password;
+    state.wifi_skipped = false;
+    syncLegacyFields(state);
+    state.last_saved_field = 'wifi';
+    return { handled: true, extractedCount: 1, savedField: 'wifi' };
+  }
+
+  if (next === 'photos') {
+    if (hasPhoto) {
+      state.photos = 'Фото получено в Telegram';
+      state.photos_count = (state.photos_count ?? 0) + 1;
+      state.photos_intent = 'now';
+      state.last_saved_field = 'photos';
+      return { handled: true, extractedCount: 1, savedField: 'photos' };
+    }
+    const n = text(messageText).toLowerCase();
+    if (/фото.*(позже|потом)|добавлю позже/.test(n)) {
+      state.photos_intent = 'later';
+      state.last_saved_field = 'photos';
+      return { handled: true, extractedCount: 1, savedField: 'photos' };
+    }
+  }
+
+  return { handled: false, extractedCount: 0 };
+}
+
+function wizardStateSnapshot(state: OwnerOnboardingState) {
+  return {
+    address: state.address,
+    object_type: state.object_type ?? state.property_name,
+    checkin_time: state.checkin_time,
+    checkout_time: state.checkout_time,
+    channels: state.channels_list,
+    rules: state.rules,
+    wifi_name: state.wifi_name,
+    wifi_password: state.wifi_password,
+    wifi_skipped: state.wifi_skipped,
+    photos: state.photos,
+    photos_intent: state.photos_intent,
+    photos_count: state.photos_count,
+  };
+}
+
+function wizardDraftSnapshot(state: OwnerOnboardingState) {
+  return {
+    channels_draft: state.channels_draft ?? [],
+    rules_draft: state.rules_draft ?? [],
+  };
 }
 
 function buildReply(params: {
   status: OwnerOnboardingStatus;
-  missing: OwnerOnboardingField[];
-  facts: Partial<Record<OwnerOnboardingField, string>>;
+  missing: OwnerOnboardingWizardField[];
+  savedField?: OwnerOnboardingWizardField;
   decision: SmartParseDecision;
   photosIntent?: PhotosIntent;
   readiness?: ObjectReadinessResult;
-}): string {
+  state: OwnerOnboardingState;
+  replyOverride?: string;
+  replyMarkup?: TelegramInlineKeyboardMarkup;
+}): { text: string; markup?: TelegramInlineKeyboardMarkup } {
   if (params.status === 'needs_operator') {
-    return 'Похоже, здесь нужна ручная помощь. Я передала диалог оператору: он посмотрит данные объекта и ответит здесь.';
+    return {
+      text: 'Похоже, здесь нужна ручная помощь. Я передала диалог оператору: он посмотрит данные объекта и ответит здесь.',
+    };
   }
   if (params.status === 'channel_manager_started') {
-    return 'Отлично, отметила старт Менеджера каналов. Если на шаге подключения что-то остановит процесс, напишите сюда — подключу оператора.';
+    return {
+      text: 'Отлично, отметила старт Менеджера каналов. Если на шаге подключения что-то остановит процесс, напишите сюда — подключу оператора.',
+    };
   }
   if (params.status === 'ready_for_channel_manager') {
-    return [
-      'Минимальные данные по объекту собраны. Объект готов к следующему шагу — Менеджеру каналов.',
-      `Открыть: ${CHANNEL_MANAGER_URL}`,
-      'Реальных вызовов к площадкам сейчас не делаю: это подготовка к подключению.',
-    ].join('\n');
+    const progress = params.readiness
+      ? buildWizardProgressBlock({
+          completedCount: wizardCompletedCount(wizardStateSnapshot(params.state)),
+          readinessPercent: params.readiness.readiness_percent,
+          checklist: buildWizardChecklist(wizardStateSnapshot(params.state)),
+        })
+      : '';
+    return {
+      text: [
+        progress,
+        'Минимальные данные по объекту собраны. Объект готов к следующему шагу — Менеджеру каналов.',
+        `Открыть: ${CHANNEL_MANAGER_URL}`,
+        'Реальных вызовов к площадкам сейчас не делаю: это подготовка к подключению.',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      markup: readyMarkup(params.status),
+    };
   }
 
   const next = params.missing[0] ?? 'address';
-  const saved = savedAckRu(params.facts, { photos_intent: params.photosIntent });
-  const readinessLine = params.readiness
-    ? `Готовность объекта: ${params.readiness.readiness_percent}%.`
+  const completedCount = wizardCompletedCount(wizardStateSnapshot(params.state));
+  const progress = params.readiness
+    ? buildWizardProgressBlock({
+        completedCount,
+        readinessPercent: params.readiness.readiness_percent,
+      })
     : '';
 
+  if (params.replyOverride) {
+    const ack = params.savedField ? fieldSavedAckRu(params.savedField) : '';
+    return {
+      text: [ack, progress, params.replyOverride].filter(Boolean).join('\n\n'),
+      markup: params.replyMarkup ?? buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state)),
+    };
+  }
+
   if (params.decision.clarification_question && params.decision.needs_clarification) {
-    const intro = saved ? `Поняла, ${saved} сохранила.` : params.decision.clarification_question;
-    if (saved && params.decision.clarification_question) {
-      return [intro, readinessLine, params.decision.clarification_question].filter(Boolean).join('\n\n');
-    }
-    return intro;
+    return {
+      text: [progress, params.decision.clarification_question].filter(Boolean).join('\n\n'),
+      markup: buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state)),
+    };
   }
 
-  if (!saved && params.status === 'onboarding_started' && next === 'address') {
-    return 'Поняла. Помогу подключить объект к ASI.\n\nДля начала укажите адрес объекта: город, улица и номер дома.';
+  if (params.state.wizard_mode !== 'legacy') {
+    if (!params.savedField && params.status === 'onboarding_started' && next === 'address') {
+      return {
+        text: ['Поняла. Помогу подключить объект к ASI.', progress, buildWizardStepPrompt('address')].filter(Boolean).join('\n\n'),
+      };
+    }
+
+    const ack =
+      params.savedField === 'address'
+        ? '✓ Адрес сохранён'
+        : params.savedField
+          ? fieldSavedAckRu(params.savedField)
+          : '';
+    const question = buildWizardStepPrompt(next);
+    return {
+      text: [ack, progress, question].filter(Boolean).join('\n\n'),
+      markup: params.replyMarkup ?? buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state)),
+    };
   }
 
-  if (saved) {
-    const missingHint = params.missing.length
-      ? `Сейчас не хватает: ${missingListRu(params.missing)}.`
-      : '';
-    const question = FIELD_QUESTIONS[next];
-    if (params.facts.address && next === 'property_name') {
-      return [
-        `Поняла, адрес сохранила.`,
-        readinessLine,
-        missingHint,
-        `Теперь укажите, пожалуйста, что это за объект: квартира, апартаменты, дом или другой формат.`,
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-    if (params.photosIntent === 'later') {
-      return [`Поняла, фото можно добавить позже.`, readinessLine, missingHint, question].filter(Boolean).join('\n');
-    }
-    return [`Поняла, ${saved} сохранила.`, readinessLine, missingHint, question].filter(Boolean).join('\n');
-  }
-
-  return [
-    'Начнём подключение объекта к ASI. Я буду спрашивать только то, чего не хватает.',
-    `Сейчас не хватает: ${missingListRu(params.missing)}.`,
-    `Следующий шаг: ${FIELD_QUESTIONS[next]}`,
-  ].join('\n');
+  const savedLegacy = params.savedField ? REQUIRED_FIELD_LABELS_RU[params.savedField] ?? params.savedField : '';
+  const questionLegacy = next ? `Следующий шаг: ${LEGACY_FIELD_LABELS[next as OwnerOnboardingField] ?? next}` : '';
+  return {
+    text: [
+      savedLegacy ? `Поняла, ${savedLegacy} сохранила.` : 'Начнём подключение объекта к ASI.',
+      progress,
+      params.missing.length ? `Сейчас не хватает: ${missingListRu(params.missing)}.` : '',
+      questionLegacy,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  };
 }
 
 function readyMarkup(status: OwnerOnboardingStatus): TelegramInlineKeyboardMarkup | undefined {
@@ -313,29 +798,62 @@ function readyMarkup(status: OwnerOnboardingStatus): TelegramInlineKeyboardMarku
   };
 }
 
-function noteWithoutOnboardingBlock(note: string): string {
+function noteWithoutStructuredBlocks(note: string): string {
   const lines = text(note, 4000).split('\n');
-  const start = lines.findIndex((line) => line.trim() === NOTE_HEADER);
-  if (start === -1) return text(note, 4000);
-  const before = lines.slice(0, start);
-  let end = start + 1;
-  while (end < lines.length && lines[end].trim() !== '') end += 1;
-  const after = lines.slice(end + 1);
-  return [...before, ...after].join('\n').trim();
+  const blockStarts = new Set([NOTE_HEADER, OWNER_OBJECTS_HEADER]);
+  const kept: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const trimmed = lines[index].trim();
+    if (blockStarts.has(trimmed)) {
+      index += 1;
+      while (index < lines.length && lines[index].trim() !== '') index += 1;
+      if (lines[index]?.trim() === '') index += 1;
+      continue;
+    }
+    kept.push(lines[index]);
+    index += 1;
+  }
+  return kept.join('\n').trim();
+}
+
+function buildOwnerObjectsNoteBlock(chatId: number, channel: CommunicationChannel): string {
+  const records = listOwnerObjectRecords(chatId, channel);
+  if (records.length === 0) return '';
+  const lines = records.map(
+    (item) =>
+      `${item.objectId} | ${item.title} | готовность: ${item.readinessPercent}% | активная сессия: ${item.isActiveSession ? 'да' : 'нет'}`,
+  );
+  return [OWNER_OBJECTS_HEADER, ...lines].join('\n');
 }
 
 function buildCrmNote(params: {
   existingNote?: string | null;
   state: OwnerOnboardingState;
+  chatId: number;
+  channel: CommunicationChannel;
+  objectId: string;
 }): string {
-  const base = noteWithoutOnboardingBlock(params.existingNote ?? '');
+  const base = noteWithoutStructuredBlocks(params.existingNote ?? '');
   const readiness = params.state.readiness;
   const block = [
     NOTE_HEADER,
+    `object_id=${params.objectId}`,
+    `owner_id=${params.chatId}`,
+    `is_active_session=да`,
     `Статус: ${params.state.status}`,
     readiness ? `Готовность: ${readiness.readiness_percent}%` : null,
     readiness ? `Статус готовности: ${readiness.readiness_status_label_ru}` : null,
     params.state.city ? `Город: ${params.state.city}` : null,
+    params.state.object_type ? `Тип объекта: ${params.state.object_type}` : null,
+    params.state.checkin_time ? `Заезд: ${params.state.checkin_time}` : null,
+    params.state.checkout_time ? `Выезд: ${params.state.checkout_time}` : null,
+    params.state.channels_list?.length ? `Каналы: ${params.state.channels_list.join(', ')}` : null,
+    params.state.rules?.length ? `Правила: ${params.state.rules.join(', ')}` : null,
+    params.state.wifi_name ? `Wi-Fi имя: ${params.state.wifi_name}` : null,
+    params.state.wifi_password ? `Wi-Fi пароль: ${params.state.wifi_password}` : null,
+    params.state.wifi_skipped ? 'Wi-Fi: добавлю позже' : null,
+    `Фото: ${params.state.photos_count ?? 0}`,
     params.state.photos_intent === 'later' ? 'Фото: обещаны позже' : null,
     `Не хватает: ${params.state.missing.length ? missingListRu(params.state.missing) : 'ничего'}`,
     readiness && readiness.missing_optional_labels_ru.length
@@ -347,7 +865,8 @@ function buildCrmNote(params: {
   ]
     .filter(Boolean)
     .join('\n');
-  return [base, block].filter(Boolean).join('\n\n').slice(0, 2000);
+  const objectsBlock = buildOwnerObjectsNoteBlock(params.chatId, params.channel);
+  return [base, objectsBlock, block].filter(Boolean).join('\n\n').slice(0, 2000);
 }
 
 async function findCrmContact(envelope: InboundMessageEnvelope): Promise<{ id: string; notes?: string | null } | null> {
@@ -378,14 +897,17 @@ async function findCrmContact(envelope: InboundMessageEnvelope): Promise<{ id: s
 
 async function upsertCrmContact(params: {
   envelope: InboundMessageEnvelope;
+  chatId: number;
   senderIdentity: SenderIdentity;
   state: OwnerOnboardingState;
+  objectId: string;
 }): Promise<string | undefined> {
   const contactKey = telegramContactKey(params.envelope);
   if (!contactKey) return undefined;
   const existing = await findCrmContact(params.envelope);
   const username = telegramUsername(params.envelope);
   const now = new Date().toISOString();
+  const objectsCount = listOwnerObjectRecords(params.chatId, params.envelope.channel).length;
   const role = params.senderIdentity === 'owner' || params.senderIdentity === 'manager' ? params.senderIdentity : 'unknown';
   const crmStatus =
     params.state.status === 'ready_for_channel_manager' || params.state.status === 'channel_manager_started'
@@ -404,8 +926,14 @@ async function upsertCrmContact(params: {
         : params.state.status === 'needs_operator'
           ? 'Оператору нужно ответить вручную по онбордингу объекта.'
           : params.state.readiness?.next_best_step_ru ??
-            `Запросить: ${FIELD_LABELS[params.state.missing[0] ?? 'address']}.`;
-  const notes = buildCrmNote({ existingNote: existing?.notes, state: params.state });
+            `Запросить: ${REQUIRED_FIELD_LABELS_RU[params.state.missing[0] ?? 'address']}.`;
+  const notes = buildCrmNote({
+    existingNote: existing?.notes,
+    state: params.state,
+    chatId: params.chatId,
+    channel: params.envelope.channel,
+    objectId: params.objectId,
+  });
 
   try {
     if (existing?.id) {
@@ -419,6 +947,7 @@ async function upsertCrmContact(params: {
           next_action: nextAction,
           notes,
           city: params.state.city ?? null,
+          property_count: objectsCount,
         })
         .eq('id', existing.id);
       return error ? undefined : existing.id;
@@ -434,7 +963,7 @@ async function upsertCrmContact(params: {
         email: null,
         role,
         source: 'telegram',
-        property_count: 1,
+        property_count: objectsCount,
         city: params.state.city ?? null,
         notes,
         status: crmStatus,
@@ -452,62 +981,214 @@ async function upsertCrmContact(params: {
   }
 }
 
+function persistState(chatId: number, channel: CommunicationChannel, state: OwnerOnboardingState): string {
+  const objectId = getActiveOwnerObjectId(chatId, channel);
+  persistOwnerObjectState(chatId, channel, objectId, state);
+  return objectId;
+}
+
 export async function processTelegramOwnerOnboarding(params: {
   envelope: InboundMessageEnvelope;
   chatId: number;
   senderIdentity: SenderIdentity;
 }): Promise<OwnerOnboardingResult> {
   if (params.envelope.channel !== 'telegram') {
-    const state = readStateFromSession(params.chatId);
+    const state = readStateFromSession(params.chatId, params.envelope.channel);
     return { handled: false, replyText: '', status: state.status, missing: state.missing, state };
   }
   if (params.senderIdentity !== 'owner' && params.senderIdentity !== 'manager' && params.senderIdentity !== 'lead') {
-    const state = readStateFromSession(params.chatId);
+    const state = readStateFromSession(params.chatId, params.envelope.channel);
     return { handled: false, replyText: '', status: state.status, missing: state.missing, state };
   }
 
-  const previous = readStateFromSession(params.chatId);
+  const wizardCallback = text((params.envelope.metadata as any)?.telegram_onboarding_wizard_callback, 64);
+  const sessionRouterCallback = text(
+    (params.envelope.metadata as any)?.telegram_session_router_callback ??
+      ((params.envelope.metadata as any)?.telegram_callback_data &&
+      isSessionRouterCallback((params.envelope.metadata as any)?.telegram_callback_data)
+        ? (params.envelope.metadata as any)?.telegram_callback_data
+        : ''),
+    64,
+  );
+
+  const existingCrm = await findCrmContact(params.envelope);
+  const routed = await tryHandleOwnerSessionRouter({
+    envelope: params.envelope,
+    chatId: params.chatId,
+    channel: params.envelope.channel,
+    senderIdentity: params.senderIdentity,
+    crmContactId: existingCrm?.id,
+    sessionRouterCallback,
+    wizardCallback,
+  });
+  if (routed) {
+    routed.state.readiness = computeObjectReadiness(
+      readinessInputFromOnboardingState({
+        ...routed.state,
+        channels: routed.state.channels_list ?? routed.state.channels,
+        rules: routed.state.rules ?? routed.state.house_rules,
+        status: routed.state.status,
+      }),
+    );
+    const objectId = persistState(params.chatId, params.envelope.channel, routed.state);
+    const crmContactId = await upsertCrmContact({
+      envelope: params.envelope,
+      chatId: params.chatId,
+      senderIdentity: params.senderIdentity,
+      state: routed.state,
+      objectId,
+    });
+    return { ...routed, crmContactId };
+  }
+
+  ensureOwnerObjectsRegistry(params.chatId, params.envelope.channel);
+
+  const previous = readStateFromSession(params.chatId, params.envelope.channel);
+  const merged: OwnerOnboardingState = {
+    ...previous,
+    wizard_mode: previous.wizard_mode ?? 'v2',
+    lastMessage: text(params.envelope.messageText, 600),
+    channelManagerHref: CHANNEL_MANAGER_HREF,
+  };
+
   const hasPhoto = Array.isArray((params.envelope.metadata as any)?.attachments)
     ? (params.envelope.metadata as any).attachments.some((attachment: any) => attachment?.type === 'photo')
     : false;
 
-  const smartResult = await extractOnboardingFactsSmart({
-    messageText: params.envelope.messageText ?? '',
-    hasPhoto,
-    missing: previous.missing,
-    collected: previous,
-    city: previous.city,
-    photosIntent: previous.photos_intent,
-    status: previous.status,
-  });
-
-  const fieldFacts: Partial<Record<OwnerOnboardingField, string>> = {};
-  for (const field of Object.keys(FIELD_LABELS) as OwnerOnboardingField[]) {
-    if (smartResult.facts[field]) fieldFacts[field] = smartResult.facts[field];
-  }
-
-  const merged: OwnerOnboardingState = {
-    ...previous,
-    ...fieldFacts,
-    city: smartResult.facts.city ?? previous.city,
-    photos_intent: smartResult.facts.photos_intent ?? previous.photos_intent,
-    lastMessage: text(params.envelope.messageText, 600),
-    channelManagerHref: CHANNEL_MANAGER_HREF,
-    clarification_attempts: previous.clarification_attempts,
+  let extractedCount = 0;
+  let savedField: OwnerOnboardingWizardField | undefined;
+  let replyOverride: string | undefined;
+  let replyMarkup: TelegramInlineKeyboardMarkup | undefined;
+  let decision: SmartParseDecision = {
+    extracted: {
+      address: null,
+      city: null,
+      property_type: null,
+      property_name: null,
+      rules: null,
+      wifi: null,
+      check_in: null,
+      check_out: null,
+      photos_intent: null,
+      channels: [],
+    },
+    confidence: 'high',
+    needs_clarification: false,
+    clarification_question: null,
+    needs_operator: false,
+    operator_reason: null,
+    next_missing_field: null,
+    source: 'deterministic',
   };
 
-  const extractedCount = countExtractedFields(fieldFacts, {
-    photos_intent: merged.photos_intent,
-    city: merged.city,
-  });
+  if (wizardCallback && isWizardCallbackData(wizardCallback)) {
+    const wizardResult = applyWizardCallback(merged, wizardCallback);
+    extractedCount = wizardResult.extractedCount;
+    savedField = wizardResult.savedField;
+    replyOverride = wizardResult.replyOverride;
+    replyMarkup = wizardResult.replyMarkup;
+    if (wizardResult.stayOnStep) {
+      merged.missing = missingFields(merged);
+      merged.missing = [wizardResult.stayOnStep, ...merged.missing.filter((field) => field !== wizardResult.stayOnStep)];
+    }
+    merged.clarification_attempts = extractedCount > 0 ? 0 : previous.clarification_attempts;
+  } else if (isIdentitySelectionText(params.envelope.messageText ?? '')) {
+    extractedCount = 0;
+  } else if (merged.wizard_mode !== 'legacy') {
+    merged.missing = missingFields(merged);
+    const messageText = params.envelope.messageText ?? '';
+    const next = merged.missing[0];
 
-  merged.clarification_attempts = nextClarificationAttempts({
-    previousAttempts: previous.clarification_attempts,
-    extractedCount,
-    messageText: params.envelope.messageText ?? '',
-    decision: smartResult.decision,
-    previousStatus: previous.status,
-  });
+    if (shouldUseLegacyFallback(merged, 0, messageText)) {
+      extractedCount = applyLegacyBulkFacts(merged, messageText, hasPhoto);
+    } else if (
+      next === 'address' &&
+      text(messageText) &&
+      !isIdentitySelectionText(messageText) &&
+      !/фото.*(позже|потом)|добавлю позже/i.test(messageText)
+    ) {
+      const smartResult = await extractOnboardingFactsSmart({
+        messageText: params.envelope.messageText ?? '',
+        hasPhoto,
+        missing: merged.missing as OwnerOnboardingField[],
+        collected: merged,
+        city: merged.city,
+        photosIntent: merged.photos_intent,
+        status: merged.status,
+      });
+      decision = smartResult.decision;
+      if (smartResult.facts.city) merged.city = smartResult.facts.city;
+      if (smartResult.facts.address && !decision.needs_clarification) {
+        merged.address = smartResult.facts.address;
+        extractedCount = 1;
+        savedField = 'address';
+      } else if (decision.needs_clarification) {
+        if (decision.confidence === 'high' && smartResult.facts.address) {
+          merged.address = smartResult.facts.address;
+          extractedCount = 1;
+          savedField = 'address';
+        } else {
+          extractedCount = smartResult.facts.city ? 1 : 0;
+        }
+        replyOverride = decision.clarification_question ?? undefined;
+      }
+    } else {
+      const wizardTextResult = applyWizardTextStep(merged, params.envelope.messageText ?? '', hasPhoto);
+      if (wizardTextResult.handled) {
+        extractedCount = wizardTextResult.extractedCount;
+        savedField = wizardTextResult.savedField;
+        replyOverride = wizardTextResult.replyOverride;
+        replyMarkup = wizardTextResult.replyMarkup;
+      } else if (shouldUseLegacyFallback(merged, 0, messageText)) {
+        extractedCount = applyLegacyBulkFacts(merged, messageText, hasPhoto);
+      } else {
+        const deterministicFacts = extractFactsDeterministic(
+          params.envelope.messageText ?? '',
+          legacyMissingFields(merged.missing),
+          hasPhoto,
+        );
+        extractedCount = applySmartFactsToState(merged, {
+          ...deterministicFacts,
+          city: deterministicFacts.city,
+          photos_intent: deterministicFacts.photos_intent ?? undefined,
+        });
+        merged.city = deterministicFacts.city ?? merged.city;
+        merged.photos_intent = deterministicFacts.photos_intent ?? merged.photos_intent;
+      }
+    }
+  } else {
+    const smartResult = await extractOnboardingFactsSmart({
+      messageText: params.envelope.messageText ?? '',
+      hasPhoto,
+      missing: merged.missing as OwnerOnboardingField[],
+      collected: merged,
+      city: merged.city,
+      photosIntent: merged.photos_intent,
+      status: merged.status,
+    });
+    decision = smartResult.decision;
+    const fieldFacts: Partial<Record<OwnerOnboardingField, string>> = {};
+    for (const field of Object.keys(LEGACY_FIELD_LABELS) as OwnerOnboardingField[]) {
+      if (smartResult.facts[field]) fieldFacts[field] = smartResult.facts[field];
+    }
+    extractedCount = applySmartFactsToState(merged, {
+      ...fieldFacts,
+      city: smartResult.facts.city,
+      photos_intent: smartResult.facts.photos_intent ?? undefined,
+    });
+    merged.city = smartResult.facts.city ?? merged.city;
+    merged.photos_intent = smartResult.facts.photos_intent ?? merged.photos_intent;
+  }
+
+  merged.clarification_attempts = wizardCallback
+    ? merged.clarification_attempts
+    : nextClarificationAttempts({
+        previousAttempts: previous.clarification_attempts,
+        extractedCount,
+        messageText: params.envelope.messageText ?? '',
+        decision,
+        previousStatus: previous.status,
+      });
 
   merged.missing = missingFields(merged);
   merged.status = statusForState({
@@ -515,13 +1196,15 @@ export async function processTelegramOwnerOnboarding(params: {
     missing: merged.missing,
     extractedCount,
     messageText: params.envelope.messageText ?? '',
-    decision: smartResult.decision,
+    decision,
     clarificationAttempts: merged.clarification_attempts,
   });
 
   merged.readiness = computeObjectReadiness(
     readinessInputFromOnboardingState({
       ...merged,
+      channels: merged.channels_list ?? merged.channels,
+      rules: merged.rules ?? merged.house_rules,
       status: merged.status,
     }),
   );
@@ -529,41 +1212,20 @@ export async function processTelegramOwnerOnboarding(params: {
   const previousReadinessPercentRaw = text(
     loadAutonomousSession(params.chatId)?.collected_data?.[`${SESSION_PREFIX}readiness_percent`],
   );
-  const previousReadinessPercent = previousReadinessPercentRaw
-    ? Number(previousReadinessPercentRaw)
-    : null;
+  const previousReadinessPercent = previousReadinessPercentRaw ? Number(previousReadinessPercentRaw) : null;
 
-  if (smartResult.decision.clarification_question) {
-    merged.lastClarificationQuestion = smartResult.decision.clarification_question;
+  if (decision.clarification_question) {
+    merged.lastClarificationQuestion = decision.clarification_question;
   }
 
-  patchAutonomousSessionCollectedData({
-    chatId: params.chatId,
-    channel: params.envelope.channel,
-    set: {
-      [`${SESSION_PREFIX}address`]: merged.address,
-      [`${SESSION_PREFIX}property_name`]: merged.property_name,
-      [`${SESSION_PREFIX}house_rules`]: merged.house_rules,
-      [`${SESSION_PREFIX}wifi`]: merged.wifi,
-      [`${SESSION_PREFIX}checkin_checkout`]: merged.checkin_checkout,
-      [`${SESSION_PREFIX}photos`]: merged.photos,
-      [`${SESSION_PREFIX}channels`]: merged.channels,
-      [`${SESSION_PREFIX}city`]: merged.city,
-      [`${SESSION_PREFIX}photos_intent`]: merged.photos_intent,
-      [`${SESSION_PREFIX}clarification_attempts`]: String(merged.clarification_attempts),
-      [`${SESSION_PREFIX}status`]: merged.status,
-      [`${SESSION_PREFIX}missing`]: merged.missing.join(','),
-      [`${SESSION_PREFIX}last_message`]: merged.lastMessage,
-      [`${SESSION_PREFIX}last_clarification`]: merged.lastClarificationQuestion,
-      [`${SESSION_PREFIX}channel_manager_href`]: CHANNEL_MANAGER_HREF,
-      [`${SESSION_PREFIX}readiness_percent`]: String(merged.readiness.readiness_percent),
-    },
-  });
+  const objectId = persistState(params.chatId, params.envelope.channel, merged);
 
   const crmContactId = await upsertCrmContact({
     envelope: params.envelope,
+    chatId: params.chatId,
     senderIdentity: params.senderIdentity,
     state: merged,
+    objectId,
   });
 
   await emitObjectReadinessEvents({
@@ -573,17 +1235,22 @@ export async function processTelegramOwnerOnboarding(params: {
     photosIntentLater: merged.photos_intent === 'later',
   });
 
+  const reply = buildReply({
+    status: merged.status,
+    missing: merged.missing,
+    savedField,
+    decision,
+    photosIntent: merged.photos_intent,
+    readiness: merged.readiness,
+    state: merged,
+    replyOverride,
+    replyMarkup,
+  });
+
   return {
     handled: true,
-    replyText: buildReply({
-      status: merged.status,
-      missing: merged.missing,
-      facts: fieldFacts,
-      decision: smartResult.decision,
-      photosIntent: merged.photos_intent,
-      readiness: merged.readiness,
-    }),
-    replyMarkup: readyMarkup(merged.status),
+    replyText: reply.text,
+    replyMarkup: reply.markup,
     status: merged.status,
     missing: merged.missing,
     crmContactId,
@@ -591,4 +1258,4 @@ export async function processTelegramOwnerOnboarding(params: {
   };
 }
 
-export { extractFactsDeterministic, isIdentitySelectionText, detectsExplicitOperatorRequest };
+export { extractFactsDeterministic, isIdentitySelectionText, detectsExplicitOperatorRequest, WIZARD_FIELD_ORDER };
