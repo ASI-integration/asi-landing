@@ -363,10 +363,14 @@ export default function CrmQueuePageClient() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [bulkArchiving, setBulkArchiving] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const initialLoadDone = useRef(false);
   const loadSeqRef = useRef(0);
   const pollPausedRef = useRef(false);
+  const archivableTestGuestIdsRef = useRef<string[]>([]);
+  const canArchiveRef = useRef(false);
   const canArchive = session?.isCrmOperator === true;
+  canArchiveRef.current = canArchive;
 
   const loadQueue = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -458,15 +462,32 @@ export default function CrmQueuePageClient() {
     if (!data || !canArchive) return [];
     return collectArchivableTestGuestContactIds(data);
   }, [canArchive, data]);
+  archivableTestGuestIdsRef.current = archivableTestGuestIds;
+
+  const openArchiveTestGuestsConfirm = useCallback(() => {
+    const ids = archivableTestGuestIdsRef.current;
+    if (!canArchiveRef.current) {
+      setMessageTone('error');
+      setMessage('Нет прав оператора для скрытия тестовых карточек.');
+      return;
+    }
+    if (ids.length === 0) {
+      setMessageTone('error');
+      setMessage('Нет тестовых карточек для скрытия. Обновите страницу.');
+      return;
+    }
+    setBulkConfirmOpen(true);
+  }, []);
 
   const handleArchiveTestGuests = useCallback(async () => {
-    if (!canArchive || archivableTestGuestIds.length === 0) return;
-    const count = archivableTestGuestIds.length;
-    const confirmed = window.confirm(
-      `Скрыть ${count} тестовых guest-карточек из очереди CRM? Реальные owner/object карточки не затронуты.`,
-    );
-    if (!confirmed) return;
+    const contactIds = [...archivableTestGuestIdsRef.current];
+    if (!canArchiveRef.current || contactIds.length === 0) {
+      setMessageTone('error');
+      setMessage('Нет тестовых карточек для скрытия. Обновите страницу.');
+      return;
+    }
 
+    setBulkConfirmOpen(false);
     setBulkArchiving(true);
     pollPausedRef.current = true;
     setMessage('');
@@ -476,7 +497,7 @@ export default function CrmQueuePageClient() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contactIds: archivableTestGuestIds }),
+        body: JSON.stringify({ contactIds }),
       });
       const payload = await readResponseJson(res, {
         ok: false,
@@ -526,7 +547,7 @@ export default function CrmQueuePageClient() {
       pollPausedRef.current = false;
       setBulkArchiving(false);
     }
-  }, [archivableTestGuestIds, canArchive, filter, loadQueue]);
+  }, [filter, loadQueue]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -620,7 +641,7 @@ export default function CrmQueuePageClient() {
         )}
       </section>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="relative z-10 flex flex-wrap items-center gap-2">
         {CRM_QUEUE_FILTER_VALUES.map((value) => (
           <button
             key={value}
@@ -638,14 +659,49 @@ export default function CrmQueuePageClient() {
         {canArchive && archivableTestGuestIds.length > 0 ? (
           <button
             type="button"
-            onClick={() => void handleArchiveTestGuests()}
-            disabled={bulkArchiving || archivingId !== null}
+            onClick={openArchiveTestGuestsConfirm}
+            disabled={bulkArchiving}
+            aria-haspopup="dialog"
+            aria-expanded={bulkConfirmOpen}
             className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-50"
           >
             {bulkArchiving ? 'Скрываем тестовые…' : `Скрыть тестовые (${archivableTestGuestIds.length})`}
           </button>
         ) : null}
       </div>
+
+      {bulkConfirmOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="crm-queue-bulk-archive-title"
+          className="rounded-xl border border-rose-200 bg-white p-4 shadow-sm space-y-3"
+        >
+          <h2 id="crm-queue-bulk-archive-title" className="text-sm font-semibold text-slate-900">
+            Скрыть тестовые карточки?
+          </h2>
+          <p className="text-sm text-slate-600">
+            Скрыть {archivableTestGuestIds.length} тестовых guest-карточек из очереди CRM? Реальные
+            owner/object карточки не затронуты.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleArchiveTestGuests()}
+              className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
+            >
+              Скрыть {archivableTestGuestIds.length}
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkConfirmOpen(false)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="text-sm text-slate-500">Загрузка очереди...</p>
