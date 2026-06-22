@@ -96,8 +96,12 @@ export type WizardCallbackResult =
   | { kind: 'set_field'; field: OwnerOnboardingWizardField; value: string }
   | { kind: 'await_custom'; field: 'checkin_time' | 'checkout_time' | 'channels' }
   | { kind: 'toggle_channel'; channelId: string }
+  | { kind: 'select_all_channels' }
+  | { kind: 'deselect_all_channels' }
   | { kind: 'confirm_channels' }
   | { kind: 'toggle_rule'; ruleId: string }
+  | { kind: 'select_all_rules' }
+  | { kind: 'deselect_all_rules' }
   | { kind: 'confirm_rules' }
   | { kind: 'wifi_later' }
   | { kind: 'photo_later' };
@@ -130,10 +134,18 @@ export function parseWizardCallback(data: unknown): WizardCallbackResult {
       return { kind: 'toggle_channel', channelId: parts.slice(1).join(':') };
     case 'ch_custom':
       return { kind: 'await_custom', field: 'channels' };
+    case 'ch_all':
+      return { kind: 'select_all_channels' };
+    case 'ch_none':
+      return { kind: 'deselect_all_channels' };
     case 'ch_done':
       return { kind: 'confirm_channels' };
     case 'rl_t':
       return { kind: 'toggle_rule', ruleId: parts[1] ?? '' };
+    case 'rl_all':
+      return { kind: 'select_all_rules' };
+    case 'rl_none':
+      return { kind: 'deselect_all_rules' };
     case 'rl_done':
       return { kind: 'confirm_rules' };
     case 'wifi_later':
@@ -302,6 +314,14 @@ export function buildTimeKeyboard(kind: 'checkin_time' | 'checkout_time'): Teleg
   return { inline_keyboard: rows };
 }
 
+export function allFixedChannelIds(): string[] {
+  return CHANNEL_OPTIONS.map((item) => item.id);
+}
+
+export function allRuleIds(): string[] {
+  return RULE_OPTIONS.map((item) => item.id);
+}
+
 export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyboardMarkup {
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = [];
   const customIds = selectedIds.filter(isCustomChannelId);
@@ -327,6 +347,8 @@ export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyb
     ]);
   }
 
+  rows.push([{ text: 'Выбрать всё', callback_data: callbackData('ch_all') }]);
+  rows.push([{ text: 'Снять всё', callback_data: callbackData('ch_none') }]);
   rows.push([{ text: 'Свой вариант', callback_data: callbackData('ch_custom') }]);
   rows.push([{ text: 'Готово', callback_data: callbackData('ch_done') }]);
   return { inline_keyboard: rows };
@@ -343,6 +365,8 @@ export function buildRulesKeyboard(selectedIds: string[]): TelegramInlineKeyboar
       },
     ]);
   }
+  rows.push([{ text: 'Выбрать всё', callback_data: callbackData('rl_all') }]);
+  rows.push([{ text: 'Снять всё', callback_data: callbackData('rl_none') }]);
   rows.push([{ text: 'Готово', callback_data: callbackData('rl_done') }]);
   return { inline_keyboard: rows };
 }

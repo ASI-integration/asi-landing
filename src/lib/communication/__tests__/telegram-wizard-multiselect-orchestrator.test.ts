@@ -226,4 +226,22 @@ describe('Telegram wizard v2 multi-select orchestrator delivery', () => {
         .map((button) => button.text),
     ).toEqual(expect.arrayContaining(['✅ TravelLine', 'Готово']));
   });
+
+  it('edits callback message markup on select-all without sendMessage', async () => {
+    const chatId = 7407;
+    await walkToChannelsStep(chatId);
+    mockSendMessage.mockClear();
+    mockEditMarkup.mockClear();
+
+    const { processUpdate } = await import('../orchestrator');
+    const result = await processUpdate(wizardCallbackUpdate('obv2:ch_all', chatId, 6));
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(mockEditMarkup).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    const labels = (mockEditMarkup.mock.calls[0]?.[2] as { inline_keyboard?: Array<Array<{ text?: string }>> } | undefined)
+      ?.inline_keyboard?.flat()
+      .map((button) => button.text);
+    expect(labels).toEqual(expect.arrayContaining(['✅ Суточно', '✅ Прямые брони', 'Выбрать всё', 'Снять всё']));
+  });
 });

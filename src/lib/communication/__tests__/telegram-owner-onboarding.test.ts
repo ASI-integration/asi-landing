@@ -55,15 +55,19 @@ import {
 } from '../owner-onboarding-smart-parser';
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
 import {
+  allFixedChannelIds,
+  allRuleIds,
   buildChannelsKeyboard,
   buildRulesKeyboard,
   buildTimeKeyboard,
+  CHANNEL_OPTIONS,
   CUSTOM_CHANNEL_INPUT_PROMPT_RU,
   CUSTOM_TIME_INPUT_PROMPT_RU,
   customChannelIdFromLabel,
   parseCustomChannelsInput,
   resolveChannelDraftIds,
   parseCustomTimeInput,
+  RULE_OPTIONS,
 } from '../telegram-owner-onboarding-wizard';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
@@ -767,7 +771,7 @@ describe('Telegram owner onboarding wizard v2', () => {
     });
   }
 
-  it('includes extended booking channel options and "Свой вариант"', () => {
+  it('includes extended booking channel options and quick actions', () => {
     const labels = buildChannelsKeyboard([]).inline_keyboard.flat().map((button) => button.text);
     expect(labels).toEqual(
       expect.arrayContaining([
@@ -776,10 +780,14 @@ describe('Telegram owner onboarding wizard v2', () => {
         'VK',
         'Telegram',
         'Прямые брони',
+        'Выбрать всё',
+        'Снять всё',
         'Свой вариант',
         'Готово',
       ]),
     );
+    const actionLabels = labels.slice(-4);
+    expect(actionLabels).toEqual(['Выбрать всё', 'Снять всё', 'Свой вариант', 'Готово']);
   });
 
   it.each([
@@ -1047,6 +1055,162 @@ describe('Telegram owner onboarding wizard v2', () => {
     expect(done.editInPlace).toBeUndefined();
     expect(done.missing[0]).toBe('wifi');
     expect(done.state.rules).toEqual(expect.arrayContaining(['Не курить']));
+  });
+
+  it('selects all fixed channels on "Выбрать всё" with checkmarks', async () => {
+    await walkToChannelsStep(7320);
+    const selected = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7320,
+      senderIdentity: 'lead',
+    });
+
+    expect(selected.editInPlace).toBe(true);
+    expect(selected.editInPlaceMode).toBe('markup');
+    expect(selected.state.channels_draft).toEqual(allFixedChannelIds());
+    const labels = selected.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    for (const item of CHANNEL_OPTIONS) {
+      expect(labels).toContain(`✅ ${item.label}`);
+    }
+  });
+
+  it('clears all channels on "Снять всё"', async () => {
+    await walkToChannelsStep(7321);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7321,
+      senderIdentity: 'lead',
+    });
+    const cleared = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_none'),
+      chatId: 7321,
+      senderIdentity: 'lead',
+    });
+
+    expect(cleared.state.channels_draft).toEqual([]);
+    const labels = cleared.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels.some((label) => label.startsWith('✅'))).toBe(false);
+  });
+
+  it('keeps custom channels when "Выбрать всё" is pressed', async () => {
+    await walkToChannelsStep(7322);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7322,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7322,
+      senderIdentity: 'lead',
+    });
+    const selected = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7322,
+      senderIdentity: 'lead',
+    });
+
+    const travelLineId = customChannelIdFromLabel('TravelLine');
+    expect(selected.state.channels_draft).toEqual(expect.arrayContaining([travelLineId, ...allFixedChannelIds()]));
+    const labels = selected.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels).toContain('✅ TravelLine');
+  });
+
+  it('removes custom channels on "Снять всё"', async () => {
+    await walkToChannelsStep(7323);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_custom'),
+      chatId: 7323,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('TravelLine'),
+      chatId: 7323,
+      senderIdentity: 'lead',
+    });
+    const cleared = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_none'),
+      chatId: 7323,
+      senderIdentity: 'lead',
+    });
+
+    expect(cleared.state.channels_draft).toEqual([]);
+    const labels = cleared.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels).not.toContain('✅ TravelLine');
+  });
+
+  it('advances to rules after "Готово" following "Выбрать всё"', async () => {
+    await walkToChannelsStep(7324);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7324,
+      senderIdentity: 'lead',
+    });
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7324,
+      senderIdentity: 'lead',
+    });
+
+    expect(done.missing[0]).toBe('rules');
+    expect(done.state.channels_list?.length).toBe(CHANNEL_OPTIONS.length);
+    expect(done.replyText).toMatch(/правил/i);
+  });
+
+  it('selects all rules on "Выбрать всё"', async () => {
+    await walkToChannelsStep(7325);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7325,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7325,
+      senderIdentity: 'lead',
+    });
+
+    const selected = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_all'),
+      chatId: 7325,
+      senderIdentity: 'lead',
+    });
+
+    expect(selected.state.rules_draft).toEqual(allRuleIds());
+    const labels = selected.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    for (const item of RULE_OPTIONS) {
+      expect(labels).toContain(`✅ ${item.label}`);
+    }
+    const actionLabels = labels.slice(-3);
+    expect(actionLabels).toEqual(['Выбрать всё', 'Снять всё', 'Готово']);
+  });
+
+  it('clears all rules on "Снять всё"', async () => {
+    await walkToChannelsStep(7326);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_all'),
+      chatId: 7326,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7326,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_all'),
+      chatId: 7326,
+      senderIdentity: 'lead',
+    });
+    const cleared = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_none'),
+      chatId: 7326,
+      senderIdentity: 'lead',
+    });
+
+    expect(cleared.state.rules_draft).toEqual([]);
+    const labels = cleared.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels.some((label) => label.startsWith('✅'))).toBe(false);
   });
 });
 

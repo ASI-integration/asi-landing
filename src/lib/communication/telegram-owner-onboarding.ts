@@ -38,6 +38,9 @@ import {
   parseWizardCallback,
   resolveChannelDraftIds,
   wizardCompletedCount,
+  allFixedChannelIds,
+  allRuleIds,
+  isCustomChannelId,
   type OwnerOnboardingWizardField,
   WIZARD_FIELD_ORDER,
 } from './telegram-owner-onboarding-wizard';
@@ -432,6 +435,29 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
       };
     }
+    case 'select_all_channels': {
+      const customIds = (state.channels_draft ?? []).filter(isCustomChannelId);
+      state.channels_draft = [...allFixedChannelIds(), ...customIds];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'channels',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
+        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+      };
+    }
+    case 'deselect_all_channels': {
+      state.channels_draft = [];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'channels',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
+        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+      };
+    }
     case 'confirm_channels': {
       const labels = labelsFromChannelIds(state.channels_draft ?? []);
       if (!labels.length) {
@@ -457,6 +483,28 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
       if (draft.has(action.ruleId)) draft.delete(action.ruleId);
       else draft.add(action.ruleId);
       state.rules_draft = [...draft];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'rules',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
+        replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+      };
+    }
+    case 'select_all_rules': {
+      state.rules_draft = [...allRuleIds()];
+      return {
+        handled: true,
+        extractedCount: 0,
+        stayOnStep: 'rules',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
+        replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+      };
+    }
+    case 'deselect_all_rules': {
+      state.rules_draft = [];
       return {
         handled: true,
         extractedCount: 0,
