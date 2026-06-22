@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
+  OPS_V1_ORIGIN_LABELS,
   OPS_V1_SOURCE_LABELS,
   OPS_V1_STATUS_LABELS,
   OPS_V1_TASK_TYPE_LABELS,
@@ -19,6 +20,7 @@ type TasksResponse = {
   tasks: OpsV1Task[];
   summary: OpsV1Summary;
   refreshedAt?: string;
+  isOpsAdmin?: boolean;
 };
 
 const STATUS_TONE: Record<OpsV1Status, string> = {
@@ -65,6 +67,7 @@ export default function OpsPageClient() {
   const [newTaskType, setNewTaskType] = useState<OpsV1TaskType>('manual_review');
   const [newObjectLabel, setNewObjectLabel] = useState('');
   const [newComment, setNewComment] = useState('');
+  const [isOpsAdmin, setIsOpsAdmin] = useState(false);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -82,6 +85,7 @@ export default function OpsPageClient() {
       }
       setTasks(payload.tasks);
       setSummary(payload.summary);
+      setIsOpsAdmin(payload.isOpsAdmin === true);
     } finally {
       setLoading(false);
     }
@@ -169,13 +173,15 @@ export default function OpsPageClient() {
             <p className="text-sm text-slate-500">Список ближайших действий по объектам</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCreate((value) => !value)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
-            >
-              Добавить задачу
-            </button>
+            {isOpsAdmin ? (
+              <button
+                type="button"
+                onClick={() => setShowCreate((value) => !value)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              >
+                Добавить вручную
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void loadTasks()}
@@ -256,7 +262,8 @@ export default function OpsPageClient() {
           <div className="p-8 text-center text-slate-600">
             <p className="text-base font-medium text-slate-800">Пока нет активных операционных задач.</p>
             <p className="mt-2 text-sm leading-6">
-              Когда появятся заезды, выезды или задачи по объектам, они будут отображаться здесь.
+              Когда появятся заезды, выезды, обращения гостей или задачи по объектам, они будут отображаться здесь
+              автоматически.
             </p>
           </div>
         ) : (
@@ -269,6 +276,7 @@ export default function OpsPageClient() {
                   <th className="px-4 py-3">Статус</th>
                   <th className="px-4 py-3">Дата / время</th>
                   <th className="px-4 py-3">Источник</th>
+                  <th className="px-4 py-3">Создание</th>
                   <th className="px-4 py-3">Комментарий</th>
                   <th className="px-4 py-3">Действия</th>
                 </tr>
@@ -292,6 +300,17 @@ export default function OpsPageClient() {
                       </td>
                       <td className="px-4 py-3 text-slate-700">{formatWhen(task.scheduledAt)}</td>
                       <td className="px-4 py-3 text-slate-700">{OPS_V1_SOURCE_LABELS[task.source]}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            task.origin === 'auto'
+                              ? 'border-sky-200 bg-sky-50 text-sky-800'
+                              : 'border-slate-200 bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          {OPS_V1_ORIGIN_LABELS[task.origin]}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{task.comment || '—'}</td>
                       <td className="px-4 py-3">
                         {isDone ? (

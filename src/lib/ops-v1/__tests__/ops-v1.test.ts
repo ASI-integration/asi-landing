@@ -82,6 +82,11 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('@/lib/crm/api-auth', () => ({
   requireCrmOperatorSession: vi.fn(async () => ({ session: { userId: 'u1', email: 'operator@asi-global.ru' } })),
+  requireOpsAdminSession: vi.fn(async () => ({ session: { userId: 'u1', email: 'operator@asi-global.ru' } })),
+}));
+
+vi.mock('@/lib/ops-v1/auto-tasks', () => ({
+  syncAutoOpsTasks: vi.fn(async () => ({ created: 0, scanned: 0 })),
 }));
 
 vi.mock('@/lib/ops-board/crm-events', () => ({
@@ -112,7 +117,8 @@ describe('ops v1', () => {
         objectLabel: 'Квартира 1',
         taskType: 'checkin',
         status: 'new',
-        source: 'manual',
+        source: 'admin',
+        origin: 'manual',
         scheduledAt: today,
         comment: null,
         title: 'Заезд',
@@ -126,6 +132,7 @@ describe('ops v1', () => {
         taskType: 'cleaning',
         status: 'needs_attention',
         source: 'crm',
+        origin: 'auto',
         scheduledAt: today,
         comment: 'Нужна уборка',
         title: 'Уборка',

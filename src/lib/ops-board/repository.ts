@@ -71,10 +71,22 @@ export function buildOpsDedupKey(input: {
   taskType: OpsTaskType;
   objectId?: string | null;
   contactId?: string | null;
+  dateKey?: string | null;
 }): string {
   const scope = input.objectId?.trim() || input.contactId?.trim() || 'unknown';
   const scopeKind = input.objectId?.trim() ? 'object' : 'contact';
-  return `${input.taskType}:${scopeKind}:${scope}`;
+  const dateSuffix = input.dateKey?.trim() ? `:${input.dateKey.trim()}` : '';
+  return `${input.taskType}:${scopeKind}:${scope}${dateSuffix}`;
+}
+
+export function buildAutoOpsDedupKey(input: {
+  source: string;
+  sourceId: string;
+  taskType: OpsTaskType;
+  dateKey?: string | null;
+}): string {
+  const dateSuffix = input.dateKey?.trim() ? `:${input.dateKey.trim()}` : '';
+  return `auto:${input.source}:${input.sourceId}:${input.taskType}${dateSuffix}`;
 }
 
 export function defaultTitleForTaskType(taskType: OpsTaskType): string {
@@ -98,14 +110,42 @@ async function findOpenTaskByDedupKey(dedupKey: string): Promise<OpsOperatorTask
 export async function createOpsOperatorTask(
   input: CreateOpsOperatorTaskInput,
 ): Promise<{ ok: boolean; task: OpsOperatorTask | null; created: boolean; error?: string }> {
-  const dedupKey = buildOpsDedupKey({
-    taskType: input.taskType,
-    objectId: input.objectId,
-    contactId: input.contactId,
-  });
+  const dedupKey =
+    input.dedupKey?.trim() ||
+    buildOpsDedupKey({
+      taskType: input.taskType,
+      objectId: input.objectId,
+      contactId: input.contactId,
+    });
 
   const existing = await findOpenTaskByDedupKey(dedupKey);
   if (existing) {
+    if (input.updateIfExists) {
+      const updates: UpdateOpsOperatorTaskInput = {
+        taskStatus: input.updateIfExists.taskStatus ?? existing.taskStatus,
+        lastEventText: input.updateIfExists.lastEventText,
+      };
+      if (input.updateIfExists.description !== undefined) {
+        const { data, error } = await supabase
+          .from('ops_operator_tasks')
+          .update({
+            description: input.updateIfExists.description,
+            task_status: updates.taskStatus,
+            last_event_text: updates.lastEventText ?? existing.lastEventText,
+            last_event_at: updates.lastEventText ? nowIso() : existing.lastEventAt,
+            updated_at: nowIso(),
+          })
+          .eq('id', existing.id)
+          .select('*')
+          .maybeSingle();
+        if (error) {
+          return { ok: false, task: null, created: false, error: error.message };
+        }
+        if (data) {
+          return { ok: true, task: mapRow(data as OpsOperatorTaskRow), created: false };
+        }
+      }
+    }
     return { ok: true, task: existing, created: false };
   }
 

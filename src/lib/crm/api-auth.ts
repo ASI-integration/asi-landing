@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
-import { isCrmOperatorEmail } from './access';
+import { isCrmOperatorEmail, isOpsAdminEmail } from './access';
 
 export async function requireCrmOperatorSession(): Promise<
   | { error: NextResponse }
@@ -26,4 +26,23 @@ export async function requireCrmOperatorSession(): Promise<
   }
 
   return { session };
+}
+
+export async function requireOpsAdminSession(): Promise<
+  | { error: NextResponse }
+  | { session: Awaited<ReturnType<typeof getSession>> }
+> {
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth;
+
+  if (!isOpsAdminEmail(auth.session.email)) {
+    return {
+      error: NextResponse.json(
+        { ok: false, message: 'Ручное создание задач доступно только администратору.' },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return auth;
 }

@@ -4,6 +4,7 @@ import {
   updateOpsOperatorTask,
 } from '@/lib/ops-board/repository';
 import { OPS_TASK_TYPE_LABELS } from '@/lib/ops-board/types';
+import { syncAutoOpsTasks } from './auto-tasks';
 import { mapOperatorTaskToV1, mapV1StatusToOperator, mapV1TypeToOperator } from './mapping';
 import type {
   CreateOpsV1TaskInput,
@@ -43,12 +44,27 @@ export function buildOpsV1Summary(tasks: OpsV1Task[]): OpsV1Summary {
   };
 }
 
-export async function listOpsV1Tasks(): Promise<{
+export async function listOpsV1Tasks(options?: { syncAuto?: boolean }): Promise<{
   ok: boolean;
   tasks: OpsV1Task[];
   summary: OpsV1Summary;
+  autoSync?: { created: number; scanned: number };
   error?: string;
 }> {
+  if (options?.syncAuto !== false) {
+    try {
+      const autoSync = await syncAutoOpsTasks();
+      const result = await listOpsOperatorTasks({ status: 'all' });
+      if (!result.ok) {
+        return { ok: false, tasks: [], summary: buildOpsV1Summary([]), autoSync, error: result.error };
+      }
+      const tasks = result.tasks.map(mapOperatorTaskToV1);
+      return { ok: true, tasks, summary: buildOpsV1Summary(tasks), autoSync };
+    } catch (error) {
+      console.error('[ops-v1] auto sync failed', error);
+    }
+  }
+
   const result = await listOpsOperatorTasks({ status: 'all' });
   if (!result.ok) {
     return { ok: false, tasks: [], summary: buildOpsV1Summary([]), error: result.error };
@@ -71,7 +87,10 @@ export async function createOpsV1Task(
     description: input.comment?.trim() || null,
     objectId: input.propertyId?.trim() || null,
     objectLabel: input.objectLabel?.trim() || input.propertyId?.trim() || null,
-    metadata: input.scheduledAt ? { scheduledAt: input.scheduledAt } : {},
+    metadata: {
+      created_by_system: false,
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+    },
   });
 
   if (!result.ok || !result.task) {

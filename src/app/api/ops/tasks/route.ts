@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { isOpsAdminEmail } from '@/lib/crm/access';
+import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { createOpsV1Task, listOpsV1Tasks } from '@/lib/ops-v1/repository';
 import { OPS_V1_TASK_TYPES, type OpsV1TaskType } from '@/lib/ops-v1/types';
 
@@ -9,7 +10,7 @@ export async function GET(): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
-  const result = await listOpsV1Tasks();
+  const result = await listOpsV1Tasks({ syncAuto: true });
   if (!result.ok) {
     return NextResponse.json({ ok: false, message: 'Не удалось загрузить задачи.' }, { status: 500 });
   }
@@ -19,11 +20,13 @@ export async function GET(): Promise<NextResponse> {
     tasks: result.tasks,
     summary: result.summary,
     refreshedAt: new Date().toISOString(),
+    isOpsAdmin: isOpsAdminEmail(auth.session.email),
+    autoSync: result.autoSync ?? null,
   });
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const auth = await requireCrmOperatorSession();
+  const auth = await requireOpsAdminSession();
   if ('error' in auth) return auth.error;
 
   let body: Record<string, unknown>;

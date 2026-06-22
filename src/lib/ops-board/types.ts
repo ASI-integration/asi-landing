@@ -119,6 +119,12 @@ export type CreateOpsOperatorTaskInput = {
   objectLabel?: string | null;
   lastEventText?: string | null;
   metadata?: Record<string, unknown>;
+  dedupKey?: string | null;
+  updateIfExists?: {
+    description?: string | null;
+    taskStatus?: OpsTaskStatus;
+    lastEventText?: string | null;
+  };
 };
 
 export type UpdateOpsOperatorTaskInput = {
