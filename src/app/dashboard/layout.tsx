@@ -41,6 +41,14 @@ const navItems: DashboardNavItem[] = [
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const pathname = usePathname();
+  const { session } = useSession();
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.key === 'crm' || item.key === 'crmQueue') {
+      return session?.isCrmOperator === true;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -64,7 +72,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           ASI
         </Link>
         <nav className="flex-1 px-4 py-4 space-y-1.5">
-          {navItems.map(({ href, key, label }) => {
+          {visibleNavItems.map(({ href, key, label }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
               <Link

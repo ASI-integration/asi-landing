@@ -63,7 +63,7 @@ export function ChannelConnectionsPanel({ compact = false }: { compact?: boolean
       <>
       <section className="grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <p className="text-sm font-semibold text-slate-900">1. Сначала менеджер каналов</p>
+          <p className="text-sm font-semibold text-slate-900">1. Сначала Менеджер Каналов</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
             Подключаемся к уже рабочему контуру, чтобы не переносить объект на новую систему вручную.
           </p>
@@ -87,7 +87,7 @@ export function ChannelConnectionsPanel({ compact = false }: { compact?: boolean
       <section className="bg-white rounded-xl border border-slate-200 p-7">
         <h2 className="text-xl font-bold text-slate-900">Менеджеры каналов и базовый ввод</h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          Это первый слой: ASI использует существующий менеджер каналов или ручную загрузку как основу для данных.
+          Это первый слой: ASI использует существующий Менеджер Каналов или ручную загрузку как основу для данных.
         </p>
 
         <div className="mt-6 grid gap-3 md:grid-cols-2">

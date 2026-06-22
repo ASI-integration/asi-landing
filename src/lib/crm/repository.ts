@@ -105,7 +105,9 @@ const ONBOARDING_STATUS_BY_LABEL: Record<string, CrmOnboardingStatus> = {
   'идёт подключение': 'onboarding_started',
   'не хватает данных': 'missing_required_data',
   'готов к Менеджеру каналов': 'ready_for_channel_manager',
+  'готов к Менеджеру Каналов': 'ready_for_channel_manager',
   'Менеджер каналов открыт': 'channel_manager_started',
+  'Менеджер Каналов открыт': 'channel_manager_started',
   'нужна реакция оператора': 'needs_operator',
   'требует внимания': 'needs_operator',
 };

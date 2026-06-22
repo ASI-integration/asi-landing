@@ -135,7 +135,7 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
   const ownerStep = useMemo(() => {
     if (!connection?.method) return 'Выберите способ подключения.';
     if (connection.method === 'realtycalendar' || connection.method === 'bnovo') {
-      if (!connection.accessSituation) return 'Сообщите, есть ли доступ к кабинету менеджера каналов.';
+      if (!connection.accessSituation) return 'Сообщите, есть ли доступ к кабинету Менеджера Каналов.';
       if (connection.accessSituation === 'from_scratch') return 'Откройте доступы по инструкции ASI или напишите в Telegram.';
       if (connection.accessSituation === 'has_access') return 'Передайте доступы оператору ASI в удобном формате.';
       return 'Ожидайте ответа оператора в Telegram.';
@@ -163,7 +163,16 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
       setSaving(false);
       return;
     }
-    await load();
+    if (result.ok && result.connection) {
+      setContext((prev) =>
+        prev
+          ? {
+              ...prev,
+              connection: result.connection!,
+            }
+          : prev,
+      );
+    }
     setSaving(false);
   }
 
@@ -191,7 +200,7 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
     <div className="space-y-6 max-w-3xl">
       <header className="space-y-2">
         <p className="text-sm font-medium text-emerald-700">Рабочий процесс подключения</p>
-        <h1 className="text-2xl font-bold text-slate-900">Менеджер каналов</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Менеджер Каналов</h1>
         <p className="text-sm text-slate-600">
           Объект: <span className="font-medium text-slate-800">{context.objectTitle}</span> ({objectId})
         </p>
@@ -204,10 +213,10 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
 
       <StepCard
         title="1. Что подключаем"
-        details="ASI подключается к вашему менеджеру каналов или начинает с ручного контура, чтобы собрать календарь, цены и брони в одном месте."
+        details="ASI подключается к вашему Менеджеру Каналов или начинает с ручного контура, чтобы собрать календарь, цены и брони в одном месте."
       >
         <p className="text-sm text-slate-600 leading-relaxed">
-          Объект прошёл онбординг и готов к следующему шагу — подключению каналов бронирования через менеджер каналов
+          Объект прошёл онбординг и готов к следующему шагу — подключению каналов бронирования через Менеджер Каналов
           или альтернативный контур ASI.
         </p>
       </StepCard>
@@ -221,10 +230,13 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
                 type="button"
                 disabled={saving}
                 onClick={() => void runAction({ contactId, objectId, action: 'select_method', method })}
-                className="rounded-lg border border-slate-200 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                className="group flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <span className="block text-sm font-semibold text-slate-900">
                   {CHANNEL_MANAGER_CONNECTION_METHOD_LABELS[method]}
+                </span>
+                <span className="shrink-0 rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white group-hover:bg-emerald-700">
+                  Выбрать
                 </span>
               </button>
             ))}
@@ -242,9 +254,10 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
                     type="button"
                     disabled={saving}
                     onClick={() => void runAction({ contactId, objectId, action: 'select_access', access })}
-                    className="rounded-lg border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-800 transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {CHANNEL_MANAGER_ACCESS_SITUATION_LABELS[access]}
+                    <span>{CHANNEL_MANAGER_ACCESS_SITUATION_LABELS[access]}</span>
+                    <span className="shrink-0 text-xs font-semibold text-emerald-700">Выбрать</span>
                   </button>
                 ))}
               </div>
@@ -263,7 +276,7 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
             {!connection.customManagerName ? (
               <>
                 <label className="block text-sm font-medium text-slate-700" htmlFor="custom-cm-name">
-                  Название менеджера каналов
+                  Название Менеджера Каналов
                 </label>
                 <input
                   id="custom-cm-name"
@@ -290,13 +303,13 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
               </>
             ) : (
               <p className="text-sm text-slate-600">
-                Другой менеджер каналов: <span className="font-medium">{connection.customManagerName}</span>
+                Другой Менеджер Каналов: <span className="font-medium">{connection.customManagerName}</span>
               </p>
             )}
           </div>
         ) : (
           <p className="text-sm text-slate-600 leading-relaxed">
-            Пока нет менеджера каналов — ASI предложит начать с базового контура и первичной настройки.
+            Пока нет Менеджера Каналов — ASI предложит начать с базового контура и первичной настройки.
           </p>
         )}
       </StepCard>

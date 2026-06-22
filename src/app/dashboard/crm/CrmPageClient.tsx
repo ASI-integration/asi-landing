@@ -17,6 +17,7 @@ import {
   CrmStatus,
 } from '@/lib/crm/types';
 import { getCrmSuggestions, resolveCrmRoleInput, resolveCrmSourceInput } from '@/lib/crm/suggestions';
+import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { CrmSuggestInput } from './CrmSuggestInput';
 
@@ -494,7 +495,7 @@ export default function CrmPageClient() {
                           </span>
                           {contact.onboarding.channelManagerHref ? (
                             <a className="text-xs font-semibold text-blue-700 hover:text-blue-900" href={contact.onboarding.channelManagerHref}>
-                              Открыть Менеджер каналов
+                              Открыть Менеджер Каналов
                             </a>
                           ) : null}
                         </div>
@@ -502,7 +503,8 @@ export default function CrmPageClient() {
                           Не хватает: {contact.onboarding.missing.length ? contact.onboarding.missing.join(', ') : 'ничего'}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          Последнее сообщение: {contact.onboarding.lastMessage || 'нет текста'}
+                          Последнее сообщение:{' '}
+                          {sanitizeCrmMessageTextForDisplay(contact.onboarding.lastMessage) || 'нет текста'}
                         </div>
                       </div>
                     ) : null}

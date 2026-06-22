@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { isCrmOperatorEmail } from '@/lib/crm/access';
 
 const emptySessionPayload = { user: null, subscription: null, account: null };
 
@@ -54,5 +55,6 @@ export async function GET() {
     user: { id: session.userId, email: session.email },
     subscription: sub,
     account,
+    isCrmOperator: isCrmOperatorEmail(session.email),
   });
 }

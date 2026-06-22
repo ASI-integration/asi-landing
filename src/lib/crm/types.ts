@@ -176,7 +176,7 @@ export const CRM_COMMUNICATION_STATUS_LABELS: Record<CrmCommunicationStatus, str
 export const CRM_ONBOARDING_STATUS_LABELS: Record<CrmOnboardingStatus, string> = {
   onboarding_started: 'онбординг начат',
   missing_required_data: 'не хватает данных',
-  ready_for_channel_manager: 'готов к Менеджеру каналов',
-  channel_manager_started: 'Менеджер каналов открыт',
+  ready_for_channel_manager: 'готов к Менеджеру Каналов',
+  channel_manager_started: 'Менеджер Каналов открыт',
   needs_operator: 'нужна реакция оператора',
 };

@@ -63,7 +63,7 @@ export function providerAvailabilityLabelRu(
     case 'available':
       return 'Доступно';
     case 'foundation':
-      return 'Foundation';
+      return 'Базовый слой';
     case 'manual':
       return 'Вручную';
     case 'on_request':

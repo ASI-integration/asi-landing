@@ -184,12 +184,12 @@ export function resolveChannelManagerQueueSummary(
       return {
         statusLabel: CHANNEL_MANAGER_CONNECTION_STATUS_LABELS.ready_to_connect,
         methodLabel: null,
-        nextStep: 'Открыть Менеджер каналов и выбрать способ подключения.',
+        nextStep: 'Открыть Менеджер Каналов и выбрать способ подключения.',
       };
     }
     if (fallbackOnboardingStatus === 'channel_manager_started') {
       return {
-        statusLabel: 'Менеджер каналов открыт',
+        statusLabel: 'Менеджер Каналов открыт',
         methodLabel: null,
         nextStep: 'Выберите способ подключения каналов.',
       };
@@ -202,7 +202,7 @@ export function resolveChannelManagerQueueSummary(
 
   if (connection.method === 'other' && connection.customManagerName) {
     return {
-      statusLabel: `Другой менеджер каналов: ${connection.customManagerName}`,
+      statusLabel: `Другой Менеджер Каналов: ${connection.customManagerName}`,
       methodLabel: connection.customManagerName,
       nextStep: connection.nextStepRu,
     };

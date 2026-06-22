@@ -1,23 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { createCrmContact, listCrmContacts } from '@/lib/crm/repository';
 import { normalizeCrmContactInput, validateCrmContact } from '@/lib/crm/normalize';
 import { CRM_SOURCE_VALUES, CRM_STATUS_VALUES, CrmSource, CrmStatus } from '@/lib/crm/types';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-async function requireDashboardSession(): Promise<NextResponse | null> {
-  if (!isSessionSecretConfigured()) {
-    return NextResponse.json({ ok: false, message: 'Доступ к CRM не настроен.' }, { status: 401 });
-  }
-  const session = await getSession();
-  if (!session.userId) {
-    return NextResponse.json({ ok: false, message: 'Войдите, чтобы открыть CRM.' }, { status: 401 });
-  }
-  return null;
-}
 
 function parseStatus(value: string | null): CrmStatus | 'all' | undefined {
   if (!value || value === 'all') return value === 'all' ? 'all' : undefined;
@@ -30,8 +19,8 @@ function parseSource(value: string | null): CrmSource | 'all' | undefined {
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const authError = await requireDashboardSession();
-  if (authError) return authError;
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   const url = new URL(req.url);
   try {
@@ -47,8 +36,8 @@ export async function GET(req: Request): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const authError = await requireDashboardSession();
-  if (authError) return authError;
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   const body = await readRequestJson(req);
   if (!body.ok) {

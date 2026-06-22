@@ -1,26 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getSession, isSessionSecretConfigured } from '@/lib/auth';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { normalizeCrmContactInput } from '@/lib/crm/normalize';
 import { deleteCrmContact, updateCrmContact } from '@/lib/crm/repository';
+import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-async function requireDashboardSession(): Promise<NextResponse | null> {
-  if (!isSessionSecretConfigured()) {
-    return NextResponse.json({ ok: false, message: 'Доступ к CRM не настроен.' }, { status: 401 });
-  }
-  const session = await getSession();
-  if (!session.userId) {
-    return NextResponse.json({ ok: false, message: 'Войдите, чтобы открыть CRM.' }, { status: 401 });
-  }
-  return null;
-}
-
 export async function PATCH(req: Request, context: { params: { id: string } }): Promise<NextResponse> {
-  const authError = await requireDashboardSession();
-  if (authError) return authError;
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   const id = context.params.id?.trim();
   if (!id) {
@@ -48,8 +37,8 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
 }
 
 export async function DELETE(_req: Request, context: { params: { id: string } }): Promise<NextResponse> {
-  const authError = await requireDashboardSession();
-  if (authError) return authError;
+  const auth = await requireCrmOperatorSession();
+  if ('error' in auth) return auth.error;
 
   const id = context.params.id?.trim();
   if (!id) {

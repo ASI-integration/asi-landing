@@ -113,8 +113,8 @@ const FIELD_FEED_PENDING: Record<OnboardingFieldKey, string> = {
 const ONBOARDING_STATUS_FEED: Partial<Record<CrmOnboardingStatus, { label: string; tone: CrmActivityTone }>> = {
   onboarding_started: { label: 'начала подключение объекта', tone: 'processing' },
   missing_required_data: { label: 'запросила недостающие данные', tone: 'processing' },
-  ready_for_channel_manager: { label: 'подготовила переход к Менеджеру каналов', tone: 'done' },
-  channel_manager_started: { label: 'открыла Менеджер каналов', tone: 'done' },
+  ready_for_channel_manager: { label: 'подготовила переход к Менеджеру Каналов', tone: 'done' },
+  channel_manager_started: { label: 'открыла Менеджер Каналов', tone: 'done' },
   needs_operator: { label: 'передала задачу оператору', tone: 'attention' },
 };
 
@@ -149,7 +149,7 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
   object_readiness_missing_photos: { actor: 'ASI', label: 'обнаружила недостающие фото', tone: 'pending' },
   object_readiness_ready_for_cm: {
     actor: 'ASI',
-    label: 'перевела объект в «Готов к Менеджеру каналов»',
+    label: 'перевела объект в «Готов к Менеджеру Каналов»',
     tone: 'done',
   },
   object_readiness_requested_channels: { actor: 'ASI', label: 'запросила каналы бронирования', tone: 'pending' },
@@ -159,7 +159,7 @@ const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor']; lab
   owner_object_continued: { actor: 'ASI', label: 'продолжила работу с объектом', tone: 'processing' },
   channel_manager_flow_prepared: {
     actor: 'ASI',
-    label: 'подготовила переход к Менеджеру каналов',
+    label: 'подготовила переход к Менеджеру Каналов',
     tone: 'done',
   },
   channel_manager_method_selected: {

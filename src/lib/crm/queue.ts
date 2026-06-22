@@ -7,6 +7,7 @@ import {
   readinessInputFromOnboardingState,
   REQUIRED_FIELD_LABELS_RU,
 } from '@/lib/object-readiness/engine';
+import { sanitizeCrmMessageTextForDisplay } from './message-display';
 
 export const CRM_QUEUE_COLUMN_VALUES = [
   'new_lead',
@@ -33,7 +34,7 @@ export const CRM_QUEUE_COLUMN_LABELS: Record<CrmQueueColumn, string> = {
   new_lead: 'Новый лид',
   onboarding: 'Идёт подключение',
   missing_data: 'Не хватает данных',
-  ready_for_cm: 'Готов к Менеджеру каналов',
+  ready_for_cm: 'Готов к Менеджеру Каналов',
   needs_operator: 'Требует внимания',
   completed: 'Завершено',
 };
@@ -41,15 +42,15 @@ export const CRM_QUEUE_COLUMN_LABELS: Record<CrmQueueColumn, string> = {
 export const CRM_QUEUE_STATUS_LABELS: Record<CrmOnboardingStatus, string> = {
   onboarding_started: 'Идёт подключение',
   missing_required_data: 'Не хватает данных',
-  ready_for_channel_manager: 'Готов к Менеджеру каналов',
-  channel_manager_started: 'Менеджер каналов открыт',
+  ready_for_channel_manager: 'Готов к Менеджеру Каналов',
+  channel_manager_started: 'Менеджер Каналов открыт',
   needs_operator: 'Требует внимания',
 };
 
 export const CRM_QUEUE_FILTER_LABELS: Record<CrmQueueFilter, string> = {
   all: 'Все',
   needs_operator: 'Нужен оператор',
-  ready_for_cm: 'Готов к Менеджеру каналов',
+  ready_for_cm: 'Готов к Менеджеру Каналов',
   active: 'Только активные',
   completed: 'Только завершённые',
 };
@@ -334,8 +335,14 @@ export function buildQueueItem(
     channelManagerHref: channelManager.href,
     propertyId: extractPropertyId(contact.note),
     crmStatus: contact.status,
-    lastMessagePreview: contact.onboarding?.lastMessage || messages[0]?.text || contact.nextStep || null,
-    messages,
+    lastMessagePreview: sanitizeCrmMessageTextForDisplay(
+      contact.onboarding?.lastMessage || messages[0]?.text || contact.nextStep || null,
+    ),
+    messages: messages.map((message) => ({
+      ...message,
+      text: sanitizeCrmMessageTextForDisplay(message.text) ?? message.text,
+      guestQuestion: sanitizeCrmMessageTextForDisplay(message.guestQuestion) ?? message.guestQuestion,
+    })),
     operationalStatus,
     operationalStatusLabel: CRM_OPERATIONAL_STATUS_LABELS[operationalStatus],
     recentActivities,

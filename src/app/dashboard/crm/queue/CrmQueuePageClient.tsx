@@ -219,7 +219,7 @@ function QueueCard({
         </div>
         {item.channelManagerStatus ? (
           <div className="flex justify-between gap-2">
-            <dt>Менеджер каналов</dt>
+            <dt>Менеджер Каналов</dt>
             <dd className="text-slate-800">{item.channelManagerStatus}</dd>
           </div>
         ) : null}
@@ -270,7 +270,7 @@ function QueueCard({
           href={item.channelManagerHref ?? '/dashboard/channel-connections'}
           className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
         >
-          {item.readyForChannelManager ? 'Открыть Менеджер каналов' : 'Менеджер каналов'}
+          {item.readyForChannelManager ? 'Открыть Менеджер Каналов' : 'Менеджер Каналов'}
         </Link>
         <button
           type="button"
@@ -435,7 +435,7 @@ export default function CrmQueuePageClient() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <MetricCard label="Активных объектов" value={metrics.activeObjects} />
           <MetricCard label="Идёт подключение" value={metrics.onboarding} />
-          <MetricCard label="Готовы к Менеджеру каналов" value={metrics.readyForChannelManager} />
+          <MetricCard label="Готовы к Менеджеру Каналов" value={metrics.readyForChannelManager} />
           <MetricCard label="Требуют внимания" value={metrics.needsAttention} />
           <MetricCard label="Завершены" value={metrics.completed} />
         </div>
