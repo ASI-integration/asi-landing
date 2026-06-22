@@ -157,6 +157,56 @@ remove_env_key() {
   fi
 }
 
+read_env_value() {
+  local key="$1"
+  if [[ ! -f "$LIVE_ENV_FILE" ]]; then
+    return 0
+  fi
+  grep -E "^${key}=" "$LIVE_ENV_FILE" | head -1 | cut -d= -f2- || true
+}
+
+env_list_has_email() {
+  local raw="$1"
+  local email="$2"
+  local normalized
+  normalized="$(printf '%s' "$email" | tr '[:upper:]' '[:lower:]')"
+  printf '%s' "$raw" |
+    tr ',;' '  ' |
+    tr -s ' ' '\n' |
+    tr '[:upper:]' '[:lower:]' |
+    grep -Fxq "$normalized"
+}
+
+ensure_email_in_env_list() {
+  local key="$1"
+  local email="$2"
+  local current
+  current="$(read_env_value "$key")"
+  if env_list_has_email "$current" "$email"; then
+    log "CRM allowlist: ${email} already present in ${key}"
+    return 0
+  fi
+  local merged="$email"
+  if [[ -n "${current// }" ]]; then
+    merged="${current},${email}"
+  fi
+  merge_env_kv "$key" "$merged"
+  log "CRM allowlist: added ${email} to ${key}"
+}
+
+ensure_crm_operator_allowlist() {
+  local required_email="project.ayfaar@gmail.com"
+  if env_list_has_email "$(read_env_value CRM_OPERATOR_EMAILS)" "$required_email"; then
+    log "CRM allowlist: ${required_email} already in CRM_OPERATOR_EMAILS"
+    return 0
+  fi
+  if env_list_has_email "$(read_env_value OPERATOR_EMAIL)" "$required_email"; then
+    log "CRM allowlist: ${required_email} already in OPERATOR_EMAIL"
+    return 0
+  fi
+  ensure_email_in_env_list CRM_OPERATOR_EMAILS "$required_email"
+}
+
 read_git_sha_from_release_dir() {
   local dir="$1"
   node -e "
@@ -332,6 +382,7 @@ EXPECTED_SHA="$META_SHA"
 log "Canonical deploy SHA from artifact release-meta.json: $EXPECTED_SHA"
 
 log "Updating shared env metadata + injected secrets (if present)"
+ensure_crm_operator_allowlist
 remove_env_key ASI_RELEASE_SHA
 merge_env_kv ASI_APP_ROOT "${CURRENT_LINK}"
 merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
