@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CRM_EVENT_FEED, buildActivityFeed } from '@/lib/crm/activity-feed';
 import { isCrmOperatorEmail } from '@/lib/crm/access';
 import {
+  applyArchivedContactToQueueState,
   buildQueueItem,
   collectQueueItemsForArchive,
   computeQueueMetrics,
@@ -10,6 +11,8 @@ import {
   excludeArchivedQueueContacts,
   isQueueItemArchivable,
   isQueueTestGuestContact,
+  resolveQueueColumn,
+  resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
 import type { CrmContact } from '@/lib/crm/types';
 
@@ -116,11 +119,35 @@ describe('crm queue archive', () => {
     expect(isQueueItemArchivable(completed)).toBe(false);
   });
 
+  it('keeps telegram guest_autopilot cards in active queue and archivable', () => {
+    const guestContact: CrmContact = {
+      ...baseContact,
+      id: 'c-guest',
+      name: 'Telegram guest',
+      status: 'ready_for_test',
+      communicationStatus: 'replied',
+      note: 'guest_autopilot property_id=prop_A',
+      onboarding: null,
+    };
+    expect(isQueueTestGuestContact(guestContact)).toBe(true);
+    expect(resolveQueueColumn(guestContact)).toBe('onboarding');
+    const guestItem = buildQueueItem(guestContact);
+    expect(guestItem.column).toBe('onboarding');
+    expect(guestItem.isTestGuest).toBe(true);
+    expect(isQueueItemArchivable(guestItem)).toBe(true);
+  });
+
   it('detects telegram guest_test cards without flagging owners', () => {
     expect(
       isQueueTestGuestContact({
         name: 'Telegram guest',
         note: 'guest_test property_id=OBJ-123',
+      }),
+    ).toBe(true);
+    expect(
+      isQueueTestGuestContact({
+        name: 'Telegram guest',
+        note: 'guest_autopilot property_id=prop_A',
       }),
     ).toBe(true);
     expect(
@@ -179,8 +206,55 @@ describe('crm queue archive', () => {
     expect(archivedEntry?.label).toBe('скрыл объект из очереди CRM');
   });
 
+  it('removes archived cards from inbox, columns and metrics optimistically', () => {
+    const inboxItem = buildQueueItem({ ...baseContact, id: 'c-inbox' });
+    const kanbanItem = buildQueueItem({
+      ...baseContact,
+      id: 'c-kanban',
+      onboarding: { ...baseContact.onboarding!, status: 'onboarding_started' },
+    });
+    const columns = {
+      new_lead: [],
+      onboarding: [kanbanItem],
+      missing_data: [],
+      ready_for_cm: [],
+      needs_operator: [inboxItem],
+      completed: [],
+    };
+    const next = applyArchivedContactToQueueState(
+      {
+        items: [inboxItem, kanbanItem],
+        operatorInbox: [inboxItem],
+        columns,
+        metrics: computeQueueMetrics([inboxItem, kanbanItem]),
+      },
+      'c-inbox',
+      'all',
+    );
+    expect(next.operatorInbox).toHaveLength(0);
+    expect(next.items.map((item) => item.id)).toEqual(['c-kanban']);
+    expect(next.columns.needs_operator).toHaveLength(0);
+    expect(next.metrics.needsAttention).toBe(0);
+  });
+
+  it('hides empty kanban columns for all/active filters', () => {
+    const item = buildQueueItem(baseContact);
+    const columns = {
+      new_lead: [],
+      onboarding: [item],
+      missing_data: [],
+      ready_for_cm: [],
+      needs_operator: [],
+      completed: [],
+    };
+    expect(resolveVisibleKanbanColumns(columns, 'all')).toEqual(['onboarding']);
+    expect(resolveVisibleKanbanColumns(columns, 'active')).toEqual(['onboarding']);
+    expect(resolveVisibleKanbanColumns(columns, 'needs_operator')).toEqual(['needs_operator']);
+  });
+
   it('does not stretch kanban columns with artificial min-height', () => {
     expect(CRM_QUEUE_KANBAN_ROW_CLASS).toContain('items-start');
+    expect(CRM_QUEUE_KANBAN_ROW_CLASS).toContain('content-start');
     expect(CRM_QUEUE_KANBAN_ROW_CLASS).not.toMatch(/min-h/);
     expect(CRM_QUEUE_KANBAN_COLUMN_CLASS).toContain('self-start');
     expect(CRM_QUEUE_KANBAN_COLUMN_CLASS).not.toMatch(/min-h/);
@@ -207,6 +281,41 @@ describe('crm queue archive', () => {
 
     expect(res.status).toBe(403);
     expect(archiveCrmContactFromQueue).not.toHaveBeenCalled();
+  });
+
+  it('archives telegram guest card for operator', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('CRM_OPERATOR_EMAILS', 'operator@asi-global.ru');
+
+    const auth = await import('@/lib/auth');
+    vi.mocked(auth.getSession).mockResolvedValueOnce({
+      userId: 'user-1',
+      email: 'operator@asi-global.ru',
+    } as never);
+
+    const guestContact: CrmContact = {
+      ...baseContact,
+      id: 'c-guest-archive',
+      name: 'Telegram guest',
+      status: 'ready_for_test',
+      communicationStatus: 'replied',
+      note: 'guest_autopilot property_id=prop_A',
+      onboarding: null,
+    };
+    getCrmContactById.mockResolvedValueOnce(guestContact);
+    archiveCrmContactFromQueue.mockResolvedValueOnce({ ...guestContact, crmArchived: true });
+
+    const mod = await import('@/app/api/dashboard/crm/queue/archive/route');
+    const res = await mod.POST(
+      new Request('http://localhost/api/dashboard/crm/queue/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactId: 'c-guest-archive' }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(archiveCrmContactFromQueue).toHaveBeenCalledWith('c-guest-archive', 'operator@asi-global.ru');
   });
 
   it('archives contact and ready_for_cm cards for operator', async () => {

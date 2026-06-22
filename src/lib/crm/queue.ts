@@ -236,6 +236,11 @@ function readinessForContact(contact: CrmContact) {
 }
 
 export function resolveQueueColumn(contact: CrmContact): CrmQueueColumn {
+  // Synthetic Telegram guest sessions must stay in active queue columns, not "completed".
+  if (isQueueTestGuestContact(contact)) {
+    return 'onboarding';
+  }
+
   const onboarding = contact.onboarding;
 
   if (onboarding) {
@@ -289,7 +294,7 @@ export function contactReadyForChannelManager(contact: CrmContact): boolean {
 
 export function isQueueTestGuestContact(contact: Pick<CrmContact, 'name' | 'note'>): boolean {
   const note = contact.note.toLowerCase();
-  if (note.includes('guest_test')) return true;
+  if (note.includes('guest_test') || note.includes('guest_autopilot')) return true;
   return contact.name.trim().toLowerCase() === 'telegram guest';
 }
 
@@ -437,11 +442,54 @@ export const CRM_QUEUE_ARCHIVABLE_COLUMNS: CrmQueueColumn[] = [
   'needs_operator',
 ];
 
-export const CRM_QUEUE_KANBAN_ROW_CLASS = 'flex min-w-max items-start gap-4';
+export const CRM_QUEUE_KANBAN_ROW_CLASS = 'flex min-w-max items-start content-start gap-4';
 export const CRM_QUEUE_KANBAN_COLUMN_CLASS = 'w-80 shrink-0 self-start space-y-3';
 
-export function isQueueItemArchivable(item: Pick<CrmQueueItem, 'column'>): boolean {
+export function isQueueItemArchivable(item: Pick<CrmQueueItem, 'column' | 'isTestGuest'>): boolean {
+  if (item.isTestGuest) return true;
   return item.column !== 'completed';
+}
+
+export function resolveVisibleKanbanColumns(
+  columns: Record<CrmQueueColumn, CrmQueueItem[]>,
+  filter: CrmQueueFilter,
+): CrmQueueColumn[] {
+  let base: CrmQueueColumn[];
+  if (filter === 'needs_operator') base = ['needs_operator'];
+  else if (filter === 'ready_for_cm') base = ['ready_for_cm'];
+  else if (filter === 'completed') base = ['completed'];
+  else base = [...CRM_QUEUE_COLUMN_VALUES];
+
+  if (filter === 'all' || filter === 'active') {
+    return base.filter((column) => (columns[column]?.length ?? 0) > 0);
+  }
+  return base;
+}
+
+export function applyArchivedContactToQueueState(
+  data: {
+    items: CrmQueueItem[];
+    operatorInbox: CrmQueueItem[];
+    columns: Record<CrmQueueColumn, CrmQueueItem[]>;
+    metrics: CrmQueueMetrics;
+  },
+  contactId: string,
+  filter: CrmQueueFilter,
+): {
+  items: CrmQueueItem[];
+  operatorInbox: CrmQueueItem[];
+  columns: Record<CrmQueueColumn, CrmQueueItem[]>;
+  metrics: CrmQueueMetrics;
+} {
+  const remove = (items: CrmQueueItem[]) => items.filter((item) => item.id !== contactId);
+  const remainingUnique = remove(collectQueueItemsForArchive(data));
+  const items = remove(data.items);
+  return {
+    items,
+    operatorInbox: remove(data.operatorInbox),
+    columns: groupQueueByColumn(filterQueueItems(items, filter)),
+    metrics: computeQueueMetrics(remainingUnique),
+  };
 }
 
 export function collectQueueItemsForArchive(data: {

@@ -187,9 +187,9 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     <DashboardAuthGuard>
       <div className="min-h-screen bg-slate-50">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="md:pl-60 min-h-screen flex flex-col">
+        <div className="md:pl-60">
           <Header onMenuClick={() => setSidebarOpen(true)} />
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <main className="p-4 md:p-6">{children}</main>
         </div>
       </div>
     </DashboardAuthGuard>

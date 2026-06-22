@@ -8,8 +8,8 @@ import {
   operationalStatusEmoji,
 } from '@/lib/crm/activity-feed';
 import {
+  applyArchivedContactToQueueState,
   CRM_QUEUE_COLUMN_LABELS,
-  CRM_QUEUE_COLUMN_VALUES,
   CRM_QUEUE_FILTER_LABELS,
   CRM_QUEUE_FILTER_VALUES,
   CRM_QUEUE_KANBAN_COLUMN_CLASS,
@@ -21,6 +21,7 @@ import {
   collectQueueItemsForArchive,
   emptyQueueColumns,
   isQueueItemArchivable,
+  resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { useSession } from '@/contexts/SessionContext';
@@ -360,10 +361,12 @@ export default function CrmQueuePageClient() {
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [bulkArchiving, setBulkArchiving] = useState(false);
   const initialLoadDone = useRef(false);
+  const loadSeqRef = useRef(0);
   const canArchive = session?.isCrmOperator === true;
 
   const loadQueue = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
+    const seq = ++loadSeqRef.current;
     if (!silent) setLoading(true);
     else setPolling(true);
     if (!silent) setMessage('');
@@ -385,6 +388,7 @@ export default function CrmQueuePageClient() {
         activityFeed: [],
         message: '',
       });
+      if (seq !== loadSeqRef.current) return;
       if (!res.ok || !payload.ok) {
         if (!silent) setMessage(payload.message || 'Не удалось загрузить очередь CRM.');
         return;
@@ -392,6 +396,7 @@ export default function CrmQueuePageClient() {
       setData(payload);
       initialLoadDone.current = true;
     } finally {
+      if (seq !== loadSeqRef.current) return;
       if (!silent) setLoading(false);
       else setPolling(false);
     }
@@ -401,9 +406,16 @@ export default function CrmQueuePageClient() {
     void loadQueue();
   }, [loadQueue]);
 
-  const removeArchivedItemFromState = useCallback((contactId: string) => {
-    setExpandedId((current) => (current === contactId || current === `inbox-${contactId}` ? null : current));
-  }, []);
+  const removeArchivedItemFromState = useCallback(
+    (contactId: string) => {
+      setExpandedId((current) => (current === contactId || current === `inbox-${contactId}` ? null : current));
+      setData((current) => {
+        if (!current) return current;
+        return { ...current, ...applyArchivedContactToQueueState(current, contactId, filter) };
+      });
+    },
+    [filter],
+  );
 
   const handleArchive = useCallback(
     async (item: CrmQueueItem) => {
@@ -426,7 +438,7 @@ export default function CrmQueuePageClient() {
           return;
         }
         removeArchivedItemFromState(item.id);
-        await loadQueue({ silent: true });
+        void loadQueue({ silent: true });
       } finally {
         setArchivingId(null);
       }
@@ -466,7 +478,7 @@ export default function CrmQueuePageClient() {
         }
         removeArchivedItemFromState(item.id);
       }
-      await loadQueue({ silent: true });
+      void loadQueue({ silent: true });
       if (failed.length > 0) {
         setMessage(`Не удалось скрыть: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}`);
       }
@@ -489,14 +501,11 @@ export default function CrmQueuePageClient() {
 
   const visibleColumns = useMemo(() => {
     if (!columns) return [];
-    if (filter === 'needs_operator') return ['needs_operator'] as CrmQueueColumn[];
-    if (filter === 'ready_for_cm') return ['ready_for_cm'] as CrmQueueColumn[];
-    if (filter === 'completed') return ['completed'] as CrmQueueColumn[];
-    return CRM_QUEUE_COLUMN_VALUES as unknown as CrmQueueColumn[];
+    return resolveVisibleKanbanColumns(columns, filter);
   }, [columns, filter]);
 
   return (
-    <div className="space-y-6 pb-2">
+    <div className="space-y-6 pb-2 w-full">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Очередь CRM</h1>
@@ -598,7 +607,10 @@ export default function CrmQueuePageClient() {
       {loading ? (
         <p className="text-sm text-slate-500">Загрузка очереди...</p>
       ) : columns ? (
-        <div className="overflow-x-auto pb-2">
+        visibleColumns.length === 0 ? (
+          <p className="text-sm text-slate-500">В выбранном фильтре карточек нет.</p>
+        ) : (
+        <div className="w-full overflow-x-auto pb-2">
           <div className={CRM_QUEUE_KANBAN_ROW_CLASS}>
             {visibleColumns.map((column) => {
               const items = columns[column] ?? [];
@@ -634,6 +646,7 @@ export default function CrmQueuePageClient() {
             })}
           </div>
         </div>
+        )
       ) : null}
     </div>
   );
