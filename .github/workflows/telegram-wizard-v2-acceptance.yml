@@ -1,0 +1,56 @@
+name: Telegram Wizard v2 Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Base URL to verify
+        required: false
+        default: https://asi-global.ru
+        type: string
+      test_chat_id:
+        description: Dedicated wizard acceptance chat id
+        required: false
+        default: '99445001'
+        type: string
+      reset_test_state:
+        description: Reset onboarding session before run
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  wizard_acceptance:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ACCEPTANCE_BASE_URL: ${{ inputs.base_url }}
+      WIZARD_ACCEPTANCE_CHAT_ID: ${{ inputs.test_chat_id }}
+      RESET_TEST_STATE: ${{ inputs.reset_test_state }}
+      INTERNAL_TEST_SECRET: ${{ secrets.INTERNAL_TEST_SECRET }}
+    steps:
+      - name: Checkout acceptance script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check acceptance script syntax
+        run: node --check scripts/telegram-wizard-v2-acceptance.mjs
+
+      - name: Run wizard v2 acceptance against production
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${INTERNAL_TEST_SECRET:-}" ]]; then
+            echo "::error::Missing required GitHub secret INTERNAL_TEST_SECRET"
+            exit 1
+          fi
+          node scripts/telegram-wizard-v2-acceptance.mjs

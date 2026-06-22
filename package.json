@@ -24,6 +24,7 @@
     "test:telegram:autopilot:live": "node scripts/telegram-autopilot-live-acceptance.mjs",
     "test:telegram:identity:live": "node scripts/telegram-identity-live-acceptance.mjs",
     "test:guest-concierge:http": "node scripts/guest-concierge-http-acceptance.mjs",
+    "test:telegram:wizard:acceptance": "node scripts/telegram-wizard-v2-acceptance.mjs",
     "location:golden": "npx tsx scripts/location-golden-trace.ts",
     "location:golden:assert": "vitest run src/lib/location/__tests__/location-golden-assertions.test.ts",
     "location-pdf:check-chromium": "node scripts/check-location-pdf-chromium.mjs",
