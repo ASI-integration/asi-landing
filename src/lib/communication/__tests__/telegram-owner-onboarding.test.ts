@@ -753,6 +753,114 @@ describe('Telegram owner onboarding wizard v2', () => {
     });
     expect(saved.state.checkout_time).toBe('11:00');
   });
+
+  it('marks channel toggle callbacks for in-place edit without advancing step', async () => {
+    await walkToCheckoutStep(7213);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId: 7213,
+      senderIdentity: 'lead',
+    });
+
+    const toggle = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId: 7213,
+      senderIdentity: 'lead',
+    });
+
+    expect(toggle.editInPlace).toBe(true);
+    expect(toggle.editInPlaceMode).toBe('markup');
+    expect(toggle.missing[0]).toBe('channels');
+    expect(toggle.state.channels_draft).toEqual(['sutochno']);
+    expect(toggle.replyMarkup?.inline_keyboard?.flat().find((button) => String(button.callback_data).includes('sutochno'))?.text).toBe(
+      '✅ Суточно',
+    );
+  });
+
+  it('keeps multiple selected channels in one wizard reply markup', async () => {
+    await walkToCheckoutStep(7214);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId: 7214,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId: 7214,
+      senderIdentity: 'lead',
+    });
+    const both = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:avito'),
+      chatId: 7214,
+      senderIdentity: 'lead',
+    });
+
+    const labels = both.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
+    expect(labels).toEqual(expect.arrayContaining(['✅ Суточно', '✅ Авито', 'Готово']));
+    expect(both.missing[0]).toBe('channels');
+    expect(both.state.channels_list ?? []).toEqual([]);
+  });
+
+  it('advances from channels to rules only after "Готово"', async () => {
+    await walkToCheckoutStep(7215);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId: 7215,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId: 7215,
+      senderIdentity: 'lead',
+    });
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7215,
+      senderIdentity: 'lead',
+    });
+
+    expect(done.editInPlace).toBeUndefined();
+    expect(done.missing[0]).toBe('rules');
+    expect(done.state.channels_list).toEqual(expect.arrayContaining(['Суточно']));
+    expect(done.replyText).toMatch(/правил/i);
+  });
+
+  it('marks rule toggle callbacks for in-place edit and advances only on "Готово"', async () => {
+    await walkToCheckoutStep(7216);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:12:00'),
+      chatId: 7216,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_t:sutochno'),
+      chatId: 7216,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:ch_done'),
+      chatId: 7216,
+      senderIdentity: 'lead',
+    });
+
+    const toggle = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_t:no_smoke'),
+      chatId: 7216,
+      senderIdentity: 'lead',
+    });
+    expect(toggle.editInPlace).toBe(true);
+    expect(toggle.editInPlaceMode).toBe('markup');
+    expect(toggle.missing[0]).toBe('rules');
+
+    const done = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:rl_done'),
+      chatId: 7216,
+      senderIdentity: 'lead',
+    });
+    expect(done.editInPlace).toBeUndefined();
+    expect(done.missing[0]).toBe('wifi');
+    expect(done.state.rules).toEqual(expect.arrayContaining(['Не курить']));
+  });
 });
 
 describe('Telegram owner session router v1', () => {

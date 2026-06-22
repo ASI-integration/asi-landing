@@ -102,7 +102,12 @@ import { runInBackground } from './background';
 import { retry, sha256Base64Url } from './reliability';
 import { writeFailure } from './failure-store';
 import { shouldEscalateByRules } from './escalation-policy';
-import { answerTelegramCallbackQuery, replyToTelegram } from '@/lib/telegram';
+import {
+  answerTelegramCallbackQuery,
+  editTelegramMessageReplyMarkup,
+  editTelegramMessageText,
+  replyToTelegram,
+} from '@/lib/telegram';
 import {
   clearTelegramPromptInjectionGuardForChat,
   detectTelegramPromptInjection,
@@ -201,7 +206,7 @@ import {
   TELEGRAM_IDENTITY_CALLBACKS,
   UNKNOWN_IDENTITY_INLINE_KEYBOARD,
 } from './communication-identity-routing';
-import { processTelegramOwnerOnboarding } from './telegram-owner-onboarding';
+import { processTelegramOwnerOnboarding, type OwnerOnboardingEditInPlaceMode } from './telegram-owner-onboarding';
 
 const GUEST_MISSING_BOOKING_CONTEXT = 'after_missing_booking_or_object_data';
 const GUEST_BOOKING_IDENTIFIER_STATE = 'awaiting_guest_booking_identifier';
@@ -224,6 +229,57 @@ function shouldGreetTelegramOperationalReply(session: { memory?: { lastMessages?
   return !messages.some((message) => {
     if (message.direction !== 'outbound') return false;
     return String(message.content ?? '').trim().length > 0;
+  });
+}
+
+function readTelegramCallbackMessageId(metadata: InboundMessageEnvelope['metadata']): number | undefined {
+  const raw = (metadata as Record<string, unknown> | undefined)?.telegram_callback_message_id;
+  const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+async function deliverOwnerOnboardingTelegramReply(params: {
+  adapter: ReturnType<typeof getChannelAdapter>;
+  targetId: string;
+  replyText: string;
+  replyMarkup?: Record<string, unknown>;
+  editInPlace?: boolean;
+  editInPlaceMode?: OwnerOnboardingEditInPlaceMode;
+  callbackMessageId?: number;
+  handler: string;
+  update_id?: number;
+  metadata: Record<string, unknown>;
+}): Promise<boolean> {
+  const messageId = params.callbackMessageId;
+  if (params.editInPlace && typeof messageId === 'number') {
+    const logCtx = {
+      handler: params.handler,
+      update_id: params.update_id,
+      reply_markup: params.replyMarkup,
+    };
+    const edited =
+      params.editInPlaceMode === 'text'
+        ? await editTelegramMessageText(
+            params.targetId,
+            messageId,
+            params.replyText,
+            params.replyMarkup,
+            logCtx,
+          )
+        : await editTelegramMessageReplyMarkup(
+            params.targetId,
+            messageId,
+            params.replyMarkup ?? { inline_keyboard: [] },
+            logCtx,
+          );
+    if (edited) return true;
+  }
+
+  return params.adapter.sendMessage(params.targetId, params.replyText, {
+    ...params.metadata,
+    reply_handler: params.handler,
+    update_id: params.update_id,
+    reply_markup: params.replyMarkup,
   });
 }
 
@@ -1664,19 +1720,23 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }),
       });
     }
-    const sent = await adapter.sendMessage(
-      String(targetId),
-      routeReplyText,
-      {
-        reply_handler: `orchestrator:communication_identity_route:${senderRoute.route}`,
-        update_id,
+    const sent = await deliverOwnerOnboardingTelegramReply({
+      adapter,
+      targetId: String(targetId),
+      replyText: routeReplyText,
+      replyMarkup: routeReplyMarkup as Record<string, unknown> | undefined,
+      editInPlace: ownerOnboarding?.editInPlace,
+      editInPlaceMode: ownerOnboarding?.editInPlaceMode,
+      callbackMessageId: readTelegramCallbackMessageId(envelope.metadata),
+      handler: `orchestrator:communication_identity_route:${senderRoute.route}`,
+      update_id,
+      metadata: {
         sender_identity: senderRoute.senderIdentity,
         crm_contact_id: routeCrmContactId,
         onboarding_status: ownerOnboarding?.status,
         onboarding_missing: ownerOnboarding?.missing,
-        reply_markup: routeReplyMarkup,
       },
-    );
+    });
     if (!sent) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
     return { outcome: ProcessOutcome.Replied, update_id, chat_id: chatId, reply: routeReplyText };
   }
@@ -4768,6 +4828,7 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
       telegram_event_type: 'callback_query',
       telegram_callback_query_id: callback.id,
       telegram_callback_data: callback.data,
+      telegram_callback_message_id: message?.message_id,
       telegram_onboarding_wizard_callback: isOnboardingWizardCallback ? callbackData : undefined,
       telegram_session_router_callback: isOwnerSessionRouterCallback ? callbackData : undefined,
       senderIdentity: selected.senderIdentity,

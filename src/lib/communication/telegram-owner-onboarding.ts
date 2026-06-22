@@ -83,10 +83,15 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   last_saved_field?: OwnerOnboardingWizardField;
 };
 
+export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';
+
 export type OwnerOnboardingResult = {
   handled: boolean;
   replyText: string;
   replyMarkup?: TelegramInlineKeyboardMarkup;
+  /** When true, update the callback message in place instead of sending a new one. */
+  editInPlace?: boolean;
+  editInPlaceMode?: OwnerOnboardingEditInPlaceMode;
   status: OwnerOnboardingStatus;
   missing: OwnerOnboardingWizardField[];
   crmContactId?: string;
@@ -369,6 +374,8 @@ type WizardApplyResult = {
   stayOnStep?: OwnerOnboardingWizardField;
   replyOverride?: string;
   replyMarkup?: TelegramInlineKeyboardMarkup;
+  editInPlace?: boolean;
+  editInPlaceMode?: OwnerOnboardingEditInPlaceMode;
 };
 
 function applyWizardCallback(state: OwnerOnboardingState, callbackData: string): WizardApplyResult {
@@ -406,6 +413,8 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         handled: true,
         extractedCount: 0,
         stayOnStep: 'channels',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
         replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
       };
     }
@@ -416,6 +425,8 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
           handled: true,
           extractedCount: 0,
           stayOnStep: 'channels',
+          editInPlace: true,
+          editInPlaceMode: 'text',
           replyOverride: 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «Готово».',
           replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
         };
@@ -436,6 +447,8 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         handled: true,
         extractedCount: 0,
         stayOnStep: 'rules',
+        editInPlace: true,
+        editInPlaceMode: 'markup',
         replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
       };
     }
@@ -446,6 +459,8 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
           handled: true,
           extractedCount: 0,
           stayOnStep: 'rules',
+          editInPlace: true,
+          editInPlaceMode: 'text',
           replyOverride: 'Выберите хотя бы одно правило, затем нажмите «Готово».',
           replyMarkup: buildWizardStepKeyboard('rules', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
         };
@@ -1063,6 +1078,8 @@ export async function processTelegramOwnerOnboarding(params: {
   let savedField: OwnerOnboardingWizardField | undefined;
   let replyOverride: string | undefined;
   let replyMarkup: TelegramInlineKeyboardMarkup | undefined;
+  let editInPlace: boolean | undefined;
+  let editInPlaceMode: OwnerOnboardingEditInPlaceMode | undefined;
   let decision: SmartParseDecision = {
     extracted: {
       address: null,
@@ -1091,6 +1108,8 @@ export async function processTelegramOwnerOnboarding(params: {
     savedField = wizardResult.savedField;
     replyOverride = wizardResult.replyOverride;
     replyMarkup = wizardResult.replyMarkup;
+    editInPlace = wizardResult.editInPlace;
+    editInPlaceMode = wizardResult.editInPlaceMode;
     if (wizardResult.stayOnStep) {
       merged.missing = missingFields(merged);
       merged.missing = [wizardResult.stayOnStep, ...merged.missing.filter((field) => field !== wizardResult.stayOnStep)];
@@ -1255,6 +1274,8 @@ export async function processTelegramOwnerOnboarding(params: {
     handled: true,
     replyText: reply.text,
     replyMarkup: reply.markup,
+    editInPlace,
+    editInPlaceMode,
     status: merged.status,
     missing: merged.missing,
     crmContactId,

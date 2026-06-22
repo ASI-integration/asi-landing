@@ -282,3 +282,111 @@ export async function answerTelegramCallbackQuery(callbackQueryId: string): Prom
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
   return sendOnce(url, { callback_query_id: callbackQueryId });
 }
+
+export async function editTelegramMessageReplyMarkup(
+  chatId: number | string,
+  messageId: number,
+  replyMarkup: Record<string, unknown>,
+  logCtx?: TelegramReplyLogContext,
+): Promise<boolean> {
+  const sendStartedAt = Date.now();
+
+  if (shouldSuppressTelegramOutbound(chatId)) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] editMessageReplyMarkup suppressed', {
+        chat_id: String(chatId),
+        message_id: messageId,
+      });
+    }
+    return true;
+  }
+
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for editMessageReplyMarkup');
+    return false;
+  }
+
+  if (logCtx?.handler) {
+    console.info('[tg:reply:handler]', {
+      handler: logCtx.handler,
+      chat_id: String(chatId),
+      message_id: messageId,
+      update_id: logCtx.update_id ?? null,
+      delivery: 'edit_message_reply_markup',
+    });
+  }
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`;
+  const sent = await sendOnce(url, {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: replyMarkup,
+  });
+  console.info('[tg:latency] telegram.edit_message_reply_markup', {
+    chat_id: String(chatId),
+    message_id: messageId,
+    update_id: logCtx?.update_id ?? null,
+    handler: logCtx?.handler ?? null,
+    stage_ms: Date.now() - sendStartedAt,
+    sent,
+  });
+  return sent;
+}
+
+export async function editTelegramMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+  replyMarkup?: Record<string, unknown>,
+  logCtx?: TelegramReplyLogContext,
+): Promise<boolean> {
+  const sendStartedAt = Date.now();
+
+  if (shouldSuppressTelegramOutbound(chatId)) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] editMessageText suppressed', {
+        chat_id: String(chatId),
+        message_id: messageId,
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
+  const TELEGRAM_BOT_TOKEN = getTelegramBotToken();
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn('[Telegram] Missing TELEGRAM_BOT_TOKEN for editMessageText');
+    return false;
+  }
+
+  if (logCtx?.handler) {
+    console.info('[tg:reply:handler]', {
+      handler: logCtx.handler,
+      chat_id: String(chatId),
+      message_id: messageId,
+      update_id: logCtx.update_id ?? null,
+      delivery: 'edit_message_text',
+    });
+  }
+
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageText`;
+  const body: Record<string, unknown> = {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+
+  const sent = await sendOnce(url, body);
+  console.info('[tg:latency] telegram.edit_message_text', {
+    chat_id: String(chatId),
+    message_id: messageId,
+    update_id: logCtx?.update_id ?? null,
+    handler: logCtx?.handler ?? null,
+    stage_ms: Date.now() - sendStartedAt,
+    sent,
+  });
+  return sent;
+}
