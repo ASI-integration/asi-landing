@@ -596,7 +596,10 @@ describe('Telegram owner onboarding wizard v2', () => {
   it('stores structured CRM fields separately in notes', async () => {
     await runFullWizardScenario(7203);
     const notes = String(
-      [...updatedRows.map((item) => item.patch?.notes), ...insertedRows.map((item) => item.row?.notes)]
+      [
+        ...updatedRows.map((item) => (item.patch as { notes?: unknown })?.notes),
+        ...insertedRows.map((item) => (item.row as { notes?: unknown })?.notes),
+      ]
         .filter(Boolean)
         .pop() ?? '',
     );
@@ -733,7 +736,10 @@ describe('Telegram owner session router v1', () => {
     });
 
     const notes = String(
-      [...updatedRows.map((item) => item.patch?.notes), ...insertedRows.map((item) => item.row?.notes)]
+      [
+        ...updatedRows.map((item) => (item.patch as { notes?: unknown })?.notes),
+        ...insertedRows.map((item) => (item.row as { notes?: unknown })?.notes),
+      ]
         .filter(Boolean)
         .pop() ?? '',
     );
