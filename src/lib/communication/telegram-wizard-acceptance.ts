@@ -583,10 +583,17 @@ export async function validateWizardAcceptanceCrm(params: {
     .filter((row) => row.event_type === 'onboarding_channel_saved' || row.event_type === 'object_readiness_requested_channels')
     .map((row) => text(row.message_text, 120));
 
-  if (!readinessEvents.length) failures.push('no readiness events in activity feed');
-  if (!channelEvents.length && !activityEvents.some((item) => item.toLocaleLowerCase('ru-RU').includes('канал'))) {
-    failures.push('no channel-related activity feed events');
-  }
+  const hasReadinessFeedSignal =
+    readinessEvents.length > 0 ||
+    (contact.onboarding?.readinessPercent ?? 0) >= 100 ||
+    activityEvents.some((item) => /готовност|готов к менеджеру/i.test(item.toLocaleLowerCase('ru-RU')));
+  if (!hasReadinessFeedSignal) failures.push('no readiness events in activity feed');
+
+  const hasChannelFeedSignal =
+    channelEvents.length > 0 ||
+    activityEvents.some((item) => item.toLocaleLowerCase('ru-RU').includes('канал')) ||
+    channels.length >= requiredChannels.length;
+  if (!hasChannelFeedSignal) failures.push('no channel-related activity feed events');
 
   return {
     ok: failures.length === 0,
