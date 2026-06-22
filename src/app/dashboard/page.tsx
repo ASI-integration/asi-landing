@@ -35,7 +35,7 @@ const modules = [
   },
   {
     title: 'Операции',
-    href: '/dashboard/operations',
+    href: '/dashboard/ops',
     status: 'в кабинете',
     description: 'Заезды, задачи, уборка и готовность объектов к заселению.',
   },

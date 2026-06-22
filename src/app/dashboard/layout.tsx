@@ -32,7 +32,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/channel-connections', key: 'channelConnections' },
   { href: '/dashboard/properties', key: 'properties' },
   { href: '/dashboard/communication', key: 'communication' },
-  { href: '/dashboard/operations', key: 'operations' },
+  { href: '/dashboard/ops', key: 'operations' },
   { href: '/dashboard/bookings', key: 'bookings' },
   { href: '/dashboard/automations', key: 'automations' },
   { href: '/dashboard/settings', key: 'settings' },

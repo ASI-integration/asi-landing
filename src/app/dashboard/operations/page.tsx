@@ -1,14 +1,5 @@
-import OperationsPageClient from './OperationsPageClient';
-import { CrmAccessGuard } from '@/components/CrmAccessGuard';
+import { redirect } from 'next/navigation';
 
-export const metadata = {
-  title: 'Операции | ASI',
-};
-
-export default function OperationsPage() {
-  return (
-    <CrmAccessGuard>
-      <OperationsPageClient />
-    </CrmAccessGuard>
-  );
+export default function OperationsRedirectPage() {
+  redirect('/dashboard/ops');
 }
