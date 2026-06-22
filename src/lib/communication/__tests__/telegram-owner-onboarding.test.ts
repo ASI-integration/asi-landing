@@ -54,6 +54,13 @@ import {
   type SmartParseExtracted,
 } from '../owner-onboarding-smart-parser';
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
+import {
+  buildChannelsKeyboard,
+  buildRulesKeyboard,
+  buildTimeKeyboard,
+  CUSTOM_TIME_INPUT_PROMPT_RU,
+  parseCustomTimeInput,
+} from '../telegram-owner-onboarding-wizard';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
   return {
@@ -630,6 +637,121 @@ describe('Telegram owner onboarding wizard v2', () => {
     expect(legacy.state.address).toMatch(/Баумана/i);
     expect(legacy.state.object_type ?? legacy.state.property_name).toMatch(/апартамент/i);
     expect(legacy.state.checkin_time ?? legacy.state.checkin_checkout).toMatch(/15:00/);
+  });
+
+  async function walkToCheckoutStep(chatId: number) {
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Хочу подключить квартиру'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: envelope('Санкт-Петербург, Лиговский пр., 108'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:type:Квартира'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+    return processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_in:14:00'),
+      chatId,
+      senderIdentity: 'lead',
+    });
+  }
+
+  it('shows multi-select buttons without empty checkbox for unselected items', () => {
+    const channels = buildChannelsKeyboard([]).inline_keyboard.flat().map((button) => button.text);
+    expect(channels.some((label) => label.includes('☐'))).toBe(false);
+    expect(channels).toContain('Суточно');
+
+    const rules = buildRulesKeyboard([]).inline_keyboard.flat().map((button) => button.text);
+    expect(rules.some((label) => label.includes('☐'))).toBe(false);
+    expect(rules).toContain('Не курить');
+  });
+
+  it('shows selected multi-select items with checkmark prefix', () => {
+    const channelLabel = buildChannelsKeyboard(['sutochno']).inline_keyboard
+      .flat()
+      .find((button) => String(button.callback_data ?? '').includes('sutochno'))?.text;
+    expect(channelLabel).toBe('✅ Суточно');
+
+    const ruleLabel = buildRulesKeyboard(['no_smoke']).inline_keyboard
+      .flat()
+      .find((button) => String(button.callback_data ?? '').includes('no_smoke'))?.text;
+    expect(ruleLabel).toBe('✅ Не курить');
+  });
+
+  it('offers checkout quick buttons including 11:00', () => {
+    const labels = buildTimeKeyboard('checkout_time').inline_keyboard.flat().map((button) => button.text);
+    expect(labels).toEqual(expect.arrayContaining(['10:00', '11:00', '12:00', '13:00', 'Свой вариант']));
+  });
+
+  it('keeps checkin quick buttons at 12:00 through 15:00', () => {
+    const labels = buildTimeKeyboard('checkin_time').inline_keyboard.flat().map((button) => button.text);
+    expect(labels).toEqual(expect.arrayContaining(['12:00', '13:00', '14:00', '15:00', 'Свой вариант']));
+    expect(labels).not.toContain('11:00');
+  });
+
+  it.each([
+    ['11', '11:00'],
+    ['11:00', '11:00'],
+    ['11 утра', '11:00'],
+    ['в 11', '11:00'],
+    ['до 11', '11:00'],
+  ])('parseCustomTimeInput parses %s as %s', (input, expected) => {
+    expect(parseCustomTimeInput(input)).toBe(expected);
+  });
+
+  it('saves checkout 11:00 from quick button and grows readiness', async () => {
+    const checkinDone = await walkToCheckoutStep(7210);
+    const readinessBefore = checkinDone.state.readiness?.readiness_percent ?? 0;
+
+    const checkout = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:11:00'),
+      chatId: 7210,
+      senderIdentity: 'lead',
+    });
+
+    expect(checkout.state.checkout_time).toBe('11:00');
+    expect(checkout.replyText).toMatch(/Время выезда сохранено/);
+    expect(checkout.state.readiness?.readiness_percent ?? 0).toBeGreaterThan(readinessBefore);
+  });
+
+  it('accepts custom checkout time "11 утра" without repeating time keyboard', async () => {
+    await walkToCheckoutStep(7211);
+    const customPrompt = await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:custom'),
+      chatId: 7211,
+      senderIdentity: 'lead',
+    });
+    expect(customPrompt.replyText).toContain(CUSTOM_TIME_INPUT_PROMPT_RU);
+    expect(customPrompt.replyMarkup).toBeUndefined();
+
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('11 утра'),
+      chatId: 7211,
+      senderIdentity: 'lead',
+    });
+    expect(saved.state.checkout_time).toBe('11:00');
+    expect(saved.replyText).toMatch(/Время выезда сохранено/);
+  });
+
+  it('accepts custom checkout time "до 11"', async () => {
+    await walkToCheckoutStep(7212);
+    await processTelegramOwnerOnboarding({
+      envelope: wizardEnvelope('obv2:chk_out:custom'),
+      chatId: 7212,
+      senderIdentity: 'lead',
+    });
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('до 11'),
+      chatId: 7212,
+      senderIdentity: 'lead',
+    });
+    expect(saved.state.checkout_time).toBe('11:00');
   });
 });
 

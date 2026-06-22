@@ -38,7 +38,11 @@ export const WIZARD_FIELD_LABELS: Record<OwnerOnboardingWizardField, string> = {
 
 export const OBJECT_TYPE_OPTIONS = ['Квартира', 'Апартаменты', 'Дом', 'Комната', 'Другое'] as const;
 
-export const TIME_OPTIONS = ['12:00', '13:00', '14:00', '15:00'] as const;
+export const CHECKIN_TIME_OPTIONS = ['12:00', '13:00', '14:00', '15:00'] as const;
+export const CHECKOUT_TIME_OPTIONS = ['10:00', '11:00', '12:00', '13:00'] as const;
+
+/** @deprecated Use CHECKIN_TIME_OPTIONS or CHECKOUT_TIME_OPTIONS */
+export const TIME_OPTIONS = CHECKIN_TIME_OPTIONS;
 
 export const CHANNEL_OPTIONS = [
   { id: 'sutochno', label: 'Суточно' },
@@ -215,8 +219,8 @@ export function buildWizardChecklist(state: Parameters<typeof missingWizardField
   }));
 }
 
-function checkboxPrefix(selected: boolean): string {
-  return selected ? '☑' : '☐';
+function multiSelectButtonLabel(selected: boolean, label: string): string {
+  return selected ? `✅ ${label}` : label;
 }
 
 function callbackData(action: string, value?: string): string {
@@ -238,10 +242,11 @@ export function buildObjectTypeKeyboard(): TelegramInlineKeyboardMarkup {
 
 export function buildTimeKeyboard(kind: 'checkin_time' | 'checkout_time'): TelegramInlineKeyboardMarkup {
   const action = kind === 'checkin_time' ? 'chk_in' : 'chk_out';
+  const options = kind === 'checkin_time' ? CHECKIN_TIME_OPTIONS : CHECKOUT_TIME_OPTIONS;
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = [];
-  for (let i = 0; i < TIME_OPTIONS.length; i += 2) {
+  for (let i = 0; i < options.length; i += 2) {
     rows.push(
-      TIME_OPTIONS.slice(i, i + 2).map((time) => ({
+      options.slice(i, i + 2).map((time) => ({
         text: time,
         callback_data: callbackData(action, time),
       })),
@@ -257,7 +262,7 @@ export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyb
     const selected = selectedIds.includes(item.id);
     rows.push([
       {
-        text: `${checkboxPrefix(selected)} ${item.label}`,
+        text: multiSelectButtonLabel(selected, item.label),
         callback_data: callbackData('ch_t', item.id),
       },
     ]);
@@ -272,7 +277,7 @@ export function buildRulesKeyboard(selectedIds: string[]): TelegramInlineKeyboar
     const selected = selectedIds.includes(item.id);
     rows.push([
       {
-        text: `${checkboxPrefix(selected)} ${item.label}`,
+        text: multiSelectButtonLabel(selected, item.label),
         callback_data: callbackData('rl_t', item.id),
       },
     ]);
@@ -386,13 +391,43 @@ export function parseWifiInput(raw: string): { wifi_name?: string; wifi_password
   return { wifi_name: value };
 }
 
+export const CUSTOM_TIME_INPUT_PROMPT_RU = 'Введите время в формате 11:00 или 11 утра.';
+
+function normalizeHourMinute(hour: number, minute = 0): string | undefined {
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return undefined;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return undefined;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 export function parseCustomTimeInput(raw: string): string | undefined {
-  const value = text(raw, 40);
-  const match = value.match(/\b(\d{1,2})[:.](\d{2})\b/);
-  if (!match) return undefined;
-  const hh = match[1].padStart(2, '0');
-  const mm = match[2];
-  return `${hh}:${mm}`;
+  const value = text(raw, 40).toLowerCase().replace(/,/g, ' ');
+
+  const colonMatch = value.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?:\s|$)/);
+  if (colonMatch) {
+    return normalizeHourMinute(Number(colonMatch[1]), Number(colonMatch[2]));
+  }
+
+  const morningMatch = value.match(/(?:^|\s)(?:в\s+|до\s+)?(\d{1,2})\s*(?:утра|утром)(?:\s|$|[,.])/);
+  if (morningMatch) {
+    return normalizeHourMinute(Number(morningMatch[1]));
+  }
+
+  const morningShortMatch = value.match(/(\d{1,2})\s*(?:утра|утром)(?:\s|$|[,.])/);
+  if (morningShortMatch) {
+    return normalizeHourMinute(Number(morningShortMatch[1]));
+  }
+
+  const prepMatch = value.match(/(?:^|\s)(?:в|до)\s+(\d{1,2})(?:\s|$|[:.])/);
+  if (prepMatch) {
+    return normalizeHourMinute(Number(prepMatch[1]));
+  }
+
+  const bareMatch = value.match(/^(\d{1,2})$/);
+  if (bareMatch) {
+    return normalizeHourMinute(Number(bareMatch[1]));
+  }
+
+  return undefined;
 }
 
 export function labelsFromChannelIds(ids: string[]): string[] {

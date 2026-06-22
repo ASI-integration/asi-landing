@@ -25,6 +25,7 @@ import {
   buildWizardProgressBlock,
   buildWizardStepKeyboard,
   buildWizardStepPrompt,
+  CUSTOM_TIME_INPUT_PROMPT_RU,
   fieldSavedAckRu,
   isWizardCallbackData,
   labelsFromChannelIds,
@@ -381,7 +382,7 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         handled: true,
         extractedCount: 0,
         stayOnStep: action.field,
-        replyOverride: action.field === 'checkin_time' ? 'Введите время заезда' : 'Введите время выезда',
+        replyOverride: CUSTOM_TIME_INPUT_PROMPT_RU,
       };
     case 'set_field':
       if (action.field === 'object_type') state.object_type = action.value;
@@ -529,8 +530,8 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
         stayOnStep: field,
         replyOverride:
           field === 'checkin_time'
-            ? 'Не поняла время. Напишите, например: 14:00'
-            : 'Не поняла время. Напишите, например: 11:00',
+            ? `Не поняла время. ${CUSTOM_TIME_INPUT_PROMPT_RU}`
+            : `Не поняла время. ${CUSTOM_TIME_INPUT_PROMPT_RU}`,
       };
     }
     if (field === 'checkin_time') state.checkin_time = parsed;
@@ -744,9 +745,12 @@ function buildReply(params: {
 
   if (params.replyOverride) {
     const ack = params.savedField ? fieldSavedAckRu(params.savedField) : '';
+    const skipKeyboard = Boolean(params.state.awaiting_custom);
     return {
       text: [ack, progress, params.replyOverride].filter(Boolean).join('\n\n'),
-      markup: params.replyMarkup ?? buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state)),
+      markup:
+        params.replyMarkup ??
+        (skipKeyboard ? undefined : buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state))),
     };
   }
 
