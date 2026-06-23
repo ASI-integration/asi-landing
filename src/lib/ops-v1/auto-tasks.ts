@@ -152,12 +152,16 @@ function collectObjectPassportSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
   return seeds;
 }
 
-function collectCommunicationSeedsFromContacts(contacts: CrmContact[]): AutoTaskSeed[] {
+function collectCommunicationSeedsFromContacts(
+  contacts: CrmContact[],
+  pendingReviewContactIds: Set<string>,
+): AutoTaskSeed[] {
   const seeds: AutoTaskSeed[] = [];
 
   for (const contact of contacts) {
     if (contact.crmArchived) continue;
     if (!CRM_MANUAL_REACTION_STATUSES.has(contact.communicationStatus)) continue;
+    if (pendingReviewContactIds.has(contact.id)) continue;
 
     const objectId = contact.ownerObjects?.[0]?.objectId ?? null;
     const objectLabel = contact.activeObjectTitle ?? contact.ownerObjects?.[0]?.title ?? contact.name;
@@ -184,10 +188,17 @@ function collectCommunicationSeedsFromContacts(contacts: CrmContact[]): AutoTask
   return seeds;
 }
 
-function collectCommunicationSeedsFromEscalations(): AutoTaskSeed[] {
+function collectCommunicationSeedsFromEscalations(): {
+  seeds: AutoTaskSeed[];
+  pendingReviewContactIds: Set<string>;
+} {
   const seeds: AutoTaskSeed[] = [];
+  const pendingReviewContactIds = new Set<string>();
   const reviews = listEscalationReviews({ status: 'pending', limit: 100 });
   for (const review of reviews) {
+    if (review.leadId?.trim()) {
+      pendingReviewContactIds.add(review.leadId.trim());
+    }
     const latestMessage = review.latestMessages.at(-1)?.content ?? review.detail ?? '';
     seeds.push({
       dedupKey: buildAutoOpsDedupKey({
@@ -212,7 +223,7 @@ function collectCommunicationSeedsFromEscalations(): AutoTaskSeed[] {
     });
   }
 
-  return seeds;
+  return { seeds, pendingReviewContactIds };
 }
 
 type ReservationRow = {
@@ -327,12 +338,15 @@ async function loadCrmContactsSafe(): Promise<CrmContact[]> {
   }
 }
 
-function collectCommunicationEscalationSeedsSafe(): AutoTaskSeed[] {
+function collectCommunicationEscalationSeedsSafe(): {
+  seeds: AutoTaskSeed[];
+  pendingReviewContactIds: Set<string>;
+} {
   try {
     return collectCommunicationSeedsFromEscalations();
   } catch (error) {
     warnAutoSyncSourceUnavailable('communications', error);
-    return [];
+    return { seeds: [], pendingReviewContactIds: new Set() };
   }
 }
 
@@ -351,8 +365,12 @@ export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: nu
 
   const crmSeeds = collectCrmOnboardingSeeds(contacts);
   const passportSeeds = collectObjectPassportSeeds(contacts);
-  const communicationContactSeeds = collectCommunicationSeedsFromContacts(contacts);
-  const communicationEscalationSeeds = collectCommunicationEscalationSeedsSafe();
+  const { seeds: communicationEscalationSeeds, pendingReviewContactIds } =
+    collectCommunicationEscalationSeedsSafe();
+  const communicationContactSeeds = collectCommunicationSeedsFromContacts(
+    contacts,
+    pendingReviewContactIds,
+  );
   const communicationSeeds = [...communicationContactSeeds, ...communicationEscalationSeeds];
   const bookingSeeds = await collectBookingSeedsSafe(today);
 

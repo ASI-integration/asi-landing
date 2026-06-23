@@ -156,7 +156,7 @@ describe('ops v1 auto tasks', () => {
     );
   });
 
-  it('creates communication tasks for manual reaction and pending escalations', async () => {
+  it('creates communication task from pending escalation and skips duplicate CRM seed', async () => {
     mocks.listCrmContacts.mockResolvedValue([
       {
         id: 'c-3',
@@ -188,11 +188,11 @@ describe('ops v1 auto tasks', () => {
     const first = await syncAutoOpsTasks();
     const second = await syncAutoOpsTasks();
 
-    expect(first.created).toBe(2);
+    expect(first.created).toBe(1);
     expect(second.created).toBe(0);
     expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        dedupKey: 'auto:communications:crm:c-3:verify_guest_issue',
+        dedupKey: 'auto:communications:rev-1:verify_guest_issue',
         taskType: 'verify_guest_issue',
         description: 'Требуется ручная проверка сообщения гостя',
         metadata: expect.objectContaining({
@@ -200,9 +200,33 @@ describe('ops v1 auto tasks', () => {
         }),
       }),
     );
+    expect(mocks.createOpsOperatorTask).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        dedupKey: 'auto:communications:crm:c-3:verify_guest_issue',
+      }),
+    );
+  });
+
+  it('creates communication task from CRM manual reaction when no pending review', async () => {
+    mocks.listCrmContacts.mockResolvedValue([
+      {
+        id: 'c-4',
+        name: 'Гость 4',
+        status: 'needs_reaction',
+        crmArchived: false,
+        ownerObjects: [],
+        activeObjectTitle: null,
+        communicationStatus: 'needs_manual_reaction',
+        onboarding: null,
+      },
+    ]);
+    mocks.listEscalationReviews.mockReturnValue([]);
+
+    await syncAutoOpsTasks();
+
     expect(mocks.createOpsOperatorTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        dedupKey: 'auto:communications:rev-1:verify_guest_issue',
+        dedupKey: 'auto:communications:crm:c-4:verify_guest_issue',
         taskType: 'verify_guest_issue',
       }),
     );

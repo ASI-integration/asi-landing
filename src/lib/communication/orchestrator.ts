@@ -87,6 +87,7 @@ import {
   getActiveEscalationReviewIdForSession,
   forceCloseActiveReviewForSession,
 } from './operator-review';
+import { recordCommunicationEscalation } from './escalations';
 import { canAiReply, recordHandoffAuditEvent } from './handoff-lock';
 import {
   SessionStatus,
@@ -2026,21 +2027,28 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     }) => {
       const targetIdRaw = resolveOutboundTargetId(envelope, identity.guestId);
       if (!targetIdRaw) return;
-      createOrUpdateEscalationReview({
+      void recordCommunicationEscalation({
         sessionId: convSession.sessionId,
         channel: envelope.channel,
         targetId: String(targetIdRaw),
         actorId: convSession.actorId,
         role: identity.role,
         reservationId: commContext?.reservation?.reservationId ?? identity.reservationId,
-        propertyId: commContext?.reservation?.propertyId ?? identity.propertyId,
-        leadId: identity.leadId,
-        escalationReason: params.reason,
+        objectId: commContext?.reservation?.propertyId ?? identity.propertyId,
+        contactId: identity.leadId,
+        guestId: identity.guestId,
+        messageText: params.escalationSummary,
+        summary: params.escalationSummary,
+        reason: params.reason,
+        source: 'telegram',
         confidence: params.confidence,
-        source: params.source,
-        latestMessages: convSession.memory.lastMessages,
         suggestedReply: params.suggestedReply,
         detail: params.detail ?? params.escalationSummary,
+        sourceMeta: params.source,
+        latestMessages: convSession.memory.lastMessages,
+      }).catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn('[orchestrator] recordCommunicationEscalation failed', detail);
       });
     };
 
