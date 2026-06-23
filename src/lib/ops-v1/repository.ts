@@ -8,6 +8,7 @@ import { syncAutoOpsTasks } from './auto-tasks';
 import { mapOperatorTaskToV1, mapV1StatusToOperator, mapV1TypeToOperator } from './mapping';
 import type {
   CreateOpsV1TaskInput,
+  OpsV1ListFilter,
   OpsV1Summary,
   OpsV1Task,
   UpdateOpsV1TaskInput,
@@ -25,32 +26,42 @@ function isToday(iso: string | null): boolean {
   );
 }
 
-function isOpenStatus(status: OpsV1Task['status']): boolean {
+export function isActiveV1Status(status: OpsV1Task['status']): boolean {
   return status !== 'done';
 }
 
 export function buildOpsV1Summary(tasks: OpsV1Task[]): OpsV1Summary {
+  const activeTasks = tasks.filter((task) => isActiveV1Status(task.status));
+
   return {
-    checkinsToday: tasks.filter(
-      (task) => task.taskType === 'checkin' && isToday(task.scheduledAt) && isOpenStatus(task.status),
+    checkinsToday: activeTasks.filter(
+      (task) => task.taskType === 'checkin' && isToday(task.scheduledAt),
     ).length,
-    checkoutsToday: tasks.filter(
-      (task) => task.taskType === 'checkout' && isToday(task.scheduledAt) && isOpenStatus(task.status),
+    checkoutsToday: activeTasks.filter(
+      (task) => task.taskType === 'checkout' && isToday(task.scheduledAt),
     ).length,
-    cleaningNeeded: tasks.filter(
-      (task) => task.taskType === 'cleaning' && isOpenStatus(task.status),
-    ).length,
-    needsAttention: tasks.filter((task) => task.status === 'needs_attention').length,
+    cleaningNeeded: activeTasks.filter((task) => task.taskType === 'cleaning').length,
+    needsAttention: activeTasks.filter((task) => task.status === 'needs_attention').length,
   };
 }
 
-export async function listOpsV1Tasks(options?: { syncAuto?: boolean }): Promise<{
+function mapListFilterToOperator(filter: OpsV1ListFilter): 'active' | 'done' | 'all' {
+  if (filter === 'done') return 'done';
+  if (filter === 'all') return 'all';
+  return 'active';
+}
+
+export async function listOpsV1Tasks(options?: {
+  syncAuto?: boolean;
+  filter?: OpsV1ListFilter;
+}): Promise<{
   ok: boolean;
   tasks: OpsV1Task[];
   summary: OpsV1Summary;
   autoSync?: { created: number; scanned: number };
   error?: string;
 }> {
+  const filter = options?.filter ?? 'active';
   let autoSync: { created: number; scanned: number } | undefined;
 
   if (options?.syncAuto !== false) {
@@ -62,14 +73,18 @@ export async function listOpsV1Tasks(options?: { syncAuto?: boolean }): Promise<
   }
 
   try {
-    const result = await listOpsOperatorTasks({ status: 'all' });
-    if (!result.ok) {
-      console.warn('[ops-v1] list tasks failed, returning empty', result.error);
-      return { ok: true, tasks: [], summary: buildOpsV1Summary([]), autoSync };
+    const activeResult = await listOpsOperatorTasks({ status: 'active' });
+    const activeTasks = activeResult.ok ? activeResult.tasks.map(mapOperatorTaskToV1) : [];
+    const summary = buildOpsV1Summary(activeTasks);
+
+    const listResult = await listOpsOperatorTasks({ status: mapListFilterToOperator(filter) });
+    if (!listResult.ok) {
+      console.warn('[ops-v1] list tasks failed, returning empty', listResult.error);
+      return { ok: true, tasks: [], summary, autoSync };
     }
 
-    const tasks = result.tasks.map(mapOperatorTaskToV1);
-    return { ok: true, tasks, summary: buildOpsV1Summary(tasks), autoSync };
+    const tasks = listResult.tasks.map(mapOperatorTaskToV1);
+    return { ok: true, tasks, summary, autoSync };
   } catch (error) {
     console.warn('[ops-v1] list tasks error, returning empty', error);
     return { ok: true, tasks: [], summary: buildOpsV1Summary([]), autoSync };

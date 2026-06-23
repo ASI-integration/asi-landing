@@ -29,6 +29,8 @@ export const OPS_OPEN_STATUSES: OpsTaskStatus[] = [
   'needs_operator',
 ];
 
+export const OPS_DONE_STATUSES: OpsTaskStatus[] = ['done', 'closed'];
+
 export const OPS_TASK_PRIORITIES = ['normal', 'urgent', 'critical'] as const;
 
 export type OpsTaskPriority = (typeof OPS_TASK_PRIORITIES)[number];

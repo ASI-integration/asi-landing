@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import {
+  OPS_DONE_STATUSES,
   OPS_OPEN_STATUSES,
   OPS_TASK_TYPE_LABELS,
   type CreateOpsOperatorTaskInput,
@@ -93,18 +94,23 @@ export function defaultTitleForTaskType(taskType: OpsTaskType): string {
   return OPS_TASK_TYPE_LABELS[taskType];
 }
 
-async function findOpenTaskByDedupKey(dedupKey: string): Promise<OpsOperatorTask | null> {
+async function findTaskByDedupKey(dedupKey: string): Promise<OpsOperatorTask | null> {
   const { data, error } = await supabase
     .from('ops_operator_tasks')
     .select('*')
     .eq('dedup_key', dedupKey)
-    .in('task_status', OPS_OPEN_STATUSES)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error || !data) return null;
   return mapRow(data as OpsOperatorTaskRow);
+}
+
+async function findOpenTaskByDedupKey(dedupKey: string): Promise<OpsOperatorTask | null> {
+  const task = await findTaskByDedupKey(dedupKey);
+  if (!task || !OPS_OPEN_STATUSES.includes(task.taskStatus)) return null;
+  return task;
 }
 
 export async function createOpsOperatorTask(
@@ -118,8 +124,12 @@ export async function createOpsOperatorTask(
       contactId: input.contactId,
     });
 
-  const existing = await findOpenTaskByDedupKey(dedupKey);
+  const existing = await findTaskByDedupKey(dedupKey);
   if (existing) {
+    if (!OPS_OPEN_STATUSES.includes(existing.taskStatus)) {
+      return { ok: true, task: existing, created: false };
+    }
+
     if (input.updateIfExists) {
       const updates: UpdateOpsOperatorTaskInput = {
         taskStatus: input.updateIfExists.taskStatus ?? existing.taskStatus,
@@ -179,7 +189,7 @@ export async function createOpsOperatorTask(
 }
 
 export type ListOpsOperatorTasksFilter = {
-  status?: OpsTaskStatus | 'open' | 'all';
+  status?: OpsTaskStatus | 'open' | 'active' | 'done' | 'all';
   urgentOnly?: boolean;
 };
 
@@ -188,8 +198,10 @@ export async function listOpsOperatorTasks(
 ): Promise<{ ok: boolean; tasks: OpsOperatorTask[]; error?: string }> {
   let query = supabase.from('ops_operator_tasks').select('*').order('updated_at', { ascending: false });
 
-  if (filter.status === 'open') {
+  if (filter.status === 'open' || filter.status === 'active') {
     query = query.in('task_status', OPS_OPEN_STATUSES) as typeof query;
+  } else if (filter.status === 'done') {
+    query = query.in('task_status', OPS_DONE_STATUSES) as typeof query;
   } else if (filter.status && filter.status !== 'all') {
     query = query.eq('task_status', filter.status) as typeof query;
   }
@@ -242,6 +254,8 @@ export async function updateOpsOperatorTask(
 
   if (input.taskStatus === 'done' || input.taskStatus === 'closed') {
     updates.closed_at = now;
+  } else if (OPS_OPEN_STATUSES.includes(input.taskStatus)) {
+    updates.closed_at = null;
   }
 
   const { data, error } = await supabase

@@ -6,18 +6,37 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = Record<string, unknown>;
 
+const OPEN_STATUSES = ['new', 'in_progress', 'waiting_owner', 'needs_operator'];
+
 let rows: Row[] = [];
 
 function resetStore(): void {
   rows = [];
 }
 
-function findOpenByDedup(dedupKey: string): Row | undefined {
-  return rows.find(
-    (row) =>
-      row.dedup_key === dedupKey &&
-      ['new', 'in_progress', 'waiting_owner', 'needs_operator'].includes(String(row.task_status)),
-  );
+function findByDedup(dedupKey: string): Row | undefined {
+  return rows.find((row) => row.dedup_key === dedupKey);
+}
+
+function sortRows(data: Row[]): Row[] {
+  return [...data].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+}
+
+function filterByStatuses(statuses: string[]): Row[] {
+  const allowed = new Set(statuses);
+  return sortRows(rows.filter((row) => allowed.has(String(row.task_status))));
+}
+
+function listThenable(data: Row[]) {
+  return {
+    in: (col: string, values: unknown[]) => {
+      if (col === 'task_status') {
+        return listThenable(filterByStatuses(values.map(String)));
+      }
+      return listThenable(data);
+    },
+    then: (cb: (r: { data: Row[]; error: null }) => unknown) => cb({ data, error: null }),
+  };
 }
 
 vi.mock('@/lib/supabase', () => ({
@@ -29,15 +48,12 @@ vi.mock('@/lib/supabase', () => ({
         insert: (row: Row) => ({
           select: () => ({
             single: async () => {
-              const dedup = String(row.dedup_key ?? '');
-              if (findOpenByDedup(dedup)) {
-                return { data: null, error: { message: 'duplicate', code: '23505' } };
-              }
               const created = {
                 id: `task-${rows.length + 1}`,
                 ...row,
                 metadata: row.metadata ?? {},
                 closed_at: null,
+                updated_at: row.updated_at ?? row.created_at ?? new Date().toISOString(),
               };
               rows.push(created);
               return { data: created, error: null };
@@ -45,23 +61,22 @@ vi.mock('@/lib/supabase', () => ({
           }),
         }),
         select: () => ({
-          eq: (col: string, val: unknown) => ({
-            in: () => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({ data: findOpenByDedup(String(val)) ?? null, error: null }),
+          eq: (col: string, val: unknown) => {
+            if (col === 'dedup_key') {
+              const match = findByDedup(String(val));
+              return {
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: async () => ({ data: match ?? null, error: null }),
+                  }),
                 }),
-              }),
-            }),
-            maybeSingle: async () => ({ data: rows.find((row) => row[col] === val) ?? null, error: null }),
-          }),
-          order: () => ({
-            then: (cb: (r: { data: Row[]; error: null }) => unknown) =>
-              cb({
-                data: [...rows].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))),
-                error: null,
-              }),
-          }),
+              };
+            }
+            return {
+              maybeSingle: async () => ({ data: rows.find((item) => item[col] === val) ?? null, error: null }),
+            };
+          },
+          order: () => listThenable(sortRows(rows)),
         }),
         update: (patch: Row) => ({
           eq: (col: string, val: unknown) => ({
@@ -108,7 +123,7 @@ describe('ops v1', () => {
     expect(mapOperatorStatusToV1('needs_operator')).toBe('needs_attention');
   });
 
-  it('builds summary cards from OPS v1 tasks', () => {
+  it('builds summary cards from OPS v1 tasks and ignores completed ones', () => {
     const today = new Date().toISOString();
     const summary = buildOpsV1Summary([
       {
@@ -139,6 +154,20 @@ describe('ops v1', () => {
         createdAt: today,
         updatedAt: today,
       },
+      {
+        id: '3',
+        propertyId: 'OBJ-3',
+        objectLabel: 'Квартира 3',
+        taskType: 'cleaning',
+        status: 'done',
+        source: 'crm',
+        origin: 'auto',
+        scheduledAt: today,
+        comment: null,
+        title: 'Уборка',
+        createdAt: today,
+        updatedAt: today,
+      },
     ]);
 
     expect(summary.checkinsToday).toBe(1);
@@ -154,13 +183,13 @@ describe('ops v1', () => {
     });
     expect(created.ok).toBe(true);
 
-    const listResponse = await listTasksRoute();
+    const listResponse = await listTasksRoute(new Request('http://localhost/api/ops/tasks?filter=active'));
     const listPayload = await listResponse.json();
     expect(listResponse.status).toBe(200);
     expect(listPayload.tasks).toHaveLength(1);
     expect(listPayload.summary).toBeTruthy();
 
-    const listed = await listOpsV1Tasks();
+    const listed = await listOpsV1Tasks({ filter: 'active', syncAuto: false });
     expect(listed.tasks[0]?.objectLabel).toBe('Тестовый объект');
 
     const patchResponse = await patchTaskRoute(
@@ -193,7 +222,7 @@ describe('ops v1', () => {
       return originalFrom.call(supabase, table);
     });
 
-    const listResponse = await listTasksRoute();
+    const listResponse = await listTasksRoute(new Request('http://localhost/api/ops/tasks'));
     const listPayload = await listResponse.json();
 
     expect(listResponse.status).toBe(200);

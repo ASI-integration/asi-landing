@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isOpsAdminEmail } from '@/lib/crm/access';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { createOpsV1Task, listOpsV1Tasks } from '@/lib/ops-v1/repository';
-import { OPS_V1_TASK_TYPES, type OpsV1TaskType } from '@/lib/ops-v1/types';
+import { OPS_V1_TASK_TYPES, type OpsV1ListFilter, type OpsV1TaskType } from '@/lib/ops-v1/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +16,19 @@ function logOpsAdminCheck(email: string | null | undefined, isAdmin: boolean): v
   console.info('OPS admin check: not in allowlist');
 }
 
-export async function GET(): Promise<NextResponse> {
+function parseListFilter(raw: string | null): OpsV1ListFilter {
+  if (raw === 'done' || raw === 'all') return raw;
+  return 'active';
+}
+
+export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
-  const result = await listOpsV1Tasks({ syncAuto: true });
+  const url = new URL(req.url);
+  const filter = parseListFilter(url.searchParams.get('filter'));
+
+  const result = await listOpsV1Tasks({ syncAuto: true, filter });
   const isOpsAdmin = isOpsAdminEmail(auth.session.email);
   logOpsAdminCheck(auth.session.email, isOpsAdmin);
 
@@ -28,6 +36,7 @@ export async function GET(): Promise<NextResponse> {
     ok: true,
     tasks: result.tasks,
     summary: result.summary,
+    filter,
     refreshedAt: new Date().toISOString(),
     isOpsAdmin,
     autoSync: result.autoSync ?? null,

@@ -8,6 +8,7 @@ import {
   OPS_V1_STATUS_LABELS,
   OPS_V1_TASK_TYPE_LABELS,
   OPS_V1_TASK_TYPES,
+  type OpsV1ListFilter,
   type OpsV1Status,
   type OpsV1Summary,
   type OpsV1Task,
@@ -19,6 +20,7 @@ type TasksResponse = {
   message?: string;
   tasks: OpsV1Task[];
   summary: OpsV1Summary;
+  filter?: OpsV1ListFilter;
   refreshedAt?: string;
   isOpsAdmin?: boolean;
 };
@@ -28,6 +30,18 @@ const STATUS_TONE: Record<OpsV1Status, string> = {
   in_progress: 'border-indigo-200 bg-indigo-50 text-indigo-800',
   done: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   needs_attention: 'border-rose-200 bg-rose-50 text-rose-800',
+};
+
+const LIST_FILTERS: { value: OpsV1ListFilter; label: string }[] = [
+  { value: 'active', label: 'Активные' },
+  { value: 'done', label: 'Завершённые' },
+  { value: 'all', label: 'Все' },
+];
+
+const EMPTY_STATE: Record<OpsV1ListFilter, string> = {
+  active: 'Пока нет активных операционных задач.',
+  done: 'Пока нет завершённых задач.',
+  all: 'Пока нет операционных задач.',
 };
 
 function formatWhen(value: string | null): string {
@@ -59,6 +73,7 @@ export default function OpsPageClient() {
     cleaningNeeded: 0,
     needsAttention: 0,
   });
+  const [listFilter, setListFilter] = useState<OpsV1ListFilter>('active');
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
@@ -69,11 +84,11 @@ export default function OpsPageClient() {
   const [newComment, setNewComment] = useState('');
   const [isOpsAdmin, setIsOpsAdmin] = useState(false);
 
-  const loadTasks = useCallback(async () => {
+  const loadTasks = useCallback(async (filter: OpsV1ListFilter = listFilter) => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await fetch('/api/ops/tasks', { credentials: 'include' });
+      const res = await fetch(`/api/ops/tasks?filter=${filter}`, { credentials: 'include' });
       const payload = await readResponseJson<TasksResponse>(res, {
         ok: false,
         tasks: [],
@@ -89,11 +104,15 @@ export default function OpsPageClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [listFilter]);
 
   useEffect(() => {
-    void loadTasks();
-  }, [loadTasks]);
+    void loadTasks(listFilter);
+  }, [listFilter, loadTasks]);
+
+  const changeFilter = useCallback((filter: OpsV1ListFilter) => {
+    setListFilter(filter);
+  }, []);
 
   const updateStatus = useCallback(async (taskId: string, status: OpsV1Status) => {
     setUpdatingId(taskId);
@@ -112,15 +131,11 @@ export default function OpsPageClient() {
         setMessage(payload.message || 'Не удалось обновить задачу.');
         return;
       }
-      setTasks((current) => {
-        const next = current.map((task) => (task.id === taskId ? payload.task! : task));
-        return next;
-      });
-      await loadTasks();
+      await loadTasks(listFilter);
     } finally {
       setUpdatingId(null);
     }
-  }, [loadTasks]);
+  }, [listFilter, loadTasks]);
 
   const createTask = useCallback(async () => {
     setCreating(true);
@@ -144,11 +159,11 @@ export default function OpsPageClient() {
       setShowCreate(false);
       setNewObjectLabel('');
       setNewComment('');
-      await loadTasks();
+      await loadTasks(listFilter);
     } finally {
       setCreating(false);
     }
-  }, [loadTasks, newComment, newObjectLabel, newTaskType]);
+  }, [listFilter, loadTasks, newComment, newObjectLabel, newTaskType]);
 
   return (
     <div className="max-w-7xl space-y-6">
@@ -172,7 +187,23 @@ export default function OpsPageClient() {
             <h2 className="text-lg font-semibold text-slate-950">Операционные задачи</h2>
             <p className="text-sm text-slate-500">Список ближайших действий по объектам</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-slate-300 bg-slate-50 p-0.5">
+              {LIST_FILTERS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => changeFilter(item.value)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    listFilter === item.value
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             {isOpsAdmin ? (
               <button
                 type="button"
@@ -184,7 +215,7 @@ export default function OpsPageClient() {
             ) : null}
             <button
               type="button"
-              onClick={() => void loadTasks()}
+              onClick={() => void loadTasks(listFilter)}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
             >
               Обновить
@@ -260,11 +291,13 @@ export default function OpsPageClient() {
           </div>
         ) : tasks.length === 0 ? (
           <div className="p-8 text-center text-slate-600">
-            <p className="text-base font-medium text-slate-800">Пока нет активных операционных задач.</p>
-            <p className="mt-2 text-sm leading-6">
-              Когда появятся заезды, выезды, обращения гостей или задачи по объектам, они будут отображаться здесь
-              автоматически.
-            </p>
+            <p className="text-base font-medium text-slate-800">{EMPTY_STATE[listFilter]}</p>
+            {listFilter === 'active' ? (
+              <p className="mt-2 text-sm leading-6">
+                Когда появятся заезды, выезды, обращения гостей или задачи по объектам, они будут отображаться здесь
+                автоматически.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -285,6 +318,7 @@ export default function OpsPageClient() {
                 {tasks.map((task) => {
                   const isUpdating = updatingId === task.id;
                   const isDone = task.status === 'done';
+                  const showReopen = isDone && listFilter === 'done';
                   return (
                     <tr key={task.id} className="align-top">
                       <td className="px-4 py-3 font-medium text-slate-900">
@@ -313,7 +347,16 @@ export default function OpsPageClient() {
                       </td>
                       <td className="px-4 py-3 text-slate-600">{task.comment || '—'}</td>
                       <td className="px-4 py-3">
-                        {isDone ? (
+                        {showReopen ? (
+                          <button
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={() => void updateStatus(task.id, 'in_progress')}
+                            className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+                          >
+                            Вернуть в работу
+                          </button>
+                        ) : isDone ? (
                           <span className="text-slate-400">—</span>
                         ) : (
                           <div className="flex flex-wrap gap-1.5">

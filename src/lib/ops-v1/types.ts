@@ -12,6 +12,10 @@ export const OPS_V1_STATUSES = ['new', 'in_progress', 'done', 'needs_attention']
 
 export type OpsV1Status = (typeof OPS_V1_STATUSES)[number];
 
+export type OpsV1ListFilter = 'active' | 'done' | 'all';
+
+export const OPS_V1_ACTIVE_STATUSES: OpsV1Status[] = ['new', 'in_progress', 'needs_attention'];
+
 export const OPS_V1_SOURCES = [
   'crm',
   'object_passport',
