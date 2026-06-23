@@ -61,6 +61,16 @@ fi
   exit 1
 }
 
+[[ -f scripts/telegram-ops-live-acceptance.mjs ]] || {
+  echo "ERROR: missing scripts/telegram-ops-live-acceptance.mjs in artifact" >&2
+  exit 1
+}
+
+[[ -f scripts/telegram-ops-live-acceptance.runner.ts ]] || {
+  echo "ERROR: missing scripts/telegram-ops-live-acceptance.runner.ts in artifact" >&2
+  exit 1
+}
+
 [[ -f tsconfig.json ]] || {
   echo "ERROR: missing tsconfig.json in artifact (required for acceptance runners)" >&2
   exit 1

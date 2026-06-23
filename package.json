@@ -30,7 +30,8 @@
     "location-pdf:check-chromium": "node scripts/check-location-pdf-chromium.mjs",
     "location-pdf:verify-production": "node scripts/verify-location-report-pdf-production.mjs",
     "acceptance:ops-v12": "node scripts/ops-v12-live-acceptance.mjs",
-    "acceptance:communication-ops": "node scripts/communication-ops-live-acceptance.mjs"
+    "acceptance:communication-ops": "node scripts/communication-ops-live-acceptance.mjs",
+    "acceptance:telegram-ops-live": "node scripts/telegram-ops-live-acceptance.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
