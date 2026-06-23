@@ -4,6 +4,7 @@ import {
   buildTelegramOpsAcceptanceMessage,
   cleanupTelegramOpsAcceptanceData,
   findAcceptanceEscalationReview,
+  runTelegramOpsAcceptanceFull,
   runTelegramOpsAcceptanceLifecycle,
   verifyTelegramOpsTaskForReview,
 } from '@/lib/communication/telegram-ops-acceptance';
@@ -46,6 +47,12 @@ export async function POST(req: Request): Promise<Response> {
   const action = String(body.action ?? 'poll_review').trim();
 
   try {
+    if (action === 'run') {
+      const runId = String(body.runId ?? body.marker ?? '').trim() || undefined;
+      const result = await runTelegramOpsAcceptanceFull({ runId });
+      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+    }
+
     if (action === 'poll_review') {
       const targetId = parseTargetId(body);
       const marker = parseMarker(body);

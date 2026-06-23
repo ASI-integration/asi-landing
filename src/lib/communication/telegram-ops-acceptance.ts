@@ -1,4 +1,12 @@
+import { tgTextUpdate } from './dev/telegram-fixtures';
+import { processUpdate } from './orchestrator';
 import { closeEscalationReview, listEscalationReviews, type EscalationReview } from './operator-review';
+import { ProcessOutcome } from './types';
+import {
+  formatOpsOperatorTasksPreflightFailure,
+  getSupabaseHostForLog,
+  verifyOpsOperatorTasksTable,
+} from '@/lib/ops-board/acceptance-preflight';
 import {
   buildAutoOpsDedupKey,
   listOpsOperatorTasks,
@@ -10,11 +18,33 @@ import { supabase } from '@/lib/supabase';
 
 export const TELEGRAM_OPS_ACCEPTANCE_PREFIX = 'ASI_TG_OPS_ACCEPTANCE_';
 
+/** Reserved synthetic chat for internal acceptance — never a real Telegram user chat. */
+export const TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT = 990_001_337;
+
+export function getTelegramOpsAcceptanceSyntheticChatId(): number {
+  const raw = process.env.TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID?.trim();
+  if (!raw) return TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT;
+}
+
 export const TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX =
   'У гостя проблема, срочно нужен оператор';
 
 export function buildTelegramOpsAcceptanceMessage(runId: string): string {
   return `${TELEGRAM_OPS_ACCEPTANCE_PREFIX}${runId} ${TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX}`;
+}
+
+export function buildTelegramOpsAcceptanceSyntheticUpdate(runId: string) {
+  const now = Date.now();
+  return tgTextUpdate({
+    update_id: now,
+    message_id: now + 1,
+    chat_id: getTelegramOpsAcceptanceSyntheticChatId(),
+    user_id: now + 2,
+    language_code: 'ru',
+    text: buildTelegramOpsAcceptanceMessage(runId),
+  });
 }
 
 function reviewMatchesMarker(review: EscalationReview, targetId: string, marker: string): boolean {
@@ -167,6 +197,134 @@ export async function runTelegramOpsAcceptanceLifecycle(taskId: string): Promise
   }
 
   return { ok: failures.length === 0, failures };
+}
+
+export type TelegramOpsAcceptanceRunResult = {
+  ok: boolean;
+  failures: string[];
+  runId: string;
+  marker: string;
+  chatId: string;
+  reviewId: string | null;
+  taskId: string | null;
+  processOutcome: string | null;
+  firstSync: { created: number; scanned: number } | null;
+  secondSync: { created: number; scanned: number } | null;
+};
+
+export async function runTelegramOpsAcceptanceFull(input?: {
+  runId?: string;
+  skipCleanup?: boolean;
+}): Promise<TelegramOpsAcceptanceRunResult> {
+  const failures: string[] = [];
+  const runId = String(input?.runId ?? Date.now().toString(36)).trim() || Date.now().toString(36);
+  const marker = `${TELEGRAM_OPS_ACCEPTANCE_PREFIX}${runId}`;
+  const chatId = String(getTelegramOpsAcceptanceSyntheticChatId());
+
+  const preflight = await verifyOpsOperatorTasksTable();
+  if (!preflight.ok) {
+    return {
+      ok: false,
+      failures: [formatOpsOperatorTasksPreflightFailure(preflight.error)],
+      runId,
+      marker,
+      chatId,
+      reviewId: null,
+      taskId: null,
+      processOutcome: null,
+      firstSync: null,
+      secondSync: null,
+    };
+  }
+
+  let reviewId: string | null = null;
+  let taskId: string | null = null;
+  let processOutcome: string | null = null;
+  let firstSync: { created: number; scanned: number } | null = null;
+  let secondSync: { created: number; scanned: number } | null = null;
+
+  const prevDryRun = process.env.DRY_RUN_TELEGRAM_OUTBOUND;
+  process.env.DRY_RUN_TELEGRAM_OUTBOUND = '1';
+
+  try {
+    const update = buildTelegramOpsAcceptanceSyntheticUpdate(runId);
+    const processResult = await processUpdate(update);
+    processOutcome = processResult.outcome;
+
+    if (processResult.outcome === ProcessOutcome.Duplicate) {
+      failures.push('processUpdate returned Duplicate (inbound idempotency collision)');
+    } else if (processResult.outcome === ProcessOutcome.Ignored) {
+      failures.push('processUpdate ignored synthetic update');
+    }
+
+    const review = findAcceptanceEscalationReview({ targetId: chatId, marker });
+    if (!review) {
+      failures.push('pending escalation review not found after processUpdate');
+    } else {
+      reviewId = review.reviewId;
+    }
+
+    if (reviewId) {
+      const verify = await verifyTelegramOpsTaskForReview(reviewId);
+      firstSync = verify.firstSync;
+      secondSync = verify.secondSync;
+      if (!verify.ok) {
+        failures.push(...verify.failures);
+      } else {
+        taskId = verify.taskId;
+      }
+
+      if (taskId) {
+        const lifecycle = await runTelegramOpsAcceptanceLifecycle(taskId);
+        if (!lifecycle.ok) {
+          failures.push(...lifecycle.failures);
+        }
+      }
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    failures.push(`acceptance run failed: ${detail}`);
+  } finally {
+    if (prevDryRun === undefined) {
+      delete process.env.DRY_RUN_TELEGRAM_OUTBOUND;
+    } else {
+      process.env.DRY_RUN_TELEGRAM_OUTBOUND = prevDryRun;
+    }
+
+    const shouldCleanup = !input?.skipCleanup && process.env.KEEP_OPS_ACCEPTANCE_DATA !== '1';
+    if (shouldCleanup && (reviewId || taskId)) {
+      try {
+        await cleanupTelegramOpsAcceptanceData({ reviewId, taskId });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        failures.push(`cleanup failed: ${detail}`);
+      }
+    }
+  }
+
+  if (failures.length === 0) {
+    console.info('[telegram-ops-acceptance] run ok', {
+      supabase_host: getSupabaseHostForLog(),
+      chatId,
+      marker,
+      processOutcome,
+      reviewId,
+      taskId,
+    });
+  }
+
+  return {
+    ok: failures.length === 0,
+    failures,
+    runId,
+    marker,
+    chatId,
+    reviewId,
+    taskId,
+    processOutcome,
+    firstSync,
+    secondSync,
+  };
 }
 
 export async function cleanupTelegramOpsAcceptanceData(input: {

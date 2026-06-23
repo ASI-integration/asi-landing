@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   findAcceptanceEscalationReview: vi.fn(),
   verifyTelegramOpsTaskForReview: vi.fn(),
   runTelegramOpsAcceptanceLifecycle: vi.fn(),
+  runTelegramOpsAcceptanceFull: vi.fn(),
   cleanupTelegramOpsAcceptanceData: vi.fn(),
 }));
 
@@ -12,6 +13,7 @@ vi.mock('@/lib/communication/telegram-ops-acceptance', () => ({
   findAcceptanceEscalationReview: mocks.findAcceptanceEscalationReview,
   verifyTelegramOpsTaskForReview: mocks.verifyTelegramOpsTaskForReview,
   runTelegramOpsAcceptanceLifecycle: mocks.runTelegramOpsAcceptanceLifecycle,
+  runTelegramOpsAcceptanceFull: mocks.runTelegramOpsAcceptanceFull,
   cleanupTelegramOpsAcceptanceData: mocks.cleanupTelegramOpsAcceptanceData,
 }));
 
@@ -32,6 +34,37 @@ describe('POST /api/internal/telegram-ops-acceptance', () => {
 
     const res = await POST(req);
     expect(res.status).toBe(403);
+  });
+
+  it('runs automated acceptance without getUpdates', async () => {
+    mocks.runTelegramOpsAcceptanceFull.mockResolvedValue({
+      ok: true,
+      failures: [],
+      runId: 'run1',
+      marker: 'ASI_TG_OPS_ACCEPTANCE_run1',
+      chatId: '990001337',
+      reviewId: 'rev-1',
+      taskId: 'task-1',
+      processOutcome: 'replied',
+      firstSync: { created: 1, scanned: 2 },
+      secondSync: { created: 0, scanned: 2 },
+    });
+
+    const req = new Request('https://example.test/api/internal/telegram-ops-acceptance', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-internal-test-secret': 'test-secret',
+      },
+      body: JSON.stringify({ action: 'run' }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(mocks.runTelegramOpsAcceptanceFull).toHaveBeenCalledOnce();
   });
 
   it('polls pending escalation review by chat id and marker', async () => {

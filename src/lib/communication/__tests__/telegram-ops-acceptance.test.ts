@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   updateOpsV1Task: vi.fn(),
   closeEscalationReview: vi.fn(),
   supabaseDelete: vi.fn(),
+  processUpdate: vi.fn(),
+  verifyOpsOperatorTasksTable: vi.fn(),
 }));
 
 vi.mock('@/lib/communication/operator-review', () => ({
@@ -46,9 +48,22 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../orchestrator', () => ({
+  processUpdate: mocks.processUpdate,
+}));
+
+vi.mock('@/lib/ops-board/acceptance-preflight', () => ({
+  verifyOpsOperatorTasksTable: mocks.verifyOpsOperatorTasksTable,
+  getSupabaseHostForLog: () => 'test.supabase.co',
+  formatOpsOperatorTasksPreflightFailure: (error: string) => `preflight failed: ${error}`,
+}));
+
 import {
   buildTelegramOpsAcceptanceMessage,
+  buildTelegramOpsAcceptanceSyntheticUpdate,
   findAcceptanceEscalationReview,
+  getTelegramOpsAcceptanceSyntheticChatId,
+  runTelegramOpsAcceptanceFull,
   runTelegramOpsAcceptanceLifecycle,
   verifyTelegramOpsTaskForReview,
 } from '@/lib/communication/telegram-ops-acceptance';
@@ -59,12 +74,81 @@ describe('telegram ops acceptance helpers', () => {
     vi.clearAllMocks();
     mocks.syncAutoOpsTasks.mockResolvedValue({ created: 1, scanned: 3 });
     mocks.supabaseDelete.mockResolvedValue({ error: null });
+    mocks.verifyOpsOperatorTasksTable.mockResolvedValue({ ok: true });
+    mocks.processUpdate.mockResolvedValue({ outcome: 'replied' });
   });
 
   it('builds a unique acceptance telegram message', () => {
     const message = buildTelegramOpsAcceptanceMessage('abc123');
     expect(message).toContain('ASI_TG_OPS_ACCEPTANCE_abc123');
     expect(message).toContain('У гостя проблема, срочно нужен оператор');
+  });
+
+  it('builds synthetic update with reserved chat id', () => {
+    const update = buildTelegramOpsAcceptanceSyntheticUpdate('run1');
+    expect(update.message?.chat?.id).toBe(getTelegramOpsAcceptanceSyntheticChatId());
+    expect(update.message?.text).toContain('ASI_TG_OPS_ACCEPTANCE_run1');
+  });
+
+  it('runs full acceptance via processUpdate without direct task creation', async () => {
+    const chatId = String(getTelegramOpsAcceptanceSyntheticChatId());
+    const reviewId = 'rev-acceptance';
+    const dedupKey = buildAutoOpsDedupKey({
+      source: 'communications',
+      sourceId: reviewId,
+      taskType: 'verify_guest_issue',
+    });
+
+    mocks.listEscalationReviews.mockReturnValue([
+      {
+        reviewId,
+        targetId: chatId,
+        status: 'pending',
+        detail: 'ASI_TG_OPS_ACCEPTANCE_run1 У гостя проблема',
+        latestMessages: [],
+        createdAt: '2026-06-23T10:00:00.000Z',
+      },
+    ]);
+
+    mocks.listOpsOperatorTasks.mockResolvedValue({
+      ok: true,
+      tasks: [
+        {
+          id: 'task-1',
+          dedupKey,
+          source: 'communication_autopilot',
+          taskType: 'verify_guest_issue',
+          taskStatus: 'needs_operator',
+          objectId: null,
+          objectLabel: null,
+          description: 'Требуется ручная проверка сообщения гостя',
+          metadata: { created_by_system: true, integration: 'communications_escalation' },
+          createdAt: '2026-06-23T10:00:00.000Z',
+          updatedAt: '2026-06-23T10:00:00.000Z',
+        },
+      ],
+    });
+
+    mocks.syncAutoOpsTasks
+      .mockResolvedValueOnce({ created: 1, scanned: 2 })
+      .mockResolvedValueOnce({ created: 0, scanned: 2 });
+
+    mocks.listOpsV1Tasks
+      .mockResolvedValueOnce({ ok: true, tasks: [{ id: 'task-1', status: 'needs_attention' }] })
+      .mockResolvedValueOnce({ ok: true, tasks: [] })
+      .mockResolvedValueOnce({ ok: true, tasks: [{ id: 'task-1', status: 'done' }] })
+      .mockResolvedValueOnce({ ok: true, tasks: [{ id: 'task-1', status: 'in_progress' }] });
+
+    mocks.updateOpsV1Task
+      .mockResolvedValueOnce({ ok: true, task: { id: 'task-1', status: 'done' } })
+      .mockResolvedValueOnce({ ok: true, task: { id: 'task-1', status: 'in_progress' } });
+
+    const result = await runTelegramOpsAcceptanceFull({ runId: 'run1', skipCleanup: true });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.processUpdate).toHaveBeenCalledOnce();
+    expect(result.taskId).toBe('task-1');
+    expect(result.reviewId).toBe(reviewId);
   });
 
   it('finds pending review by chat id and marker', () => {
