@@ -51,6 +51,26 @@ fi
   exit 1
 }
 
+[[ -f scripts/communication-ops-live-acceptance.mjs ]] || {
+  echo "ERROR: missing scripts/communication-ops-live-acceptance.mjs in artifact" >&2
+  exit 1
+}
+
+[[ -f scripts/communication-ops-live-acceptance.runner.ts ]] || {
+  echo "ERROR: missing scripts/communication-ops-live-acceptance.runner.ts in artifact" >&2
+  exit 1
+}
+
+[[ -f tsconfig.json ]] || {
+  echo "ERROR: missing tsconfig.json in artifact (required for acceptance runners)" >&2
+  exit 1
+}
+
+[[ -d src/lib ]] || {
+  echo "ERROR: missing src/lib in artifact (required for acceptance runners)" >&2
+  exit 1
+}
+
 echo "Starting Next (production) on 127.0.0.1:${PORT}..."
 SRV_PID=""
 PORT="$PORT" NODE_ENV=production ASI_APP_ROOT="$(pwd)" \

@@ -109,6 +109,10 @@ jobs:
           cp scripts/telegram-live-acceptance.mjs release/scripts/
           cp scripts/check-location-pdf-chromium.mjs release/scripts/
           cp scripts/verify-location-report-pdf-production.mjs release/scripts/
+          cp scripts/communication-ops-live-acceptance.mjs release/scripts/
+          cp scripts/communication-ops-live-acceptance.runner.ts release/scripts/
+          cp tsconfig.json release/
+          cp -R src release/
           cp tests/telegram-live-cases.ru.json release/tests/
           cp tests/location-report-production-cases.json release/tests/
           if [ -d public ]; then cp -R public release/; fi
