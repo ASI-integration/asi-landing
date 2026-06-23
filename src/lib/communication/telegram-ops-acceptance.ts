@@ -1,6 +1,14 @@
 import { tgTextUpdate } from './dev/telegram-fixtures';
 import { processUpdate } from './orchestrator';
 import { closeEscalationReview, listEscalationReviews, type EscalationReview } from './operator-review';
+import {
+  buildTelegramOpsAcceptanceMessage,
+  getTelegramOpsAcceptanceSyntheticChatId,
+  TELEGRAM_OPS_ACCEPTANCE_PREFIX,
+  TELEGRAM_OPS_ACCEPTANCE_ESCALATE_MARKER,
+  TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX,
+  TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT,
+} from './telegram-ops-acceptance-shared';
 import { ProcessOutcome } from './types';
 import {
   formatOpsOperatorTasksPreflightFailure,
@@ -16,24 +24,15 @@ import { mapOperatorTaskToV1 } from '@/lib/ops-v1/mapping';
 import { listOpsV1Tasks, updateOpsV1Task } from '@/lib/ops-v1/repository';
 import { supabase } from '@/lib/supabase';
 
-export const TELEGRAM_OPS_ACCEPTANCE_PREFIX = 'ASI_TG_OPS_ACCEPTANCE_';
-
-/** Reserved synthetic chat for internal acceptance — never a real Telegram user chat. */
-export const TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT = 990_001_337;
-
-export function getTelegramOpsAcceptanceSyntheticChatId(): number {
-  const raw = process.env.TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID?.trim();
-  if (!raw) return TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT;
-}
-
-export const TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX =
-  'У гостя проблема, срочно нужен оператор';
-
-export function buildTelegramOpsAcceptanceMessage(runId: string): string {
-  return `${TELEGRAM_OPS_ACCEPTANCE_PREFIX}${runId} ${TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX}`;
-}
+export {
+  TELEGRAM_OPS_ACCEPTANCE_PREFIX,
+  TELEGRAM_OPS_ACCEPTANCE_ESCALATE_MARKER,
+  TELEGRAM_OPS_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT,
+  TELEGRAM_OPS_ACCEPTANCE_MESSAGE_SUFFIX,
+  buildTelegramOpsAcceptanceMessage,
+  getTelegramOpsAcceptanceSyntheticChatId,
+  isTelegramOpsAcceptanceEscalationRequest,
+} from './telegram-ops-acceptance-shared';
 
 export function buildTelegramOpsAcceptanceSyntheticUpdate(runId: string) {
   const now = Date.now();

@@ -179,6 +179,7 @@ import {
   type ObjectKnowledgeStatus,
 } from './object-knowledge';
 import { isTelegramOutboundDryRun } from './telegram-outbound-safe-mode';
+import { handleTelegramOpsAcceptanceEscalation } from './telegram-ops-acceptance-escalation';
 import { shouldSuppressEmailOutbound } from './email-outbound-safe-mode';
 import {
   applyCommAgentSessionContinuation,
@@ -1376,6 +1377,17 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     meta: envelope.metadata,
   });
   convSession = updateSessionFactsAndSummary({ key: sessionKey, session: convSession, text });
+
+  const acceptanceEscalation = await handleTelegramOpsAcceptanceEscalation({
+    envelope,
+    identity,
+    convSession,
+    chatId,
+    update_id,
+  });
+  if (acceptanceEscalation) {
+    return acceptanceEscalation;
+  }
 
   // Session safety: if already escalated, avoid "normal automation" by default.
   // We still allow limited deterministic-only tooling for acceptance testing.

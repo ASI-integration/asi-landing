@@ -73,6 +73,11 @@ import { processMessage, processUpdate } from '../orchestrator';
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { __resetConversationSessionEngineForTests } from '../conversation-session-engine';
 import { __resetEscalationReviewStoreForTests, listEscalationReviews } from '../operator-review';
+import {
+  buildTelegramOpsAcceptanceSyntheticUpdate,
+  findAcceptanceEscalationReview,
+  getTelegramOpsAcceptanceSyntheticChatId,
+} from '../telegram-ops-acceptance';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -351,6 +356,26 @@ describe('processUpdate', () => {
     await processUpdate(makeUpdate('problem with the lock'));
     const [, sentText] = mockSendMessage.mock.calls.at(-1)!;
     expect(String(sentText)).toBe('LLM: after reset ok');
+  });
+
+  it('creates pending escalation review for internal Telegram OPS acceptance synthetic update', async () => {
+    const runId = `orch-${Date.now()}`;
+    const update = buildTelegramOpsAcceptanceSyntheticUpdate(runId);
+    const chatId = getTelegramOpsAcceptanceSyntheticChatId();
+
+    const result = await processUpdate(update);
+
+    expect(result.outcome).toBe(ProcessOutcome.Replied);
+    expect(result.escalation?.reason).toBe(EscalationReason.RequiresOperator);
+    const reviews = listEscalationReviews({ status: 'pending' });
+    expect(reviews.length).toBeGreaterThanOrEqual(1);
+    const review = findAcceptanceEscalationReview({
+      targetId: String(chatId),
+      marker: `ASI_TG_OPS_ACCEPTANCE_${runId}`,
+    });
+    expect(review?.reviewId).toBeTruthy();
+    expect(review?.escalationReason).toBe('operator_required');
+    expect(mockLLM).not.toHaveBeenCalled();
   });
 
   it('returns Error outcome but still does not throw when reply fails', async () => {

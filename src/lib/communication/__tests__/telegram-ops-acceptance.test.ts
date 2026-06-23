@@ -81,6 +81,7 @@ describe('telegram ops acceptance helpers', () => {
   it('builds a unique acceptance telegram message', () => {
     const message = buildTelegramOpsAcceptanceMessage('abc123');
     expect(message).toContain('ASI_TG_OPS_ACCEPTANCE_abc123');
+    expect(message).toContain('ASI_TG_OPS_ACCEPTANCE_ESCALATE');
     expect(message).toContain('У гостя проблема, срочно нужен оператор');
   });
 
