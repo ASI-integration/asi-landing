@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { createOrUpdateEscalationReview, type EscalationReview } from './operator-review';
+import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import type { CommunicationChannel, Message, Role } from './types';
 
 export type CommunicationEscalationSource = 'communication_autopilot' | 'telegram';
@@ -111,6 +112,10 @@ export async function recordCommunicationEscalation(
       createdAt: input.createdAt,
     });
   }
+
+  void syncAutoOpsTasks().catch((error) => {
+    console.warn('[communication-escalations] ops sync after escalation failed', error);
+  });
 
   return { review, contactId };
 }

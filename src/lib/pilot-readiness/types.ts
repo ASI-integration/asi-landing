@@ -65,3 +65,24 @@ export type PilotReadinessResult = {
 };
 
 export const PILOT_ACCEPTANCE_PREFIX = 'ASI_PILOT_READINESS_ACCEPTANCE_';
+
+export type PilotPropertyRow = {
+  property_id: string;
+  object_name?: string | null;
+  address?: string | null;
+  location?: string | null;
+  description?: string | null;
+  house_rules?: string | null;
+  house_rules_text?: string | null;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
+  wifi_name?: string | null;
+  wifi_password?: string | null;
+  access_notes?: string | null;
+  checkin_instructions?: string | null;
+  booking_channels?: string | null;
+  communication_autopilot?: string | null;
+  photos_deferred?: boolean | null;
+  active?: boolean | null;
+  pilot_acceptance_marker?: string | null;
+};

@@ -3,6 +3,7 @@ import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { getOpsOperatorTask, updateOpsOperatorTask } from '@/lib/ops-board/repository';
 import { emitOpsTaskStatusEvent } from '@/lib/ops-board/crm-events';
 import { mapOperatorTaskToV1, mapV1StatusToOperator } from '@/lib/ops-v1/mapping';
+import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import { OPS_V1_STATUSES, type OpsV1Status } from '@/lib/ops-v1/types';
 
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,10 @@ export async function PATCH(req: Request, { params }: RouteParams): Promise<Next
     taskType: result.task.taskType,
     taskStatus: result.task.taskStatus,
     title: task.title,
+  });
+
+  void syncAutoOpsTasks().catch((error) => {
+    console.warn('[ops-v1] auto sync after task update failed', error);
   });
 
   return NextResponse.json({ ok: true, task });

@@ -4,7 +4,9 @@ import {
   getSupabaseHostForLog,
   verifyOpsOperatorTasksTable,
 } from '@/lib/ops-board/acceptance-preflight';
-import { createPilotBooking } from '@/lib/bookings/repository';
+import { createPilotBooking, listPilotBookings } from '@/lib/bookings/repository';
+import { importBookingFromText } from '@/lib/bookings/import-service';
+import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
 import { runTelegramOpsAcceptanceFull } from '@/lib/communication/telegram-ops-acceptance';
 import {
   canSendAutonomousGuestReply,
@@ -15,6 +17,7 @@ import { cleanupPilotAcceptanceData } from '@/lib/pilot-readiness/cleanup';
 import { computePilotReadiness } from '@/lib/pilot-readiness/engine';
 import {
   getPilotReadinessForProperty,
+  listPilotReadinessResults,
   loadPilotObjectSnapshot,
   upsertPilotObjectKnowledge,
 } from '@/lib/pilot-readiness/repository';
@@ -91,6 +94,9 @@ export async function runPilotReadinessAcceptance(input?: {
     const before = await getPilotReadinessForProperty(propertyId);
     readinessBefore = before?.ready ?? false;
     if (readinessBefore) failures.push('readiness should be not ready before filling data');
+    if (before?.objectLabel === propertyId) {
+      failures.push('readiness should show human object label, not property_id');
+    }
 
     const firstSync = await syncAutoOpsTasks();
     const readinessDedup = buildAutoOpsDedupKey({
@@ -166,6 +172,44 @@ export async function runPilotReadinessAcceptance(input?: {
     }
     if (checkinTasks.length > 1) {
       failures.push(`duplicate prepare_checkin tasks: ${checkinTasks.length}`);
+    }
+
+    const importResult = await importBookingFromText({
+      text: `Гость acceptance 2, +79001112233, Пилот acceptance, заезд ${localDatePlusDays(2)}, выезд ${localDatePlusDays(4)}, Авито`,
+      properties: [{ propertyId, label: 'Пилот acceptance' }],
+      forceCreate: true,
+    });
+    if (!importResult.ok || !importResult.bookingId) {
+      failures.push(`booking text import failed: ${importResult.error ?? importResult.message}`);
+    }
+
+    const listedBookingsDefault = await listPilotBookings({ includeTest: false });
+    const hasAcceptanceBookingInDefaultList = listedBookingsDefault.some(
+      (item) => item.pilotAcceptanceMarker?.includes(marker) || item.id === bookingId,
+    );
+    if (hasAcceptanceBookingInDefaultList) {
+      failures.push('acceptance bookings should be hidden from default bookings list');
+    }
+
+    const listedReadinessDefault = await listPilotReadinessResults({ includeTest: false });
+    if (listedReadinessDefault.some((item) => item.propertyId === propertyId)) {
+      failures.push('acceptance properties should be hidden from default readiness list');
+    }
+
+    const ownerIntake = await tryTelegramOwnerBookingIntake({
+      envelope: {
+        channel: 'telegram',
+        externalUserId: 'owner-acceptance',
+        chatId: '999001122',
+        messageText: `Иван, +79005554433, Пилот acceptance, заезд ${localDatePlusDays(5)}, выезд ${localDatePlusDays(7)}`,
+        receivedAt: new Date(),
+        metadata: {},
+      },
+      chatId: 999001122,
+      knownProperties: [{ propertyId, label: 'Пилот acceptance' }],
+    });
+    if (!ownerIntake.handled) {
+      failures.push('telegram owner booking intake should handle owner booking text');
     }
 
     const telegramResult = await runTelegramOpsAcceptanceFull({

@@ -32,7 +32,9 @@
     "acceptance:ops-v12": "node scripts/ops-v12-live-acceptance.mjs",
     "acceptance:communication-ops": "node scripts/communication-ops-live-acceptance.mjs",
     "acceptance:telegram-ops-live": "node scripts/telegram-ops-live-acceptance.mjs",
-    "acceptance:pilot-readiness": "node scripts/pilot-readiness-live-acceptance.mjs"
+    "acceptance:pilot-readiness": "node scripts/pilot-readiness-live-acceptance.mjs",
+    "acceptance:pilot-automation": "node scripts/pilot-readiness-live-acceptance.mjs",
+    "ops:sync": "node scripts/ops-sync.mjs"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",

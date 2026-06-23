@@ -54,6 +54,7 @@ import {
 } from './telegram-owner-object-session';
 import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
 import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
+import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -1137,6 +1138,21 @@ export async function processTelegramOwnerOnboarding(params: {
   if (params.senderIdentity !== 'owner' && params.senderIdentity !== 'manager' && params.senderIdentity !== 'lead') {
     const state = readStateFromSession(params.chatId, params.envelope.channel);
     return { handled: false, replyText: '', status: state.status, missing: state.missing, state };
+  }
+
+  const bookingIntake = await tryTelegramOwnerBookingIntake({
+    envelope: params.envelope,
+    chatId: params.chatId,
+  });
+  if (bookingIntake.handled) {
+    const state = readStateFromSession(params.chatId, params.envelope.channel);
+    return {
+      handled: true,
+      replyText: bookingIntake.replyText,
+      status: state.status,
+      missing: state.missing,
+      state,
+    };
   }
 
   const wizardCallback = text((params.envelope.metadata as any)?.telegram_onboarding_wizard_callback, 64);

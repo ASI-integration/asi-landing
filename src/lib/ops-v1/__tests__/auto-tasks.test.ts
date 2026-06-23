@@ -337,7 +337,7 @@ describe('ops v1 auto tasks', () => {
 
     const result = await syncAutoOpsTasks();
 
-    expect(result).toEqual({ created: 0, scanned: 0 });
+    expect(result).toEqual({ created: 0, scanned: 0, updated: 0 });
     expect(mocks.createOpsOperatorTask).not.toHaveBeenCalled();
   });
 
@@ -354,7 +354,7 @@ describe('ops v1 auto tasks', () => {
 
     const result = await syncAutoOpsTasks();
 
-    expect(result).toEqual({ created: 0, scanned: 0 });
+    expect(result).toEqual({ created: 0, scanned: 0, updated: 0 });
     expect(warnSpy).toHaveBeenCalledWith(
       '[ops-v1] auto-sync: bookings source unavailable',
       'tg_guest_reservations missing',

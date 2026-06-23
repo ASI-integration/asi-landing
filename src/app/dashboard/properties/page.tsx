@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 import { readResponseJson } from '@/lib/safeResponseJson';
@@ -19,18 +20,24 @@ type ReadinessResponse = {
 
 const MODE_OPTIONS: CommunicationMode[] = ['off', 'manual', 'autopilot'];
 
+function passportHref(propertyId: string): string {
+  return `/dashboard/channel-connections?objectId=${encodeURIComponent(propertyId)}&source=pilot_readiness`;
+}
+
 function PropertiesPageInner() {
   const [results, setResults] = useState<PilotReadinessResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [isOpsAdmin, setIsOpsAdmin] = useState(false);
+  const [showTest, setShowTest] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await fetch('/api/dashboard/pilot-readiness', { credentials: 'include' });
+      const query = showTest ? '?includeTest=1' : '';
+      const res = await fetch(`/api/dashboard/pilot-readiness${query}`, { credentials: 'include' });
       const payload = await readResponseJson<ReadinessResponse>(res, { ok: false, results: [] });
       if (!res.ok || !payload.ok) {
         setMessage(payload.message || 'Не удалось загрузить готовность объектов.');
@@ -41,7 +48,7 @@ function PropertiesPageInner() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showTest]);
 
   useEffect(() => {
     void load();
@@ -73,20 +80,41 @@ function PropertiesPageInner() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Объекты</h1>
           <p className="mt-2 text-lg text-slate-500 leading-relaxed">
-            Чеклист готовности к пилоту. Недостающие данные создают OPS-задачи автоматически.
+            Готовность к пилоту на основе паспорта объекта. Недостающие данные автоматически создают OPS-задачи.
           </p>
         </div>
-        {isOpsAdmin ? (
-          <button
-            type="button"
-            onClick={() => void syncOps()}
-            disabled={syncing}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-          >
-            {syncing ? 'Синхронизация…' : 'Обновить OPS-задачи'}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {isOpsAdmin ? (
+            <Link
+              href="/dashboard/properties/prepare"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            >
+              Подготовить объект к пилоту
+            </Link>
+          ) : null}
+          {isOpsAdmin ? (
+            <button
+              type="button"
+              onClick={() => void syncOps()}
+              disabled={syncing}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {syncing ? 'Синхронизация…' : 'Обновить OPS-задачи'}
+            </button>
+          ) : null}
+        </div>
       </header>
+
+      {isOpsAdmin ? (
+        <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={showTest}
+            onChange={(event) => setShowTest(event.target.checked)}
+          />
+          Показать тестовые
+        </label>
+      ) : null}
 
       {message ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -100,8 +128,18 @@ function PropertiesPageInner() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5">
           <p className="text-base font-medium text-amber-800">Пилотные объекты пока не добавлены</p>
           <p className="mt-1 text-sm text-amber-700">
-            Добавьте объект через ранний доступ или админский API, затем заполните паспорт объекта.
+            {isOpsAdmin
+              ? 'Запустите подготовку объекта или добавьте объект через ранний доступ.'
+              : 'Добавьте объект через ранний доступ, затем заполните паспорт объекта.'}
           </p>
+          {isOpsAdmin ? (
+            <Link
+              href="/dashboard/properties/prepare"
+              className="mt-4 inline-block text-sm font-medium text-amber-900 underline"
+            >
+              Подготовить объект к пилоту
+            </Link>
+          ) : null}
         </div>
       ) : (
         <div className="space-y-4">
@@ -110,7 +148,7 @@ function PropertiesPageInner() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900">
-                    {item.objectLabel || item.propertyId}
+                    {item.objectLabel || 'Объект без названия'}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">{item.propertyId}</p>
                 </div>
@@ -124,6 +162,24 @@ function PropertiesPageInner() {
                   {item.ready ? 'Готов к пилоту' : 'Не готов'}
                 </span>
               </div>
+              {!item.ready ? (
+                <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                  <Link
+                    href={passportHref(item.propertyId)}
+                    className="font-medium text-slate-800 underline"
+                  >
+                    Заполнить в паспорте объекта
+                  </Link>
+                  {isOpsAdmin ? (
+                    <Link
+                      href={`/dashboard/properties/prepare?propertyId=${encodeURIComponent(item.propertyId)}`}
+                      className="font-medium text-slate-800 underline"
+                    >
+                      Мастер подготовки
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
               <ul className="mt-5 space-y-2">
                 {item.checks.map((check) => (
                   <li key={check.id} className="flex items-start gap-3 text-sm">

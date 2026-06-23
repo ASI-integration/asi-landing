@@ -114,6 +114,8 @@ jobs:
           cp scripts/telegram-ops-live-acceptance.mjs release/scripts/
           cp scripts/pilot-readiness-live-acceptance.mjs release/scripts/
           cp scripts/pilot-readiness-live-acceptance.runner.ts release/scripts/
+          cp scripts/ops-sync.mjs release/scripts/
+          cp scripts/ops-sync.runner.ts release/scripts/
           cp tsconfig.json release/
           cp -R src release/
           cp tests/telegram-live-cases.ru.json release/tests/

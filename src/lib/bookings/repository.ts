@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isPilotAcceptanceBooking, text as cleanText } from '@/lib/pilot-data/test-markers';
 import { supabase } from '@/lib/supabase';
 import {
   type BookingChannel,
@@ -29,7 +30,7 @@ type ReservationRow = {
 };
 
 function text(value: unknown): string {
-  return String(value ?? '').trim();
+  return cleanText(value);
 }
 
 function toIsoDate(value: string | null | undefined): string | null {
@@ -68,7 +69,11 @@ function buildReservationRef(input: CreatePilotBookingInput): string {
   return `pilot-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 }
 
-export async function listPilotBookings(limit = 200): Promise<PilotBooking[]> {
+export async function listPilotBookings(options?: {
+  limit?: number;
+  includeTest?: boolean;
+}): Promise<PilotBooking[]> {
+  const limit = options?.limit ?? 200;
   const { data, error } = await supabase
     .from('tg_guest_reservations')
     .select('*')
@@ -76,7 +81,17 @@ export async function listPilotBookings(limit = 200): Promise<PilotBooking[]> {
     .limit(limit);
 
   if (error || !data) return [];
-  return (data as ReservationRow[]).map(mapRow);
+  const bookings = (data as ReservationRow[]).map(mapRow);
+  if (options?.includeTest) return bookings;
+  return bookings.filter(
+    (booking) =>
+      !isPilotAcceptanceBooking({
+        propertyId: booking.propertyId,
+        reservationRef: booking.reservationRef,
+        comment: booking.comment,
+        pilotAcceptanceMarker: booking.pilotAcceptanceMarker,
+      }),
+  );
 }
 
 export async function getPilotBooking(id: string): Promise<PilotBooking | null> {

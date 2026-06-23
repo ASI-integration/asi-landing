@@ -10,8 +10,7 @@ import {
   type PilotPropertyRow,
 } from '@/lib/pilot-readiness/repository';
 import { computePilotReadiness } from '@/lib/pilot-readiness/engine';
-import { communicationModeToStorage } from '@/lib/communication/communication-autopilot-settings';
-import type { CommunicationMode } from '@/lib/communication/communication-autopilot-settings';
+import { communicationModeToStorage, type CommunicationMode } from '@/lib/communication/communication-autopilot-settings';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +21,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const url = new URL(req.url);
   const propertyId = url.searchParams.get('propertyId')?.trim();
+  const includeTest = url.searchParams.get('includeTest') === '1';
 
   if (propertyId) {
     const result = await getPilotReadinessForProperty(propertyId);
@@ -31,7 +31,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true, result });
   }
 
-  const results = await listPilotReadinessResults();
+  const results = await listPilotReadinessResults({ includeTest });
   const readyCount = results.filter((item) => item.ready).length;
   return NextResponse.json({
     ok: true,

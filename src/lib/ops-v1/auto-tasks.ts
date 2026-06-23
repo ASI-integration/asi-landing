@@ -52,7 +52,7 @@ function daysFromToday(iso: string | null | undefined, today: Date): number | nu
   return Math.round(diffMs / (24 * 60 * 60 * 1000));
 }
 
-async function upsertAutoTask(seed: AutoTaskSeed): Promise<boolean> {
+async function upsertAutoTask(seed: AutoTaskSeed): Promise<'created' | 'updated' | 'skipped'> {
   const result = await createOpsOperatorTask({
     taskType: seed.taskType,
     taskStatus: seed.taskStatus,
@@ -79,7 +79,9 @@ async function upsertAutoTask(seed: AutoTaskSeed): Promise<boolean> {
     },
   });
 
-  return result.ok && result.created;
+  if (!result.ok) return 'skipped';
+  if (result.created) return 'created';
+  return 'updated';
 }
 
 function collectCrmOnboardingSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
@@ -114,9 +116,10 @@ function collectCrmOnboardingSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
   return seeds;
 }
 
-function collectObjectPassportSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
-  // TODO: подключить прямое чтение tg_property_knowledge, когда появится стабильная связь объект ↔ паспорт.
-  // Сейчас недостающие поля берутся из CRM notes (contact.onboarding.missing).
+function collectObjectPassportSeeds(
+  contacts: CrmContact[],
+  pilotReadinessObjectIds: Set<string>,
+): AutoTaskSeed[] {
   const seeds: AutoTaskSeed[] = [];
 
   for (const contact of contacts) {
@@ -126,20 +129,23 @@ function collectObjectPassportSeeds(contacts: CrmContact[]): AutoTaskSeed[] {
     if (missing.length === 0) continue;
 
     const objectId = contact.ownerObjects?.[0]?.objectId ?? null;
+    if (objectId && pilotReadinessObjectIds.has(objectId.trim())) continue;
+
     const objectLabel = contact.activeObjectTitle ?? contact.ownerObjects?.[0]?.title ?? contact.name;
     const missingLabels = missing.map((field) => String(field));
+    const sourceId = objectId?.trim() || contact.id;
 
     seeds.push({
       dedupKey: buildAutoOpsDedupKey({
         source: 'object_passport',
-        sourceId: contact.id,
+        sourceId,
         taskType: 'request_owner_data',
       }),
       taskType: 'request_owner_data',
       taskStatus: 'needs_operator',
       source: 'channel_manager',
       integration: 'object_passport',
-      sourceId: contact.id,
+      sourceId,
       contactId: contact.id,
       objectId,
       objectLabel,
@@ -238,7 +244,10 @@ type ReservationRow = {
   status: string | null;
 };
 
-function collectBookingManualReviewSeeds(rows: ReservationRow[]): AutoTaskSeed[] {
+function collectBookingManualReviewSeeds(
+  rows: ReservationRow[],
+  propertyLabels: Map<string, string>,
+): AutoTaskSeed[] {
   const seeds: AutoTaskSeed[] = [];
   for (const row of rows) {
     const propertyId = row.property_id?.trim() || null;
@@ -265,7 +274,7 @@ function collectBookingManualReviewSeeds(rows: ReservationRow[]): AutoTaskSeed[]
       integration: 'booking_manual_review',
       sourceId: row.id,
       objectId: propertyId,
-      objectLabel: propertyId,
+      objectLabel: propertyLabels.get(propertyId) ?? propertyId,
       guestName: row.guest_name,
       description: 'Ручная проверка брони: не хватает данных',
       metadata: {
@@ -281,7 +290,10 @@ function collectBookingManualReviewSeeds(rows: ReservationRow[]): AutoTaskSeed[]
   return seeds;
 }
 
-async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
+async function collectBookingSeeds(
+  today: Date,
+  propertyLabels: Map<string, string>,
+): Promise<AutoTaskSeed[]> {
   // Booking autopilot hooks into tg_guest_reservations when the table is available.
   const { data, error } = await supabase
     .from('tg_guest_reservations')
@@ -297,11 +309,12 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
   }
 
   const rows = data as ReservationRow[];
-  const seeds: AutoTaskSeed[] = [...collectBookingManualReviewSeeds(rows)];
+  const seeds: AutoTaskSeed[] = [...collectBookingManualReviewSeeds(rows, propertyLabels)];
 
   for (const row of rows) {
     const propertyId = row.property_id?.trim() || null;
     if (!propertyId) continue;
+    const objectLabel = propertyLabels.get(propertyId) ?? propertyId;
 
     const checkinOffset = daysFromToday(row.check_in, today);
     if (checkinOffset === 0 || checkinOffset === 1) {
@@ -319,7 +332,7 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
         integration: 'booking',
         sourceId: row.id,
         objectId: propertyId,
-        objectLabel: propertyId,
+        objectLabel,
         description: checkinOffset === 0 ? 'Заезд сегодня' : 'Заезд завтра',
         scheduledAt: row.check_in,
       });
@@ -341,7 +354,7 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
         integration: 'booking',
         sourceId: row.id,
         objectId: propertyId,
-        objectLabel: propertyId,
+        objectLabel,
         description: checkoutOffset === 0 ? 'Выезд сегодня' : 'Выезд завтра',
         scheduledAt: row.check_out,
       });
@@ -362,7 +375,7 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
         integration: 'booking',
         sourceId: row.id,
         objectId: propertyId,
-        objectLabel: propertyId,
+        objectLabel,
         description: 'Уборка после выезда',
         scheduledAt: row.check_out,
       });
@@ -398,32 +411,41 @@ function collectCommunicationEscalationSeedsSafe(): {
   }
 }
 
-async function collectBookingSeedsSafe(today: Date): Promise<AutoTaskSeed[]> {
+async function collectBookingSeedsSafe(
+  today: Date,
+  propertyLabels: Map<string, string>,
+): Promise<AutoTaskSeed[]> {
   try {
-    return await collectBookingSeeds(today);
+    return await collectBookingSeeds(today, propertyLabels);
   } catch (error) {
     warnAutoSyncSourceUnavailable('bookings', error);
     return [];
   }
 }
 
-async function collectPilotReadinessSeedsSafe(): Promise<AutoTaskSeed[]> {
-  try {
-    const snapshots = await listPilotObjectSnapshots();
-    return collectPilotReadinessSeeds(snapshots);
-  } catch (error) {
-    warnAutoSyncSourceUnavailable('pilot_readiness', error);
-    return [];
+function buildPropertyLabelMap(
+  snapshots: Awaited<ReturnType<typeof listPilotObjectSnapshots>>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    const label = snapshot.objectLabel?.trim() || snapshot.name?.trim();
+    if (label) map.set(snapshot.propertyId, label);
   }
+  return map;
 }
 
-export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: number }> {
+export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: number; updated: number }> {
   const today = new Date();
   const contacts = await loadCrmContactsSafe();
+  const pilotSnapshots = await listPilotObjectSnapshots({ includeTest: true });
+  const propertyLabels = buildPropertyLabelMap(pilotSnapshots);
+  const pilotReadinessObjectIds = new Set(
+    pilotSnapshots.map((snapshot) => snapshot.propertyId).filter(Boolean),
+  );
 
   const crmSeeds = collectCrmOnboardingSeeds(contacts);
-  const passportSeeds = collectObjectPassportSeeds(contacts);
-  const pilotReadinessSeeds = await collectPilotReadinessSeedsSafe();
+  const passportSeeds = collectObjectPassportSeeds(contacts, pilotReadinessObjectIds);
+  const pilotReadinessSeeds = collectPilotReadinessSeeds(pilotSnapshots);
   const { seeds: communicationEscalationSeeds, pendingReviewContactIds } =
     collectCommunicationEscalationSeedsSafe();
   const communicationContactSeeds = collectCommunicationSeedsFromContacts(
@@ -431,7 +453,7 @@ export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: nu
     pendingReviewContactIds,
   );
   const communicationSeeds = [...communicationContactSeeds, ...communicationEscalationSeeds];
-  const bookingSeeds = await collectBookingSeedsSafe(today);
+  const bookingSeeds = await collectBookingSeedsSafe(today, propertyLabels);
 
   console.info('[ops-v1] auto-sync seed counts', {
     crm: crmSeeds.length,
@@ -450,14 +472,16 @@ export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: nu
   ];
 
   let created = 0;
+  let updated = 0;
   for (const seed of seeds) {
     try {
-      const wasCreated = await upsertAutoTask(seed);
-      if (wasCreated) created += 1;
+      const outcome = await upsertAutoTask(seed);
+      if (outcome === 'created') created += 1;
+      if (outcome === 'updated') updated += 1;
     } catch (error) {
       console.warn('[ops-v1] auto-sync: failed to upsert task', error);
     }
   }
 
-  return { created, scanned: seeds.length };
+  return { created, scanned: seeds.length, updated };
 }

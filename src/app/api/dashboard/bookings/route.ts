@@ -8,11 +8,14 @@ import type { BookingChannel, BookingStatus } from '@/lib/bookings/types';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: Request): Promise<NextResponse> {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
 
-  const bookings = await listPilotBookings();
+  const url = new URL(req.url);
+  const includeTest = url.searchParams.get('includeTest') === '1';
+
+  const bookings = await listPilotBookings({ includeTest });
   return NextResponse.json({ ok: true, bookings, isOpsAdmin: isOpsAdminEmail(auth.session.email) });
 }
 
