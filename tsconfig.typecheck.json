@@ -5,7 +5,8 @@
     "node_modules",
     "playwright.config.ts",
     "tests",
-    ".next"
+    ".next",
+    "tmp"
   ]
 }
 

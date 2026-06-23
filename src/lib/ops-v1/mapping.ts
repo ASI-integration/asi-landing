@@ -18,6 +18,7 @@ const OPERATOR_TO_V1_TYPE: Partial<Record<OpsTaskType, OpsV1TaskType>> = {
   request_owner_data: 'manual_review',
   verify_channel_manager: 'manual_review',
   contact_owner: 'manual_review',
+  support_review: 'manual_review',
 };
 
 const V1_TO_OPERATOR_STATUS: Record<OpsV1Status, OpsTaskStatus> = {
@@ -38,6 +39,7 @@ const OPERATOR_TO_V1_STATUS: Record<OpsTaskStatus, OpsV1Status> = {
 
 const OPERATOR_TO_V1_SOURCE: Record<OpsTaskSource, OpsV1Source> = {
   telegram: 'telegram',
+  telegram_support: 'telegram_support',
   crm: 'crm',
   communication_autopilot: 'communications',
   channel_manager: 'object_passport',
@@ -46,6 +48,7 @@ const OPERATOR_TO_V1_SOURCE: Record<OpsTaskSource, OpsV1Source> = {
 
 const V1_TO_OPERATOR_SOURCE: Record<OpsV1Source, OpsTaskSource> = {
   telegram: 'telegram',
+  telegram_support: 'telegram_support',
   crm: 'crm',
   communications: 'communication_autopilot',
   object_passport: 'channel_manager',

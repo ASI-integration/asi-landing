@@ -124,6 +124,7 @@ export async function createOpsTaskFromMissingOwnerData(input: {
 export function resolveOpsSourceLabel(source: OpsTaskSource): string {
   const labels: Record<OpsTaskSource, string> = {
     telegram: 'Telegram',
+    telegram_support: 'Поддержка Telegram',
     crm: 'CRM',
     communication_autopilot: 'Communication Autopilot',
     channel_manager: 'Channel Manager',

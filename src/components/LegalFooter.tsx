@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { ruComplianceRoutes } from '@/config/ruCompliance';
 
 export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
@@ -42,12 +43,12 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
             <p>
               Telegram:{' '}
               <a
-                href="https://t.me/ASI_core_bot"
+                href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-slate-200 transition-colors"
               >
-                @ASI_core_bot
+                @{telegramSupportBotHandle}
               </a>
             </p>
           </div>

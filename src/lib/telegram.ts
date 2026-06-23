@@ -14,6 +14,11 @@ function getTelegramBotToken(): string | null {
   return t && t.trim().length > 0 ? t.trim() : null;
 }
 
+function getTelegramSupportBotToken(): string | null {
+  const t = process.env.TELEGRAM_SUPPORT_BOT_TOKEN;
+  return t && t.trim().length > 0 ? t.trim() : null;
+}
+
 function getTelegramChatId(): string | null {
   const t = process.env.TELEGRAM_CHAT_ID;
   return t && t.trim().length > 0 ? t.trim() : null;
@@ -226,6 +231,77 @@ export async function replyToTelegram(
     sent,
   });
   return sent;
+}
+
+export async function sendSupportBotReply(
+  chatId: number | string,
+  text: string,
+  logCtx?: TelegramReplyLogContext,
+): Promise<boolean> {
+  if (shouldSuppressTelegramOutbound(chatId)) {
+    if (outboundDebugEnabled()) {
+      console.log('[Telegram] support outbound suppressed', {
+        chat_id: String(chatId),
+        dry_run: isTelegramOutboundDryRun(),
+        text_preview: safePreview(String(text ?? ''), 160),
+      });
+    }
+    return true;
+  }
+
+  const token = getTelegramSupportBotToken();
+  if (!token) {
+    console.warn('[Telegram] Missing TELEGRAM_SUPPORT_BOT_TOKEN for support reply');
+    return false;
+  }
+
+  if (logCtx?.handler) {
+    console.info('[tg:reply:handler]', {
+      handler: logCtx.handler,
+      chat_id: String(chatId),
+      update_id: logCtx.update_id ?? null,
+    });
+  }
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  return sendOnce(url, {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+    reply_markup: logCtx?.reply_markup ?? { remove_keyboard: true },
+  });
+}
+
+export function sendSupportBotTyping(chatId: number | string, updateId?: number): void {
+  if (typeof chatId !== 'number' && typeof chatId !== 'string') return;
+  void sendSupportBotChatAction(chatId, 'typing', {
+    handler: 'support_bot:typing',
+    update_id: updateId,
+  }).catch(() => undefined);
+}
+
+export async function sendSupportBotChatAction(
+  chatId: number | string,
+  action: 'typing' = 'typing',
+  logCtx?: TelegramChatActionLogContext,
+): Promise<boolean> {
+  const token = getTelegramSupportBotToken();
+  if (!token) {
+    console.warn('[Telegram] Missing TELEGRAM_SUPPORT_BOT_TOKEN for support chat action');
+    return false;
+  }
+
+  const throttleMs = Number.isFinite(logCtx?.throttleMs) ? Number(logCtx?.throttleMs) : 4_000;
+  const key = `support:${chatId}:${action}`;
+  const now = Date.now();
+  const last = chatActionLastSentAt.get(key) ?? 0;
+  if (last > 0 && now - last < throttleMs) return true;
+  chatActionLastSentAt.set(key, now);
+
+  if (shouldSuppressTelegramOutbound(chatId)) return true;
+
+  const url = `https://api.telegram.org/bot${token}/sendChatAction`;
+  return sendOnce(url, { chat_id: chatId, action });
 }
 
 export async function sendTelegramChatAction(

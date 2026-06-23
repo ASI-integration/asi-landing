@@ -4,6 +4,7 @@ import { LocationIntelligenceDemo } from '@/components/LocationIntelligenceDemo'
 import { LocationTelemetryProvider } from '@/context/landing-location-telemetry';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
@@ -125,13 +126,13 @@ export default async function LocationAnalysisPage(
               </div>
               <div className="mt-8 flex justify-center gap-4 flex-wrap">
                 <a
-                  href="https://t.me/ASI_core_bot"
+                  href={telegramSupportBotUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-sky-300 transition-colors"
                 >
                   <TgIcon className="w-4 h-4" />
-                  @ASI_core_bot
+                  @{telegramSupportBotHandle}
                 </a>
                 <a
                   href={`mailto:${productSupportEmail}`}

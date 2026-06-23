@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { CommDemo } from '@/components/CommDemo';
 import { TgIcon } from '@/components/TgIcon';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { RU_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 
@@ -143,7 +144,7 @@ export default function CommunicationModulePage() {
                 Get Access — $10
               </a>
               <a
-                href="https://t.me/ASI_core_bot"
+                href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 border border-slate-700 text-slate-300 font-semibold rounded-xl hover:border-slate-500 hover:text-white transition-all text-base"
@@ -154,13 +155,13 @@ export default function CommunicationModulePage() {
             </div>
             <div className="mt-8 flex justify-center gap-4 flex-wrap">
               <a
-                href="https://t.me/ASI_core_bot"
+                href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-sky-300 transition-colors"
               >
                 <TgIcon className="w-4 h-4" />
-                @ASI_core_bot
+                @{telegramSupportBotHandle}
               </a>
               <a
                 href={`mailto:${productSupportEmail}`}

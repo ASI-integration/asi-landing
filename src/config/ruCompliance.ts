@@ -1,4 +1,5 @@
 import { productSupportEmail } from './contact';
+import { telegramSupportBotUrl } from './telegramBots';
 
 /**
  * RU legal / Robokassa compliance data.
@@ -8,7 +9,7 @@ export const ruCompliance = {
   fullName: 'Реутова Юлия Игоревна',
   inn: '235307941957',
   email: productSupportEmail,
-  telegram: 'https://t.me/ASI_core_bot',
+  telegram: telegramSupportBotUrl,
   phone: 'сделаем позже',
   address: 'сделаем позже',
 };

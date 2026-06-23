@@ -23,6 +23,7 @@ export const OPS_V1_SOURCES = [
   'booking',
   'admin',
   'telegram',
+  'telegram_support',
 ] as const;
 
 export type OpsV1Source = (typeof OPS_V1_SOURCES)[number];
@@ -53,6 +54,7 @@ export const OPS_V1_SOURCE_LABELS: Record<OpsV1Source, string> = {
   booking: 'Бронь',
   admin: 'Админ',
   telegram: 'Telegram',
+  telegram_support: 'Поддержка',
 };
 
 export const OPS_V1_ORIGIN_LABELS: Record<OpsV1Origin, string> = {

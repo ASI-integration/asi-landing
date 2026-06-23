@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { legalConfig } from '@/config/legal';
 
 export const metadata = {
@@ -96,12 +97,12 @@ export default function ContactsPage() {
               Telegram
             </p>
             <a
-              href="https://t.me/ASI_core_bot"
+              href={telegramSupportBotUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xl font-semibold text-white hover:text-slate-300 transition-colors"
             >
-              @ASI_core_bot
+              @{telegramSupportBotHandle}
             </a>
           </div>
           <p className="text-sm text-slate-400 leading-relaxed">
@@ -109,7 +110,7 @@ export default function ContactsPage() {
             and escalates complex requests to the team.
           </p>
           <a
-            href="https://t.me/ASI_core_bot"
+            href={telegramSupportBotUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-600 transition-colors"

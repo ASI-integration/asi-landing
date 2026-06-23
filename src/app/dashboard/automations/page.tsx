@@ -1,60 +1,74 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useSession } from '@/contexts/SessionContext';
+
+const STATUS_BLOCKS = [
+  {
+    title: 'Поддержка',
+    status: 'Готовится',
+    description: 'Запросы из Telegram будут автоматически попадать в CRM и OPS.',
+  },
+  {
+    title: 'Коммуникации',
+    status: 'Частично работает',
+    description: 'Гостевые сообщения могут создавать задачи для оператора.',
+  },
+  {
+    title: 'OPS-задачи',
+    status: 'Работает',
+    description: 'Система создаёт задачи по готовности объекта, броням и обращениям.',
+  },
+  {
+    title: 'Бронирования',
+    status: 'В работе',
+    description: 'После добавления брони создаются задачи заезда, выезда и уборки.',
+  },
+] as const;
+
 export default function AutomationsPage() {
+  const router = useRouter();
+  const { session, loading } = useSession();
+
+  useEffect(() => {
+    if (loading) return;
+    if (session?.isCrmOperator !== true) {
+      router.replace('/dashboard');
+    }
+  }, [loading, router, session?.isCrmOperator]);
+
+  if (loading || session?.isCrmOperator !== true) {
+    return null;
+  }
+
   return (
     <div className="space-y-8 max-w-3xl">
-
       <header>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Автоматизация</h1>
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Автопилот</h1>
         <p className="mt-2 text-lg text-slate-500 leading-relaxed">
-          Контур автоматизации координирует операционные процессы и снижает ручную нагрузку. Он
-          строится поверх подключённых источников данных и готовых объектов.
+          Здесь будет управление автоматическими сценариями: поддержка, коммуникации с гостями,
+          OPS-задачи и уведомления. Сейчас автопилот включается поэтапно через объекты, бронирования
+          и Telegram.
         </p>
       </header>
 
-      <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-xl font-bold text-slate-900">Что будет автоматизировано</h2>
-        <ul className="mt-5 space-y-4 text-base text-slate-600 leading-relaxed">
-          <li className="flex gap-3">
-            <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
-            <span>Коммуникация с гостями по этапам пребывания: до заезда, во время, после выезда</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
-            <span>Операционные задачи: уборка, передача ключей, проверка готовности объекта</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
-            <span>Уведомления команде по событиям в системе</span>
-          </li>
-          <li className="flex gap-3">
-            <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
-            <span>Сценарии обработки нестандартных ситуаций</span>
-          </li>
-        </ul>
+      <section className="grid gap-4 sm:grid-cols-2">
+        {STATUS_BLOCKS.map((block) => (
+          <article
+            key={block.title}
+            className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col gap-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-lg font-bold text-slate-900">{block.title}</h2>
+              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {block.status}
+              </span>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed">{block.description}</p>
+          </article>
+        ))}
       </section>
-
-      <section className="bg-slate-50 rounded-xl border border-slate-200 p-7">
-        <h2 className="text-lg font-bold text-slate-900">Порядок активации</h2>
-        <p className="mt-3 text-base text-slate-600 leading-relaxed">
-          Автоматизации становятся доступны поэтапно — по мере готовности системы:
-        </p>
-        <ol className="mt-4 space-y-2 text-sm text-slate-500 leading-relaxed">
-          <li>1. Подключить источник данных (PMS / менеджер каналов)</li>
-          <li>2. Импортировать и заполнить объекты</li>
-          <li>3. Настроить контур коммуникации</li>
-          <li>4. Включить и настроить нужные автоматизации</li>
-        </ol>
-      </section>
-
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-5">
-        <p className="text-base font-medium text-slate-700">Раздел будет доступен позже</p>
-        <p className="mt-1 text-sm text-slate-500">
-          Настройка автоматизаций станет возможной после подключения источника данных и заполнения
-          объектов.
-        </p>
-      </div>
-
     </div>
   );
 }

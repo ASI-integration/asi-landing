@@ -6,6 +6,7 @@ import { HeroSection } from '@/components/HeroSection';
 import { STRIPE_PAYMENT_LINK } from '@/config/payments';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { TgIcon } from '@/components/TgIcon';
 import { RU_PUBLIC_ORIGIN, EN_PUBLIC_ORIGIN } from '@/config/publicOrigins';
 import { hostnameFromHostHeader, isRuRuntimeHost } from '@/lib/runtimeHost';
@@ -20,13 +21,13 @@ function ContactLinks({ orientation = 'row' }: { orientation?: 'row' | 'col' }) 
   return (
     <div className={cls}>
       <a
-        href="https://t.me/ASI_core_bot"
+        href={telegramSupportBotUrl}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-[#2CA5E0]/10 border border-[#2CA5E0]/30 text-white font-semibold text-sm hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/60 transition-all"
       >
         <TgIcon />
-        @ASI_core_bot
+        @{telegramSupportBotHandle}
       </a>
       <a
         href={`mailto:${productSupportEmail}`}
@@ -105,7 +106,7 @@ export default async function Home() {
             </a>
             <span className="hidden sm:block w-px h-4 bg-slate-800 shrink-0" />
             <a
-              href="https://t.me/ASI_core_bot"
+              href={telegramSupportBotUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#2CA5E0]/10 border border-[#2CA5E0]/25 text-sky-300 hover:bg-[#2CA5E0]/20 hover:border-[#2CA5E0]/50 transition-all text-sm font-semibold"
@@ -247,7 +248,7 @@ export default async function Home() {
                 Get Access — $10
               </a>
               <a
-                href="https://t.me/ASI_core_bot"
+                href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 px-10 py-5 border border-slate-600 text-slate-300 font-semibold rounded-xl hover:border-slate-400 hover:text-white transition-all text-lg"
@@ -281,13 +282,13 @@ export default async function Home() {
 
           <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 text-sm">
             <a
-              href="https://t.me/ASI_core_bot"
+              href={telegramSupportBotUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-slate-400 hover:text-sky-300 transition-colors"
             >
               <TgIcon className="w-4 h-4" />
-              @ASI_core_bot
+              @{telegramSupportBotHandle}
             </a>
             <span className="hidden sm:block w-px h-3 bg-slate-800" />
             <a

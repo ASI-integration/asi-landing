@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotHandle, telegramSupportBotUrl } from '@/config/telegramBots';
 import { TgIcon } from '@/components/TgIcon';
 
 export interface HeroBenefitCard {
@@ -111,7 +112,7 @@ export function HeroSection({
                 </p>
                 <div className="flex flex-col items-start sm:items-end gap-3">
                   <a
-                    href="https://t.me/ASI_core_bot"
+                    href={telegramSupportBotUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Telegram"
@@ -123,7 +124,7 @@ export function HeroSection({
                     }
                   >
                     <TgIcon className="w-4 h-4 shrink-0" />
-                    {telegramVariant === 'handle' ? '@ASI_core_bot' : <span className="sr-only">Telegram</span>}
+                    {telegramVariant === 'handle' ? `@${telegramSupportBotHandle}` : <span className="sr-only">Telegram</span>}
                   </a>
                   <a
                     href={`mailto:${productSupportEmail}`}

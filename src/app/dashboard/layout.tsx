@@ -47,6 +47,9 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations') {
       return session?.isCrmOperator === true;
     }
+    if (item.key === 'automations') {
+      return session?.isCrmOperator === true;
+    }
     return true;
   });
 

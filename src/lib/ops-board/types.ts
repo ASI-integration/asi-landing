@@ -6,6 +6,7 @@ export const OPS_TASK_TYPES = [
   'request_owner_data',
   'verify_channel_manager',
   'contact_owner',
+  'support_review',
   'other',
 ] as const;
 
@@ -37,6 +38,7 @@ export type OpsTaskPriority = (typeof OPS_TASK_PRIORITIES)[number];
 
 export const OPS_TASK_SOURCES = [
   'telegram',
+  'telegram_support',
   'crm',
   'communication_autopilot',
   'channel_manager',
@@ -53,6 +55,7 @@ export const OPS_TASK_TYPE_LABELS: Record<OpsTaskType, string> = {
   request_owner_data: 'Запросить данные у владельца',
   verify_channel_manager: 'Проверить подключение Менеджера Каналов',
   contact_owner: 'Связаться с владельцем',
+  support_review: 'Проверить обращение в поддержку',
   other: 'Другое',
 };
 
@@ -73,6 +76,7 @@ export const OPS_TASK_PRIORITY_LABELS: Record<OpsTaskPriority, string> = {
 
 export const OPS_TASK_SOURCE_LABELS: Record<OpsTaskSource, string> = {
   telegram: 'Telegram',
+  telegram_support: 'Поддержка Telegram',
   crm: 'CRM',
   communication_autopilot: 'Communication Autopilot',
   channel_manager: 'Channel Manager',

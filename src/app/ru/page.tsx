@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { productSupportEmail } from '@/config/contact';
+import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { HeroSection } from '@/components/HeroSection';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { TgIcon } from '@/components/TgIcon';
@@ -202,7 +203,7 @@ export default function HomeRu() {
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 text-sm">
               <a
-                href="https://t.me/ASI_core_bot"
+                href={telegramSupportBotUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"

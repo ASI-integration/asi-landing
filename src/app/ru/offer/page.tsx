@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { RuLegalPageLayout } from '@/components/ru/RuLegalPageLayout';
 import { ruCompliance } from '@/config/ruCompliance';
+import { telegramSupportBotHandle } from '@/config/telegramBots';
 
 export const metadata: Metadata = {
   title: 'Публичная оферта — ASI',
@@ -95,7 +96,7 @@ export default function RuOfferPage() {
             rel="noopener noreferrer"
             className="text-[var(--t-text)] underline underline-offset-2 decoration-[var(--t-border)] hover:decoration-[var(--t-text)] break-all"
           >
-            @ASI_core_bot
+            @{telegramSupportBotHandle}
           </a>
         </p>
       </section>
