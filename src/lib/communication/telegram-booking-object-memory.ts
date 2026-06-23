@@ -42,7 +42,7 @@ export type TelegramPropertyObjectV1 = {
   checkout_time: string | null;
   house_rules_text: string | null;
   door_code_notes: string | null;
-  communication_autopilot?: 'enabled' | 'disabled' | null;
+  communication_autopilot?: 'enabled' | 'disabled' | 'manual' | null;
   knowledge_status?: Partial<Record<string, ObjectKnowledgeStatus>>;
 };
 

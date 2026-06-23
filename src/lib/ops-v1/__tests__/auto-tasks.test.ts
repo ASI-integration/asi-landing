@@ -9,10 +9,15 @@ const mocks = vi.hoisted(() => ({
   listEscalationReviews: vi.fn(),
   createOpsOperatorTask: vi.fn(),
   supabaseFrom: vi.fn(),
+  listPilotObjectSnapshots: vi.fn(),
 }));
 
 vi.mock('@/lib/crm/repository', () => ({
   listCrmContacts: mocks.listCrmContacts,
+}));
+
+vi.mock('@/lib/pilot-readiness/repository', () => ({
+  listPilotObjectSnapshots: mocks.listPilotObjectSnapshots,
 }));
 
 vi.mock('@/lib/communication/operator-review', () => ({
@@ -42,6 +47,7 @@ describe('ops v1 auto tasks', () => {
   beforeEach(() => {
     mocks.listCrmContacts.mockReset();
     mocks.listEscalationReviews.mockReset();
+    mocks.listPilotObjectSnapshots.mockReset();
     mocks.createOpsOperatorTask.mockReset();
     mocks.supabaseFrom.mockReset();
     mocks.supabaseFrom.mockImplementation(() => ({
@@ -61,6 +67,7 @@ describe('ops v1 auto tasks', () => {
       return { ok: true, created: true, task: { id: 'task-1' } };
     });
     mocks.listEscalationReviews.mockReturnValue([]);
+    mocks.listPilotObjectSnapshots.mockResolvedValue([]);
   });
 
   it('builds stable dedupe keys for auto tasks', () => {
@@ -245,6 +252,7 @@ describe('ops v1 auto tasks', () => {
               {
                 id: 'res-today',
                 property_id: 'PROP-1',
+                guest_name: 'Гость',
                 check_in: '2026-06-22',
                 check_out: '2026-06-25',
                 status: 'confirmed',
@@ -252,6 +260,7 @@ describe('ops v1 auto tasks', () => {
               {
                 id: 'res-tomorrow',
                 property_id: 'PROP-2',
+                guest_name: 'Гость 2',
                 check_in: '2026-06-23',
                 check_out: '2026-06-26',
                 status: 'confirmed',
@@ -259,6 +268,7 @@ describe('ops v1 auto tasks', () => {
               {
                 id: 'res-cleaning',
                 property_id: 'PROP-3',
+                guest_name: 'Гость 3',
                 check_in: '2026-06-18',
                 check_out: '2026-06-21',
                 status: 'confirmed',
@@ -315,6 +325,7 @@ describe('ops v1 auto tasks', () => {
     expect(infoSpy).toHaveBeenCalledWith('[ops-v1] auto-sync seed counts', {
       crm: 1,
       object_passport: 0,
+      pilot_readiness: 0,
       communications: 0,
       bookings: 0,
     });

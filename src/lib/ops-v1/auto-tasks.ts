@@ -1,6 +1,9 @@
+import { bookingNeedsManualReview } from '@/lib/bookings/types';
 import { listCrmContacts } from '@/lib/crm/repository';
 import type { CrmContact, CrmStatus } from '@/lib/crm/types';
 import { listEscalationReviews } from '@/lib/communication/operator-review';
+import { collectPilotReadinessSeeds } from '@/lib/pilot-readiness/ops-seeds';
+import { listPilotObjectSnapshots } from '@/lib/pilot-readiness/repository';
 import { buildAutoOpsDedupKey, createOpsOperatorTask } from '@/lib/ops-board/repository';
 import { OPS_TASK_TYPE_LABELS, type OpsTaskType } from '@/lib/ops-board/types';
 import { supabase } from '@/lib/supabase';
@@ -229,16 +232,60 @@ function collectCommunicationSeedsFromEscalations(): {
 type ReservationRow = {
   id: string;
   property_id: string | null;
+  guest_name: string | null;
   check_in: string | null;
   check_out: string | null;
   status: string | null;
 };
 
+function collectBookingManualReviewSeeds(rows: ReservationRow[]): AutoTaskSeed[] {
+  const seeds: AutoTaskSeed[] = [];
+  for (const row of rows) {
+    const propertyId = row.property_id?.trim() || null;
+    if (!propertyId) continue;
+    if (row.status === 'cancelled') continue;
+
+    const needsReview = bookingNeedsManualReview({
+      propertyId,
+      guestName: row.guest_name,
+      checkIn: row.check_in,
+      checkOut: row.check_out,
+    });
+    if (!needsReview) continue;
+
+    seeds.push({
+      dedupKey: buildAutoOpsDedupKey({
+        source: 'booking',
+        sourceId: row.id,
+        taskType: 'other',
+      }),
+      taskType: 'other',
+      taskStatus: 'needs_operator',
+      source: 'crm',
+      integration: 'booking_manual_review',
+      sourceId: row.id,
+      objectId: propertyId,
+      objectLabel: propertyId,
+      guestName: row.guest_name,
+      description: 'Ручная проверка брони: не хватает данных',
+      metadata: {
+        booking_id: row.id,
+        missing_fields: [
+          !row.guest_name ? 'guest_name' : null,
+          !row.check_in ? 'check_in' : null,
+          !row.check_out ? 'check_out' : null,
+        ].filter(Boolean),
+      },
+    });
+  }
+  return seeds;
+}
+
 async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
   // Booking autopilot hooks into tg_guest_reservations when the table is available.
   const { data, error } = await supabase
     .from('tg_guest_reservations')
-    .select('id, property_id, check_in, check_out, status')
+    .select('id, property_id, guest_name, check_in, check_out, status')
     .neq('status', 'cancelled')
     .limit(500);
 
@@ -249,9 +296,10 @@ async function collectBookingSeeds(today: Date): Promise<AutoTaskSeed[]> {
     return [];
   }
 
-  const seeds: AutoTaskSeed[] = [];
+  const rows = data as ReservationRow[];
+  const seeds: AutoTaskSeed[] = [...collectBookingManualReviewSeeds(rows)];
 
-  for (const row of data as ReservationRow[]) {
+  for (const row of rows) {
     const propertyId = row.property_id?.trim() || null;
     if (!propertyId) continue;
 
@@ -359,12 +407,23 @@ async function collectBookingSeedsSafe(today: Date): Promise<AutoTaskSeed[]> {
   }
 }
 
+async function collectPilotReadinessSeedsSafe(): Promise<AutoTaskSeed[]> {
+  try {
+    const snapshots = await listPilotObjectSnapshots();
+    return collectPilotReadinessSeeds(snapshots);
+  } catch (error) {
+    warnAutoSyncSourceUnavailable('pilot_readiness', error);
+    return [];
+  }
+}
+
 export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: number }> {
   const today = new Date();
   const contacts = await loadCrmContactsSafe();
 
   const crmSeeds = collectCrmOnboardingSeeds(contacts);
   const passportSeeds = collectObjectPassportSeeds(contacts);
+  const pilotReadinessSeeds = await collectPilotReadinessSeedsSafe();
   const { seeds: communicationEscalationSeeds, pendingReviewContactIds } =
     collectCommunicationEscalationSeedsSafe();
   const communicationContactSeeds = collectCommunicationSeedsFromContacts(
@@ -377,11 +436,18 @@ export async function syncAutoOpsTasks(): Promise<{ created: number; scanned: nu
   console.info('[ops-v1] auto-sync seed counts', {
     crm: crmSeeds.length,
     object_passport: passportSeeds.length,
+    pilot_readiness: pilotReadinessSeeds.length,
     communications: communicationSeeds.length,
     bookings: bookingSeeds.length,
   });
 
-  const seeds = [...crmSeeds, ...passportSeeds, ...communicationSeeds, ...bookingSeeds];
+  const seeds = [
+    ...crmSeeds,
+    ...passportSeeds,
+    ...pilotReadinessSeeds,
+    ...communicationSeeds,
+    ...bookingSeeds,
+  ];
 
   let created = 0;
   for (const seed of seeds) {

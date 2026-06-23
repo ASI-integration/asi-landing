@@ -97,6 +97,7 @@ import {
 } from './session-status';
 import { getPropertyTemplates } from './templates';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
+import { shouldCreateTelegramOpsTaskDirectly } from '@/lib/ops/telegram-ops-guard';
 import { evaluateCheckinReadiness } from '@/lib/ops/checkin-gate';
 import { supabase } from '@/lib/supabase';
 import { runInBackground } from './background';
@@ -156,7 +157,11 @@ import { buildVoiceOutboundMetadata, inferDomainZoneForVoice } from './voice-out
 import { loadChatVoiceUserSettings } from './voice-response-settings';
 import { loadPropertyTimezone } from './telegram-property-knowledge';
 import { GUEST_MISSING_DATA_OPERATOR_REPLY, OPERATOR_HANDOFF_FAILED_REPLY } from './guest-test-answers';
-import { isCommunicationAutopilotEnabled } from './communication-autopilot-settings';
+import {
+  canClassifyInboundCommunication,
+  canSendAutonomousGuestReply,
+  isCommunicationAutopilotEnabled,
+} from './communication-autopilot-settings';
 import {
   buildAutopilotSessionPatch,
   runCommunicationAutopilotV1,
@@ -224,6 +229,13 @@ type TgLivePriorityScenario = 'access_issue' | 'wifi_issue' | 'late_checkout';
 
 function isTgLivePriorityScenario(s: unknown): s is TgLivePriorityScenario {
   return s === 'access_issue' || s === 'wifi_issue' || s === 'late_checkout';
+}
+
+async function createTelegramOpsTask(task: Parameters<typeof createOpsTask>[0]) {
+  if (!shouldCreateTelegramOpsTaskDirectly()) {
+    return { task_id: null as string | null, error: 'telegram_ops_escalation_only' };
+  }
+  return createOpsTask(task);
 }
 
 function shouldGreetTelegramOperationalReply(session: { memory?: { lastMessages?: Array<{ direction?: unknown; content?: unknown }> } }): boolean {
@@ -2284,7 +2296,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         }
 
         const autopilotProperty = telegramBookingObjectCtx.property;
-        if (isCommunicationAutopilotEnabled(autopilotProperty)) {
+        if (canClassifyInboundCommunication(autopilotProperty)) {
           const telegramUserId = String(
             envelope.metadata?.telegram_user_id ??
               envelope.metadata?.telegramUserId ??
@@ -2350,20 +2362,46 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               15_000,
             );
           }
+          const allowAutonomousReply =
+            canSendAutonomousGuestReply(autopilotProperty) &&
+            autopilotResult.action === 'auto_reply' &&
+            !autopilotResult.needsOperator;
+          const outboundReplyText = allowAutonomousReply
+            ? autopilotResult.replyText
+            : 'Передал вопрос оператору. Скоро вернусь с ответом.';
+          if (!allowAutonomousReply && autopilotResult.action === 'auto_reply' && !autopilotResult.needsOperator) {
+            persistEscalationReview({
+              reason: 'manual_control_mode',
+              escalationSummary: `communication_manual_mode:${autopilotResult.intent}`,
+              confidence: 0.85,
+              suggestedReply: autopilotResult.replyText,
+              source: {
+                route: 'communication_manual_mode',
+                intent: autopilotResult.intent,
+              },
+              detail: buildOperatorEscalationDetail({
+                role: senderRoute.senderIdentity,
+                intent: autopilotResult.intent,
+                message: text,
+                reason: 'Ручной контроль: автоответ заблокирован.',
+                recommendedStep: autopilotResult.replyText,
+              }),
+            });
+          }
           const targetId = resolveOutboundTargetId(envelope, identity.guestId);
           if (!targetId) return { outcome: ProcessOutcome.Error, update_id, chat_id: chatId };
           const voiceExtras = await buildTelegramVoiceExtras({
             envelope,
-            replyText: autopilotResult.replyText,
+            replyText: outboundReplyText,
             chatId,
             detectedIntent: autopilotResult.intent,
-            responseMode: autopilotResult.action === 'auto_reply' ? 'answer_from_property' : 'operator_escalation',
+            responseMode: allowAutonomousReply ? 'answer_from_property' : 'operator_escalation',
             role: senderRoute.senderIdentity,
             propertyId,
             isUrgent: false,
-            isEscalation: autopilotResult.needsOperator,
+            isEscalation: autopilotResult.needsOperator || !allowAutonomousReply,
           });
-          const sent = await adapter.sendMessage(String(targetId), autopilotResult.replyText, {
+          const sent = await adapter.sendMessage(String(targetId), outboundReplyText, {
             reply_handler: `orchestrator:communication_autopilot_v1:${autopilotResult.action}`,
             update_id,
             sender_identity: senderRoute.senderIdentity,
@@ -2380,7 +2418,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
             update_id,
             chat_id: chatId,
             category: MessageCategory.GuestMessage,
-            reply: autopilotResult.replyText,
+            reply: outboundReplyText,
           };
         }
 
@@ -2862,7 +2900,10 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         escalationSafetyGate &&
         isSafeAutopilotSelfServiceIntent(autopilotDecision.metadata.intent) &&
         !autopilotDecision.metadata.urgent;
-      const canUseAutopilotReply = !escalationSafetyGate || allowSafeAutopilotReplyDuringHandoff;
+      const autopilotPropertyForMode = telegramBookingObjectCtx?.property ?? null;
+      const canUseAutopilotReply =
+        (!escalationSafetyGate || allowSafeAutopilotReplyDuringHandoff) &&
+        canSendAutonomousGuestReply(autopilotPropertyForMode);
 
       if (canUseAutopilotReply && autopilotDecision.action === 'auto_reply' && autopilotDecision.replyText) {
         const operationsReply = composeAutopilotOperationsRegisteredReply({
@@ -3018,7 +3059,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
                 triggerId: String(chatId),
               },
               async () => {
-                const { task_id } = await createOpsTask(autopilotOpsTask.task);
+                const { task_id } = await createTelegramOpsTask(autopilotOpsTask.task);
                 if (task_id) {
                   await appendTimelineEvent(identity.guestId ?? String(chatId), {
                     type: 'ops_task_created',
@@ -3488,7 +3529,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               triggerId: String(chatId),
             },
             async () => {
-              const { task_id } = await createOpsTask({
+              const { task_id } = await createTelegramOpsTask({
                 property_id: commContext.reservation.propertyId ?? 'unknown',
                 reservation_id: commContext.reservation.reservationId ?? null,
                 chat_id: chatId,
@@ -3651,7 +3692,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
               triggerId: String(chatId),
             },
             async () => {
-              const { task_id } = await createOpsTask({
+              const { task_id } = await createTelegramOpsTask({
                 property_id: commContext.reservation.propertyId ?? 'unknown',
                 reservation_id: commContext.reservation.reservationId ?? null,
                 chat_id: chatId,
@@ -3901,7 +3942,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_EscalatePolicy', triggerId: String(chatId) },
         async () => {
-          const { task_id } = await createOpsTask({
+          const { task_id } = await createTelegramOpsTask({
             property_id: commContext.reservation.propertyId ?? 'unknown',
             reservation_id: commContext.reservation.reservationId ?? null,
             chat_id: chatId,
@@ -4040,7 +4081,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
         runInBackground(
           { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_CheckinBlocked', triggerId: String(chatId) },
           async () => {
-            const { error } = await createOpsTask({
+            const { error } = await createTelegramOpsTask({
               property_id: propertyId ?? 'unknown',
               reservation_id: commContext.reservation.reservationId ?? null,
               chat_id: chatId,
@@ -4327,7 +4368,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_LLMFallback', triggerId: String(chatId) },
         async () => {
-          const { task_id, error } = await createOpsTask({
+          const { task_id, error } = await createTelegramOpsTask({
             property_id: commContext.reservation.propertyId ?? 'unknown',
             reservation_id: commContext.reservation.reservationId ?? null,
             chat_id: chatId,
@@ -4354,7 +4395,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       runInBackground(
         { correlationId: corrId, module: 'orchestrator', taskName: 'createOpsTask_Checkout', triggerId: String(chatId) },
         async () => {
-          const { task_id, error } = await createOpsTask({
+          const { task_id, error } = await createTelegramOpsTask({
             property_id: commContext.reservation.propertyId!,
             reservation_id: commContext.reservation.reservationId ?? null,
             chat_id: chatId,
