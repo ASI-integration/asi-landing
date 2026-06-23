@@ -63,6 +63,16 @@ function getMissingSupabaseEnvNames() {
   return missing;
 }
 
+function getSupabaseHostForLog() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url?.trim()) return '(missing)';
+  try {
+    return new URL(url).host;
+  } catch {
+    return '(invalid url)';
+  }
+}
+
 function ensureSupabaseEnv(dotenvState) {
   const missing = getMissingSupabaseEnvNames();
   if (missing.length === 0) {
@@ -72,6 +82,7 @@ function ensureSupabaseEnv(dotenvState) {
       .replace(/\/rest\/v1$/, '');
     process.env.SUPABASE_URL = base;
     process.env.NEXT_PUBLIC_SUPABASE_URL = base;
+    console.info('[ops-v12-acceptance] supabase_host:', getSupabaseHostForLog());
     return;
   }
 
@@ -114,8 +125,9 @@ function reportRunnerResult(result) {
 
 function main() {
   try {
+    const cleanupOnly = process.env.OPS_ACCEPTANCE_CLEANUP === '1';
     const confirm = process.env.OPS_ACCEPTANCE_CONFIRM?.trim();
-    if (confirm !== REQUIRED_CONFIRM) {
+    if (!cleanupOnly && confirm !== REQUIRED_CONFIRM) {
       console.log(
         `[ops-v12-acceptance] SKIPPED: no changes. Set OPS_ACCEPTANCE_CONFIRM=${REQUIRED_CONFIRM} to run live acceptance.`,
       );
@@ -124,6 +136,10 @@ function main() {
 
     const dotenvState = loadDotEnvLocal();
     ensureSupabaseEnv(dotenvState);
+
+    if (cleanupOnly) {
+      console.info('[ops-v12-acceptance] cleanup mode: removing ASI_OPS_ACCEPTANCE_* CRM contacts');
+    }
 
     const result = runWithTsx(RUNNER_TS);
     reportRunnerResult(result);

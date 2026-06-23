@@ -82,3 +82,13 @@ CREATE POLICY "service_role_full_access"
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+REVOKE ALL ON TABLE public.ops_operator_tasks FROM anon, authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON TABLE public.ops_operator_tasks
+  TO service_role;
+
+-- After applying this migration, reload PostgREST schema cache if acceptance still reports
+-- "Could not find the table ... in the schema cache":
+--   NOTIFY pgrst, 'reload schema';

@@ -1,5 +1,10 @@
 import { createCrmContact, deleteCrmContact } from '@/lib/crm/repository';
 import {
+  formatOpsOperatorTasksPreflightFailure,
+  getSupabaseHostForLog,
+  verifyOpsOperatorTasksTable,
+} from '@/lib/ops-board/acceptance-preflight';
+import {
   buildAutoOpsDedupKey,
   getOpsOperatorTask,
   listOpsOperatorTasks,
@@ -29,6 +34,40 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+export async function cleanupOrphanedAcceptanceContacts(): Promise<number> {
+  const { data, error } = await supabase
+    .from('crm_contacts')
+    .select('id,name')
+    .like('name', `${ACCEPTANCE_PREFIX}%`);
+
+  if (error) {
+    throw new Error(`failed to list acceptance contacts: ${error.message}`);
+  }
+
+  let removed = 0;
+  for (const row of data ?? []) {
+    try {
+      await deleteCrmContact(row.id);
+      removed += 1;
+      console.info('[ops-v12-acceptance] removed acceptance contact', { id: row.id, name: row.name });
+    } catch (cleanupError) {
+      const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+      console.warn('[ops-v12-acceptance] cleanup contact warning:', row.id, detail);
+    }
+  }
+  return removed;
+}
+
+async function runAcceptancePreflight(): Promise<void> {
+  console.info('[ops-v12-acceptance] supabase_host:', getSupabaseHostForLog());
+
+  const preflight = await verifyOpsOperatorTasksTable();
+  if (!preflight.ok) {
+    console.error(formatOpsOperatorTasksPreflightFailure(preflight.error));
+    fail('OPS preflight failed: ops_operator_tasks table unavailable');
+  }
+}
+
 async function cleanup(contactId: string, taskId: string | null): Promise<void> {
   if (process.env.KEEP_OPS_ACCEPTANCE_DATA === '1') {
     console.info('[ops-v12-acceptance] KEEP_OPS_ACCEPTANCE_DATA=1');
@@ -53,6 +92,15 @@ async function cleanup(contactId: string, taskId: string | null): Promise<void> 
 }
 
 async function main(): Promise<void> {
+  if (process.env.OPS_ACCEPTANCE_CLEANUP === '1') {
+    console.info('[ops-v12-acceptance] supabase_host:', getSupabaseHostForLog());
+    const removed = await cleanupOrphanedAcceptanceContacts();
+    console.info('[ops-v12-acceptance] cleanup complete', { removed });
+    return;
+  }
+
+  await runAcceptancePreflight();
+
   const runId = Date.now().toString(36);
   const name = `${ACCEPTANCE_PREFIX}${runId}`;
   const phoneSuffix = String(Date.now()).slice(-7);
