@@ -9,13 +9,17 @@ import {
   CRM_ROLE_LABELS,
   CRM_SOURCE_LABELS,
   CRM_SOURCE_VALUES,
-  CRM_STATUS_LABELS,
-  CRM_STATUS_VALUES,
+  PILOT_ROLLOUT_STATUS_LABELS,
+  PILOT_ROLLOUT_STATUS_VALUES,
   CrmCommunicationStatus,
   CrmContact,
   CrmSource,
   CrmStatus,
 } from '@/lib/crm/types';
+import {
+  pilotRolloutStatusLabel,
+  resolvePilotRolloutStatus,
+} from '@/lib/crm/pilot-rollout';
 import { getCrmSuggestions, resolveCrmRoleInput, resolveCrmSourceInput } from '@/lib/crm/suggestions';
 import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
@@ -47,7 +51,7 @@ const emptyDraft: Draft = {
   objectsCount: '0',
   city: '',
   note: '',
-  status: 'new_lead',
+  status: 'new' as CrmStatus,
   communicationStatus: 'no_contact',
   nextStep: '',
   nextActionAt: '',
@@ -91,6 +95,7 @@ export default function CrmPageClient() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pilotLimitMessage, setPilotLimitMessage] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -113,6 +118,18 @@ export default function CrmPageClient() {
       }
     } catch {
       // Подсказки не блокируют основной экран CRM.
+    }
+  }, []);
+
+  const loadPilotSummary = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dashboard/crm/pilot-summary', { credentials: 'include' });
+      const data = await readResponseJson(res, { ok: false, limitMessage: null as string | null });
+      if (res.ok && data.ok) {
+        setPilotLimitMessage(data.limitMessage ?? null);
+      }
+    } catch {
+      // Сводка пилота не блокирует CRM.
     }
   }, []);
 
@@ -146,7 +163,8 @@ export default function CrmPageClient() {
 
   useEffect(() => {
     void loadContacts();
-  }, [loadContacts]);
+    void loadPilotSummary();
+  }, [loadContacts, loadPilotSummary]);
 
   useEffect(() => {
     void loadSuggestionContacts();
@@ -228,6 +246,7 @@ export default function CrmPageClient() {
         setMessage(data.message || 'Не удалось сохранить изменения.');
         return;
       }
+      await loadPilotSummary();
       setContacts((prev) => prev.map((contact) => (contact.id === id ? data.contact! : contact)));
       setEdits((prev) => ({
         ...prev,
@@ -446,13 +465,19 @@ export default function CrmPageClient() {
         />
         <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as CrmStatus | 'all')}>
           <option value="all">все статусы</option>
-          {CRM_STATUS_VALUES.map((value) => <option key={value} value={value}>{CRM_STATUS_LABELS[value]}</option>)}
+          {PILOT_ROLLOUT_STATUS_VALUES.map((value) => <option key={value} value={value}>{PILOT_ROLLOUT_STATUS_LABELS[value]}</option>)}
         </select>
         <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as CrmSource | 'all')}>
           <option value="all">все источники</option>
           {CRM_SOURCE_VALUES.map((value) => <option key={value} value={value}>{CRM_SOURCE_LABELS[value]}</option>)}
         </select>
       </div>
+
+      {pilotLimitMessage ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {pilotLimitMessage}
+        </div>
+      ) : null}
 
       {message ? <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{message}</div> : null}
 
@@ -472,6 +497,9 @@ export default function CrmPageClient() {
                       <h2 className="text-base font-semibold text-slate-950">{contact.name}</h2>
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{CRM_ROLE_LABELS[contact.role]}</span>
                       <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">{CRM_SOURCE_LABELS[contact.source]}</span>
+                      <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
+                        {pilotRolloutStatusLabel(contact.status)}
+                      </span>
                       <button
                         type="button"
                         disabled={deletingId === contact.id || savingId === contact.id}
@@ -513,8 +541,19 @@ export default function CrmPageClient() {
                   <div className="space-y-3">
                     <label className="block text-xs font-medium uppercase text-slate-500">
                       Статус
-                      <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={contact.status} disabled={savingId === contact.id} onChange={(e) => void patchContact(contact.id, { status: e.target.value as CrmStatus })}>
-                        {CRM_STATUS_VALUES.map((value) => <option key={value} value={value}>{CRM_STATUS_LABELS[value]}</option>)}
+                      <select
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={resolvePilotRolloutStatus(contact.status)}
+                        disabled={savingId === contact.id}
+                        onChange={(e) =>
+                          void patchContact(contact.id, { status: e.target.value as CrmStatus })
+                        }
+                      >
+                        {PILOT_ROLLOUT_STATUS_VALUES.map((value) => (
+                          <option key={value} value={value}>
+                            {PILOT_ROLLOUT_STATUS_LABELS[value]}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="block text-xs font-medium uppercase text-slate-500">

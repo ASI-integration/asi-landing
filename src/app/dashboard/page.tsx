@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { productSupportEmail } from '@/config/contact';
 import { useSession } from '@/contexts/SessionContext';
+import type { PilotRolloutMetrics } from '@/lib/crm/pilot-rollout';
+import { readResponseJson } from '@/lib/safeResponseJson';
 
 function formatDateRu(iso: string | null) {
   if (!iso) return '—';
@@ -56,6 +59,23 @@ const modules = [
 export default function DashboardPage() {
   const { session } = useSession();
   const account = session?.account ?? null;
+  const isCrmOperator = session?.isCrmOperator === true;
+  const [pilotMetrics, setPilotMetrics] = useState<PilotRolloutMetrics | null>(null);
+
+  useEffect(() => {
+    if (!isCrmOperator) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/dashboard/crm/pilot-summary', { credentials: 'include' });
+        const data = await readResponseJson(res, { ok: false, metrics: null });
+        if (res.ok && data.ok && data.metrics) {
+          setPilotMetrics(data.metrics);
+        }
+      } catch {
+        // Блок пилота не блокирует обзор кабинета.
+      }
+    })();
+  }, [isCrmOperator]);
 
   const trialEnds = account?.trial_ends_at ?? null;
   const subStatus = subscriptionStatusLabel(account?.subscription_status);
@@ -100,6 +120,46 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {isCrmOperator && pilotMetrics ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-7">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900">Пилот</h2>
+              <p className="mt-2 text-base text-slate-600 max-w-2xl leading-relaxed">
+                Контроль постепенного запуска: активные подключения, очередь и объекты на настройке.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/crm"
+              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Открыть CRM
+            </Link>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+              <p className="text-sm text-slate-500">Активных пилотников</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">
+                {pilotMetrics.activePilots} / {pilotMetrics.limit}
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+              <p className="text-sm text-slate-500">В листе ожидания</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.waitlist}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+              <p className="text-sm text-slate-500">На настройке объекта</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.onboarding}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
+              <p className="text-sm text-slate-500">Требуют внимания</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.needsAttention}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {/* Block 2 — Модули */}
       <section className="bg-white rounded-xl border border-slate-200 p-7">

@@ -1,3 +1,4 @@
+import { normalizePilotRolloutStorageStatus } from './pilot-rollout';
 import {
   CRM_COMMUNICATION_STATUS_VALUES,
   CRM_ROLE_VALUES,
@@ -64,7 +65,7 @@ export function normalizeCrmContactInput(input: CrmContactInput): NormalizedCrmC
     objectsCount: objectsCount(input.objectsCount),
     city: text(input.city, 120),
     note: text(input.note, 2000),
-    status: enumValue(input.status, CRM_STATUS_VALUES, 'new_lead'),
+    status: normalizePilotRolloutStorageStatus(enumValue(input.status, CRM_STATUS_VALUES, 'new')),
     communicationStatus: enumValue(input.communicationStatus, CRM_COMMUNICATION_STATUS_VALUES, 'no_contact'),
     lastContactAt: dateValue(input.lastContactAt),
     nextStep: text(input.nextStep, 500),

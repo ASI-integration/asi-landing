@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { normalizeCrmContactInput } from '@/lib/crm/normalize';
-import { deleteCrmContact, updateCrmContact } from '@/lib/crm/repository';
+import { deleteCrmContact, listCrmContacts, updateCrmContact } from '@/lib/crm/repository';
+import { validatePilotStatusChange } from '@/lib/crm/pilot-rollout';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 
 export const runtime = 'nodejs';
@@ -26,6 +27,14 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
   const patch: Partial<typeof normalized> = {};
   for (const key of Object.keys(raw) as Array<keyof typeof normalized>) {
     if (key in normalized) patch[key] = normalized[key] as never;
+  }
+
+  if (patch.status) {
+    const contacts = await listCrmContacts();
+    const limitError = validatePilotStatusChange(contacts, id, patch.status);
+    if (limitError) {
+      return NextResponse.json({ ok: false, message: limitError }, { status: 409 });
+    }
   }
 
   try {

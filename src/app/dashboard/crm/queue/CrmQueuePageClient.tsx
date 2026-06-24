@@ -38,6 +38,15 @@ type QueueResponse = {
   message?: string;
   filter: CrmQueueFilter;
   metrics: CrmQueueMetrics;
+  pilot?: {
+    activePilots: number;
+    waitlist: number;
+    onboarding: number;
+    needsAttention: number;
+    limit: number;
+    limitReached: boolean;
+  };
+  pilotLimitMessage?: string | null;
   operatorInbox: CrmQueueItem[];
   columns: Record<CrmQueueColumn, CrmQueueItem[]>;
   items: CrmQueueItem[];
@@ -182,6 +191,11 @@ function QueueCard({
         <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${columnBadgeClass(item.column)}`}>
           {item.onboardingStatusLabel}
         </span>
+        {item.isPilotParticipant ? (
+          <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+            {item.pilotRolloutStatusLabel}
+          </span>
+        ) : null}
         {item.readyForChannelManager ? (
           <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
             Готов к МК
@@ -609,6 +623,21 @@ export default function CrmQueuePageClient() {
 
       {message ? (
         <p className={`text-sm ${messageTone === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>{message}</p>
+      ) : null}
+
+      {data?.pilotLimitMessage ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {data.pilotLimitMessage}
+        </div>
+      ) : null}
+
+      {data?.pilot ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <MetricCard label={`Активных пилотников / ${data.pilot.limit}`} value={data.pilot.activePilots} />
+          <MetricCard label="В листе ожидания" value={data.pilot.waitlist} />
+          <MetricCard label="На настройке объекта" value={data.pilot.onboarding} />
+          <MetricCard label="Требуют внимания" value={data.pilot.needsAttention} />
+        </div>
       ) : null}
 
       <ActivityFeedPanel

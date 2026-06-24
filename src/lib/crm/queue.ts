@@ -9,6 +9,7 @@ import {
   REQUIRED_FIELD_LABELS_RU,
 } from '@/lib/object-readiness/engine';
 import { sanitizeCrmMessageTextForDisplay } from './message-display';
+import { isPilotParticipantStatus, pilotRolloutStatusLabel, resolvePilotRolloutStatus } from './pilot-rollout';
 
 export const CRM_QUEUE_COLUMN_VALUES = [
   'new_lead',
@@ -56,7 +57,7 @@ export const CRM_QUEUE_FILTER_LABELS: Record<CrmQueueFilter, string> = {
   completed: 'Только завершённые',
 };
 
-const COMPLETED_STATUSES: CrmStatus[] = ['pilot', 'ready_for_test', 'rejected', 'not_relevant'];
+const COMPLETED_STATUSES: CrmStatus[] = ['active_pilot', 'pilot', 'ready_for_test', 'rejected', 'not_relevant'];
 const INACTIVE_STATUSES: CrmStatus[] = ['paused', 'rejected', 'not_relevant'];
 
 const ONBOARDING_FIELD_LABELS: Record<string, string> = {
@@ -108,6 +109,9 @@ export type CrmQueueItem = {
   channelManagerHref: string | null;
   propertyId: string | null;
   crmStatus: CrmStatus;
+  pilotRolloutStatus: string;
+  pilotRolloutStatusLabel: string;
+  isPilotParticipant: boolean;
   lastMessagePreview: string | null;
   messages: CrmQueueMessage[];
   operationalStatus: CrmOperationalStatus;
@@ -265,7 +269,7 @@ export function resolveQueueColumn(contact: CrmContact): CrmQueueColumn {
     return 'needs_operator';
   }
 
-  if (contact.status === 'new_lead') return 'new_lead';
+  if (contact.status === 'new' || contact.status === 'new_lead') return 'new_lead';
   if (COMPLETED_STATUSES.includes(contact.status)) return 'completed';
   if (contact.status === 'waiting_object_data') return 'missing_data';
 
@@ -398,6 +402,9 @@ export function buildQueueItem(
     channelManagerHref: channelManager.href,
     propertyId: extractPropertyId(contact.note),
     crmStatus: contact.status,
+    pilotRolloutStatus: resolvePilotRolloutStatus(contact.status),
+    pilotRolloutStatusLabel: pilotRolloutStatusLabel(contact.status),
+    isPilotParticipant: isPilotParticipantStatus(contact.status),
     lastMessagePreview: sanitizeCrmMessageTextForDisplay(
       contact.onboarding?.lastMessage || messages[0]?.text || contact.nextStep || null,
     ),

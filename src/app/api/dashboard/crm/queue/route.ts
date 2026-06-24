@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { buildActivityFeed, buildCardActivities } from '@/lib/crm/activity-feed';
 import { demoCrmEventsForFeed, shouldUseDemoActivityEvents } from '@/lib/crm/demo-activity-data';
 import { listCrmContacts } from '@/lib/crm/repository';
+import { computePilotRolloutMetrics, PILOT_LIMIT_FULL_MESSAGE } from '@/lib/crm/pilot-rollout';
 import { listCrmEventsByContactIds, listRecentCrmEventsForFeed } from '@/lib/crm/queue-events';
 import {
   buildOperatorInbox,
@@ -84,11 +85,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     const items = buildQueueItems(contacts, messagesByContact, activitiesByContact, opsSummaryByContact);
     const filtered = filterQueueItems(items, filter);
     const activityFeed = buildActivityFeed(contacts, feedEvents);
+    const pilot = computePilotRolloutMetrics(contacts);
 
     return NextResponse.json({
       ok: true,
       filter,
       metrics: computeQueueMetrics(items),
+      pilot,
+      pilotLimitMessage: pilot.limitReached ? PILOT_LIMIT_FULL_MESSAGE : null,
       operatorInbox: buildOperatorInbox(items),
       columns: groupQueueByColumn(filtered),
       items: filtered,

@@ -2,6 +2,7 @@ import { parseChannelManagerConnectionBlock } from '@/lib/channel-manager-connec
 import { supabase } from '@/lib/supabase';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
+import { normalizePilotRolloutStorageStatus } from './pilot-rollout';
 import { CrmContact, CrmOnboarding, CrmOnboardingStatus, CrmOwnerObject, CrmSource, CrmStatus } from './types';
 
 type CrmContactRow = {
@@ -37,6 +38,24 @@ export type CrmContactFilters = {
 };
 
 const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
+  new: ['new', 'new_lead', 'pilot_candidate', 'contact', 'qualified', 'needs_reaction'],
+  waitlist: ['waitlist', 'pilot_waitlist'],
+  invited: ['invited', 'instruction_sent', 'pilot_selected'],
+  onboarding: [
+    'onboarding',
+    'waiting_object_data',
+    'needs_clarification',
+    'access_received',
+    'object_filled',
+    'creating_object',
+    'object_setup',
+    'test_object_selected',
+    'ready_for_test',
+    'testing_communication',
+  ],
+  active_pilot: ['active_pilot', 'pilot', 'pilot_active'],
+  paused: ['paused'],
+  rejected: ['rejected', 'not_relevant', 'not_fit'],
   new_lead: ['new_lead', 'new', 'pilot_candidate'],
   contact: ['contact', 'qualified', 'needs_reaction'],
   waiting_object_data: ['waiting_object_data', 'needs_clarification'],
@@ -44,8 +63,7 @@ const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
   test_object_selected: ['test_object_selected', 'pilot_selected'],
   object_setup: ['object_setup', 'creating_object'],
   ready_for_test: ['ready_for_test', 'testing_communication'],
-  pilot: ['pilot', 'pilot_active'],
-  paused: ['paused', 'pilot_waitlist'],
+  pilot: ['pilot', 'pilot_active', 'active_pilot'],
   not_relevant: ['not_relevant', 'not_fit'],
 };
 
@@ -69,18 +87,20 @@ function toSource(value: string): CrmSource {
 
 function toStatus(value: string): CrmStatus {
   const map: Record<string, CrmStatus> = {
-    new: 'new_lead',
+    new_lead: 'new',
+    pilot_candidate: 'new',
     needs_clarification: 'waiting_object_data',
     qualified: 'contact',
     creating_object: 'object_setup',
     object_filled: 'access_received',
     testing_communication: 'ready_for_test',
     needs_reaction: 'contact',
-    pilot_active: 'pilot',
-    pilot_candidate: 'new_lead',
+    pilot_active: 'active_pilot',
+    pilot: 'active_pilot',
     pilot_selected: 'test_object_selected',
-    pilot_waitlist: 'paused',
-    not_fit: 'not_relevant',
+    pilot_waitlist: 'waitlist',
+    not_fit: 'rejected',
+    not_relevant: 'rejected',
   };
   return map[value] ?? (value as CrmStatus);
 }
@@ -239,7 +259,7 @@ function toRow(input: NormalizedCrmContactInput) {
     property_count: input.objectsCount,
     city: input.city || null,
     notes: input.note || '',
-    status: input.status,
+    status: normalizePilotRolloutStorageStatus(input.status),
     communication_status: input.communicationStatus,
     last_activity_at: input.lastContactAt,
     next_action: input.nextStep || '',
@@ -337,7 +357,7 @@ export async function updateCrmContact(id: string, input: Partial<NormalizedCrmC
     objectsCount: 0,
     city: '',
     note: '',
-    status: 'new_lead',
+    status: 'new',
     communicationStatus: 'no_contact',
     lastContactAt: null,
     nextStep: '',

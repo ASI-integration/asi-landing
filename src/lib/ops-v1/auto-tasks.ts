@@ -12,6 +12,8 @@ const CRM_ONBOARDING_REVIEW_STATUSES: CrmStatus[] = [
   'access_received',
   'test_object_selected',
   'object_setup',
+  'onboarding',
+  'invited',
 ];
 
 const CRM_MANUAL_REACTION_STATUSES = new Set(['needs_manual_reaction', 'has_problem']);

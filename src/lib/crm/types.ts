@@ -4,7 +4,18 @@ export type CrmRole = (typeof CRM_ROLE_VALUES)[number];
 export const CRM_SOURCE_VALUES = ['telegram', 'form', 'manual', 'bragin_group', 'other'] as const;
 export type CrmSource = (typeof CRM_SOURCE_VALUES)[number];
 
-export const CRM_STATUS_VALUES = [
+export const PILOT_ROLLOUT_STATUS_VALUES = [
+  'new',
+  'waitlist',
+  'invited',
+  'onboarding',
+  'active_pilot',
+  'paused',
+  'rejected',
+] as const;
+export type PilotRolloutStatus = (typeof PILOT_ROLLOUT_STATUS_VALUES)[number];
+
+export const CRM_LEGACY_STATUS_VALUES = [
   'new_lead',
   'contact',
   'instruction_sent',
@@ -14,9 +25,12 @@ export const CRM_STATUS_VALUES = [
   'object_setup',
   'ready_for_test',
   'pilot',
-  'paused',
-  'rejected',
   'not_relevant',
+] as const;
+
+export const CRM_STATUS_VALUES = [
+  ...PILOT_ROLLOUT_STATUS_VALUES,
+  ...CRM_LEGACY_STATUS_VALUES,
 ] as const;
 export type CrmStatus = (typeof CRM_STATUS_VALUES)[number];
 
@@ -151,19 +165,34 @@ export const CRM_SOURCE_LABELS: Record<CrmSource, string> = {
   other: 'другое',
 };
 
+export const PILOT_ROLLOUT_STATUS_LABELS: Record<PilotRolloutStatus, string> = {
+  new: 'Новая заявка',
+  waitlist: 'Лист ожидания',
+  invited: 'Приглашён в пилот',
+  onboarding: 'Настройка объекта',
+  active_pilot: 'Активный пилот',
+  paused: 'Пауза',
+  rejected: 'Не подходит сейчас',
+};
+
 export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
-  new_lead: 'новый лид',
-  contact: 'связаться',
-  instruction_sent: 'инструкция отправлена',
-  waiting_object_data: 'ждем данные объекта',
-  access_received: 'доступ получен',
-  test_object_selected: 'выбран тестовый объект',
-  object_setup: 'объект на настройке',
-  ready_for_test: 'готов к тесту',
-  pilot: 'в пилоте',
-  paused: 'пауза',
-  rejected: 'отказ',
-  not_relevant: 'неактуально',
+  new: 'Новая заявка',
+  waitlist: 'Лист ожидания',
+  invited: 'Приглашён в пилот',
+  onboarding: 'Настройка объекта',
+  active_pilot: 'Активный пилот',
+  paused: 'Пауза',
+  rejected: 'Не подходит сейчас',
+  new_lead: 'Новая заявка',
+  contact: 'Связаться',
+  instruction_sent: 'Инструкция отправлена',
+  waiting_object_data: 'Ждём данные объекта',
+  access_received: 'Доступ получен',
+  test_object_selected: 'Выбран тестовый объект',
+  object_setup: 'Объект на настройке',
+  ready_for_test: 'Готов к тесту',
+  pilot: 'Активный пилот',
+  not_relevant: 'Не подходит сейчас',
 };
 
 export const CRM_COMMUNICATION_STATUS_LABELS: Record<CrmCommunicationStatus, string> = {
