@@ -1,14 +1,14 @@
-import { TELEGRAM_SUPPORT_BOT_HANDLE } from '@/config/telegramBots';
+import { TELEGRAM_CORE_BOT_HANDLE, TELEGRAM_SUPPORT_BOT_HANDLE } from '@/config/telegramBots';
 import { buildAutoOpsDedupKey, createOpsOperatorTask } from '@/lib/ops-board/repository';
 import { sendSupportBotReply, sendSupportBotTyping } from '@/lib/telegram';
 import { supabase } from '@/lib/supabase';
 import type { TelegramUpdate } from './types';
 
 export type SupportBotIntent =
-  | 'support_lead'
   | 'connect_property'
-  | 'pilot_interest'
-  | 'question'
+  | 'pricing_pilot'
+  | 'about_asi'
+  | 'needs_human'
   | 'unknown';
 
 export type SupportBotProcessResult = {
@@ -24,6 +24,7 @@ export type SupportBotProcessResult = {
 };
 
 const SUPPORT_OPS_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+const SUPPORT_OPS_DESCRIPTION = 'Требуется ручная проверка обращения в поддержку';
 
 function normalizeRu(text: string): string {
   return String(text ?? '')
@@ -41,50 +42,84 @@ export function classifySupportBotIntent(messageText: string): SupportBotIntent 
   const text = normalizeRu(messageText);
   if (!text) return 'unknown';
 
-  if (has(text, /интересует\s+пилот|пилот.*интерес|хочу\s+(в\s+)?пилот/)) {
-    return 'pilot_interest';
-  }
   if (
     has(
       text,
-      /хочу\s+подключить\s+(квартир|объект)|подключить\s+asi|хочу\s+подключить\s+asi/,
+      /оператор/,
+      /человек/,
+      /поддержк/,
+      /не\s+работает/,
+      /ошибк/,
+      /сломал/,
+      /не\s+могу/,
+      /помогите/,
+      /нужна\s+помощь/,
+    )
+  ) {
+    return 'needs_human';
+  }
+
+  if (
+    has(
+      text,
+      /хочу\s+подключить\s+(квартир|объект)/,
+      /подключить\s+объект/,
+      /подключить\s+asi/,
+      /как\s+начать/,
+      /хочу\s+(в\s+)?пилот/,
+      /интересует\s+пилот/,
       /подключ(ить|иться).*(квартир|объект|апартамент)/,
     )
   ) {
     return 'connect_property';
   }
-  if (has(text, /нужна\s+помощь|что\s+умеет\s+asi/)) {
-    return 'question';
-  }
+
   if (
     has(
       text,
-      /\basi\b|подключ|пилот|квартир|объект|помощь|поддержк|демо|условия/,
+      /сколько\s+стоит/,
+      /\bцена\b/,
+      /\bтариф/,
+      /пилот\s+бесплатно/,
+      /стоимость\s+подключения/,
     )
   ) {
-    return 'support_lead';
+    return 'pricing_pilot';
   }
+
+  if (
+    has(
+      text,
+      /что\s+такое\s+asi/,
+      /что\s+вы\s+делаете/,
+      /что\s+умеет\s+(система|asi)/,
+      /чем\s+помогает/,
+    )
+  ) {
+    return 'about_asi';
+  }
+
   return 'unknown';
 }
 
 export function buildSupportBotReply(intent: SupportBotIntent): string {
   switch (intent) {
     case 'connect_property':
-      return 'Поняла. Могу помочь подключить объект к ASI. Напишите город, адрес/район и сколько объектов хотите вести.';
-    case 'pilot_interest':
-      return 'Поняла. Сейчас пилот набирается на 2–4 объекта. Напишите город, количество объектов и какие каналы бронирования используете.';
-    case 'question':
-      return 'ASI автоматизирует коммуникации с гостями, операционные задачи и бронирования. Напишите, что именно интересует — подключение объекта или вопрос по сервису.';
-    case 'support_lead':
-      return 'Поняла. Помогу с подключением или вопросами по ASI. Напишите город, тип объекта и что хотите автоматизировать в первую очередь.';
+      return `Поняла. Чтобы подключить объект к ASI, начните с основного бота: @${TELEGRAM_CORE_BOT_HANDLE}. Он проведёт по шагам раннего доступа и подготовки объекта. Если что-то не получится, напишите сюда, я передам вопрос оператору.`;
+    case 'pricing_pilot':
+      return 'Сейчас ASI запускается через ограниченный пилот. На пилоте подключение может быть бесплатным для первых объектов, чтобы проверить систему на живом контуре. Итоговые тарифы будут зависеть от режима: ручной, полуавтоматический или автоматический.';
+    case 'about_asi':
+      return 'ASI — это автопилот для посуточной аренды. Система помогает вести объект, собирать данные, готовить публикацию, обрабатывать коммуникацию с гостями и создавать операционные задачи: заезды, выезды, уборки и ручные проверки.';
+    case 'needs_human':
+      return 'Поняла. Я передала обращение оператору. Он посмотрит ситуацию и вернётся с ответом.';
     case 'unknown':
     default:
-      return 'Поняла запрос. Передала в поддержку, вернёмся с ответом.';
+      return 'Поняла сообщение, но мне нужно передать его оператору, чтобы не ответить неверно.';
   }
 }
 
 export function shouldCreateSupportOpsTask(intent: SupportBotIntent): boolean {
-  return intent === 'unknown';
+  return intent === 'needs_human' || intent === 'unknown';
 }
 
 function simpleHash(text: string): string {
@@ -138,12 +173,12 @@ function crmNotesForIntent(intent: SupportBotIntent, messageText: string): strin
   switch (intent) {
     case 'connect_property':
       return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: хочет подключить объект. ${preview}`;
-    case 'pilot_interest':
-      return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: интерес к пилоту. ${preview}`;
-    case 'question':
+    case 'pricing_pilot':
+      return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: вопрос о стоимости/пилоте. ${preview}`;
+    case 'about_asi':
       return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: вопрос о возможностях ASI. ${preview}`;
-    case 'support_lead':
-      return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: общий интерес. ${preview}`;
+    case 'needs_human':
+      return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: нужен оператор. ${preview}`;
     case 'unknown':
     default:
       return `Обращение в @${TELEGRAM_SUPPORT_BOT_HANDLE}: требует ручной проверки. ${preview}`;
@@ -153,13 +188,12 @@ function crmNotesForIntent(intent: SupportBotIntent, messageText: string): strin
 function crmNextActionForIntent(intent: SupportBotIntent): string {
   switch (intent) {
     case 'connect_property':
-      return 'Уточнить город, адрес/район и количество объектов.';
-    case 'pilot_interest':
-      return 'Уточнить город, количество объектов и каналы бронирования.';
-    case 'question':
+      return 'Направить в @ASI_core_bot для подключения объекта.';
+    case 'pricing_pilot':
+      return 'Ответить на вопрос о пилоте и тарифах.';
+    case 'about_asi':
       return 'Ответить на вопрос о возможностях ASI.';
-    case 'support_lead':
-      return 'Уточнить город, тип объекта и цель подключения.';
+    case 'needs_human':
     case 'unknown':
     default:
       return 'Проверить обращение и ответить в Telegram.';
@@ -237,23 +271,37 @@ async function createSupportOpsTask(input: {
   ownerName: string | null;
 }): Promise<{ taskId: string | null; dedupKey: string }> {
   const dedupKey = buildSupportOpsDedupKey(input.chatId, input.messageText);
+  const messagePreview = input.messageText.trim();
   const result = await createOpsOperatorTask({
     taskType: 'support_review',
     taskStatus: 'needs_operator',
     source: 'telegram_support',
     title: 'Проверить обращение в поддержку',
-    description: input.messageText.trim(),
+    description: SUPPORT_OPS_DESCRIPTION,
     contactId: input.contactId,
     ownerName: input.ownerName,
-    lastEventText: input.messageText.trim(),
+    lastEventText: messagePreview,
     dedupKey,
     metadata: {
       created_by_system: true,
       integration: 'support_bot',
-      telegram_chat_id: input.chatId,
+      marker: dedupKey,
+      message_text: messagePreview,
       support_bot: TELEGRAM_SUPPORT_BOT_HANDLE,
     },
+    updateIfExists: {
+      description: SUPPORT_OPS_DESCRIPTION,
+      taskStatus: 'needs_operator',
+      lastEventText: messagePreview,
+    },
   });
+
+  if (!result.ok || !result.task) {
+    console.warn('[support-bot] failed to create support_review OPS task', {
+      dedupKey,
+      error: result.error ?? 'unknown',
+    });
+  }
 
   return {
     taskId: result.ok && result.task ? result.task.id : null,

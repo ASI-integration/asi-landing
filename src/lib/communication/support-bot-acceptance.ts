@@ -9,15 +9,18 @@ import {
 import { TELEGRAM_CORE_BOT_HANDLE, TELEGRAM_SUPPORT_BOT_HANDLE } from '@/config/telegramBots';
 import {
   formatOpsOperatorTasksPreflightFailure,
+  formatSupportBotOpsPreflightFailure,
   getSupabaseHostForLog,
   verifyOpsOperatorTasksTable,
+  verifySupportBotOpsSchema,
 } from '@/lib/ops-board/acceptance-preflight';
-import { buildAutoOpsDedupKey, listOpsOperatorTasks } from '@/lib/ops-board/repository';
+import { listOpsOperatorTasks } from '@/lib/ops-board/repository';
 import { supabase } from '@/lib/supabase';
 
 export const SUPPORT_BOT_ACCEPTANCE_PREFIX = 'ASI_SUPPORT_BOT_ACCEPTANCE_';
 export const SUPPORT_BOT_ACCEPTANCE_SYNTHETIC_CHAT_ID_DEFAULT = 9_880_001;
 export const SUPPORT_BOT_ACCEPTANCE_CONNECT_MESSAGE = 'хочу подключить квартиру';
+export const SUPPORT_BOT_ACCEPTANCE_OPERATOR_MESSAGE = 'не работает, нужен оператор';
 export const SUPPORT_BOT_ACCEPTANCE_UNKNOWN_MESSAGE = 'случайный запрос без понятного смысла xyz';
 
 export function getSupportBotAcceptanceSyntheticChatId(): number {
@@ -30,8 +33,9 @@ export function buildSupportBotAcceptanceSyntheticUpdate(input?: {
   text?: string;
   chatId?: number;
   username?: string;
+  updateIdOffset?: number;
 }) {
-  const now = Date.now();
+  const now = Date.now() + (input?.updateIdOffset ?? 0);
   const chatId = input?.chatId ?? getSupportBotAcceptanceSyntheticChatId();
   const update = tgTextUpdate({
     update_id: now,
@@ -64,10 +68,12 @@ export async function findSupportBotCrmContact(username: string): Promise<{ id: 
 
 export async function cleanupSupportBotAcceptanceData(input: {
   contactId?: string | null;
-  taskId?: string | null;
+  taskIds?: string[];
 }): Promise<void> {
-  if (input.taskId) {
-    await supabase.from('ops_operator_tasks').delete().eq('id', input.taskId);
+  for (const taskId of input.taskIds ?? []) {
+    if (taskId) {
+      await supabase.from('ops_operator_tasks').delete().eq('id', taskId);
+    }
   }
   if (input.contactId) {
     await supabase.from('crm_contacts').delete().eq('id', input.contactId);
@@ -78,9 +84,44 @@ export type SupportBotAcceptanceRunResult = {
   ok: boolean;
   failures: string[];
   connectResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null;
+  operatorResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null;
   unknownResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null;
-  secondConnectResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null;
+  secondOperatorResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null;
 };
+
+async function assertOpsTaskForDedupKey(
+  failures: string[],
+  dedupKey: string | null | undefined,
+  label: string,
+): Promise<void> {
+  if (!dedupKey) {
+    failures.push(`${label}: missing dedup key`);
+    return;
+  }
+  const listed = await listOpsOperatorTasks({ status: 'all' });
+  if (!listed.ok) {
+    failures.push(`${label}: listOpsOperatorTasks failed: ${listed.error ?? 'unknown'}`);
+    return;
+  }
+  const matches = listed.tasks.filter((task) => task.dedupKey === dedupKey);
+  if (matches.length !== 1) {
+    failures.push(`${label}: expected 1 OPS task for dedup key, found ${matches.length}`);
+    return;
+  }
+  const task = matches[0];
+  if (task?.taskType !== 'support_review') {
+    failures.push(`${label}: expected taskType=support_review, got ${task?.taskType ?? 'none'}`);
+  }
+  if (task?.taskStatus !== 'needs_operator') {
+    failures.push(`${label}: expected taskStatus=needs_operator, got ${task?.taskStatus ?? 'none'}`);
+  }
+  if (task?.source !== 'telegram_support') {
+    failures.push(`${label}: expected source=telegram_support, got ${task?.source ?? 'none'}`);
+  }
+  if (!task?.description?.includes('ручная проверка')) {
+    failures.push(`${label}: OPS description should mention manual review in Russian`);
+  }
+}
 
 export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanceRunResult> {
   const failures: string[] = [];
@@ -97,16 +138,29 @@ export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanc
     failures.push(formatOpsOperatorTasksPreflightFailure(preflight.error));
   }
 
+  const supportOpsPreflight = await verifySupportBotOpsSchema();
+  if (!supportOpsPreflight.ok) {
+    failures.push(formatSupportBotOpsPreflightFailure(supportOpsPreflight.error));
+  }
+
   const connectIntent = classifySupportBotIntent(SUPPORT_BOT_ACCEPTANCE_CONNECT_MESSAGE);
   if (connectIntent !== 'connect_property') {
     failures.push(`expected connect_property intent, got ${connectIntent}`);
   }
   const connectReply = buildSupportBotReply('connect_property');
-  if (!connectReply.includes('город')) {
-    failures.push('connect_property reply missing city prompt');
+  if (!connectReply.includes(TELEGRAM_CORE_BOT_HANDLE)) {
+    failures.push('connect_property reply should reference core bot');
   }
   if (shouldCreateSupportOpsTask('connect_property')) {
     failures.push('connect_property should not create OPS task');
+  }
+
+  const operatorIntent = classifySupportBotIntent(SUPPORT_BOT_ACCEPTANCE_OPERATOR_MESSAGE);
+  if (operatorIntent !== 'needs_human') {
+    failures.push(`expected needs_human intent, got ${operatorIntent}`);
+  }
+  if (!shouldCreateSupportOpsTask('needs_human')) {
+    failures.push('needs_human should create OPS task');
   }
 
   const unknownIntent = classifySupportBotIntent(SUPPORT_BOT_ACCEPTANCE_UNKNOWN_MESSAGE);
@@ -117,15 +171,24 @@ export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanc
     failures.push('unknown should create OPS task');
   }
 
+  const dedupKey = buildSupportOpsDedupKey(
+    getSupportBotAcceptanceSyntheticChatId() + 1,
+    SUPPORT_BOT_ACCEPTANCE_OPERATOR_MESSAGE,
+  );
+  if (!dedupKey.includes('telegram_support')) {
+    failures.push('dedup key should include telegram_support marker');
+  }
+
   const prevDryRun = process.env.DRY_RUN_TELEGRAM_OUTBOUND;
   process.env.DRY_RUN_TELEGRAM_OUTBOUND = '1';
 
   const username = `support_acceptance_${getSupportBotAcceptanceSyntheticChatId()}`;
   let connectResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null = null;
+  let operatorResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null = null;
   let unknownResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null = null;
-  let secondConnectResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null = null;
+  let secondOperatorResult: Awaited<ReturnType<typeof processSupportBotUpdate>> | null = null;
   let cleanupContactId: string | null = null;
-  let cleanupTaskId: string | null = null;
+  const cleanupTaskIds: string[] = [];
 
   try {
     const connectUpdate = buildSupportBotAcceptanceSyntheticUpdate({
@@ -149,40 +212,55 @@ export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanc
       failures.push('OPS task should not be created for connect_property');
     }
 
-    secondConnectResult = await processSupportBotUpdate(connectUpdate);
-    const contactAfterSecond = await findSupportBotCrmContact(username);
-    if (!contactAfterSecond?.id) {
-      failures.push('CRM contact missing after second connect sync');
+    const operatorChatId = getSupportBotAcceptanceSyntheticChatId() + 1;
+    const operatorUpdate = buildSupportBotAcceptanceSyntheticUpdate({
+      text: SUPPORT_BOT_ACCEPTANCE_OPERATOR_MESSAGE,
+      chatId: operatorChatId,
+      username: `${username}_operator`,
+      updateIdOffset: 10_000,
+    });
+    operatorResult = await processSupportBotUpdate(operatorUpdate);
+
+    if (operatorResult.outcome !== 'replied') {
+      failures.push(`operator message outcome=${operatorResult.outcome}`);
+    }
+    if (!operatorResult.replyText?.includes('оператор')) {
+      failures.push('operator message reply should mention operator handoff');
+    }
+    if (!operatorResult.opsTaskId || !operatorResult.dedupKey) {
+      failures.push('OPS support_review task was not created for needs_human intent');
+    } else {
+      cleanupTaskIds.push(operatorResult.opsTaskId);
+      await assertOpsTaskForDedupKey(failures, operatorResult.dedupKey, 'needs_human');
+    }
+
+    secondOperatorResult = await processSupportBotUpdate(operatorUpdate);
+    if (secondOperatorResult.opsTaskId && operatorResult.opsTaskId) {
+      if (secondOperatorResult.opsTaskId !== operatorResult.opsTaskId) {
+        failures.push('second operator sync created a different OPS task id');
+      }
+      const listedAgain = await listOpsOperatorTasks({ status: 'all' });
+      if (listedAgain.ok && operatorResult.dedupKey) {
+        const dupes = listedAgain.tasks.filter((task) => task.dedupKey === operatorResult?.dedupKey);
+        if (dupes.length > 1) {
+          failures.push(`duplicate OPS tasks after second operator sync (${dupes.length})`);
+        }
+      }
     }
 
     const unknownUpdate = buildSupportBotAcceptanceSyntheticUpdate({
       text: SUPPORT_BOT_ACCEPTANCE_UNKNOWN_MESSAGE,
+      chatId: getSupportBotAcceptanceSyntheticChatId() + 2,
       username: `${username}_unknown`,
+      updateIdOffset: 20_000,
     });
     unknownResult = await processSupportBotUpdate(unknownUpdate);
 
     if (!unknownResult.opsTaskId || !unknownResult.dedupKey) {
       failures.push('OPS support_review task was not created for unknown intent');
     } else {
-      cleanupTaskId = unknownResult.opsTaskId;
-      const listed = await listOpsOperatorTasks({ status: 'all' });
-      if (!listed.ok) {
-        failures.push(`listOpsOperatorTasks failed: ${listed.error ?? 'unknown'}`);
-      } else {
-        const matches = listed.tasks.filter((task) => task.dedupKey === unknownResult?.dedupKey);
-        if (matches.length !== 1) {
-          failures.push(`expected 1 OPS task for dedup key, found ${matches.length}`);
-        }
-        if (matches[0]?.taskType !== 'support_review') {
-          failures.push(`expected taskType=support_review, got ${matches[0]?.taskType ?? 'none'}`);
-        }
-        if (matches[0]?.taskStatus !== 'needs_operator') {
-          failures.push(`expected taskStatus=needs_operator, got ${matches[0]?.taskStatus ?? 'none'}`);
-        }
-        if (matches[0]?.source !== 'telegram_support') {
-          failures.push(`expected source=telegram_support, got ${matches[0]?.source ?? 'none'}`);
-        }
-      }
+      cleanupTaskIds.push(unknownResult.opsTaskId);
+      await assertOpsTaskForDedupKey(failures, unknownResult.dedupKey, 'unknown');
 
       const secondUnknown = await processSupportBotUpdate(unknownUpdate);
       const listedAgain = await listOpsOperatorTasks({ status: 'all' });
@@ -209,7 +287,7 @@ export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanc
       try {
         await cleanupSupportBotAcceptanceData({
           contactId: cleanupContactId,
-          taskId: cleanupTaskId,
+          taskIds: cleanupTaskIds,
         });
       } catch (error) {
         failures.push(`cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -229,7 +307,8 @@ export async function runSupportBotAcceptanceFull(): Promise<SupportBotAcceptanc
     ok: failures.length === 0,
     failures,
     connectResult,
+    operatorResult,
     unknownResult,
-    secondConnectResult,
+    secondOperatorResult,
   };
 }

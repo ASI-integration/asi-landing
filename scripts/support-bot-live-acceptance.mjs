@@ -97,7 +97,7 @@ function main() {
 
     console.info('[support-bot-acceptance] mode: local runner (synthetic update, no getUpdates)');
 
-    const result = spawnSync('npx', ['tsx', RUNNER_TS], {
+    const result = spawnSync('npx', ['--yes', 'tsx', RUNNER_TS], {
       cwd: ROOT,
       env: process.env,
       stdio: 'inherit',
