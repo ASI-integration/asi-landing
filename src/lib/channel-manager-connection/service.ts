@@ -32,7 +32,7 @@ import type {
 const ONBOARDING_HEADER = 'Онбординг ASI';
 
 function extractObjectIdFromOnboardingNote(note: string): string | null {
-  const match = note.match(/object_id=([a-zA-Z0-9_-]+)/);
+  const match = note.match(/object_id=([^\s\n]+)/);
   return match?.[1] ?? null;
 }
 

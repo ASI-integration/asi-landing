@@ -14,9 +14,9 @@ const STRUCTURED_BLOCK_HEADERS = new Set([
 
 export function extractObjectIdFromNote(note: string | null | undefined): string | null {
   const raw = String(note ?? '');
-  const objectMatch = raw.match(/object_id=([a-zA-Z0-9_-]+)/);
+  const objectMatch = raw.match(/object_id=([^\s\n]+)/);
   if (objectMatch?.[1]) return objectMatch[1];
-  const propertyMatch = raw.match(/property_id=([a-zA-Z0-9_-]+)/);
+  const propertyMatch = raw.match(/property_id=([^\s\n]+)/);
   return propertyMatch?.[1] ?? null;
 }
 

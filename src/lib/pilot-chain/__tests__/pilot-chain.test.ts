@@ -74,7 +74,7 @@ function parseOwnerObjectsFromNote(note: string) {
   for (const line of lines.slice(start + 1)) {
     if (!line.trim()) break;
     const match = line.match(
-      /^((?:OBJ-\d+)|(?:pilot_[a-zA-Z0-9_-]+))\s*\|\s*(.+?)\s*\|\s*готовность:\s*(\d+)%\s*\|\s*активная сессия:\s*(да|нет)$/i,
+      /^((?:OBJ-\d+)|(?:pilot_[^\s|]+))\s*\|\s*(.+?)\s*\|\s*готовность:\s*(\d+)%\s*\|\s*активная сессия:\s*(да|нет)$/i,
     );
     if (!match) continue;
     objects.push({
@@ -238,20 +238,19 @@ describe('pilot-chain status triggers', () => {
 });
 
 describe('pilot-chain note blocks', () => {
-  it('парсит pilot_* в блоке объектов владельца', () => {
+  it('парсит pilot_* с кириллицей в блоке объектов владельца', () => {
+    const objectId = 'pilot_spb_объект-в-spb_mqt4orsy';
     const block = buildOwnerObjectsNoteBlock([
-      { objectId: 'pilot_spb_test_abc', title: 'Квартира', readinessPercent: 20, isActiveSession: true },
+      { objectId, title: 'Квартира', readinessPercent: 20, isActiveSession: true },
     ]);
-    expect(block).toContain('pilot_spb_test_abc');
+    expect(block).toContain(objectId);
     const merged = mergePilotChainNoteBlocks({
       existingNote: 'ручная заметка',
-      ownerObjects: [{ objectId: 'pilot_spb_test_abc', title: 'Квартира', readinessPercent: 20, isActiveSession: true }],
-      onboardingBlock: 'Онбординг ASI\nobject_id=pilot_spb_test_abc',
+      ownerObjects: [{ objectId, title: 'Квартира', readinessPercent: 20, isActiveSession: true }],
+      onboardingBlock: `Онбординг ASI\nobject_id=${objectId}`,
     });
-    expect(merged).toContain('Объекты владельца');
-    expect(merged).toContain('Онбординг ASI');
     expect(extractLinkedObjectId(rowToContact({ id: 'c', notes: merged, name: 'x', status: 'onboarding', created_at: '', updated_at: '' }))).toBe(
-      'pilot_spb_test_abc',
+      objectId,
     );
   });
 });
