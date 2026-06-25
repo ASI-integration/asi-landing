@@ -1,8 +1,9 @@
-import { isPilotParticipantStatus } from '@/lib/crm/pilot-rollout';
+import { isPilotParticipantStatus, resolvePilotRolloutStatus } from '@/lib/crm/pilot-rollout';
 import { listCrmContacts } from '@/lib/crm/repository';
 import type { CrmContact } from '@/lib/crm/types';
 import { listOpsOperatorTasks } from '@/lib/ops-board/repository';
 import type { OpsOperatorTask } from '@/lib/ops-board/types';
+import { extractLinkedObjectId } from '@/lib/pilot-chain/note-blocks';
 import { buildOpsPilotParticipantSnapshot } from './snapshot';
 import type { OpsPilotOperatorAction, OpsPilotParticipant } from './types';
 
@@ -29,17 +30,50 @@ function sortParticipants(items: OpsPilotParticipant[]): OpsPilotParticipant[] {
   });
 }
 
-export function filterPilotParticipantContacts(contacts: CrmContact[]): CrmContact[] {
-  return contacts.filter((contact) => !contact.crmArchived && isPilotParticipantStatus(contact.status));
+function hasPilotChainOpsTask(contactId: string, opsTasks: OpsOperatorTask[]): boolean {
+  return opsTasks.some(
+    (task) => task.contactId === contactId && task.taskType === 'verify_channel_manager',
+  );
+}
+
+function looksLikePilotAcceptanceContact(contact: CrmContact): boolean {
+  const name = contact.name.trim().toUpperCase();
+  return name.includes('ASI_PILOT') || name.includes('PILOT_CHAIN');
+}
+
+export function isOpsPilotVisibleContact(contact: CrmContact, opsTasks: OpsOperatorTask[] = []): boolean {
+  if (contact.crmArchived) return false;
+  if (!isPilotParticipantStatus(contact.status)) return false;
+
+  const rollout = resolvePilotRolloutStatus(contact.status);
+  if (rollout === 'active_pilot' || rollout === 'invited') return true;
+  if (extractLinkedObjectId(contact)) return true;
+  if (looksLikePilotAcceptanceContact(contact)) return true;
+  if (hasPilotChainOpsTask(contact.id, opsTasks)) return true;
+
+  // Скрываем шум от анонимных telegram guest без контура пилота.
+  if (contact.name.trim() === 'Telegram guest' && contact.source === 'telegram') return false;
+
+  return Boolean(contact.city?.trim()) || contact.objectsCount > 0;
+}
+
+export function filterPilotParticipantContacts(
+  contacts: CrmContact[],
+  opsTasks: OpsOperatorTask[] = [],
+): CrmContact[] {
+  return contacts.filter((contact) => isOpsPilotVisibleContact(contact, opsTasks));
 }
 
 export async function listOpsPilotParticipants(): Promise<{
   participants: OpsPilotParticipant[];
   opsTasks: OpsOperatorTask[];
 }> {
-  const contacts = filterPilotParticipantContacts(await listCrmContacts({ excludeArchived: true }));
   const opsResult = await listOpsOperatorTasks({ status: 'all' });
   const opsTasks = opsResult.ok ? opsResult.tasks : [];
+  const contacts = filterPilotParticipantContacts(
+    await listCrmContacts({ excludeArchived: true }),
+    opsTasks,
+  );
   const participants = sortParticipants(
     contacts.map((contact) => buildOpsPilotParticipantSnapshot(contact, opsTasks)),
   );

@@ -177,9 +177,21 @@ describe('ops-pilot service', () => {
       baseContact({ id: '2', status: 'active_pilot' }),
       baseContact({ id: '3', status: 'waitlist' }),
       baseContact({ id: '4', status: 'new' }),
+      baseContact({
+        id: '5',
+        status: 'onboarding',
+        name: 'Telegram guest',
+        source: 'telegram',
+      }),
+      baseContact({
+        id: '6',
+        status: 'onboarding',
+        name: 'ASI_PILOT_CHAIN_ACCEPTANCE_x',
+        ownerObjects: [{ objectId: 'pilot_x', title: 'x', readinessPercent: 0, isActiveSession: false }],
+      }),
     ];
     const filtered = filterPilotParticipantContacts(contacts);
-    expect(filtered.map((item) => item.id)).toEqual(['1', '2']);
+    expect(filtered.map((item) => item.id)).toEqual(['1', '2', '6']);
   });
 
   it('строит безопасные патчи операторских действий', () => {
