@@ -1,0 +1,115 @@
+name: Ops Fix Telegram Token
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fix_telegram_token:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      TELEGRAM_CORE_BOT_TOKEN: ${{ secrets.TELEGRAM_CORE_BOT_TOKEN }}
+      TELEGRAM_TEST_CHAT_ID: ${{ secrets.TELEGRAM_TEST_CHAT_ID }}
+    steps:
+      - name: Fix production TELEGRAM_BOT_TOKEN and verify Telegram
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" || -z "${TELEGRAM_CORE_BOT_TOKEN:-}" ]]; then
+            echo "::error::Missing VPS_HOST, VPS_SSH_KEY, or TELEGRAM_CORE_BOT_TOKEN"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "CORE_TOKEN='${TELEGRAM_CORE_BOT_TOKEN}' TELEGRAM_TEST_CHAT_ID='${TELEGRAM_TEST_CHAT_ID:-}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE=/var/www/asi/shared/.env.production.live
+          if [[ ! -f "$ENV_FILE" ]]; then
+            echo "Missing env file: $ENV_FILE"
+            exit 1
+          fi
+
+          echo "=== before ==="
+          BEFORE_LINE="$(grep -m1 '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE" || true)"
+          BEFORE_PREFIX="$(printf '%s' "${BEFORE_LINE#TELEGRAM_BOT_TOKEN=}" | cut -c1-12)"
+          echo "old_token_prefix=${BEFORE_PREFIX}"
+
+          BEFORE_ME="$(curl -sS "https://api.telegram.org/bot${BEFORE_LINE#TELEGRAM_BOT_TOKEN=}/getMe" || true)"
+          echo "old_getMe=${BEFORE_ME}"
+
+          cp "$ENV_FILE" "${ENV_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+          if grep -q '^TELEGRAM_BOT_TOKEN=' "$ENV_FILE"; then
+            sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=${CORE_TOKEN}|" "$ENV_FILE"
+          else
+            printf '\nTELEGRAM_BOT_TOKEN=%s\n' "$CORE_TOKEN" >> "$ENV_FILE"
+          fi
+
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          echo "=== after env update ==="
+          NEW_ME="$(curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe")"
+          echo "new_getMe=${NEW_ME}"
+
+          WEBHOOK_PAYLOAD="$(node -e "const s=process.env.TELEGRAM_WEBHOOK_SECRET||''; console.log(JSON.stringify({url:'https://asi-global.ru/api/telegram/webhook', secret_token:s||undefined, allowed_updates:['message','edited_message','callback_query']}));")"
+          SET_WH="$(curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" -H 'content-type: application/json' -d "$WEBHOOK_PAYLOAD")"
+          echo "setWebhook=${SET_WH}"
+
+          WH_INFO="$(curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo")"
+          echo "getWebhookInfo=${WH_INFO}"
+
+          pm2 restart asi-landing --update-env
+          pm2 save
+          sleep 3
+
+          echo "=== admin route ==="
+          curl -sS http://127.0.0.1:3000/api/admin/telegram-webhook-info || true
+          echo
+
+          if [[ -n "${TELEGRAM_TEST_CHAT_ID:-}" ]]; then
+            SEND="$(curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -H 'content-type: application/json' \
+              -d "{\"chat_id\":${TELEGRAM_TEST_CHAT_ID},\"text\":\"ASI ops: TELEGRAM_BOT_TOKEN fix probe $(date -u +%Y-%m-%dT%H:%M:%SZ)\"}")"
+            echo "sendMessage=${SEND}"
+          else
+            echo "sendMessage=skipped_no_TELEGRAM_TEST_CHAT_ID"
+          fi
+
+          CHAT_ID=99784600
+          UPDATE_ID=$(( $(date +%s) * 1000 ))
+          WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
+          HEADERS=(-H 'content-type: application/json')
+          if [[ -n "$WEBHOOK_SECRET" ]]; then
+            HEADERS+=(-H "x-telegram-bot-api-secret-token: ${WEBHOOK_SECRET}")
+          fi
+          OWNER_PAYLOAD="$(node -e "const id=Number(process.argv[1]); console.log(JSON.stringify({update_id:id,message:{message_id:id,date:Math.floor(Date.now()/1000),text:'Хочу подключить ASI',chat:{id:id,type:'private'},from:{id:id,is_bot:false,username:'owner_token_fix_probe',first_name:'Probe'}}}))" "$UPDATE_ID")"
+          OWNER_RESP="$(curl -sS -X POST http://127.0.0.1:3000/api/telegram/webhook "${HEADERS[@]}" -d "$OWNER_PAYLOAD")"
+          echo "owner_webhook_resp=${OWNER_RESP}"
+          sleep 2
+          pm2 logs asi-landing --lines 40 --nostream | tail -n 40 || true
+          REMOTE
