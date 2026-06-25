@@ -1,6 +1,7 @@
 import { parseChannelManagerConnectionBlock } from '@/lib/channel-manager-connection/note-block';
 import { supabase } from '@/lib/supabase';
 import { formatCrmContactNameForDisplay } from './contact-display';
+import { filterWorkingUiCrmContacts } from './working-ui-visibility';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
 import { normalizePilotRolloutStorageStatus } from './pilot-rollout';
@@ -36,6 +37,7 @@ export type CrmContactFilters = {
   source?: CrmSource | 'all';
   search?: string;
   excludeArchived?: boolean;
+  includeTest?: boolean;
 };
 
 const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
@@ -274,7 +276,7 @@ function toRow(input: NormalizedCrmContactInput) {
 
 function demoContacts(filters: CrmContactFilters): CrmContact[] {
   const search = filters.search?.trim().toLowerCase() ?? '';
-  return demoCrmContacts.filter((contact) => {
+  const filtered = demoCrmContacts.filter((contact) => {
     if (filters.excludeArchived && contact.crmArchived) return false;
     if (filters.status && filters.status !== 'all' && contact.status !== filters.status) return false;
     if (filters.source && filters.source !== 'all' && contact.source !== filters.source) return false;
@@ -282,6 +284,7 @@ function demoContacts(filters: CrmContactFilters): CrmContact[] {
     const haystack = [contact.name, contact.phone, contact.telegramUsername].join(' ').toLowerCase();
     return haystack.includes(search);
   });
+  return filterWorkingUiCrmContacts(filtered, { includeTest: filters.includeTest });
 }
 
 function shouldUseDemoFallback(error: unknown): boolean {
@@ -314,7 +317,8 @@ export async function listCrmContacts(filters: CrmContactFilters = {}): Promise<
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data ?? []).map((row) => toContact(row as CrmContactRow));
+    const contacts = (data ?? []).map((row) => toContact(row as CrmContactRow));
+    return filterWorkingUiCrmContacts(contacts, { includeTest: filters.includeTest });
   } catch (error) {
     if (shouldUseDemoFallback(error)) return demoContacts(filters);
     throw error;

@@ -3,6 +3,7 @@ import {
   listOpsOperatorTasks,
   updateOpsOperatorTask,
 } from '@/lib/ops-board/repository';
+import { filterWorkingUiOpsTasks } from '@/lib/crm/working-ui-visibility';
 import { OPS_TASK_TYPE_LABELS } from '@/lib/ops-board/types';
 import { syncAutoOpsTasks } from './auto-tasks';
 import { mapOperatorTaskToV1, mapV1StatusToOperator, mapV1TypeToOperator } from './mapping';
@@ -54,6 +55,7 @@ function mapListFilterToOperator(filter: OpsV1ListFilter): 'active' | 'done' | '
 export async function listOpsV1Tasks(options?: {
   syncAuto?: boolean;
   filter?: OpsV1ListFilter;
+  includeTest?: boolean;
 }): Promise<{
   ok: boolean;
   tasks: OpsV1Task[];
@@ -74,7 +76,10 @@ export async function listOpsV1Tasks(options?: {
 
   try {
     const activeResult = await listOpsOperatorTasks({ status: 'active' });
-    const activeTasks = activeResult.ok ? activeResult.tasks.map(mapOperatorTaskToV1) : [];
+    const activeTasks = filterWorkingUiOpsTasks(
+      activeResult.ok ? activeResult.tasks : [],
+      { includeTest: options?.includeTest },
+    ).map(mapOperatorTaskToV1);
     const summary = buildOpsV1Summary(activeTasks);
 
     const listResult = await listOpsOperatorTasks({ status: mapListFilterToOperator(filter) });
@@ -83,7 +88,9 @@ export async function listOpsV1Tasks(options?: {
       return { ok: true, tasks: [], summary, autoSync };
     }
 
-    const tasks = listResult.tasks.map(mapOperatorTaskToV1);
+    const tasks = filterWorkingUiOpsTasks(listResult.tasks, { includeTest: options?.includeTest }).map(
+      mapOperatorTaskToV1,
+    );
     return { ok: true, tasks, summary, autoSync };
   } catch (error) {
     console.warn('[ops-v1] list tasks error, returning empty', error);

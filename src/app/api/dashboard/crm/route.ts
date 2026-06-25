@@ -28,6 +28,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       status: parseStatus(url.searchParams.get('status')),
       source: parseSource(url.searchParams.get('source')),
       search: url.searchParams.get('search') ?? undefined,
+      excludeArchived: true,
+      includeTest: url.searchParams.get('includeTest') === '1',
     });
     return NextResponse.json({ ok: true, contacts });
   } catch {

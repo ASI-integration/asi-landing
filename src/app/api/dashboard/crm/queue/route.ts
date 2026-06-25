@@ -51,7 +51,12 @@ export async function GET(req: Request): Promise<NextResponse> {
   const filter = parseFilter(url.searchParams.get('filter'));
 
   try {
-    const contacts = excludeArchivedQueueContacts(await listCrmContacts({ excludeArchived: true }));
+    const contacts = excludeArchivedQueueContacts(
+      await listCrmContacts({
+        excludeArchived: true,
+        includeTest: url.searchParams.get('includeTest') === '1',
+      }),
+    );
     const contactIds = contacts.map((contact) => contact.id);
     const messagesByContact = await listCrmEventsByContactIds(contactIds);
 

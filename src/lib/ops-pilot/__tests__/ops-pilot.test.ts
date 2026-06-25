@@ -171,7 +171,7 @@ describe('ops-pilot snapshot', () => {
 });
 
 describe('ops-pilot service', () => {
-  it('фильтрует только пилотных участников', () => {
+  it('фильтрует только пилотных участников без acceptance-записей', () => {
     const contacts = [
       baseContact({ id: '1', status: 'onboarding' }),
       baseContact({ id: '2', status: 'active_pilot' }),
@@ -191,7 +191,7 @@ describe('ops-pilot service', () => {
       }),
     ];
     const filtered = filterPilotParticipantContacts(contacts);
-    expect(filtered.map((item) => item.id)).toEqual(['1', '2', '6']);
+    expect(filtered.map((item) => item.id)).toEqual(['1', '2']);
   });
 
   it('строит безопасные патчи операторских действий', () => {

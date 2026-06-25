@@ -27,8 +27,9 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const url = new URL(req.url);
   const filter = parseListFilter(url.searchParams.get('filter'));
+  const includeTest = url.searchParams.get('includeTest') === '1';
 
-  const result = await listOpsV1Tasks({ syncAuto: true, filter });
+  const result = await listOpsV1Tasks({ syncAuto: true, filter, includeTest });
   const isOpsAdmin = isOpsAdminEmail(auth.session.email);
   logOpsAdminCheck(auth.session.email, isOpsAdmin);
 

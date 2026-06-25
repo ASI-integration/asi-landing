@@ -39,6 +39,8 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 function getLocaleFromUrl(): Locale {
   if (typeof window === 'undefined') return 'en';
   const { hostname, pathname } = window.location;
+  // Dashboard is RU-first product UI.
+  if (pathname?.startsWith('/dashboard')) return 'ru';
   // Prefer explicit path locale (used on asi-global.ru/ru).
   if (pathname?.startsWith('/ru')) return 'ru';
   // Fallback: dedicated RU host.

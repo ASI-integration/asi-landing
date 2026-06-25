@@ -1,4 +1,5 @@
 import { isPilotParticipantStatus, resolvePilotRolloutStatus } from '@/lib/crm/pilot-rollout';
+import { isHiddenWorkingUiCrmContact } from '@/lib/crm/working-ui-visibility';
 import { listCrmContacts } from '@/lib/crm/repository';
 import type { CrmContact } from '@/lib/crm/types';
 import { listOpsOperatorTasks } from '@/lib/ops-board/repository';
@@ -36,23 +37,14 @@ function hasPilotChainOpsTask(contactId: string, opsTasks: OpsOperatorTask[]): b
   );
 }
 
-function looksLikePilotAcceptanceContact(contact: CrmContact): boolean {
-  const name = contact.name.trim().toUpperCase();
-  return name.includes('ASI_PILOT') || name.includes('PILOT_CHAIN');
-}
-
 export function isOpsPilotVisibleContact(contact: CrmContact, opsTasks: OpsOperatorTask[] = []): boolean {
   if (contact.crmArchived) return false;
+  if (isHiddenWorkingUiCrmContact(contact)) return false;
   if (!isPilotParticipantStatus(contact.status)) return false;
-
-  if (contact.name.trim() === 'Telegram guest') {
-    return looksLikePilotAcceptanceContact(contact) || hasPilotChainOpsTask(contact.id, opsTasks);
-  }
 
   const rollout = resolvePilotRolloutStatus(contact.status);
   if (rollout === 'active_pilot' || rollout === 'invited') return true;
   if (extractLinkedObjectId(contact)) return true;
-  if (looksLikePilotAcceptanceContact(contact)) return true;
   if (hasPilotChainOpsTask(contact.id, opsTasks)) return true;
 
   return Boolean(contact.city?.trim()) || contact.objectsCount > 0;

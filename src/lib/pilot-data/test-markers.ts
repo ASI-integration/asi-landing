@@ -1,9 +1,12 @@
 import { PILOT_ACCEPTANCE_PREFIX } from '@/lib/pilot-readiness/types';
 import { TELEGRAM_OPS_ACCEPTANCE_PREFIX } from '@/lib/communication/telegram-ops-acceptance-shared';
 
+export const PILOT_CHAIN_ACCEPTANCE_PREFIX = 'ASI_PILOT_CHAIN_ACCEPTANCE_';
+
 export const TEST_DATA_MARKER_PREFIXES = [
   PILOT_ACCEPTANCE_PREFIX,
   TELEGRAM_OPS_ACCEPTANCE_PREFIX,
+  PILOT_CHAIN_ACCEPTANCE_PREFIX,
   'ASI_OPS_ACCEPTANCE_',
   'ASI_COMM_OPS_ACCEPTANCE_',
   'pilot_accept_',

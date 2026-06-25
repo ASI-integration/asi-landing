@@ -185,8 +185,6 @@ export default function OpsPageClient() {
         <SummaryCard label="Требуют внимания" value={summary.needsAttention} />
       </section>
 
-      <OpsPilotParticipantsSection />
-
       <section className="rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -405,6 +403,8 @@ export default function OpsPageClient() {
           </div>
         )}
       </section>
+
+      <OpsPilotParticipantsSection />
     </div>
   );
 }

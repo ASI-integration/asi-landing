@@ -18,18 +18,6 @@ type ActionResponse = {
   participant?: OpsPilotParticipant;
 };
 
-function formatWhen(value: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function contactLine(participant: OpsPilotParticipant): string {
   const parts: string[] = [];
   if (participant.phone.trim()) parts.push(participant.phone.trim());
@@ -71,10 +59,9 @@ function ParticipantCard({
         <div className="min-w-0 space-y-1">
           <h3 className="text-base font-semibold text-slate-950">{participant.name}</h3>
           <p className="text-sm text-slate-600">{contactLine(participant)}</p>
-          <p className="text-sm text-slate-500">
-            CRM: {participant.crmStatusLabelRu}
-            {participant.objectTitle ? ` · ${participant.objectTitle}` : ''}
-          </p>
+          {participant.objectTitle ? (
+            <p className="text-sm text-slate-500">{participant.objectTitle}</p>
+          ) : null}
         </div>
         <span
           className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${STAGE_TONE[participant.stage]}`}
@@ -83,36 +70,13 @@ function ParticipantCard({
         </span>
       </div>
 
-      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+      <div className="mt-3 space-y-2 text-sm">
         <p>
-          <span className="text-slate-500">Следующее действие: </span>
+          <span className="text-slate-500">Следующий шаг: </span>
           <span className="font-medium text-slate-900">{participant.nextActionRu}</span>
         </p>
-        <p>
-          <span className="text-slate-500">Обновлено: </span>
-          <span className="text-slate-800">{formatWhen(participant.lastUpdatedAt)}</span>
-        </p>
-        {participant.readinessPercent !== null ? (
-          <p>
-            <span className="text-slate-500">Готовность объекта: </span>
-            <span className="text-slate-800">
-              {participant.readinessPercent}% {participant.readinessLabelRu ? `(${participant.readinessLabelRu})` : ''}
-            </span>
-          </p>
-        ) : null}
-        {participant.channelManagerStatusLabelRu ? (
-          <p>
-            <span className="text-slate-500">Менеджер каналов: </span>
-            <span className="text-slate-800">{participant.channelManagerStatusLabelRu}</span>
-          </p>
-        ) : null}
-        {participant.opsTask ? (
-          <p className="sm:col-span-2">
-            <span className="text-slate-500">OPS-задача: </span>
-            <span className="text-slate-800">
-              {participant.opsTask.title} · {participant.opsTask.statusLabelRu}
-            </span>
-          </p>
+        {participant.needsManualHelp ? (
+          <p className="font-medium text-rose-800">Требуется внимание оператора</p>
         ) : null}
       </div>
 
@@ -246,14 +210,19 @@ export default function OpsPilotParticipantsSection() {
 
   const needsAttentionCount = participants.filter((item) => item.needsManualHelp).length;
 
+  if (!loading && participants.length === 0) {
+    return null;
+  }
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
       <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">Пилотные участники</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Участники пилота</h2>
           <p className="text-sm text-slate-500">
-            Контур CRM → объект → менеджер каналов → OPS. Участников: {participants.length}
-            {needsAttentionCount > 0 ? ` · нужна помощь: ${needsAttentionCount}` : ''}
+            {needsAttentionCount > 0
+              ? `Нужна помощь: ${needsAttentionCount} из ${participants.length}`
+              : `Активных участников: ${participants.length}`}
           </p>
         </div>
         <button
@@ -273,11 +242,7 @@ export default function OpsPilotParticipantsSection() {
         <div className="flex min-h-[16vh] items-center justify-center p-6">
           <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-900 border-t-transparent" />
         </div>
-      ) : participants.length === 0 ? (
-        <div className="p-6 text-sm text-slate-600">
-          Пока нет участников со статусом «приглашён», «настройка объекта» или «участник пилота».
-        </div>
-      ) : (
+      ) : participants.length === 0 ? null : (
         <div className="grid gap-3 p-4 lg:grid-cols-2">
           {participants.map((participant) => (
             <ParticipantCard
