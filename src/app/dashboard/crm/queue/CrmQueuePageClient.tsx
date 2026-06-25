@@ -250,7 +250,7 @@ function QueueCard({
         </div>
         {item.channelManagerStatus ? (
           <div className="flex justify-between gap-2">
-            <dt>Менеджер Каналов</dt>
+            <dt>Менеджер каналов</dt>
             <dd className="text-slate-800">{item.channelManagerStatus}</dd>
           </div>
         ) : null}
@@ -318,7 +318,7 @@ function QueueCard({
           href={item.channelManagerHref ?? '/dashboard/channel-connections'}
           className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
         >
-          {item.readyForChannelManager ? 'Открыть Менеджер Каналов' : 'Менеджер Каналов'}
+          {item.readyForChannelManager ? 'Открыть менеджер каналов' : 'Менеджер каналов'}
         </Link>
         <button
           type="button"
@@ -600,7 +600,7 @@ export default function CrmQueuePageClient() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Очередь CRM</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Единый экран объектов, лидов и подключений для пилота.
+            Единый экран объектов, заявок и подключений для пилота.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -609,7 +609,7 @@ export default function CrmQueuePageClient() {
             href="/dashboard/crm"
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Список лидов
+            Список заявок
           </Link>
           <button
             type="button"
@@ -633,7 +633,7 @@ export default function CrmQueuePageClient() {
 
       {data?.pilot ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <MetricCard label={`Активных пилотников / ${data.pilot.limit}`} value={data.pilot.activePilots} />
+          <MetricCard label={`Участников пилота / ${data.pilot.limit}`} value={data.pilot.activePilots} />
           <MetricCard label="В листе ожидания" value={data.pilot.waitlist} />
           <MetricCard label="На настройке объекта" value={data.pilot.onboarding} />
           <MetricCard label="Требуют внимания" value={data.pilot.needsAttention} />
@@ -650,7 +650,7 @@ export default function CrmQueuePageClient() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <MetricCard label="Активных объектов" value={metrics.activeObjects} />
           <MetricCard label="Идёт подключение" value={metrics.onboarding} />
-          <MetricCard label="Готовы к Менеджеру Каналов" value={metrics.readyForChannelManager} />
+          <MetricCard label="Готовы к менеджеру каналов" value={metrics.readyForChannelManager} />
           <MetricCard label="Требуют внимания" value={metrics.needsAttention} />
           <MetricCard label="Завершены" value={metrics.completed} />
         </div>

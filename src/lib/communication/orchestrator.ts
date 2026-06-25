@@ -846,7 +846,7 @@ function roleLabelRu(role: unknown): string {
     case 'manager':
       return 'владелец / управляющий';
     case 'lead':
-      return 'лид';
+      return 'заявка';
     case 'support_problem':
       return 'поддержка';
     default:

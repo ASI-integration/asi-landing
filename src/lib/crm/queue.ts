@@ -9,6 +9,7 @@ import {
   REQUIRED_FIELD_LABELS_RU,
 } from '@/lib/object-readiness/engine';
 import { sanitizeCrmMessageTextForDisplay } from './message-display';
+import { formatCrmContactNameForDisplay, isWizardAcceptanceCrmContact } from './contact-display';
 import { isPilotParticipantStatus, pilotRolloutStatusLabel, resolvePilotRolloutStatus } from './pilot-rollout';
 
 export const CRM_QUEUE_COLUMN_VALUES = [
@@ -33,10 +34,10 @@ export const CRM_QUEUE_FILTER_VALUES = [
 export type CrmQueueFilter = (typeof CRM_QUEUE_FILTER_VALUES)[number];
 
 export const CRM_QUEUE_COLUMN_LABELS: Record<CrmQueueColumn, string> = {
-  new_lead: 'Новый лид',
+  new_lead: 'Новая заявка',
   onboarding: 'Идёт подключение',
   missing_data: 'Не хватает данных',
-  ready_for_cm: 'Готов к Менеджеру Каналов',
+  ready_for_cm: 'Готов к менеджеру каналов',
   needs_operator: 'Требует внимания',
   completed: 'Завершено',
 };
@@ -44,15 +45,15 @@ export const CRM_QUEUE_COLUMN_LABELS: Record<CrmQueueColumn, string> = {
 export const CRM_QUEUE_STATUS_LABELS: Record<CrmOnboardingStatus, string> = {
   onboarding_started: 'Идёт подключение',
   missing_required_data: 'Не хватает данных',
-  ready_for_channel_manager: 'Готов к Менеджеру Каналов',
-  channel_manager_started: 'Менеджер Каналов открыт',
+  ready_for_channel_manager: 'Готов к менеджеру каналов',
+  channel_manager_started: 'менеджер каналов открыт',
   needs_operator: 'Требует внимания',
 };
 
 export const CRM_QUEUE_FILTER_LABELS: Record<CrmQueueFilter, string> = {
   all: 'Все',
   needs_operator: 'Нужен оператор',
-  ready_for_cm: 'Готов к Менеджеру Каналов',
+  ready_for_cm: 'Готов к менеджеру каналов',
   active: 'Только активные',
   completed: 'Только завершённые',
 };
@@ -301,6 +302,7 @@ export function contactReadyForChannelManager(contact: CrmContact): boolean {
 
 export type QueueTestGuestProbe = {
   name: string;
+  telegramUsername?: string | null;
   note?: string | null;
   lastMessage?: string | null;
   source?: string | null;
@@ -315,6 +317,16 @@ export function queueTestGuestTextBlob(contact: QueueTestGuestProbe): string {
 export function isQueueTestGuestContact(contact: QueueTestGuestProbe): boolean {
   const name = contact.name.trim().toLowerCase();
   const blob = queueTestGuestTextBlob(contact);
+
+  if (
+    isWizardAcceptanceCrmContact({
+      name: contact.name,
+      telegramUsername: contact.telegramUsername,
+      note: blob,
+    })
+  ) {
+    return true;
+  }
 
   if (
     blob.includes('guest_test') ||
@@ -344,6 +356,7 @@ export function isQueueTestGuestContact(contact: QueueTestGuestProbe): boolean {
 export function queueTestGuestProbeFromContact(contact: CrmContact): QueueTestGuestProbe {
   return {
     name: contact.name,
+    telegramUsername: contact.telegramUsername,
     note: contact.note,
     lastMessage: contact.onboarding?.lastMessage ?? contact.nextStep,
     source: contact.source,
@@ -375,7 +388,7 @@ export function buildQueueItem(
   return {
     id: contact.id,
     objectTitle: objectTitleFor(contact),
-    ownerName: contact.name,
+    ownerName: formatCrmContactNameForDisplay(contact.name, contact.telegramUsername),
     telegramUsername: contact.telegramUsername.trim() || null,
     objectsCount: contact.objectsCount,
     activeObjectTitle: contact.activeObjectTitle ?? null,

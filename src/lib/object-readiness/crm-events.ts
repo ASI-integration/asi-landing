@@ -76,7 +76,7 @@ export async function emitObjectReadinessEvents(params: {
     await insertReadinessEvent({
       contactId: params.contactId,
       eventType: 'object_readiness_ready_for_cm',
-      messageText: 'Объект готов к Менеджеру каналов',
+      messageText: 'Объект готов к менеджеру каналов',
       metadata: { readiness_percent: readiness.readiness_percent },
     });
   }

@@ -41,7 +41,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const body = await readRequestJson(req);
   if (!body.ok) {
-    return NextResponse.json({ ok: false, message: 'Проверьте данные лида.' }, { status: 400 });
+    return NextResponse.json({ ok: false, message: 'Проверьте данные заявки.' }, { status: 400 });
   }
 
   const input = normalizeCrmContactInput(body.data);
@@ -54,6 +54,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     const contact = await createCrmContact(input);
     return NextResponse.json({ ok: true, contact }, { status: 201 });
   } catch {
-    return NextResponse.json({ ok: false, message: 'Не удалось добавить лида.' }, { status: 500 });
+    return NextResponse.json({ ok: false, message: 'Не удалось добавить заявку.' }, { status: 500 });
   }
 }

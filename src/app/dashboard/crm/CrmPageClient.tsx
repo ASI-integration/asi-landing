@@ -21,6 +21,7 @@ import {
   resolvePilotRolloutStatus,
 } from '@/lib/crm/pilot-rollout';
 import { getCrmSuggestions, resolveCrmRoleInput, resolveCrmSourceInput } from '@/lib/crm/suggestions';
+import { formatCrmContactNameForDisplay } from '@/lib/crm/contact-display';
 import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { CrmSuggestInput } from './CrmSuggestInput';
@@ -204,7 +205,9 @@ export default function CrmPageClient() {
   );
 
   async function deleteContact(contact: CrmContact) {
-    const confirmed = window.confirm(`Удалить лида «${contact.name}»? Это действие нельзя отменить.`);
+    const confirmed = window.confirm(
+      `Удалить заявку «${formatCrmContactNameForDisplay(contact.name, contact.telegramUsername)}»? Это действие нельзя отменить.`,
+    );
     if (!confirmed) return;
 
     setDeletingId(contact.id);
@@ -216,7 +219,7 @@ export default function CrmPageClient() {
       });
       const data = await readResponseJson(res, { ok: false, message: '' });
       if (!res.ok || !data.ok) {
-        setMessage(data.message || 'Не удалось удалить лида.');
+        setMessage(data.message || 'Не удалось удалить заявку.');
         return;
       }
       setContacts((prev) => prev.filter((item) => item.id !== contact.id));
@@ -280,7 +283,7 @@ export default function CrmPageClient() {
       });
       const data = await readResponseJson(res, { ok: false, contact: null as CrmContact | null, message: '' });
       if (!res.ok || !data.ok || !data.contact) {
-        setMessage(data.message || 'Не удалось добавить лида.');
+        setMessage(data.message || 'Не удалось добавить заявку.');
         return;
       }
       setDraft(emptyDraft);
@@ -302,7 +305,7 @@ export default function CrmPageClient() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-950">CRM раннего доступа</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Лиды, владельцы, объекты, этап подключения и следующий ручной шаг.
+            Заявки, владельцы, объекты, этап подключения и следующий ручной шаг.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -317,14 +320,14 @@ export default function CrmPageClient() {
             onClick={() => setShowForm((value) => !value)}
             className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
-            {showForm ? 'Закрыть форму' : 'Добавить лида'}
+            {showForm ? 'Закрыть форму' : 'Добавить заявку'}
           </button>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase text-slate-500">всего лидов</div>
+          <div className="text-xs font-medium uppercase text-slate-500">Всего заявок</div>
           <div className="mt-2 text-2xl font-bold text-slate-950">{contacts.length}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -451,7 +454,7 @@ export default function CrmPageClient() {
             <textarea className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2" value={draft.note} onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
           </label>
           <button type="submit" disabled={savingId === 'new'} className="mt-3 rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">
-            {savingId === 'new' ? 'Сохранение...' : 'Сохранить лида'}
+            {savingId === 'new' ? 'Сохранение...' : 'Сохранить заявку'}
           </button>
         </form>
       ) : null}
@@ -485,7 +488,7 @@ export default function CrmPageClient() {
         {loading ? (
           <div className="p-6 text-sm text-slate-500">Загрузка CRM...</div>
         ) : contacts.length === 0 ? (
-          <div className="p-6 text-sm text-slate-500">Лиды не найдены.</div>
+          <div className="p-6 text-sm text-slate-500">Заявки не найдены.</div>
         ) : (
           <div className="divide-y divide-slate-100">
             {contacts.map((contact) => {
@@ -494,7 +497,9 @@ export default function CrmPageClient() {
                 <section key={contact.id} className="grid gap-4 p-4 lg:grid-cols-[1.2fr_0.9fr_1.1fr]">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-base font-semibold text-slate-950">{contact.name}</h2>
+                      <h2 className="text-base font-semibold text-slate-950">
+                        {formatCrmContactNameForDisplay(contact.name, contact.telegramUsername)}
+                      </h2>
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{CRM_ROLE_LABELS[contact.role]}</span>
                       <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">{CRM_SOURCE_LABELS[contact.source]}</span>
                       <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
@@ -523,7 +528,7 @@ export default function CrmPageClient() {
                           </span>
                           {contact.onboarding.channelManagerHref ? (
                             <a className="text-xs font-semibold text-blue-700 hover:text-blue-900" href={contact.onboarding.channelManagerHref}>
-                              Открыть Менеджер Каналов
+                              Открыть менеджер каналов
                             </a>
                           ) : null}
                         </div>

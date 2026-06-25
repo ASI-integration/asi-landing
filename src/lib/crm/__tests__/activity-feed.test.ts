@@ -81,7 +81,7 @@ describe('crm activity feed', () => {
     expect(feed[0]?.createdAt).toBe('2026-06-19T10:05:00.000Z');
     expect(feed.some((entry) => entry.label.includes('статус подключения'))).toBe(true);
     expect(feed.some((entry) => entry.label.includes('Wi-Fi'))).toBe(true);
-    expect(feed.some((entry) => entry.label.includes('Менеджеру каналов'))).toBe(true);
+    expect(feed.some((entry) => entry.label.includes('менеджеру каналов'))).toBe(true);
     expect(feed.some((entry) => entry.label.includes('onboarding_started'))).toBe(false);
   });
 
@@ -149,6 +149,6 @@ describe('crm activity feed', () => {
 
     const feed = buildActivityFeed([withOnboarding('missing_required_data', ['wifi'])], events, 20);
     expect(feed.some((entry) => entry.label.includes('готовность объекта: 50%'))).toBe(true);
-    expect(feed.some((entry) => entry.label.includes('Менеджеру каналов'))).toBe(true);
+    expect(feed.some((entry) => entry.label.includes('менеджеру каналов'))).toBe(true);
   });
 });

@@ -2,6 +2,10 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { providerAvailabilityLabelRu } from '@/lib/channel-connections/labels';
 import { applySelectMethod, initialConnectionState } from '@/lib/channel-manager-connection/flow';
 import { isCrmOperatorEmail } from '@/lib/crm/access';
+import {
+  formatCrmContactNameForDisplay,
+  isWizardAcceptanceCrmContact,
+} from '@/lib/crm/contact-display';
 import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import {
   buildQueueItem,
@@ -39,8 +43,8 @@ function withOnboarding(status: CrmOnboardingStatus): CrmContact {
       lastMessage: '[photo]',
       channelManagerHref: '/dashboard/channel-connections',
       readinessPercent: 100,
-      readinessStatusLabel: 'Готов к Менеджеру Каналов',
-      nextBestStep: 'Открыть Менеджер Каналов',
+      readinessStatusLabel: 'Готов к менеджеру каналов',
+      nextBestStep: 'Открыть менеджер каналов',
       missingOptional: [],
     },
   };
@@ -56,11 +60,18 @@ describe('crm/channel manager ux polish', () => {
     expect(providerAvailabilityLabelRu('foundation')).not.toContain('Foundation');
   });
 
-  it('uses Менеджер Каналов capitalization in queue labels', () => {
-    expect(CRM_QUEUE_STATUS_LABELS.channel_manager_started).toBe('Менеджер Каналов открыт');
+  it('uses lowercase менеджер каналов in queue labels', () => {
+    expect(CRM_QUEUE_STATUS_LABELS.channel_manager_started).toBe('менеджер каналов открыт');
     const item = buildQueueItem(withOnboarding('ready_for_channel_manager'));
-    expect(item.onboardingStatusLabel).toContain('Менеджеру Каналов');
-    expect(item.nextBestStep).toContain('Открыть Менеджер Каналов');
+    expect(item.onboardingStatusLabel).toContain('менеджеру каналов');
+    expect(item.nextBestStep).toContain('Открыть менеджер каналов');
+  });
+
+  it('shows Russian display name for wizard acceptance contacts', () => {
+    expect(
+      formatCrmContactNameForDisplay('Wizard Acceptance', 'wizard_accept_v2'),
+    ).toBe('Заявка автопроверки');
+    expect(isWizardAcceptanceCrmContact({ name: 'Wizard Acceptance', telegramUsername: 'wizard_accept_v2' })).toBe(true);
   });
 
   it('hides [photo] technical marker from CRM queue preview', () => {

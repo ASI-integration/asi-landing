@@ -113,8 +113,8 @@ const FIELD_FEED_PENDING: Record<OnboardingFieldKey, string> = {
 const ONBOARDING_STATUS_FEED: Partial<Record<CrmOnboardingStatus, { label: string; tone: CrmActivityTone }>> = {
   onboarding_started: { label: 'начала подключение объекта', tone: 'processing' },
   missing_required_data: { label: 'запросила недостающие данные', tone: 'processing' },
-  ready_for_channel_manager: { label: 'подготовила переход к Менеджеру Каналов', tone: 'done' },
-  channel_manager_started: { label: 'открыла Менеджер Каналов', tone: 'done' },
+  ready_for_channel_manager: { label: 'подготовила переход к менеджеру каналов', tone: 'done' },
+  channel_manager_started: { label: 'открыла менеджер каналов', tone: 'done' },
   needs_operator: { label: 'передала задачу оператору', tone: 'attention' },
 };
 
@@ -137,7 +137,7 @@ export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor
   guest_test_ready: { actor: 'ASI', label: 'подготовила тест гостя', tone: 'done' },
   guest_test_passed_basic: { actor: 'ASI', label: 'подтвердила базовый тест гостя', tone: 'done' },
   role_selected_owner: { actor: 'Владелец', label: 'выбрал роль владельца', tone: 'done' },
-  role_selected_lead: { actor: 'Владелец', label: 'выбрал роль лида', tone: 'done' },
+  role_selected_lead: { actor: 'Владелец', label: 'оформил новую заявку', tone: 'done' },
   role_selected_guest: { actor: 'Гость', label: 'выбрал роль гостя', tone: 'done' },
   pilot_application_submitted: { actor: 'Владелец', label: 'отправил заявку на пилот', tone: 'processing' },
   pilot_selected: { actor: 'ASI', label: 'зафиксировала выбор пилотного объекта', tone: 'done' },
@@ -149,7 +149,7 @@ export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor
   object_readiness_missing_photos: { actor: 'ASI', label: 'обнаружила недостающие фото', tone: 'pending' },
   object_readiness_ready_for_cm: {
     actor: 'ASI',
-    label: 'перевела объект в «Готов к Менеджеру Каналов»',
+    label: 'перевела объект в «Готов к менеджеру каналов»',
     tone: 'done',
   },
   object_readiness_requested_channels: { actor: 'ASI', label: 'запросила каналы бронирования', tone: 'pending' },
@@ -159,7 +159,7 @@ export const CRM_EVENT_FEED: Record<string, { actor: CrmActivityFeedEntry['actor
   owner_object_continued: { actor: 'ASI', label: 'продолжила работу с объектом', tone: 'processing' },
   channel_manager_flow_prepared: {
     actor: 'ASI',
-    label: 'подготовила переход к Менеджеру Каналов',
+    label: 'подготовила переход к менеджеру каналов',
     tone: 'done',
   },
   channel_manager_method_selected: {

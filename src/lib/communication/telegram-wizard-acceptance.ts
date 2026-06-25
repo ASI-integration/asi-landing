@@ -34,6 +34,7 @@ import {
 } from './telegram-owner-onboarding-wizard';
 
 export const WIZARD_ACCEPTANCE_USERNAME = 'wizard_accept_v2';
+export const WIZARD_ACCEPTANCE_DISPLAY_NAME = 'Заявка автопроверки';
 export const DEFAULT_WIZARD_ACCEPTANCE_CHAT_ID = 99445001;
 
 export type WizardAcceptanceStepInput = {
@@ -160,7 +161,7 @@ export function buildWizardAcceptanceEnvelope(params: {
       telegram_chat_id: String(chatId),
       telegram_user_id: chatId,
       telegram_username: WIZARD_ACCEPTANCE_USERNAME,
-      telegram_first_name: 'Wizard Acceptance',
+      telegram_first_name: WIZARD_ACCEPTANCE_DISPLAY_NAME,
       providerMessageId: `wizard-acceptance-${updateId}`,
       externalMessageId: `wizard-acceptance-${updateId}`,
       acceptance_run: true,

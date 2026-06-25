@@ -176,7 +176,7 @@ export default function OperatorLeadsPage() {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Лиды / обращения</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Заявки / обращения</h1>
             <p className="text-sm text-slate-500 mt-1">Обращения гостей, требующие внимания оператора</p>
           </div>
           <div className="flex items-center gap-3">

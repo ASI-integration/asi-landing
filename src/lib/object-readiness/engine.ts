@@ -70,7 +70,7 @@ export const READINESS_STATUS_LABELS_RU: Record<ObjectReadinessStatusKey, string
   not_started: 'Не начат',
   in_progress: 'Идёт заполнение',
   missing_data: 'Не хватает данных',
-  ready_for_channel_manager: 'Готов к Менеджеру каналов',
+  ready_for_channel_manager: 'Готов к менеджеру каналов',
   needs_attention: 'Требует внимания',
   completed: 'Завершено',
 };
@@ -258,7 +258,7 @@ export function computeObjectReadiness(input: ObjectReadinessInput): ObjectReadi
   });
 
   const nextField = missingRequired[0];
-  const next_best_step_ru = nextField ? NEXT_STEP_BY_FIELD[nextField] : 'Открыть Менеджер каналов';
+  const next_best_step_ru = nextField ? NEXT_STEP_BY_FIELD[nextField] : 'Открыть менеджер каналов';
 
   return {
     readiness_percent: readinessPercent(requiredDoneCount, requiredTotal),

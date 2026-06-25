@@ -14,12 +14,12 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
 
   const id = context.params.id?.trim();
   if (!id) {
-    return NextResponse.json({ ok: false, message: 'Лид не найден.' }, { status: 404 });
+    return NextResponse.json({ ok: false, message: 'Заявка не найдена.' }, { status: 404 });
   }
 
   const body = await readRequestJson(req);
   if (!body.ok) {
-    return NextResponse.json({ ok: false, message: 'Проверьте данные лида.' }, { status: 400 });
+    return NextResponse.json({ ok: false, message: 'Проверьте данные заявки.' }, { status: 400 });
   }
 
   const raw = body.data;
@@ -51,13 +51,13 @@ export async function DELETE(_req: Request, context: { params: { id: string } })
 
   const id = context.params.id?.trim();
   if (!id) {
-    return NextResponse.json({ ok: false, message: 'Лид не найден.' }, { status: 404 });
+    return NextResponse.json({ ok: false, message: 'Заявка не найдена.' }, { status: 404 });
   }
 
   try {
     await deleteCrmContact(id);
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ ok: false, message: 'Не удалось удалить лида.' }, { status: 500 });
+    return NextResponse.json({ ok: false, message: 'Не удалось удалить заявку.' }, { status: 500 });
   }
 }

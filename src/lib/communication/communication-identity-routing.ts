@@ -292,7 +292,7 @@ function telegramUsername(envelope: InboundMessageEnvelope): string {
 function telegramDisplayName(envelope: InboundMessageEnvelope): string {
   const firstName = text(envelope.metadata?.telegram_first_name ?? (envelope.metadata as any)?.telegram?.first_name);
   const username = telegramUsername(envelope);
-  return firstName || (username ? `@${username}` : 'Telegram lead');
+  return firstName || (username ? `@${username}` : 'Контакт из Telegram');
 }
 
 async function findCrmContactByTelegramUsername(username: string): Promise<{ id: string; role?: string | null } | null> {

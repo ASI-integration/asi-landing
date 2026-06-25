@@ -8,8 +8,8 @@ export const CHANNEL_MANAGER_CONNECTION_METHOD_LABELS: Record<ChannelManagerConn
   realtycalendar: 'RealtyCalendar',
   bnovo: 'Bnovo',
   manual_import: 'Ручной импорт',
-  other: 'Другой Менеджер Каналов',
-  none_yet: 'Пока нет Менеджера Каналов',
+  other: 'Другой менеджер каналов',
+  none_yet: 'Пока нет менеджера каналов',
 };
 
 export const CHANNEL_MANAGER_ACCESS_SITUATION_LABELS: Record<ChannelManagerAccessSituation, string> = {

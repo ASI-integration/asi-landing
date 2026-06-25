@@ -39,7 +39,7 @@ describe('/api/dashboard/crm/[id]', () => {
     const res = await mod.DELETE(new Request('http://localhost/api/dashboard/crm/'), { params: { id: '' } });
 
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ ok: false, message: 'Лид не найден.' });
+    expect(await res.json()).toEqual({ ok: false, message: 'Заявка не найдена.' });
     expect(deleteCrmContact).not.toHaveBeenCalled();
   });
 
@@ -49,6 +49,6 @@ describe('/api/dashboard/crm/[id]', () => {
     const res = await mod.DELETE(new Request('http://localhost/api/dashboard/crm/lead-1'), { params: { id: 'lead-1' } });
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ ok: false, message: 'Не удалось удалить лида.' });
+    expect(await res.json()).toEqual({ ok: false, message: 'Не удалось удалить заявку.' });
   });
 });

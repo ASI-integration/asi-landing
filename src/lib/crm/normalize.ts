@@ -74,7 +74,7 @@ export function normalizeCrmContactInput(input: CrmContactInput): NormalizedCrmC
 }
 
 export function validateCrmContact(input: NormalizedCrmContactInput): string | null {
-  if (!input.name) return 'Укажите имя лида.';
+  if (!input.name) return 'Укажите имя контакта.';
   if (!input.phone && !input.telegramUsername && !input.email) {
     return 'Укажите хотя бы один способ связи.';
   }

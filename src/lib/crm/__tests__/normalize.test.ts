@@ -21,7 +21,7 @@ describe('CRM contact normalization', () => {
       objectsCount: 3,
       role: 'owner',
       source: 'telegram',
-      status: 'pilot',
+      status: 'active_pilot',
       communicationStatus: 'replied',
       nextActionAt: '2026-06-20T07:00:00.000Z',
     });
@@ -29,7 +29,7 @@ describe('CRM contact normalization', () => {
 
   it('requires a name and at least one contact channel', () => {
     const empty = normalizeCrmContactInput({ name: ' ' });
-    expect(validateCrmContact(empty)).toBe('Укажите имя лида.');
+    expect(validateCrmContact(empty)).toBe('Укажите имя контакта.');
 
     const withoutContact = normalizeCrmContactInput({ name: 'Илья' });
     expect(validateCrmContact(withoutContact)).toBe('Укажите хотя бы один способ связи.');

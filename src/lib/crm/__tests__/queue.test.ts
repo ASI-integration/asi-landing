@@ -80,17 +80,17 @@ describe('crm queue', () => {
     const item = buildQueueItem(
       withOnboarding('ready_for_channel_manager', [], {
         readinessPercent: 100,
-        readinessStatusLabel: 'Готов к Менеджеру Каналов',
-        nextBestStep: 'Открыть Менеджер Каналов',
+        readinessStatusLabel: 'Готов к менеджеру каналов',
+        nextBestStep: 'Открыть менеджер каналов',
       }),
     );
     expect(item.objectTitle).toBe('Объект в Москва');
-    expect(item.onboardingStatusLabel).toBe('Готов к Менеджеру Каналов');
+    expect(item.onboardingStatusLabel).toBe('Готов к менеджеру каналов');
     expect(item.readyForChannelManager).toBe(true);
     expect(item.needsOperator).toBe(false);
     expect(item.channelManagerStatus).toBe('Готов к подключению');
     expect(item.readinessPercent).toBe(100);
-    expect(item.nextBestStep).toBe('Открыть Менеджер Каналов');
+    expect(item.nextBestStep).toBe('Открыть менеджер каналов и выбрать способ подключения.');
   });
 
   it('filters queue items', () => {

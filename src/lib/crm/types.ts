@@ -170,7 +170,7 @@ export const PILOT_ROLLOUT_STATUS_LABELS: Record<PilotRolloutStatus, string> = {
   waitlist: 'Лист ожидания',
   invited: 'Приглашён в пилот',
   onboarding: 'Настройка объекта',
-  active_pilot: 'Активный пилот',
+  active_pilot: 'Участник пилота',
   paused: 'Пауза',
   rejected: 'Не подходит сейчас',
 };
@@ -180,7 +180,7 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   waitlist: 'Лист ожидания',
   invited: 'Приглашён в пилот',
   onboarding: 'Настройка объекта',
-  active_pilot: 'Активный пилот',
+  active_pilot: 'Участник пилота',
   paused: 'Пауза',
   rejected: 'Не подходит сейчас',
   new_lead: 'Новая заявка',
@@ -191,7 +191,7 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   test_object_selected: 'Выбран тестовый объект',
   object_setup: 'Объект на настройке',
   ready_for_test: 'Готов к тесту',
-  pilot: 'Активный пилот',
+  pilot: 'Участник пилота',
   not_relevant: 'Не подходит сейчас',
 };
 
@@ -208,7 +208,7 @@ export const CRM_COMMUNICATION_STATUS_LABELS: Record<CrmCommunicationStatus, str
 export const CRM_ONBOARDING_STATUS_LABELS: Record<CrmOnboardingStatus, string> = {
   onboarding_started: 'онбординг начат',
   missing_required_data: 'не хватает данных',
-  ready_for_channel_manager: 'готов к Менеджеру Каналов',
-  channel_manager_started: 'Менеджер Каналов открыт',
+  ready_for_channel_manager: 'готов к менеджеру каналов',
+  channel_manager_started: 'менеджер каналов открыт',
   needs_operator: 'нужна реакция оператора',
 };

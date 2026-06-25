@@ -172,7 +172,7 @@ function telegramDisplayName(envelope: InboundMessageEnvelope): string {
   const username = telegramUsername(envelope);
   if (firstName) return firstName;
   if (username) return `@${username}`;
-  return 'Telegram лид';
+  return 'Контакт из Telegram';
 }
 
 function readStateFromSession(chatId: number, channel: CommunicationChannel = 'telegram'): OwnerOnboardingState {

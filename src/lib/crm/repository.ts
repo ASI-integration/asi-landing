@@ -1,5 +1,6 @@
 import { parseChannelManagerConnectionBlock } from '@/lib/channel-manager-connection/note-block';
 import { supabase } from '@/lib/supabase';
+import { formatCrmContactNameForDisplay } from './contact-display';
 import { demoCrmContacts } from './demo-data';
 import { NormalizedCrmContactInput } from './normalize';
 import { normalizePilotRolloutStorageStatus } from './pilot-rollout';
@@ -128,9 +129,11 @@ const ONBOARDING_STATUS_BY_LABEL: Record<string, CrmOnboardingStatus> = {
   'онбординг начат': 'onboarding_started',
   'идёт подключение': 'onboarding_started',
   'не хватает данных': 'missing_required_data',
+  'готов к менеджеру каналов': 'ready_for_channel_manager',
   'готов к Менеджеру каналов': 'ready_for_channel_manager',
   'готов к Менеджеру Каналов': 'ready_for_channel_manager',
   'Менеджер каналов открыт': 'channel_manager_started',
+  'менеджер каналов открыт': 'channel_manager_started',
   'Менеджер Каналов открыт': 'channel_manager_started',
   'нужна реакция оператора': 'needs_operator',
   'требует внимания': 'needs_operator',
@@ -221,7 +224,7 @@ function toContact(row: CrmContactRow): CrmContact {
   const activeObject = ownerObjects.find((item) => item.isActiveSession) ?? ownerObjects[0] ?? null;
   return {
     id: row.id,
-    name: row.name,
+    name: formatCrmContactNameForDisplay(row.name, row.telegram_username),
     phone: row.phone ?? row.contact ?? '',
     telegramUsername: row.telegram_username ?? '',
     email: row.email,
