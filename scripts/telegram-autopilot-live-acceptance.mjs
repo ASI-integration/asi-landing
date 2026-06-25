@@ -1,285 +1,262 @@
 #!/usr/bin/env node
+/**
+ * Live production MK-first acceptance via Telegram webhook on VPS.
+ */
+import { readFileSync, existsSync } from 'node:fs';
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { createClient } from '@supabase/supabase-js';
+const TARGET_SHA = '39776922c6b9e9b591e650974c3962701ac2367e';
+const BASE = (process.env.ACCEPTANCE_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+const WEBHOOK = `${BASE.replace('https://asi-global.ru', 'http://127.0.0.1:3000')}/api/telegram/webhook`;
+const ENV_FILE = '/var/www/asi/shared/.env.production.live';
 
-const DEFAULT_BASE_URL = 'https://asi-global.ru';
-const PROPERTY_ID = process.env.TELEGRAM_AUTOPILOT_PROPERTY_ID?.trim() || 'prop_A';
-const ACCEPTANCE_CASES = [
-  {
-    id: 'wifi',
-    text: 'Какой Wi-Fi?',
-    expectReply: ['ASI-Test-WiFi', 'test12345'],
-    expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
-  },
-  {
-    id: 'parking',
-    text: 'Есть парковка?',
-    expectReply: ['парковка во дворе по возможности, место не гарантируется'],
-    expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
-  },
-  {
-    id: 'checkin',
-    text: 'Во сколько заезд?',
-    expectReply: ['после 14:00'],
-    expectEvents: ['autopilot_guest_reply', 'conversation_resolved'],
-  },
-  {
-    id: 'refund',
-    text: 'Хочу вернуть деньги',
-    expectReply: ['оператор'],
-    expectEvents: ['autopilot_operator_handoff', 'operator_followup_required'],
-    expectNeedsOperator: true,
-  },
-];
+const CHAT_A = Number(process.env.MK_ACCEPTANCE_CHAT_A || '99785211');
+const CHAT_B = Number(process.env.MK_ACCEPTANCE_CHAT_B || '99785212');
+const CHAT_C = Number(process.env.MK_ACCEPTANCE_CHAT_C || '99785213');
+const USERNAME = process.env.MK_ACCEPTANCE_USERNAME || 'mk_first_accept_0625';
 
-function loadEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return;
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!match || process.env[match[1]]) continue;
-    let value = match[2];
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    process.env[match[1]] = value;
+function loadEnv(path) {
+  const env = {};
+  if (!existsSync(path)) return env;
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#') || !t.includes('=')) continue;
+    const i = t.indexOf('=');
+    let v = t.slice(i + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    env[t.slice(0, i).trim()] = v;
   }
+  return env;
 }
 
-function normalizeSupabaseUrl(url) {
-  const parsed = new URL(url);
-  if (parsed.pathname.replace(/\/+$/, '') === '/rest/v1') parsed.pathname = '/';
-  parsed.search = '';
-  parsed.hash = '';
-  return parsed.toString().replace(/\/$/, '');
+const env = { ...loadEnv(ENV_FILE), ...process.env };
+const webhookSecret = env.TELEGRAM_WEBHOOK_SECRET || '';
+const supabaseUrl = (env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL || '').replace(/\/rest\/v1\/?$/, '');
+const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+let updateSeq = 9_978_520_000;
+let callbackSeq = 1;
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-function requiredEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required env ${name}`);
-  return value;
+async function postWebhook(body) {
+  const headers = { 'content-type': 'application/json' };
+  if (webhookSecret) headers['x-telegram-bot-api-secret-token'] = webhookSecret;
+  const res = await fetch(WEBHOOK, { method: 'POST', headers, body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`webhook ${res.status}: ${text.slice(0, 200)}`);
+  await sleep(450);
+  return text;
 }
 
-function optionalEnv(name) {
-  return process.env[name]?.trim() || null;
-}
-
-function includesCi(text, needle) {
-  return String(text ?? '').toLocaleLowerCase('ru-RU').includes(String(needle ?? '').toLocaleLowerCase('ru-RU'));
-}
-
-function supabaseClient() {
-  loadEnvFile(path.join(process.cwd(), '.env.local'));
-  const url = normalizeSupabaseUrl(requiredEnv('NEXT_PUBLIC_SUPABASE_URL'));
-  return createClient(url, requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false } });
-}
-
-async function getProperty(sb) {
-  const { data, error } = await sb
-    .from('tg_property_knowledge')
-    .select('property_id,wifi_name,wifi_password,parking_text,check_in_text,communication_autopilot')
-    .eq('property_id', PROPERTY_ID)
-    .maybeSingle();
-  if (error) throw new Error(`property lookup failed: ${error.message}`);
-  if (!data) throw new Error(`Missing tg_property_knowledge row for ${PROPERTY_ID}`);
-  return data;
-}
-
-async function findLinkedReservation(sb) {
-  const preferredChat = optionalEnv('TELEGRAM_AUTOPILOT_TEST_CHAT_ID') ?? optionalEnv('TELEGRAM_TEST_CHAT_ID');
-  let query = sb.from('tg_guest_reservations').select('*').eq('property_id', PROPERTY_ID);
-  if (preferredChat) query = query.eq('chat_id', Number(preferredChat));
-  const { data, error } = await query.order('updated_at', { ascending: false }).limit(10);
-  if (error) throw new Error(`reservation lookup failed: ${error.message}`);
-  const direct = (data ?? []).find((row) => row.chat_id);
-  if (direct) return direct;
-
-  const { data: allRows, error: allError } = await sb
-    .from('tg_guest_reservations')
-    .select('*')
-    .eq('property_id', PROPERTY_ID)
-    .order('updated_at', { ascending: false })
-    .limit(20);
-  if (allError) throw new Error(`reservation lookup failed: ${allError.message}`);
-  for (const row of allRows ?? []) {
-    if (!row.guest_id) continue;
-    const { data: identity, error: identityError } = await sb
-      .from('tg_guest_identities')
-      .select('*')
-      .eq('guest_id', row.guest_id)
-      .maybeSingle();
-    if (identityError) throw new Error(`identity lookup failed: ${identityError.message}`);
-    if (identity?.telegram_chat_id) return { ...row, chat_id: identity.telegram_chat_id, identity, needsChatLink: true };
-  }
-  return null;
-}
-
-async function ensureLinkedReservation(sb) {
-  const existing = await findLinkedReservation(sb);
-  if (existing) {
-    if (existing.needsChatLink && existing.id && existing.chat_id) {
-      const { data, error } = await sb
-        .from('tg_guest_reservations')
-        .update({ chat_id: Number(existing.chat_id), updated_at: new Date().toISOString() })
-        .eq('id', existing.id)
-        .select('*')
-        .single();
-      if (error) throw new Error(`reservation chat_id link update failed: ${error.message}`);
-      return { row: data, created: false, updated: true };
-    }
-    return { row: existing, created: false, updated: false };
-  }
-
-  const chatId = optionalEnv('TELEGRAM_AUTOPILOT_TEST_CHAT_ID') ?? optionalEnv('TELEGRAM_TEST_CHAT_ID');
-  if (!chatId) {
-    throw new Error('No prop_A reservation link found. Set TELEGRAM_AUTOPILOT_TEST_CHAT_ID to create one.');
-  }
-
-  const guestId = `tg_${chatId}`;
-  const now = new Date().toISOString();
-  const identity = {
-    guest_id: guestId,
-    telegram_chat_id: Number(chatId),
-    display_name: 'ASI Autopilot Acceptance Guest',
-    trust_status: 'normal',
-    last_seen_at: now,
-    updated_at: now,
-  };
-  const { error: identityError } = await sb.from('tg_guest_identities').upsert(identity, { onConflict: 'guest_id' });
-  if (identityError) throw new Error(`identity upsert failed: ${identityError.message}`);
-
-  const reservation = {
-    id: 'ASI-AUTOPILOT-PROP-A-LIVE',
-    reservation_ref: 'ASI-AUTOPILOT-PROP-A-LIVE',
-    guest_id: guestId,
-    chat_id: Number(chatId),
-    property_id: PROPERTY_ID,
-    guest_name: 'ASI Autopilot Acceptance Guest',
-    check_in: '2026-07-12',
-    check_out: '2026-07-15',
-    status: 'confirmed',
-    updated_at: now,
-  };
-  const { data, error } = await sb
-    .from('tg_guest_reservations')
-    .upsert(reservation, { onConflict: 'id' })
-    .select('*')
-    .single();
-  if (error) throw new Error(`reservation upsert failed: ${error.message}`);
-  return { row: data, created: true, updated: false };
-}
-
-async function postDryRun({ baseUrl, secret, chatId, text }) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/telegram-dry-run`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-internal-test-secret': secret,
-    },
-    body: JSON.stringify({
-      chatId: String(chatId),
+async function sendText(chatId, text, username = USERNAME) {
+  updateSeq += 1;
+  return postWebhook({
+    update_id: updateSeq,
+    message: {
+      message_id: updateSeq,
+      date: Math.floor(Date.now() / 1000),
       text,
-      senderIdentity: 'test_guest',
-      guestTestMode: true,
-    }),
+      chat: { id: chatId, type: 'private' },
+      from: { id: chatId, is_bot: false, username, first_name: 'MK Accept' },
+    },
   });
-  const bodyText = await response.text();
-  let json;
-  try {
-    json = JSON.parse(bodyText);
-  } catch {
-    throw new Error(`invalid dry-run JSON (${response.status}): ${bodyText.slice(0, 300)}`);
-  }
-  if (!response.ok || !json.replyText) {
-    throw new Error(`dry-run failed (${response.status}): ${JSON.stringify(json).slice(0, 500)}`);
-  }
-  return json;
 }
 
-async function getRecentEvents(sb, sinceIso, messageText) {
-  const { data, error } = await sb
-    .from('crm_events')
-    .select('event_type,property_id,message_text,metadata,created_at')
-    .eq('property_id', PROPERTY_ID)
-    .eq('message_text', messageText)
-    .gte('created_at', sinceIso)
-    .order('created_at', { ascending: false })
-    .limit(20);
-  if (error) throw new Error(`crm event lookup failed: ${error.message}`);
-  return data ?? [];
+async function sendCallback(chatId, data, username = USERNAME) {
+  updateSeq += 1;
+  const cbId = `cb-${callbackSeq++}`;
+  return postWebhook({
+    update_id: updateSeq,
+    callback_query: {
+      id: cbId,
+      from: { id: chatId, is_bot: false, username, first_name: 'MK Accept' },
+      message: {
+        message_id: updateSeq - 1,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: chatId, type: 'private' },
+        text: 'mk',
+      },
+      data,
+    },
+  });
+}
+
+function sessionPath(chatId) {
+  return `/var/www/asi/current/.asi-comm-state/asi-sess-${chatId}.json`;
+}
+
+function readSession(chatId) {
+  const p = sessionPath(chatId);
+  if (!existsSync(p)) return null;
+  return JSON.parse(readFileSync(p, 'utf8'));
+}
+
+async function readSessionRetry(chatId) {
+  for (let i = 0; i < 12; i += 1) {
+    const s = readSession(chatId);
+    if (s) return s;
+    await sleep(300);
+  }
+  return readSession(chatId);
+}
+
+function readOwnerState(session) {
+  const cd = session?.collected_data || {};
+  const regRaw = cd.owner_objects_registry;
+  if (!regRaw) return null;
+  try {
+    const reg = JSON.parse(regRaw);
+    const activeId = reg.activeObjectId;
+    const stateRaw = cd[`owner_obj_state_${activeId}`];
+    if (!stateRaw) return null;
+    return JSON.parse(stateRaw);
+  } catch {
+    return null;
+  }
+}
+
+async function supabaseSelect(table, params) {
+  if (!supabaseUrl || !supabaseKey) return [];
+  const qs = new URLSearchParams(params);
+  const res = await fetch(`${supabaseUrl}/rest/v1/${table}?${qs}`, {
+    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+  });
+  if (!res.ok) throw new Error(`supabase ${table}: ${res.status}`);
+  return res.json();
+}
+
+async function countMkOps(username) {
+  const rows = await supabaseSelect('crm_contacts', {
+    select: 'id,telegram_username',
+    telegram_username: `ilike.${username}`,
+  });
+  const contactId = rows[0]?.id;
+  if (!contactId) return { contactId: null, mkOps: [] };
+  const ops = await supabaseSelect('ops_operator_tasks', {
+    select: 'id,task_type,dedup_key,metadata,task_status',
+    contact_id: `eq.${contactId}`,
+    limit: '30',
+  });
+  const mkOps = ops.filter((row) => {
+    const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    return Boolean(meta.mk_followup_kind);
+  });
+  return { contactId, mkOps };
+}
+
+async function walkWizardCore(chatId, username) {
+  await sendText(chatId, 'Казань', username);
+  await sendText(chatId, 'Баумана 5', username);
+  await sendCallback(chatId, 'obv2:type:Квартира', username);
+  await sendText(chatId, 'Апартаменты у Кремля', username);
+  await sendCallback(chatId, 'obv2:chk_in:15:00', username);
+  await sendCallback(chatId, 'obv2:chk_out:11:00', username);
+  await sendCallback(chatId, 'obv2:rl_t:no_smoke', username);
+  await sendCallback(chatId, 'obv2:rl_done', username);
+  await sendText(chatId, 'ASI_Guest, пароль 12345678', username);
+  await sendCallback(chatId, 'obv2:ch_t:sutochno', username);
+  await sendCallback(chatId, 'obv2:ch_done', username);
+  await sendCallback(chatId, 'obv2:photo_later', username);
+}
+
+async function scenarioA(chatId) {
+  const username = `${USERNAME}_a`;
+  await sendText(chatId, 'Хочу подключить ASI', username);
+  let session = await readSessionRetry(chatId);
+  let state = readOwnerState(session);
+  const mkPhaseStart = state?.mk_phase;
+  await sendCallback(chatId, 'obmk:has:yes', username);
+  await sendCallback(chatId, 'obmk:cm:bnovo', username);
+  await sendCallback(chatId, 'obmk:prop:yes', username);
+  await sendText(chatId, 'Апартаменты на Невском', username);
+  await sendText(chatId, 'Санкт-Петербург', username);
+  await sendText(chatId, '+79991112233', username);
+  await sendCallback(chatId, 'obmk:placement:skip', username);
+  await sleep(800);
+  await sendText(chatId, 'спасибо', username);
+  session = await readSessionRetry(chatId);
+  state = readOwnerState(session);
+  await sleep(800);
+  const ops1 = await countMkOps(username);
+  await sendText(chatId, 'ещё раз', username);
+  const ops2 = await countMkOps(username);
+  return {
+    ok:
+      (mkPhaseStart === 'ask_has_cm' || state?.mk_collection_mode === 'minimal') &&
+      state?.mk_collection_mode === 'minimal' &&
+      state?.selected_channel_manager === 'bnovo' &&
+      ops1.mkOps.length === 1 &&
+      ops2.mkOps.length === 1 &&
+      ops1.mkOps[0]?.metadata?.mk_followup_kind === 'channel_manager_existing_check',
+    mkPhaseStart,
+    collectionMode: state?.mk_collection_mode,
+    opsCountFirst: ops1.mkOps.length,
+    opsCountSecond: ops2.mkOps.length,
+    mkFollowupKind: ops1.mkOps[0]?.metadata?.mk_followup_kind ?? null,
+  };
+}
+
+async function scenarioB(chatId) {
+  const username = `${USERNAME}_b`;
+  await sendText(chatId, 'Хочу подключить ASI', username);
+  await sendCallback(chatId, 'obmk:has:no', username);
+  await walkWizardCore(chatId, username);
+  await sendText(chatId, '+79993334455', username);
+  const session = await readSessionRetry(chatId);
+  const state = readOwnerState(session);
+  const ops = await countMkOps(username);
+  return {
+    ok:
+      state?.mk_route === 'no_cm' &&
+      ops.mkOps.length === 1 &&
+      ops.mkOps[0]?.metadata?.mk_followup_kind === 'channel_manager_selection_needed',
+    mkRoute: state?.mk_route,
+    mkFollowupKind: ops.mkOps[0]?.metadata?.mk_followup_kind ?? null,
+  };
+}
+
+async function scenarioC(chatId) {
+  const username = `${USERNAME}_c`;
+  await sendText(chatId, 'Хочу подключить ASI', username);
+  await sendCallback(chatId, 'obmk:has:unknown', username);
+  const sessionExplain = await readSessionRetry(chatId);
+  const explainState = readOwnerState(sessionExplain);
+  await sendCallback(chatId, 'obmk:explain:help', username);
+  await walkWizardCore(chatId, username);
+  await sendText(chatId, '@mk_first_accept_0625_c', username);
+  const session = await readSessionRetry(chatId);
+  const state = readOwnerState(session);
+  const ops = await countMkOps(username);
+  return {
+    ok:
+      explainState?.mk_phase === 'explain_cm' &&
+      state?.mk_route === 'unknown_help' &&
+      ops.mkOps.length === 1 &&
+      ops.mkOps[0]?.metadata?.mk_followup_kind === 'channel_manager_explain_and_select',
+    mkPhase: explainState?.mk_phase,
+    mkRoute: state?.mk_route,
+    mkFollowupKind: ops.mkOps[0]?.metadata?.mk_followup_kind ?? null,
+  };
 }
 
 async function main() {
-  const sb = supabaseClient();
-  const baseUrl = optionalEnv('ACCEPTANCE_BASE_URL') ?? optionalEnv('PRODUCTION_URL') ?? DEFAULT_BASE_URL;
-  const secret = requiredEnv('INTERNAL_TEST_SECRET');
-  const property = await getProperty(sb);
-  const link = await ensureLinkedReservation(sb);
-  const chatId = Number(link.row.chat_id);
-  if (!Number.isFinite(chatId)) throw new Error('Resolved prop_A link has no numeric chat_id');
+  const version = await fetch(`${BASE}/api/version`).then((r) => r.json());
+  if (version.sha !== TARGET_SHA) throw new Error(`sha mismatch ${version.sha}`);
 
-  const startedAt = new Date().toISOString();
-  const rows = [];
-
-  for (const testCase of ACCEPTANCE_CASES) {
-    const dryRun = await postDryRun({ baseUrl, secret, chatId, text: testCase.text });
-    const reply = String(dryRun.replyText ?? '');
-    const events = await getRecentEvents(sb, startedAt, testCase.text);
-    const eventTypes = new Set(events.map((event) => event.event_type));
-    const failures = [];
-
-    for (const needle of testCase.expectReply) {
-      if (!includesCi(reply, needle)) failures.push(`reply missing "${needle}"`);
-    }
-    for (const eventType of testCase.expectEvents) {
-      if (!eventTypes.has(eventType)) failures.push(`missing CRM event ${eventType}`);
-    }
-    if (testCase.expectNeedsOperator) {
-      const handoff = events.find((event) => event.event_type === 'autopilot_operator_handoff');
-      if (handoff?.metadata?.needs_operator !== true) failures.push('handoff metadata needs_operator is not true');
-    }
-
-    rows.push({
-      id: testCase.id,
-      text: testCase.text,
-      pass: failures.length === 0,
-      failures,
-      reply,
-      events: [...eventTypes],
-    });
-  }
-
-  const failed = rows.filter((row) => !row.pass);
-  const summary = {
-    pass: failed.length === 0,
-    baseUrl,
-    propertyId: PROPERTY_ID,
-    chatId,
-    reservationId: link.row.id ?? null,
-    reservationRef: link.row.reservation_ref ?? link.row.booking_id ?? null,
-    guestId: link.row.guest_id ?? null,
-    linkCreated: link.created,
-    linkUpdated: link.updated,
-    property: {
-      communication_autopilot: property.communication_autopilot ?? null,
-      wifi_name: property.wifi_name ?? null,
-      wifi_password: property.wifi_password ?? null,
-      parking_text: property.parking_text ?? null,
-      check_in_text: property.check_in_text ?? null,
-    },
-    startedAt,
-    total: rows.length,
-    passed: rows.length - failed.length,
-    failed: failed.length,
-    rows,
+  const report = {
+    productionSha: version.sha,
+    scenarioA: await scenarioA(CHAT_A),
+    scenarioB: await scenarioB(CHAT_B),
+    scenarioC: await scenarioC(CHAT_C),
   };
-
-  console.log(JSON.stringify(summary, null, 2));
-  if (failed.length > 0) process.exitCode = 1;
+  report.ok = report.scenarioA.ok && report.scenarioB.ok && report.scenarioC.ok;
+  console.log(JSON.stringify(report, null, 2));
+  process.exit(report.ok ? 0 : 1);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : error);
-  process.exitCode = 1;
+main().catch((e) => {
+  console.error('[mk-first-live-acceptance] FAIL', e);
+  process.exit(1);
 });
