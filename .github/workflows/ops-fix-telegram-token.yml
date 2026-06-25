@@ -67,6 +67,18 @@ jobs:
             printf '\nTELEGRAM_BOT_TOKEN=%s\n' "$CORE_TOKEN" >> "$ENV_FILE"
           fi
 
+          CURRENT_ENV_LOCAL=/var/www/asi/current/.env.production.local
+          if [[ -f "$CURRENT_ENV_LOCAL" ]]; then
+            if grep -q '^TELEGRAM_BOT_TOKEN=' "$CURRENT_ENV_LOCAL"; then
+              sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=${CORE_TOKEN}|" "$CURRENT_ENV_LOCAL"
+            else
+              printf '\nTELEGRAM_BOT_TOKEN=%s\n' "$CORE_TOKEN" >> "$CURRENT_ENV_LOCAL"
+            fi
+            echo "updated_current_env_local=yes"
+          else
+            echo "updated_current_env_local=missing_file"
+          fi
+
           set -a
           # shellcheck disable=SC1090
           source "$ENV_FILE"
@@ -85,7 +97,7 @@ jobs:
 
           pm2 restart asi-landing --update-env
           pm2 save
-          sleep 3
+          sleep 4
 
           echo "=== admin route ==="
           curl -sS http://127.0.0.1:3000/api/admin/telegram-webhook-info || true
@@ -100,16 +112,17 @@ jobs:
             echo "sendMessage=skipped_no_TELEGRAM_TEST_CHAT_ID"
           fi
 
+          echo "=== fresh outbound owner probe ==="
           CHAT_ID=99784600
-          UPDATE_ID=$(( $(date +%s) * 1000 ))
+          UPDATE_ID=$(( $(date +%s) * 1000 + 1 ))
           WEBHOOK_SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
           HEADERS=(-H 'content-type: application/json')
           if [[ -n "$WEBHOOK_SECRET" ]]; then
             HEADERS+=(-H "x-telegram-bot-api-secret-token: ${WEBHOOK_SECRET}")
           fi
-          OWNER_PAYLOAD="$(node -e "const id=Number(process.argv[1]); console.log(JSON.stringify({update_id:id,message:{message_id:id,date:Math.floor(Date.now()/1000),text:'Хочу подключить ASI',chat:{id:id,type:'private'},from:{id:id,is_bot:false,username:'owner_token_fix_probe',first_name:'Probe'}}}))" "$UPDATE_ID")"
+          OWNER_PAYLOAD="$(node -e "const id=Number(process.argv[1]); console.log(JSON.stringify({update_id:id,message:{message_id:id,date:Math.floor(Date.now()/1000),text:'Хочу подключить ASI',chat:{id:id,type:'private'},from:{id:id,is_bot:false,username:'owner_token_fix_probe2',first_name:'Probe'}}}))" "$UPDATE_ID")"
           OWNER_RESP="$(curl -sS -X POST http://127.0.0.1:3000/api/telegram/webhook "${HEADERS[@]}" -d "$OWNER_PAYLOAD")"
           echo "owner_webhook_resp=${OWNER_RESP}"
           sleep 2
-          pm2 logs asi-landing --lines 40 --nostream | tail -n 40 || true
+          pm2 logs asi-landing --lines 25 --nostream 2>/dev/null | grep -E 'sendMessage|owner|onboarding|401|200' | tail -n 25 || true
           REMOTE
