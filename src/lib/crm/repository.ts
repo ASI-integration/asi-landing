@@ -157,7 +157,9 @@ function parseOwnerObjects(note: string | null | undefined): CrmOwnerObject[] {
   const objects: CrmOwnerObject[] = [];
   for (const line of lines.slice(start + 1)) {
     if (!line) break;
-    const match = line.match(/^(OBJ-\d+)\s*\|\s*(.+?)\s*\|\s*готовность:\s*(\d+)%\s*\|\s*активная сессия:\s*(да|нет)$/i);
+    const match = line.match(
+      /^((?:OBJ-\d+)|(?:pilot_[a-zA-Z0-9_-]+))\s*\|\s*(.+?)\s*\|\s*готовность:\s*(\d+)%\s*\|\s*активная сессия:\s*(да|нет)$/i,
+    );
     if (!match) continue;
     objects.push({
       objectId: match[1],

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { isOpsAdminEmail } from '@/lib/crm/access';
 import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
+import { runPilotChainForProperty } from '@/lib/pilot-chain/orchestrator';
 import {
   getPilotReadinessForProperty,
   listPilotObjectSnapshots,
@@ -88,6 +89,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   await syncAutoOpsTasks();
+  await runPilotChainForProperty(propertyId);
   const result = await getPilotReadinessForProperty(propertyId);
   return NextResponse.json({ ok: true, result });
 }

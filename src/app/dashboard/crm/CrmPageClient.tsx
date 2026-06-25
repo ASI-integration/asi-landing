@@ -25,6 +25,7 @@ import { formatCrmContactNameForDisplay } from '@/lib/crm/contact-display';
 import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { CrmSuggestInput } from './CrmSuggestInput';
+import { CrmPilotChainActions } from './CrmPilotChainActions';
 
 type Draft = {
   name: string;
@@ -541,6 +542,7 @@ export default function CrmPageClient() {
                         </div>
                       </div>
                     ) : null}
+                    <CrmPilotChainActions contact={contact} />
                   </div>
 
                   <div className="space-y-3">

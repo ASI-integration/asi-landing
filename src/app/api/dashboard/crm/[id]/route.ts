@@ -4,6 +4,8 @@ import { normalizeCrmContactInput } from '@/lib/crm/normalize';
 import { deleteCrmContact, listCrmContacts, updateCrmContact } from '@/lib/crm/repository';
 import { validatePilotStatusChange } from '@/lib/crm/pilot-rollout';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { resolvePilotChainNextActions } from '@/lib/pilot-chain/next-actions';
+import { runPilotChainForContact } from '@/lib/pilot-chain/orchestrator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,7 +41,21 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
 
   try {
     const contact = await updateCrmContact(id, patch);
-    return NextResponse.json({ ok: true, contact });
+    const chain = await runPilotChainForContact(id);
+    const resolvedContact = chain.contact ?? contact;
+    const nextActions = resolvePilotChainNextActions(resolvedContact, {
+      opsTaskId: chain.opsTaskId,
+    });
+    return NextResponse.json({
+      ok: true,
+      contact: resolvedContact,
+      pilotChain: {
+        objectId: chain.objectId,
+        steps: chain.steps,
+        opsTaskId: chain.opsTaskId,
+        nextActions,
+      },
+    });
   } catch {
     return NextResponse.json({ ok: false, message: 'Не удалось сохранить изменения.' }, { status: 500 });
   }
