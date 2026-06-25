@@ -1,6 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import OpsPilotParticipantsSection from './OpsPilotParticipantsSection';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   OPS_V1_ORIGIN_LABELS,
@@ -66,6 +68,8 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
 }
 
 export default function OpsPageClient() {
+  const searchParams = useSearchParams();
+  const highlightTaskId = useMemo(() => searchParams.get('taskId')?.trim() ?? '', [searchParams]);
   const [tasks, setTasks] = useState<OpsV1Task[]>([]);
   const [summary, setSummary] = useState<OpsV1Summary>({
     checkinsToday: 0,
@@ -180,6 +184,8 @@ export default function OpsPageClient() {
         <SummaryCard label="Нужна уборка" value={summary.cleaningNeeded} />
         <SummaryCard label="Требуют внимания" value={summary.needsAttention} />
       </section>
+
+      <OpsPilotParticipantsSection />
 
       <section className="rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -319,8 +325,12 @@ export default function OpsPageClient() {
                   const isUpdating = updatingId === task.id;
                   const isDone = task.status === 'done';
                   const showReopen = isDone && listFilter === 'done';
+                  const isHighlighted = highlightTaskId && highlightTaskId === task.id;
                   return (
-                    <tr key={task.id} className="align-top">
+                    <tr
+                      key={task.id}
+                      className={`align-top ${isHighlighted ? 'bg-amber-50 ring-1 ring-inset ring-amber-300' : ''}`}
+                    >
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {task.objectLabel || task.propertyId || '—'}
                       </td>
