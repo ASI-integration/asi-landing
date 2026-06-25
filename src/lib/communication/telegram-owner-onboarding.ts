@@ -60,6 +60,16 @@ import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connect
 import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
 import { syncOwnerOnboardingAutomation } from './owner-onboarding-spine';
+import {
+  buildMkNoCmFinalAddon,
+  buildMkReadyOwnerMessage,
+  isMkOnboardingCallback,
+  isMkRoutingActive,
+  tryHandleOwnerMkOnboarding,
+  type OwnerMkPhase,
+  type OwnerMkPropertyInCm,
+  type OwnerMkRoute,
+} from './owner-mk-onboarding-router';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -96,6 +106,13 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   rules_draft?: string[];
   last_saved_field?: OwnerOnboardingWizardField;
   wizard_redo_from?: OwnerOnboardingWizardField;
+  mk_phase?: OwnerMkPhase;
+  mk_route?: OwnerMkRoute;
+  selected_channel_manager?: string;
+  property_in_channel_manager?: OwnerMkPropertyInCm;
+  mk_collection_mode?: 'full' | 'minimal';
+  target_placement_channels?: string[];
+  target_placement_skipped?: boolean;
 };
 
 export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';
@@ -138,9 +155,23 @@ function channelManagerHrefFor(objectId?: string, contactId?: string): string {
   });
 }
 
+function usesPlacementViaChannelManager(state: OwnerOnboardingState): boolean {
+  return Boolean(state.mk_route);
+}
+
+function wizardPromptOptions(state: OwnerOnboardingState) {
+  return { placementViaChannelManager: usesPlacementViaChannelManager(state) };
+}
+
 function channelManagerPublicUrl(href: string): string {
   if (href.startsWith('http')) return href;
   return `https://asi-global.ru${href}`;
+}
+
+function syncTargetPlacementFromChannels(state: OwnerOnboardingState): void {
+  if (!usesPlacementViaChannelManager(state)) return;
+  const labels = state.channels_list ?? [];
+  state.target_placement_channels = labels;
 }
 
 function text(value: unknown, max = 600): string {
@@ -460,7 +491,7 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         stayOnStep: 'channels',
         editInPlace: true,
         editInPlaceMode: 'markup',
-        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+        replyMarkup: wizardChannelsKeyboard(state),
       };
     }
     case 'select_all_channels': {
@@ -472,7 +503,7 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         stayOnStep: 'channels',
         editInPlace: true,
         editInPlaceMode: 'markup',
-        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+        replyMarkup: wizardChannelsKeyboard(state),
       };
     }
     case 'deselect_all_channels': {
@@ -483,7 +514,7 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
         stayOnStep: 'channels',
         editInPlace: true,
         editInPlaceMode: 'markup',
-        replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft, rules_draft: state.rules_draft ?? [] }),
+        replyMarkup: wizardChannelsKeyboard(state),
       };
     }
     case 'confirm_channels': {
@@ -495,14 +526,17 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
           stayOnStep: 'channels',
           editInPlace: true,
           editInPlaceMode: 'text',
-          replyOverride: 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «🚀 Готово, запустить подготовку».',
-          replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
+          replyOverride: usesPlacementViaChannelManager(state)
+            ? 'Выберите хотя бы одну площадку или нажмите «Готово».'
+            : 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «🚀 Готово, запустить подготовку».',
+          replyMarkup: wizardChannelsKeyboard(state),
         };
       }
       state.channels_list = labels;
       state.channels = labels.join(', ');
       state.channels_draft = [];
       state.last_saved_field = 'channels';
+      syncTargetPlacementFromChannels(state);
       syncLegacyFields(state);
       return { handled: true, extractedCount: 1, savedField: 'channels' };
     }
@@ -881,7 +915,12 @@ function wizardDraftSnapshot(state: OwnerOnboardingState) {
   return {
     channels_draft: state.channels_draft ?? [],
     rules_draft: state.rules_draft ?? [],
+    placementViaChannelManager: usesPlacementViaChannelManager(state),
   };
+}
+
+function wizardChannelsKeyboard(state: OwnerOnboardingState) {
+  return buildWizardStepKeyboard('channels', wizardDraftSnapshot(state));
 }
 
 function buildReply(params: {
@@ -913,15 +952,13 @@ function buildReply(params: {
           checklist: buildWizardChecklist(wizardStateSnapshot(params.state)),
         })
       : '';
+    const readyMessage = buildMkReadyOwnerMessage(params.state);
+    const noCmAddon =
+      params.state.mk_route === 'no_cm' && params.state.mk_collection_mode !== 'minimal'
+        ? buildMkNoCmFinalAddon()
+        : null;
     return {
-      text: [
-        progress,
-        'Готово, данные объекта собраны.',
-        'Я запустила автоматическую подготовку подключения каналов. Сейчас система проверит данные объекта и подготовит его к публикации.',
-        'Если потребуется уточнение, оператор напишет вам. Пока ничего дополнительно делать не нужно.',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
+      text: [progress, readyMessage, noCmAddon].filter(Boolean).join('\n\n'),
       markup: buildOwnerCompletionMarkup(),
     };
   }
@@ -954,9 +991,9 @@ function buildReply(params: {
   }
 
   if (params.state.wizard_mode !== 'legacy') {
-    if (!params.savedField && params.status === 'onboarding_started' && next === 'city') {
+    if (!params.savedField && params.status === 'onboarding_started' && next === 'city' && !isMkRoutingActive(params.state)) {
       return {
-        text: ['Поняла. Помогу подключить объект к ASI.', progress, buildWizardStepPrompt('city')].filter(Boolean).join('\n\n'),
+        text: ['Поняла. Помогу подключить объект к ASI.', progress, buildWizardStepPrompt('city', wizardPromptOptions(params.state))].filter(Boolean).join('\n\n'),
       };
     }
 
@@ -966,7 +1003,7 @@ function buildReply(params: {
         : params.savedField
           ? fieldSavedAckRu(params.savedField)
           : '';
-    const question = buildWizardStepPrompt(next);
+    const question = buildWizardStepPrompt(next, wizardPromptOptions(params.state));
     return {
       text: [ack, progress, question].filter(Boolean).join('\n\n'),
       markup: params.replyMarkup ?? buildWizardStepKeyboard(next, wizardDraftSnapshot(params.state)),
@@ -1060,7 +1097,16 @@ function buildCrmNote(params: {
     params.state.property_name ? `Название объекта: ${params.state.property_name}` : null,
     params.state.checkin_time ? `Заезд: ${params.state.checkin_time}` : null,
     params.state.checkout_time ? `Выезд: ${params.state.checkout_time}` : null,
-    params.state.channels_list?.length ? `Каналы: ${params.state.channels_list.join(', ')}` : null,
+    params.state.channels_list?.length
+      ? `Площадки: ${(params.state.target_placement_channels ?? params.state.channels_list).join(', ')}`
+      : null,
+    params.state.selected_channel_manager
+      ? `МК: ${params.state.selected_channel_manager}`
+      : null,
+    params.state.property_in_channel_manager
+      ? `Объект в МК: ${params.state.property_in_channel_manager}`
+      : null,
+    params.state.mk_route ? `Ветка онбординга: ${params.state.mk_route}` : null,
     params.state.rules?.length ? `Правила: ${params.state.rules.join(', ')}` : null,
     params.state.wifi_name ? `Wi-Fi имя: ${params.state.wifi_name}` : null,
     params.state.wifi_password ? `Wi-Fi пароль: ${params.state.wifi_password}` : null,
@@ -1242,6 +1288,13 @@ export async function processTelegramOwnerOnboarding(params: {
   }
 
   const wizardCallback = text((params.envelope.metadata as any)?.telegram_onboarding_wizard_callback, 64);
+  const mkCallbackRaw = text(
+    (params.envelope.metadata as any)?.telegram_mk_onboarding_callback ??
+      (wizardCallback && isMkOnboardingCallback(wizardCallback) ? wizardCallback : ''),
+    64,
+  );
+  const wizardCallbackEffective =
+    wizardCallback && !isMkOnboardingCallback(wizardCallback) ? wizardCallback : '';
   const sessionRouterCallback = text(
     (params.envelope.metadata as any)?.telegram_session_router_callback ??
       ((params.envelope.metadata as any)?.telegram_callback_data &&
@@ -1259,7 +1312,7 @@ export async function processTelegramOwnerOnboarding(params: {
     senderIdentity: params.senderIdentity,
     crmContactId: existingCrm?.id,
     sessionRouterCallback,
-    wizardCallback,
+    wizardCallback: wizardCallbackEffective,
   });
   if (routed) {
     routed.state.readiness = computeObjectReadiness(
@@ -1290,6 +1343,88 @@ export async function processTelegramOwnerOnboarding(params: {
     lastMessage: text(params.envelope.messageText, 600),
     channelManagerHref: CHANNEL_MANAGER_HREF_FALLBACK,
   };
+
+  const mkEarly = tryHandleOwnerMkOnboarding({
+    state: merged,
+    messageText: params.envelope.messageText ?? '',
+    mkCallback: mkCallbackRaw,
+    isConnectIntent: isIdentitySelectionText(params.envelope.messageText ?? ''),
+  });
+  if (mkEarly?.handled) {
+    merged.missing = missingFields(merged);
+    if (mkEarly.status) merged.status = mkEarly.status;
+    merged.readiness = computeObjectReadiness(
+      readinessInputFromOnboardingState({
+        ...merged,
+        channels: merged.channels_list ?? merged.channels,
+        rules: merged.rules ?? merged.house_rules,
+        status: merged.status,
+      }),
+    );
+    const objectId = persistState(params.chatId, params.envelope.channel, merged);
+    let crmContactId: string | undefined;
+    if (merged.mk_phase !== 'ask_has_cm') {
+      crmContactId = await upsertCrmContact({
+        envelope: params.envelope,
+        chatId: params.chatId,
+        senderIdentity: params.senderIdentity,
+        state: merged,
+        objectId,
+      });
+    }
+    if (merged.status === 'ready_for_channel_manager') {
+      await syncOwnerOnboardingAutomation({
+        contactId: crmContactId,
+        objectId,
+        previousStatus: previous.status,
+        status: merged.status,
+        state: merged,
+        ownerName: telegramDisplayName(params.envelope),
+        objectLabel: merged.property_name ?? merged.object_type ?? merged.address ?? 'Новый объект',
+      });
+    }
+    const mkReply =
+      merged.status === 'ready_for_channel_manager'
+        ? buildReply({
+            status: merged.status,
+            missing: merged.missing,
+            decision: {
+              extracted: {
+                address: null,
+                city: null,
+                property_type: null,
+                property_name: null,
+                rules: null,
+                wifi: null,
+                check_in: null,
+                check_out: null,
+                photos_intent: null,
+                channels: [],
+              },
+              confidence: 'high',
+              needs_clarification: false,
+              clarification_question: null,
+              needs_operator: false,
+              operator_reason: null,
+              next_missing_field: null,
+              source: 'deterministic',
+            },
+            readiness: merged.readiness,
+            state: merged,
+          })
+        : null;
+    return {
+      handled: true,
+      replyText: mkReply?.text ?? mkEarly.replyText,
+      replyMarkup: mkReply?.markup ?? mkEarly.replyMarkup,
+      editInPlace: mkEarly.editInPlace,
+      editInPlaceMode: mkEarly.editInPlaceMode,
+      status: merged.status,
+      missing: merged.missing,
+      crmContactId,
+      state: merged,
+    };
+  }
 
   const hasPhoto = Array.isArray((params.envelope.metadata as any)?.attachments)
     ? (params.envelope.metadata as any).attachments.some((attachment: any) => attachment?.type === 'photo')
@@ -1324,8 +1459,8 @@ export async function processTelegramOwnerOnboarding(params: {
     source: 'deterministic',
   };
 
-  if (wizardCallback && isWizardCallbackData(wizardCallback)) {
-    const wizardResult = applyWizardCallback(merged, wizardCallback);
+  if (wizardCallbackEffective && isWizardCallbackData(wizardCallbackEffective)) {
+    const wizardResult = applyWizardCallback(merged, wizardCallbackEffective);
     extractedCount = wizardResult.extractedCount;
     savedField = wizardResult.savedField;
     replyOverride = wizardResult.replyOverride;
@@ -1433,7 +1568,7 @@ export async function processTelegramOwnerOnboarding(params: {
     merged.photos_intent = smartResult.facts.photos_intent ?? merged.photos_intent;
   }
 
-  merged.clarification_attempts = wizardCallback
+  merged.clarification_attempts = wizardCallbackEffective
     ? merged.clarification_attempts
     : nextClarificationAttempts({
         previousAttempts: previous.clarification_attempts,

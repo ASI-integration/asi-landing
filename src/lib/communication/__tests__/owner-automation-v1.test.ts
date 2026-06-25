@@ -91,6 +91,7 @@ import {
 } from '../telegram-owner-onboarding-wizard';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
+  const { metadata: extraMetadata, ...restExtra } = extra ?? {};
   return {
     channel: 'telegram',
     externalUserId: '88001',
@@ -104,10 +105,14 @@ function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>):
       telegram_username: 'owner_auto_v1',
       telegram_first_name: 'Ирина',
       providerMessageId: `msg-${Math.random()}`,
-      ...extra?.metadata,
+      ...extraMetadata,
     },
-    ...extra,
+    ...restExtra,
   };
+}
+
+function mkCb(data: string): InboundMessageEnvelope {
+  return envelope('', { metadata: { telegram_mk_onboarding_callback: data } });
 }
 
 function wizardCb(data: string): InboundMessageEnvelope {
@@ -117,6 +122,11 @@ function wizardCb(data: string): InboundMessageEnvelope {
 async function walkCoreSteps(chatId: number): Promise<void> {
   await processTelegramOwnerOnboarding({
     envelope: envelope('Хочу подключить ASI'),
+    chatId,
+    senderIdentity: 'lead',
+  });
+  await processTelegramOwnerOnboarding({
+    envelope: mkCb('obmk:has:no'),
     chatId,
     senderIdentity: 'lead',
   });
@@ -201,20 +211,33 @@ describe('Owner automation v1', () => {
     expect(route.shouldRunGuestConcierge).toBe(false);
   });
 
-  it('starts onboarding with city as the first question', async () => {
+  it('starts onboarding with channel manager question as the first step', async () => {
     const result = await processTelegramOwnerOnboarding({
       envelope: envelope('Хочу подключить ASI'),
       chatId: 88001,
       senderIdentity: 'lead',
     });
-    expect(result.missing[0]).toBe('city');
-    expect(result.replyText).toMatch(/город/i);
+    expect(result.replyText).toContain('У вас уже есть менеджер каналов?');
+    expect(result.state.mk_phase).toBe('ask_has_cm');
+    expect(insertedRows.filter((item) => item.table === 'crm_contacts')).toHaveLength(0);
+
+    const started = await processTelegramOwnerOnboarding({
+      envelope: mkCb('obmk:has:no'),
+      chatId: 88001,
+      senderIdentity: 'lead',
+    });
+    expect(started.replyText).toMatch(/город/i);
     expect(insertedRows.filter((item) => item.table === 'crm_contacts')).toHaveLength(1);
   });
 
   it('resumes onboarding after interruption without creating a second CRM lead', async () => {
     await processTelegramOwnerOnboarding({
       envelope: envelope('Хочу подключить ASI'),
+      chatId: 88002,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: mkCb('obmk:has:no'),
       chatId: 88002,
       senderIdentity: 'lead',
     });
@@ -235,7 +258,10 @@ describe('Owner automation v1', () => {
 
     expect(resumed.state.city).toBe('Казань');
     expect(resumed.state.address).toMatch(/Баумана/i);
-    expect(insertedRows.filter((item) => item.table === 'crm_contacts')).toHaveLength(1);
+    const contactIds = new Set(
+      [...crmRows.values()].map((row) => String((row as { id?: string }).id ?? '')),
+    );
+    expect(contactIds.size).toBe(1);
   });
 
   it('does not create OPS task during normal step-by-step flow', async () => {
@@ -249,6 +275,11 @@ describe('Owner automation v1', () => {
   it('creates a deduplicated OPS task only when owner is blocked', async () => {
     await processTelegramOwnerOnboarding({
       envelope: envelope('Хочу подключить ASI'),
+      chatId: 88004,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: mkCb('obmk:has:no'),
       chatId: 88004,
       senderIdentity: 'lead',
     });
@@ -289,7 +320,7 @@ describe('Owner automation v1', () => {
     ).toHaveLength(0);
   });
 
-  it('reaches readiness, runs pilot chain once, shows final delivery, and creates one OPS follow-up', async () => {
+  it('reaches readiness, skips pilot chain, shows honest MK final message, and creates one OPS follow-up', async () => {
     await walkCoreSteps(88005);
     const ready = await processTelegramOwnerOnboarding({
       envelope: envelope('+79991234567'),
@@ -298,20 +329,17 @@ describe('Owner automation v1', () => {
     });
 
     expect(ready.status).toBe('ready_for_channel_manager');
-    expect(ready.replyText).toContain('Готово, данные объекта собраны');
-    expect(ready.replyText).toContain('Я запустила автоматическую подготовку подключения каналов');
-    expect(ready.replyText).toContain('Пока ничего дополнительно делать не нужно');
-    expect(ready.replyText).not.toMatch(/дождитесь|мы проверим/i);
-    expect(ready.replyText).not.toMatch(/менеджер каналов|Channel Manager|CRM|OPS/i);
+    expect(ready.replyText).toMatch(/Данные объекта собраны/i);
+    expect(ready.replyText).toMatch(/подготовить объект к подключению через менеджер каналов/i);
+    expect(ready.replyText).toMatch(/подобрать или подключить менеджер каналов/i);
+    expect(ready.replyText).not.toMatch(/автоматическую подготовку подключения каналов/i);
     expect(ready.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Связаться с поддержкой');
-    expect(ready.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Добавить ещё один объект');
-    expect(ready.replyMarkup?.inline_keyboard?.[2]?.[0]?.text).toBe('Изменить данные объекта');
-    expect(pilotChainCalls).toBe(1);
+    expect(pilotChainCalls).toBe(0);
 
     const followupOps = opsTaskCalls.filter(
       (call) =>
-        (call.metadata as { integration?: string })?.integration === 'owner_onboarding' &&
-        String(call.dedupKey ?? '').includes('verify_channel_manager'),
+        (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+        'channel_manager_selection_needed',
     );
     expect(followupOps).toHaveLength(1);
 
@@ -320,12 +348,12 @@ describe('Owner automation v1', () => {
       chatId: 88005,
       senderIdentity: 'lead',
     });
-    expect(pilotChainCalls).toBe(1);
+    expect(pilotChainCalls).toBe(0);
     expect(
       opsTaskCalls.filter(
         (call) =>
-          (call.metadata as { integration?: string })?.integration === 'owner_onboarding' &&
-          String(call.dedupKey ?? '').includes('verify_channel_manager'),
+          (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+          'channel_manager_selection_needed',
       ),
     ).toHaveLength(1);
   });
@@ -363,6 +391,11 @@ describe('Owner automation v1', () => {
   it('preserves collected city on CRM update when later step has no city', async () => {
     await processTelegramOwnerOnboarding({
       envelope: envelope('Хочу подключить ASI'),
+      chatId: 88007,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: mkCb('obmk:has:no'),
       chatId: 88007,
       senderIdentity: 'lead',
     });

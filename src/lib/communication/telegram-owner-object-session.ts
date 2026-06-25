@@ -170,6 +170,13 @@ export function serializeOwnerObjectState(state: OwnerOnboardingState): string {
     rules_draft: state.rules_draft,
     owner_contact: state.owner_contact,
     readiness_percent: state.readiness?.readiness_percent ?? null,
+    mk_phase: state.mk_phase ?? null,
+    mk_route: state.mk_route ?? null,
+    selected_channel_manager: state.selected_channel_manager ?? null,
+    property_in_channel_manager: state.property_in_channel_manager ?? null,
+    mk_collection_mode: state.mk_collection_mode ?? null,
+    target_placement_channels: state.target_placement_channels ?? null,
+    target_placement_skipped: state.target_placement_skipped ?? false,
   });
 }
 
@@ -214,6 +221,15 @@ export function deserializeOwnerObjectState(raw: unknown): OwnerOnboardingState 
         ? parsed.rules_draft.map((item) => text(item, 120)).filter(Boolean)
         : [],
       owner_contact: parsed.owner_contact,
+      mk_phase: parsed.mk_phase,
+      mk_route: parsed.mk_route,
+      selected_channel_manager: parsed.selected_channel_manager,
+      property_in_channel_manager: parsed.property_in_channel_manager,
+      mk_collection_mode: parsed.mk_collection_mode,
+      target_placement_channels: Array.isArray(parsed.target_placement_channels)
+        ? parsed.target_placement_channels.map((item) => text(item, 120)).filter(Boolean)
+        : undefined,
+      target_placement_skipped: Boolean(parsed.target_placement_skipped),
     };
     state.missing = resolveMissingFields(state);
     return state;

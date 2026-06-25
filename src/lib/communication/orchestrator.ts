@@ -4845,9 +4845,10 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
 
   const callbackData = String(callback.data ?? '').trim();
   const isOnboardingWizardCallback = callbackData.startsWith('obv2:');
+  const isMkOnboardingCallback = callbackData.startsWith('obmk:');
   const isOwnerSessionRouterCallback = callbackData.startsWith('obsr:');
 
-  const selected = isOnboardingWizardCallback || isOwnerSessionRouterCallback
+  const selected = isOnboardingWizardCallback || isMkOnboardingCallback || isOwnerSessionRouterCallback
     ? { messageText: '', senderIdentity: 'lead' as const }
     : telegramIdentityCallbackToRoute(callback.data);
 
@@ -4896,6 +4897,7 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
       telegram_callback_data: callback.data,
       telegram_callback_message_id: message?.message_id,
       telegram_onboarding_wizard_callback: isOnboardingWizardCallback ? callbackData : undefined,
+      telegram_mk_onboarding_callback: isMkOnboardingCallback ? callbackData : undefined,
       telegram_session_router_callback: isOwnerSessionRouterCallback ? callbackData : undefined,
       senderIdentity: selected.senderIdentity,
       telegram_user_language_code: callback.from?.language_code,

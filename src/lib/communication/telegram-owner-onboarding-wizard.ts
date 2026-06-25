@@ -356,9 +356,10 @@ export function allRuleIds(): string[] {
   return RULE_OPTIONS.map((item) => item.id);
 }
 
-export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyboardMarkup {
+export function buildChannelsKeyboard(selectedIds: string[], options?: { viaChannelManager?: boolean }): TelegramInlineKeyboardMarkup {
   const rows: TelegramInlineKeyboardMarkup['inline_keyboard'] = [];
   const customIds = selectedIds.filter(isCustomChannelId);
+  const doneLabel = options?.viaChannelManager ? 'Готово' : '🚀 Готово, запустить подготовку';
 
   for (const item of CHANNEL_OPTIONS) {
     const selected = selectedIds.includes(item.id);
@@ -384,7 +385,7 @@ export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyb
   rows.push([{ text: '✅ Выбрать все', callback_data: callbackData('ch_all') }]);
   rows.push([{ text: '↩️ Снять всё', callback_data: callbackData('ch_none') }]);
   rows.push([{ text: 'Свой вариант', callback_data: callbackData('ch_custom') }]);
-  rows.push([{ text: '🚀 Готово, запустить подготовку', callback_data: callbackData('ch_done') }]);
+  rows.push([{ text: doneLabel, callback_data: callbackData('ch_done') }]);
   return { inline_keyboard: rows };
 }
 
@@ -417,7 +418,10 @@ export function buildPhotosKeyboard(): TelegramInlineKeyboardMarkup {
   };
 }
 
-export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string {
+export function buildWizardStepPrompt(
+  field: OwnerOnboardingWizardField,
+  options?: { placementViaChannelManager?: boolean },
+): string {
   switch (field) {
     case 'city':
       return 'Поняла. Укажите, пожалуйста, город объекта.';
@@ -435,6 +439,13 @@ export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string
     case 'checkout_time':
       return 'Выберите время выезда:';
     case 'channels':
+      if (options?.placementViaChannelManager) {
+        return [
+          'На каких площадках вы хотите размещаться через менеджер каналов?',
+          'Мы не подключаем площадки напрямую. Сначала объект готовится для менеджера каналов, а уже он передаёт данные на площадки.',
+          'Можно отметить несколько, затем нажмите «Готово».',
+        ].join('\n');
+      }
       return 'Выберите каналы бронирования. Можно отметить несколько, затем нажмите «🚀 Готово, запустить подготовку».';
     case 'rules':
       return 'Выберите правила проживания. Можно отметить несколько, затем нажмите «Готово».';
@@ -451,7 +462,7 @@ export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string
 
 export function buildWizardStepKeyboard(
   field: OwnerOnboardingWizardField,
-  draft?: Pick<WizardStructuredState, 'channels_draft' | 'rules_draft'>,
+  draft?: Pick<WizardStructuredState, 'channels_draft' | 'rules_draft'> & { placementViaChannelManager?: boolean },
 ): TelegramInlineKeyboardMarkup | undefined {
   switch (field) {
     case 'object_type':
@@ -461,7 +472,9 @@ export function buildWizardStepKeyboard(
     case 'checkout_time':
       return buildTimeKeyboard('checkout_time');
     case 'channels':
-      return buildChannelsKeyboard(draft?.channels_draft ?? []);
+      return buildChannelsKeyboard(draft?.channels_draft ?? [], {
+        viaChannelManager: draft?.placementViaChannelManager,
+      });
     case 'rules':
       return buildRulesKeyboard(draft?.rules_draft ?? []);
     case 'wifi':
@@ -488,7 +501,7 @@ export function fieldSavedAckRu(field: OwnerOnboardingWizardField): string {
     case 'checkout_time':
       return '✓ Время выезда сохранено';
     case 'channels':
-      return '✓ Каналы сохранены';
+      return '✓ Площадки сохранены';
     case 'rules':
       return '✓ Правила сохранены';
     case 'wifi':
