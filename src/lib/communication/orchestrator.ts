@@ -1687,7 +1687,12 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
     const routeReplyText = ownerOnboarding?.replyText || senderRoute.replyText;
     const routeReplyMarkup = ownerOnboarding?.replyMarkup ?? senderRoute.replyMarkup;
     const routeCrmContactId = ownerOnboarding?.crmContactId ?? senderRoute.crmContactId;
-    if (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead' || senderRoute.route === 'support_problem') {
+    const needsOperatorHandoff =
+      ownerOnboarding?.status === 'needs_operator' || senderRoute.route === 'support_problem';
+    if (
+      (senderRoute.route === 'owner_manager' || senderRoute.route === 'lead' || senderRoute.route === 'support_problem') &&
+      needsOperatorHandoff
+    ) {
       const reviewReason =
         ownerOnboarding?.status === 'needs_operator'
           ? 'owner_onboarding_needs_operator'

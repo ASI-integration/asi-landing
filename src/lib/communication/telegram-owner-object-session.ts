@@ -9,8 +9,11 @@ import { missingWizardFields } from './telegram-owner-onboarding-wizard';
 
 function resolveMissingFields(state: Partial<OwnerOnboardingState>) {
   return missingWizardFields({
+    city: state.city,
     address: state.address,
-    object_type: state.object_type ?? state.property_name,
+    object_type: state.object_type,
+    object_name: state.property_name,
+    owner_contact: state.owner_contact,
     checkin_time: state.checkin_time,
     checkout_time: state.checkout_time,
     channels: state.channels_list ?? (state.channels ? state.channels.split(',').map((item) => item.trim()) : []),
@@ -128,6 +131,7 @@ function readLegacyState(collected: Record<string, string | undefined>): OwnerOn
 }
 
 export function objectTitleFromState(state: Pick<OwnerOnboardingState, 'address' | 'city' | 'object_type' | 'property_name'>): string {
+  if (state.property_name?.trim()) return state.property_name.trim();
   if (state.address?.trim()) return state.address.trim();
   if (state.city?.trim()) return `Объект в ${state.city.trim()}`;
   const type = state.object_type ?? state.property_name;
@@ -164,6 +168,7 @@ export function serializeOwnerObjectState(state: OwnerOnboardingState): string {
     awaiting_custom: state.awaiting_custom,
     channels_draft: state.channels_draft,
     rules_draft: state.rules_draft,
+    owner_contact: state.owner_contact,
     readiness_percent: state.readiness?.readiness_percent ?? null,
   });
 }
@@ -208,6 +213,7 @@ export function deserializeOwnerObjectState(raw: unknown): OwnerOnboardingState 
       rules_draft: Array.isArray(parsed.rules_draft)
         ? parsed.rules_draft.map((item) => text(item, 120)).filter(Boolean)
         : [],
+      owner_contact: parsed.owner_contact,
     };
     state.missing = resolveMissingFields(state);
     return state;
@@ -301,6 +307,7 @@ export function mirrorActiveObjectToLegacyKeys(
       [`${LEGACY_SESSION_PREFIX}awaiting_custom`]: state.awaiting_custom,
       [`${LEGACY_SESSION_PREFIX}channels_draft`]: JSON.stringify(state.channels_draft ?? []),
       [`${LEGACY_SESSION_PREFIX}rules_draft`]: JSON.stringify(state.rules_draft ?? []),
+      [`${LEGACY_SESSION_PREFIX}owner_contact`]: state.owner_contact,
       [objectStateKey(objectId)]: serializeOwnerObjectState(state),
     },
   });

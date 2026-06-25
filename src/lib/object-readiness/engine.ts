@@ -1,8 +1,15 @@
 import type { OwnerOnboardingField } from '@/lib/communication/owner-onboarding-smart-parser';
 import type { OwnerOnboardingStatus } from '@/lib/communication/telegram-owner-onboarding';
-import type { OwnerOnboardingWizardField } from '@/lib/communication/telegram-owner-onboarding-wizard';
 
-export type ObjectReadinessRequiredField = OwnerOnboardingWizardField;
+export type ObjectReadinessRequiredField =
+  | 'address'
+  | 'object_type'
+  | 'checkin_time'
+  | 'checkout_time'
+  | 'channels'
+  | 'rules'
+  | 'wifi'
+  | 'photos';
 
 /** @deprecated Legacy field keys kept for smart-parser and fallback parsing. */
 export type ObjectReadinessLegacyField = OwnerOnboardingField;

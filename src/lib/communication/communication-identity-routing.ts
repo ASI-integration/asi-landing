@@ -59,7 +59,7 @@ export type CommunicationIdentityRoutingDecision = {
 };
 
 export const UNKNOWN_IDENTITY_CLARIFY_RU =
-  'Здравствуйте! Чем могу помочь?';
+  'Здравствуйте! Вы владелец/управляющий или гость?';
 
 export const RESET_IDENTITY_CLARIFY_RU =
   'Идентичность и сессия сброшены. Чем могу помочь?';
@@ -79,7 +79,7 @@ const GUEST_SELECTED_REPLY_RU =
   'Поняла, вы гость. Напишите вопрос по объекту — адрес, заезд, Wi-Fi, правила. Если бронь ещё не привязана, укажите номер бронирования или телефон из брони.';
 
 const LEAD_REPLY_RU =
-  'Поняла. Помогу подключить объект к ASI.\n\nДля начала укажите адрес объекта.';
+  'Поняла. Помогу подключить объект к ASI.\n\nДля начала укажите город объекта.';
 
 const OWNER_MANAGER_REPLY_RU =
   'Поняла, вы владелец/управляющий. Опишите, пожалуйста, объект или ситуацию, которую нужно разобрать. Я передам это как внутреннее обращение.';
@@ -189,14 +189,17 @@ function looksLikeOwnerOnboardingContinuation(messageText: string, missing: stri
   if (!t) return false;
   if (isIdentitySelectionText(messageText)) return true;
 
-  const fields = missing.length > 0 ? missing : ['address'];
+  const fields = missing.length > 0 ? missing : ['city'];
   const facts = extractFactsDeterministic(messageText, fields as OwnerOnboardingField[], false);
   const extractedCount =
     Object.keys(facts).filter((key) => key !== 'city' && key !== 'photos_intent').length + (facts.photos_intent ? 1 : 0);
   if (extractedCount > 0) return true;
 
   if (fields.includes('address')) {
-    return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат)/.test(t);
+    return /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат|район)/.test(t);
+  }
+  if (fields.includes('city')) {
+    return /(москва|питер|спб|санкт|казань|екат|новосиб|город)/.test(t) || t.length >= 3;
   }
   if (fields.includes('property_name') || fields.includes('object_type')) {
     if (/(квартир|апартамент|студия|дом|объект|лофт|номер|вокзал|комната)/.test(t)) return true;

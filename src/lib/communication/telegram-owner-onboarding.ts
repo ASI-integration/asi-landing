@@ -34,6 +34,7 @@ import {
   missingWizardFields,
   parseCustomChannelsInput,
   parseCustomTimeInput,
+  parseOwnerContactInput,
   parseWifiInput,
   parseWizardCallback,
   resolveChannelDraftIds,
@@ -42,6 +43,7 @@ import {
   allRuleIds,
   isCustomChannelId,
   type OwnerOnboardingWizardField,
+  WIZARD_FIELD_LABELS,
   WIZARD_FIELD_ORDER,
 } from './telegram-owner-onboarding-wizard';
 import {
@@ -55,6 +57,7 @@ import {
 import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
 import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
 import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
+import { syncOwnerOnboardingAutomation } from './owner-onboarding-spine';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -85,6 +88,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   wifi_skipped?: boolean;
   photos_count?: number;
   channels_list?: string[];
+  owner_contact?: string;
   awaiting_custom?: 'checkin_time' | 'checkout_time' | 'channels';
   channels_draft?: string[];
   rules_draft?: string[];
@@ -205,8 +209,7 @@ function readStateFromSession(chatId: number, channel: CommunicationChannel = 't
 }
 
 function syncLegacyFields(state: OwnerOnboardingState): void {
-  if (state.object_type) state.property_name = state.object_type;
-  else if (state.property_name && !state.object_type) state.object_type = state.property_name;
+  if (!state.object_type && state.property_name) state.object_type = state.property_name;
 
   if (state.checkin_time || state.checkout_time) {
     const parts = [];
@@ -241,8 +244,11 @@ export function missingFields(state: Partial<OwnerOnboardingState>): OwnerOnboar
   }
 
   return missingWizardFields({
+    city: state.city,
     address: state.address,
-    object_type: state.object_type ?? state.property_name,
+    object_type: state.object_type,
+    object_name: state.property_name,
+    owner_contact: state.owner_contact,
     checkin_time: state.checkin_time,
     checkout_time: state.checkout_time,
     channels: state.channels_list ?? parseJsonArray(state.channels),
@@ -326,7 +332,7 @@ function nextClarificationAttempts(params: {
 }
 
 function missingListRu(missing: OwnerOnboardingWizardField[]): string {
-  return missing.map((field) => REQUIRED_FIELD_LABELS_RU[field] ?? field).join(', ');
+  return missing.map((field) => WIZARD_FIELD_LABELS[field] ?? REQUIRED_FIELD_LABELS_RU[field as keyof typeof REQUIRED_FIELD_LABELS_RU] ?? field).join(', ');
 }
 
 function applySmartFactsToState(
@@ -347,7 +353,10 @@ function applySmartFactsToState(
     state.photos_intent = facts.photos_intent;
     extracted += 1;
   }
-  if (facts.property_name) state.object_type = facts.property_name;
+  if (facts.property_name) {
+    state.property_name = facts.property_name;
+    if (!state.object_type) state.object_type = facts.property_name;
+  }
   if (facts.house_rules) state.rules = facts.house_rules.split(',').map((item) => item.trim()).filter(Boolean);
   if (facts.channels) state.channels_list = facts.channels.split(',').map((item) => item.trim()).filter(Boolean);
   if (facts.checkin_checkout) {
@@ -667,14 +676,30 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
     return { handled: true, extractedCount: 1, savedField: field };
   }
 
+  if (next === 'city' && text(messageText) && !isIdentitySelectionText(messageText)) {
+    const facts = extractFactsDeterministic(messageText, ['address'], false);
+    const cityValue = facts.city ?? text(messageText, 120);
+    if (cityValue) {
+      state.city = cityValue;
+      state.last_saved_field = 'city';
+      return { handled: true, extractedCount: 1, savedField: 'city' };
+    }
+    return {
+      handled: true,
+      extractedCount: 0,
+      stayOnStep: 'city',
+      replyOverride: 'Не совсем поняла город. Напишите, пожалуйста, название города.',
+    };
+  }
+
   if (next === 'address' && text(messageText) && !isIdentitySelectionText(messageText)) {
     if (/фото.*(позже|потом)|добавлю позже/i.test(messageText) && !/(адрес|ул\.?|улиц|просп)/i.test(messageText)) {
       return { handled: false, extractedCount: 0 };
     }
     const facts = extractFactsDeterministic(messageText, ['address'], false);
-    if (facts.address || /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|питер|спб|ебург|екат|москва|санкт)/i.test(messageText)) {
+    if (facts.address || /(адрес|ул\.?|улиц|просп|наб\.?|переул|шоссе|лиговск|\d{1,4}|район|микрорайон)/i.test(messageText)) {
       state.address = facts.address ?? text(messageText, 400);
-      if (facts.city) state.city = facts.city;
+      if (facts.city && !state.city) state.city = facts.city;
       state.last_saved_field = 'address';
       return { handled: true, extractedCount: 1, savedField: 'address' };
     }
@@ -682,7 +707,23 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
       handled: true,
       extractedCount: 0,
       stayOnStep: 'address',
-      replyOverride: 'Укажите адрес объекта.\nНапример:\nСанкт-Петербург, Лиговский пр., 108',
+      replyOverride: 'Не совсем поняла адрес. Напишите, пожалуйста, улицу и номер дома или район.',
+    };
+  }
+
+  if (next === 'object_name' && text(messageText) && !isIdentitySelectionText(messageText)) {
+    const name = text(messageText, 120);
+    if (name.length >= 2) {
+      state.property_name = name;
+      syncLegacyFields(state);
+      state.last_saved_field = 'object_name';
+      return { handled: true, extractedCount: 1, savedField: 'object_name' };
+    }
+    return {
+      handled: true,
+      extractedCount: 0,
+      stayOnStep: 'object_name',
+      replyOverride: 'Напишите короткое название объекта, как его увидят гости.',
     };
   }
 
@@ -791,13 +832,31 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
     }
   }
 
+  if (next === 'owner_contact' && text(messageText) && !isIdentitySelectionText(messageText)) {
+    const contact = parseOwnerContactInput(messageText);
+    if (contact) {
+      state.owner_contact = contact;
+      state.last_saved_field = 'owner_contact';
+      return { handled: true, extractedCount: 1, savedField: 'owner_contact' };
+    }
+    return {
+      handled: true,
+      extractedCount: 0,
+      stayOnStep: 'owner_contact',
+      replyOverride: 'Укажите телефон или Telegram для связи, например +79991234567 или @username.',
+    };
+  }
+
   return { handled: false, extractedCount: 0 };
 }
 
 function wizardStateSnapshot(state: OwnerOnboardingState) {
   return {
+    city: state.city,
     address: state.address,
-    object_type: state.object_type ?? state.property_name,
+    object_type: state.object_type,
+    object_name: state.property_name,
+    owner_contact: state.owner_contact,
     checkin_time: state.checkin_time,
     checkout_time: state.checkout_time,
     channels: state.channels_list,
@@ -850,13 +909,10 @@ function buildReply(params: {
     return {
       text: [
         progress,
-        'Минимальные данные по объекту собраны. Объект готов к следующему шагу — Менеджеру каналов.',
-        `Открыть: ${channelManagerPublicUrl(params.state.channelManagerHref || CHANNEL_MANAGER_HREF_FALLBACK)}`,
-        'Реальных вызовов к площадкам сейчас не делаю: это подготовка к подключению.',
+        'Данные объекта собраны. Мы подготовим подключение каналов и сообщим следующий шаг.',
       ]
         .filter(Boolean)
         .join('\n\n'),
-      markup: readyMarkup(params.status, params.state.channelManagerHref),
     };
   }
 
@@ -888,15 +944,15 @@ function buildReply(params: {
   }
 
   if (params.state.wizard_mode !== 'legacy') {
-    if (!params.savedField && params.status === 'onboarding_started' && next === 'address') {
+    if (!params.savedField && params.status === 'onboarding_started' && next === 'city') {
       return {
-        text: ['Поняла. Помогу подключить объект к ASI.', progress, buildWizardStepPrompt('address')].filter(Boolean).join('\n\n'),
+        text: ['Поняла. Помогу подключить объект к ASI.', progress, buildWizardStepPrompt('city')].filter(Boolean).join('\n\n'),
       };
     }
 
     const ack =
-      params.savedField === 'address'
-        ? '✓ Адрес сохранён'
+      params.savedField === 'city' || params.savedField === 'address'
+        ? fieldSavedAckRu(params.savedField)
         : params.savedField
           ? fieldSavedAckRu(params.savedField)
           : '';
@@ -907,7 +963,7 @@ function buildReply(params: {
     };
   }
 
-  const savedLegacy = params.savedField ? REQUIRED_FIELD_LABELS_RU[params.savedField] ?? params.savedField : '';
+  const savedLegacy = params.savedField ? WIZARD_FIELD_LABELS[params.savedField] ?? params.savedField : '';
   const questionLegacy = next ? `Следующий шаг: ${LEGACY_FIELD_LABELS[next as OwnerOnboardingField] ?? next}` : '';
   return {
     text: [
@@ -981,6 +1037,7 @@ function buildCrmNote(params: {
     readiness ? `Статус готовности: ${readiness.readiness_status_label_ru}` : null,
     params.state.city ? `Город: ${params.state.city}` : null,
     params.state.object_type ? `Тип объекта: ${params.state.object_type}` : null,
+    params.state.property_name ? `Название объекта: ${params.state.property_name}` : null,
     params.state.checkin_time ? `Заезд: ${params.state.checkin_time}` : null,
     params.state.checkout_time ? `Выезд: ${params.state.checkout_time}` : null,
     params.state.channels_list?.length ? `Каналы: ${params.state.channels_list.join(', ')}` : null,
@@ -988,6 +1045,7 @@ function buildCrmNote(params: {
     params.state.wifi_name ? `Wi-Fi имя: ${params.state.wifi_name}` : null,
     params.state.wifi_password ? `Wi-Fi пароль: ${params.state.wifi_password}` : null,
     params.state.wifi_skipped ? 'Wi-Fi: добавлю позже' : null,
+    params.state.owner_contact ? `Контакт: ${params.state.owner_contact}` : null,
     `Фото: ${params.state.photos_count ?? 0}`,
     params.state.photos_intent === 'later' ? 'Фото: обещаны позже' : null,
     `Не хватает: ${params.state.missing.length ? missingListRu(params.state.missing) : 'ничего'}`,
@@ -1061,7 +1119,7 @@ async function upsertCrmContact(params: {
         : params.state.status === 'needs_operator'
           ? 'Оператору нужно ответить вручную по онбордингу объекта.'
           : params.state.readiness?.next_best_step_ru ??
-            `Запросить: ${REQUIRED_FIELD_LABELS_RU[params.state.missing[0] ?? 'address']}.`;
+            `Запросить: ${WIZARD_FIELD_LABELS[params.state.missing[0] ?? 'city'] ?? 'данные объекта'}.`;
   const notes = buildCrmNote({
     existingNote: existing?.notes,
     state: {
@@ -1076,34 +1134,42 @@ async function upsertCrmContact(params: {
 
   try {
     if (existing?.id) {
-      const { error } = await supabase
-        .from('crm_contacts')
-        .update({
-          role,
-          status: crmStatus,
-          communication_status: communicationStatus,
-          last_activity_at: now,
-          next_action: nextAction,
-          notes,
-          city: params.state.city ?? null,
-          property_count: objectsCount,
-        })
-        .eq('id', existing.id);
+      const patch: Record<string, unknown> = {
+        role,
+        status: crmStatus,
+        communication_status: communicationStatus,
+        last_activity_at: now,
+        next_action: nextAction,
+        notes,
+        property_count: objectsCount,
+      };
+      if (params.state.city?.trim()) patch.city = params.state.city.trim();
+      const phoneCandidate = params.state.owner_contact?.replace(/^@+/, '').trim();
+      if (phoneCandidate && /\d{10,}/.test(phoneCandidate.replace(/\D/g, ''))) {
+        patch.phone = phoneCandidate;
+      }
+      const { error } = await supabase.from('crm_contacts').update(patch).eq('id', existing.id);
       return error ? undefined : existing.id;
     }
+
+    const insertPhone = (() => {
+      const phoneCandidate = params.state.owner_contact?.replace(/^@+/, '').trim();
+      if (phoneCandidate && /\d{10,}/.test(phoneCandidate.replace(/\D/g, ''))) return phoneCandidate;
+      return null;
+    })();
 
     const { data, error } = await supabase
       .from('crm_contacts')
       .insert({
         name: telegramDisplayName(params.envelope),
-        phone: null,
+        phone: insertPhone,
         contact: contactKey,
         telegram_username: username || null,
         email: null,
         role,
         source: 'telegram',
         property_count: objectsCount,
-        city: params.state.city ?? null,
+        city: params.state.city?.trim() || null,
         notes,
         status: crmStatus,
         communication_status: communicationStatus,
@@ -1418,6 +1484,16 @@ export async function processTelegramOwnerOnboarding(params: {
   await emitOnboardingChannelSavedEvents({
     contactId: crmContactId,
     channelLabels: savedCustomChannelLabels ?? [],
+  });
+
+  await syncOwnerOnboardingAutomation({
+    contactId: crmContactId,
+    objectId,
+    previousStatus: previous.status,
+    status: merged.status,
+    state: merged,
+    ownerName: telegramDisplayName(params.envelope),
+    objectLabel: merged.property_name ?? merged.object_type ?? merged.address ?? 'Новый объект',
   });
 
   const reply = buildReply({

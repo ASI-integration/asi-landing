@@ -2,38 +2,47 @@ import type { TelegramInlineKeyboardMarkup } from './communication-identity-rout
 
 export const WIZARD_CALLBACK_PREFIX = 'obv2:';
 
-export const WIZARD_TOTAL_STEPS = 8;
+export const WIZARD_TOTAL_STEPS = 11;
 
 export type OwnerOnboardingWizardField =
+  | 'city'
   | 'address'
   | 'object_type'
+  | 'object_name'
   | 'checkin_time'
   | 'checkout_time'
-  | 'channels'
   | 'rules'
   | 'wifi'
-  | 'photos';
+  | 'channels'
+  | 'photos'
+  | 'owner_contact';
 
 export const WIZARD_FIELD_ORDER: OwnerOnboardingWizardField[] = [
+  'city',
   'address',
   'object_type',
+  'object_name',
   'checkin_time',
   'checkout_time',
-  'channels',
   'rules',
   'wifi',
+  'channels',
   'photos',
+  'owner_contact',
 ];
 
 export const WIZARD_FIELD_LABELS: Record<OwnerOnboardingWizardField, string> = {
+  city: 'Город',
   address: 'Адрес',
   object_type: 'Тип',
+  object_name: 'Название',
   checkin_time: 'Заезд',
   checkout_time: 'Выезд',
-  channels: 'Каналы',
   rules: 'Правила',
   wifi: 'Wi-Fi',
+  channels: 'Каналы',
   photos: 'Фото',
+  owner_contact: 'Контакт',
 };
 
 export const OBJECT_TYPE_OPTIONS = ['Квартира', 'Апартаменты', 'Дом', 'Комната', 'Другое'] as const;
@@ -210,8 +219,12 @@ export function ruleIdsFromLabels(labels: string[]): string[] {
 }
 
 export function missingWizardFields(state: {
+  city?: string;
   address?: string;
   object_type?: string;
+  object_name?: string;
+  property_name?: string;
+  owner_contact?: string;
   checkin_time?: string;
   checkout_time?: string;
   channels?: string[];
@@ -225,10 +238,16 @@ export function missingWizardFields(state: {
 }): OwnerOnboardingWizardField[] {
   return WIZARD_FIELD_ORDER.filter((field) => {
     switch (field) {
+      case 'city':
+        return !text(state.city);
       case 'address':
         return !text(state.address);
       case 'object_type':
         return !text(state.object_type);
+      case 'object_name':
+        return !text(state.object_name ?? state.property_name);
+      case 'owner_contact':
+        return !text(state.owner_contact);
       case 'checkin_time':
         return !text(state.checkin_time);
       case 'checkout_time':
@@ -385,14 +404,17 @@ export function buildPhotosKeyboard(): TelegramInlineKeyboardMarkup {
 
 export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string {
   switch (field) {
+    case 'city':
+      return 'Поняла. Укажите, пожалуйста, город объекта.';
     case 'address':
       return [
-        'Укажите адрес объекта.',
-        'Например:',
-        'Санкт-Петербург, Лиговский пр., 108',
+        'Спасибо, сохранила. Теперь укажите адрес или район.',
+        'Например: Лиговский пр., 108',
       ].join('\n');
     case 'object_type':
       return 'Выберите тип объекта:';
+    case 'object_name':
+      return 'Как называется объект? Напишите короткое название для гостей.';
     case 'checkin_time':
       return 'Выберите время заезда:';
     case 'checkout_time':
@@ -405,6 +427,8 @@ export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string
       return 'Пришлите название сети и пароль Wi-Fi одним сообщением.\nНапример: ASI_Guest, пароль 12345678';
     case 'photos':
       return 'Отправьте хотя бы одно фото объекта в этот чат или нажмите «Добавлю позже».';
+    case 'owner_contact':
+      return 'Укажите контакт для связи: телефон или Telegram.';
     default:
       return '';
   }
@@ -436,8 +460,14 @@ export function buildWizardStepKeyboard(
 
 export function fieldSavedAckRu(field: OwnerOnboardingWizardField): string {
   switch (field) {
+    case 'city':
+      return '✓ Город сохранён';
+    case 'address':
+      return '✓ Адрес сохранён';
     case 'object_type':
       return '✓ Тип объекта сохранён';
+    case 'object_name':
+      return '✓ Название объекта сохранено';
     case 'checkin_time':
       return '✓ Время заезда сохранено';
     case 'checkout_time':
@@ -450,9 +480,25 @@ export function fieldSavedAckRu(field: OwnerOnboardingWizardField): string {
       return '✓ Wi-Fi сохранён';
     case 'photos':
       return '✓ Фото сохранены';
+    case 'owner_contact':
+      return '✓ Контакт сохранён';
     default:
       return '✓ Данные сохранены';
   }
+}
+
+export function parseOwnerContactInput(raw: string): string | undefined {
+  const value = text(raw, 120);
+  if (!value) return undefined;
+  if (/^\+?\d[\d\s()-]{8,}$/.test(value)) return value;
+  if (/^@[\w\d_]{3,}$/i.test(value)) return value;
+  if (/telegram|телеграм/i.test(value) && /@[\w\d_]+/i.test(value)) {
+    const match = value.match(/@[\w\d_]+/i);
+    return match?.[0];
+  }
+  if (/\d{10,}/.test(value.replace(/\D/g, ''))) return value;
+  if (value.length >= 3) return value;
+  return undefined;
 }
 
 export function parseWifiInput(raw: string): { wifi_name?: string; wifi_password?: string } {
