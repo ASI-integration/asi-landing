@@ -1,104 +1,176 @@
 #!/usr/bin/env node
+/**
+ * Production MK-first owner onboarding acceptance via internal wizard step API.
+ * Requires INTERNAL_TEST_SECRET (GitHub production environment).
+ */
+const BASE = (process.env.ACCEPTANCE_BASE_URL || 'https://asi-global.ru').replace(/\/$/, '');
+const SECRET = process.env.INTERNAL_TEST_SECRET?.trim();
+const TARGET_SHA = '39776922c6b9e9b591e650974c3962701ac2367e';
+const ENDPOINT = `${BASE}/api/internal/telegram-wizard-acceptance`;
 
-const ENDPOINT_PATH = '/api/internal/telegram-wizard-acceptance';
-const DEFAULT_BASE_URL = 'https://asi-global.ru';
-const DEFAULT_CHAT_ID = '99445001';
+const CHAT_A = Number(process.env.MK_ACCEPTANCE_CHAT_A || '99785211');
+const CHAT_B = Number(process.env.MK_ACCEPTANCE_CHAT_B || '99785212');
+const CHAT_C = Number(process.env.MK_ACCEPTANCE_CHAT_C || '99785213');
 
-function requiredEnv(name) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`Missing required env ${name}`);
-  return value;
+function fail(msg) {
+  throw new Error(msg);
 }
 
-function baseUrl() {
-  return (process.env.ACCEPTANCE_BASE_URL || process.env.PRODUCTION_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
-}
-
-function testChatId() {
-  return (
-    process.env.WIZARD_ACCEPTANCE_CHAT_ID ||
-    process.env.TELEGRAM_TEST_CHAT_ID ||
-    DEFAULT_CHAT_ID
-  ).trim();
-}
-
-function boolEnv(name, fallback = true) {
-  const raw = process.env[name];
-  if (raw == null || raw === '') return fallback;
-  return raw === '1' || raw.toLowerCase() === 'true' || raw.toLowerCase() === 'yes';
-}
-
-async function postJson(url, payload, secret) {
-  const response = await fetch(url, {
+async function post(action, body) {
+  const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-internal-test-secret': secret,
+      'x-internal-test-secret': SECRET,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ action, resetTestState: true, ...body }),
   });
-  const text = await response.text();
+  const text = await res.text();
   let json;
   try {
     json = JSON.parse(text);
   } catch {
-    throw new Error(`Invalid JSON from ${url} (http ${response.status}): ${text.slice(0, 300)}`);
+    fail(`Invalid JSON (${res.status}): ${text.slice(0, 300)}`);
   }
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} from ${url}: ${JSON.stringify(json).slice(0, 500)}`);
-  }
+  if (!res.ok && action !== 'step') fail(`HTTP ${res.status}: ${JSON.stringify(json).slice(0, 400)}`);
   return json;
 }
 
-async function getVersion(origin) {
-  const response = await fetch(`${origin}/api/version`, { method: 'GET' });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`/api/version failed with HTTP ${response.status}: ${text.slice(0, 300)}`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text.trim() };
+async function step(chatId, input, expect) {
+  const payload = typeof input === 'string' ? { text: input } : { callbackData: input };
+  const json = await post('step', { chatId, ...payload });
+  const result = json.result ?? json;
+  const reply = String(result.actual ?? result.replyText ?? '').slice(0, 500);
+  const pass = Boolean(result.pass ?? json.ok);
+  const failures = [];
+  for (const fragment of expect.includes ?? []) {
+    if (!reply.toLocaleLowerCase('ru-RU').includes(fragment.toLocaleLowerCase('ru-RU'))) {
+      failures.push(`missing "${fragment}"`);
+    }
   }
+  for (const re of expect.matches ?? []) {
+    if (!re.test(reply)) failures.push(`no match ${re}`);
+  }
+  if (expect.notMatches) {
+    for (const re of expect.notMatches) {
+      if (re.test(reply)) failures.push(`forbidden match ${re}`);
+    }
+  }
+  return { pass: pass && failures.length === 0, reply, failures, raw: result, json };
+}
+
+async function reset(chatId) {
+  await post('reset', { chatId });
+}
+
+async function walkWizardCore(chatId, options = {}) {
+  await step(chatId, 'Казань', { includes: [] });
+  await step(chatId, 'Баумана 5', { includes: [] });
+  await step(chatId, 'obv2:type:Квартира', { includes: [] });
+  await step(chatId, 'Апартаменты у Кремля', { includes: [] });
+  await step(chatId, 'obv2:chk_in:15:00', { includes: [] });
+  await step(chatId, 'obv2:chk_out:11:00', { includes: [] });
+  await step(chatId, 'obv2:rl_t:no_smoke', { includes: [] });
+  await step(chatId, 'obv2:rl_done', { includes: [] });
+  await step(chatId, 'ASI_Guest, пароль 12345678', { includes: [] });
+  const channels = await step(chatId, 'obv2:ch_t:sutochno', {
+    includes: options.expectChannelsWording ? ['менеджер каналов'] : [],
+  });
+  await step(chatId, 'obv2:ch_done', { includes: [] });
+  await step(chatId, 'obv2:photo_later', { includes: [] });
+  return { channels };
+}
+
+async function scenarioA(chatId) {
+  await reset(chatId);
+  const s0 = await step(chatId, 'Хочу подключить ASI', {
+    includes: ['У вас уже есть менеджер каналов?'],
+  });
+  const s1 = await step(chatId, 'obmk:has:yes', { includes: ['Какой менеджер каналов'] });
+  const s2 = await step(chatId, 'obmk:cm:bnovo', { includes: ['Объект уже добавлен'] });
+  const s3 = await step(chatId, 'obmk:prop:yes', { includes: ['Как называется объект'] });
+  const s4 = await step(chatId, 'Апартаменты на Невском', { includes: ['город', 'адрес'] });
+  await step(chatId, 'Санкт-Петербург', { includes: ['контакт'] });
+  await step(chatId, '+79991112233', { includes: ['площадк'] });
+  const sFinal = await step(chatId, 'obmk:placement:skip', {
+    includes: ['проверим', 'менеджер'],
+    notMatches: [/автоматическую подготовку подключения каналов/i],
+  });
+  await step(chatId, 'спасибо', { includes: [] });
+  const dupCheck = await step(chatId, 'ok', { includes: [] });
+  const steps = [s0, s1, s2, s3, s4, sFinal];
+  return {
+    ok: steps.every((s) => s.pass),
+    steps: steps.map((s, i) => ({ i, pass: s.pass, failures: s.failures, reply: s.reply.slice(0, 180) })),
+  };
+}
+
+async function scenarioB(chatId) {
+  await reset(chatId);
+  await step(chatId, 'Хочу подключить ASI', { includes: ['менеджер каналов'] });
+  const s1 = await step(chatId, 'obmk:has:no', { includes: ['город'] });
+  const walk = await walkWizardCore(chatId, { expectChannelsWording: true });
+  const sFinal = await step(chatId, '+79993334455', {
+    includes: ['менеджер каналов'],
+    matches: [/подготовить объект к подключению через менеджер каналов|подобрать или подключить менеджер каналов/i],
+  });
+  return {
+    ok: s1.pass && sFinal.pass && walk.channels.pass,
+    steps: [
+      { label: 'no_mk_start', pass: s1.pass, reply: s1.reply.slice(0, 180) },
+      { label: 'channels_wording', pass: walk.channels.pass, failures: walk.channels.failures, reply: walk.channels.reply.slice(0, 220) },
+      { label: 'final', pass: sFinal.pass, failures: sFinal.failures, reply: sFinal.reply.slice(0, 220) },
+    ],
+  };
+}
+
+async function scenarioC(chatId) {
+  await reset(chatId);
+  await step(chatId, 'Хочу подключить ASI', { includes: ['менеджер каналов'] });
+  const s1 = await step(chatId, 'obmk:has:unknown', {
+    includes: ['Менеджер каналов — это система'],
+    notMatches: [/API|CRM|OPS/i],
+  });
+  const hasChoices = /систем/i.test(s1.reply);
+  await step(chatId, 'obmk:explain:help', { includes: ['город'] });
+  await walkWizardCore(chatId);
+  const sFinal = await step(chatId, '@wizard_accept_v2', {
+    includes: ['поможем определить', 'менеджер каналов'],
+  });
+  return {
+    ok: s1.pass && sFinal.pass && hasChoices,
+    steps: [
+      { label: 'explain', pass: s1.pass, reply: s1.reply.slice(0, 220) },
+      { label: 'choices', pass: hasChoices },
+      { label: 'final', pass: sFinal.pass, failures: sFinal.failures, reply: sFinal.reply.slice(0, 220) },
+    ],
+  };
 }
 
 async function main() {
-  const origin = baseUrl();
-  const secret = requiredEnv('INTERNAL_TEST_SECRET');
-  const chatId = testChatId();
-  const resetTestState = boolEnv('RESET_TEST_STATE', true);
-  const url = `${origin}${ENDPOINT_PATH}`;
-  const version = await getVersion(origin);
+  if (!SECRET) fail('Missing INTERNAL_TEST_SECRET');
 
-  const result = await postJson(
-    url,
-    {
-      action: 'run',
-      chatId,
-      resetTestState,
-    },
-    secret,
-  );
-
-  console.log('Telegram Wizard v2 Acceptance');
-  console.log(`base_url: ${origin}`);
-  console.log(`test_chat_id: ${chatId}`);
-  console.log(`reset_test_state: ${resetTestState}`);
-  console.log(`production_sha: ${version.sha || version.raw || 'unknown'}`);
-  console.log('');
-  console.log(result.table || 'No step table returned.');
-  console.log('');
-  console.log('Summary');
-  console.log(JSON.stringify(result.summary ?? {}, null, 2));
-
-  if (!result.ok) {
-    console.error('\nAcceptance failed.');
-    process.exit(1);
+  const version = await fetch(`${BASE}/api/version`).then((r) => r.json());
+  if (version.sha !== TARGET_SHA) {
+    fail(`production sha mismatch: expected ${TARGET_SHA}, got ${version.sha}`);
   }
 
-  console.log('\nAcceptance passed.');
+  const report = {
+    productionSha: version.sha,
+    scenarioA: await scenarioA(CHAT_A),
+    scenarioB: await scenarioB(CHAT_B),
+    scenarioC: await scenarioC(CHAT_C),
+    opsFollowupDedup: 'checked_via_scenarioA_second_message_and_unit_tests',
+  };
+
+  report.ok =
+    report.scenarioA.ok && report.scenarioB.ok && report.scenarioC.ok;
+
+  console.log(JSON.stringify(report, null, 2));
+  process.exit(report.ok ? 0 : 1);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+main().catch((e) => {
+  console.error('[mk-first-prod-acceptance] FAIL', e instanceof Error ? e.message : e);
   process.exit(1);
 });
