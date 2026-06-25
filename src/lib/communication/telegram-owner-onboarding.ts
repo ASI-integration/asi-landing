@@ -34,7 +34,8 @@ import {
   missingWizardFields,
   parseCustomChannelsInput,
   parseCustomTimeInput,
-  parseOwnerContactInput,
+  validateOwnerContactInput,
+  OWNER_CONTACT_SERVICE_BOT_REJECT_RU,
   parseWifiInput,
   parseWizardCallback,
   resolveChannelDraftIds,
@@ -56,6 +57,7 @@ import {
 } from './telegram-owner-object-session';
 import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
 import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
+import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
 import { syncOwnerOnboardingAutomation } from './owner-onboarding-spine';
 
@@ -93,6 +95,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   channels_draft?: string[];
   rules_draft?: string[];
   last_saved_field?: OwnerOnboardingWizardField;
+  wizard_redo_from?: OwnerOnboardingWizardField;
 };
 
 export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';
@@ -833,17 +836,21 @@ function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, h
   }
 
   if (next === 'owner_contact' && text(messageText) && !isIdentitySelectionText(messageText)) {
-    const contact = parseOwnerContactInput(messageText);
-    if (contact) {
-      state.owner_contact = contact;
+    const validation = validateOwnerContactInput(messageText);
+    if (validation.ok) {
+      state.owner_contact = validation.contact;
       state.last_saved_field = 'owner_contact';
       return { handled: true, extractedCount: 1, savedField: 'owner_contact' };
     }
+    const replyOverride =
+      validation.reason === 'service_bot'
+        ? OWNER_CONTACT_SERVICE_BOT_REJECT_RU
+        : 'Укажите телефон или Telegram для связи, например +79991234567 или @username.';
     return {
       handled: true,
       extractedCount: 0,
       stayOnStep: 'owner_contact',
-      replyOverride: 'Укажите телефон или Telegram для связи, например +79991234567 или @username.',
+      replyOverride,
     };
   }
 
@@ -909,10 +916,13 @@ function buildReply(params: {
     return {
       text: [
         progress,
-        'Данные объекта собраны. Мы подготовим подключение каналов и сообщим следующий шаг.',
+        'Готово, данные объекта собраны.',
+        'Следующий шаг: мы проверим подключение каналов и подготовим объект к публикации.',
+        'Если хотите, можете сразу открыть поддержку или дождаться сообщения оператора.',
       ]
         .filter(Boolean)
         .join('\n\n'),
+      markup: buildOwnerCompletionMarkup(),
     };
   }
 
@@ -974,6 +984,16 @@ function buildReply(params: {
     ]
       .filter(Boolean)
       .join('\n'),
+  };
+}
+
+function buildOwnerCompletionMarkup(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Связаться с поддержкой', url: telegramSupportBotUrl }],
+      [{ text: 'Добавить ещё один объект', callback_data: 'obsr:new' }],
+      [{ text: 'Изменить данные объекта', callback_data: 'obsr:edit' }],
+    ],
   };
 }
 
@@ -1424,6 +1444,12 @@ export async function processTelegramOwnerOnboarding(params: {
       });
 
   merged.missing = missingFields(merged);
+  if (merged.wizard_redo_from) {
+    const fromIndex = WIZARD_FIELD_ORDER.indexOf(merged.wizard_redo_from);
+    if (fromIndex >= 0) {
+      merged.missing = WIZARD_FIELD_ORDER.slice(fromIndex);
+    }
+  }
   merged.status = statusForState({
     previousStatus: previous.status,
     missing: merged.missing,
@@ -1432,6 +1458,22 @@ export async function processTelegramOwnerOnboarding(params: {
     decision,
     clarificationAttempts: merged.clarification_attempts,
   });
+
+  if (merged.wizard_redo_from && savedField === merged.wizard_redo_from) {
+    const redoIndex = WIZARD_FIELD_ORDER.indexOf(savedField);
+    merged.wizard_redo_from =
+      redoIndex >= 0 && redoIndex < WIZARD_FIELD_ORDER.length - 1
+        ? WIZARD_FIELD_ORDER[redoIndex + 1]
+        : undefined;
+    if (merged.wizard_redo_from) {
+      merged.missing = WIZARD_FIELD_ORDER.slice(redoIndex + 1);
+      merged.status = 'missing_required_data';
+    }
+  }
+
+  if (merged.status === 'ready_for_channel_manager') {
+    merged.wizard_redo_from = undefined;
+  }
 
   merged.readiness = computeObjectReadiness(
     readinessInputFromOnboardingState({

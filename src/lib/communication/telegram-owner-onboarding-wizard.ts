@@ -1,4 +1,19 @@
+import {
+  TELEGRAM_CORE_BOT_HANDLE,
+  TELEGRAM_SUPPORT_BOT_HANDLE,
+} from '@/config/telegramBots';
 import type { TelegramInlineKeyboardMarkup } from './communication-identity-routing';
+
+const SERVICE_TELEGRAM_BOT_HANDLES = new Set(
+  [TELEGRAM_CORE_BOT_HANDLE, TELEGRAM_SUPPORT_BOT_HANDLE].map((handle) => handle.toLowerCase()),
+);
+
+export type OwnerContactValidationResult =
+  | { ok: true; contact: string }
+  | { ok: false; reason: 'empty' | 'short' | 'service_bot' };
+
+export const OWNER_CONTACT_SERVICE_BOT_REJECT_RU =
+  'Это ссылка на наш бот. Укажите, пожалуйста, ваш телефон или Telegram для связи.';
 
 export const WIZARD_CALLBACK_PREFIX = 'obv2:';
 
@@ -487,18 +502,49 @@ export function fieldSavedAckRu(field: OwnerOnboardingWizardField): string {
   }
 }
 
+function normalizeTelegramHandle(raw: string): string {
+  return text(raw, 80).replace(/^@+/, '').toLowerCase();
+}
+
+export function extractTelegramHandleFromContactInput(raw: string): string | null {
+  const value = text(raw, 200);
+  const tmeMatch = value.match(/(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([A-Za-z0-9_]{3,})/i);
+  if (tmeMatch?.[1]) return normalizeTelegramHandle(tmeMatch[1]);
+  const atMatch = value.match(/@([A-Za-z0-9_]{3,})/);
+  if (atMatch?.[1]) return normalizeTelegramHandle(atMatch[1]);
+  return null;
+}
+
+export function isServiceTelegramBotHandle(handle: string): boolean {
+  return SERVICE_TELEGRAM_BOT_HANDLES.has(normalizeTelegramHandle(handle));
+}
+
 export function parseOwnerContactInput(raw: string): string | undefined {
+  const validation = validateOwnerContactInput(raw);
+  return validation.ok ? validation.contact : undefined;
+}
+
+export function validateOwnerContactInput(raw: string): OwnerContactValidationResult {
   const value = text(raw, 120);
-  if (!value) return undefined;
-  if (/^\+?\d[\d\s()-]{8,}$/.test(value)) return value;
-  if (/^@[\w\d_]{3,}$/i.test(value)) return value;
+  if (!value) return { ok: false, reason: 'empty' };
+
+  const telegramHandle = extractTelegramHandleFromContactInput(value);
+  if (telegramHandle && isServiceTelegramBotHandle(telegramHandle)) {
+    return { ok: false, reason: 'service_bot' };
+  }
+
+  if (/^\+?\d[\d\s()-]{8,}$/.test(value)) return { ok: true, contact: value };
+  if (telegramHandle) return { ok: true, contact: `@${telegramHandle}` };
+  if (/^@[\w\d_]{3,}$/i.test(value)) return { ok: true, contact: value };
   if (/telegram|телеграм/i.test(value) && /@[\w\d_]+/i.test(value)) {
     const match = value.match(/@[\w\d_]+/i);
-    return match?.[0];
+    if (match?.[0]) return { ok: true, contact: match[0] };
   }
-  if (/\d{10,}/.test(value.replace(/\D/g, ''))) return value;
-  if (value.length >= 3) return value;
-  return undefined;
+  if (/\d{10,}/.test(value.replace(/\D/g, ''))) return { ok: true, contact: value };
+  if (/писать\s+сюда/i.test(value)) return { ok: true, contact: value };
+  if (value.length >= 3) return { ok: true, contact: value };
+
+  return { ok: false, reason: 'short' };
 }
 
 export function parseWifiInput(raw: string): { wifi_name?: string; wifi_password?: string } {

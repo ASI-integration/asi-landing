@@ -38,6 +38,68 @@ function buildBlockerDescription(params: {
   return lines.filter(Boolean).join('\n');
 }
 
+function buildReadyFollowupDescription(params: {
+  ownerName: string;
+  objectLabel: string;
+  state: OwnerOnboardingState;
+}): string {
+  const lines = [
+    `Владелец: ${params.ownerName}`,
+    `Объект: ${params.objectLabel}`,
+    params.state.owner_contact ? `Контакт: ${params.state.owner_contact}` : null,
+    'Оператору:',
+    '1. Проверить собранные данные объекта.',
+    '2. Проверить подключение каналов.',
+    '3. Связаться с владельцем при необходимости.',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+export async function ensureOwnerOnboardingReadyFollowupOpsTask(params: {
+  contactId: string;
+  objectId: string;
+  ownerName: string;
+  objectLabel: string;
+  state: OwnerOnboardingState;
+}): Promise<string | null> {
+  const description = buildReadyFollowupDescription(params);
+  const dedupKey = buildAutoOpsDedupKey({
+    source: 'owner_onboarding',
+    sourceId: `${params.contactId}:${params.objectId}`,
+    taskType: 'verify_channel_manager',
+  });
+
+  const result = await createOpsOperatorTask({
+    taskType: 'verify_channel_manager',
+    taskStatus: 'new',
+    priority: 'normal',
+    source: 'communication_autopilot',
+    contactId: params.contactId,
+    objectId: params.objectId,
+    ownerName: params.ownerName,
+    objectLabel: params.objectLabel,
+    title: 'Проверить объект после сбора данных',
+    description,
+    lastEventText: 'Владелец завершил сбор данных — нужна проверка и следующий шаг',
+    dedupKey,
+    metadata: {
+      created_by_system: true,
+      integration: 'owner_onboarding',
+      onboarding_status: params.state.status,
+      owner_contact: params.state.owner_contact ?? null,
+      readiness_percent: params.state.readiness?.readiness_percent ?? null,
+    },
+    updateIfExists: {
+      description,
+      lastEventText: 'Владелец завершил сбор данных — нужна проверка и следующий шаг',
+      taskStatus: 'new',
+    },
+  });
+
+  if (!result.ok) return null;
+  return result.task?.id ?? null;
+}
+
 export async function ensureOwnerOnboardingBlockerOpsTask(params: {
   contactId: string;
   objectId: string;
@@ -123,6 +185,14 @@ export async function syncOwnerOnboardingAutomation(params: {
         error,
       });
     }
+
+    opsTaskId = await ensureOwnerOnboardingReadyFollowupOpsTask({
+      contactId: params.contactId,
+      objectId: params.objectId,
+      ownerName: params.ownerName,
+      objectLabel: params.objectLabel,
+      state: params.state,
+    });
   }
 
   if (params.status === 'needs_operator' && params.previousStatus !== 'needs_operator') {

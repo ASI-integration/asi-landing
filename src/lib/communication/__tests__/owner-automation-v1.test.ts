@@ -87,6 +87,7 @@ import {
   buildChannelsKeyboard,
   buildRulesKeyboard,
   customChannelIdFromLabel,
+  validateOwnerContactInput,
 } from '../telegram-owner-onboarding-wizard';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
@@ -268,7 +269,27 @@ describe('Owner automation v1', () => {
     expect(opsTaskCalls).toHaveLength(1);
   });
 
-  it('reaches readiness, runs pilot chain once, and shows a plain RU completion message', async () => {
+  it('rejects service bot links as owner contact and does not complete the wizard', async () => {
+    await walkCoreSteps(88008);
+    const rejected = await processTelegramOwnerOnboarding({
+      envelope: envelope('https://t.me/ASI_Support_Bot'),
+      chatId: 88008,
+      senderIdentity: 'lead',
+    });
+
+    expect(rejected.status).not.toBe('ready_for_channel_manager');
+    expect(rejected.missing).toContain('owner_contact');
+    expect(rejected.replyText).toContain('Это ссылка на наш бот');
+    expect(rejected.state.owner_contact).toBeUndefined();
+    expect(pilotChainCalls).toBe(0);
+    expect(
+      opsTaskCalls.filter(
+        (call) => (call.metadata as { integration?: string })?.integration === 'owner_onboarding',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('reaches readiness, runs pilot chain once, shows final delivery, and creates one OPS follow-up', async () => {
     await walkCoreSteps(88005);
     const ready = await processTelegramOwnerOnboarding({
       envelope: envelope('+79991234567'),
@@ -277,9 +298,20 @@ describe('Owner automation v1', () => {
     });
 
     expect(ready.status).toBe('ready_for_channel_manager');
-    expect(ready.replyText).toContain('Данные объекта собраны');
+    expect(ready.replyText).toContain('Готово, данные объекта собраны');
+    expect(ready.replyText).toContain('Следующий шаг: мы проверим подключение каналов');
     expect(ready.replyText).not.toMatch(/менеджер каналов|Channel Manager|CRM|OPS/i);
+    expect(ready.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Связаться с поддержкой');
+    expect(ready.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Добавить ещё один объект');
+    expect(ready.replyMarkup?.inline_keyboard?.[2]?.[0]?.text).toBe('Изменить данные объекта');
     expect(pilotChainCalls).toBe(1);
+
+    const followupOps = opsTaskCalls.filter(
+      (call) =>
+        (call.metadata as { integration?: string })?.integration === 'owner_onboarding' &&
+        String(call.dedupKey ?? '').includes('verify_channel_manager'),
+    );
+    expect(followupOps).toHaveLength(1);
 
     await processTelegramOwnerOnboarding({
       envelope: envelope('спасибо'),
@@ -287,6 +319,29 @@ describe('Owner automation v1', () => {
       senderIdentity: 'lead',
     });
     expect(pilotChainCalls).toBe(1);
+    expect(
+      opsTaskCalls.filter(
+        (call) =>
+          (call.metadata as { integration?: string })?.integration === 'owner_onboarding' &&
+          String(call.dedupKey ?? '').includes('verify_channel_manager'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('validates owner contact input for phones, usernames, and service bots', () => {
+    expect(validateOwnerContactInput('+79991234567')).toEqual({ ok: true, contact: '+79991234567' });
+    expect(validateOwnerContactInput('@real_owner')).toEqual({ ok: true, contact: '@real_owner' });
+    expect(validateOwnerContactInput('писать сюда')).toEqual({ ok: true, contact: 'писать сюда' });
+    expect(validateOwnerContactInput('https://t.me/ASI_Support_Bot')).toEqual({
+      ok: false,
+      reason: 'service_bot',
+    });
+    expect(validateOwnerContactInput('https://t.me/ASI_core_bot')).toEqual({
+      ok: false,
+      reason: 'service_bot',
+    });
+    expect(validateOwnerContactInput('')).toEqual({ ok: false, reason: 'empty' });
+    expect(validateOwnerContactInput('ab')).toEqual({ ok: false, reason: 'short' });
   });
 
   it('keeps a single object registry entry through the full flow', async () => {

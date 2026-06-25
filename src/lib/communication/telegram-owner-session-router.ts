@@ -17,7 +17,7 @@ import {
   readOwnerObjectState,
   switchActiveOwnerObject,
 } from './telegram-owner-object-session';
-import { buildWizardStepKeyboard, buildWizardStepPrompt } from './telegram-owner-onboarding-wizard';
+import { buildWizardStepKeyboard, buildWizardStepPrompt, WIZARD_FIELD_ORDER } from './telegram-owner-onboarding-wizard';
 
 export const SESSION_ROUTER_CALLBACK_PREFIX = 'obsr:';
 
@@ -206,6 +206,25 @@ export async function tryHandleOwnerSessionRouter(params: {
           buildWizardStepPrompt('address'),
         ].join('\n\n'),
         replyMarkup: buildWizardStepKeyboard('address'),
+      };
+    }
+
+    if (callback === `${SESSION_ROUTER_CALLBACK_PREFIX}edit`) {
+      const state = readOwnerObjectState(params.chatId, params.channel);
+      state.status = 'missing_required_data';
+      state.wizard_redo_from = 'city';
+      state.missing = [...WIZARD_FIELD_ORDER];
+      return {
+        ...baseResult(state),
+        replyText: [
+          'Давайте обновим данные объекта.',
+          'Пройдём шаги заново — новые ответы заменят прежние значения.',
+          buildWizardStepPrompt('city'),
+        ].join('\n\n'),
+        replyMarkup: buildWizardStepKeyboard('city', {
+          channels_draft: state.channels_draft ?? [],
+          rules_draft: state.rules_draft ?? [],
+        }),
       };
     }
 
