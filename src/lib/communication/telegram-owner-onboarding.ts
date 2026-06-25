@@ -495,7 +495,7 @@ function applyWizardCallback(state: OwnerOnboardingState, callbackData: string):
           stayOnStep: 'channels',
           editInPlace: true,
           editInPlaceMode: 'text',
-          replyOverride: 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «Готово».',
+          replyOverride: 'Выберите хотя бы один канал или нажмите на нужные пункты, затем «🚀 Готово, запустить подготовку».',
           replyMarkup: buildWizardStepKeyboard('channels', { channels_draft: state.channels_draft ?? [], rules_draft: state.rules_draft ?? [] }),
         };
       }
@@ -917,8 +917,8 @@ function buildReply(params: {
       text: [
         progress,
         'Готово, данные объекта собраны.',
-        'Следующий шаг: мы проверим подключение каналов и подготовим объект к публикации.',
-        'Если хотите, можете сразу открыть поддержку или дождаться сообщения оператора.',
+        'Я запустила автоматическую подготовку подключения каналов. Сейчас система проверит данные объекта и подготовит его к публикации.',
+        'Если потребуется уточнение, оператор напишет вам. Пока ничего дополнительно делать не нужно.',
       ]
         .filter(Boolean)
         .join('\n\n'),

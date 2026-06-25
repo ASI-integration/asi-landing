@@ -146,7 +146,9 @@ describe('Telegram wizard v2 multi-select orchestrator delivery', () => {
     const labels = (mockEditMarkup.mock.calls[0]?.[2] as { inline_keyboard?: Array<Array<{ text?: string }>> } | undefined)
       ?.inline_keyboard?.flat()
       .map((button) => button.text);
-    expect(labels).toEqual(expect.arrayContaining(['✅ Суточно', '✅ Авито', 'Готово']));
+    expect(labels).toEqual(
+      expect.arrayContaining(['✅ Суточно', '✅ Авито', '🚀 Готово, запустить подготовку']),
+    );
   });
 
   it('sends a new message when channels are confirmed with "Готово"', async () => {
@@ -224,7 +226,7 @@ describe('Telegram wizard v2 multi-select orchestrator delivery', () => {
       )?.reply_markup?.inline_keyboard
         ?.flat()
         .map((button) => button.text),
-    ).toEqual(expect.arrayContaining(['✅ TravelLine', 'Готово']));
+    ).toEqual(expect.arrayContaining(['✅ TravelLine', '🚀 Готово, запустить подготовку']));
   });
 
   it('edits callback message markup on select-all without sendMessage', async () => {
@@ -242,6 +244,8 @@ describe('Telegram wizard v2 multi-select orchestrator delivery', () => {
     const labels = (mockEditMarkup.mock.calls[0]?.[2] as { inline_keyboard?: Array<Array<{ text?: string }>> } | undefined)
       ?.inline_keyboard?.flat()
       .map((button) => button.text);
-    expect(labels).toEqual(expect.arrayContaining(['✅ Суточно', '✅ Прямые брони', 'Выбрать всё', 'Снять всё']));
+    expect(labels).toEqual(
+      expect.arrayContaining(['✅ Суточно', '✅ Прямые брони', '✅ Выбрать все', '↩️ Снять всё']),
+    );
   });
 });

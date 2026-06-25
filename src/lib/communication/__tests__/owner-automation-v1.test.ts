@@ -299,7 +299,9 @@ describe('Owner automation v1', () => {
 
     expect(ready.status).toBe('ready_for_channel_manager');
     expect(ready.replyText).toContain('Готово, данные объекта собраны');
-    expect(ready.replyText).toContain('Следующий шаг: мы проверим подключение каналов');
+    expect(ready.replyText).toContain('Я запустила автоматическую подготовку подключения каналов');
+    expect(ready.replyText).toContain('Пока ничего дополнительно делать не нужно');
+    expect(ready.replyText).not.toMatch(/дождитесь|мы проверим/i);
     expect(ready.replyText).not.toMatch(/менеджер каналов|Channel Manager|CRM|OPS/i);
     expect(ready.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Связаться с поддержкой');
     expect(ready.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Добавить ещё один объект');

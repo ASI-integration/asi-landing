@@ -381,10 +381,10 @@ export function buildChannelsKeyboard(selectedIds: string[]): TelegramInlineKeyb
     ]);
   }
 
-  rows.push([{ text: 'Выбрать всё', callback_data: callbackData('ch_all') }]);
-  rows.push([{ text: 'Снять всё', callback_data: callbackData('ch_none') }]);
+  rows.push([{ text: '✅ Выбрать все', callback_data: callbackData('ch_all') }]);
+  rows.push([{ text: '↩️ Снять всё', callback_data: callbackData('ch_none') }]);
   rows.push([{ text: 'Свой вариант', callback_data: callbackData('ch_custom') }]);
-  rows.push([{ text: 'Готово', callback_data: callbackData('ch_done') }]);
+  rows.push([{ text: '🚀 Готово, запустить подготовку', callback_data: callbackData('ch_done') }]);
   return { inline_keyboard: rows };
 }
 
@@ -435,7 +435,7 @@ export function buildWizardStepPrompt(field: OwnerOnboardingWizardField): string
     case 'checkout_time':
       return 'Выберите время выезда:';
     case 'channels':
-      return 'Выберите каналы бронирования. Можно отметить несколько, затем нажмите «Готово».';
+      return 'Выберите каналы бронирования. Можно отметить несколько, затем нажмите «🚀 Готово, запустить подготовку».';
     case 'rules':
       return 'Выберите правила проживания. Можно отметить несколько, затем нажмите «Готово».';
     case 'wifi':

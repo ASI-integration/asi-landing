@@ -780,14 +780,19 @@ describe('Telegram owner onboarding wizard v2', () => {
         'VK',
         'Telegram',
         'Прямые брони',
-        'Выбрать всё',
-        'Снять всё',
+        '✅ Выбрать все',
+        '↩️ Снять всё',
         'Свой вариант',
-        'Готово',
+        '🚀 Готово, запустить подготовку',
       ]),
     );
     const actionLabels = labels.slice(-4);
-    expect(actionLabels).toEqual(['Выбрать всё', 'Снять всё', 'Свой вариант', 'Готово']);
+    expect(actionLabels).toEqual([
+      '✅ Выбрать все',
+      '↩️ Снять всё',
+      'Свой вариант',
+      '🚀 Готово, запустить подготовку',
+    ]);
   });
 
   it.each([
@@ -991,7 +996,9 @@ describe('Telegram owner onboarding wizard v2', () => {
     });
 
     const labels = both.replyMarkup?.inline_keyboard?.flat().map((button) => button.text) ?? [];
-    expect(labels).toEqual(expect.arrayContaining(['✅ Суточно', '✅ Авито', 'Готово']));
+    expect(labels).toEqual(
+      expect.arrayContaining(['✅ Суточно', '✅ Авито', '🚀 Готово, запустить подготовку']),
+    );
     expect(both.missing[0]).toBe('channels');
     expect(both.state.channels_list ?? []).toEqual([]);
   });
