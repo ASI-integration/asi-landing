@@ -238,6 +238,23 @@ describe('pilot-chain status triggers', () => {
 });
 
 describe('pilot-chain note blocks', () => {
+  it('сохраняет блок МК при merge заметки', () => {
+    const cmNote = [
+      'Подключение МК ASI',
+      'object_id=pilot_spb_test',
+      'contact_id=c-1',
+      'Статус: ready_to_connect',
+      'Следующий шаг: Выберите способ',
+    ].join('\n');
+    const merged = mergePilotChainNoteBlocks({
+      existingNote: `ручная заметка\n\n${cmNote}`,
+      ownerObjects: [{ objectId: 'pilot_spb_test', title: 'Объект', readinessPercent: 10, isActiveSession: true }],
+      onboardingBlock: 'Онбординг ASI\nobject_id=pilot_spb_test',
+    });
+    expect(merged).toContain('Подключение МК ASI');
+    expect(merged).toContain('Онбординг ASI');
+  });
+
   it('парсит pilot_* с кириллицей в блоке объектов владельца', () => {
     const objectId = 'pilot_spb_объект-в-spb_mqt4orsy';
     const block = buildOwnerObjectsNoteBlock([

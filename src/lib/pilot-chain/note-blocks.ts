@@ -1,4 +1,5 @@
 import type { CrmContact, CrmOnboardingStatus, CrmOwnerObject } from '@/lib/crm/types';
+import { buildChannelManagerConnectionBlock, parseChannelManagerConnectionBlock } from '@/lib/channel-manager-connection/note-block';
 import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
 import type { ObjectReadinessResult } from '@/lib/object-readiness/engine';
 import { REQUIRED_FIELD_LABELS_RU } from '@/lib/object-readiness/engine';
@@ -113,7 +114,9 @@ export function mergePilotChainNoteBlocks(input: {
 }): string {
   const base = noteWithoutStructuredBlocks(input.existingNote);
   const ownerBlock = buildOwnerObjectsNoteBlock(input.ownerObjects);
-  return [base, ownerBlock, input.onboardingBlock].filter(Boolean).join('\n\n').slice(0, 4000);
+  const channelManagerBlock = parseChannelManagerConnectionBlock(input.existingNote);
+  const channelManagerSection = channelManagerBlock ? buildChannelManagerConnectionBlock(channelManagerBlock) : '';
+  return [base, ownerBlock, input.onboardingBlock, channelManagerSection].filter(Boolean).join('\n\n').slice(0, 4000);
 }
 
 export function mapReadinessToOnboardingStatus(readiness: ObjectReadinessResult): CrmOnboardingStatus {
