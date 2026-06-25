@@ -181,7 +181,7 @@ describe('ops-pilot service', () => {
         id: '5',
         status: 'onboarding',
         name: 'Telegram guest',
-        source: 'telegram',
+        source: 'other',
       }),
       baseContact({
         id: '6',

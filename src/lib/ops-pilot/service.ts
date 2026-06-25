@@ -45,14 +45,15 @@ export function isOpsPilotVisibleContact(contact: CrmContact, opsTasks: OpsOpera
   if (contact.crmArchived) return false;
   if (!isPilotParticipantStatus(contact.status)) return false;
 
+  if (contact.name.trim() === 'Telegram guest') {
+    return looksLikePilotAcceptanceContact(contact) || hasPilotChainOpsTask(contact.id, opsTasks);
+  }
+
   const rollout = resolvePilotRolloutStatus(contact.status);
   if (rollout === 'active_pilot' || rollout === 'invited') return true;
   if (extractLinkedObjectId(contact)) return true;
   if (looksLikePilotAcceptanceContact(contact)) return true;
   if (hasPilotChainOpsTask(contact.id, opsTasks)) return true;
-
-  // Скрываем шум от анонимных telegram guest без контура пилота.
-  if (contact.name.trim() === 'Telegram guest' && contact.source === 'telegram') return false;
 
   return Boolean(contact.city?.trim()) || contact.objectsCount > 0;
 }
