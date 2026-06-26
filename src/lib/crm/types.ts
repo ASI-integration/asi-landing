@@ -76,6 +76,21 @@ export type CrmChannelManagerConnection = {
     | 'connected'
     | 'primary_setup_needed';
   nextStepRu: string;
+  selectedChannelManager?: string | null;
+  channelManagerRoute?: 'has_manager' | 'no_manager' | 'unknown' | null;
+  objectInChannelManager?: 'yes' | 'no' | 'unknown' | null;
+  targetPlacementChannels?: string[];
+  connectionStatus?:
+    | 'needs_manager_check'
+    | 'needs_manager_selection'
+    | 'needs_object_preparation'
+    | 'needs_access_confirmation'
+    | 'ready_for_operator_review'
+    | 'waiting_for_owner'
+    | 'done'
+    | null;
+  nextOperatorAction?: string | null;
+  nextOwnerMessage?: string | null;
   updatedAt: string | null;
 };
 

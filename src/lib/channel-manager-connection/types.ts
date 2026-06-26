@@ -28,6 +28,26 @@ export const CHANNEL_MANAGER_CONNECTION_STATUS_VALUES = [
 
 export type ChannelManagerConnectionStatus = (typeof CHANNEL_MANAGER_CONNECTION_STATUS_VALUES)[number];
 
+export const CHANNEL_MANAGER_ROUTE_VALUES = ['has_manager', 'no_manager', 'unknown'] as const;
+
+export type ChannelManagerRoute = (typeof CHANNEL_MANAGER_ROUTE_VALUES)[number];
+
+export const CHANNEL_MANAGER_OBJECT_IN_MANAGER_VALUES = ['yes', 'no', 'unknown'] as const;
+
+export type ChannelManagerObjectInManager = (typeof CHANNEL_MANAGER_OBJECT_IN_MANAGER_VALUES)[number];
+
+export const MK_AUTOMATION_CONNECTION_STATUS_VALUES = [
+  'needs_manager_check',
+  'needs_manager_selection',
+  'needs_object_preparation',
+  'needs_access_confirmation',
+  'ready_for_operator_review',
+  'waiting_for_owner',
+  'done',
+] as const;
+
+export type MkAutomationConnectionStatus = (typeof MK_AUTOMATION_CONNECTION_STATUS_VALUES)[number];
+
 export type ChannelManagerConnectionState = {
   objectId: string | null;
   contactId: string | null;
@@ -36,6 +56,13 @@ export type ChannelManagerConnectionState = {
   accessSituation: ChannelManagerAccessSituation | null;
   status: ChannelManagerConnectionStatus;
   nextStepRu: string;
+  selectedChannelManager?: string | null;
+  channelManagerRoute?: ChannelManagerRoute | null;
+  objectInChannelManager?: ChannelManagerObjectInManager | null;
+  targetPlacementChannels?: string[];
+  connectionStatus?: MkAutomationConnectionStatus | null;
+  nextOperatorAction?: string | null;
+  nextOwnerMessage?: string | null;
   updatedAt: string | null;
 };
 

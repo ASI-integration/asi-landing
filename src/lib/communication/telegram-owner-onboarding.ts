@@ -62,14 +62,18 @@ import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-int
 import { syncOwnerOnboardingAutomation } from './owner-onboarding-spine';
 import {
   buildMkNoCmFinalAddon,
+  buildOwnerMkConnectionState,
   buildMkReadyOwnerMessage,
   isMkOnboardingCallback,
   isMkRoutingActive,
+  MK_STATUS_CALLBACK_DATA,
   tryHandleOwnerMkOnboarding,
   type OwnerMkPhase,
   type OwnerMkPropertyInCm,
   type OwnerMkRoute,
 } from './owner-mk-onboarding-router';
+import type { ChannelManagerConnectionState } from '@/lib/channel-manager-connection/types';
+import { mergeChannelManagerConnectionIntoNote, noteWithoutChannelManagerBlock } from '@/lib/channel-manager-connection/note-block';
 
 export type OwnerOnboardingStatus =
   | 'onboarding_started'
@@ -115,6 +119,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   mk_collection_mode?: 'full' | 'minimal';
   target_placement_channels?: string[];
   target_placement_skipped?: boolean;
+  mk_connection_state?: ChannelManagerConnectionState;
 };
 
 export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';
@@ -1047,6 +1052,7 @@ function buildOwnerCompletionMarkup(): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [{ text: 'Связаться с поддержкой', url: telegramSupportBotUrl }],
+      [{ text: 'Статус подключения', callback_data: MK_STATUS_CALLBACK_DATA }],
       [{ text: 'Добавить ещё один объект', callback_data: 'obsr:new' }],
       [{ text: 'Изменить данные объекта', callback_data: 'obsr:edit' }],
     ],
@@ -1100,7 +1106,7 @@ function buildCrmNote(params: {
   objectId: string;
   contactId?: string;
 }): string {
-  const base = noteWithoutStructuredBlocks(params.existingNote ?? '');
+  const base = noteWithoutChannelManagerBlock(noteWithoutStructuredBlocks(params.existingNote ?? ''));
   const readiness = params.state.readiness;
   const href = params.state.channelManagerHref || channelManagerHrefFor(params.objectId, params.contactId);
   const block = [
@@ -1144,7 +1150,14 @@ function buildCrmNote(params: {
     .filter(Boolean)
     .join('\n');
   const objectsBlock = buildOwnerObjectsNoteBlock(params.chatId, params.channel);
-  return [base, objectsBlock, block].filter(Boolean).join('\n\n').slice(0, 2000);
+  const note = [base, objectsBlock, block].filter(Boolean).join('\n\n').slice(0, 3500);
+  if (!params.state.mk_route) return note.slice(0, 4000);
+  const connectionState = buildOwnerMkConnectionState(params.state, {
+    objectId: params.objectId,
+    contactId: params.contactId,
+  });
+  params.state.mk_connection_state = connectionState;
+  return mergeChannelManagerConnectionIntoNote(note, connectionState);
 }
 
 async function findCrmContact(envelope: InboundMessageEnvelope): Promise<{ id: string; notes?: string | null } | null> {
@@ -1370,6 +1383,7 @@ export async function processTelegramOwnerOnboarding(params: {
     isConnectIntent: isIdentitySelectionText(params.envelope.messageText ?? ''),
   });
   if (mkEarly?.handled) {
+    const isMkStatusCallback = mkCallbackRaw === MK_STATUS_CALLBACK_DATA;
     merged.missing = missingFields(merged);
     if (mkEarly.status) merged.status = mkEarly.status;
     merged.readiness = computeObjectReadiness(
@@ -1380,6 +1394,10 @@ export async function processTelegramOwnerOnboarding(params: {
         status: merged.status,
       }),
     );
+    const activeObjectId = getActiveOwnerObjectId(params.chatId, params.envelope.channel);
+    if (merged.mk_route) {
+      merged.mk_connection_state = buildOwnerMkConnectionState(merged, { objectId: activeObjectId });
+    }
     const objectId = persistState(params.chatId, params.envelope.channel, merged);
     let crmContactId: string | undefined;
     if (merged.mk_phase !== 'ask_has_cm') {
@@ -1390,6 +1408,10 @@ export async function processTelegramOwnerOnboarding(params: {
         state: merged,
         objectId,
       });
+      if (crmContactId && merged.mk_route) {
+        merged.mk_connection_state = buildOwnerMkConnectionState(merged, { objectId, contactId: crmContactId });
+        persistState(params.chatId, params.envelope.channel, merged);
+      }
     }
     if (merged.status === 'ready_for_channel_manager') {
       await syncOwnerOnboardingAutomation({
@@ -1403,7 +1425,7 @@ export async function processTelegramOwnerOnboarding(params: {
       });
     }
     const mkReply =
-      merged.status === 'ready_for_channel_manager'
+      merged.status === 'ready_for_channel_manager' && !isMkStatusCallback
         ? buildReply({
             status: merged.status,
             missing: merged.missing,
@@ -1637,6 +1659,11 @@ export async function processTelegramOwnerOnboarding(params: {
       status: merged.status,
     }),
   );
+  if (merged.mk_route) {
+    merged.mk_connection_state = buildOwnerMkConnectionState(merged, {
+      objectId: getActiveOwnerObjectId(params.chatId, params.envelope.channel),
+    });
+  }
 
   const previousReadinessPercentRaw = text(
     loadAutonomousSession(params.chatId)?.collected_data?.[`${SESSION_PREFIX}readiness_percent`],
@@ -1668,6 +1695,10 @@ export async function processTelegramOwnerOnboarding(params: {
     state: merged,
     objectId,
   });
+  if (crmContactId && merged.mk_route) {
+    merged.mk_connection_state = buildOwnerMkConnectionState(merged, { objectId, contactId: crmContactId });
+    persistState(params.chatId, params.envelope.channel, merged);
+  }
 
   await emitObjectReadinessEvents({
     contactId: crmContactId,

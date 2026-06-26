@@ -39,6 +39,35 @@ function operatorNextStepForFollowup(kind: OwnerMkFollowupKind): string {
   }
 }
 
+function operatorChecklistForFollowup(kind: OwnerMkFollowupKind): string[] {
+  switch (kind) {
+    case 'channel_manager_existing_check':
+      return [
+        'проверить выбранный МК',
+        'уточнить, есть ли технический способ подключения ASI',
+        'проверить, нужен ли доступ владельца',
+        'проверить, какие площадки уже подключены',
+        'связаться с владельцем, если нужен доступ или подтверждение',
+      ];
+    case 'channel_manager_selection_needed':
+      return [
+        'посмотреть объект',
+        'оценить подходящий МК',
+        'проверить желаемые площадки',
+        'предложить владельцу следующий шаг',
+        'не обещать прямое подключение OTA',
+      ];
+    case 'channel_manager_explain_and_select':
+      return [
+        'объяснить владельцу роль менеджера каналов',
+        'уточнить, есть ли у него уже PMS/МК',
+        'если нет, предложить путь подготовки объекта',
+      ];
+    default:
+      return ['проверить следующий шаг подключения через менеджер каналов'];
+  }
+}
+
 function followupTitle(kind: OwnerMkFollowupKind): string {
   switch (kind) {
     case 'channel_manager_existing_check':
@@ -81,7 +110,9 @@ function buildMkFollowupDescription(params: {
 }): string {
   const cmLabel = channelManagerDisplayName(params.state.selected_channel_manager);
   const placements = placementChannelsLabel(params.state);
+  const checklist = operatorChecklistForFollowup(params.kind);
   const lines = [
+    `Тип: ${params.kind}`,
     `Владелец: ${params.ownerName}`,
     `Объект: ${params.objectLabel}`,
     params.state.owner_contact ? `Контакт: ${params.state.owner_contact}` : null,
@@ -97,6 +128,9 @@ function buildMkFollowupDescription(params: {
       : null,
     placements ? `Желаемые площадки: ${placements}` : null,
     `Следующий шаг оператора: ${operatorNextStepForFollowup(params.kind)}`,
+    '',
+    'Checklist:',
+    ...checklist.map((item) => `- ${item}`),
   ];
   return lines.filter(Boolean).join('\n');
 }
@@ -137,7 +171,9 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
     metadata: {
       created_by_system: true,
       integration: 'owner_onboarding',
+      type: params.kind,
       mk_followup_kind: params.kind,
+      checklist: operatorChecklistForFollowup(params.kind),
       onboarding_status: params.state.status,
       owner_contact: params.state.owner_contact ?? null,
       selected_channel_manager: params.state.selected_channel_manager ?? null,

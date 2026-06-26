@@ -3,6 +3,9 @@ import type {
   ChannelManagerConnectionMethod,
   ChannelManagerConnectionState,
   ChannelManagerConnectionStatus,
+  ChannelManagerObjectInManager,
+  ChannelManagerRoute,
+  MkAutomationConnectionStatus,
 } from './types';
 
 export const CHANNEL_MANAGER_CONNECTION_HEADER = 'Подключение МК ASI';
@@ -31,9 +34,35 @@ const STATUS_BY_LABEL: Record<string, ChannelManagerConnectionStatus> = {
   primary_setup_needed: 'primary_setup_needed',
 };
 
+const ROUTE_BY_LABEL: Record<string, ChannelManagerRoute> = {
+  has_manager: 'has_manager',
+  no_manager: 'no_manager',
+  unknown: 'unknown',
+};
+
+const OBJECT_IN_MANAGER_BY_LABEL: Record<string, ChannelManagerObjectInManager> = {
+  yes: 'yes',
+  no: 'no',
+  unknown: 'unknown',
+};
+
+const CONNECTION_STATUS_BY_LABEL: Record<string, MkAutomationConnectionStatus> = {
+  needs_manager_check: 'needs_manager_check',
+  needs_manager_selection: 'needs_manager_selection',
+  needs_object_preparation: 'needs_object_preparation',
+  needs_access_confirmation: 'needs_access_confirmation',
+  ready_for_operator_review: 'ready_for_operator_review',
+  waiting_for_owner: 'waiting_for_owner',
+  done: 'done',
+};
+
 function getLineValue(lines: string[], prefix: string): string {
   const line = lines.find((item) => item.startsWith(prefix));
   return line ? line.slice(prefix.length).trim() : '';
+}
+
+function parseCsv(raw: string): string[] {
+  return raw.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
 export function parseChannelManagerConnectionBlock(note: string | null | undefined): ChannelManagerConnectionState | null {
@@ -55,6 +84,11 @@ export function parseChannelManagerConnectionBlock(note: string | null | undefin
   const customManagerName = getLineValue(blockLines, 'Другой МК:') || null;
   const objectId = getLineValue(blockLines, 'object_id=') || null;
   const contactId = getLineValue(blockLines, 'contact_id=') || null;
+  const selectedChannelManager = getLineValue(blockLines, 'Выбранный МК:') || null;
+  const routeRaw = getLineValue(blockLines, 'Ветка МК:');
+  const objectInManagerRaw = getLineValue(blockLines, 'Объект в МК v1:');
+  const targetPlacementRaw = getLineValue(blockLines, 'Площадки через МК:');
+  const connectionStatusRaw = getLineValue(blockLines, 'Статус подключения:');
   const updatedAt = getLineValue(blockLines, 'Обновлено:') || null;
 
   return {
@@ -65,6 +99,13 @@ export function parseChannelManagerConnectionBlock(note: string | null | undefin
     accessSituation,
     status,
     nextStepRu,
+    selectedChannelManager,
+    channelManagerRoute: ROUTE_BY_LABEL[routeRaw] ?? null,
+    objectInChannelManager: OBJECT_IN_MANAGER_BY_LABEL[objectInManagerRaw] ?? null,
+    targetPlacementChannels: targetPlacementRaw ? parseCsv(targetPlacementRaw) : [],
+    connectionStatus: CONNECTION_STATUS_BY_LABEL[connectionStatusRaw] ?? null,
+    nextOperatorAction: getLineValue(blockLines, 'Следующее действие оператора:') || null,
+    nextOwnerMessage: getLineValue(blockLines, 'Сообщение владельцу:') || null,
     updatedAt,
   };
 }
@@ -79,6 +120,13 @@ export function buildChannelManagerConnectionBlock(state: ChannelManagerConnecti
     state.accessSituation ? `Доступ: ${state.accessSituation}` : null,
     `Статус: ${state.status}`,
     `Следующий шаг: ${state.nextStepRu}`,
+    state.selectedChannelManager ? `Выбранный МК: ${state.selectedChannelManager}` : null,
+    state.channelManagerRoute ? `Ветка МК: ${state.channelManagerRoute}` : null,
+    state.objectInChannelManager ? `Объект в МК v1: ${state.objectInChannelManager}` : null,
+    state.targetPlacementChannels?.length ? `Площадки через МК: ${state.targetPlacementChannels.join(', ')}` : null,
+    state.connectionStatus ? `Статус подключения: ${state.connectionStatus}` : null,
+    state.nextOperatorAction ? `Следующее действие оператора: ${state.nextOperatorAction}` : null,
+    state.nextOwnerMessage ? `Сообщение владельцу: ${state.nextOwnerMessage}` : null,
     state.updatedAt ? `Обновлено: ${state.updatedAt}` : null,
   ]
     .filter(Boolean)

@@ -16,8 +16,17 @@ import {
 } from './telegram-owner-onboarding-wizard';
 import type { OwnerOnboardingState, OwnerOnboardingStatus } from './telegram-owner-onboarding';
 import { isIdentitySelectionText } from './owner-onboarding-smart-parser';
+import type {
+  ChannelManagerConnectionMethod,
+  ChannelManagerConnectionState,
+  ChannelManagerConnectionStatus,
+  ChannelManagerObjectInManager,
+  ChannelManagerRoute,
+  MkAutomationConnectionStatus,
+} from '@/lib/channel-manager-connection/types';
 
 export const MK_CALLBACK_PREFIX = 'obmk:';
+export const MK_STATUS_CALLBACK_DATA = `${MK_CALLBACK_PREFIX}status`;
 
 export type OwnerMkPhase =
   | 'not_started'
@@ -58,6 +67,129 @@ function text(value: unknown, max = 600): string {
 function callbackData(action: string, value?: string): string {
   const raw = value ? `${MK_CALLBACK_PREFIX}${action}:${value}` : `${MK_CALLBACK_PREFIX}${action}`;
   return raw.slice(0, 64);
+}
+
+function selectedManagerLabel(state: OwnerOnboardingState): string | null {
+  const label = channelManagerDisplayName(state.selected_channel_manager);
+  if (label) return label;
+  const raw = text(state.selected_channel_manager, 80);
+  return raw || null;
+}
+
+function selectedManagerMethod(state: OwnerOnboardingState): ChannelManagerConnectionMethod | null {
+  if (state.selected_channel_manager === 'bnovo') return 'bnovo';
+  if (state.selected_channel_manager === 'realtycalendar') return 'realtycalendar';
+  if (state.mk_route === 'no_cm') return 'none_yet';
+  if (state.selected_channel_manager) return 'other';
+  return null;
+}
+
+function automationRoute(state: OwnerOnboardingState): ChannelManagerRoute {
+  if (state.mk_route === 'has_cm') return 'has_manager';
+  if (state.mk_route === 'unknown_cm' || state.mk_route === 'unknown_help') return 'unknown';
+  return 'no_manager';
+}
+
+function automationObjectInManager(state: OwnerOnboardingState): ChannelManagerObjectInManager {
+  if (state.property_in_channel_manager === 'yes') return 'yes';
+  if (state.property_in_channel_manager === 'no') return 'no';
+  return 'unknown';
+}
+
+export function resolveOwnerMkConnectionStatus(state: OwnerOnboardingState): MkAutomationConnectionStatus {
+  if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') return 'needs_manager_check';
+  if (
+    state.mk_route === 'has_cm' &&
+    (state.property_in_channel_manager === 'no' || state.property_in_channel_manager === 'unknown')
+  ) {
+    return 'needs_object_preparation';
+  }
+  return 'needs_manager_selection';
+}
+
+export function buildOwnerMkNextOperatorAction(state: OwnerOnboardingState): string {
+  if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') {
+    return 'Проверить возможность подключения ASI к существующему менеджеру каналов';
+  }
+  if (
+    state.mk_route === 'has_cm' &&
+    (state.property_in_channel_manager === 'no' || state.property_in_channel_manager === 'unknown')
+  ) {
+    return 'Подготовить объект для добавления в менеджер каналов';
+  }
+  if (state.mk_route === 'unknown_cm' || state.mk_route === 'unknown_help') {
+    return 'Объяснить владельцу менеджер каналов и предложить подходящий путь';
+  }
+  return 'Подобрать подходящий менеджер каналов и подготовить подключение';
+}
+
+export function buildOwnerMkStatusMessage(state: OwnerOnboardingState): string {
+  const manager = selectedManagerLabel(state);
+  if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') {
+    return [
+      `Сейчас проверяем подключение к вашему менеджеру каналов${manager ? `: ${manager}` : ''}.`,
+      'Если понадобится доступ или подтверждение, оператор напишет вам.',
+      'Не отправляйте пароль в чат. Оператор подскажет безопасный способ передачи доступа.',
+    ].join(' ');
+  }
+  if (state.mk_route === 'has_cm') {
+    return [
+      'Данные объекта собираются, чтобы подготовить его для добавления в менеджер каналов.',
+      'Если понадобится доступ или подтверждение, оператор напишет вам.',
+    ].join(' ');
+  }
+  if (state.mk_route === 'unknown_cm' || state.mk_route === 'unknown_help') {
+    return 'Мы поможем определить, нужен ли вам менеджер каналов и какой вариант подойдёт.';
+  }
+  return [
+    'Данные объекта собраны.',
+    'Следующий шаг — подобрать менеджер каналов, через который объект сможет размещаться на выбранных площадках.',
+  ].join(' ');
+}
+
+function legacyStatusForAutomation(status: MkAutomationConnectionStatus): ChannelManagerConnectionStatus {
+  switch (status) {
+    case 'needs_manager_check':
+    case 'needs_access_confirmation':
+      return 'verifying_data';
+    case 'needs_object_preparation':
+    case 'ready_for_operator_review':
+      return 'prepared';
+    case 'waiting_for_owner':
+      return 'waiting_access';
+    case 'done':
+      return 'connected';
+    case 'needs_manager_selection':
+    default:
+      return 'primary_setup_needed';
+  }
+}
+
+export function buildOwnerMkConnectionState(
+  state: OwnerOnboardingState,
+  ids?: { contactId?: string | null; objectId?: string | null },
+): ChannelManagerConnectionState {
+  const connectionStatus = resolveOwnerMkConnectionStatus(state);
+  const selectedChannelManager = selectedManagerLabel(state);
+  const method = selectedManagerMethod(state);
+  const nextOwnerMessage = buildOwnerMkStatusMessage(state);
+  return {
+    objectId: ids?.objectId ?? null,
+    contactId: ids?.contactId ?? null,
+    method,
+    customManagerName: method === 'other' ? selectedChannelManager : null,
+    accessSituation: null,
+    status: legacyStatusForAutomation(connectionStatus),
+    nextStepRu: nextOwnerMessage,
+    selectedChannelManager,
+    channelManagerRoute: automationRoute(state),
+    objectInChannelManager: automationObjectInManager(state),
+    targetPlacementChannels: state.target_placement_channels ?? state.channels_list ?? [],
+    connectionStatus,
+    nextOperatorAction: buildOwnerMkNextOperatorAction(state),
+    nextOwnerMessage,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function isMkOnboardingCallback(data: unknown): boolean {
@@ -232,6 +364,7 @@ function syncTargetPlacementChannels(state: OwnerOnboardingState): void {
 function beginWizardFromMk(state: OwnerOnboardingState, intro?: string): OwnerMkOnboardingResult {
   state.mk_phase = 'wizard';
   state.mk_collection_mode = 'full';
+  state.mk_connection_state = buildOwnerMkConnectionState(state);
   const next: OwnerOnboardingWizardField = 'city';
   return {
     handled: true,
@@ -252,6 +385,7 @@ function finalizeMinimalFlow(state: OwnerOnboardingState): OwnerMkOnboardingResu
   state.mk_collection_mode = 'minimal';
   state.status = 'ready_for_channel_manager';
   state.missing = [];
+  state.mk_connection_state = buildOwnerMkConnectionState(state);
   return {
     handled: true,
     replyText: [
@@ -301,10 +435,21 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
   if (!parsed) return null;
 
   switch (parsed.action) {
+    case 'status':
+      state.mk_connection_state = buildOwnerMkConnectionState(state);
+      return {
+        handled: true,
+        replyText: buildOwnerMkStatusMessage(state),
+        state,
+        status: state.status,
+        missing: state.missing,
+      };
+
     case 'has':
       if (parsed.value === 'yes') {
         state.mk_route = 'has_cm';
         state.mk_phase = 'ask_cm_vendor';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return {
           handled: true,
           replyText: 'Какой менеджер каналов вы используете?',
@@ -316,11 +461,13 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       }
       if (parsed.value === 'no') {
         state.mk_route = 'no_cm';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return beginWizardFromMk(state);
       }
       if (parsed.value === 'unknown') {
         state.mk_route = 'unknown_cm';
         state.mk_phase = 'explain_cm';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return {
           handled: true,
           replyText: [
@@ -341,6 +488,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       state.selected_channel_manager = cmId;
       state.mk_route = 'has_cm';
       state.mk_phase = 'ask_property_in_cm';
+      state.mk_connection_state = buildOwnerMkConnectionState(state);
       return {
         handled: true,
         replyText: 'Объект уже добавлен в этом менеджере каналов?',
@@ -356,6 +504,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
         state.property_in_channel_manager = 'yes';
         state.mk_collection_mode = 'minimal';
         state.mk_phase = 'minimal_collect';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return {
           handled: true,
           replyText: mkMinimalPrompt('object_name'),
@@ -366,6 +515,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       }
       if (parsed.value === 'no' || parsed.value === 'unknown') {
         state.property_in_channel_manager = parsed.value === 'no' ? 'no' : 'unknown';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return beginWizardFromMk(
           state,
           'Тогда подготовим данные объекта, чтобы его можно было добавить в менеджер каналов.',
@@ -377,6 +527,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       if (parsed.value === 'has') {
         state.mk_route = 'has_cm';
         state.mk_phase = 'ask_cm_vendor';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return {
           handled: true,
           replyText: 'Какой менеджер каналов вы используете?',
@@ -388,10 +539,12 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       }
       if (parsed.value === 'help') {
         state.mk_route = 'unknown_help';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return beginWizardFromMk(state);
       }
       if (parsed.value === 'scratch') {
         state.mk_route = 'no_cm';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return beginWizardFromMk(state);
       }
       return null;
@@ -399,11 +552,12 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
     case 'placement':
       if (parsed.value === 'skip') {
         state.target_placement_skipped = true;
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
         return finalizeMinimalFlow(state);
       }
       return null;
 
-  case 'ch_t': {
+    case 'ch_t': {
       if (state.mk_phase !== 'minimal_collect') return null;
       const draft = new Set(state.channels_draft ?? []);
       const channelId = parsed.value ?? '';
@@ -441,6 +595,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       state.channels_list = labels;
       state.channels = labels.join(', ');
       state.channels_draft = [];
+      state.mk_connection_state = buildOwnerMkConnectionState(state);
       return finalizeMinimalFlow(state);
     }
 

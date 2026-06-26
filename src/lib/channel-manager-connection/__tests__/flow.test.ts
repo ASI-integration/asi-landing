@@ -98,6 +98,33 @@ describe('channel manager connection flow', () => {
     expect(parsed?.accessSituation).toBe('has_access');
     expect(buildChannelManagerConnectionBlock(state)).toContain('Способ: bnovo');
   });
+
+  it('round-trips MK automation v1 state in CRM note block', () => {
+    const state = {
+      ...initialConnectionState({ objectId: 'OBJ-10', contactId: 'c-10' }),
+      method: 'bnovo' as const,
+      status: 'verifying_data' as const,
+      nextStepRu: 'Сейчас проверяем подключение к вашему менеджеру каналов: Bnovo.',
+      selectedChannelManager: 'Bnovo',
+      channelManagerRoute: 'has_manager' as const,
+      objectInChannelManager: 'yes' as const,
+      targetPlacementChannels: ['Суточно', 'Авито'],
+      connectionStatus: 'needs_manager_check' as const,
+      nextOperatorAction: 'Проверить возможность подключения ASI к существующему менеджеру каналов',
+      nextOwnerMessage: 'Сейчас проверяем подключение к вашему менеджеру каналов: Bnovo.',
+      updatedAt: '2026-06-26T10:00:00.000Z',
+    };
+
+    const note = mergeChannelManagerConnectionIntoNote('Онбординг ASI\nСтатус: ready_for_channel_manager', state);
+    const parsed = parseChannelManagerConnectionBlock(note);
+
+    expect(parsed?.selectedChannelManager).toBe('Bnovo');
+    expect(parsed?.channelManagerRoute).toBe('has_manager');
+    expect(parsed?.objectInChannelManager).toBe('yes');
+    expect(parsed?.targetPlacementChannels).toEqual(['Суточно', 'Авито']);
+    expect(parsed?.connectionStatus).toBe('needs_manager_check');
+    expect(parsed?.nextOperatorAction).toContain('Проверить возможность подключения ASI');
+  });
 });
 
 describe('channel manager CRM integration', () => {
