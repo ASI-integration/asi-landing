@@ -110,6 +110,9 @@ describe('channel manager connection flow', () => {
       objectInChannelManager: 'yes' as const,
       targetPlacementChannels: ['Суточно', 'Авито'],
       connectionStatus: 'needs_manager_check' as const,
+      mkResponsibleRole: 'manager' as const,
+      mkResponsibleContact: '@manager_nevsky',
+      mkResponsibleName: 'Ирина',
       nextOperatorAction: 'Проверить возможность подключения ASI к существующему менеджеру каналов',
       nextOwnerMessage: 'Сейчас проверяем подключение к вашему менеджеру каналов: Bnovo.',
       updatedAt: '2026-06-26T10:00:00.000Z',
@@ -123,6 +126,9 @@ describe('channel manager connection flow', () => {
     expect(parsed?.objectInChannelManager).toBe('yes');
     expect(parsed?.targetPlacementChannels).toEqual(['Суточно', 'Авито']);
     expect(parsed?.connectionStatus).toBe('needs_manager_check');
+    expect(parsed?.mkResponsibleRole).toBe('manager');
+    expect(parsed?.mkResponsibleContact).toBe('@manager_nevsky');
+    expect(parsed?.mkResponsibleName).toBe('Ирина');
     expect(parsed?.nextOperatorAction).toContain('Проверить возможность подключения ASI');
   });
 });

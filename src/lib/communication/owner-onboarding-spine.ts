@@ -26,7 +26,63 @@ function placementChannelsLabel(state: OwnerOnboardingState): string | null {
   return labels.join(', ');
 }
 
-function operatorNextStepForFollowup(kind: OwnerMkFollowupKind): string {
+function responsibleLabel(state: OwnerOnboardingState): string {
+  switch (state.mk_responsible_role) {
+    case 'owner':
+      return 'владелец';
+    case 'manager':
+      return 'управляющий';
+    case 'administrator':
+      return 'администратор';
+    case 'staff':
+      return 'другой сотрудник';
+    case 'unknown':
+      return 'ответственный ещё не выбран';
+    case 'asi_help':
+      return 'нужна помощь ASI';
+    default:
+      return 'не указан';
+  }
+}
+
+function mkRouteLabel(state: OwnerOnboardingState): string {
+  switch (state.mk_route) {
+    case 'has_cm':
+      return 'МК уже есть';
+    case 'no_cm':
+      return 'МК нет';
+    case 'unknown_cm':
+      return 'владелец не знает, что такое МК';
+    case 'unknown_help':
+      return 'нужна помощь с выбором МК';
+    default:
+      return 'не указана';
+  }
+}
+
+function objectInManagerLabel(state: OwnerOnboardingState): string {
+  switch (state.property_in_channel_manager) {
+    case 'yes':
+      return 'да';
+    case 'no':
+      return 'нет';
+    case 'unknown':
+      return 'неизвестно';
+    default:
+      return 'не указано';
+  }
+}
+
+function operatorNextStepForState(state: OwnerOnboardingState, kind: OwnerMkFollowupKind): string {
+  if (state.mk_responsible_role === 'unknown') {
+    return 'Уточнить у владельца, кто будет отвечать за подключение МК.';
+  }
+  if (state.mk_responsible_role === 'asi_help') {
+    return 'Оператор ASI берёт подключение в ручной разбор и согласует безопасный способ передачи доступа.';
+  }
+  if (state.mk_responsible_role) {
+    return 'Связаться с ответственным, отправить короткую инструкцию и проверить статус подключения.';
+  }
   switch (kind) {
     case 'channel_manager_existing_check':
       return 'Проверить возможность подключения ASI к существующему менеджеру каналов и связаться с владельцем при необходимости.';
@@ -39,7 +95,25 @@ function operatorNextStepForFollowup(kind: OwnerMkFollowupKind): string {
   }
 }
 
-function operatorChecklistForFollowup(kind: OwnerMkFollowupKind): string[] {
+function operatorChecklistForState(state: OwnerOnboardingState, kind: OwnerMkFollowupKind): string[] {
+  if (state.mk_responsible_role === 'unknown') {
+    return ['уточнить у владельца, кто будет отвечать за подключение МК'];
+  }
+  if (state.mk_responsible_role === 'asi_help') {
+    return [
+      'оператор ASI берёт подключение в ручной разбор',
+      'не просить пароли в Telegram',
+      'согласовать безопасный способ передачи доступа',
+    ];
+  }
+  if (state.mk_responsible_role) {
+    return [
+      'связаться с ответственным',
+      'отправить инструкцию по подключению МК',
+      'уточнить доступы/подтверждения',
+      'проверить статус подключения',
+    ];
+  }
   switch (kind) {
     case 'channel_manager_existing_check':
       return [
@@ -110,24 +184,21 @@ function buildMkFollowupDescription(params: {
 }): string {
   const cmLabel = channelManagerDisplayName(params.state.selected_channel_manager);
   const placements = placementChannelsLabel(params.state);
-  const checklist = operatorChecklistForFollowup(params.kind);
+  const checklist = operatorChecklistForState(params.state, params.kind);
+  const nextStep = operatorNextStepForState(params.state, params.kind);
   const lines = [
     `Тип: ${params.kind}`,
     `Владелец: ${params.ownerName}`,
     `Объект: ${params.objectLabel}`,
     params.state.owner_contact ? `Контакт: ${params.state.owner_contact}` : null,
+    `Ответственный за подключение: ${responsibleLabel(params.state)}`,
+    params.state.mk_responsible_contact ? `Контакт ответственного: ${params.state.mk_responsible_contact}` : null,
+    params.state.mk_responsible_name ? `Имя ответственного: ${params.state.mk_responsible_name}` : null,
+    `Ветка МК: ${mkRouteLabel(params.state)}`,
     cmLabel ? `Менеджер каналов: ${cmLabel}` : null,
-    params.state.property_in_channel_manager
-      ? `Объект в МК: ${
-          params.state.property_in_channel_manager === 'yes'
-            ? 'да'
-            : params.state.property_in_channel_manager === 'no'
-              ? 'нет'
-              : 'неизвестно'
-        }`
-      : null,
+    `Объект в МК: ${objectInManagerLabel(params.state)}`,
     placements ? `Желаемые площадки: ${placements}` : null,
-    `Следующий шаг оператора: ${operatorNextStepForFollowup(params.kind)}`,
+    `Следующий шаг оператора: ${nextStep}`,
     '',
     'Checklist:',
     ...checklist.map((item) => `- ${item}`),
@@ -173,9 +244,13 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
       integration: 'owner_onboarding',
       type: params.kind,
       mk_followup_kind: params.kind,
-      checklist: operatorChecklistForFollowup(params.kind),
+      checklist: operatorChecklistForState(params.state, params.kind),
       onboarding_status: params.state.status,
       owner_contact: params.state.owner_contact ?? null,
+      mk_responsible_role: params.state.mk_responsible_role ?? null,
+      mk_responsible_contact: params.state.mk_responsible_contact ?? null,
+      mk_responsible_name: params.state.mk_responsible_name ?? null,
+      mk_route: params.state.mk_route ?? null,
       selected_channel_manager: params.state.selected_channel_manager ?? null,
       property_in_channel_manager: params.state.property_in_channel_manager ?? null,
       target_placement_channels: params.state.target_placement_channels ?? params.state.channels_list ?? [],
@@ -283,10 +358,7 @@ export async function syncOwnerOnboardingAutomation(params: {
   let pilotChainRan = false;
   let opsTaskId: string | null = null;
 
-  if (
-    params.status === 'ready_for_channel_manager' &&
-    params.previousStatus !== 'ready_for_channel_manager'
-  ) {
+  if (params.status === 'ready_for_channel_manager') {
     if (shouldRunPilotChain(params.state)) {
       try {
         await runPilotChainForContact(params.contactId);
@@ -300,14 +372,16 @@ export async function syncOwnerOnboardingAutomation(params: {
       }
     }
 
-    opsTaskId = await ensureOwnerMkFollowupOpsTask({
-      contactId: params.contactId,
-      objectId: params.objectId,
-      ownerName: params.ownerName,
-      objectLabel: params.objectLabel,
-      state: params.state,
-      kind: resolveOwnerMkFollowupKind(params.state),
-    });
+    if (params.previousStatus !== 'ready_for_channel_manager' || params.state.mk_responsible_role) {
+      opsTaskId = await ensureOwnerMkFollowupOpsTask({
+        contactId: params.contactId,
+        objectId: params.objectId,
+        ownerName: params.ownerName,
+        objectLabel: params.objectLabel,
+        state: params.state,
+        kind: resolveOwnerMkFollowupKind(params.state),
+      });
+    }
   }
 
   if (params.status === 'needs_operator' && params.previousStatus !== 'needs_operator') {

@@ -179,6 +179,9 @@ export function serializeOwnerObjectState(state: OwnerOnboardingState): string {
     mk_collection_mode: state.mk_collection_mode ?? null,
     target_placement_channels: state.target_placement_channels ?? null,
     target_placement_skipped: state.target_placement_skipped ?? false,
+    mk_responsible_role: state.mk_responsible_role ?? null,
+    mk_responsible_contact: state.mk_responsible_contact ?? null,
+    mk_responsible_name: state.mk_responsible_name ?? null,
   });
 }
 
@@ -234,6 +237,9 @@ export function deserializeOwnerObjectState(raw: unknown): OwnerOnboardingState 
         ? parsed.target_placement_channels.map((item) => text(item, 120)).filter(Boolean)
         : undefined,
       target_placement_skipped: Boolean(parsed.target_placement_skipped),
+      mk_responsible_role: parsed.mk_responsible_role,
+      mk_responsible_contact: parsed.mk_responsible_contact,
+      mk_responsible_name: parsed.mk_responsible_name,
     };
     state.missing = resolveMissingFields(state);
     return state;

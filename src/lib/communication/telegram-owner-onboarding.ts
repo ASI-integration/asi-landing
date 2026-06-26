@@ -63,10 +63,13 @@ import { syncOwnerOnboardingAutomation } from './owner-onboarding-spine';
 import {
   buildMkNoCmFinalAddon,
   buildOwnerMkConnectionState,
+  buildOwnerMkResponsibleQuestionResult,
   buildMkReadyOwnerMessage,
   isMkOnboardingCallback,
   isMkRoutingActive,
+  MK_CALLBACK_PREFIX,
   MK_STATUS_CALLBACK_DATA,
+  shouldAskOwnerMkResponsible,
   tryHandleOwnerMkOnboarding,
   type OwnerMkPhase,
   type OwnerMkPropertyInCm,
@@ -119,6 +122,9 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   mk_collection_mode?: 'full' | 'minimal';
   target_placement_channels?: string[];
   target_placement_skipped?: boolean;
+  mk_responsible_role?: ChannelManagerConnectionState['mkResponsibleRole'];
+  mk_responsible_contact?: string;
+  mk_responsible_name?: string;
   mk_connection_state?: ChannelManagerConnectionState;
 };
 
@@ -1132,6 +1138,9 @@ function buildCrmNote(params: {
       ? `Объект в МК: ${params.state.property_in_channel_manager}`
       : null,
     params.state.mk_route ? `Ветка онбординга: ${params.state.mk_route}` : null,
+    params.state.mk_responsible_role ? `Ответственный за МК: ${params.state.mk_responsible_role}` : null,
+    params.state.mk_responsible_contact ? `Контакт ответственного за МК: ${params.state.mk_responsible_contact}` : null,
+    params.state.mk_responsible_name ? `Имя ответственного за МК: ${params.state.mk_responsible_name}` : null,
     params.state.rules?.length ? `Правила: ${params.state.rules.join(', ')}` : null,
     params.state.wifi_name ? `Wi-Fi имя: ${params.state.wifi_name}` : null,
     params.state.wifi_password ? `Wi-Fi пароль: ${params.state.wifi_password}` : null,
@@ -1384,6 +1393,8 @@ export async function processTelegramOwnerOnboarding(params: {
   });
   if (mkEarly?.handled) {
     const isMkStatusCallback = mkCallbackRaw === MK_STATUS_CALLBACK_DATA;
+    const isMkResponsibleCallback = mkCallbackRaw.startsWith(`${MK_CALLBACK_PREFIX}resp:`);
+    const isMkResponsibleContact = previous.mk_phase === 'await_responsible_contact';
     merged.missing = missingFields(merged);
     if (mkEarly.status) merged.status = mkEarly.status;
     merged.readiness = computeObjectReadiness(
@@ -1413,7 +1424,7 @@ export async function processTelegramOwnerOnboarding(params: {
         persistState(params.chatId, params.envelope.channel, merged);
       }
     }
-    if (merged.status === 'ready_for_channel_manager') {
+    if (merged.status === 'ready_for_channel_manager' && !isMkStatusCallback) {
       await syncOwnerOnboardingAutomation({
         contactId: crmContactId,
         objectId,
@@ -1425,7 +1436,10 @@ export async function processTelegramOwnerOnboarding(params: {
       });
     }
     const mkReply =
-      merged.status === 'ready_for_channel_manager' && !isMkStatusCallback
+      merged.status === 'ready_for_channel_manager' &&
+      !isMkStatusCallback &&
+      !isMkResponsibleCallback &&
+      !isMkResponsibleContact
         ? buildReply({
             status: merged.status,
             missing: merged.missing,
@@ -1457,7 +1471,11 @@ export async function processTelegramOwnerOnboarding(params: {
     return {
       handled: true,
       replyText: mkReply?.text ?? mkEarly.replyText,
-      replyMarkup: mkReply?.markup ?? mkEarly.replyMarkup,
+      replyMarkup:
+        mkReply?.markup ??
+        (merged.status === 'ready_for_channel_manager' && (isMkResponsibleCallback || isMkResponsibleContact)
+          ? buildOwnerCompletionMarkup()
+          : mkEarly.replyMarkup),
       editInPlace: mkEarly.editInPlace,
       editInPlaceMode: mkEarly.editInPlaceMode,
       status: merged.status,
@@ -1649,6 +1667,13 @@ export async function processTelegramOwnerOnboarding(params: {
 
   if (merged.status === 'ready_for_channel_manager') {
     merged.wizard_redo_from = undefined;
+  }
+
+  if (merged.status === 'ready_for_channel_manager' && shouldAskOwnerMkResponsible(merged)) {
+    const responsibleQuestion = buildOwnerMkResponsibleQuestionResult(merged);
+    merged.status = responsibleQuestion.status;
+    replyOverride = responsibleQuestion.replyText;
+    replyMarkup = responsibleQuestion.replyMarkup;
   }
 
   merged.readiness = computeObjectReadiness(

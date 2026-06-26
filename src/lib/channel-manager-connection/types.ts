@@ -48,6 +48,17 @@ export const MK_AUTOMATION_CONNECTION_STATUS_VALUES = [
 
 export type MkAutomationConnectionStatus = (typeof MK_AUTOMATION_CONNECTION_STATUS_VALUES)[number];
 
+export const MK_RESPONSIBLE_ROLE_VALUES = [
+  'owner',
+  'manager',
+  'administrator',
+  'staff',
+  'unknown',
+  'asi_help',
+] as const;
+
+export type MkResponsibleRole = (typeof MK_RESPONSIBLE_ROLE_VALUES)[number];
+
 export type ChannelManagerConnectionState = {
   objectId: string | null;
   contactId: string | null;
@@ -61,6 +72,9 @@ export type ChannelManagerConnectionState = {
   objectInChannelManager?: ChannelManagerObjectInManager | null;
   targetPlacementChannels?: string[];
   connectionStatus?: MkAutomationConnectionStatus | null;
+  mkResponsibleRole?: MkResponsibleRole | null;
+  mkResponsibleContact?: string | null;
+  mkResponsibleName?: string | null;
   nextOperatorAction?: string | null;
   nextOwnerMessage?: string | null;
   updatedAt: string | null;

@@ -6,6 +6,7 @@ import type {
   ChannelManagerObjectInManager,
   ChannelManagerRoute,
   MkAutomationConnectionStatus,
+  MkResponsibleRole,
 } from './types';
 
 export const CHANNEL_MANAGER_CONNECTION_HEADER = 'Подключение МК ASI';
@@ -56,6 +57,15 @@ const CONNECTION_STATUS_BY_LABEL: Record<string, MkAutomationConnectionStatus> =
   done: 'done',
 };
 
+const RESPONSIBLE_ROLE_BY_LABEL: Record<string, MkResponsibleRole> = {
+  owner: 'owner',
+  manager: 'manager',
+  administrator: 'administrator',
+  staff: 'staff',
+  unknown: 'unknown',
+  asi_help: 'asi_help',
+};
+
 function getLineValue(lines: string[], prefix: string): string {
   const line = lines.find((item) => item.startsWith(prefix));
   return line ? line.slice(prefix.length).trim() : '';
@@ -89,6 +99,7 @@ export function parseChannelManagerConnectionBlock(note: string | null | undefin
   const objectInManagerRaw = getLineValue(blockLines, 'Объект в МК v1:');
   const targetPlacementRaw = getLineValue(blockLines, 'Площадки через МК:');
   const connectionStatusRaw = getLineValue(blockLines, 'Статус подключения:');
+  const responsibleRoleRaw = getLineValue(blockLines, 'Ответственный роль:');
   const updatedAt = getLineValue(blockLines, 'Обновлено:') || null;
 
   return {
@@ -104,6 +115,9 @@ export function parseChannelManagerConnectionBlock(note: string | null | undefin
     objectInChannelManager: OBJECT_IN_MANAGER_BY_LABEL[objectInManagerRaw] ?? null,
     targetPlacementChannels: targetPlacementRaw ? parseCsv(targetPlacementRaw) : [],
     connectionStatus: CONNECTION_STATUS_BY_LABEL[connectionStatusRaw] ?? null,
+    mkResponsibleRole: RESPONSIBLE_ROLE_BY_LABEL[responsibleRoleRaw] ?? null,
+    mkResponsibleContact: getLineValue(blockLines, 'Ответственный контакт:') || null,
+    mkResponsibleName: getLineValue(blockLines, 'Ответственный имя:') || null,
     nextOperatorAction: getLineValue(blockLines, 'Следующее действие оператора:') || null,
     nextOwnerMessage: getLineValue(blockLines, 'Сообщение владельцу:') || null,
     updatedAt,
@@ -125,6 +139,9 @@ export function buildChannelManagerConnectionBlock(state: ChannelManagerConnecti
     state.objectInChannelManager ? `Объект в МК v1: ${state.objectInChannelManager}` : null,
     state.targetPlacementChannels?.length ? `Площадки через МК: ${state.targetPlacementChannels.join(', ')}` : null,
     state.connectionStatus ? `Статус подключения: ${state.connectionStatus}` : null,
+    state.mkResponsibleRole ? `Ответственный роль: ${state.mkResponsibleRole}` : null,
+    state.mkResponsibleContact ? `Ответственный контакт: ${state.mkResponsibleContact}` : null,
+    state.mkResponsibleName ? `Ответственный имя: ${state.mkResponsibleName}` : null,
     state.nextOperatorAction ? `Следующее действие оператора: ${state.nextOperatorAction}` : null,
     state.nextOwnerMessage ? `Сообщение владельцу: ${state.nextOwnerMessage}` : null,
     state.updatedAt ? `Обновлено: ${state.updatedAt}` : null,

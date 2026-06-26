@@ -23,6 +23,7 @@ import type {
   ChannelManagerObjectInManager,
   ChannelManagerRoute,
   MkAutomationConnectionStatus,
+  MkResponsibleRole,
 } from '@/lib/channel-manager-connection/types';
 
 export const MK_CALLBACK_PREFIX = 'obmk:';
@@ -35,6 +36,8 @@ export type OwnerMkPhase =
   | 'ask_property_in_cm'
   | 'minimal_collect'
   | 'explain_cm'
+  | 'ask_responsible'
+  | 'await_responsible_contact'
   | 'wizard'
   | 'completed';
 
@@ -48,6 +51,8 @@ export type OwnerMkFollowupKind =
   | 'channel_manager_explain_and_select';
 
 export type MkMinimalField = 'object_name' | 'location' | 'owner_contact' | 'target_placement';
+
+export type MkResponsibleSelectableRole = Exclude<MkResponsibleRole, 'owner' | 'unknown' | 'asi_help'>;
 
 export type OwnerMkOnboardingResult = {
   handled: boolean;
@@ -84,6 +89,81 @@ function selectedManagerMethod(state: OwnerOnboardingState): ChannelManagerConne
   return null;
 }
 
+export function mkResponsibleRoleLabel(role: MkResponsibleRole | null | undefined): string {
+  switch (role) {
+    case 'owner':
+      return 'владелец';
+    case 'manager':
+      return 'управляющий';
+    case 'administrator':
+      return 'администратор';
+    case 'staff':
+      return 'другой сотрудник';
+    case 'unknown':
+      return 'ответственный ещё не выбран';
+    case 'asi_help':
+      return 'нужна помощь ASI';
+    default:
+      return 'ответственный ещё не выбран';
+  }
+}
+
+function hasMkResponsibleDecision(state: OwnerOnboardingState): boolean {
+  return Boolean(state.mk_responsible_role);
+}
+
+export function shouldAskOwnerMkResponsible(state: OwnerOnboardingState): boolean {
+  return Boolean(state.mk_route) && !hasMkResponsibleDecision(state);
+}
+
+function ownerContactFromState(state: OwnerOnboardingState): string {
+  return text(state.owner_contact, 160) || 'текущий контакт владельца';
+}
+
+function extractResponsibleName(contactText: string): string | undefined {
+  const withoutHandles = contactText
+    .replace(/@\w+/g, ' ')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, ' ')
+    .replace(/\b(?:telegram|телеграм|тел|phone|контакт)\b/gi, ' ')
+    .replace(/[,:;|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!withoutHandles) return undefined;
+  const words = withoutHandles.split(' ').filter((word) => /[А-Яа-яA-Za-zЁё]/.test(word));
+  return words.slice(0, 3).join(' ') || undefined;
+}
+
+export function buildOwnerMkResponsiblePrompt(): string {
+  return 'Кто со стороны объекта будет отвечать за подключение менеджера каналов?';
+}
+
+function responsibleKeyboard(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Я сам', callback_data: callbackData('resp', 'owner') }],
+      [{ text: 'Управляющий', callback_data: callbackData('resp', 'manager') }],
+      [{ text: 'Администратор', callback_data: callbackData('resp', 'administrator') }],
+      [{ text: 'Другой сотрудник', callback_data: callbackData('resp', 'staff') }],
+      [{ text: 'Пока не знаю', callback_data: callbackData('resp', 'unknown') }],
+      [{ text: 'Нужна помощь ASI', callback_data: callbackData('resp', 'asi_help') }],
+    ],
+  };
+}
+
+export function buildOwnerMkResponsibleQuestionResult(state: OwnerOnboardingState): OwnerMkOnboardingResult {
+  state.mk_phase = 'ask_responsible';
+  state.status = 'missing_required_data';
+  state.mk_connection_state = buildOwnerMkConnectionState(state);
+  return {
+    handled: true,
+    replyText: buildOwnerMkResponsiblePrompt(),
+    replyMarkup: responsibleKeyboard(),
+    state,
+    status: 'missing_required_data',
+    missing: state.missing,
+  };
+}
+
 function automationRoute(state: OwnerOnboardingState): ChannelManagerRoute {
   if (state.mk_route === 'has_cm') return 'has_manager';
   if (state.mk_route === 'unknown_cm' || state.mk_route === 'unknown_help') return 'unknown';
@@ -97,6 +177,8 @@ function automationObjectInManager(state: OwnerOnboardingState): ChannelManagerO
 }
 
 export function resolveOwnerMkConnectionStatus(state: OwnerOnboardingState): MkAutomationConnectionStatus {
+  if (state.mk_responsible_role === 'unknown') return 'waiting_for_owner';
+  if (state.mk_responsible_role === 'asi_help') return 'ready_for_operator_review';
   if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') return 'needs_manager_check';
   if (
     state.mk_route === 'has_cm' &&
@@ -108,6 +190,15 @@ export function resolveOwnerMkConnectionStatus(state: OwnerOnboardingState): MkA
 }
 
 export function buildOwnerMkNextOperatorAction(state: OwnerOnboardingState): string {
+  if (state.mk_responsible_role === 'unknown') {
+    return 'Уточнить у владельца, кто будет отвечать за подключение менеджера каналов';
+  }
+  if (state.mk_responsible_role === 'asi_help') {
+    return 'Взять подключение менеджера каналов в ручной разбор ASI';
+  }
+  if (state.mk_responsible_role) {
+    return 'Связаться с ответственным и провести его по подключению менеджера каналов';
+  }
   if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') {
     return 'Проверить возможность подключения ASI к существующему менеджеру каналов';
   }
@@ -124,26 +215,27 @@ export function buildOwnerMkNextOperatorAction(state: OwnerOnboardingState): str
 }
 
 export function buildOwnerMkStatusMessage(state: OwnerOnboardingState): string {
-  const manager = selectedManagerLabel(state);
-  if (state.mk_route === 'has_cm' && state.property_in_channel_manager === 'yes') {
+  if (state.mk_responsible_role === 'unknown') {
+    return 'Данные объекта собраны. Следующий шаг — выбрать ответственного за подключение менеджера каналов.';
+  }
+  if (state.mk_responsible_role === 'asi_help') {
     return [
-      `Сейчас проверяем подключение к вашему менеджеру каналов${manager ? `: ${manager}` : ''}.`,
-      'Если понадобится доступ или подтверждение, оператор напишет вам.',
-      'Не отправляйте пароль в чат. Оператор подскажет безопасный способ передачи доступа.',
+      'Данные объекта собраны. Следующий шаг — ручной разбор подключения менеджера каналов оператором ASI.',
+      'Если понадобится доступ к кабинету менеджера каналов, оператор подскажет безопасный способ передачи.',
     ].join(' ');
   }
-  if (state.mk_route === 'has_cm') {
+  if (state.mk_responsible_role) {
+    const contact = text(state.mk_responsible_contact, 160);
+    const responsible = [mkResponsibleRoleLabel(state.mk_responsible_role), contact].filter(Boolean).join(', ');
     return [
-      'Данные объекта собираются, чтобы подготовить его для добавления в менеджер каналов.',
-      'Если понадобится доступ или подтверждение, оператор напишет вам.',
-    ].join(' ');
-  }
-  if (state.mk_route === 'unknown_cm' || state.mk_route === 'unknown_help') {
-    return 'Мы поможем определить, нужен ли вам менеджер каналов и какой вариант подойдёт.';
+      'Данные объекта собраны. Следующий шаг — подключить менеджер каналов.',
+      `Ответственный: ${responsible}.`,
+      'Если понадобится доступ или подтверждение, оператор напишет ответственному.',
+    ].join('\n');
   }
   return [
     'Данные объекта собраны.',
-    'Следующий шаг — подобрать менеджер каналов, через который объект сможет размещаться на выбранных площадках.',
+    'Следующий шаг — выбрать ответственного за подключение менеджера каналов.',
   ].join(' ');
 }
 
@@ -186,6 +278,9 @@ export function buildOwnerMkConnectionState(
     objectInChannelManager: automationObjectInManager(state),
     targetPlacementChannels: state.target_placement_channels ?? state.channels_list ?? [],
     connectionStatus,
+    mkResponsibleRole: state.mk_responsible_role ?? null,
+    mkResponsibleContact: state.mk_responsible_contact ?? null,
+    mkResponsibleName: state.mk_responsible_name ?? null,
     nextOperatorAction: buildOwnerMkNextOperatorAction(state),
     nextOwnerMessage,
     updatedAt: new Date().toISOString(),
@@ -381,6 +476,9 @@ function beginWizardFromMk(state: OwnerOnboardingState, intro?: string): OwnerMk
 
 function finalizeMinimalFlow(state: OwnerOnboardingState): OwnerMkOnboardingResult {
   syncTargetPlacementChannels(state);
+  if (shouldAskOwnerMkResponsible(state)) {
+    return buildOwnerMkResponsibleQuestionResult(state);
+  }
   state.mk_phase = 'completed';
   state.mk_collection_mode = 'minimal';
   state.status = 'ready_for_channel_manager';
@@ -520,6 +618,68 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
           state,
           'Тогда подготовим данные объекта, чтобы его можно было добавить в менеджер каналов.',
         );
+      }
+      return null;
+
+    case 'resp':
+      if (parsed.value === 'owner') {
+        state.mk_responsible_role = 'owner';
+        state.mk_responsible_contact = ownerContactFromState(state);
+        state.mk_responsible_name = undefined;
+        state.mk_phase = 'completed';
+        state.status = 'ready_for_channel_manager';
+        state.missing = [];
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
+        return {
+          handled: true,
+          replyText: 'Хорошо. Я буду считать вас ответственным за подключение менеджера каналов.',
+          state,
+          status: 'ready_for_channel_manager',
+          missing: [],
+        };
+      }
+      if (parsed.value === 'manager' || parsed.value === 'administrator' || parsed.value === 'staff') {
+        state.mk_responsible_role = parsed.value;
+        state.mk_phase = 'await_responsible_contact';
+        state.status = 'missing_required_data';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
+        return {
+          handled: true,
+          replyText: 'Укажите Telegram или телефон человека, который будет заниматься подключением.',
+          state,
+          status: 'missing_required_data',
+          missing: state.missing,
+        };
+      }
+      if (parsed.value === 'unknown') {
+        state.mk_responsible_role = 'unknown';
+        state.mk_responsible_contact = undefined;
+        state.mk_responsible_name = undefined;
+        state.mk_phase = 'completed';
+        state.status = 'ready_for_channel_manager';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
+        return {
+          handled: true,
+          replyText: 'Хорошо. Когда определитесь, напишите, кто будет отвечать за подключение. Пока я сохраню объект и отмечу, что ответственный ещё не выбран.',
+          state,
+          status: 'ready_for_channel_manager',
+          missing: [],
+        };
+      }
+      if (parsed.value === 'asi_help') {
+        state.mk_responsible_role = 'asi_help';
+        state.mk_responsible_contact = undefined;
+        state.mk_responsible_name = undefined;
+        state.mk_phase = 'completed';
+        state.status = 'ready_for_channel_manager';
+        state.mk_connection_state = buildOwnerMkConnectionState(state);
+        return {
+          handled: true,
+          replyText: 'Поняла. Передам задачу оператору ASI. Если понадобится доступ к кабинету менеджера каналов, оператор подскажет безопасный способ передачи.',
+          state,
+          status: 'ready_for_channel_manager',
+          missing: [],
+        };
       }
       return null;
 
@@ -731,6 +891,31 @@ export function tryHandleOwnerMkOnboarding(params: {
     };
   }
 
+  if (state.mk_phase === 'await_responsible_contact') {
+    if (messageText && !isIdentitySelectionText(messageText)) {
+      state.mk_responsible_contact = messageText;
+      state.mk_responsible_name = extractResponsibleName(messageText);
+      state.mk_phase = 'completed';
+      state.status = 'ready_for_channel_manager';
+      state.missing = [];
+      state.mk_connection_state = buildOwnerMkConnectionState(state);
+      return {
+        handled: true,
+        replyText: 'Поняла. Я подготовлю для него короткую инструкцию по подключению менеджера каналов.',
+        state,
+        status: 'ready_for_channel_manager',
+        missing: [],
+      };
+    }
+    return {
+      handled: true,
+      replyText: 'Укажите Telegram или телефон человека, который будет заниматься подключением.',
+      state,
+      status: 'missing_required_data',
+      missing: state.missing,
+    };
+  }
+
   if (isMkRoutingActive(state)) {
     if (state.mk_phase === 'ask_has_cm') {
       return {
@@ -780,6 +965,9 @@ export function tryHandleOwnerMkOnboarding(params: {
         status: state.status,
         missing: state.missing,
       };
+    }
+    if (state.mk_phase === 'ask_responsible') {
+      return buildOwnerMkResponsibleQuestionResult(state);
     }
   }
 
