@@ -200,6 +200,25 @@ describe('Telegram owner start menu and reset', () => {
     expect(listOwnerObjectRecords(8804, 'telegram')).toHaveLength(2);
   });
 
+  it('/start shows continue-or-restart menu for incomplete onboarding', async () => {
+    ensureOwnerObjectsRegistry(8807, 'telegram');
+    const state = readOwnerObjectState(8807, 'telegram', 'OBJ-0001');
+    state.city = 'Казань';
+    state.status = 'missing_required_data';
+    state.missing = ['address'];
+    persistOwnerObjectState(8807, 'telegram', 'OBJ-0001', state);
+
+    const result = await processTelegramOwnerOnboarding({
+      envelope: envelope('/start'),
+      chatId: 8807,
+      senderIdentity: 'lead',
+    });
+
+    expect(result.replyText).toContain('незавершённое подключение');
+    expect(result.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Продолжить');
+    expect(result.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Начать заново');
+  });
+
   it('status button shows last completed object without OPS side effects', async () => {
     seedCompletedObject(8805);
 
