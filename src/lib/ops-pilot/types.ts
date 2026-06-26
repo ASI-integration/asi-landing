@@ -16,7 +16,7 @@ export const OPS_PILOT_STAGE_VALUES = [
 export type OpsPilotStage = (typeof OPS_PILOT_STAGE_VALUES)[number];
 
 export const OPS_PILOT_STAGE_LABELS: Record<OpsPilotStage, string> = {
-  new_lead: 'Новый лид',
+  new_lead: 'Новая заявка',
   access_received: 'Доступ/контакт получен',
   object_created: 'Объект создан',
   object_filling: 'Объект заполняется',

@@ -31,7 +31,13 @@ describe('/api/dashboard/crm', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, contacts: [] });
-    expect(listCrmContacts).toHaveBeenCalledWith({ status: 'pilot', source: 'telegram', search: 'anna' });
+    expect(listCrmContacts).toHaveBeenCalledWith({
+      status: 'pilot',
+      source: 'telegram',
+      search: 'anna',
+      excludeArchived: true,
+      includeTest: false,
+    });
   });
 
   it('rejects contacts without contact channel', async () => {

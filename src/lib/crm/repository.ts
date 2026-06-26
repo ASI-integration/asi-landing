@@ -13,14 +13,22 @@ type CrmContactRow = {
   contact?: string | null;
   phone: string | null;
   telegram_username: string | null;
+  telegram_user_id?: string | null;
+  telegram_chat_id?: string | null;
   email: string | null;
   role: string;
   source: string;
+  interest_context?: string | null;
   property_count: number | null;
   city: string | null;
   notes: string | null;
   status: string;
   communication_status?: string | null;
+  responsible_name?: string | null;
+  responsible_telegram?: string | null;
+  responsible_phone?: string | null;
+  last_message?: string | null;
+  last_reason?: string | null;
   awaiting_reply?: boolean | null;
   last_activity_at: string | null;
   next_action: string | null;
@@ -61,9 +69,13 @@ const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
   rejected: ['rejected', 'not_relevant', 'not_fit'],
   new_lead: ['new_lead', 'new', 'pilot_candidate'],
   contact: ['contact', 'qualified', 'needs_reaction'],
+  contact_sent: ['contact_sent', 'instruction_sent'],
+  operator_needed: ['operator_needed', 'needs_reaction', 'contact'],
+  access_requested: ['access_requested'],
   waiting_object_data: ['waiting_object_data', 'needs_clarification'],
   access_received: ['access_received', 'object_filled'],
   test_object_selected: ['test_object_selected', 'pilot_selected'],
+  ready_for_setup: ['ready_for_setup', 'object_setup'],
   object_setup: ['object_setup', 'creating_object'],
   ready_for_test: ['ready_for_test', 'testing_communication'],
   pilot: ['pilot', 'pilot_active', 'active_pilot'],
@@ -71,6 +83,7 @@ const STATUS_FILTER_VALUES: Partial<Record<CrmStatus, string[]>> = {
 };
 
 const SOURCE_FILTER_VALUES: Partial<Record<CrmSource, string[]>> = {
+  web: ['web', 'landing', 'pilot_form', 'form'],
   form: ['form', 'landing', 'pilot_form'],
   other: ['other', 'test'],
 };
@@ -81,10 +94,19 @@ function toRole(value: string): CrmContact['role'] {
 }
 
 function toSource(value: string): CrmSource {
-  if (value === 'telegram' || value === 'form' || value === 'manual' || value === 'bragin_group' || value === 'other') {
+  if (
+    value === 'telegram' ||
+    value === 'web' ||
+    value === 'dashboard' ||
+    value === 'unknown' ||
+    value === 'form' ||
+    value === 'manual' ||
+    value === 'bragin_group' ||
+    value === 'other'
+  ) {
     return value;
   }
-  if (value === 'landing' || value === 'pilot_form') return 'form';
+  if (value === 'landing' || value === 'pilot_form') return 'web';
   return 'other';
 }
 
@@ -98,6 +120,7 @@ function toStatus(value: string): CrmStatus {
     object_filled: 'access_received',
     testing_communication: 'ready_for_test',
     needs_reaction: 'contact',
+    instruction_sent: 'contact_sent',
     pilot_active: 'active_pilot',
     pilot: 'active_pilot',
     pilot_selected: 'test_object_selected',
@@ -106,6 +129,11 @@ function toStatus(value: string): CrmStatus {
     not_relevant: 'rejected',
   };
   return map[value] ?? (value as CrmStatus);
+}
+
+function toInterestContext(value: string | null | undefined): CrmContact['interestContext'] {
+  if (value === 'channel_manager_setup' || value === 'asi_connection' || value === 'support') return value;
+  return 'unknown';
 }
 
 function toCommunicationStatus(row: CrmContactRow): CrmContact['communicationStatus'] {
@@ -231,14 +259,21 @@ function toContact(row: CrmContactRow): CrmContact {
     name: formatCrmContactNameForDisplay(row.name, row.telegram_username),
     phone: row.phone ?? row.contact ?? '',
     telegramUsername: row.telegram_username ?? '',
+    telegramId: row.telegram_user_id ?? row.telegram_chat_id ?? '',
     email: row.email,
     role: toRole(row.role),
     source: toSource(row.source),
+    interestContext: toInterestContext(row.interest_context),
     objectsCount: ownerObjects.length > 0 ? ownerObjects.length : (row.property_count ?? 0),
     city: row.city ?? '',
     note: row.notes ?? '',
     status: toStatus(row.status),
     communicationStatus: toCommunicationStatus(row),
+    responsibleName: row.responsible_name ?? 'Николай',
+    responsibleTelegram: row.responsible_telegram ?? '@ASI_Support_Bot',
+    responsiblePhone: row.responsible_phone ?? '+79217926627',
+    lastMessage: row.last_message ?? '',
+    lastReason: row.last_reason ?? '',
     lastContactAt: row.last_activity_at,
     nextStep: row.next_action ?? '',
     nextActionAt: row.next_action_due_at,

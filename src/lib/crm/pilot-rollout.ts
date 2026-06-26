@@ -15,6 +15,9 @@ const LEGACY_TO_PILOT: Record<string, PilotRolloutStatus> = {
   new_lead: 'new',
   pilot_candidate: 'new',
   contact: 'new',
+  contact_sent: 'invited',
+  operator_needed: 'new',
+  access_requested: 'onboarding',
   qualified: 'new',
   needs_reaction: 'new',
   waitlist: 'waitlist',
@@ -30,6 +33,7 @@ const LEGACY_TO_PILOT: Record<string, PilotRolloutStatus> = {
   creating_object: 'onboarding',
   object_setup: 'onboarding',
   test_object_selected: 'onboarding',
+  ready_for_setup: 'onboarding',
   ready_for_test: 'onboarding',
   testing_communication: 'onboarding',
   active_pilot: 'active_pilot',
@@ -52,7 +56,6 @@ const PILOT_TO_STORAGE: Record<PilotRolloutStatus, CrmStatus> = {
 };
 
 const STORAGE_ALIASES: Record<string, CrmStatus> = {
-  new_lead: 'new',
   pilot_candidate: 'new',
   pilot_waitlist: 'waitlist',
   pilot_active: 'active_pilot',
@@ -60,6 +63,21 @@ const STORAGE_ALIASES: Record<string, CrmStatus> = {
   not_fit: 'rejected',
   not_relevant: 'rejected',
 };
+
+const EXACT_STORAGE_STATUSES = new Set<CrmStatus>([
+  'new_lead',
+  'contact',
+  'contact_sent',
+  'operator_needed',
+  'access_requested',
+  'instruction_sent',
+  'waiting_object_data',
+  'access_received',
+  'test_object_selected',
+  'ready_for_setup',
+  'object_setup',
+  'ready_for_test',
+]);
 
 export type PilotRolloutMetrics = {
   activePilots: number;
@@ -102,6 +120,7 @@ export function isPilotParticipantStatus(status: CrmStatus | string): boolean {
 }
 
 export function normalizePilotRolloutStorageStatus(status: CrmStatus | string): CrmStatus {
+  if (EXACT_STORAGE_STATUSES.has(status as CrmStatus)) return status as CrmStatus;
   const rollout = resolvePilotRolloutStatus(status);
   if (PILOT_ROLLOUT_STATUS_VALUES.includes(rollout)) {
     return PILOT_TO_STORAGE[rollout];

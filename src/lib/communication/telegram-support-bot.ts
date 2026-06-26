@@ -146,26 +146,55 @@ function telegramUsernameFromUpdate(update: TelegramUpdate): string {
   return typeof username === 'string' ? username.trim().replace(/^@/, '') : '';
 }
 
+function telegramUserIdFromUpdate(update: TelegramUpdate): string {
+  const message = update.message ?? update.edited_message;
+  const id = message?.from?.id;
+  return typeof id === 'number' || typeof id === 'string' ? String(id).trim() : '';
+}
+
+function telegramChatIdFromUpdate(update: TelegramUpdate): string {
+  const message = update.message ?? update.edited_message;
+  const id = message?.chat?.id;
+  return typeof id === 'number' || typeof id === 'string' ? String(id).trim() : '';
+}
+
 function telegramDisplayNameFromUpdate(update: TelegramUpdate): string {
   const message = update.message ?? update.edited_message;
   const firstName = typeof message?.from?.first_name === 'string' ? message.from.first_name.trim() : '';
   const username = telegramUsernameFromUpdate(update);
-  return firstName || (username ? `@${username}` : 'Telegram support lead');
+  return firstName || (username ? `@${username}` : 'Контакт из Telegram');
 }
 
-async function findCrmContactByTelegramUsername(username: string): Promise<{ id: string } | null> {
-  if (!username) return null;
+async function findCrmContactByTelegram(input: { username: string; userId: string; chatId: string }): Promise<{ id: string } | null> {
   try {
-    const { data, error } = await supabase
-      .from('crm_contacts')
-      .select('id')
-      .eq('telegram_username', username)
-      .maybeSingle();
-    if (error || !data) return null;
-    return { id: String((data as { id: unknown }).id) };
+    if (input.userId) {
+      const { data, error } = await supabase
+        .from('crm_contacts')
+        .select('id')
+        .eq('telegram_user_id', input.userId)
+        .maybeSingle();
+      if (!error && data) return { id: String((data as { id: unknown }).id) };
+    }
+    if (input.username) {
+      const { data, error } = await supabase
+        .from('crm_contacts')
+        .select('id')
+        .eq('telegram_username', input.username)
+        .maybeSingle();
+      if (!error && data) return { id: String((data as { id: unknown }).id) };
+    }
+    if (input.chatId) {
+      const { data, error } = await supabase
+        .from('crm_contacts')
+        .select('id')
+        .eq('telegram_chat_id', input.chatId)
+        .maybeSingle();
+      if (!error && data) return { id: String((data as { id: unknown }).id) };
+    }
   } catch {
     return null;
   }
+  return null;
 }
 
 function crmNotesForIntent(intent: SupportBotIntent, messageText: string): string {
@@ -206,22 +235,36 @@ async function upsertSupportCrmLead(input: {
   messageText: string;
 }): Promise<string | null> {
   const username = telegramUsernameFromUpdate(input.update);
-  if (!username) return null;
+  const userId = telegramUserIdFromUpdate(input.update);
+  const chatId = telegramChatIdFromUpdate(input.update);
+  const contactKey = username || (userId ? `tg:${userId}` : chatId ? `tg-chat:${chatId}` : '');
+  if (!contactKey) return null;
 
   const now = new Date().toISOString();
   const notes = crmNotesForIntent(input.intent, input.messageText);
   const nextAction = crmNextActionForIntent(input.intent);
-  const existing = await findCrmContactByTelegramUsername(username);
+  const existing = await findCrmContactByTelegram({ username, userId, chatId });
+  const operatorNeeded = shouldCreateSupportOpsTask(input.intent);
+  const interestContext = input.intent === 'connect_property' ? 'asi_connection' : 'support';
 
   if (existing?.id) {
     try {
       const { data, error } = await supabase
         .from('crm_contacts')
         .update({
-          role: 'lead',
+          role: 'unknown',
           source: 'telegram',
+          interest_context: interestContext,
+          status: operatorNeeded ? 'operator_needed' : 'new',
+          responsible_name: process.env.ASI_OPERATOR_NAME?.trim() || 'Николай',
+          responsible_telegram: process.env.ASI_OPERATOR_TELEGRAM?.trim() || '@ASI_Support_Bot',
+          responsible_phone: process.env.ASI_OPERATOR_PHONE?.trim() || '+79217926627',
+          telegram_user_id: userId || null,
+          telegram_chat_id: chatId || null,
+          last_message: input.messageText.trim().slice(0, 600),
+          last_reason: operatorNeeded ? 'обращение в поддержку требует оператора' : 'обращение в поддержку ASI',
           last_activity_at: now,
-          communication_status: 'wrote_first',
+          communication_status: operatorNeeded ? 'needs_manual_reaction' : 'wrote_first',
           notes,
           next_action: nextAction,
         })
@@ -241,16 +284,24 @@ async function upsertSupportCrmLead(input: {
       .insert({
         name: telegramDisplayNameFromUpdate(input.update),
         phone: null,
-        contact: username,
-        telegram_username: username,
+        contact: contactKey,
+        telegram_username: username || null,
+        telegram_user_id: userId || null,
+        telegram_chat_id: chatId || null,
         email: null,
-        role: 'lead',
+        role: 'unknown',
         source: 'telegram',
+        interest_context: interestContext,
         property_count: 0,
         city: null,
         notes,
-        status: 'new_lead',
-        communication_status: 'wrote_first',
+        status: operatorNeeded ? 'operator_needed' : 'new',
+        communication_status: operatorNeeded ? 'needs_manual_reaction' : 'wrote_first',
+        responsible_name: process.env.ASI_OPERATOR_NAME?.trim() || 'Николай',
+        responsible_telegram: process.env.ASI_OPERATOR_TELEGRAM?.trim() || '@ASI_Support_Bot',
+        responsible_phone: process.env.ASI_OPERATOR_PHONE?.trim() || '+79217926627',
+        last_message: input.messageText.trim().slice(0, 600),
+        last_reason: operatorNeeded ? 'обращение в поддержку требует оператора' : 'обращение в поддержку ASI',
         last_activity_at: now,
         next_action: nextAction,
         next_action_due_at: null,

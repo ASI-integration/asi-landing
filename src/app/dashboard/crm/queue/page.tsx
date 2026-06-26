@@ -2,7 +2,7 @@ import CrmQueuePageClient from './CrmQueuePageClient';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 
 export const metadata = {
-  title: 'Очередь CRM | ASI',
+  title: 'Очередь заявок | ASI',
 };
 
 export default function CrmQueuePage() {

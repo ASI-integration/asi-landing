@@ -9,17 +9,13 @@ import {
   CRM_ROLE_LABELS,
   CRM_SOURCE_LABELS,
   CRM_SOURCE_VALUES,
-  PILOT_ROLLOUT_STATUS_LABELS,
-  PILOT_ROLLOUT_STATUS_VALUES,
+  CRM_STATUS_LABELS,
+  CRM_STATUS_VALUES,
   CrmCommunicationStatus,
   CrmContact,
   CrmSource,
   CrmStatus,
 } from '@/lib/crm/types';
-import {
-  pilotRolloutStatusLabel,
-  resolvePilotRolloutStatus,
-} from '@/lib/crm/pilot-rollout';
 import { getCrmSuggestions, resolveCrmRoleInput, resolveCrmSourceInput } from '@/lib/crm/suggestions';
 import { formatCrmContactNameForDisplay } from '@/lib/crm/contact-display';
 import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
@@ -59,6 +55,21 @@ const emptyDraft: Draft = {
   nextActionAt: '',
 };
 
+const SETUP_STATUS_ACTIONS: Array<{ status: CrmStatus; label: string }> = [
+  { status: 'contact_sent', label: 'Инструкция отправлена' },
+  { status: 'access_requested', label: 'Доступ запрошен' },
+  { status: 'access_received', label: 'Доступ получен' },
+  { status: 'test_object_selected', label: 'Выбран тестовый объект' },
+  { status: 'ready_for_setup', label: 'Готов к настройке' },
+];
+
+const INTEREST_CONTEXT_LABELS: Record<NonNullable<CrmContact['interestContext']>, string> = {
+  channel_manager_setup: 'настройка менеджера каналов',
+  asi_connection: 'подключение ASI',
+  support: 'поддержка',
+  unknown: 'неизвестно',
+};
+
 function formatDate(value: string | null): string {
   if (!value) return 'не задано';
   return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(
@@ -86,6 +97,24 @@ function onboardingBadgeClass(status: string): string {
     default:
       return 'bg-slate-50 text-slate-700 border-slate-200';
   }
+}
+
+function crmStatusLabel(status: CrmStatus): string {
+  return CRM_STATUS_LABELS[status] ?? status;
+}
+
+function interestContextLabel(contact: CrmContact): string {
+  return INTEREST_CONTEXT_LABELS[contact.interestContext ?? 'unknown'];
+}
+
+function responsibleLabel(contact: CrmContact): string {
+  return [
+    contact.responsibleName || 'Николай',
+    contact.responsibleTelegram || '@ASI_Support_Bot',
+    contact.responsiblePhone || '+79217926627',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 export default function CrmPageClient() {
@@ -142,7 +171,7 @@ export default function CrmPageClient() {
       const res = await fetch(`/api/dashboard/crm${params ? `?${params}` : ''}`, { credentials: 'include' });
       const data = await readResponseJson(res, { ok: false, contacts: [] as CrmContact[], message: '' });
       if (!res.ok || !data.ok) {
-        setMessage(data.message || 'Не удалось загрузить CRM.');
+        setMessage(data.message || 'Не удалось загрузить заявки.');
         return;
       }
       setContacts(data.contacts);
@@ -304,9 +333,9 @@ export default function CrmPageClient() {
     <div className="mx-auto max-w-7xl space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-950">CRM раннего доступа</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Заявки</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Заявки, владельцы, объекты, этап подключения и следующий ручной шаг.
+            Рабочий поток заявок: контакт, подключение, доступы и подготовка объекта.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -314,7 +343,7 @@ export default function CrmPageClient() {
             href="/dashboard/crm/queue"
             className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
           >
-            Очередь CRM
+            Очередь заявок
           </Link>
           <button
             type="button"
@@ -469,7 +498,7 @@ export default function CrmPageClient() {
         />
         <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as CrmStatus | 'all')}>
           <option value="all">все статусы</option>
-          {PILOT_ROLLOUT_STATUS_VALUES.map((value) => <option key={value} value={value}>{PILOT_ROLLOUT_STATUS_LABELS[value]}</option>)}
+          {CRM_STATUS_VALUES.map((value) => <option key={value} value={value}>{crmStatusLabel(value)}</option>)}
         </select>
         <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as CrmSource | 'all')}>
           <option value="all">все источники</option>
@@ -487,7 +516,7 @@ export default function CrmPageClient() {
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         {loading ? (
-          <div className="p-6 text-sm text-slate-500">Загрузка CRM...</div>
+          <div className="p-6 text-sm text-slate-500">Загрузка заявок...</div>
         ) : contacts.length === 0 ? (
           <div className="p-6 text-sm text-slate-500">Заявки не найдены.</div>
         ) : (
@@ -504,7 +533,7 @@ export default function CrmPageClient() {
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{CRM_ROLE_LABELS[contact.role]}</span>
                       <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">{CRM_SOURCE_LABELS[contact.source]}</span>
                       <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700">
-                        {pilotRolloutStatusLabel(contact.status)}
+                        {crmStatusLabel(contact.status)}
                       </span>
                       <button
                         type="button"
@@ -520,6 +549,13 @@ export default function CrmPageClient() {
                       <div>{contact.telegramUsername ? `@${contact.telegramUsername}` : 'Telegram не указан'}</div>
                       <div>{contact.email || 'email не указан'}</div>
                       <div>{contact.city || 'город не указан'} · объектов: {contact.objectsCount}</div>
+                      <div>Контекст: {interestContextLabel(contact)}</div>
+                      <div>Ответственный по заявке: {responsibleLabel(contact)}</div>
+                      <div>Создана: {formatDate(contact.createdAt)} · обновлена: {formatDate(contact.updatedAt)}</div>
+                      {contact.lastReason ? <div>Причина: {contact.lastReason}</div> : null}
+                      {contact.lastMessage ? (
+                        <div>Последнее сообщение: {sanitizeCrmMessageTextForDisplay(contact.lastMessage)}</div>
+                      ) : null}
                     </div>
                     {contact.onboarding ? (
                       <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
@@ -547,22 +583,35 @@ export default function CrmPageClient() {
 
                   <div className="space-y-3">
                     <label className="block text-xs font-medium uppercase text-slate-500">
-                      Статус
+                      Статус заявки
                       <select
                         className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                        value={resolvePilotRolloutStatus(contact.status)}
+                        value={contact.status}
                         disabled={savingId === contact.id}
                         onChange={(e) =>
                           void patchContact(contact.id, { status: e.target.value as CrmStatus })
                         }
                       >
-                        {PILOT_ROLLOUT_STATUS_VALUES.map((value) => (
+                        {CRM_STATUS_VALUES.map((value) => (
                           <option key={value} value={value}>
-                            {PILOT_ROLLOUT_STATUS_LABELS[value]}
+                            {crmStatusLabel(value)}
                           </option>
                         ))}
                       </select>
                     </label>
+                    <div className="grid gap-2">
+                      {SETUP_STATUS_ACTIONS.map((action) => (
+                        <button
+                          key={action.status}
+                          type="button"
+                          disabled={savingId === contact.id || contact.status === action.status}
+                          onClick={() => void patchContact(contact.id, { status: action.status })}
+                          className="rounded-md border border-slate-300 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
                     <label className="block text-xs font-medium uppercase text-slate-500">
                       Коммуникация
                       <select className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={contact.communicationStatus} disabled={savingId === contact.id} onChange={(e) => void patchContact(contact.id, { communicationStatus: e.target.value as CrmCommunicationStatus })}>

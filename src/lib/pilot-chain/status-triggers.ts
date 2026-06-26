@@ -5,6 +5,7 @@ const LEGACY_OBJECT_SETUP_STATUSES = new Set<CrmStatus>([
   'waiting_object_data',
   'access_received',
   'test_object_selected',
+  'ready_for_setup',
   'object_setup',
   'ready_for_test',
 ]);

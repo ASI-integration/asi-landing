@@ -2,7 +2,7 @@ import CrmPageClient from './CrmPageClient';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 
 export const metadata = {
-  title: 'CRM раннего доступа | ASI',
+  title: 'Заявки | ASI',
 };
 
 export default function CrmPage() {

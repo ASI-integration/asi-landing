@@ -33,7 +33,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     });
     return NextResponse.json({ ok: true, contacts });
   } catch {
-    return NextResponse.json({ ok: false, message: 'Не удалось загрузить CRM.' }, { status: 500 });
+    return NextResponse.json({ ok: false, message: 'Не удалось загрузить заявки.' }, { status: 500 });
   }
 }
 

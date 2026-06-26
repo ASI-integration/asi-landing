@@ -598,7 +598,7 @@ export default function CrmQueuePageClient() {
     <div className="space-y-6 pb-2 w-full">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Очередь CRM</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Очередь заявок</h1>
           <p className="mt-1 text-sm text-slate-600">
             Единый экран объектов, заявок и подключений для пилота.
           </p>

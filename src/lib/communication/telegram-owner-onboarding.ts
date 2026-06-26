@@ -224,6 +224,10 @@ function telegramContactKey(envelope: InboundMessageEnvelope): string {
   return userId ? `tg:${userId}` : '';
 }
 
+function telegramUserId(envelope: InboundMessageEnvelope): string {
+  return text(envelope.metadata?.telegram_user_id ?? envelope.externalUserId, 80);
+}
+
 function telegramDisplayName(envelope: InboundMessageEnvelope): string {
   const firstName = text(envelope.metadata?.telegram_first_name ?? (envelope.metadata as any)?.telegram?.first_name, 120);
   const username = telegramUsername(envelope);
@@ -1178,7 +1182,16 @@ function buildCrmNote(params: {
 async function findCrmContact(envelope: InboundMessageEnvelope): Promise<{ id: string; notes?: string | null } | null> {
   const username = telegramUsername(envelope);
   const contactKey = telegramContactKey(envelope);
+  const userId = telegramUserId(envelope);
   try {
+    if (userId) {
+      const { data, error } = await supabase
+        .from('crm_contacts')
+        .select('id,notes')
+        .eq('telegram_user_id', userId)
+        .maybeSingle();
+      if (!error && data) return data as { id: string; notes?: string | null };
+    }
     if (username) {
       const { data, error } = await supabase
         .from('crm_contacts')
@@ -1212,26 +1225,31 @@ async function upsertCrmContact(params: {
   if (!contactKey) return undefined;
   const existing = await findCrmContact(params.envelope);
   const username = telegramUsername(params.envelope);
+  const userId = telegramUserId(params.envelope);
+  const chatId = text(params.envelope.metadata?.telegram_chat_id ?? params.chatId, 80);
   const now = new Date().toISOString();
   const objectsCount = listOwnerObjectRecords(params.chatId, params.envelope.channel).length;
   const role = params.senderIdentity === 'owner' || params.senderIdentity === 'manager' ? params.senderIdentity : 'unknown';
   const crmStatus =
-    params.state.status === 'ready_for_channel_manager' || params.state.status === 'channel_manager_started'
+    params.state.status === 'needs_operator'
+      ? 'operator_needed'
+      : params.state.status === 'ready_for_channel_manager' || params.state.status === 'channel_manager_started'
       ? 'object_setup'
-      : params.state.status === 'needs_operator'
-        ? 'contact'
-        : params.state.status === 'onboarding_started'
+      : params.state.status === 'onboarding_started'
           ? 'contact'
           : 'waiting_object_data';
   const communicationStatus = params.state.status === 'needs_operator' ? 'needs_manual_reaction' : 'waiting_reply';
+  const operatorRequested = Boolean(params.state.mk_operator_requested_at);
+  const lastReason = operatorRequested ? 'нажата кнопка Позвать оператора' : '';
+  const interestContext = params.state.mk_route ? 'channel_manager_setup' : 'asi_connection';
   const nextAction =
-    params.state.status === 'ready_for_channel_manager'
+    params.state.status === 'needs_operator'
+      ? 'Николай связывается с владельцем по подключению менеджера каналов.'
+      : params.state.status === 'ready_for_channel_manager'
       ? 'Открыть Менеджер каналов и начать подключение каналов.'
       : params.state.status === 'channel_manager_started'
         ? 'Проверить старт Менеджера каналов.'
-        : params.state.status === 'needs_operator'
-          ? 'Оператору нужно ответить вручную по онбордингу объекта.'
-          : params.state.readiness?.next_best_step_ru ??
+        : params.state.readiness?.next_best_step_ru ??
             `Запросить: ${WIZARD_FIELD_LABELS[params.state.missing[0] ?? 'city'] ?? 'данные объекта'}.`;
   const notes = buildCrmNote({
     existingNote: existing?.notes,
@@ -1251,11 +1269,19 @@ async function upsertCrmContact(params: {
         role,
         status: crmStatus,
         communication_status: communicationStatus,
+        interest_context: interestContext,
+        responsible_name: process.env.ASI_OPERATOR_NAME?.trim() || 'Николай',
+        responsible_telegram: process.env.ASI_OPERATOR_TELEGRAM?.trim() || '@ASI_Support_Bot',
+        responsible_phone: process.env.ASI_OPERATOR_PHONE?.trim() || '+79217926627',
+        last_message: params.state.lastMessage || lastReason,
+        last_reason: lastReason,
         last_activity_at: now,
         next_action: nextAction,
         notes,
         property_count: objectsCount,
       };
+      if (userId) patch.telegram_user_id = userId;
+      if (chatId) patch.telegram_chat_id = chatId;
       if (params.state.city?.trim()) patch.city = params.state.city.trim();
       const phoneCandidate = params.state.owner_contact?.replace(/^@+/, '').trim();
       if (phoneCandidate && /\d{10,}/.test(phoneCandidate.replace(/\D/g, ''))) {
@@ -1278,14 +1304,22 @@ async function upsertCrmContact(params: {
         phone: insertPhone,
         contact: contactKey,
         telegram_username: username || null,
+        telegram_user_id: userId || null,
+        telegram_chat_id: chatId || null,
         email: null,
         role,
         source: 'telegram',
+        interest_context: interestContext,
         property_count: objectsCount,
         city: params.state.city?.trim() || null,
         notes,
         status: crmStatus,
         communication_status: communicationStatus,
+        responsible_name: process.env.ASI_OPERATOR_NAME?.trim() || 'Николай',
+        responsible_telegram: process.env.ASI_OPERATOR_TELEGRAM?.trim() || '@ASI_Support_Bot',
+        responsible_phone: process.env.ASI_OPERATOR_PHONE?.trim() || '+79217926627',
+        last_message: params.state.lastMessage || lastReason,
+        last_reason: lastReason,
         last_activity_at: now,
         next_action: nextAction,
         next_action_due_at: null,

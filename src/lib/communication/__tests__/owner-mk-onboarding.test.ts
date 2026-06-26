@@ -339,6 +339,20 @@ describe('Owner onboarding MK-first routing', () => {
     expect(callOperator.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
       expect.arrayContaining(['Связаться с поддержкой', 'Изменить ответственного', 'Проверить статус']),
     );
+    const crmOperatorPatch = insertedRows
+      .filter((item) => item.table === 'crm_contacts_update')
+      .at(-1)?.patch as Record<string, unknown> | undefined;
+    expect(crmOperatorPatch).toMatchObject({
+      status: 'operator_needed',
+      communication_status: 'needs_manual_reaction',
+      interest_context: 'channel_manager_setup',
+      responsible_name: 'Николай',
+      responsible_telegram: '@ASI_Support_Bot',
+      responsible_phone: '+79217926627',
+      last_reason: 'нажата кнопка Позвать оператора',
+      telegram_user_id: '99001',
+      telegram_chat_id: '99001',
+    });
     const operatorFollowup = opsTaskCalls.at(-1);
     expect(operatorFollowup?.taskType).toBe('verify_channel_manager');
     expect(operatorFollowup?.dedupKey).toBe(followupOps[0]?.dedupKey);

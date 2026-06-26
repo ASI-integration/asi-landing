@@ -1,7 +1,7 @@
 export const CRM_ROLE_VALUES = ['owner', 'manager', 'partner', 'unknown'] as const;
 export type CrmRole = (typeof CRM_ROLE_VALUES)[number];
 
-export const CRM_SOURCE_VALUES = ['telegram', 'form', 'manual', 'bragin_group', 'other'] as const;
+export const CRM_SOURCE_VALUES = ['telegram', 'web', 'dashboard', 'unknown', 'form', 'manual', 'bragin_group', 'other'] as const;
 export type CrmSource = (typeof CRM_SOURCE_VALUES)[number];
 
 export const PILOT_ROLLOUT_STATUS_VALUES = [
@@ -18,10 +18,14 @@ export type PilotRolloutStatus = (typeof PILOT_ROLLOUT_STATUS_VALUES)[number];
 export const CRM_LEGACY_STATUS_VALUES = [
   'new_lead',
   'contact',
+  'contact_sent',
+  'operator_needed',
+  'access_requested',
   'instruction_sent',
   'waiting_object_data',
   'access_received',
   'test_object_selected',
+  'ready_for_setup',
   'object_setup',
   'ready_for_test',
   'pilot',
@@ -119,14 +123,21 @@ export type CrmContact = {
   name: string;
   phone: string;
   telegramUsername: string;
+  telegramId?: string;
   email: string | null;
   role: CrmRole;
   source: CrmSource;
+  interestContext?: 'channel_manager_setup' | 'asi_connection' | 'support' | 'unknown';
   objectsCount: number;
   city: string;
   note: string;
   status: CrmStatus;
   communicationStatus: CrmCommunicationStatus;
+  responsibleName?: string;
+  responsibleTelegram?: string;
+  responsiblePhone?: string;
+  lastMessage?: string;
+  lastReason?: string;
   lastContactAt: string | null;
   nextStep: string;
   nextActionAt: string | null;
@@ -174,6 +185,9 @@ export const CRM_ROLE_LABELS: Record<CrmRole, string> = {
 
 export const CRM_SOURCE_LABELS: Record<CrmSource, string> = {
   telegram: 'Telegram',
+  web: 'сайт',
+  dashboard: 'дашборд',
+  unknown: 'неизвестно',
   form: 'форма',
   manual: 'вручную',
   bragin_group: 'группа Брагина',
@@ -200,10 +214,14 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   rejected: 'Не подходит сейчас',
   new_lead: 'Новая заявка',
   contact: 'Связаться',
+  contact_sent: 'Инструкция отправлена',
+  operator_needed: 'Нужен оператор',
+  access_requested: 'Доступ запрошен',
   instruction_sent: 'Инструкция отправлена',
   waiting_object_data: 'Ждём данные объекта',
   access_received: 'Доступ получен',
   test_object_selected: 'Выбран тестовый объект',
+  ready_for_setup: 'Готов к настройке',
   object_setup: 'Объект на настройке',
   ready_for_test: 'Готов к тесту',
   pilot: 'Участник пилота',
