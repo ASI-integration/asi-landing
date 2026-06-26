@@ -660,6 +660,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
 
     case 'call_operator':
       state.status = 'needs_operator';
+      state.mk_operator_requested_at = new Date().toISOString();
       state.mk_connection_state = buildOwnerMkConnectionState(state);
       return {
         handled: true,

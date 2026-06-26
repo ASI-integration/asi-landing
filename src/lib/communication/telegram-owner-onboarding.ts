@@ -128,6 +128,7 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   mk_responsible_contact?: string;
   mk_responsible_name?: string;
   mk_connection_state?: ChannelManagerConnectionState;
+  mk_operator_requested_at?: string;
 };
 
 export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';

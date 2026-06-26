@@ -161,5 +161,23 @@ export function buildMkResponsibleCopyIntroMessage(): string {
 }
 
 export function buildMkResponsibleCallOperatorMessage(): string {
-  return 'Поняла, передам вопрос оператору ASI. Он подключится здесь, как будет готов.';
+  const operatorName = text(process.env.ASI_OPERATOR_NAME, 80);
+  const operatorTelegram = text(process.env.ASI_OPERATOR_TELEGRAM, 80);
+  const operatorPhone = text(process.env.ASI_OPERATOR_PHONE, 80);
+
+  if (!operatorName || !operatorTelegram || !operatorPhone) {
+    return 'Оператор ASI получил задачу и свяжется с вами.';
+  }
+
+  return [
+    'Поняла, передала вопрос оператору ASI.',
+    '',
+    `С вами свяжется ${operatorName}, ответственный за подключение. Сейчас он может быть не в чате, но уведомление уже зафиксировано.`,
+    '',
+    'Для связи:',
+    `Telegram: ${operatorTelegram}`,
+    `Телефон: ${operatorPhone}`,
+    '',
+    'Пока ничего дополнительно делать не нужно. Мы вернёмся к вам по подключению менеджера каналов.',
+  ].join('\n');
 }

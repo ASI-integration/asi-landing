@@ -104,6 +104,14 @@ function operatorNextStepForState(state: OwnerOnboardingState, kind: OwnerMkFoll
 }
 
 function operatorChecklistForState(state: OwnerOnboardingState, kind: OwnerMkFollowupKind): string[] {
+  if (state.mk_operator_requested_at) {
+    return [
+      'владелец нажал «Позвать оператора»',
+      'не просить пароли в Telegram',
+      'связаться с владельцем по подключению менеджера каналов',
+      'согласовать безопасный способ передачи доступа при необходимости',
+    ];
+  }
   if (state.mk_responsible_role === 'unknown') {
     return ['уточнить у владельца, кто будет отвечать за подключение МК'];
   }
@@ -210,6 +218,7 @@ function buildMkFollowupDescription(params: {
     `Тип: ${params.kind}`,
     `Владелец: ${params.ownerName}`,
     `Объект: ${params.objectLabel}`,
+    params.state.mk_operator_requested_at ? 'Владелец нажал «Позвать оператора».' : null,
     params.state.owner_contact ? `Контакт: ${params.state.owner_contact}` : null,
     `Ответственный за подключение: ${responsibleLabel(params.state)}`,
     params.state.mk_responsible_contact ? `Контакт ответственного: ${params.state.mk_responsible_contact}` : null,
@@ -240,6 +249,29 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
   const instructionSummary = instructionPrepared
     ? buildMkResponsibleInstructionSummary(params.state)
     : null;
+  const ownerRequestedOperator = Boolean(params.state.mk_operator_requested_at);
+  const metadata = {
+    created_by_system: true,
+    integration: 'owner_onboarding',
+    type: params.kind,
+    mk_followup_kind: params.kind,
+    checklist: operatorChecklistForState(params.state, params.kind),
+    onboarding_status: params.state.status,
+    owner_requested_operator: ownerRequestedOperator,
+    owner_requested_operator_at: params.state.mk_operator_requested_at ?? null,
+    owner_contact: params.state.owner_contact ?? null,
+    mk_responsible_role: params.state.mk_responsible_role ?? null,
+    mk_responsible_contact: params.state.mk_responsible_contact ?? null,
+    mk_responsible_name: params.state.mk_responsible_name ?? null,
+    responsibleInstructionPrepared: instructionPrepared,
+    instructionSummary,
+    instructionText: instructionPrepared ? buildMkResponsibleInstructionText(params.state) : null,
+    mk_route: params.state.mk_route ?? null,
+    selected_channel_manager: params.state.selected_channel_manager ?? null,
+    property_in_channel_manager: params.state.property_in_channel_manager ?? null,
+    target_placement_channels: params.state.target_placement_channels ?? params.state.channels_list ?? [],
+    readiness_percent: params.state.readiness?.readiness_percent ?? null,
+  };
   const description = buildMkFollowupDescription({
     ownerName: params.ownerName,
     objectLabel: params.objectLabel,
@@ -254,7 +286,7 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
 
   const result = await createOpsOperatorTask({
     taskType: 'verify_channel_manager',
-    taskStatus: 'new',
+    taskStatus: ownerRequestedOperator ? 'needs_operator' : 'new',
     priority: 'normal',
     source: 'communication_autopilot',
     contactId: params.contactId,
@@ -263,32 +295,18 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
     objectLabel: params.objectLabel,
     title: followupTitle(params.kind),
     description,
-    lastEventText: 'Владелец завершил шаг онбординга — нужен следующий шаг по менеджеру каналов',
+    lastEventText: ownerRequestedOperator
+      ? 'Владелец нажал «Позвать оператора»'
+      : 'Владелец завершил шаг онбординга — нужен следующий шаг по менеджеру каналов',
     dedupKey,
-    metadata: {
-      created_by_system: true,
-      integration: 'owner_onboarding',
-      type: params.kind,
-      mk_followup_kind: params.kind,
-      checklist: operatorChecklistForState(params.state, params.kind),
-      onboarding_status: params.state.status,
-      owner_contact: params.state.owner_contact ?? null,
-      mk_responsible_role: params.state.mk_responsible_role ?? null,
-      mk_responsible_contact: params.state.mk_responsible_contact ?? null,
-      mk_responsible_name: params.state.mk_responsible_name ?? null,
-      responsibleInstructionPrepared: instructionPrepared,
-      instructionSummary,
-      instructionText: instructionPrepared ? buildMkResponsibleInstructionText(params.state) : null,
-      mk_route: params.state.mk_route ?? null,
-      selected_channel_manager: params.state.selected_channel_manager ?? null,
-      property_in_channel_manager: params.state.property_in_channel_manager ?? null,
-      target_placement_channels: params.state.target_placement_channels ?? params.state.channels_list ?? [],
-      readiness_percent: params.state.readiness?.readiness_percent ?? null,
-    },
+    metadata,
     updateIfExists: {
       description,
-      lastEventText: 'Владелец завершил шаг онбординга — нужен следующий шаг по менеджеру каналов',
-      taskStatus: 'new',
+      lastEventText: ownerRequestedOperator
+        ? 'Владелец нажал «Позвать оператора»'
+        : 'Владелец завершил шаг онбординга — нужен следующий шаг по менеджеру каналов',
+      taskStatus: ownerRequestedOperator ? 'needs_operator' : 'new',
+      metadata,
     },
   });
 
@@ -414,13 +432,24 @@ export async function syncOwnerOnboardingAutomation(params: {
   }
 
   if (params.status === 'needs_operator' && params.previousStatus !== 'needs_operator') {
-    opsTaskId = await ensureOwnerOnboardingBlockerOpsTask({
-      contactId: params.contactId,
-      objectId: params.objectId,
-      ownerName: params.ownerName,
-      objectLabel: params.objectLabel,
-      state: params.state,
-    });
+    if (params.state.mk_route) {
+      opsTaskId = await ensureOwnerMkFollowupOpsTask({
+        contactId: params.contactId,
+        objectId: params.objectId,
+        ownerName: params.ownerName,
+        objectLabel: params.objectLabel,
+        state: params.state,
+        kind: resolveOwnerMkFollowupKind(params.state),
+      });
+    } else {
+      opsTaskId = await ensureOwnerOnboardingBlockerOpsTask({
+        contactId: params.contactId,
+        objectId: params.objectId,
+        ownerName: params.ownerName,
+        objectLabel: params.objectLabel,
+        state: params.state,
+      });
+    }
   }
 
   return { pilotChainRan, opsTaskId };

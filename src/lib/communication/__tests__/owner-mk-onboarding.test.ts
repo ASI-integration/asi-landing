@@ -78,7 +78,7 @@ vi.mock('@/lib/ops-board/repository', () => ({
 
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
-import { MK_CALLBACK_PREFIX } from '../owner-mk-onboarding-router';
+import { MK_CALLBACK_PREFIX, tryHandleOwnerMkOnboarding } from '../owner-mk-onboarding-router';
 import { MK_COPY_INSTRUCTION_CALLBACK_DATA } from '../mk-responsible-instruction';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
@@ -147,6 +147,7 @@ async function walkWizardCore(chatId: number): Promise<void> {
 
 describe('Owner onboarding MK-first routing', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     __resetAutonomousSessionStoreForTests();
     crmRows.clear();
     insertedRows.length = 0;
@@ -327,16 +328,94 @@ describe('Owner onboarding MK-first routing', () => {
       ),
     ).toHaveLength(2);
 
+    const requestOwnerDataBeforeCall = opsTaskCalls.filter((call) => call.taskType === 'request_owner_data').length;
     const callOperator = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}call_operator`),
       chatId: chat(2),
       senderIdentity: 'lead',
     });
     expect(callOperator.status).toBe('needs_operator');
-    expect(callOperator.replyText).toContain('передам вопрос оператору ASI');
+    expect(callOperator.replyText).toBe('Оператор ASI получил задачу и свяжется с вами.');
     expect(callOperator.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
       expect.arrayContaining(['Связаться с поддержкой', 'Изменить ответственного', 'Проверить статус']),
     );
+    const operatorFollowup = opsTaskCalls.at(-1);
+    expect(operatorFollowup?.taskType).toBe('verify_channel_manager');
+    expect(operatorFollowup?.dedupKey).toBe(followupOps[0]?.dedupKey);
+    expect(operatorFollowup?.updateIfExists).toMatchObject({
+      taskStatus: 'needs_operator',
+      lastEventText: 'Владелец нажал «Позвать оператора»',
+    });
+    expect(operatorFollowup?.metadata).toMatchObject({
+      mk_followup_kind: 'channel_manager_existing_check',
+      owner_requested_operator: true,
+    });
+    expect(String(operatorFollowup?.description ?? '')).toContain('Владелец нажал «Позвать оператора».');
+    expect(opsTaskCalls.filter((call) => call.taskType === 'request_owner_data')).toHaveLength(
+      requestOwnerDataBeforeCall,
+    );
+  });
+
+  it('answers obmk:call_operator with operator env contacts', () => {
+    vi.stubEnv('ASI_OPERATOR_NAME', 'Николай');
+    vi.stubEnv('ASI_OPERATOR_TELEGRAM', '@ASI_Support_Bot');
+    vi.stubEnv('ASI_OPERATOR_PHONE', '+79217926627');
+
+    const result = tryHandleOwnerMkOnboarding({
+      state: {
+        clarification_attempts: 0,
+        status: 'ready_for_channel_manager',
+        missing: [],
+        lastMessage: '',
+        channelManagerHref: '',
+        mk_phase: 'completed',
+        mk_route: 'has_cm',
+      } as any,
+      messageText: '',
+      mkCallback: `${MK_CALLBACK_PREFIX}call_operator`,
+      isConnectIntent: false,
+    });
+
+    expect(result?.status).toBe('needs_operator');
+    expect(result?.replyText).toBe(
+      [
+        'Поняла, передала вопрос оператору ASI.',
+        '',
+        'С вами свяжется Николай, ответственный за подключение. Сейчас он может быть не в чате, но уведомление уже зафиксировано.',
+        '',
+        'Для связи:',
+        'Telegram: @ASI_Support_Bot',
+        'Телефон: +79217926627',
+        '',
+        'Пока ничего дополнительно делать не нужно. Мы вернёмся к вам по подключению менеджера каналов.',
+      ].join('\n'),
+    );
+    expect(result?.state.mk_operator_requested_at).toEqual(expect.any(String));
+  });
+
+  it('answers obmk:call_operator with safe fallback without operator env', () => {
+    vi.stubEnv('ASI_OPERATOR_NAME', '');
+    vi.stubEnv('ASI_OPERATOR_TELEGRAM', '');
+    vi.stubEnv('ASI_OPERATOR_PHONE', '');
+
+    const result = tryHandleOwnerMkOnboarding({
+      state: {
+        clarification_attempts: 0,
+        status: 'ready_for_channel_manager',
+        missing: [],
+        lastMessage: '',
+        channelManagerHref: '',
+        mk_phase: 'completed',
+        mk_route: 'has_cm',
+      } as any,
+      messageText: '',
+      mkCallback: `${MK_CALLBACK_PREFIX}call_operator`,
+      isConnectIntent: false,
+    });
+
+    expect(result?.status).toBe('needs_operator');
+    expect(result?.replyText).toBe('Оператор ASI получил задачу и свяжется с вами.');
+    expect(result?.state.mk_operator_requested_at).toEqual(expect.any(String));
   });
 
   it('no MK branch runs full wizard with placement wording and channel_manager_selection_needed OPS', async () => {

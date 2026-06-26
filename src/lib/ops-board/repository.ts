@@ -135,16 +135,29 @@ export async function createOpsOperatorTask(
         taskStatus: input.updateIfExists.taskStatus ?? existing.taskStatus,
         lastEventText: input.updateIfExists.lastEventText,
       };
-      if (input.updateIfExists.description !== undefined) {
+      if (
+        input.updateIfExists.description !== undefined ||
+        input.updateIfExists.metadata !== undefined ||
+        input.updateIfExists.taskStatus !== undefined ||
+        input.updateIfExists.lastEventText !== undefined
+      ) {
+        const rowUpdates: Record<string, unknown> = {
+          task_status: updates.taskStatus,
+          updated_at: nowIso(),
+        };
+        if (input.updateIfExists.description !== undefined) {
+          rowUpdates.description = input.updateIfExists.description;
+        }
+        if (input.updateIfExists.lastEventText !== undefined) {
+          rowUpdates.last_event_text = updates.lastEventText ?? existing.lastEventText;
+          rowUpdates.last_event_at = updates.lastEventText ? nowIso() : existing.lastEventAt;
+        }
+        if (input.updateIfExists.metadata !== undefined) {
+          rowUpdates.metadata = input.updateIfExists.metadata;
+        }
         const { data, error } = await supabase
           .from('ops_operator_tasks')
-          .update({
-            description: input.updateIfExists.description,
-            task_status: updates.taskStatus,
-            last_event_text: updates.lastEventText ?? existing.lastEventText,
-            last_event_at: updates.lastEventText ? nowIso() : existing.lastEventAt,
-            updated_at: nowIso(),
-          })
+          .update(rowUpdates)
           .eq('id', existing.id)
           .select('*')
           .maybeSingle();

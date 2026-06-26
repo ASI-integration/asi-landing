@@ -130,6 +130,7 @@ export type CreateOpsOperatorTaskInput = {
     description?: string | null;
     taskStatus?: OpsTaskStatus;
     lastEventText?: string | null;
+    metadata?: Record<string, unknown>;
   };
 };
 
