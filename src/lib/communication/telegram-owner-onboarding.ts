@@ -56,6 +56,7 @@ import {
   readOwnerObjectStateIfExists,
 } from './telegram-owner-object-session';
 import { isSessionRouterCallback, tryHandleOwnerSessionRouter } from './telegram-owner-session-router';
+import { isStartMenuCallback, tryHandleOwnerStartMenu } from './telegram-owner-start-menu';
 import { buildChannelManagerConnectionHref } from '@/lib/channel-manager-connection/flow';
 import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { tryTelegramOwnerBookingIntake } from '@/lib/bookings/owner-telegram-intake';
@@ -143,6 +144,8 @@ export type OwnerOnboardingResult = {
   missing: OwnerOnboardingWizardField[];
   crmContactId?: string;
   state: OwnerOnboardingState;
+  skipAutomationSync?: boolean;
+  skipCrmUpsert?: boolean;
 };
 
 const LEGACY_FIELD_LABELS: Record<OwnerOnboardingField, string> = {
@@ -1346,6 +1349,54 @@ export async function processTelegramOwnerOnboarding(params: {
         : ''),
     64,
   );
+  const startMenuCallback = text(
+    (params.envelope.metadata as any)?.telegram_start_menu_callback ??
+      ((params.envelope.metadata as any)?.telegram_callback_data &&
+      isStartMenuCallback((params.envelope.metadata as any)?.telegram_callback_data)
+        ? (params.envelope.metadata as any)?.telegram_callback_data
+        : ''),
+    64,
+  );
+
+  const startMenu = await tryHandleOwnerStartMenu({
+    envelope: params.envelope,
+    chatId: params.chatId,
+    channel: params.envelope.channel,
+    senderIdentity: params.senderIdentity,
+    startMenuCallback,
+  });
+  if (startMenu) {
+    if (!startMenu.skipCrmUpsert) {
+      startMenu.state.readiness = computeObjectReadiness(
+        readinessInputFromOnboardingState({
+          ...startMenu.state,
+          channels: startMenu.state.channels_list ?? startMenu.state.channels,
+          rules: startMenu.state.rules ?? startMenu.state.house_rules,
+          status: startMenu.status,
+        }),
+      );
+      const objectId = persistState(params.chatId, params.envelope.channel, startMenu.state);
+      startMenu.crmContactId = await upsertCrmContact({
+        envelope: params.envelope,
+        chatId: params.chatId,
+        senderIdentity: params.senderIdentity,
+        state: startMenu.state,
+        objectId,
+      });
+    } else if (!startMenu.skipAutomationSync) {
+      const objectId = persistState(params.chatId, params.envelope.channel, startMenu.state);
+      startMenu.state.readiness = computeObjectReadiness(
+        readinessInputFromOnboardingState({
+          ...startMenu.state,
+          channels: startMenu.state.channels_list ?? startMenu.state.channels,
+          rules: startMenu.state.rules ?? startMenu.state.house_rules,
+          status: startMenu.status,
+        }),
+      );
+      void objectId;
+    }
+    return startMenu;
+  }
 
   const existingCrm = await findCrmContact(params.envelope);
   const routed = await tryHandleOwnerSessionRouter({

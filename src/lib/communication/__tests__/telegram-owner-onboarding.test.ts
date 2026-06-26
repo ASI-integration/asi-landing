@@ -58,6 +58,7 @@ import {
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
 import {
   ensureOwnerObjectsRegistry,
+  listOwnerObjectRecords,
   persistOwnerObjectState,
   readOwnerObjectState,
 } from '../telegram-owner-object-session';
@@ -1255,7 +1256,7 @@ describe('Telegram owner session router v1', () => {
     persistOwnerObjectState(chatId, 'telegram', 'OBJ-0001', state);
   }
 
-  it('prompts to continue, create new, or list objects when a second connection intent arrives', async () => {
+  it('starts MK-first on second connection intent when first object is already completed', async () => {
     seedFirstObjectWithAddress(7301);
 
     const prompt = await processTelegramOwnerOnboarding({
@@ -1264,10 +1265,9 @@ describe('Telegram owner session router v1', () => {
       senderIdentity: 'lead',
     });
 
-    expect(prompt.replyText).toContain('У вас уже есть объект в работе');
-    expect(prompt.replyText).toContain('Большой проспект П.С., 106');
-    expect(prompt.replyMarkup?.inline_keyboard?.[0]?.[0]?.text).toBe('Продолжить');
-    expect(prompt.replyMarkup?.inline_keyboard?.[1]?.[0]?.text).toBe('Создать новый');
+    expect(prompt.replyText).toContain('менеджер каналов');
+    expect(prompt.state.mk_phase).toBe('ask_has_cm');
+    expect(listOwnerObjectRecords(7301, 'telegram')).toHaveLength(2);
   });
 
   it('keeps object data isolated across create, switch, and continue', async () => {

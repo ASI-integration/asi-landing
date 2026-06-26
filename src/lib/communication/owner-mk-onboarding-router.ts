@@ -331,6 +331,18 @@ export function resolveOwnerMkFollowupKind(state: OwnerOnboardingState): OwnerMk
   return 'channel_manager_selection_needed';
 }
 
+export function buildMkHasCmQuestionResult(state: OwnerOnboardingState): OwnerMkOnboardingResult {
+  state.mk_phase = 'ask_has_cm';
+  return {
+    handled: true,
+    replyText: 'У вас уже есть менеджер каналов?',
+    replyMarkup: hasCmKeyboard(),
+    state,
+    status: 'onboarding_started',
+    missing: state.missing,
+  };
+}
+
 export function shouldStartMkRouting(state: OwnerOnboardingState, isConnectIntent: boolean): boolean {
   if (!isConnectIntent) return false;
   if (state.mk_phase === 'wizard' || state.mk_phase === 'completed') return false;
@@ -868,15 +880,7 @@ export function tryHandleOwnerMkOnboarding(params: {
   }
 
   if (shouldStartMkRouting(state, params.isConnectIntent)) {
-    state.mk_phase = 'ask_has_cm';
-    return {
-      handled: true,
-      replyText: 'У вас уже есть менеджер каналов?',
-      replyMarkup: hasCmKeyboard(),
-      state,
-      status: 'onboarding_started',
-      missing: state.missing,
-    };
+    return buildMkHasCmQuestionResult(state);
   }
 
   if (state.mk_phase === 'minimal_collect') {
