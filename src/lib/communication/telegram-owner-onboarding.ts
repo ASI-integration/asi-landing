@@ -76,7 +76,7 @@ import {
   type OwnerMkPropertyInCm,
   type OwnerMkRoute,
 } from './owner-mk-onboarding-router';
-import { MK_COPY_INSTRUCTION_CALLBACK_DATA, hasMkResponsibleInstruction } from './mk-responsible-instruction';
+import { MK_COPY_INSTRUCTION_CALLBACK_DATA } from './mk-responsible-instruction';
 import type { ChannelManagerConnectionState } from '@/lib/channel-manager-connection/types';
 import { mergeChannelManagerConnectionIntoNote, noteWithoutChannelManagerBlock } from '@/lib/channel-manager-connection/note-block';
 
@@ -1534,11 +1534,10 @@ export async function processTelegramOwnerOnboarding(params: {
       replyFollowUpText: mkEarly.replyFollowUpText,
       replyMarkup:
         mkReply?.markup ??
-        (hasMkResponsibleInstruction(merged) && merged.status === 'ready_for_channel_manager'
-          ? mkEarly.replyMarkup
-          : merged.status === 'ready_for_channel_manager' && (isMkResponsibleCallback || isMkResponsibleContact)
+        mkEarly.replyMarkup ??
+        (merged.status === 'ready_for_channel_manager' && (isMkResponsibleCallback || isMkResponsibleContact)
             ? buildOwnerCompletionMarkup()
-            : mkEarly.replyMarkup),
+            : undefined),
       editInPlace: mkEarly.editInPlace,
       editInPlaceMode: mkEarly.editInPlaceMode,
       status: merged.status,

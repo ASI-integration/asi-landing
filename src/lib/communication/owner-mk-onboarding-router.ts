@@ -16,6 +16,7 @@ import {
 } from './telegram-owner-onboarding-wizard';
 import type { OwnerOnboardingState, OwnerOnboardingStatus } from './telegram-owner-onboarding';
 import { isIdentitySelectionText } from './owner-onboarding-smart-parser';
+import { telegramSupportBotUrl } from '@/config/telegramBots';
 import type {
   ChannelManagerConnectionMethod,
   ChannelManagerConnectionState,
@@ -128,6 +129,48 @@ function hasMkResponsibleDecision(state: OwnerOnboardingState): boolean {
   return Boolean(state.mk_responsible_role);
 }
 
+function noResponsibleStatusMarkup(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Выбрать ответственного', callback_data: callbackData('choose_resp') }],
+      [{ text: 'Нужна помощь ASI', callback_data: callbackData('resp', 'asi_help') }],
+      [{ text: 'Изменить данные объекта', callback_data: 'obsr:edit' }],
+      [{ text: 'Связаться с поддержкой', url: telegramSupportBotUrl }],
+    ],
+  };
+}
+
+function responsibleStatusMarkup(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Скопировать инструкцию', callback_data: callbackData('copy_inst') }],
+      [{ text: 'Изменить ответственного', callback_data: callbackData('change_resp') }],
+      [{ text: 'Позвать оператора', callback_data: callbackData('call_operator') }],
+      [{ text: 'Связаться с поддержкой', url: telegramSupportBotUrl }],
+    ],
+  };
+}
+
+function asiHelpStatusMarkup(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Связаться с поддержкой', url: telegramSupportBotUrl }],
+      [{ text: 'Изменить ответственного', callback_data: callbackData('change_resp') }],
+      [{ text: 'Проверить статус', callback_data: callbackData('status') }],
+    ],
+  };
+}
+
+function buildOwnerMkStatusMarkup(state: OwnerOnboardingState): TelegramInlineKeyboardMarkup {
+  if (state.mk_responsible_role === 'asi_help' || state.status === 'needs_operator') {
+    return asiHelpStatusMarkup();
+  }
+  if (hasMkResponsibleInstruction(state)) {
+    return responsibleStatusMarkup();
+  }
+  return noResponsibleStatusMarkup();
+}
+
 export function shouldAskOwnerMkResponsible(state: OwnerOnboardingState): boolean {
   return Boolean(state.mk_route) && !hasMkResponsibleDecision(state);
 }
@@ -235,13 +278,14 @@ export function buildOwnerMkNextOperatorAction(state: OwnerOnboardingState): str
 
 export function buildOwnerMkStatusMessage(state: OwnerOnboardingState): string {
   if (state.mk_responsible_role === 'unknown') {
-    return 'Данные объекта собраны. Следующий шаг — выбрать ответственного за подключение менеджера каналов.';
+    return [
+      'Данные объекта собраны.',
+      '',
+      'Следующий шаг — выбрать ответственного за подключение менеджера каналов.',
+    ].join('\n');
   }
   if (state.mk_responsible_role === 'asi_help') {
-    return [
-      'Данные объекта собраны. Следующий шаг — ручной разбор подключения менеджера каналов оператором ASI.',
-      'Если понадобится доступ к кабинету менеджера каналов, оператор подскажет безопасный способ передачи.',
-    ].join(' ');
+    return 'Задача передана оператору ASI. Если понадобится доступ, оператор подскажет безопасный способ передачи.';
   }
   if (hasMkResponsibleInstruction(state)) {
     return buildMkResponsibleStatusMessage(state);
@@ -258,7 +302,7 @@ export function buildOwnerMkStatusMessage(state: OwnerOnboardingState): string {
   return [
     'Данные объекта собраны.',
     'Следующий шаг — выбрать ответственного за подключение менеджера каналов.',
-  ].join(' ');
+  ].join('\n\n');
 }
 
 function legacyStatusForAutomation(status: MkAutomationConnectionStatus): ChannelManagerConnectionStatus {
@@ -587,9 +631,7 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       return {
         handled: true,
         replyText: buildOwnerMkStatusMessage(state),
-        replyMarkup: hasMkResponsibleInstruction(state)
-          ? buildMkResponsibleInstructionMarkup()
-          : undefined,
+        replyMarkup: buildOwnerMkStatusMarkup(state),
         state,
         status: state.status,
         missing: state.missing,
@@ -613,12 +655,16 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
       state.mk_responsible_name = undefined;
       return buildOwnerMkResponsibleQuestionResult(state);
 
+    case 'choose_resp':
+      return buildOwnerMkResponsibleQuestionResult(state);
+
     case 'call_operator':
       state.status = 'needs_operator';
       state.mk_connection_state = buildOwnerMkConnectionState(state);
       return {
         handled: true,
         replyText: buildMkResponsibleCallOperatorMessage(),
+        replyMarkup: asiHelpStatusMarkup(),
         state,
         status: 'needs_operator',
         missing: state.missing,
@@ -746,7 +792,8 @@ function handleMkCallback(state: OwnerOnboardingState, data: string): OwnerMkOnb
         state.mk_connection_state = buildOwnerMkConnectionState(state);
         return {
           handled: true,
-          replyText: 'Поняла. Передам задачу оператору ASI. Если понадобится доступ к кабинету менеджера каналов, оператор подскажет безопасный способ передачи.',
+          replyText: buildOwnerMkStatusMessage(state),
+          replyMarkup: asiHelpStatusMarkup(),
           state,
           status: 'ready_for_channel_manager',
           missing: [],

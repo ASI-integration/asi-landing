@@ -5,6 +5,7 @@ const crmRows = new Map<string, Record<string, unknown>>();
 const insertedRows: Array<Record<string, unknown>> = [];
 const opsTaskCalls: Array<Record<string, unknown>> = [];
 let pilotChainCalls = 0;
+const chatBase = 2_990_000 + Math.floor(Math.random() * 100_000);
 
 function makeQuery(table: string) {
   const query: any = {
@@ -109,6 +110,10 @@ function wizardCb(data: string): InboundMessageEnvelope {
   return envelope('', { metadata: { telegram_onboarding_wizard_callback: data } });
 }
 
+function chat(suffix: number): number {
+  return chatBase + suffix;
+}
+
 function collectedCrmNotes(): string[] {
   return insertedRows
     .flatMap((item) => {
@@ -149,10 +154,10 @@ describe('Owner onboarding MK-first routing', () => {
     pilotChainCalls = 0;
   });
 
-  it('asks about channel manager as the first fork after connect intent', async () => {
+  it('asks about channel manager when starting a fresh object', async () => {
     const result = await processTelegramOwnerOnboarding({
-      envelope: envelope('Хочу подключить ASI'),
-      chatId: 99001,
+      envelope: envelope('', { metadata: { telegram_start_menu_callback: 'obmenu:restart' } }),
+      chatId: chat(1),
       senderIdentity: 'lead',
     });
 
@@ -165,24 +170,24 @@ describe('Owner onboarding MK-first routing', () => {
   });
 
   it('existing MK branch collects minimal data and creates channel_manager_existing_check OPS task', async () => {
-    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: 99002, senderIdentity: 'lead' });
-    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}has:yes`), chatId: 99002, senderIdentity: 'lead' });
-    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}cm:bnovo`), chatId: 99002, senderIdentity: 'lead' });
-    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}prop:yes`), chatId: 99002, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: chat(2), senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}has:yes`), chatId: chat(2), senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}cm:bnovo`), chatId: chat(2), senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: mkCb(`${MK_CALLBACK_PREFIX}prop:yes`), chatId: chat(2), senderIdentity: 'lead' });
 
     const afterProp = await processTelegramOwnerOnboarding({
       envelope: envelope('Апартаменты на Невском'),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     expect(afterProp.state.mk_collection_mode).toBe('minimal');
     expect(afterProp.missing).toContain('city');
 
-    await processTelegramOwnerOnboarding({ envelope: envelope('Санкт-Петербург'), chatId: 99002, senderIdentity: 'lead' });
-    await processTelegramOwnerOnboarding({ envelope: envelope('+79991112233'), chatId: 99002, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('Санкт-Петербург'), chatId: chat(2), senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('+79991112233'), chatId: chat(2), senderIdentity: 'lead' });
     const placement = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}placement:skip`),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
 
@@ -194,12 +199,12 @@ describe('Owner onboarding MK-first routing', () => {
 
     await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:manager`),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     const responsible = await processTelegramOwnerOnboarding({
       envelope: envelope('@manager_nevsky'),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
 
@@ -250,7 +255,7 @@ describe('Owner onboarding MK-first routing', () => {
 
     const copy = await processTelegramOwnerOnboarding({
       envelope: mkCb(MK_COPY_INSTRUCTION_CALLBACK_DATA),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     expect(copy.replyText).toBe('Скопируйте сообщение ниже и отправьте ответственному.');
@@ -265,12 +270,20 @@ describe('Owner onboarding MK-first routing', () => {
 
     const status = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}status`),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     expect(status.replyText).toContain('Ответственный за подключение: управляющий, @manager_nevsky');
     expect(status.replyText).toContain('Инструкция для ответственного подготовлена');
     expect(status.replyText).toContain('оператор подскажет безопасный способ передачи');
+    expect(status.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining([
+        'Скопировать инструкцию',
+        'Изменить ответственного',
+        'Позвать оператора',
+        'Связаться с поддержкой',
+      ]),
+    );
     expect(
       opsTaskCalls.filter(
         (call) =>
@@ -281,17 +294,17 @@ describe('Owner onboarding MK-first routing', () => {
 
     await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}change_resp`),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:administrator`),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     const changed = await processTelegramOwnerOnboarding({
       envelope: envelope('@admin_new'),
-      chatId: 99002,
+      chatId: chat(2),
       senderIdentity: 'lead',
     });
     expect(changed.replyText).toContain('Ответственный сохранён');
@@ -305,7 +318,7 @@ describe('Owner onboarding MK-first routing', () => {
       ),
     ).toHaveLength(2);
 
-    await processTelegramOwnerOnboarding({ envelope: envelope('спасибо'), chatId: 99002, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('спасибо'), chatId: chat(2), senderIdentity: 'lead' });
     expect(
       opsTaskCalls.filter(
         (call) =>
@@ -313,22 +326,33 @@ describe('Owner onboarding MK-first routing', () => {
           'channel_manager_existing_check',
       ),
     ).toHaveLength(2);
+
+    const callOperator = await processTelegramOwnerOnboarding({
+      envelope: mkCb(`${MK_CALLBACK_PREFIX}call_operator`),
+      chatId: chat(2),
+      senderIdentity: 'lead',
+    });
+    expect(callOperator.status).toBe('needs_operator');
+    expect(callOperator.replyText).toContain('передам вопрос оператору ASI');
+    expect(callOperator.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining(['Связаться с поддержкой', 'Изменить ответственного', 'Проверить статус']),
+    );
   });
 
   it('no MK branch runs full wizard with placement wording and channel_manager_selection_needed OPS', async () => {
-    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: 99003, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: chat(3), senderIdentity: 'lead' });
     const noMk = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}has:no`),
-      chatId: 99003,
+      chatId: chat(3),
       senderIdentity: 'lead',
     });
     expect(noMk.state.mk_route).toBe('no_cm');
     expect(noMk.replyText).toMatch(/город/i);
 
-    await walkNoMkWizard(99003);
+    await walkNoMkWizard(chat(3));
     const responsibleQuestion = await processTelegramOwnerOnboarding({
       envelope: envelope('+79993334455'),
-      chatId: 99003,
+      chatId: chat(3),
       senderIdentity: 'lead',
     });
 
@@ -337,7 +361,7 @@ describe('Owner onboarding MK-first routing', () => {
 
     const ready = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:owner`),
-      chatId: 99003,
+      chatId: chat(3),
       senderIdentity: 'lead',
     });
 
@@ -366,7 +390,7 @@ describe('Owner onboarding MK-first routing', () => {
 
     const status = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}status`),
-      chatId: 99003,
+      chatId: chat(3),
       senderIdentity: 'lead',
     });
     expect(status.replyText).toContain('Ответственный за подключение: владелец, +79993334455');
@@ -381,10 +405,10 @@ describe('Owner onboarding MK-first routing', () => {
   });
 
   it('unknown MK branch explains and routes to channel_manager_explain_and_select OPS', async () => {
-    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: 99004, senderIdentity: 'lead' });
+    await processTelegramOwnerOnboarding({ envelope: envelope('Хочу подключить ASI'), chatId: chat(4), senderIdentity: 'lead' });
     const explain = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}has:unknown`),
-      chatId: 99004,
+      chatId: chat(4),
       senderIdentity: 'lead',
     });
     expect(explain.replyText).toMatch(/Менеджер каналов — это система/i);
@@ -392,13 +416,13 @@ describe('Owner onboarding MK-first routing', () => {
 
     await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}explain:help`),
-      chatId: 99004,
+      chatId: chat(4),
       senderIdentity: 'lead',
     });
-    await walkWizardCore(99004);
+    await walkWizardCore(chat(4));
     const responsibleQuestion = await processTelegramOwnerOnboarding({
       envelope: envelope('@owner_mk_test'),
-      chatId: 99004,
+      chatId: chat(4),
       senderIdentity: 'lead',
     });
 
@@ -406,7 +430,7 @@ describe('Owner onboarding MK-first routing', () => {
 
     const ready = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:unknown`),
-      chatId: 99004,
+      chatId: chat(4),
       senderIdentity: 'lead',
     });
 
@@ -430,9 +454,53 @@ describe('Owner onboarding MK-first routing', () => {
 
     const status = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}status`),
-      chatId: 99004,
+      chatId: chat(4),
       senderIdentity: 'lead',
     });
     expect(status.replyText).toContain('Следующий шаг — выбрать ответственного');
+    expect(status.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining([
+        'Выбрать ответственного',
+        'Нужна помощь ASI',
+        'Изменить данные объекта',
+        'Связаться с поддержкой',
+      ]),
+    );
+    expect(
+      opsTaskCalls.filter(
+        (call) =>
+          (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+          'channel_manager_explain_and_select',
+      ),
+    ).toHaveLength(1);
+
+    const chooseResponsible = await processTelegramOwnerOnboarding({
+      envelope: mkCb(`${MK_CALLBACK_PREFIX}choose_resp`),
+      chatId: chat(4),
+      senderIdentity: 'lead',
+    });
+    expect(chooseResponsible.replyText).toContain('Кто со стороны объекта будет отвечать');
+    expect(chooseResponsible.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining([
+        'Я сам',
+        'Управляющий',
+        'Администратор',
+        'Другой сотрудник',
+        'Пока не знаю',
+        'Нужна помощь ASI',
+      ]),
+    );
+
+    const asiHelp = await processTelegramOwnerOnboarding({
+      envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:asi_help`),
+      chatId: chat(4),
+      senderIdentity: 'lead',
+    });
+    expect(asiHelp.replyText).toBe(
+      'Задача передана оператору ASI. Если понадобится доступ, оператор подскажет безопасный способ передачи.',
+    );
+    expect(asiHelp.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining(['Связаться с поддержкой', 'Изменить ответственного', 'Проверить статус']),
+    );
   });
 });
