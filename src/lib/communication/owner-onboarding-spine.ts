@@ -5,6 +5,11 @@ import { OPS_TASK_TYPE_LABELS } from '@/lib/ops-board/types';
 import { runPilotChainForContact } from '@/lib/pilot-chain/orchestrator';
 import type { OwnerMkFollowupKind } from './owner-mk-onboarding-router';
 import { resolveOwnerMkFollowupKind } from './owner-mk-onboarding-router';
+import {
+  buildMkResponsibleInstructionSummary,
+  buildMkResponsibleInstructionText,
+  hasMkResponsibleInstruction,
+} from './mk-responsible-instruction';
 import type { OwnerOnboardingState, OwnerOnboardingStatus } from './telegram-owner-onboarding';
 import {
   WIZARD_FIELD_LABELS,
@@ -80,6 +85,9 @@ function operatorNextStepForState(state: OwnerOnboardingState, kind: OwnerMkFoll
   if (state.mk_responsible_role === 'asi_help') {
     return 'Оператор ASI берёт подключение в ручной разбор и согласует безопасный способ передачи доступа.';
   }
+  if (hasMkResponsibleInstruction(state)) {
+    return 'Проверить, получил ли ответственный инструкцию и есть ли блокер.';
+  }
   if (state.mk_responsible_role) {
     return 'Связаться с ответственным, отправить короткую инструкцию и проверить статус подключения.';
   }
@@ -104,6 +112,14 @@ function operatorChecklistForState(state: OwnerOnboardingState, kind: OwnerMkFol
       'оператор ASI берёт подключение в ручной разбор',
       'не просить пароли в Telegram',
       'согласовать безопасный способ передачи доступа',
+    ];
+  }
+  if (hasMkResponsibleInstruction(state)) {
+    return [
+      'проверить, получил ли ответственный инструкцию',
+      'уточнить, есть ли блокер',
+      'не просить пароли в Telegram',
+      'согласовать безопасный способ передачи доступа при необходимости',
     ];
   }
   if (state.mk_responsible_role) {
@@ -186,6 +202,10 @@ function buildMkFollowupDescription(params: {
   const placements = placementChannelsLabel(params.state);
   const checklist = operatorChecklistForState(params.state, params.kind);
   const nextStep = operatorNextStepForState(params.state, params.kind);
+  const instructionPrepared = hasMkResponsibleInstruction(params.state);
+  const instructionSummary = instructionPrepared
+    ? buildMkResponsibleInstructionSummary(params.state)
+    : null;
   const lines = [
     `Тип: ${params.kind}`,
     `Владелец: ${params.ownerName}`,
@@ -194,6 +214,8 @@ function buildMkFollowupDescription(params: {
     `Ответственный за подключение: ${responsibleLabel(params.state)}`,
     params.state.mk_responsible_contact ? `Контакт ответственного: ${params.state.mk_responsible_contact}` : null,
     params.state.mk_responsible_name ? `Имя ответственного: ${params.state.mk_responsible_name}` : null,
+    instructionPrepared ? 'Инструкция для ответственного: подготовлена' : null,
+    instructionSummary,
     `Ветка МК: ${mkRouteLabel(params.state)}`,
     cmLabel ? `Менеджер каналов: ${cmLabel}` : null,
     `Объект в МК: ${objectInManagerLabel(params.state)}`,
@@ -214,6 +236,10 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
   state: OwnerOnboardingState;
   kind: OwnerMkFollowupKind;
 }): Promise<string | null> {
+  const instructionPrepared = hasMkResponsibleInstruction(params.state);
+  const instructionSummary = instructionPrepared
+    ? buildMkResponsibleInstructionSummary(params.state)
+    : null;
   const description = buildMkFollowupDescription({
     ownerName: params.ownerName,
     objectLabel: params.objectLabel,
@@ -250,6 +276,9 @@ export async function ensureOwnerMkFollowupOpsTask(params: {
       mk_responsible_role: params.state.mk_responsible_role ?? null,
       mk_responsible_contact: params.state.mk_responsible_contact ?? null,
       mk_responsible_name: params.state.mk_responsible_name ?? null,
+      responsibleInstructionPrepared: instructionPrepared,
+      instructionSummary,
+      instructionText: instructionPrepared ? buildMkResponsibleInstructionText(params.state) : null,
       mk_route: params.state.mk_route ?? null,
       selected_channel_manager: params.state.selected_channel_manager ?? null,
       property_in_channel_manager: params.state.property_in_channel_manager ?? null,

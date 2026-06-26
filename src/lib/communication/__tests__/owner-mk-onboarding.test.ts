@@ -78,6 +78,7 @@ vi.mock('@/lib/ops-board/repository', () => ({
 import { __resetAutonomousSessionStoreForTests } from '../conversation-session-store';
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
 import { MK_CALLBACK_PREFIX } from '../owner-mk-onboarding-router';
+import { MK_COPY_INSTRUCTION_CALLBACK_DATA } from '../mk-responsible-instruction';
 
 function envelope(messageText: string, extra?: Partial<InboundMessageEnvelope>): InboundMessageEnvelope {
   const { metadata: extraMetadata, ...restExtra } = extra ?? {};
@@ -203,8 +204,18 @@ describe('Owner onboarding MK-first routing', () => {
     });
 
     expect(responsible.status).toBe('ready_for_channel_manager');
-    expect(responsible.replyText).toContain('Поняла. Я подготовлю для него короткую инструкцию');
-    expect(responsible.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toContain('Статус подключения');
+    expect(responsible.replyText).toContain('Поняла. Ответственный сохранён.');
+    expect(responsible.replyText).toContain('Инструкция по подключению ASI к менеджеру каналов');
+    expect(responsible.replyText).toContain('Bnovo');
+    expect(responsible.replyText).not.toContain('подготовлю');
+    expect(responsible.replyMarkup?.inline_keyboard?.flat().map((button) => button.text)).toEqual(
+      expect.arrayContaining([
+        'Скопировать инструкцию',
+        'Статус подключения',
+        'Изменить ответственного',
+        'Позвать оператора',
+      ]),
+    );
     expect(placement.state.selected_channel_manager).toBe('bnovo');
     expect(responsible.state.mk_connection_state).toMatchObject({
       selectedChannelManager: 'Bnovo',
@@ -213,7 +224,7 @@ describe('Owner onboarding MK-first routing', () => {
       connectionStatus: 'needs_manager_check',
       mkResponsibleRole: 'manager',
       mkResponsibleContact: '@manager_nevsky',
-      nextOperatorAction: 'Связаться с ответственным и провести его по подключению менеджера каналов',
+      nextOperatorAction: 'Проверить, получил ли ответственный инструкцию и есть ли блокер.',
     });
     expect(pilotChainCalls).toBe(0);
 
@@ -226,26 +237,73 @@ describe('Owner onboarding MK-first routing', () => {
     expect(String(followupOps[0]?.description ?? '')).toContain('Тип: channel_manager_existing_check');
     expect(String(followupOps[0]?.description ?? '')).toContain('Ответственный за подключение: управляющий');
     expect(String(followupOps[0]?.description ?? '')).toContain('Контакт ответственного: @manager_nevsky');
-    expect(String(followupOps[0]?.description ?? '')).toContain('- связаться с ответственным');
+    expect(String(followupOps[0]?.description ?? '')).toContain('- проверить, получил ли ответственный инструкцию');
+    expect(String(followupOps[0]?.description ?? '')).toContain('Инструкция для ответственного: подготовлена');
+    expect(String(followupOps[0]?.description ?? '')).toContain('Проверить, получил ли ответственный инструкцию и есть ли блокер');
     expect(followupOps[0]?.metadata).toMatchObject({
       type: 'channel_manager_existing_check',
       mk_responsible_role: 'manager',
       mk_responsible_contact: '@manager_nevsky',
-      checklist: expect.arrayContaining(['связаться с ответственным']),
+      responsibleInstructionPrepared: true,
+      checklist: expect.arrayContaining(['проверить, получил ли ответственный инструкцию']),
     });
 
-    expect(collectedCrmNotes().some((note) => note.includes('Статус подключения: needs_manager_check'))).toBe(true);
-    expect(collectedCrmNotes().some((note) => note.includes('Выбранный МК: Bnovo'))).toBe(true);
-    expect(collectedCrmNotes().some((note) => note.includes('Ответственный роль: manager'))).toBe(true);
-    expect(collectedCrmNotes().some((note) => note.includes('Ответственный контакт: @manager_nevsky'))).toBe(true);
+    const copy = await processTelegramOwnerOnboarding({
+      envelope: mkCb(MK_COPY_INSTRUCTION_CALLBACK_DATA),
+      chatId: 99002,
+      senderIdentity: 'lead',
+    });
+    expect(copy.replyText).toBe('Скопируйте сообщение ниже и отправьте ответственному.');
+    expect(copy.replyFollowUpText).toContain('Инструкция по подключению ASI к менеджеру каналов');
+    expect(
+      opsTaskCalls.filter(
+        (call) =>
+          (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+          'channel_manager_existing_check',
+      ),
+    ).toHaveLength(1);
 
     const status = await processTelegramOwnerOnboarding({
       envelope: mkCb(`${MK_CALLBACK_PREFIX}status`),
       chatId: 99002,
       senderIdentity: 'lead',
     });
-    expect(status.replyText).toContain('Ответственный: управляющий, @manager_nevsky');
-    expect(status.replyText).toContain('оператор напишет ответственному');
+    expect(status.replyText).toContain('Ответственный за подключение: управляющий, @manager_nevsky');
+    expect(status.replyText).toContain('Инструкция для ответственного подготовлена');
+    expect(status.replyText).toContain('оператор подскажет безопасный способ передачи');
+    expect(
+      opsTaskCalls.filter(
+        (call) =>
+          (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+          'channel_manager_existing_check',
+      ),
+    ).toHaveLength(1);
+
+    await processTelegramOwnerOnboarding({
+      envelope: mkCb(`${MK_CALLBACK_PREFIX}change_resp`),
+      chatId: 99002,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: mkCb(`${MK_CALLBACK_PREFIX}resp:administrator`),
+      chatId: 99002,
+      senderIdentity: 'lead',
+    });
+    const changed = await processTelegramOwnerOnboarding({
+      envelope: envelope('@admin_new'),
+      chatId: 99002,
+      senderIdentity: 'lead',
+    });
+    expect(changed.replyText).toContain('Ответственный сохранён');
+    expect(changed.state.mk_responsible_role).toBe('administrator');
+    expect(changed.state.mk_responsible_contact).toBe('@admin_new');
+    expect(
+      opsTaskCalls.filter(
+        (call) =>
+          (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
+          'channel_manager_existing_check',
+      ),
+    ).toHaveLength(2);
 
     await processTelegramOwnerOnboarding({ envelope: envelope('спасибо'), chatId: 99002, senderIdentity: 'lead' });
     expect(
@@ -254,7 +312,7 @@ describe('Owner onboarding MK-first routing', () => {
           (call.metadata as { mk_followup_kind?: string })?.mk_followup_kind ===
           'channel_manager_existing_check',
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 
   it('no MK branch runs full wizard with placement wording and channel_manager_selection_needed OPS', async () => {
@@ -284,7 +342,8 @@ describe('Owner onboarding MK-first routing', () => {
     });
 
     expect(ready.status).toBe('ready_for_channel_manager');
-    expect(ready.replyText).toContain('Хорошо. Я буду считать вас ответственным');
+    expect(ready.replyText).toContain('Поняла. Ответственный сохранён.');
+    expect(ready.replyText).toContain('Инструкция по подключению ASI к менеджеру каналов');
     expect(ready.state.target_placement_channels).toEqual(expect.arrayContaining(['Суточно']));
     expect(ready.state.mk_connection_state).toMatchObject({
       channelManagerRoute: 'no_manager',
@@ -292,7 +351,7 @@ describe('Owner onboarding MK-first routing', () => {
       connectionStatus: 'needs_manager_selection',
       mkResponsibleRole: 'owner',
       mkResponsibleContact: '+79993334455',
-      nextOperatorAction: 'Связаться с ответственным и провести его по подключению менеджера каналов',
+      nextOperatorAction: 'Проверить, получил ли ответственный инструкцию и есть ли блокер.',
     });
     expect(pilotChainCalls).toBe(0);
 
@@ -310,7 +369,8 @@ describe('Owner onboarding MK-first routing', () => {
       chatId: 99003,
       senderIdentity: 'lead',
     });
-    expect(status.replyText).toContain('Ответственный: владелец, +79993334455');
+    expect(status.replyText).toContain('Ответственный за подключение: владелец, +79993334455');
+    expect(status.replyText).toContain('Инструкция для ответственного подготовлена');
     expect(
       opsTaskCalls.filter(
         (call) =>

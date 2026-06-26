@@ -256,6 +256,7 @@ async function deliverOwnerOnboardingTelegramReply(params: {
   adapter: ReturnType<typeof getChannelAdapter>;
   targetId: string;
   replyText: string;
+  replyFollowUpText?: string;
   replyMarkup?: Record<string, unknown>;
   editInPlace?: boolean;
   editInPlaceMode?: OwnerOnboardingEditInPlaceMode;
@@ -286,14 +287,30 @@ async function deliverOwnerOnboardingTelegramReply(params: {
             params.replyMarkup ?? { inline_keyboard: [] },
             logCtx,
           );
-    if (edited) return true;
+    if (edited) {
+      if (params.replyFollowUpText) {
+        return params.adapter.sendMessage(params.targetId, params.replyFollowUpText, {
+          ...params.metadata,
+          reply_handler: `${params.handler}:follow_up`,
+          update_id: params.update_id,
+        });
+      }
+      return true;
+    }
   }
 
-  return params.adapter.sendMessage(params.targetId, params.replyText, {
+  const sent = await params.adapter.sendMessage(params.targetId, params.replyText, {
     ...params.metadata,
     reply_handler: params.handler,
     update_id: params.update_id,
     reply_markup: params.replyMarkup,
+  });
+  if (!sent || !params.replyFollowUpText) return sent;
+
+  return params.adapter.sendMessage(params.targetId, params.replyFollowUpText, {
+    ...params.metadata,
+    reply_handler: `${params.handler}:follow_up`,
+    update_id: params.update_id,
   });
 }
 
@@ -1754,6 +1771,7 @@ export async function processMessage(envelope: InboundMessageEnvelope): Promise<
       adapter,
       targetId: String(targetId),
       replyText: routeReplyText,
+      replyFollowUpText: ownerOnboarding?.replyFollowUpText,
       replyMarkup: routeReplyMarkup as Record<string, unknown> | undefined,
       editInPlace: ownerOnboarding?.editInPlace,
       editInPlaceMode: ownerOnboarding?.editInPlaceMode,

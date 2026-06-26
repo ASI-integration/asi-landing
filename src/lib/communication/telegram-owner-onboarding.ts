@@ -75,6 +75,7 @@ import {
   type OwnerMkPropertyInCm,
   type OwnerMkRoute,
 } from './owner-mk-onboarding-router';
+import { MK_COPY_INSTRUCTION_CALLBACK_DATA, hasMkResponsibleInstruction } from './mk-responsible-instruction';
 import type { ChannelManagerConnectionState } from '@/lib/channel-manager-connection/types';
 import { mergeChannelManagerConnectionIntoNote, noteWithoutChannelManagerBlock } from '@/lib/channel-manager-connection/note-block';
 
@@ -133,6 +134,7 @@ export type OwnerOnboardingEditInPlaceMode = 'markup' | 'text';
 export type OwnerOnboardingResult = {
   handled: boolean;
   replyText: string;
+  replyFollowUpText?: string;
   replyMarkup?: TelegramInlineKeyboardMarkup;
   /** When true, update the callback message in place instead of sending a new one. */
   editInPlace?: boolean;
@@ -1393,6 +1395,7 @@ export async function processTelegramOwnerOnboarding(params: {
   });
   if (mkEarly?.handled) {
     const isMkStatusCallback = mkCallbackRaw === MK_STATUS_CALLBACK_DATA;
+    const isMkCopyInstructionCallback = mkCallbackRaw === MK_COPY_INSTRUCTION_CALLBACK_DATA;
     const isMkResponsibleCallback = mkCallbackRaw.startsWith(`${MK_CALLBACK_PREFIX}resp:`);
     const isMkResponsibleContact = previous.mk_phase === 'await_responsible_contact';
     merged.missing = missingFields(merged);
@@ -1424,7 +1427,12 @@ export async function processTelegramOwnerOnboarding(params: {
         persistState(params.chatId, params.envelope.channel, merged);
       }
     }
-    if (merged.status === 'ready_for_channel_manager' && !isMkStatusCallback) {
+    if (
+      (!isMkStatusCallback &&
+        !isMkCopyInstructionCallback &&
+        merged.status === 'ready_for_channel_manager') ||
+      (merged.status === 'needs_operator' && previous.status !== 'needs_operator')
+    ) {
       await syncOwnerOnboardingAutomation({
         contactId: crmContactId,
         objectId,
@@ -1438,6 +1446,7 @@ export async function processTelegramOwnerOnboarding(params: {
     const mkReply =
       merged.status === 'ready_for_channel_manager' &&
       !isMkStatusCallback &&
+      !isMkCopyInstructionCallback &&
       !isMkResponsibleCallback &&
       !isMkResponsibleContact
         ? buildReply({
@@ -1471,11 +1480,14 @@ export async function processTelegramOwnerOnboarding(params: {
     return {
       handled: true,
       replyText: mkReply?.text ?? mkEarly.replyText,
+      replyFollowUpText: mkEarly.replyFollowUpText,
       replyMarkup:
         mkReply?.markup ??
-        (merged.status === 'ready_for_channel_manager' && (isMkResponsibleCallback || isMkResponsibleContact)
-          ? buildOwnerCompletionMarkup()
-          : mkEarly.replyMarkup),
+        (hasMkResponsibleInstruction(merged) && merged.status === 'ready_for_channel_manager'
+          ? mkEarly.replyMarkup
+          : merged.status === 'ready_for_channel_manager' && (isMkResponsibleCallback || isMkResponsibleContact)
+            ? buildOwnerCompletionMarkup()
+            : mkEarly.replyMarkup),
       editInPlace: mkEarly.editInPlace,
       editInPlaceMode: mkEarly.editInPlaceMode,
       status: merged.status,
