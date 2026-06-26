@@ -104,6 +104,8 @@ export type OwnerOnboardingState = Record<OwnerOnboardingField, string | undefin
   awaiting_custom?: 'checkin_time' | 'checkout_time' | 'channels';
   channels_draft?: string[];
   rules_draft?: string[];
+  addressDetails?: string;
+  awaiting_address_details?: boolean;
   last_saved_field?: OwnerOnboardingWizardField;
   wizard_redo_from?: OwnerOnboardingWizardField;
   mk_phase?: OwnerMkPhase;
@@ -647,6 +649,23 @@ function applyLegacyBulkFacts(
 
 function applyWizardTextStep(state: OwnerOnboardingState, messageText: string, hasPhoto: boolean): WizardApplyResult {
   const next = state.missing[0];
+
+  if (state.awaiting_address_details && text(messageText) && !isIdentitySelectionText(messageText)) {
+    state.addressDetails = text(messageText, 160);
+    state.awaiting_address_details = false;
+    state.last_saved_field = 'address';
+    syncLegacyFields(state);
+    const afterDetailsMissing = missingFields(state);
+    const nextAfterDetails = afterDetailsMissing[0] ?? 'object_type';
+    return {
+      handled: true,
+      extractedCount: 1,
+      replyOverride: ['✓ Уточнение сохранено', buildWizardStepPrompt(nextAfterDetails, wizardPromptOptions(state))]
+        .filter(Boolean)
+        .join('\n\n'),
+      replyMarkup: buildWizardStepKeyboard(nextAfterDetails, wizardDraftSnapshot(state)),
+    };
+  }
 
   if (/правил|курен|животн|тишин|залог|вечерин/i.test(messageText) && !(state.rules?.length ?? 0)) {
     const facts = extractFactsDeterministic(messageText, ['house_rules'], false);

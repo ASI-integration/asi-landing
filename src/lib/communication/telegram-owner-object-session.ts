@@ -168,6 +168,8 @@ export function serializeOwnerObjectState(state: OwnerOnboardingState): string {
     awaiting_custom: state.awaiting_custom,
     channels_draft: state.channels_draft,
     rules_draft: state.rules_draft,
+    addressDetails: state.addressDetails,
+    awaiting_address_details: state.awaiting_address_details ?? false,
     owner_contact: state.owner_contact,
     readiness_percent: state.readiness?.readiness_percent ?? null,
     mk_phase: state.mk_phase ?? null,
@@ -220,6 +222,8 @@ export function deserializeOwnerObjectState(raw: unknown): OwnerOnboardingState 
       rules_draft: Array.isArray(parsed.rules_draft)
         ? parsed.rules_draft.map((item) => text(item, 120)).filter(Boolean)
         : [],
+      addressDetails: parsed.addressDetails,
+      awaiting_address_details: Boolean(parsed.awaiting_address_details),
       owner_contact: parsed.owner_contact,
       mk_phase: parsed.mk_phase,
       mk_route: parsed.mk_route,
@@ -323,6 +327,8 @@ export function mirrorActiveObjectToLegacyKeys(
       [`${LEGACY_SESSION_PREFIX}awaiting_custom`]: state.awaiting_custom,
       [`${LEGACY_SESSION_PREFIX}channels_draft`]: JSON.stringify(state.channels_draft ?? []),
       [`${LEGACY_SESSION_PREFIX}rules_draft`]: JSON.stringify(state.rules_draft ?? []),
+      [`${LEGACY_SESSION_PREFIX}address_details`]: state.addressDetails,
+      [`${LEGACY_SESSION_PREFIX}awaiting_address_details`]: state.awaiting_address_details ? '1' : '0',
       [`${LEGACY_SESSION_PREFIX}owner_contact`]: state.owner_contact,
       [objectStateKey(objectId)]: serializeOwnerObjectState(state),
     },
@@ -495,6 +501,29 @@ export function createOwnerObject(chatId: number, channel: CommunicationChannel)
   persistRegistry(chatId, channel, nextRegistry);
   mirrorActiveObjectToLegacyKeys(chatId, channel, objectId, state);
   return { objectId, state };
+}
+
+export function createOrReuseActiveDraftOwnerObject(
+  chatId: number,
+  channel: CommunicationChannel,
+): { objectId: string; state: OwnerOnboardingState; reused: boolean } {
+  const registry = ensureOwnerObjectsRegistry(chatId, channel);
+  if (registry.objects.length > 1) {
+    const activeState = readOwnerObjectState(chatId, channel, registry.activeObjectId);
+    const activeIncomplete =
+      activeState.status !== 'ready_for_channel_manager' &&
+      activeState.status !== 'channel_manager_started' &&
+      activeState.missing.length > 0;
+    if (activeIncomplete) {
+      return {
+        objectId: registry.activeObjectId,
+        state: activeState,
+        reused: true,
+      };
+    }
+  }
+
+  return { ...createOwnerObject(chatId, channel), reused: false };
 }
 
 export function switchActiveOwnerObject(

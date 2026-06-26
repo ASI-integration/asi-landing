@@ -9,7 +9,7 @@ import {
 } from '@/lib/object-readiness/engine';
 import type { OwnerOnboardingResult, OwnerOnboardingState } from './telegram-owner-onboarding';
 import {
-  createOwnerObject,
+  createOrReuseActiveDraftOwnerObject,
   listOwnerObjectRecords,
   migrateLegacyOwnerSessionIfNeeded,
   objectTitleFromState,
@@ -17,7 +17,12 @@ import {
   readOwnerObjectState,
   switchActiveOwnerObject,
 } from './telegram-owner-object-session';
-import { buildWizardStepKeyboard, buildWizardStepPrompt, WIZARD_FIELD_ORDER } from './telegram-owner-onboarding-wizard';
+import {
+  buildWizardStepKeyboard,
+  buildWizardStepPrompt,
+  missingWizardFields,
+  WIZARD_FIELD_ORDER,
+} from './telegram-owner-onboarding-wizard';
 
 export const SESSION_ROUTER_CALLBACK_PREFIX = 'obsr:';
 
@@ -68,6 +73,82 @@ function objectListMarkup(chatId: number, channel: CommunicationChannel): Telegr
     ];
   });
   return { inline_keyboard: rows };
+}
+
+function sameAddressChoiceMarkup(): TelegramInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: 'Да, тот же адрес', callback_data: `${SESSION_ROUTER_CALLBACK_PREFIX}new:same` }],
+      [{ text: 'Нет, другой адрес', callback_data: `${SESSION_ROUTER_CALLBACK_PREFIX}new:other` }],
+      [{ text: 'Уточнить корпус/квартиру', callback_data: `${SESSION_ROUTER_CALLBACK_PREFIX}new:details` }],
+    ],
+  };
+}
+
+function recomputeMissing(state: OwnerOnboardingState): void {
+  state.missing = missingWizardFields({
+    city: state.city,
+    address: state.address,
+    object_type: state.object_type,
+    object_name: state.property_name,
+    owner_contact: state.owner_contact,
+    checkin_time: state.checkin_time,
+    checkout_time: state.checkout_time,
+    channels: state.channels_list ?? (state.channels ? state.channels.split(',').map((item) => item.trim()) : []),
+    rules: state.rules ?? (state.house_rules ? state.house_rules.split(',').map((item) => item.trim()) : []),
+    wifi_name: state.wifi_name,
+    wifi_password: state.wifi_password,
+    wifi_skipped: state.wifi_skipped,
+    photos: state.photos,
+    photos_intent: state.photos_intent,
+    photos_count: state.photos_count,
+  });
+}
+
+function previousObjectWithAddress(
+  chatId: number,
+  channel: CommunicationChannel,
+  activeObjectId?: string,
+): { objectId: string; state: OwnerOnboardingState } | null {
+  const records = listOwnerObjectRecords(chatId, channel);
+  for (const item of [...records].reverse()) {
+    if (activeObjectId && item.objectId === activeObjectId) continue;
+    const state = readOwnerObjectState(chatId, channel, item.objectId);
+    if (state.address?.trim()) return { objectId: item.objectId, state };
+  }
+  return null;
+}
+
+function previousObjectWithCity(
+  chatId: number,
+  channel: CommunicationChannel,
+  activeObjectId?: string,
+): { objectId: string; state: OwnerOnboardingState } | null {
+  const records = listOwnerObjectRecords(chatId, channel);
+  for (const item of [...records].reverse()) {
+    if (activeObjectId && item.objectId === activeObjectId) continue;
+    const state = readOwnerObjectState(chatId, channel, item.objectId);
+    if (state.city?.trim()) return { objectId: item.objectId, state };
+  }
+  return null;
+}
+
+function prepareNewObjectForAddressChoice(params: {
+  chatId: number;
+  channel: CommunicationChannel;
+}): {
+  objectId: string;
+  state: OwnerOnboardingState;
+  previous: { objectId: string; state: OwnerOnboardingState } | null;
+  reused: boolean;
+} {
+  const created = createOrReuseActiveDraftOwnerObject(params.chatId, params.channel);
+  const previous = previousObjectWithAddress(params.chatId, params.channel, created.objectId);
+  if (previous?.state.city && !created.state.city) {
+    created.state.city = previous.state.city;
+    recomputeMissing(created.state);
+  }
+  return { objectId: created.objectId, state: created.state, previous, reused: created.reused };
 }
 
 function buildObjectsListText(chatId: number, channel: CommunicationChannel): string {
@@ -191,21 +272,106 @@ export async function tryHandleOwnerSessionRouter(params: {
     }
 
     if (callback === `${SESSION_ROUTER_CALLBACK_PREFIX}new`) {
-      const { objectId, state } = createOwnerObject(params.chatId, params.channel);
+      const { objectId, state, previous, reused } = prepareNewObjectForAddressChoice({
+        chatId: params.chatId,
+        channel: params.channel,
+      });
       await emitOwnerObjectEvent({
         contactId: params.crmContactId,
-        eventType: 'owner_object_created',
-        messageText: `Создан новый объект ${objectId}`,
-        metadata: { object_id: objectId },
+        eventType: reused ? 'owner_object_continued' : 'owner_object_created',
+        messageText: reused ? `Продолжение нового объекта ${objectId}` : `Создан новый объект ${objectId}`,
+        metadata: { object_id: objectId, reused },
       });
+      if (previous?.state.address) {
+        return {
+          ...baseResult(state),
+          replyText: `Создаём ещё один объект. Использовать тот же адрес, что у прошлого объекта: ${previous.state.address}?`,
+          replyMarkup: sameAddressChoiceMarkup(),
+        };
+      }
+
+      const citySource = previousObjectWithCity(params.chatId, params.channel, objectId);
+      if (citySource?.state.city && !state.city) {
+        state.city = citySource.state.city;
+        recomputeMissing(state);
+      }
+      const next = state.city ? 'address' : 'city';
+      return {
+        ...baseResult(state),
+        replyText: ['Создаём ещё один объект.', buildWizardStepPrompt(next)].join('\n\n'),
+        replyMarkup: buildWizardStepKeyboard(next),
+      };
+    }
+
+    if (callback === `${SESSION_ROUTER_CALLBACK_PREFIX}new:same`) {
+      const { state, previous } = prepareNewObjectForAddressChoice({
+        chatId: params.chatId,
+        channel: params.channel,
+      });
+      if (!previous?.state.address) {
+        const citySource = previousObjectWithCity(params.chatId, params.channel);
+        if (citySource?.state.city && !state.city) state.city = citySource.state.city;
+        recomputeMissing(state);
+        const next = state.city ? 'address' : 'city';
+        return {
+          ...baseResult(state),
+          replyText: ['Создаём ещё один объект.', buildWizardStepPrompt(next)].join('\n\n'),
+          replyMarkup: buildWizardStepKeyboard(next),
+        };
+      }
+      state.city = previous.state.city ?? state.city;
+      state.address = previous.state.address;
+      state.awaiting_address_details = false;
+      recomputeMissing(state);
+      const next = state.missing[0] ?? 'object_type';
       return {
         ...baseResult(state),
         replyText: [
-          `Создала новый объект ${objectId}.`,
-          'Поняла. Помогу подключить объект к ASI.',
-          buildWizardStepPrompt('address'),
-        ].join('\n\n'),
-        replyMarkup: buildWizardStepKeyboard('address'),
+          'Хорошо, использую тот же адрес. Укажите, пожалуйста, тип объекта.',
+          next !== 'object_type' ? buildWizardStepPrompt(next) : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        replyMarkup: buildWizardStepKeyboard(next, {
+          channels_draft: state.channels_draft ?? [],
+          rules_draft: state.rules_draft ?? [],
+        }),
+      };
+    }
+
+    if (callback === `${SESSION_ROUTER_CALLBACK_PREFIX}new:other`) {
+      const { objectId, state } = prepareNewObjectForAddressChoice({
+        chatId: params.chatId,
+        channel: params.channel,
+      });
+      const citySource = previousObjectWithCity(params.chatId, params.channel, objectId);
+      if (citySource?.state.city && !state.city) state.city = citySource.state.city;
+      state.address = undefined;
+      state.addressDetails = undefined;
+      state.awaiting_address_details = false;
+      recomputeMissing(state);
+      const next = state.city ? 'address' : 'city';
+      return {
+        ...baseResult(state),
+        replyText: buildWizardStepPrompt(next),
+        replyMarkup: buildWizardStepKeyboard(next),
+      };
+    }
+
+    if (callback === `${SESSION_ROUTER_CALLBACK_PREFIX}new:details`) {
+      const { state, previous } = prepareNewObjectForAddressChoice({
+        chatId: params.chatId,
+        channel: params.channel,
+      });
+      if (previous?.state.address) {
+        state.city = previous.state.city ?? state.city;
+        state.address = previous.state.address;
+      }
+      state.awaiting_address_details = true;
+      recomputeMissing(state);
+      return {
+        ...baseResult(state),
+        replyText: 'Напишите уточнение к адресу: корпус, подъезд, квартира или апартаменты.',
       };
     }
 

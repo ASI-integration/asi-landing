@@ -10,6 +10,8 @@ function makeQuery(table: string) {
     __field: '',
     __value: '',
     select: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(() => query),
     eq: vi.fn((field: string, value: unknown) => {
       query.__field = field;
       query.__value = String(value ?? '');
@@ -54,6 +56,11 @@ import {
   type SmartParseExtracted,
 } from '../owner-onboarding-smart-parser';
 import { processTelegramOwnerOnboarding } from '../telegram-owner-onboarding';
+import {
+  ensureOwnerObjectsRegistry,
+  persistOwnerObjectState,
+  readOwnerObjectState,
+} from '../telegram-owner-object-session';
 import {
   allFixedChannelIds,
   allRuleIds,
@@ -1238,17 +1245,18 @@ describe('Telegram owner session router v1', () => {
     });
   }
 
+  function seedFirstObjectWithAddress(chatId: number): void {
+    ensureOwnerObjectsRegistry(chatId, 'telegram');
+    const state = readOwnerObjectState(chatId, 'telegram', 'OBJ-0001');
+    state.city = 'Санкт-Петербург';
+    state.address = 'Большой проспект П.С., 106';
+    state.status = 'ready_for_channel_manager';
+    state.missing = [];
+    persistOwnerObjectState(chatId, 'telegram', 'OBJ-0001', state);
+  }
+
   it('prompts to continue, create new, or list objects when a second connection intent arrives', async () => {
-    await processTelegramOwnerOnboarding({
-      envelope: envelope('Хочу подключить квартиру'),
-      chatId: 7301,
-      senderIdentity: 'lead',
-    });
-    await processTelegramOwnerOnboarding({
-      envelope: envelope('Большой проспект П.С., 106'),
-      chatId: 7301,
-      senderIdentity: 'lead',
-    });
+    seedFirstObjectWithAddress(7301);
 
     const prompt = await processTelegramOwnerOnboarding({
       envelope: envelope('Хочу подключить квартиру'),
@@ -1263,23 +1271,20 @@ describe('Telegram owner session router v1', () => {
   });
 
   it('keeps object data isolated across create, switch, and continue', async () => {
-    await processTelegramOwnerOnboarding({
-      envelope: envelope('Хочу подключить квартиру'),
-      chatId: 7302,
-      senderIdentity: 'lead',
-    });
-    await processTelegramOwnerOnboarding({
-      envelope: envelope('Большой проспект П.С., 106'),
-      chatId: 7302,
-      senderIdentity: 'lead',
-    });
+    seedFirstObjectWithAddress(7302);
 
     const createNew = await processTelegramOwnerOnboarding({
       envelope: routerEnvelope('obsr:new'),
       chatId: 7302,
       senderIdentity: 'lead',
     });
-    expect(createNew.replyText).toContain('OBJ-0002');
+    expect(createNew.replyText).toContain('Создаём ещё один объект');
+
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new:other'),
+      chatId: 7302,
+      senderIdentity: 'lead',
+    });
 
     await processTelegramOwnerOnboarding({
       envelope: envelope('Лиговский пр., 108'),
@@ -1301,19 +1306,127 @@ describe('Telegram owner session router v1', () => {
     expect(obj2.address).toContain('Лиговский пр., 108');
   });
 
-  it('stores multiple objects in CRM notes with active session flag', async () => {
-    await processTelegramOwnerOnboarding({
-      envelope: envelope('Хочу подключить квартиру'),
-      chatId: 7303,
+  it('starts a new object with a same-address choice and copies address on confirmation', async () => {
+    seedFirstObjectWithAddress(7304);
+
+    const prompt = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7304,
       senderIdentity: 'lead',
     });
+
+    expect(prompt.replyText).toBe(
+      'Создаём ещё один объект. Использовать тот же адрес, что у прошлого объекта: Большой проспект П.С., 106?',
+    );
+    expect(prompt.replyMarkup?.inline_keyboard.flat().map((item) => item.text)).toEqual([
+      'Да, тот же адрес',
+      'Нет, другой адрес',
+      'Уточнить корпус/квартиру',
+    ]);
+
+    const same = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new:same'),
+      chatId: 7304,
+      senderIdentity: 'lead',
+    });
+
+    expect(same.replyText).toContain('Хорошо, использую тот же адрес. Укажите, пожалуйста, тип объекта.');
+    expect(same.replyText).not.toContain('Теперь укажите адрес');
+    expect(same.missing[0]).toBe('object_type');
+
+    const active = loadAutonomousSession(7304)?.collected_data;
+    const obj2 = JSON.parse(String(active?.['owner_obj_state_OBJ-0002'] ?? '{}'));
+    expect(obj2.city).toBe('Санкт-Петербург');
+    expect(obj2.address).toBe('Большой проспект П.С., 106');
+  });
+
+  it('saves a different second-object address as address, not city', async () => {
+    seedFirstObjectWithAddress(7305);
     await processTelegramOwnerOnboarding({
-      envelope: envelope('Большой проспект П.С., 106'),
-      chatId: 7303,
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7305,
+      senderIdentity: 'lead',
+    });
+
+    const other = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new:other'),
+      chatId: 7305,
+      senderIdentity: 'lead',
+    });
+    expect(other.replyText).toContain('Теперь укажите адрес или район');
+
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('Лиговский пр., 108'),
+      chatId: 7305,
+      senderIdentity: 'lead',
+    });
+
+    expect(saved.replyText).toContain('✓ Адрес сохранён');
+    expect(saved.replyText).not.toContain('✓ Город сохранён');
+    const active = loadAutonomousSession(7305)?.collected_data;
+    const obj2 = JSON.parse(String(active?.['owner_obj_state_OBJ-0002'] ?? '{}'));
+    expect(obj2.city).toBe('Санкт-Петербург');
+    expect(obj2.address).toBe('Лиговский пр., 108');
+  });
+
+  it('stores second-object address details without overwriting the base address', async () => {
+    seedFirstObjectWithAddress(7306);
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7306,
+      senderIdentity: 'lead',
+    });
+
+    const detailsPrompt = await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new:details'),
+      chatId: 7306,
+      senderIdentity: 'lead',
+    });
+    expect(detailsPrompt.replyText).toBe('Напишите уточнение к адресу: корпус, подъезд, квартира или апартаменты.');
+
+    const saved = await processTelegramOwnerOnboarding({
+      envelope: envelope('кв. 12'),
+      chatId: 7306,
+      senderIdentity: 'lead',
+    });
+
+    expect(saved.replyText).toContain('✓ Уточнение сохранено');
+    expect(saved.replyText).toContain('Выберите тип объекта');
+    const active = loadAutonomousSession(7306)?.collected_data;
+    const obj2 = JSON.parse(String(active?.['owner_obj_state_OBJ-0002'] ?? '{}'));
+    expect(obj2.address).toBe('Большой проспект П.С., 106');
+    expect(obj2.addressDetails).toBe('кв. 12');
+  });
+
+  it('does not create duplicate active draft objects on repeated new-object clicks', async () => {
+    seedFirstObjectWithAddress(7307);
+
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7307,
       senderIdentity: 'lead',
     });
     await processTelegramOwnerOnboarding({
       envelope: routerEnvelope('obsr:new'),
+      chatId: 7307,
+      senderIdentity: 'lead',
+    });
+
+    const collected = loadAutonomousSession(7307)?.collected_data;
+    const registry = JSON.parse(String(collected?.owner_objects_registry ?? '{}'));
+    expect(registry.objects.map((item: { objectId: string }) => item.objectId)).toEqual(['OBJ-0001', 'OBJ-0002']);
+    expect(registry.activeObjectId).toBe('OBJ-0002');
+  });
+
+  it('stores multiple objects in CRM notes with active session flag', async () => {
+    seedFirstObjectWithAddress(7303);
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new'),
+      chatId: 7303,
+      senderIdentity: 'lead',
+    });
+    await processTelegramOwnerOnboarding({
+      envelope: routerEnvelope('obsr:new:other'),
       chatId: 7303,
       senderIdentity: 'lead',
     });
