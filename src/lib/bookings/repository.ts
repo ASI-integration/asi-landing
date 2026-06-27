@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isPilotAcceptanceBooking, text as cleanText } from '@/lib/pilot-data/test-markers';
+import { ensureBookingOpsForReservation, syncBookingOpsFromReservation } from '@/lib/booking-ops/reservation-sync';
 import { supabase } from '@/lib/supabase';
 import {
   type BookingChannel,
@@ -154,7 +155,18 @@ export async function createPilotBooking(input: CreatePilotBookingInput): Promis
     .single();
 
   if (error) return { ok: false, error: error.message };
-  return { ok: true, booking: mapRow(data as ReservationRow), created: !existing };
+  const booking = mapRow(data as ReservationRow);
+
+  try {
+    await ensureBookingOpsForReservation(booking.id);
+  } catch (syncError) {
+    console.error('[booking-ops-source-link] create sync failed', {
+      reservationId: booking.id,
+      error: syncError,
+    });
+  }
+
+  return { ok: true, booking, created: !existing };
 }
 
 export async function updatePilotBooking(
@@ -186,5 +198,16 @@ export async function updatePilotBooking(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  return { ok: true, booking: mapRow(data as ReservationRow) };
+  const booking = mapRow(data as ReservationRow);
+
+  try {
+    await syncBookingOpsFromReservation(booking.id);
+  } catch (syncError) {
+    console.error('[booking-ops-source-link] update sync failed', {
+      reservationId: booking.id,
+      error: syncError,
+    });
+  }
+
+  return { ok: true, booking };
 }

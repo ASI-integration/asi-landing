@@ -115,6 +115,22 @@ export async function getBookingOpsRecord(id: string): Promise<BookingOpsRecord 
   return attachAutomation(mapRow(data as BookingOpsRow));
 }
 
+export async function getBookingOpsByBookingId(bookingId: string): Promise<BookingOpsRecord | null> {
+  const sourceBookingId = text(bookingId);
+  if (!sourceBookingId) return null;
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('booking_id', sourceBookingId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return attachAutomation(mapRow(data as BookingOpsRow));
+}
+
 export async function createBookingOpsRecord(input: CreateBookingOpsInput): Promise<{
   ok: boolean;
   record?: BookingOpsRecord;
