@@ -1,4 +1,5 @@
 import { evaluateBookingOpsAutomation } from './decision-engine';
+import { attachBookingOpsOperatorAction } from './action-templates';
 import type {
   BookingOpsAlert,
   BookingOpsAlertKind,
@@ -372,5 +373,6 @@ export function computeBookingOpsAlerts(
 export function attachBookingOpsAlerts(record: BookingOpsRecord): BookingOpsRecord {
   const automation = record.automation ?? evaluateBookingOpsAutomation(record);
   const withAutomation = { ...record, automation };
-  return { ...withAutomation, alerts: computeBookingOpsAlerts(withAutomation) };
+  const withAlerts = { ...withAutomation, alerts: computeBookingOpsAlerts(withAutomation) };
+  return attachBookingOpsOperatorAction(withAlerts);
 }

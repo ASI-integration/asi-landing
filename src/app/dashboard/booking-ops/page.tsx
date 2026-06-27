@@ -25,6 +25,7 @@ import {
   type BookingOpsRecord,
   type BookingOpsStatus,
   type BookingOpsAlertSeverity,
+  type BookingOpsActionTemplate,
 } from '@/lib/booking-ops/types';
 
 type ListResponse = {
@@ -138,6 +139,7 @@ function BookingOpsPageInner() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmingAction, setConfirmingAction] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState<EditDraft>({
@@ -240,6 +242,33 @@ function BookingOpsPageInner() {
       setMessage('Изменения сохранены.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onConfirmAction() {
+    if (!isOpsAdmin || !selectedId || !selectedRecord?.operatorAction) return;
+    const action = selectedRecord.operatorAction;
+    if (!action.isAllowed) return;
+
+    setConfirmingAction(true);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${selectedId}/confirm-action`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actionId: action.actionId }),
+      });
+      const payload = await readResponseJson<SaveResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.record) {
+        setMessage(payload.message || 'Не удалось подтвердить действие.');
+        return;
+      }
+      setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
+      setDraft(draftFromRecord(payload.record));
+      setMessage('Действие подтверждено, статус обновлён.');
+    } finally {
+      setConfirmingAction(false);
     }
   }
 
@@ -434,6 +463,14 @@ function BookingOpsPageInner() {
                 </div>
               ) : null}
 
+              {selectedRecord.operatorAction ? (
+                <OperatorActionPanel
+                  action={selectedRecord.operatorAction}
+                  confirming={confirmingAction}
+                  onConfirm={() => void onConfirmAction()}
+                />
+              ) : null}
+
               {selectedRecord.alerts && selectedRecord.alerts.alerts.length > 0 ? (
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-slate-800">Задачи оператора</h3>
@@ -512,6 +549,98 @@ function BookingOpsPageInner() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function OperatorActionPanel({
+  action,
+  confirming,
+  onConfirm,
+}: {
+  action: BookingOpsActionTemplate;
+  confirming: boolean;
+  onConfirm: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyMessage() {
+    if (!action.messageTemplate) return;
+    try {
+      await navigator.clipboard.writeText(action.messageTemplate);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div
+      className={`rounded-lg border px-4 py-3 text-sm space-y-3 ${
+        action.isAllowed
+          ? 'border-indigo-200 bg-indigo-50 text-indigo-950'
+          : 'border-slate-200 bg-slate-50 text-slate-700'
+      }`}
+    >
+      <div>
+        <p className="font-semibold text-base">{action.title}</p>
+        <p className="mt-1">{action.description}</p>
+      </div>
+
+      {!action.isAllowed && action.blockedReason ? (
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-900">
+          {action.blockedReason}
+        </p>
+      ) : null}
+
+      {action.warnings.length > 0 ? (
+        <ul className="list-disc pl-5 space-y-1 text-amber-900">
+          {action.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {action.internalChecklist.length > 0 ? (
+        <div>
+          <p className="font-medium">Чеклист оператора</p>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            {action.internalChecklist.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {action.messageTemplate ? (
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-medium">Текст для гостя</p>
+            <button
+              type="button"
+              onClick={() => void copyMessage()}
+              className="rounded-md border border-indigo-300 bg-white px-2.5 py-1 text-xs font-medium text-indigo-900 hover:bg-indigo-100"
+            >
+              {copied ? 'Скопировано' : 'Копировать'}
+            </button>
+          </div>
+          <pre className="mt-2 whitespace-pre-wrap rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs leading-relaxed">
+            {action.messageTemplate}
+          </pre>
+        </div>
+      ) : null}
+
+      {action.isAllowed ? (
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={confirming}
+          className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-60"
+        >
+          {confirming ? 'Сохранение…' : 'Подтвердить выполнение'}
+        </button>
+      ) : null}
     </div>
   );
 }

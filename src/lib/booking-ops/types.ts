@@ -215,6 +215,46 @@ export type BookingOpsAlertSummary = {
   maxSeverity: BookingOpsAlertSeverity | null;
 };
 
+/** Operator-confirmable workflow actions (excludes blocked/pause/attention). */
+export const BOOKING_OPS_OPERATOR_ACTIONS = [
+  'request_guest_documents',
+  'verify_guest_documents',
+  'prepare_contract',
+  'send_contract',
+  'confirm_contract_signed',
+  'request_deposit',
+  'confirm_deposit',
+  'prepare_mvd_report',
+  'submit_mvd_report',
+  'prepare_checkin_instructions',
+  'mark_ready_for_checkin',
+] as const;
+
+export type BookingOpsOperatorActionId = (typeof BOOKING_OPS_OPERATOR_ACTIONS)[number];
+
+export type BookingOpsActionFieldsOnConfirm = {
+  documentsStatus?: BookingOpsDocumentsStatus;
+  contractStatus?: BookingOpsContractStatus;
+  depositStatus?: BookingOpsDepositStatus;
+  mvdStatus?: BookingOpsMvdStatus;
+  checkinReadinessStatus?: BookingOpsCheckinReadinessStatus;
+  opsStatus?: BookingOpsStatus;
+};
+
+export type BookingOpsActionTemplate = {
+  actionId: BookingOpsOperatorActionId;
+  title: string;
+  description: string;
+  /** Guest-facing copy-ready text; null for internal-only actions. */
+  messageTemplate: string | null;
+  /** Operator-facing steps; empty for guest-message-only actions. */
+  internalChecklist: string[];
+  warnings: string[];
+  isAllowed: boolean;
+  blockedReason: string | null;
+  fieldsOnConfirm: BookingOpsActionFieldsOnConfirm;
+};
+
 export type BookingOpsRecord = {
   id: string;
   bookingId: string | null;
@@ -241,6 +281,7 @@ export type BookingOpsRecord = {
   updatedAt: string;
   automation?: BookingOpsAutomationDecision;
   alerts?: BookingOpsAlertSummary;
+  operatorAction?: BookingOpsActionTemplate | null;
 };
 
 export type CreateBookingOpsInput = {
