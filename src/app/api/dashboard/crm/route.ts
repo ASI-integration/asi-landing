@@ -4,6 +4,7 @@ import { createCrmContact, listCrmContacts } from '@/lib/crm/repository';
 import { normalizeCrmContactInput, validateCrmContact, validateCrmContactPayload } from '@/lib/crm/normalize';
 import { CRM_SOURCE_VALUES, CRM_STATUS_VALUES, CrmSource, CrmStatus } from '@/lib/crm/types';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { runCrmOpsAutomation, runCrmOpsAutomationBatch } from '@/lib/crm/ops-automation-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       excludeArchived: true,
       includeTest: url.searchParams.get('includeTest') === '1',
     });
-    return NextResponse.json({ ok: true, contacts });
+    const automatedContacts = await runCrmOpsAutomationBatch(contacts);
+    return NextResponse.json({ ok: true, contacts: automatedContacts });
   } catch {
     return NextResponse.json({ ok: false, message: 'Не удалось загрузить заявки.' }, { status: 500 });
   }
@@ -59,7 +61,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   try {
     const contact = await createCrmContact(input);
-    return NextResponse.json({ ok: true, contact }, { status: 201 });
+    const automatedContact = await runCrmOpsAutomation(contact);
+    return NextResponse.json({ ok: true, contact: automatedContact }, { status: 201 });
   } catch {
     return NextResponse.json({ ok: false, message: 'Не удалось добавить заявку.' }, { status: 500 });
   }

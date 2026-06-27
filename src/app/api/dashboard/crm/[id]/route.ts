@@ -11,6 +11,7 @@ import { validatePilotStatusChange } from '@/lib/crm/pilot-rollout';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { resolvePilotChainNextActions } from '@/lib/pilot-chain/next-actions';
 import { runPilotChainForContact } from '@/lib/pilot-chain/orchestrator';
+import { attachCrmOpsAutomation } from '@/lib/crm/ops-automation-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function PATCH(req: Request, context: { params: { id: string } }): 
 
   try {
     const chain = await runPilotChainForContact(id);
-    const resolvedContact = chain.contact ?? contact;
+    const resolvedContact = attachCrmOpsAutomation(chain.contact ?? contact);
     const nextActions = resolvePilotChainNextActions(resolvedContact, {
       opsTaskId: chain.opsTaskId,
     });

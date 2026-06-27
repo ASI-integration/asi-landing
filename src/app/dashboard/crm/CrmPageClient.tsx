@@ -22,6 +22,7 @@ import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { CrmSuggestInput } from './CrmSuggestInput';
 import { CrmPilotChainActions } from './CrmPilotChainActions';
+import { CRM_OPS_NEXT_ACTION_LABELS } from '@/lib/crm/ops-automation';
 
 type Draft = {
   name: string;
@@ -624,6 +625,17 @@ export default function CrmPageClient() {
                           Последнее сообщение:{' '}
                           {sanitizeCrmMessageTextForDisplay(contact.onboarding.lastMessage) || 'нет текста'}
                         </div>
+                      </div>
+                    ) : null}
+                    {contact.opsAutomation ? (
+                      <div className={`mt-3 rounded-md border p-3 text-sm ${contact.opsAutomation.needsOperatorAction ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                        <div className="font-semibold">
+                          Следующее действие: {CRM_OPS_NEXT_ACTION_LABELS[contact.opsAutomation.nextAction]}
+                        </div>
+                        <div className="mt-1 text-xs">{contact.opsAutomation.reason}</div>
+                        {contact.opsAutomation.needsOperatorAction ? (
+                          <div className="mt-2 text-xs font-semibold">Нужна реакция оператора</div>
+                        ) : null}
                       </div>
                     ) : null}
                     <CrmPilotChainActions contact={contact} />

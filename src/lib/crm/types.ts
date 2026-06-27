@@ -118,6 +118,39 @@ export type CrmOnboarding = {
   photosCount?: number | null;
 };
 
+export const CRM_OPS_NEXT_ACTION_VALUES = [
+  'send_instruction',
+  'request_access',
+  'mark_access_received',
+  'choose_test_property',
+  'open_channel_manager',
+  'start_channel_setup',
+  'mark_ready_for_setup',
+  'pause',
+  'problem_detected',
+] as const;
+export type CrmOpsNextAction = (typeof CRM_OPS_NEXT_ACTION_VALUES)[number];
+
+export type CrmOpsAutomationState =
+  | 'action_required'
+  | 'waiting'
+  | 'automatic_action_available'
+  | 'needs_operator_attention'
+  | 'manual_override'
+  | 'paused'
+  | 'completed';
+
+export type CrmOpsAutomationDecision = {
+  currentStage: CrmStatus;
+  nextAction: CrmOpsNextAction;
+  automationState: CrmOpsAutomationState;
+  needsOperatorAction: boolean;
+  canAutoPerform: boolean;
+  recommendedStatus: CrmStatus | null;
+  reason: string;
+  evaluatedAt: string;
+};
+
 export type CrmContact = {
   id: string;
   name: string;
@@ -150,6 +183,7 @@ export type CrmContact = {
   channelManagerConnection?: CrmChannelManagerConnection | null;
   ownerObjects?: CrmOwnerObject[];
   activeObjectTitle?: string | null;
+  opsAutomation?: CrmOpsAutomationDecision;
 };
 
 export type CrmContactInput = {
