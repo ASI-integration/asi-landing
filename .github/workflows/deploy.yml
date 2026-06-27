@@ -346,16 +346,39 @@ jobs:
               exit 0
             fi
 
+            echo "Current release target: ${current_target:-unknown}"
             echo "Disk before release cleanup:"
             df -h "${BASE_DIR}" || true
             du -sh "${RELEASES_DIR}" 2>/dev/null || true
+
+            remove_stale_release() {
+              local release_path="$1"
+              if rm -rf -- "${release_path}" 2>/dev/null; then
+                echo "Removed stale release: ${release_path}"
+                return 0
+              fi
+              echo "WARN: rm failed for ${release_path}, trying sudo..."
+              if sudo rm -rf -- "${release_path}" 2>/dev/null; then
+                echo "Removed stale release via sudo: ${release_path}"
+                return 0
+              fi
+              echo "WARN: sudo rm failed for ${release_path}, fixing ownership then retrying..."
+              sudo chown -R "$(whoami):$(whoami)" "${release_path}" 2>/dev/null || true
+              rm -rf -- "${release_path}" 2>/dev/null || sudo rm -rf -- "${release_path}" 2>/dev/null || true
+              if [ ! -e "${release_path}" ]; then
+                echo "Removed stale release after chown: ${release_path}"
+                return 0
+              fi
+              echo "ERROR: could not remove stale release ${release_path}"
+              return 1
+            }
 
             find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d -name "*.tmp.*" -exec rm -rf -- {} + 2>/dev/null || true
             find "${RELEASES_DIR}" -mindepth 1 -maxdepth 1 -type d ! -name "*.tmp.*" -print 2>/dev/null |
               while IFS= read -r release_path; do
                 [ -z "${release_path}" ] && continue
                 [ -n "${current_target}" ] && [ "${release_path}" = "${current_target}" ] && continue
-                rm -rf -- "${release_path}"
+                remove_stale_release "${release_path}" || true
               done
 
             echo "Disk after release cleanup:"
