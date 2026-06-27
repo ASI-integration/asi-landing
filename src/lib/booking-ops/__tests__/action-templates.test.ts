@@ -65,6 +65,70 @@ describe('Booking Ops action templates v1', () => {
     expect(template.messageTemplate).toContain('[имя гостя]');
     expect(template.messageTemplate).toContain('[объект]');
     expect(template.messageTemplate).toContain('[дата заезда]');
+    expect(template.messageTemplate).toContain('[уточнить код замка или способ получения ключей]');
+    expect(template.warnings).toContain('Для объекта нет карточки знаний — проверьте все заглушки перед отправкой.');
+  });
+
+  it('uses structured property knowledge in the check-in draft', () => {
+    const template = getBookingOpsActionTemplateById({
+      ...baseRecord,
+      propertyKnowledgeMatch: 'property_id',
+      propertyKnowledge: {
+        propertyId: 'OBJ-1',
+        propertyLabel: 'Апартаменты на Невском',
+        address: 'Санкт-Петербург, Невский проспект, 10',
+        entranceInstructions: 'Вход со двора через арку',
+        floorApartment: '3 этаж, квартира 12',
+        intercomCode: 'тест-12',
+        keyPickupInstructions: 'Ключ в тестовом боксе',
+        wifiName: 'ASI-Guest',
+        wifiPassword: 'test-password',
+        parkingInstructions: 'Гостевая парковка во дворе',
+        houseRules: 'Не курить',
+        quietHours: 'с 22:00 до 08:00',
+        checkoutInstructions: 'Оставьте ключ на столе',
+        emergencyInstructions: 'Напишите оператору в чате',
+        cleaningLinenNotes: 'Смена белья после выезда',
+        publicGuestNotes: 'Сохраните инструкцию до выезда',
+        privateOperatorNotes: 'Только оператору',
+        updatedAt: '2026-06-27T10:00:00.000Z',
+      },
+    }, 'prepare_checkin_instructions');
+
+    expect(template.messageTemplate).toContain('Санкт-Петербург, Невский проспект, 10');
+    expect(template.messageTemplate).toContain('ASI-Guest');
+    expect(template.messageTemplate).toContain('Не курить');
+    expect(template.messageTemplate).not.toContain('Только оператору');
+    expect(template.warnings).not.toContain('Не указан адрес объекта.');
+  });
+
+  it('does not log sensitive property values while building a template', () => {
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    const calls: unknown[][] = [];
+    console.log = (...args) => { calls.push(args); };
+    console.warn = (...args) => { calls.push(args); };
+    console.error = (...args) => { calls.push(args); };
+    try {
+      getBookingOpsActionTemplateById({
+        ...baseRecord,
+        propertyKnowledgeMatch: 'property_id',
+        propertyKnowledge: {
+          propertyId: 'OBJ-1', propertyLabel: 'Объект', address: 'Адрес',
+          entranceInstructions: 'Вход', floorApartment: null, intercomCode: 'secret-code',
+          keyPickupInstructions: 'Ключи', wifiName: 'Wi-Fi', wifiPassword: 'secret-password',
+          parkingInstructions: null, houseRules: null, quietHours: null,
+          checkoutInstructions: null, emergencyInstructions: null, cleaningLinenNotes: null,
+          publicGuestNotes: null, privateOperatorNotes: 'private-note', updatedAt: null,
+        },
+      }, 'prepare_checkin_instructions');
+    } finally {
+      console.log = originalLog;
+      console.warn = originalWarn;
+      console.error = originalError;
+    }
+    expect(calls).toEqual([]);
   });
 
   it('returns primary operator action from automation nextAction', () => {

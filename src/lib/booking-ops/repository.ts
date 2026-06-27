@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
 import { attachBookingOpsAlerts } from './alerts';
+import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
   BookingOpsRecord,
   CreateBookingOpsInput,
@@ -58,6 +59,34 @@ function attachAutomation(record: BookingOpsRecord): BookingOpsRecord {
   return attachBookingOpsAlerts(record);
 }
 
+async function enrichRecord(record: BookingOpsRecord): Promise<BookingOpsRecord> {
+  const lookup = await lookupPropertyKnowledge({
+    propertyId: record.propertyId,
+    propertyLabel: record.propertyLabel,
+  });
+  return attachAutomation({
+    ...record,
+    propertyKnowledge: lookup.knowledge,
+    propertyKnowledgeMatch: lookup.match,
+  });
+}
+
+async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRecord[]> {
+  const lookups = await lookupPropertyKnowledgeBatch(records.map((record) => ({
+    key: record.id,
+    propertyId: record.propertyId,
+    propertyLabel: record.propertyLabel,
+  })));
+  return records.map((record) => {
+    const lookup = lookups.get(record.id) ?? { knowledge: null, match: 'none' as const };
+    return attachAutomation({
+      ...record,
+      propertyKnowledge: lookup.knowledge,
+      propertyKnowledgeMatch: lookup.match,
+    });
+  });
+}
+
 function mapRow(row: BookingOpsRow): BookingOpsRecord {
   return {
     id: row.id,
@@ -97,7 +126,7 @@ export async function listBookingOpsRecords(options?: {
     .limit(limit);
 
   if (error) return { ok: false, records: [], error: error.message };
-  const records = ((data ?? []) as BookingOpsRow[]).map(mapRow).map(attachAutomation);
+  const records = await enrichRecords(((data ?? []) as BookingOpsRow[]).map(mapRow));
   return { ok: true, records };
 }
 
@@ -112,7 +141,7 @@ export async function getBookingOpsRecord(id: string): Promise<BookingOpsRecord 
     .maybeSingle();
 
   if (error || !data) return null;
-  return attachAutomation(mapRow(data as BookingOpsRow));
+  return enrichRecord(mapRow(data as BookingOpsRow));
 }
 
 export async function getBookingOpsByBookingId(bookingId: string): Promise<BookingOpsRecord | null> {
@@ -128,7 +157,7 @@ export async function getBookingOpsByBookingId(bookingId: string): Promise<Booki
     .maybeSingle();
 
   if (error || !data) return null;
-  return attachAutomation(mapRow(data as BookingOpsRow));
+  return enrichRecord(mapRow(data as BookingOpsRow));
 }
 
 export async function createBookingOpsRecord(input: CreateBookingOpsInput): Promise<{
@@ -168,7 +197,7 @@ export async function createBookingOpsRecord(input: CreateBookingOpsInput): Prom
     .single();
 
   if (error) return { ok: false, error: error.message };
-  return { ok: true, record: attachAutomation(mapRow(data as BookingOpsRow)) };
+  return { ok: true, record: await enrichRecord(mapRow(data as BookingOpsRow)) };
 }
 
 export async function updateBookingOpsRecord(
@@ -222,5 +251,5 @@ export async function updateBookingOpsRecord(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  return { ok: true, record: attachAutomation(mapRow(data as BookingOpsRow)) };
+  return { ok: true, record: await enrichRecord(mapRow(data as BookingOpsRow)) };
 }

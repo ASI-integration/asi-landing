@@ -255,6 +255,29 @@ export type BookingOpsActionTemplate = {
   fieldsOnConfirm: BookingOpsActionFieldsOnConfirm;
 };
 
+export type PropertyKnowledgeMatch = 'property_id' | 'property_label' | 'none' | 'ambiguous' | 'error';
+
+export type BookingOpsPropertyKnowledge = {
+  propertyId: string;
+  propertyLabel: string | null;
+  address: string | null;
+  entranceInstructions: string | null;
+  floorApartment: string | null;
+  intercomCode: string | null;
+  keyPickupInstructions: string | null;
+  wifiName: string | null;
+  wifiPassword: string | null;
+  parkingInstructions: string | null;
+  houseRules: string | null;
+  quietHours: string | null;
+  checkoutInstructions: string | null;
+  emergencyInstructions: string | null;
+  cleaningLinenNotes: string | null;
+  publicGuestNotes: string | null;
+  privateOperatorNotes: string | null;
+  updatedAt: string | null;
+};
+
 export type BookingOpsRecord = {
   id: string;
   bookingId: string | null;
@@ -279,6 +302,8 @@ export type BookingOpsRecord = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  propertyKnowledge?: BookingOpsPropertyKnowledge | null;
+  propertyKnowledgeMatch?: PropertyKnowledgeMatch;
   automation?: BookingOpsAutomationDecision;
   alerts?: BookingOpsAlertSummary;
   operatorAction?: BookingOpsActionTemplate | null;

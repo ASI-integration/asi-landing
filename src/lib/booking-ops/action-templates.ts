@@ -115,6 +115,44 @@ function propertyDataWarnings(record: BookingOpsRecord): string[] {
   return warnings;
 }
 
+function checkinKnowledgeWarnings(record: BookingOpsRecord): string[] {
+  const warnings = propertyDataWarnings(record);
+  const knowledge = record.propertyKnowledge;
+  if (!knowledge) {
+    if (record.propertyKnowledgeMatch === 'ambiguous') {
+      warnings.push('Название объекта совпало с несколькими карточками. Укажите ID объекта.');
+    } else if (record.propertyKnowledgeMatch === 'error') {
+      warnings.push('Не удалось загрузить данные объекта. Проверьте карточку перед отправкой.');
+    } else {
+      warnings.push('Для объекта нет карточки знаний — проверьте все заглушки перед отправкой.');
+    }
+    return warnings;
+  }
+
+  const missing: Array<[string | null, string]> = [
+    [knowledge.address, 'Не указан адрес объекта.'],
+    [knowledge.entranceInstructions, 'Не указаны инструкции по входу.'],
+    [knowledge.keyPickupInstructions, 'Не указан способ получения ключей или код замка.'],
+    [knowledge.wifiName, 'Не указано название Wi-Fi.'],
+    [knowledge.wifiPassword, 'Не указан пароль Wi-Fi.'],
+    [knowledge.parkingInstructions, 'Не указана информация о парковке.'],
+    [knowledge.houseRules, 'Не указаны правила проживания.'],
+    [knowledge.checkoutInstructions, 'Не указаны инструкции по выезду.'],
+    [knowledge.emergencyInstructions, 'Не указан контакт для экстренной связи.'],
+  ];
+  for (const [value, warning] of missing) {
+    if (!value) warnings.push(warning);
+  }
+  if (!knowledge.entranceInstructions && !knowledge.keyPickupInstructions && !knowledge.intercomCode) {
+    warnings.push('Критичные данные доступа отсутствуют — не отправляйте черновик без проверки.');
+  }
+  return warnings;
+}
+
+function valueOrPlaceholder(value: string | null | undefined, placeholder: string): string {
+  return String(value ?? '').trim() || placeholder;
+}
+
 function getReadyForCheckinBlockers(record: BookingOpsRecord): string[] {
   const blockers: string[] = [];
   if (record.isBlocked || record.opsStatus === 'problem_blocked') {
@@ -356,10 +394,14 @@ const ACTION_SPECS: Record<BookingOpsOperatorActionId, ActionSpec> = {
     },
     description: 'Подготовьте и отправьте гостю инструкции заезда вручную.',
     messageTemplate: (record) => {
+      const knowledge = record.propertyKnowledge;
       const name = guestNameLabel(record);
-      const property = propertyLabel(record);
+      const property = knowledge?.propertyLabel ?? propertyLabel(record);
       const checkIn = formatRuDate(record.checkInAt, '[дата заезда]');
       const checkOut = formatRuDate(record.checkOutAt, '[дата выезда]');
+      const guestNotes = knowledge?.publicGuestNotes
+        ? `\nДополнительно: ${knowledge.publicGuestNotes}`
+        : '';
       return `Здравствуйте, ${name}!
 
 Инструкции по заезду в «${property}»:
@@ -367,10 +409,20 @@ const ACTION_SPECS: Record<BookingOpsOperatorActionId, ActionSpec> = {
 Дата заезда: ${checkIn}
 Дата выезда: ${checkOut}
 
-Адрес: [укажите адрес объекта]
-Как добраться: [укажите маршрут]
-Код домофона / ключ: [укажите код или способ получения ключей]
-Контакт на месте: [укажите контакт]
+Адрес: ${valueOrPlaceholder(knowledge?.address, '[уточнить адрес объекта]')}
+Вход: ${valueOrPlaceholder(knowledge?.entranceInstructions, '[уточнить инструкции по входу]')}
+Этаж / квартира: ${valueOrPlaceholder(knowledge?.floorApartment, '[уточнить этаж и номер квартиры]')}
+Домофон: ${valueOrPlaceholder(knowledge?.intercomCode, '[уточнить код домофона]')}
+Ключи: ${valueOrPlaceholder(knowledge?.keyPickupInstructions, '[уточнить код замка или способ получения ключей]')}
+
+Wi-Fi: ${valueOrPlaceholder(knowledge?.wifiName, '[уточнить название Wi-Fi]')}
+Пароль Wi-Fi: ${valueOrPlaceholder(knowledge?.wifiPassword, '[уточнить пароль Wi-Fi]')}
+Парковка: ${valueOrPlaceholder(knowledge?.parkingInstructions, '[уточнить информацию о парковке]')}
+
+Правила проживания: ${valueOrPlaceholder(knowledge?.houseRules, '[уточнить правила проживания]')}
+Тихие часы: ${valueOrPlaceholder(knowledge?.quietHours, '[уточнить тихие часы]')}
+Выезд: ${valueOrPlaceholder(knowledge?.checkoutInstructions, '[уточнить инструкции по выезду]')}
+Экстренная связь: ${valueOrPlaceholder(knowledge?.emergencyInstructions, '[уточнить контакт для экстренной связи]')}${guestNotes}
 
 Если возникнут вопросы — напишите нам.`;
     },
@@ -387,7 +439,7 @@ const ACTION_SPECS: Record<BookingOpsOperatorActionId, ActionSpec> = {
       if (record.checkinReadinessStatus === 'problem') return 'Статус инструкций — проблема.';
       return null;
     },
-    warnings: (record) => propertyDataWarnings(record),
+    warnings: (record) => checkinKnowledgeWarnings(record),
   },
   mark_ready_for_checkin: {
     fieldsOnConfirm: { opsStatus: 'ready_for_checkin' },
