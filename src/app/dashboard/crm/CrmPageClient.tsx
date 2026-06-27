@@ -55,6 +55,19 @@ const emptyDraft: Draft = {
   nextActionAt: '',
 };
 
+const CRM_DRAFT_STORAGE_KEY = 'asi:crm-application-draft:v1';
+
+function readSavedDraft(): Draft | null {
+  try {
+    const value = window.localStorage.getItem(CRM_DRAFT_STORAGE_KEY);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as Partial<Draft>;
+    return { ...emptyDraft, ...parsed };
+  } catch {
+    return null;
+  }
+}
+
 const SETUP_STATUS_ACTIONS: Array<{ status: CrmStatus; label: string }> = [
   { status: 'contact_sent', label: 'Инструкция отправлена' },
   { status: 'access_requested', label: 'Доступ запрошен' },
@@ -187,6 +200,8 @@ export default function CrmPageClient() {
           ])
         )
       );
+    } catch {
+      setMessage('Не удалось загрузить заявки. Проверьте соединение и попробуйте снова.');
     } finally {
       setLoading(false);
     }
@@ -200,6 +215,22 @@ export default function CrmPageClient() {
   useEffect(() => {
     void loadSuggestionContacts();
   }, [loadSuggestionContacts]);
+
+  useEffect(() => {
+    const savedDraft = readSavedDraft();
+    if (!savedDraft) return;
+    setDraft(savedDraft);
+    setShowForm(true);
+  }, []);
+
+  useEffect(() => {
+    if (draft === emptyDraft) return;
+    try {
+      window.localStorage.setItem(CRM_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+      // Форма продолжает работать, даже если браузер запретил локальное хранилище.
+    }
+  }, [draft]);
 
   const nameSuggestions = useMemo(
     () => getCrmSuggestions(suggestionContacts, 'name', draft.name),
@@ -259,6 +290,8 @@ export default function CrmPageClient() {
         delete next[contact.id];
         return next;
       });
+    } catch {
+      setMessage('Не удалось удалить заявку. Проверьте соединение и попробуйте снова.');
     } finally {
       setDeletingId(null);
     }
@@ -274,7 +307,12 @@ export default function CrmPageClient() {
         credentials: 'include',
         body: JSON.stringify(patch),
       });
-      const data = await readResponseJson(res, { ok: false, contact: null as CrmContact | null, message: '' });
+      const data = await readResponseJson(res, {
+        ok: false,
+        contact: null as CrmContact | null,
+        message: '',
+        warning: '',
+      });
       if (!res.ok || !data.ok || !data.contact) {
         setMessage(data.message || 'Не удалось сохранить изменения.');
         return;
@@ -289,6 +327,9 @@ export default function CrmPageClient() {
           nextActionAt: toInputDate(data.contact!.nextActionAt),
         },
       }));
+      if (data.warning) setMessage(data.warning);
+    } catch {
+      setMessage('Не удалось сохранить изменения. Проверьте соединение и попробуйте снова.');
     } finally {
       setSavingId(null);
     }
@@ -317,8 +358,15 @@ export default function CrmPageClient() {
         return;
       }
       setDraft(emptyDraft);
+      try {
+        window.localStorage.removeItem(CRM_DRAFT_STORAGE_KEY);
+      } catch {
+        // Успешное сохранение уже подтверждено сервером.
+      }
       setShowForm(false);
       await Promise.all([loadContacts(), loadSuggestionContacts()]);
+    } catch {
+      setMessage('Не удалось добавить заявку. Данные формы сохранены в этом браузере — проверьте соединение и попробуйте снова.');
     } finally {
       setSavingId(null);
     }

@@ -88,6 +88,13 @@ const SOURCE_FILTER_VALUES: Partial<Record<CrmSource, string[]>> = {
   other: ['other', 'test'],
 };
 
+export class CrmContactNotFoundError extends Error {
+  constructor(id: string) {
+    super(`CRM contact not found: ${id}`);
+    this.name = 'CrmContactNotFoundError';
+  }
+}
+
 function toRole(value: string): CrmContact['role'] {
   if (value === 'owner' || value === 'manager' || value === 'partner') return value;
   return 'unknown';
@@ -429,14 +436,16 @@ export async function updateCrmContact(id: string, input: Partial<NormalizedCrmC
     .update(allowedPatch)
     .eq('id', id)
     .select('*')
-    .single();
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new CrmContactNotFoundError(id);
   return toContact(data as CrmContactRow);
 }
 
 export async function deleteCrmContact(id: string): Promise<void> {
-  const { error } = await supabase.from('crm_contacts').delete().eq('id', id);
+  const { data, error } = await supabase.from('crm_contacts').delete().eq('id', id).select('id').maybeSingle();
   if (error) throw error;
+  if (!data) throw new CrmContactNotFoundError(id);
 }
 
 export async function archiveCrmContactFromQueue(id: string, archivedBy: string): Promise<CrmContact> {

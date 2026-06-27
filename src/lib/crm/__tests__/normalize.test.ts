@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeCrmContactInput, validateCrmContact } from '../normalize';
+import { normalizeCrmContactInput, validateCrmContact, validateCrmContactPayload } from '../normalize';
 
 describe('CRM contact normalization', () => {
   it('normalizes user input and strips telegram prefix', () => {
@@ -36,5 +36,19 @@ describe('CRM contact normalization', () => {
 
     const valid = normalizeCrmContactInput({ name: 'Илья', telegramUsername: '@ilya' });
     expect(validateCrmContact(valid)).toBeNull();
+  });
+
+  it('rejects invalid creation and update payloads instead of silently replacing values', () => {
+    expect(validateCrmContactPayload({ name: 'Анна', email: 'не-email' })).toBe('Проверьте адрес email.');
+    expect(validateCrmContactPayload({ name: 'Анна', phone: '+7', status: 'unknown-stage' })).toBe(
+      'Проверьте данные заявки.',
+    );
+    expect(validateCrmContactPayload({ name: 'Анна', phone: '+7', objectsCount: -1 })).toBe(
+      'Укажите количество объектов от 0 до 999.',
+    );
+    expect(validateCrmContactPayload({ nextActionAt: 'не дата' }, true)).toBe(
+      'Проверьте дату следующего действия.',
+    );
+    expect(validateCrmContactPayload({}, true)).toBe('Нет изменений для сохранения.');
   });
 });

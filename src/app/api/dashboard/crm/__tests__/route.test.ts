@@ -53,4 +53,18 @@ describe('/api/dashboard/crm', () => {
     expect(await res.json()).toEqual({ ok: false, message: 'Укажите хотя бы один способ связи.' });
     expect(createCrmContact).not.toHaveBeenCalled();
   });
+
+  it('rejects invalid values instead of reporting a successful write', async () => {
+    const mod = await import('../route');
+    const res = await mod.POST(
+      new Request('http://localhost/api/dashboard/crm', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Анна', email: 'не-email', status: 'broken' }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, message: 'Проверьте данные заявки.' });
+    expect(createCrmContact).not.toHaveBeenCalled();
+  });
 });

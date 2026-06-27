@@ -28,6 +28,72 @@ export type NormalizedCrmContactInput = {
   nextActionAt: string | null;
 };
 
+const CRM_CONTACT_INPUT_KEYS = new Set([
+  'name',
+  'phone',
+  'telegramUsername',
+  'email',
+  'role',
+  'source',
+  'objectsCount',
+  'city',
+  'note',
+  'status',
+  'communicationStatus',
+  'lastContactAt',
+  'nextStep',
+  'nextActionAt',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidOptionalDate(value: unknown): boolean {
+  return value === null || value === undefined || value === '' ||
+    (typeof value === 'string' && !Number.isNaN(new Date(value).getTime()));
+}
+
+function isValidEmail(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true;
+  if (typeof value !== 'string') return false;
+  const email = value.trim();
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+export function validateCrmContactPayload(input: unknown, partial = false): string | null {
+  if (!isRecord(input)) return 'Проверьте данные заявки.';
+
+  const keys = Object.keys(input);
+  if (partial && keys.length === 0) return 'Нет изменений для сохранения.';
+  if (keys.some((key) => !CRM_CONTACT_INPUT_KEYS.has(key))) return 'Проверьте данные заявки.';
+
+  const enumChecks: Array<[string, readonly string[]]> = [
+    ['role', CRM_ROLE_VALUES],
+    ['source', CRM_SOURCE_VALUES],
+    ['status', CRM_STATUS_VALUES],
+    ['communicationStatus', CRM_COMMUNICATION_STATUS_VALUES],
+  ];
+  for (const [key, values] of enumChecks) {
+    if (key in input && (typeof input[key] !== 'string' || !values.includes(input[key] as never))) {
+      return 'Проверьте данные заявки.';
+    }
+  }
+
+  if (!isValidEmail(input.email)) return 'Проверьте адрес email.';
+  if (!isValidOptionalDate(input.lastContactAt) || !isValidOptionalDate(input.nextActionAt)) {
+    return 'Проверьте дату следующего действия.';
+  }
+  if ('objectsCount' in input) {
+    const raw = input.objectsCount;
+    const value = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 999) return 'Укажите количество объектов от 0 до 999.';
+  }
+  if (partial && 'name' in input && !text(input.name, 160)) return 'Укажите имя контакта.';
+
+  return null;
+}
+
 function text(value: unknown, max = 500): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }

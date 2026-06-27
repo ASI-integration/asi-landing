@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readRequestJson } from '@/lib/safeRequestJson';
 import { createCrmContact, listCrmContacts } from '@/lib/crm/repository';
-import { normalizeCrmContactInput, validateCrmContact } from '@/lib/crm/normalize';
+import { normalizeCrmContactInput, validateCrmContact, validateCrmContactPayload } from '@/lib/crm/normalize';
 import { CRM_SOURCE_VALUES, CRM_STATUS_VALUES, CrmSource, CrmStatus } from '@/lib/crm/types';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 
@@ -44,6 +44,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   const body = await readRequestJson(req);
   if (!body.ok) {
     return NextResponse.json({ ok: false, message: 'Проверьте данные заявки.' }, { status: 400 });
+  }
+
+  const payloadError = validateCrmContactPayload(body.data);
+  if (payloadError) {
+    return NextResponse.json({ ok: false, message: payloadError }, { status: 400 });
   }
 
   const input = normalizeCrmContactInput(body.data);
