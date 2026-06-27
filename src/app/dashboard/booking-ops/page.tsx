@@ -24,6 +24,7 @@ import {
   type BookingOpsMvdStatus,
   type BookingOpsRecord,
   type BookingOpsStatus,
+  type BookingOpsAlertSeverity,
 } from '@/lib/booking-ops/types';
 
 type ListResponse = {
@@ -49,6 +50,18 @@ const AUTOMATION_TONE: Record<string, string> = {
   completed: 'border-emerald-200 bg-emerald-50 text-emerald-900',
   paused: 'border-slate-200 bg-slate-50 text-slate-700',
   automatic_action_available: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+};
+
+const ALERT_SEVERITY_TONE: Record<BookingOpsAlertSeverity, string> = {
+  critical: 'border-red-300 bg-red-50 text-red-900',
+  warning: 'border-amber-200 bg-amber-50 text-amber-900',
+  info: 'border-sky-200 bg-sky-50 text-sky-900',
+};
+
+const ALERT_SEVERITY_LABEL: Record<BookingOpsAlertSeverity, string> = {
+  critical: 'Срочно',
+  warning: 'Внимание',
+  info: 'Инфо',
 };
 
 function formatWhen(value: string | null): string {
@@ -337,12 +350,14 @@ function BookingOpsPageInner() {
                   <th className="px-4 py-3 font-medium">Гость</th>
                   <th className="px-4 py-3 font-medium">Заезд</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
+                  <th className="px-4 py-3 font-medium">Задача</th>
                   <th className="px-4 py-3 font-medium">След. шаг</th>
                 </tr>
               </thead>
               <tbody>
                 {records.map((record) => {
                   const nextAction = record.automation?.nextAction;
+                  const primaryAlert = record.alerts?.primaryAlert;
                   const isSelected = record.id === selectedId;
                   return (
                     <tr
@@ -359,6 +374,20 @@ function BookingOpsPageInner() {
                       </td>
                       <td className="px-4 py-3">{formatWhen(record.checkInAt)}</td>
                       <td className="px-4 py-3">{BOOKING_OPS_STATUS_LABELS_RU[record.opsStatus]}</td>
+                      <td className="px-4 py-3">
+                        {primaryAlert ? (
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${
+                              ALERT_SEVERITY_TONE[primaryAlert.severity]
+                            }`}
+                          >
+                            <span>{ALERT_SEVERITY_LABEL[primaryAlert.severity]}</span>
+                            <span className="font-normal">{primaryAlert.title}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         {nextAction ? BOOKING_OPS_NEXT_ACTION_LABELS_RU[nextAction] : '—'}
                       </td>
@@ -402,6 +431,25 @@ function BookingOpsPageInner() {
                       ))}
                     </ul>
                   ) : null}
+                </div>
+              ) : null}
+
+              {selectedRecord.alerts && selectedRecord.alerts.alerts.length > 0 ? (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-slate-800">Задачи оператора</h3>
+                  {selectedRecord.alerts.alerts.map((alert) => (
+                    <div
+                      key={`${alert.kind}-${alert.title}`}
+                      className={`rounded-lg border px-4 py-3 text-sm ${
+                        ALERT_SEVERITY_TONE[alert.severity]
+                      }`}
+                    >
+                      <p className="font-medium">
+                        {ALERT_SEVERITY_LABEL[alert.severity]} · {alert.title}
+                      </p>
+                      <p className="mt-1">{alert.reason}</p>
+                    </div>
+                  ))}
                 </div>
               ) : null}
 

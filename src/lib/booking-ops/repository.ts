@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
-import { evaluateBookingOpsAutomation } from './decision-engine';
+import { attachBookingOpsAlerts } from './alerts';
 import type {
   BookingOpsRecord,
   CreateBookingOpsInput,
@@ -55,7 +55,7 @@ function toIsoDate(value: string | null | undefined): string | null {
 }
 
 function attachAutomation(record: BookingOpsRecord): BookingOpsRecord {
-  return { ...record, automation: evaluateBookingOpsAutomation(record) };
+  return attachBookingOpsAlerts(record);
 }
 
 function mapRow(row: BookingOpsRow): BookingOpsRecord {

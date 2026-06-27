@@ -183,6 +183,38 @@ export type BookingOpsAutomationDecision = {
   evaluatedAt: string;
 };
 
+export type BookingOpsAlertSeverity = 'info' | 'warning' | 'critical';
+
+export type BookingOpsAlertKind =
+  | 'guest_contact_missing'
+  | 'documents_not_requested'
+  | 'documents_not_received'
+  | 'contract_incomplete'
+  | 'deposit_incomplete'
+  | 'mvd_not_submitted'
+  | 'checkin_instructions_not_ready'
+  | 'booking_blocked'
+  | 'checkin_approaching_incomplete';
+
+export type BookingOpsAlert = {
+  bookingOpsId: string;
+  sourceBookingId: string | null;
+  kind: BookingOpsAlertKind;
+  title: string;
+  reason: string;
+  severity: BookingOpsAlertSeverity;
+  /** v1 computed-only — always open; no resolve/ignore persistence. */
+  status: 'open';
+  dueAt: string | null;
+  relatedNextAction: BookingOpsNextAction | null;
+};
+
+export type BookingOpsAlertSummary = {
+  alerts: BookingOpsAlert[];
+  primaryAlert: BookingOpsAlert | null;
+  maxSeverity: BookingOpsAlertSeverity | null;
+};
+
 export type BookingOpsRecord = {
   id: string;
   bookingId: string | null;
@@ -208,6 +240,7 @@ export type BookingOpsRecord = {
   createdAt: string;
   updatedAt: string;
   automation?: BookingOpsAutomationDecision;
+  alerts?: BookingOpsAlertSummary;
 };
 
 export type CreateBookingOpsInput = {
