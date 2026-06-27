@@ -19,6 +19,7 @@ type DashboardNavItem = {
     | 'communication'
     | 'operations'
     | 'bookings'
+    | 'bookingOps'
     | 'automations'
     | 'settings';
   label?: string;
@@ -34,6 +35,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/communication', key: 'communication' },
   { href: '/dashboard/ops', key: 'operations' },
   { href: '/dashboard/bookings', key: 'bookings' },
+  { href: '/dashboard/booking-ops', key: 'bookingOps', label: 'Операции по броням' },
   { href: '/dashboard/automations', key: 'automations' },
   { href: '/dashboard/settings', key: 'settings' },
 ] as const;
@@ -44,7 +46,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { session } = useSession();
 
   const visibleNavItems = navItems.filter((item) => {
-    if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations') {
+    if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations' || item.key === 'bookingOps') {
       return session?.isCrmOperator === true;
     }
     if (item.key === 'automations') {
