@@ -353,6 +353,9 @@ function BookingOpsPageInner() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-900">{record.guestName || '—'}</div>
                         <div className="text-slate-500">{record.propertyLabel || record.propertyId || '—'}</div>
+                        {record.bookingId ? (
+                          <div className="mt-1 text-xs text-emerald-700">Из брони · {record.bookingId}</div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">{formatWhen(record.checkInAt)}</td>
                       <td className="px-4 py-3">{BOOKING_OPS_STATUS_LABELS_RU[record.opsStatus]}</td>
@@ -369,7 +372,15 @@ function BookingOpsPageInner() {
           {selectedRecord && draft && isOpsAdmin ? (
             <form onSubmit={onSave} className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
-                <h2 className="text-lg font-semibold text-slate-900">Редактирование</h2>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Редактирование</h2>
+                  {selectedRecord.bookingId ? (
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Создано из брони · ID: {selectedRecord.bookingId}
+                      {selectedRecord.otaSource ? ` · ${selectedRecord.otaSource}` : ''}
+                    </p>
+                  ) : null}
+                </div>
                 <span className="text-xs text-slate-500">Обновлено: {formatWhen(selectedRecord.updatedAt)}</span>
               </div>
 

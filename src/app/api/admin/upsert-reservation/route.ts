@@ -35,6 +35,7 @@
 import { NextResponse } from 'next/server';
 import { supabase }     from '@/lib/supabase';
 import { appendTimelineEvent } from '@/lib/communication/timeline';
+import { syncBookingOpsFromReservation } from '@/lib/booking-ops/reservation-sync';
 import { createOpsTask, OpsTaskType, OpsTaskPriority } from '@/lib/ops/tasks';
 import { markUnitOccupied } from '@/lib/ops/unit-state';
 
@@ -203,5 +204,21 @@ export async function POST(req: Request) {
     markUnitOccupied(property_id as string, reservationId).catch(() => {});
   }
 
-  return NextResponse.json({ ok: true, reservation_id: reservationId, reservation_ref, created });
+  let bookingOpsSync: Awaited<ReturnType<typeof syncBookingOpsFromReservation>> | null = null;
+  try {
+    bookingOpsSync = await syncBookingOpsFromReservation(reservationId);
+  } catch (syncError) {
+    console.error('[booking-ops-source-link] upsert-reservation sync failed', {
+      reservationId,
+      error: syncError,
+    });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    reservation_id: reservationId,
+    reservation_ref,
+    created,
+    booking_ops_sync: bookingOpsSync,
+  });
 }
