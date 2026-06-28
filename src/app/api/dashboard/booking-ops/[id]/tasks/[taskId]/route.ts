@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
   parseUpdateBookingOpsTaskInput,
-  updateBookingOpsTask,
 } from '@/lib/booking-ops/tasks';
+import { updateBookingOpsTaskWithCompletionEffects } from '@/lib/booking-ops/task-completion-effects';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,18 +32,27 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 
-  const result = await updateBookingOpsTask(
+  const result = await updateBookingOpsTaskWithCompletionEffects(
     context.params.id,
     context.params.taskId,
     parsed.input,
   );
   if (!result.ok) {
-    const status = result.error === 'not_found' ? 404 : 500;
+    const status = result.error === 'not_found'
+      ? 404
+      : result.error === 'telegram_drafts_missing'
+        ? 409
+        : 500;
     return NextResponse.json(
-      { ok: false, message: result.error ?? 'Не удалось обновить задачу.' },
+      { ok: false, message: result.message, effectResult: result.effectResult },
       { status },
     );
   }
 
-  return NextResponse.json({ ok: true, task: result.task });
+  return NextResponse.json({
+    ok: true,
+    task: result.task,
+    effectResult: result.effectResult,
+    message: result.effectResult?.message ?? 'Статус задачи обновлён.',
+  });
 }

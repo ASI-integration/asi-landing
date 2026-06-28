@@ -56,6 +56,7 @@ import {
   BOOKING_READINESS_STATUS_LABELS_RU,
   type BookingReadinessStatus,
 } from '@/lib/booking-ops/readiness';
+import type { BookingOpsTaskCompletionEffectResult } from '@/lib/booking-ops/task-completion-effects';
 
 type ListResponse = {
   ok: boolean;
@@ -83,6 +84,10 @@ type TasksResponse = {
   message?: string;
   tasks?: BookingOpsTask[];
   task?: BookingOpsTask;
+};
+
+type TaskUpdateResponse = TasksResponse & {
+  effectResult?: BookingOpsTaskCompletionEffectResult | null;
 };
 
 type TaskActionResult = {
@@ -490,14 +495,17 @@ function BookingOpsPageInner() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      const payload = await readResponseJson<TasksResponse>(res, { ok: false });
+      const payload = await readResponseJson<TaskUpdateResponse>(res, { ok: false });
       if (!res.ok || !payload.ok || !payload.task) {
         setMessage(payload.message || 'Не удалось обновить задачу.');
         return;
       }
-      setOpsTasks((current) => current.map((task) => (
-        task.id === payload.task!.id ? payload.task! : task
-      )));
+      setMessage(payload.effectResult?.message || payload.message || 'Статус задачи обновлён.');
+      await Promise.all([
+        load(),
+        reloadOpsTasks(selectedId),
+        reloadTelegramDrafts(selectedId),
+      ]);
     } finally {
       setUpdatingTaskId(null);
     }
