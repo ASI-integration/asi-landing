@@ -232,6 +232,54 @@ export const BOOKING_OPS_OPERATOR_ACTIONS = [
 
 export type BookingOpsOperatorActionId = (typeof BOOKING_OPS_OPERATOR_ACTIONS)[number];
 
+export const BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS = [
+  'request_guest_documents',
+  'send_contract',
+  'request_deposit',
+  'prepare_checkin_instructions',
+] as const;
+
+export type BookingOpsTelegramDraftActionId =
+  (typeof BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS)[number];
+
+export const BOOKING_OPS_TELEGRAM_DRAFT_STATUSES = [
+  'draft',
+  'copied',
+  'sent_manually',
+  'cancelled',
+  'failed',
+] as const;
+
+export type BookingOpsTelegramDraftStatus =
+  (typeof BOOKING_OPS_TELEGRAM_DRAFT_STATUSES)[number];
+
+export const BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU: Record<
+  BookingOpsTelegramDraftStatus,
+  string
+> = {
+  draft: 'Черновик',
+  copied: 'Скопирован',
+  sent_manually: 'Отправлен вручную',
+  cancelled: 'Отменён',
+  failed: 'Ошибка',
+};
+
+export type BookingOpsTelegramDraft = {
+  id: string;
+  bookingOpsRecordId: string;
+  sourceBookingId: string | null;
+  telegramChatId: string | null;
+  telegramTarget: string | null;
+  actionId: BookingOpsTelegramDraftActionId;
+  messageText: string;
+  status: BookingOpsTelegramDraftStatus;
+  createdBy: string | null;
+  warning: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type BookingOpsActionFieldsOnConfirm = {
   documentsStatus?: BookingOpsDocumentsStatus;
   contractStatus?: BookingOpsContractStatus;
