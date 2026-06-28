@@ -150,6 +150,26 @@ export async function createBookingOpsTask(
   return { ok: true, task: mapRow(data as BookingOpsTaskRow), created: true };
 }
 
+export async function getBookingOpsTask(
+  bookingOpsRecordId: string,
+  taskId: string,
+): Promise<{ ok: true; task: BookingOpsTask } | { ok: false; error: string }> {
+  const recordId = text(bookingOpsRecordId);
+  const id = text(taskId);
+  if (!recordId || !id) return { ok: false, error: 'id_required' };
+
+  const { data, error } = await supabase
+    .from('booking_ops_tasks')
+    .select('*')
+    .eq('id', id)
+    .eq('booking_ops_record_id', recordId)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'not_found' };
+  return { ok: true, task: mapRow(data as BookingOpsTaskRow) };
+}
+
 export async function updateBookingOpsTask(
   bookingOpsRecordId: string,
   taskId: string,
