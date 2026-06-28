@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
 import { canCreateTelegramDraftForAction, fetchTelegramDraftStatusesForRecord } from './readiness';
-import { getBookingOpsRecord } from './repository';
+import { syncBookingOpsTasksForRecordId, getBookingOpsRecord } from './repository';
 import {
   BOOKING_OPS_OPERATOR_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
@@ -213,6 +213,7 @@ export async function updateBookingOpsTelegramDraftStatus(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
+  await syncBookingOpsTasksForRecordId(recordId);
   return { ok: true, draft: mapRow(data as TelegramDraftRow) };
 }
 
@@ -291,5 +292,6 @@ export async function createTelegramDraftFromBookingOpsAction(
   if (!inserted.ok) {
     return { ok: false, error: 'database_error', message: inserted.error };
   }
+  await syncBookingOpsTasksForRecordId(record.id);
   return inserted;
 }

@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
 import { attachBookingOpsAlerts } from './alerts';
 import { attachBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
+import { applyBookingOpsTaskSync } from './tasks';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
   BookingOpsRecord,
@@ -102,6 +103,12 @@ async function enrichRecord(record: BookingOpsRecord): Promise<BookingOpsRecord>
     propertyKnowledgeMatch: lookup.match,
   });
   return attachReadiness(withAutomation);
+}
+
+async function enrichRecordWithTaskSync(record: BookingOpsRecord): Promise<BookingOpsRecord> {
+  const enriched = await enrichRecord(record);
+  await applyBookingOpsTaskSync(enriched);
+  return enriched;
 }
 
 async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRecord[]> {
@@ -274,7 +281,29 @@ export async function createBookingOpsRecord(input: CreateBookingOpsInput): Prom
     .single();
 
   if (error) return { ok: false, error: error.message };
-  return { ok: true, record: await enrichRecord(mapRow(data as BookingOpsRow)) };
+  const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow));
+  return { ok: true, record };
+}
+
+export async function syncBookingOpsTasksForRecordId(
+  recordId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const recordIdClean = text(recordId);
+  if (!recordIdClean) return { ok: false, error: 'id_required' };
+
+  const { data, error } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('id', recordIdClean)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: 'not_found' };
+
+  const drafts = await fetchTelegramDraftStatusesForRecord(recordIdClean);
+  const record = attachBookingReadiness(mapRow(data as BookingOpsRow), drafts);
+  const result = await applyBookingOpsTaskSync(record);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 export async function updateBookingOpsRecord(
@@ -359,5 +388,5 @@ export async function updateBookingOpsRecord(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  return { ok: true, record: await enrichRecord(mapRow(data as BookingOpsRow)) };
+  return { ok: true, record: await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow)) };
 }

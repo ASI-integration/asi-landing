@@ -46,6 +46,12 @@ import {
   type BookingOpsTelegramDraft,
 } from '@/lib/booking-ops/types';
 import {
+  BOOKING_OPS_TASK_STATUS_LABELS_RU,
+  BOOKING_OPS_TASK_STATUSES,
+  type BookingOpsTask,
+  type BookingOpsTaskStatus,
+} from '@/lib/booking-ops/task-types';
+import {
   BOOKING_READINESS_STATUS_LABELS_RU,
   type BookingReadinessStatus,
 } from '@/lib/booking-ops/readiness';
@@ -69,6 +75,13 @@ type TelegramDraftResponse = {
   message?: string;
   draft?: BookingOpsTelegramDraft;
   drafts?: BookingOpsTelegramDraft[];
+};
+
+type TasksResponse = {
+  ok: boolean;
+  message?: string;
+  tasks?: BookingOpsTask[];
+  task?: BookingOpsTask;
 };
 
 const AUTOMATION_TONE: Record<string, string> = {
@@ -261,6 +274,9 @@ function BookingOpsPageInner() {
   const [telegramDrafts, setTelegramDrafts] = useState<BookingOpsTelegramDraft[]>([]);
   const [telegramDraftsLoading, setTelegramDraftsLoading] = useState(false);
   const [creatingTelegramDraft, setCreatingTelegramDraft] = useState(false);
+  const [opsTasks, setOpsTasks] = useState<BookingOpsTask[]>([]);
+  const [opsTasksLoading, setOpsTasksLoading] = useState(false);
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState<EditDraft>({
@@ -365,11 +381,70 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setOpsTasks([]);
+      return;
+    }
+
+    let cancelled = false;
+    setOpsTasksLoading(true);
+    void fetch(`/api/dashboard/booking-ops/${selectedId}/tasks`, { credentials: 'include' })
+      .then(async (res) => {
+        const payload = await readResponseJson<TasksResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setOpsTasks([]);
+          return;
+        }
+        setOpsTasks(payload.tasks ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setOpsTasksLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
     setTelegramDrafts([]);
+    setOpsTasks([]);
     setMessage('');
+  }
+
+  async function reloadOpsTasks(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/${recordId}/tasks`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<TasksResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setOpsTasks(payload.tasks ?? []);
+  }
+
+  async function onUpdateTaskStatus(taskId: string, status: BookingOpsTaskStatus) {
+    if (!isOpsAdmin || !selectedId) return;
+    setUpdatingTaskId(taskId);
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${selectedId}/tasks/${taskId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const payload = await readResponseJson<TasksResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.task) {
+        setMessage(payload.message || 'Не удалось обновить задачу.');
+        return;
+      }
+      setOpsTasks((current) => current.map((task) => (
+        task.id === payload.task!.id ? payload.task! : task
+      )));
+    } finally {
+      setUpdatingTaskId(null);
+    }
   }
 
   async function onCreateTelegramDraft() {
@@ -389,6 +464,7 @@ function BookingOpsPageInner() {
         return;
       }
       setTelegramDrafts((current) => [payload.draft!, ...current]);
+      await reloadOpsTasks(selectedId);
       setMessage('Черновик Telegram создан. Сообщение не отправлено.');
     } finally {
       setCreatingTelegramDraft(false);
@@ -410,6 +486,7 @@ function BookingOpsPageInner() {
       setTelegramDrafts((current) => current.map((item) => (
         item.id === payload.draft!.id ? payload.draft! : item
       )));
+      await reloadOpsTasks(draft.bookingOpsRecordId);
     }
   }
 
@@ -453,6 +530,7 @@ function BookingOpsPageInner() {
       }
       setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
       setDraft(draftFromRecord(payload.record));
+      await reloadOpsTasks(selectedId);
       setMessage('Изменения сохранены.');
     } finally {
       setSaving(false);
@@ -675,6 +753,14 @@ function BookingOpsPageInner() {
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
 
+              <OperationalTasksCard
+                tasks={opsTasks}
+                loading={opsTasksLoading}
+                isOpsAdmin={isOpsAdmin}
+                updatingTaskId={updatingTaskId}
+                onUpdateStatus={(taskId, status) => void onUpdateTaskStatus(taskId, status)}
+              />
+
               {selectedRecord.automation ? (
                 <div
                   className={`rounded-lg border px-4 py-3 text-sm ${
@@ -835,6 +921,102 @@ function ReadinessCard({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const OPS_TASK_STATUS_TONE: Record<BookingOpsTaskStatus, string> = {
+  open: 'border-amber-200 bg-amber-50 text-amber-950',
+  in_progress: 'border-sky-200 bg-sky-50 text-sky-950',
+  blocked: 'border-red-200 bg-red-50 text-red-950',
+  completed: 'border-slate-200 bg-slate-50 text-slate-600',
+  cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
+};
+
+function OperationalTasksCard({
+  tasks,
+  loading,
+  isOpsAdmin,
+  updatingTaskId,
+  onUpdateStatus,
+}: {
+  tasks: BookingOpsTask[];
+  loading: boolean;
+  isOpsAdmin: boolean;
+  updatingTaskId: string | null;
+  onUpdateStatus: (taskId: string, status: BookingOpsTaskStatus) => void;
+}) {
+  const openTasks = tasks.filter((task) =>
+    task.status === 'open' || task.status === 'in_progress' || task.status === 'blocked',
+  );
+  const completedTasks = tasks.filter((task) =>
+    task.status === 'completed' || task.status === 'cancelled',
+  );
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-slate-900">Операционные задачи</h3>
+        {loading ? <span className="text-xs text-slate-500">Загрузка…</span> : null}
+      </div>
+
+      {openTasks.length === 0 && !loading ? (
+        <p className="text-slate-600">Нет открытых задач — все шаги выполнены или ещё не созданы.</p>
+      ) : null}
+
+      {openTasks.length > 0 ? (
+        <ul className="space-y-2">
+          {openTasks.map((task) => (
+            <li
+              key={task.id}
+              className={`rounded-md border px-3 py-2 ${OPS_TASK_STATUS_TONE[task.status]}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium">{task.title}</p>
+                  {task.description ? <p className="mt-1 text-xs">{task.description}</p> : null}
+                  <p className="mt-1 text-xs opacity-80">
+                    {BOOKING_OPS_TASK_STATUS_LABELS_RU[task.status]}
+                    {task.source === 'readiness_gate' ? ' · из готовности' : ''}
+                  </p>
+                </div>
+                {isOpsAdmin ? (
+                  <select
+                    value={task.status}
+                    disabled={updatingTaskId === task.id}
+                    onChange={(event) =>
+                      onUpdateStatus(task.id, event.target.value as BookingOpsTaskStatus)}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                  >
+                    {BOOKING_OPS_TASK_STATUSES.filter((status) => status !== 'cancelled').map(
+                      (status) => (
+                        <option key={status} value={status}>
+                          {BOOKING_OPS_TASK_STATUS_LABELS_RU[status]}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {completedTasks.length > 0 ? (
+        <details className="text-xs text-slate-600">
+          <summary className="cursor-pointer font-medium text-slate-700">
+            Выполненные и отменённые ({completedTasks.length})
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {completedTasks.map((task) => (
+              <li key={task.id} className="rounded border border-slate-100 px-2 py-1">
+                {task.title} — {BOOKING_OPS_TASK_STATUS_LABELS_RU[task.status]}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }
