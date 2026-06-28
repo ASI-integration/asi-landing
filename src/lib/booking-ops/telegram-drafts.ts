@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
+import { canCreateTelegramDraftForAction, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { getBookingOpsRecord } from './repository';
 import {
   BOOKING_OPS_OPERATOR_ACTIONS,
@@ -250,6 +251,22 @@ export async function createTelegramDraftFromBookingOpsAction(
       ok: false,
       error: 'action_not_available',
       message: template.blockedReason ?? 'Действие сейчас недоступно.',
+    };
+  }
+
+  const existingDrafts = await fetchTelegramDraftStatusesForRecord(record.id);
+  const readinessGate = canCreateTelegramDraftForAction(
+    { ...record, telegramDrafts: existingDrafts },
+    action,
+  );
+  if (!readinessGate.allowed) {
+    const preview = readinessGate.missingItems.slice(0, 3).join(' ');
+    return {
+      ok: false,
+      error: 'readiness_blocked',
+      message: preview
+        ? `Нельзя создать черновик: ${preview}`
+        : 'Нельзя создать черновик: не выполнены условия готовности.',
     };
   }
 

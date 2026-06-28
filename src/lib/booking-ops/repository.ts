@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { text as cleanText } from '@/lib/pilot-data/test-markers';
 import { attachBookingOpsAlerts } from './alerts';
+import { attachBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
   BookingOpsRecord,
@@ -10,11 +11,17 @@ import type {
 } from './types';
 import {
   normalizeBookingOpsCheckinReadinessStatus,
+  normalizeBookingOpsContractIntakeStatus,
+  normalizeBookingOpsContractProvider,
   normalizeBookingOpsContractStatus,
+  normalizeBookingOpsDepositIntakeStatus,
   normalizeBookingOpsDepositStatus,
+  normalizeBookingOpsDocumentVerificationStatus,
   normalizeBookingOpsDocumentsStatus,
+  normalizeBookingOpsMvdDataStatus,
   normalizeBookingOpsMvdStatus,
   normalizeBookingOpsStatus,
+  DEFAULT_BOOKING_OPS_INTAKE,
 } from './types';
 
 type BookingOpsRow = {
@@ -39,6 +46,26 @@ type BookingOpsRow = {
   mvd_status: string;
   checkin_readiness_status: string;
   notes: string | null;
+  guest_count: number | null;
+  payment_status: string | null;
+  document_required: boolean | null;
+  document_collected: boolean | null;
+  document_verification_status: string | null;
+  document_notes: string | null;
+  contract_required: boolean | null;
+  contract_provider: string | null;
+  contract_intake_status: string | null;
+  contract_link: string | null;
+  contract_notes: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
+  deposit_intake_status: string | null;
+  deposit_payment_method: string | null;
+  deposit_notes: string | null;
+  mvd_required: boolean | null;
+  mvd_data_status: string | null;
+  mvd_confirmation_link: string | null;
+  mvd_notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -59,16 +86,22 @@ function attachAutomation(record: BookingOpsRecord): BookingOpsRecord {
   return attachBookingOpsAlerts(record);
 }
 
+async function attachReadiness(record: BookingOpsRecord): Promise<BookingOpsRecord> {
+  const drafts = await fetchTelegramDraftStatusesForRecord(record.id);
+  return attachBookingReadiness(record, drafts);
+}
+
 async function enrichRecord(record: BookingOpsRecord): Promise<BookingOpsRecord> {
   const lookup = await lookupPropertyKnowledge({
     propertyId: record.propertyId,
     propertyLabel: record.propertyLabel,
   });
-  return attachAutomation({
+  const withAutomation = attachAutomation({
     ...record,
     propertyKnowledge: lookup.knowledge,
     propertyKnowledgeMatch: lookup.match,
   });
+  return attachReadiness(withAutomation);
 }
 
 async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRecord[]> {
@@ -77,7 +110,7 @@ async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRec
     propertyId: record.propertyId,
     propertyLabel: record.propertyLabel,
   })));
-  return records.map((record) => {
+  const enriched = records.map((record) => {
     const lookup = lookups.get(record.id) ?? { knowledge: null, match: 'none' as const };
     return attachAutomation({
       ...record,
@@ -85,6 +118,7 @@ async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRec
       propertyKnowledgeMatch: lookup.match,
     });
   });
+  return Promise.all(enriched.map((record) => attachReadiness(record)));
 }
 
 function mapRow(row: BookingOpsRow): BookingOpsRecord {
@@ -110,6 +144,29 @@ function mapRow(row: BookingOpsRow): BookingOpsRecord {
     mvdStatus: normalizeBookingOpsMvdStatus(row.mvd_status),
     checkinReadinessStatus: normalizeBookingOpsCheckinReadinessStatus(row.checkin_readiness_status),
     notes: text(row.notes) || null,
+    ...DEFAULT_BOOKING_OPS_INTAKE,
+    guestCount: row.guest_count ?? null,
+    paymentStatus: text(row.payment_status) || null,
+    documentRequired: row.document_required ?? null,
+    documentCollected: row.document_collected ?? null,
+    documentVerificationStatus: normalizeBookingOpsDocumentVerificationStatus(
+      row.document_verification_status,
+    ),
+    documentNotes: text(row.document_notes) || null,
+    contractRequired: row.contract_required ?? null,
+    contractProvider: normalizeBookingOpsContractProvider(row.contract_provider),
+    contractIntakeStatus: normalizeBookingOpsContractIntakeStatus(row.contract_intake_status),
+    contractLink: text(row.contract_link) || null,
+    contractNotes: text(row.contract_notes) || null,
+    depositRequired: row.deposit_required ?? null,
+    depositAmount: row.deposit_amount ?? null,
+    depositIntakeStatus: normalizeBookingOpsDepositIntakeStatus(row.deposit_intake_status),
+    depositPaymentMethod: text(row.deposit_payment_method) || null,
+    depositNotes: text(row.deposit_notes) || null,
+    mvdRequired: row.mvd_required ?? null,
+    mvdDataStatus: normalizeBookingOpsMvdDataStatus(row.mvd_data_status),
+    mvdConfirmationLink: text(row.mvd_confirmation_link) || null,
+    mvdNotes: text(row.mvd_notes) || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -186,6 +243,26 @@ export async function createBookingOpsRecord(input: CreateBookingOpsInput): Prom
     mvd_status: normalizeBookingOpsMvdStatus(input.mvdStatus),
     checkin_readiness_status: normalizeBookingOpsCheckinReadinessStatus(input.checkinReadinessStatus),
     notes: text(input.notes) || null,
+    guest_count: input.guestCount ?? null,
+    payment_status: text(input.paymentStatus) || null,
+    document_required: input.documentRequired ?? null,
+    document_collected: input.documentCollected ?? null,
+    document_verification_status: input.documentVerificationStatus ?? null,
+    document_notes: text(input.documentNotes) || null,
+    contract_required: input.contractRequired ?? null,
+    contract_provider: input.contractProvider ?? null,
+    contract_intake_status: input.contractIntakeStatus ?? null,
+    contract_link: text(input.contractLink) || null,
+    contract_notes: text(input.contractNotes) || null,
+    deposit_required: input.depositRequired ?? null,
+    deposit_amount: input.depositAmount ?? null,
+    deposit_intake_status: input.depositIntakeStatus ?? null,
+    deposit_payment_method: text(input.depositPaymentMethod) || null,
+    deposit_notes: text(input.depositNotes) || null,
+    mvd_required: input.mvdRequired ?? null,
+    mvd_data_status: input.mvdDataStatus ?? null,
+    mvd_confirmation_link: text(input.mvdConfirmationLink) || null,
+    mvd_notes: text(input.mvdNotes) || null,
     created_at: now,
     updated_at: now,
   };
@@ -241,6 +318,37 @@ export async function updateBookingOpsRecord(
     );
   }
   if (input.notes !== undefined) patch.notes = text(input.notes) || null;
+
+  if (input.guestCount !== undefined) patch.guest_count = input.guestCount ?? null;
+  if (input.paymentStatus !== undefined) patch.payment_status = text(input.paymentStatus) || null;
+  if (input.documentRequired !== undefined) patch.document_required = input.documentRequired ?? null;
+  if (input.documentCollected !== undefined) patch.document_collected = input.documentCollected ?? null;
+  if (input.documentVerificationStatus !== undefined) {
+    patch.document_verification_status = input.documentVerificationStatus ?? null;
+  }
+  if (input.documentNotes !== undefined) patch.document_notes = text(input.documentNotes) || null;
+  if (input.contractRequired !== undefined) patch.contract_required = input.contractRequired ?? null;
+  if (input.contractProvider !== undefined) patch.contract_provider = input.contractProvider ?? null;
+  if (input.contractIntakeStatus !== undefined) {
+    patch.contract_intake_status = input.contractIntakeStatus ?? null;
+  }
+  if (input.contractLink !== undefined) patch.contract_link = text(input.contractLink) || null;
+  if (input.contractNotes !== undefined) patch.contract_notes = text(input.contractNotes) || null;
+  if (input.depositRequired !== undefined) patch.deposit_required = input.depositRequired ?? null;
+  if (input.depositAmount !== undefined) patch.deposit_amount = input.depositAmount ?? null;
+  if (input.depositIntakeStatus !== undefined) {
+    patch.deposit_intake_status = input.depositIntakeStatus ?? null;
+  }
+  if (input.depositPaymentMethod !== undefined) {
+    patch.deposit_payment_method = text(input.depositPaymentMethod) || null;
+  }
+  if (input.depositNotes !== undefined) patch.deposit_notes = text(input.depositNotes) || null;
+  if (input.mvdRequired !== undefined) patch.mvd_required = input.mvdRequired ?? null;
+  if (input.mvdDataStatus !== undefined) patch.mvd_data_status = input.mvdDataStatus ?? null;
+  if (input.mvdConfirmationLink !== undefined) {
+    patch.mvd_confirmation_link = text(input.mvdConfirmationLink) || null;
+  }
+  if (input.mvdNotes !== undefined) patch.mvd_notes = text(input.mvdNotes) || null;
 
   const { data, error } = await supabase
     .from('booking_ops_records')

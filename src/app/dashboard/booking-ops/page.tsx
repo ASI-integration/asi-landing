@@ -6,12 +6,22 @@ import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
   BOOKING_OPS_CHECKIN_READINESS_STATUSES,
+  BOOKING_OPS_CONTRACT_INTAKE_STATUS_LABELS_RU,
+  BOOKING_OPS_CONTRACT_INTAKE_STATUSES,
+  BOOKING_OPS_CONTRACT_PROVIDER_LABELS_RU,
+  BOOKING_OPS_CONTRACT_PROVIDERS,
   BOOKING_OPS_CONTRACT_STATUS_LABELS_RU,
   BOOKING_OPS_CONTRACT_STATUSES,
+  BOOKING_OPS_DEPOSIT_INTAKE_STATUS_LABELS_RU,
+  BOOKING_OPS_DEPOSIT_INTAKE_STATUSES,
   BOOKING_OPS_DEPOSIT_STATUS_LABELS_RU,
   BOOKING_OPS_DEPOSIT_STATUSES,
+  BOOKING_OPS_DOCUMENT_VERIFICATION_STATUS_LABELS_RU,
+  BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES,
   BOOKING_OPS_DOCUMENTS_STATUS_LABELS_RU,
   BOOKING_OPS_DOCUMENTS_STATUSES,
+  BOOKING_OPS_MVD_DATA_STATUS_LABELS_RU,
+  BOOKING_OPS_MVD_DATA_STATUSES,
   BOOKING_OPS_MVD_STATUS_LABELS_RU,
   BOOKING_OPS_MVD_STATUSES,
   BOOKING_OPS_NEXT_ACTION_LABELS_RU,
@@ -20,9 +30,14 @@ import {
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
   type BookingOpsCheckinReadinessStatus,
+  type BookingOpsContractIntakeStatus,
+  type BookingOpsContractProvider,
   type BookingOpsContractStatus,
+  type BookingOpsDepositIntakeStatus,
   type BookingOpsDepositStatus,
+  type BookingOpsDocumentVerificationStatus,
   type BookingOpsDocumentsStatus,
+  type BookingOpsMvdDataStatus,
   type BookingOpsMvdStatus,
   type BookingOpsRecord,
   type BookingOpsStatus,
@@ -30,6 +45,10 @@ import {
   type BookingOpsActionTemplate,
   type BookingOpsTelegramDraft,
 } from '@/lib/booking-ops/types';
+import {
+  BOOKING_READINESS_STATUS_LABELS_RU,
+  type BookingReadinessStatus,
+} from '@/lib/booking-ops/readiness';
 
 type ListResponse = {
   ok: boolean;
@@ -95,6 +114,18 @@ function formatDateInput(value: string | null): string {
   return date.toISOString().slice(0, 10);
 }
 
+const READINESS_TONE: Record<BookingReadinessStatus, string> = {
+  missing_booking_data: 'border-amber-200 bg-amber-50 text-amber-950',
+  missing_documents: 'border-amber-200 bg-amber-50 text-amber-950',
+  missing_contract: 'border-amber-200 bg-amber-50 text-amber-950',
+  missing_deposit: 'border-amber-200 bg-amber-50 text-amber-950',
+  missing_mvd_data: 'border-amber-200 bg-amber-50 text-amber-950',
+  ready_for_drafts: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  drafts_created: 'border-sky-200 bg-sky-50 text-sky-950',
+  ready_for_manual_send: 'border-indigo-200 bg-indigo-50 text-indigo-950',
+  completed: 'border-slate-200 bg-slate-50 text-slate-800',
+};
+
 type EditDraft = {
   guestName: string;
   guestPhone: string;
@@ -105,17 +136,49 @@ type EditDraft = {
   otaSource: string;
   checkInAt: string;
   checkOutAt: string;
+  guestCount: string;
+  paymentStatus: string;
   opsStatus: BookingOpsStatus;
   documentsStatus: BookingOpsDocumentsStatus;
   contractStatus: BookingOpsContractStatus;
   depositStatus: BookingOpsDepositStatus;
   mvdStatus: BookingOpsMvdStatus;
   checkinReadinessStatus: BookingOpsCheckinReadinessStatus;
+  documentRequired: '' | 'true' | 'false';
+  documentCollected: '' | 'true' | 'false';
+  documentVerificationStatus: '' | BookingOpsDocumentVerificationStatus;
+  documentNotes: string;
+  contractRequired: '' | 'true' | 'false';
+  contractProvider: '' | BookingOpsContractProvider;
+  contractIntakeStatus: '' | BookingOpsContractIntakeStatus;
+  contractLink: string;
+  contractNotes: string;
+  depositRequired: '' | 'true' | 'false';
+  depositAmount: string;
+  depositIntakeStatus: '' | BookingOpsDepositIntakeStatus;
+  depositPaymentMethod: string;
+  depositNotes: string;
+  mvdRequired: '' | 'true' | 'false';
+  mvdDataStatus: '' | BookingOpsMvdDataStatus;
+  mvdConfirmationLink: string;
+  mvdNotes: string;
   isBlocked: boolean;
   blockerReason: string;
   manualNextAction: string;
   notes: string;
 };
+
+function triStateFromBoolean(value: boolean | null | undefined): '' | 'true' | 'false' {
+  if (value === true) return 'true';
+  if (value === false) return 'false';
+  return '';
+}
+
+function booleanFromTriState(value: '' | 'true' | 'false'): boolean | null {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return null;
+}
 
 function draftFromRecord(record: BookingOpsRecord): EditDraft {
   return {
@@ -128,16 +191,61 @@ function draftFromRecord(record: BookingOpsRecord): EditDraft {
     otaSource: record.otaSource ?? '',
     checkInAt: formatDateInput(record.checkInAt),
     checkOutAt: formatDateInput(record.checkOutAt),
+    guestCount: record.guestCount != null ? String(record.guestCount) : '',
+    paymentStatus: record.paymentStatus ?? '',
     opsStatus: record.opsStatus,
     documentsStatus: record.documentsStatus,
     contractStatus: record.contractStatus,
     depositStatus: record.depositStatus,
     mvdStatus: record.mvdStatus,
     checkinReadinessStatus: record.checkinReadinessStatus,
+    documentRequired: triStateFromBoolean(record.documentRequired),
+    documentCollected: triStateFromBoolean(record.documentCollected),
+    documentVerificationStatus: record.documentVerificationStatus ?? '',
+    documentNotes: record.documentNotes ?? '',
+    contractRequired: triStateFromBoolean(record.contractRequired),
+    contractProvider: record.contractProvider ?? '',
+    contractIntakeStatus: record.contractIntakeStatus ?? '',
+    contractLink: record.contractLink ?? '',
+    contractNotes: record.contractNotes ?? '',
+    depositRequired: triStateFromBoolean(record.depositRequired),
+    depositAmount: record.depositAmount != null ? String(record.depositAmount) : '',
+    depositIntakeStatus: record.depositIntakeStatus ?? '',
+    depositPaymentMethod: record.depositPaymentMethod ?? '',
+    depositNotes: record.depositNotes ?? '',
+    mvdRequired: triStateFromBoolean(record.mvdRequired),
+    mvdDataStatus: record.mvdDataStatus ?? '',
+    mvdConfirmationLink: record.mvdConfirmationLink ?? '',
+    mvdNotes: record.mvdNotes ?? '',
     isBlocked: record.isBlocked,
     blockerReason: record.blockerReason ?? '',
     manualNextAction: record.manualNextAction ?? '',
     notes: record.notes ?? '',
+  };
+}
+
+function intakePayloadFromDraft(draft: EditDraft): Record<string, unknown> {
+  return {
+    guestCount: draft.guestCount ? Number(draft.guestCount) : null,
+    paymentStatus: draft.paymentStatus || null,
+    documentRequired: booleanFromTriState(draft.documentRequired),
+    documentCollected: booleanFromTriState(draft.documentCollected),
+    documentVerificationStatus: draft.documentVerificationStatus || null,
+    documentNotes: draft.documentNotes || null,
+    contractRequired: booleanFromTriState(draft.contractRequired),
+    contractProvider: draft.contractProvider || null,
+    contractIntakeStatus: draft.contractIntakeStatus || null,
+    contractLink: draft.contractLink || null,
+    contractNotes: draft.contractNotes || null,
+    depositRequired: booleanFromTriState(draft.depositRequired),
+    depositAmount: draft.depositAmount ? Number(draft.depositAmount) : null,
+    depositIntakeStatus: draft.depositIntakeStatus || null,
+    depositPaymentMethod: draft.depositPaymentMethod || null,
+    depositNotes: draft.depositNotes || null,
+    mvdRequired: booleanFromTriState(draft.mvdRequired),
+    mvdDataStatus: draft.mvdDataStatus || null,
+    mvdConfirmationLink: draft.mvdConfirmationLink || null,
+    mvdNotes: draft.mvdNotes || null,
   };
 }
 
@@ -165,12 +273,32 @@ function BookingOpsPageInner() {
     otaSource: 'manual',
     checkInAt: '',
     checkOutAt: '',
+    guestCount: '',
+    paymentStatus: '',
     opsStatus: 'created',
     documentsStatus: 'not_started',
     contractStatus: 'not_started',
     depositStatus: 'not_started',
     mvdStatus: 'not_required',
     checkinReadinessStatus: 'not_started',
+    documentRequired: '',
+    documentCollected: '',
+    documentVerificationStatus: '',
+    documentNotes: '',
+    contractRequired: '',
+    contractProvider: '',
+    contractIntakeStatus: '',
+    contractLink: '',
+    contractNotes: '',
+    depositRequired: '',
+    depositAmount: '',
+    depositIntakeStatus: '',
+    depositPaymentMethod: '',
+    depositNotes: '',
+    mvdRequired: '',
+    mvdDataStatus: '',
+    mvdConfirmationLink: '',
+    mvdNotes: '',
     isBlocked: false,
     blockerReason: '',
     manualNextAction: '',
@@ -305,6 +433,7 @@ function BookingOpsPageInner() {
           otaSource: draft.otaSource,
           checkInAt: draft.checkInAt || null,
           checkOutAt: draft.checkOutAt || null,
+          ...intakePayloadFromDraft(draft),
           opsStatus: draft.opsStatus,
           documentsStatus: draft.documentsStatus,
           contractStatus: draft.contractStatus,
@@ -377,6 +506,7 @@ function BookingOpsPageInner() {
           otaSource: createDraft.otaSource,
           checkInAt: createDraft.checkInAt || null,
           checkOutAt: createDraft.checkOutAt || null,
+          ...intakePayloadFromDraft(createDraft),
           opsStatus: createDraft.opsStatus,
           documentsStatus: createDraft.documentsStatus,
           contractStatus: createDraft.contractStatus,
@@ -462,6 +592,7 @@ function BookingOpsPageInner() {
               <thead className="bg-slate-50 text-left text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Гость</th>
+                  <th className="px-4 py-3 font-medium">Готовность</th>
                   <th className="px-4 py-3 font-medium">Заезд</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
                   <th className="px-4 py-3 font-medium">Задача</th>
@@ -485,6 +616,19 @@ function BookingOpsPageInner() {
                         {record.bookingId ? (
                           <div className="mt-1 text-xs text-emerald-700">Из брони · {record.bookingId}</div>
                         ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        {record.readiness ? (
+                          <span
+                            className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${
+                              READINESS_TONE[record.readiness.status]
+                            }`}
+                          >
+                            {BOOKING_READINESS_STATUS_LABELS_RU[record.readiness.status]}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">{formatWhen(record.checkInAt)}</td>
                       <td className="px-4 py-3">{BOOKING_OPS_STATUS_LABELS_RU[record.opsStatus]}</td>
@@ -526,6 +670,10 @@ function BookingOpsPageInner() {
                 </div>
                 <span className="text-xs text-slate-500">Обновлено: {formatWhen(selectedRecord.updatedAt)}</span>
               </div>
+
+              {selectedRecord.readiness ? (
+                <ReadinessCard readiness={selectedRecord.readiness} />
+              ) : null}
 
               {selectedRecord.automation ? (
                 <div
@@ -583,6 +731,7 @@ function BookingOpsPageInner() {
               ) : null}
 
               <RecordFields draft={draft} onChange={setDraft} />
+              <IntakeFields draft={draft} onChange={setDraft} />
 
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input
@@ -642,6 +791,228 @@ function BookingOpsPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+function ReadinessCard({
+  readiness,
+}: {
+  readiness: NonNullable<BookingOpsRecord['readiness']>;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-4 py-3 text-sm space-y-3 ${
+        READINESS_TONE[readiness.status]
+      }`}
+    >
+      <div>
+        <p className="font-semibold">
+          Готовность: {BOOKING_READINESS_STATUS_LABELS_RU[readiness.status]}
+        </p>
+        {readiness.missingItems.length > 0 ? (
+          <ul className="mt-2 list-disc pl-5 space-y-1">
+            {readiness.missingItems.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1">Обязательные шаги до черновиков Telegram выполнены.</p>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {readiness.checklist.map((group) => (
+          <div key={group.id} className="rounded-md border border-white/60 bg-white/70 px-3 py-2">
+            <p className="font-medium text-slate-900">{group.title}</p>
+            <ul className="mt-2 space-y-1 text-xs">
+              {group.items.map((item) => (
+                <li key={item.id} className={item.ok ? 'text-emerald-800' : 'text-amber-900'}>
+                  {item.ok ? '✓' : '○'} {item.label}
+                  {item.detail && !item.ok ? ` — ${item.detail}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IntakeFields({
+  draft,
+  onChange,
+}: {
+  draft: EditDraft;
+  onChange: (value: EditDraft) => void;
+}) {
+  return (
+    <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-sm font-semibold text-slate-800">Чеклист приёма брони</h3>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Количество гостей</span>
+          <input
+            type="number"
+            min={1}
+            value={draft.guestCount}
+            onChange={(event) => onChange({ ...draft, guestCount: event.target.value })}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Статус оплаты</span>
+          <input
+            value={draft.paymentStatus}
+            onChange={(event) => onChange({ ...draft, paymentStatus: event.target.value })}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+          />
+        </label>
+        <TriStateSelect
+          label="Документы требуются"
+          value={draft.documentRequired}
+          onChange={(value) => onChange({ ...draft, documentRequired: value })}
+        />
+        <TriStateSelect
+          label="Документы получены"
+          value={draft.documentCollected}
+          onChange={(value) => onChange({ ...draft, documentCollected: value })}
+        />
+        <OptionalStatusSelect
+          label="Проверка документов"
+          value={draft.documentVerificationStatus}
+          options={BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES}
+          labels={BOOKING_OPS_DOCUMENT_VERIFICATION_STATUS_LABELS_RU}
+          onChange={(value) => onChange({ ...draft, documentVerificationStatus: value })}
+        />
+        <TriStateSelect
+          label="Договор требуется"
+          value={draft.contractRequired}
+          onChange={(value) => onChange({ ...draft, contractRequired: value })}
+        />
+        <OptionalStatusSelect
+          label="Провайдер договора"
+          value={draft.contractProvider}
+          options={BOOKING_OPS_CONTRACT_PROVIDERS}
+          labels={BOOKING_OPS_CONTRACT_PROVIDER_LABELS_RU}
+          onChange={(value) => onChange({ ...draft, contractProvider: value })}
+        />
+        <OptionalStatusSelect
+          label="Статус договора (intake)"
+          value={draft.contractIntakeStatus}
+          options={BOOKING_OPS_CONTRACT_INTAKE_STATUSES}
+          labels={BOOKING_OPS_CONTRACT_INTAKE_STATUS_LABELS_RU}
+          onChange={(value) => onChange({ ...draft, contractIntakeStatus: value })}
+        />
+        <label className="block text-sm md:col-span-2">
+          <span className="font-medium text-slate-700">Ссылка на договор</span>
+          <input
+            value={draft.contractLink}
+            onChange={(event) => onChange({ ...draft, contractLink: event.target.value })}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+          />
+        </label>
+        <TriStateSelect
+          label="Депозит требуется"
+          value={draft.depositRequired}
+          onChange={(value) => onChange({ ...draft, depositRequired: value })}
+        />
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Сумма депозита</span>
+          <input
+            type="number"
+            min={0}
+            value={draft.depositAmount}
+            onChange={(event) => onChange({ ...draft, depositAmount: event.target.value })}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+          />
+        </label>
+        <OptionalStatusSelect
+          label="Статус депозита (intake)"
+          value={draft.depositIntakeStatus}
+          options={BOOKING_OPS_DEPOSIT_INTAKE_STATUSES}
+          labels={BOOKING_OPS_DEPOSIT_INTAKE_STATUS_LABELS_RU}
+          onChange={(value) => onChange({ ...draft, depositIntakeStatus: value })}
+        />
+        <TriStateSelect
+          label="МВД требуется"
+          value={draft.mvdRequired}
+          onChange={(value) => onChange({ ...draft, mvdRequired: value })}
+        />
+        <OptionalStatusSelect
+          label="Статус данных МВД"
+          value={draft.mvdDataStatus}
+          options={BOOKING_OPS_MVD_DATA_STATUSES}
+          labels={BOOKING_OPS_MVD_DATA_STATUS_LABELS_RU}
+          onChange={(value) => onChange({ ...draft, mvdDataStatus: value })}
+        />
+        <label className="block text-sm md:col-span-2">
+          <span className="font-medium text-slate-700">Подтверждение МВД / ссылка</span>
+          <input
+            value={draft.mvdConfirmationLink}
+            onChange={(event) => onChange({ ...draft, mvdConfirmationLink: event.target.value })}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function TriStateSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: '' | 'true' | 'false';
+  onChange: (value: '' | 'true' | 'false') => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="font-medium text-slate-700">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as '' | 'true' | 'false')}
+        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+      >
+        <option value="">Не указано</option>
+        <option value="true">Да</option>
+        <option value="false">Нет</option>
+      </select>
+    </label>
+  );
+}
+
+function OptionalStatusSelect<T extends string>({
+  label,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: '' | T;
+  options: readonly T[];
+  labels: Record<T, string>;
+  onChange: (value: '' | T) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="font-medium text-slate-700">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as '' | T)}
+        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+      >
+        <option value="">Не указано</option>
+        {options.map((item) => (
+          <option key={item} value={item}>
+            {labels[item]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

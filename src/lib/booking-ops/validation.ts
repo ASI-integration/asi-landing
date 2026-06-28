@@ -1,11 +1,17 @@
 import type { CreateBookingOpsInput, UpdateBookingOpsInput } from './types';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUSES,
+  BOOKING_OPS_CONTRACT_INTAKE_STATUSES,
+  BOOKING_OPS_CONTRACT_PROVIDERS,
   BOOKING_OPS_CONTRACT_STATUSES,
+  BOOKING_OPS_DEPOSIT_INTAKE_STATUSES,
   BOOKING_OPS_DEPOSIT_STATUSES,
+  BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES,
   BOOKING_OPS_DOCUMENTS_STATUSES,
+  BOOKING_OPS_MVD_DATA_STATUSES,
   BOOKING_OPS_MVD_STATUSES,
   BOOKING_OPS_STATUSES,
+  parseBookingOpsIntakeFields,
 } from './types';
 
 function text(value: unknown): string | null {
@@ -102,6 +108,61 @@ export function parseCreateBookingOpsInput(
   }
   if (typeof checkinReadinessStatus === 'string') {
     input.checkinReadinessStatus = checkinReadinessStatus;
+  }
+
+  Object.assign(input, parseBookingOpsIntakeFields(body));
+
+  const intakeEnums: Array<{
+    key: keyof CreateBookingOpsInput;
+    raw: unknown;
+    allowed: readonly string[];
+    label: string;
+    bodyKeys: string[];
+  }> = [
+    {
+      key: 'documentVerificationStatus',
+      raw: body.documentVerificationStatus ?? body.document_verification_status,
+      allowed: BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES,
+      label: 'Статус проверки документов',
+      bodyKeys: ['documentVerificationStatus', 'document_verification_status'],
+    },
+    {
+      key: 'contractProvider',
+      raw: body.contractProvider ?? body.contract_provider,
+      allowed: BOOKING_OPS_CONTRACT_PROVIDERS,
+      label: 'Провайдер договора',
+      bodyKeys: ['contractProvider', 'contract_provider'],
+    },
+    {
+      key: 'contractIntakeStatus',
+      raw: body.contractIntakeStatus ?? body.contract_intake_status,
+      allowed: BOOKING_OPS_CONTRACT_INTAKE_STATUSES,
+      label: 'Статус договора (intake)',
+      bodyKeys: ['contractIntakeStatus', 'contract_intake_status'],
+    },
+    {
+      key: 'depositIntakeStatus',
+      raw: body.depositIntakeStatus ?? body.deposit_intake_status,
+      allowed: BOOKING_OPS_DEPOSIT_INTAKE_STATUSES,
+      label: 'Статус депозита (intake)',
+      bodyKeys: ['depositIntakeStatus', 'deposit_intake_status'],
+    },
+    {
+      key: 'mvdDataStatus',
+      raw: body.mvdDataStatus ?? body.mvd_data_status,
+      allowed: BOOKING_OPS_MVD_DATA_STATUSES,
+      label: 'Статус данных МВД',
+      bodyKeys: ['mvdDataStatus', 'mvd_data_status'],
+    },
+  ];
+
+  for (const field of intakeEnums) {
+    if (!field.bodyKeys.some((key) => key in body)) continue;
+    const parsed = parseEnum(field.raw, field.allowed as readonly string[], field.label);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed) return parsed;
+    if (typeof parsed === 'string') {
+      input[field.key] = parsed as never;
+    }
   }
 
   return { input };
@@ -205,6 +266,53 @@ export function parseUpdateBookingOpsInput(
   ];
 
   for (const field of fields) {
+    if (!field.bodyKeys.some((key) => key in body)) continue;
+    const parsed = parseEnum(field.raw, field.allowed as readonly string[], field.label);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed) return parsed;
+    if (typeof parsed === 'string') {
+      input[field.key] = parsed as never;
+    }
+  }
+
+  Object.assign(input, parseBookingOpsIntakeFields(body));
+
+  for (const field of [
+    {
+      key: 'documentVerificationStatus' as const,
+      raw: body.documentVerificationStatus ?? body.document_verification_status,
+      allowed: BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES,
+      label: 'Статус проверки документов',
+      bodyKeys: ['documentVerificationStatus', 'document_verification_status'],
+    },
+    {
+      key: 'contractProvider' as const,
+      raw: body.contractProvider ?? body.contract_provider,
+      allowed: BOOKING_OPS_CONTRACT_PROVIDERS,
+      label: 'Провайдер договора',
+      bodyKeys: ['contractProvider', 'contract_provider'],
+    },
+    {
+      key: 'contractIntakeStatus' as const,
+      raw: body.contractIntakeStatus ?? body.contract_intake_status,
+      allowed: BOOKING_OPS_CONTRACT_INTAKE_STATUSES,
+      label: 'Статус договора (intake)',
+      bodyKeys: ['contractIntakeStatus', 'contract_intake_status'],
+    },
+    {
+      key: 'depositIntakeStatus' as const,
+      raw: body.depositIntakeStatus ?? body.deposit_intake_status,
+      allowed: BOOKING_OPS_DEPOSIT_INTAKE_STATUSES,
+      label: 'Статус депозита (intake)',
+      bodyKeys: ['depositIntakeStatus', 'deposit_intake_status'],
+    },
+    {
+      key: 'mvdDataStatus' as const,
+      raw: body.mvdDataStatus ?? body.mvd_data_status,
+      allowed: BOOKING_OPS_MVD_DATA_STATUSES,
+      label: 'Статус данных МВД',
+      bodyKeys: ['mvdDataStatus', 'mvd_data_status'],
+    },
+  ]) {
     if (!field.bodyKeys.some((key) => key in body)) continue;
     const parsed = parseEnum(field.raw, field.allowed as readonly string[], field.label);
     if (parsed && typeof parsed === 'object' && 'error' in parsed) return parsed;

@@ -6,6 +6,16 @@ import type {
   BookingOpsTelegramDraftActionId,
 } from '../types';
 
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(async () => ({ data: [], error: null })),
+      })),
+    })),
+  },
+}));
+
 const sendMessage = vi.fn();
 vi.mock('@/lib/telegram', () => ({
   replyToTelegram: sendMessage,
@@ -34,24 +44,72 @@ const baseRecord: BookingOpsRecord = {
   mvdStatus: 'not_required',
   checkinReadinessStatus: 'not_started',
   notes: 'Не менять заметку оператора',
+  guestCount: 2,
+  paymentStatus: 'paid',
+  documentRequired: null,
+  documentCollected: null,
+  documentVerificationStatus: null,
+  documentNotes: null,
+  contractRequired: null,
+  contractProvider: null,
+  contractIntakeStatus: null,
+  contractLink: null,
+  contractNotes: null,
+  depositRequired: null,
+  depositAmount: null,
+  depositIntakeStatus: null,
+  depositPaymentMethod: null,
+  depositNotes: null,
+  mvdRequired: null,
+  mvdDataStatus: null,
+  mvdConfirmationLink: null,
+  mvdNotes: null,
   createdAt: '2026-06-27T08:00:00.000Z',
   updatedAt: '2026-06-27T08:00:00.000Z',
 };
 
 function recordForAction(actionId: BookingOpsTelegramDraftActionId): BookingOpsRecord {
+  const intake = {
+    guestCount: 2,
+    paymentStatus: 'paid',
+    documentRequired: true,
+    documentCollected: true,
+    documentVerificationStatus: 'verified' as const,
+    contractRequired: true,
+    contractProvider: 'manual' as const,
+    depositRequired: true,
+    mvdRequired: false,
+    mvdDataStatus: 'not_required' as const,
+  };
   switch (actionId) {
     case 'request_guest_documents':
-      return { ...baseRecord };
+      return { ...baseRecord, ...intake, documentVerificationStatus: null, documentsStatus: 'not_started' };
     case 'send_contract':
-      return { ...baseRecord, documentsStatus: 'verified', contractStatus: 'prepared' };
+      return {
+        ...baseRecord,
+        ...intake,
+        documentsStatus: 'verified',
+        contractStatus: 'prepared',
+        contractIntakeStatus: 'prepared',
+      };
     case 'request_deposit':
-      return { ...baseRecord, documentsStatus: 'verified', contractStatus: 'signed' };
+      return {
+        ...baseRecord,
+        ...intake,
+        documentsStatus: 'verified',
+        contractStatus: 'signed',
+        contractIntakeStatus: 'signed',
+        depositRequired: true,
+      };
     case 'prepare_checkin_instructions':
       return {
         ...baseRecord,
+        ...intake,
         documentsStatus: 'verified',
         contractStatus: 'signed',
+        contractIntakeStatus: 'signed',
         depositStatus: 'confirmed',
+        depositIntakeStatus: 'received',
         checkinReadinessStatus: 'in_progress',
       };
     default:

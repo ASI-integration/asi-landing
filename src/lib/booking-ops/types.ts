@@ -264,6 +264,104 @@ export const BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU: Record<
   failed: 'Ошибка',
 };
 
+export const BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES = [
+  'missing',
+  'uploaded',
+  'verified',
+  'rejected',
+] as const;
+
+export type BookingOpsDocumentVerificationStatus =
+  (typeof BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES)[number];
+
+export const BOOKING_OPS_DOCUMENT_VERIFICATION_STATUS_LABELS_RU: Record<
+  BookingOpsDocumentVerificationStatus,
+  string
+> = {
+  missing: 'Нет',
+  uploaded: 'Загружено',
+  verified: 'Проверено',
+  rejected: 'Отклонено',
+};
+
+export const BOOKING_OPS_CONTRACT_PROVIDERS = ['manual', 'okidoki', 'none'] as const;
+
+export type BookingOpsContractProvider = (typeof BOOKING_OPS_CONTRACT_PROVIDERS)[number];
+
+export const BOOKING_OPS_CONTRACT_PROVIDER_LABELS_RU: Record<BookingOpsContractProvider, string> = {
+  manual: 'Вручную',
+  okidoki: 'Okidoki',
+  none: 'Не нужен',
+};
+
+export const BOOKING_OPS_CONTRACT_INTAKE_STATUSES = [
+  'not_required',
+  'missing',
+  'prepared',
+  'sent',
+  'signed',
+] as const;
+
+export type BookingOpsContractIntakeStatus =
+  (typeof BOOKING_OPS_CONTRACT_INTAKE_STATUSES)[number];
+
+export const BOOKING_OPS_CONTRACT_INTAKE_STATUS_LABELS_RU: Record<
+  BookingOpsContractIntakeStatus,
+  string
+> = {
+  not_required: 'Не требуется',
+  missing: 'Нет',
+  prepared: 'Подготовлен',
+  sent: 'Отправлен',
+  signed: 'Подписан',
+};
+
+export const BOOKING_OPS_DEPOSIT_INTAKE_STATUSES = [
+  'not_required',
+  'missing',
+  'requested',
+  'received',
+  'held',
+  'returned',
+  'issue',
+] as const;
+
+export type BookingOpsDepositIntakeStatus =
+  (typeof BOOKING_OPS_DEPOSIT_INTAKE_STATUSES)[number];
+
+export const BOOKING_OPS_DEPOSIT_INTAKE_STATUS_LABELS_RU: Record<
+  BookingOpsDepositIntakeStatus,
+  string
+> = {
+  not_required: 'Не требуется',
+  missing: 'Нет',
+  requested: 'Запрошен',
+  received: 'Получен',
+  held: 'Удержан',
+  returned: 'Возвращён',
+  issue: 'Проблема',
+};
+
+export const BOOKING_OPS_MVD_DATA_STATUSES = [
+  'not_required',
+  'missing',
+  'collected',
+  'prepared',
+  'submitted',
+  'confirmed',
+] as const;
+
+export type BookingOpsMvdDataStatus = (typeof BOOKING_OPS_MVD_DATA_STATUSES)[number];
+
+export const BOOKING_OPS_MVD_DATA_STATUS_LABELS_RU: Record<BookingOpsMvdDataStatus, string> = {
+  not_required: 'Не требуется',
+  missing: 'Нет данных',
+  collected: 'Собрано',
+  prepared: 'Подготовлено',
+  submitted: 'Отправлено',
+  confirmed: 'Подтверждено',
+};
+
 export type BookingOpsTelegramDraft = {
   id: string;
   bookingOpsRecordId: string;
@@ -326,6 +424,54 @@ export type BookingOpsPropertyKnowledge = {
   updatedAt: string | null;
 };
 
+export type BookingOpsIntakeFields = {
+  guestCount?: number | null;
+  paymentStatus?: string | null;
+  documentRequired?: boolean | null;
+  documentCollected?: boolean | null;
+  documentVerificationStatus?: BookingOpsDocumentVerificationStatus | null;
+  documentNotes?: string | null;
+  contractRequired?: boolean | null;
+  contractProvider?: BookingOpsContractProvider | null;
+  contractIntakeStatus?: BookingOpsContractIntakeStatus | null;
+  contractLink?: string | null;
+  contractNotes?: string | null;
+  depositRequired?: boolean | null;
+  depositAmount?: number | null;
+  depositIntakeStatus?: BookingOpsDepositIntakeStatus | null;
+  depositPaymentMethod?: string | null;
+  depositNotes?: string | null;
+  mvdRequired?: boolean | null;
+  mvdDataStatus?: BookingOpsMvdDataStatus | null;
+  mvdConfirmationLink?: string | null;
+  mvdNotes?: string | null;
+};
+
+export const DEFAULT_BOOKING_OPS_INTAKE: Required<{
+  [K in keyof BookingOpsIntakeFields]: NonNullable<BookingOpsIntakeFields[K]> | null;
+}> = {
+  guestCount: null,
+  paymentStatus: null,
+  documentRequired: null,
+  documentCollected: null,
+  documentVerificationStatus: null,
+  documentNotes: null,
+  contractRequired: null,
+  contractProvider: null,
+  contractIntakeStatus: null,
+  contractLink: null,
+  contractNotes: null,
+  depositRequired: null,
+  depositAmount: null,
+  depositIntakeStatus: null,
+  depositPaymentMethod: null,
+  depositNotes: null,
+  mvdRequired: null,
+  mvdDataStatus: null,
+  mvdConfirmationLink: null,
+  mvdNotes: null,
+};
+
 export type BookingOpsRecord = {
   id: string;
   bookingId: string | null;
@@ -350,11 +496,13 @@ export type BookingOpsRecord = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+} & BookingOpsIntakeFields & {
   propertyKnowledge?: BookingOpsPropertyKnowledge | null;
   propertyKnowledgeMatch?: PropertyKnowledgeMatch;
   automation?: BookingOpsAutomationDecision;
   alerts?: BookingOpsAlertSummary;
   operatorAction?: BookingOpsActionTemplate | null;
+  readiness?: import('./readiness').BookingReadinessResult;
 };
 
 export type CreateBookingOpsInput = {
@@ -375,7 +523,7 @@ export type CreateBookingOpsInput = {
   mvdStatus?: BookingOpsMvdStatus;
   checkinReadinessStatus?: BookingOpsCheckinReadinessStatus;
   notes?: string | null;
-};
+} & Partial<BookingOpsIntakeFields>;
 
 export type UpdateBookingOpsInput = Partial<
   Omit<CreateBookingOpsInput, never>
@@ -426,6 +574,151 @@ export function normalizeBookingOpsCheckinReadinessStatus(
   const raw = String(value ?? '').trim();
   if (includesValue(BOOKING_OPS_CHECKIN_READINESS_STATUSES, raw)) return raw;
   return 'not_started';
+}
+
+export function normalizeBookingOpsDocumentVerificationStatus(
+  value: unknown,
+): BookingOpsDocumentVerificationStatus | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim();
+  if (includesValue(BOOKING_OPS_DOCUMENT_VERIFICATION_STATUSES, raw)) return raw;
+  return null;
+}
+
+export function normalizeBookingOpsContractProvider(
+  value: unknown,
+): BookingOpsContractProvider | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim();
+  if (includesValue(BOOKING_OPS_CONTRACT_PROVIDERS, raw)) return raw;
+  return null;
+}
+
+export function normalizeBookingOpsContractIntakeStatus(
+  value: unknown,
+): BookingOpsContractIntakeStatus | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim();
+  if (includesValue(BOOKING_OPS_CONTRACT_INTAKE_STATUSES, raw)) return raw;
+  return null;
+}
+
+export function normalizeBookingOpsDepositIntakeStatus(
+  value: unknown,
+): BookingOpsDepositIntakeStatus | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim();
+  if (includesValue(BOOKING_OPS_DEPOSIT_INTAKE_STATUSES, raw)) return raw;
+  return null;
+}
+
+export function normalizeBookingOpsMvdDataStatus(value: unknown): BookingOpsMvdDataStatus | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim();
+  if (includesValue(BOOKING_OPS_MVD_DATA_STATUSES, raw)) return raw;
+  return null;
+}
+
+function parseNullableBoolean(value: unknown): boolean | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return null;
+}
+
+function parseNullableNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseBookingOpsIntakeFields(
+  body: Record<string, unknown>,
+): Partial<BookingOpsIntakeFields> {
+  const input: Partial<BookingOpsIntakeFields> = {};
+
+  if ('guestCount' in body || 'guest_count' in body) {
+    input.guestCount = parseNullableNumber(body.guestCount ?? body.guest_count) ?? null;
+  }
+  if ('paymentStatus' in body || 'payment_status' in body) {
+    const raw = String(body.paymentStatus ?? body.payment_status ?? '').trim();
+    input.paymentStatus = raw || null;
+  }
+  if ('documentRequired' in body || 'document_required' in body) {
+    input.documentRequired = parseNullableBoolean(body.documentRequired ?? body.document_required) ?? null;
+  }
+  if ('documentCollected' in body || 'document_collected' in body) {
+    input.documentCollected = parseNullableBoolean(body.documentCollected ?? body.document_collected) ?? null;
+  }
+  if ('documentVerificationStatus' in body || 'document_verification_status' in body) {
+    input.documentVerificationStatus = normalizeBookingOpsDocumentVerificationStatus(
+      body.documentVerificationStatus ?? body.document_verification_status,
+    );
+  }
+  if ('documentNotes' in body || 'document_notes' in body) {
+    const raw = String(body.documentNotes ?? body.document_notes ?? '').trim();
+    input.documentNotes = raw || null;
+  }
+  if ('contractRequired' in body || 'contract_required' in body) {
+    input.contractRequired = parseNullableBoolean(body.contractRequired ?? body.contract_required) ?? null;
+  }
+  if ('contractProvider' in body || 'contract_provider' in body) {
+    input.contractProvider = normalizeBookingOpsContractProvider(
+      body.contractProvider ?? body.contract_provider,
+    );
+  }
+  if ('contractIntakeStatus' in body || 'contract_intake_status' in body) {
+    input.contractIntakeStatus = normalizeBookingOpsContractIntakeStatus(
+      body.contractIntakeStatus ?? body.contract_intake_status,
+    );
+  }
+  if ('contractLink' in body || 'contract_link' in body) {
+    const raw = String(body.contractLink ?? body.contract_link ?? '').trim();
+    input.contractLink = raw || null;
+  }
+  if ('contractNotes' in body || 'contract_notes' in body) {
+    const raw = String(body.contractNotes ?? body.contract_notes ?? '').trim();
+    input.contractNotes = raw || null;
+  }
+  if ('depositRequired' in body || 'deposit_required' in body) {
+    input.depositRequired = parseNullableBoolean(body.depositRequired ?? body.deposit_required) ?? null;
+  }
+  if ('depositAmount' in body || 'deposit_amount' in body) {
+    input.depositAmount = parseNullableNumber(body.depositAmount ?? body.deposit_amount) ?? null;
+  }
+  if ('depositIntakeStatus' in body || 'deposit_intake_status' in body) {
+    input.depositIntakeStatus = normalizeBookingOpsDepositIntakeStatus(
+      body.depositIntakeStatus ?? body.deposit_intake_status,
+    );
+  }
+  if ('depositPaymentMethod' in body || 'deposit_payment_method' in body) {
+    const raw = String(body.depositPaymentMethod ?? body.deposit_payment_method ?? '').trim();
+    input.depositPaymentMethod = raw || null;
+  }
+  if ('depositNotes' in body || 'deposit_notes' in body) {
+    const raw = String(body.depositNotes ?? body.deposit_notes ?? '').trim();
+    input.depositNotes = raw || null;
+  }
+  if ('mvdRequired' in body || 'mvd_required' in body) {
+    input.mvdRequired = parseNullableBoolean(body.mvdRequired ?? body.mvd_required) ?? null;
+  }
+  if ('mvdDataStatus' in body || 'mvd_data_status' in body) {
+    input.mvdDataStatus = normalizeBookingOpsMvdDataStatus(
+      body.mvdDataStatus ?? body.mvd_data_status,
+    );
+  }
+  if ('mvdConfirmationLink' in body || 'mvd_confirmation_link' in body) {
+    const raw = String(body.mvdConfirmationLink ?? body.mvd_confirmation_link ?? '').trim();
+    input.mvdConfirmationLink = raw || null;
+  }
+  if ('mvdNotes' in body || 'mvd_notes' in body) {
+    const raw = String(body.mvdNotes ?? body.mvd_notes ?? '').trim();
+    input.mvdNotes = raw || null;
+  }
+
+  return input;
 }
 
 export function hasGuestContact(
