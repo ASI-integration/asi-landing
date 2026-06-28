@@ -17,6 +17,8 @@ import {
   BOOKING_OPS_NEXT_ACTION_LABELS_RU,
   BOOKING_OPS_STATUS_LABELS_RU,
   BOOKING_OPS_STATUSES,
+  BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
+  BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
   type BookingOpsCheckinReadinessStatus,
   type BookingOpsContractStatus,
   type BookingOpsDepositStatus,
@@ -26,6 +28,7 @@ import {
   type BookingOpsStatus,
   type BookingOpsAlertSeverity,
   type BookingOpsActionTemplate,
+  type BookingOpsTelegramDraft,
 } from '@/lib/booking-ops/types';
 
 type ListResponse = {
@@ -40,6 +43,13 @@ type SaveResponse = {
   ok: boolean;
   message?: string;
   record?: BookingOpsRecord;
+};
+
+type TelegramDraftResponse = {
+  ok: boolean;
+  message?: string;
+  draft?: BookingOpsTelegramDraft;
+  drafts?: BookingOpsTelegramDraft[];
 };
 
 const AUTOMATION_TONE: Record<string, string> = {
@@ -140,6 +150,9 @@ function BookingOpsPageInner() {
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState(false);
+  const [telegramDrafts, setTelegramDrafts] = useState<BookingOpsTelegramDraft[]>([]);
+  const [telegramDraftsLoading, setTelegramDraftsLoading] = useState(false);
+  const [creatingTelegramDraft, setCreatingTelegramDraft] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState<EditDraft>({
@@ -194,10 +207,82 @@ function BookingOpsPageInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setTelegramDrafts([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTelegramDraftsLoading(true);
+    void fetch(`/api/dashboard/booking-ops/${selectedId}/telegram-drafts`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<TelegramDraftResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setMessage(payload.message || 'Не удалось загрузить черновики Telegram.');
+          setTelegramDrafts([]);
+          return;
+        }
+        setTelegramDrafts(payload.drafts ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setTelegramDraftsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
+    setTelegramDrafts([]);
     setMessage('');
+  }
+
+  async function onCreateTelegramDraft() {
+    if (!isOpsAdmin || !selectedId || !selectedRecord?.operatorAction) return;
+    setCreatingTelegramDraft(true);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${selectedId}/telegram-drafts`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actionId: selectedRecord.operatorAction.actionId }),
+      });
+      const payload = await readResponseJson<TelegramDraftResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.draft) {
+        setMessage(payload.message || 'Не удалось создать черновик Telegram.');
+        return;
+      }
+      setTelegramDrafts((current) => [payload.draft!, ...current]);
+      setMessage('Черновик Telegram создан. Сообщение не отправлено.');
+    } finally {
+      setCreatingTelegramDraft(false);
+    }
+  }
+
+  async function onCopyTelegramDraft(draft: BookingOpsTelegramDraft) {
+    await navigator.clipboard.writeText(draft.messageText);
+    if (draft.status !== 'draft') return;
+
+    const res = await fetch(`/api/dashboard/booking-ops/${draft.bookingOpsRecordId}/telegram-drafts`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftId: draft.id, status: 'copied' }),
+    });
+    const payload = await readResponseJson<TelegramDraftResponse>(res, { ok: false });
+    if (res.ok && payload.ok && payload.draft) {
+      setTelegramDrafts((current) => current.map((item) => (
+        item.id === payload.draft!.id ? payload.draft! : item
+      )));
+    }
   }
 
   async function onSave(event: FormEvent) {
@@ -467,7 +552,14 @@ function BookingOpsPageInner() {
                 <OperatorActionPanel
                   action={selectedRecord.operatorAction}
                   confirming={confirmingAction}
+                  creatingTelegramDraft={creatingTelegramDraft}
+                  telegramDraftsLoading={telegramDraftsLoading}
+                  telegramDraft={telegramDrafts.find(
+                    (item) => item.actionId === selectedRecord.operatorAction?.actionId,
+                  ) ?? null}
                   onConfirm={() => void onConfirmAction()}
+                  onCreateTelegramDraft={() => void onCreateTelegramDraft()}
+                  onCopyTelegramDraft={onCopyTelegramDraft}
                 />
               ) : null}
 
@@ -556,13 +648,27 @@ function BookingOpsPageInner() {
 function OperatorActionPanel({
   action,
   confirming,
+  creatingTelegramDraft,
+  telegramDraftsLoading,
+  telegramDraft,
   onConfirm,
+  onCreateTelegramDraft,
+  onCopyTelegramDraft,
 }: {
   action: BookingOpsActionTemplate;
   confirming: boolean;
+  creatingTelegramDraft: boolean;
+  telegramDraftsLoading: boolean;
+  telegramDraft: BookingOpsTelegramDraft | null;
   onConfirm: () => void;
+  onCreateTelegramDraft: () => void;
+  onCopyTelegramDraft: (draft: BookingOpsTelegramDraft) => Promise<void>;
 }) {
   const [copied, setCopied] = useState(false);
+  const [draftCopied, setDraftCopied] = useState(false);
+  const supportsTelegramDraft = (
+    BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS as readonly string[]
+  ).includes(action.actionId);
 
   async function copyMessage() {
     if (!action.messageTemplate) return;
@@ -572,6 +678,17 @@ function OperatorActionPanel({
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
+    }
+  }
+
+  async function copyDraft() {
+    if (!telegramDraft) return;
+    try {
+      await onCopyTelegramDraft(telegramDraft);
+      setDraftCopied(true);
+      window.setTimeout(() => setDraftCopied(false), 2000);
+    } catch {
+      setDraftCopied(false);
     }
   }
 
@@ -628,6 +745,57 @@ function OperatorActionPanel({
           <pre className="mt-2 whitespace-pre-wrap rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs leading-relaxed">
             {action.messageTemplate}
           </pre>
+        </div>
+      ) : null}
+
+      {supportsTelegramDraft && action.messageTemplate ? (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-3 text-sky-950">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-medium">Черновик Telegram</p>
+              <p className="mt-1 text-xs">Создаётся только для проверки и ручной отправки.</p>
+            </div>
+            {telegramDraft ? (
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium">
+                {BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU[telegramDraft.status]}
+              </span>
+            ) : null}
+          </div>
+
+          {telegramDraftsLoading ? (
+            <p className="mt-3 text-xs">Загрузка черновика…</p>
+          ) : telegramDraft ? (
+            <div className="mt-3 space-y-2">
+              {telegramDraft.warning ? (
+                <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                  {telegramDraft.warning}
+                </p>
+              ) : (
+                <p className="text-xs">
+                  Чат получателя найден: {telegramDraft.telegramTarget ?? telegramDraft.telegramChatId}
+                </p>
+              )}
+              <pre className="whitespace-pre-wrap rounded-md border border-sky-200 bg-white px-3 py-2 text-xs leading-relaxed">
+                {telegramDraft.messageText}
+              </pre>
+              <button
+                type="button"
+                onClick={() => void copyDraft()}
+                className="rounded-md border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-sky-100"
+              >
+                {draftCopied ? 'Скопировано' : 'Копировать черновик'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onCreateTelegramDraft}
+              disabled={!action.isAllowed || creatingTelegramDraft}
+              className="mt-3 rounded-md bg-sky-700 px-3 py-2 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-60"
+            >
+              {creatingTelegramDraft ? 'Создание…' : 'Создать черновик Telegram'}
+            </button>
+          )}
         </div>
       ) : null}
 
