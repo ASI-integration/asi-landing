@@ -36,24 +36,6 @@ export type BookingOpsTaskActionResult = {
   blockingReason: string | null;
 };
 
-export const BOOKING_OPS_TASK_ACTION_LABELS_RU: Partial<Record<BookingOpsTaskType, string>> = {
-  complete_booking_data: 'Показать, чего не хватает',
-  request_guest_documents: 'Создать черновик запроса',
-  verify_guest_documents: 'Открыть чеклист проверки',
-  prepare_contract: 'Открыть чеклист подготовки',
-  send_contract_manual: 'Подготовить черновик отправки',
-  follow_up_contract_signature: 'Создать напоминание',
-  request_deposit: 'Создать черновик запроса депозита',
-  confirm_deposit: 'Открыть чеклист подтверждения',
-  track_deposit_return: 'Открыть чеклист возврата',
-  collect_mvd_data: 'Открыть чеклист сбора данных',
-  prepare_mvd_report: 'Открыть чеклист подготовки отчёта',
-  submit_mvd_report: 'Открыть чеклист отправки',
-  generate_telegram_drafts: 'Создать черновики Telegram',
-  review_telegram_drafts: 'Показать черновики',
-  manual_send_telegram_drafts: 'Пакет для ручной отправки',
-};
-
 const REUSABLE_DRAFT_STATUSES = new Set(['draft', 'copied']);
 
 const TASK_OPERATOR_ACTION: Partial<Record<BookingOpsTaskType, BookingOpsOperatorActionId>> = {

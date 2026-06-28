@@ -48,10 +48,10 @@ import {
 import {
   BOOKING_OPS_TASK_STATUS_LABELS_RU,
   BOOKING_OPS_TASK_STATUSES,
+  BOOKING_OPS_TASK_ACTION_LABELS_RU,
   type BookingOpsTask,
   type BookingOpsTaskStatus,
 } from '@/lib/booking-ops/task-types';
-import { BOOKING_OPS_TASK_ACTION_LABELS_RU } from '@/lib/booking-ops/task-action-runner';
 import {
   BOOKING_READINESS_STATUS_LABELS_RU,
   type BookingReadinessStatus,
