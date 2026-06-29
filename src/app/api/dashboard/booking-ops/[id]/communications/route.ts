@@ -6,6 +6,7 @@ import {
   syncBookingOpsCommunications,
 } from '@/lib/booking-ops/communication-orchestrator';
 import { listBookingOpsTasksForRecord } from '@/lib/booking-ops/tasks';
+import { syncGuestIntakeAutopilot } from '@/lib/booking-ops/guest-intake-autopilot';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,8 +45,9 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
     );
   }
 
+  const guestIntake = await syncGuestIntakeAutopilot(record);
   const result = await syncBookingOpsCommunications({
-    record,
+    record: { ...record, guestIntake: guestIntake.session ?? record.guestIntake ?? null },
     tasks: tasksResult.tasks,
   });
   if (!result.ok) {

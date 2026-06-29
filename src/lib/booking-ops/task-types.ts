@@ -29,6 +29,7 @@ export const BOOKING_OPS_TASK_TYPES = [
   'inspection_needed',
   'maintenance_needed',
   'unit_ready_confirmation',
+  'guest_intake_operator_fallback',
 ] as const;
 
 export type BookingOpsTaskType = (typeof BOOKING_OPS_TASK_TYPES)[number];
@@ -94,6 +95,7 @@ export const BOOKING_OPS_TASK_TYPE_LABELS_RU: Record<BookingOpsTaskType, string>
   inspection_needed: 'Провести осмотр',
   maintenance_needed: 'Устранить поломку',
   unit_ready_confirmation: 'Подтвердить готовность объекта',
+  guest_intake_operator_fallback: 'Помочь гостю с данными',
 };
 
 export const BOOKING_OPS_TASK_STATUS_LABELS_RU: Record<BookingOpsTaskStatus, string> = {
@@ -182,6 +184,7 @@ export const BOOKING_OPS_TASK_ACTION_LABELS_RU: Partial<Record<BookingOpsTaskTyp
   inspection_needed: 'Чеклист осмотра',
   maintenance_needed: 'Чеклист ремонта',
   unit_ready_confirmation: 'Подтвердить готовность',
+  guest_intake_operator_fallback: 'Открыть ручную помощь',
 };
 
 export function normalizeBookingOpsTaskType(value: unknown): BookingOpsTaskType | null {

@@ -4,6 +4,11 @@ import { text as cleanText } from '@/lib/pilot-data/test-markers';
 import { attachBookingOpsAlerts } from './alerts';
 import { attachBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { applyBookingOpsTaskSync } from './tasks';
+import {
+  getGuestIntakeSessionForRecord,
+  getGuestIntakeSessionsForRecords,
+  syncGuestIntakeAutopilot,
+} from './guest-intake-autopilot';
 import { recordBookingOpsEvent, type BookingOpsEventActorType } from './events';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
@@ -105,13 +110,16 @@ async function enrichRecord(record: BookingOpsRecord): Promise<BookingOpsRecord>
     propertyKnowledge: lookup.knowledge,
     propertyKnowledgeMatch: lookup.match,
   });
-  return attachReadiness(withAutomation);
+  const withReadiness = await attachReadiness(withAutomation);
+  const guestIntake = await getGuestIntakeSessionForRecord(record.id);
+  return { ...withReadiness, guestIntake };
 }
 
 async function enrichRecordWithTaskSync(record: BookingOpsRecord): Promise<BookingOpsRecord> {
   const enriched = await enrichRecord(record);
   await applyBookingOpsTaskSync(enriched);
-  return enriched;
+  const intake = await syncGuestIntakeAutopilot(enriched);
+  return { ...enriched, guestIntake: intake.session ?? enriched.guestIntake ?? null };
 }
 
 async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRecord[]> {
@@ -128,7 +136,12 @@ async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRec
       propertyKnowledgeMatch: lookup.match,
     });
   });
-  return Promise.all(enriched.map((record) => attachReadiness(record)));
+  const withReadiness = await Promise.all(enriched.map((record) => attachReadiness(record)));
+  const intakeSessions = await getGuestIntakeSessionsForRecords(withReadiness.map((record) => record.id));
+  return withReadiness.map((record) => ({
+    ...record,
+    guestIntake: intakeSessions.get(record.id) ?? null,
+  }));
 }
 
 function mapRow(row: BookingOpsRow): BookingOpsRecord {

@@ -51,6 +51,7 @@ const TERMINAL_STATUSES = new Set<BookingOpsCommunicationStatus>([
 ]);
 
 const PURPOSE_PRIORITY: BookingOpsCommunicationPurpose[] = [
+  'issue_escalation_notice',
   'request_guest_documents',
   'request_deposit_payment',
   'request_contract_confirmation',
@@ -164,6 +165,25 @@ function planGuestCommunications(record: BookingOpsRecord, tasks: BookingOpsTask
   const guest = guestName(record);
   const property = propertyName(record);
   const items: PlannedBookingOpsCommunication[] = [];
+
+  if (record.guestIntake?.intakeStatus === 'fallback_required') {
+    const task = openTask(tasks, 'guest_intake_operator_fallback');
+    items.push({
+      actorType: 'admin',
+      actorLabel: 'Оператор',
+      purpose: 'issue_escalation_notice',
+      channel: 'internal',
+      status: 'draft_ready',
+      relatedTaskId: task?.id ?? null,
+      messageTemplateKey: 'operator.guest_intake_fallback.v1',
+      messageText: record.guestIntake.fallbackReason ?? 'Требуется ручная помощь гостю',
+      metadata: {
+        guestIntakeSessionId: record.guestIntake.id,
+        guestIntakeStatus: record.guestIntake.intakeStatus,
+        fallbackReason: record.guestIntake.fallbackReason,
+      },
+    });
+  }
 
   if (readiness.status === 'missing_documents') {
     const task = openTask(tasks, 'request_guest_documents');

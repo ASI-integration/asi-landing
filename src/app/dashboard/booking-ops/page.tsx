@@ -32,6 +32,7 @@ import {
   BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
   BOOKING_OPS_COMMUNICATION_ACTOR_LABELS_RU,
   BOOKING_OPS_COMMUNICATION_STATUS_LABELS_RU,
+  BOOKING_OPS_GUEST_INTAKE_STATUS_LABELS_RU,
   type BookingOpsCheckinReadinessStatus,
   type BookingOpsContractIntakeStatus,
   type BookingOpsContractProvider,
@@ -48,7 +49,9 @@ import {
   type BookingOpsActionTemplate,
   type BookingOpsTelegramDraft,
   type BookingOpsCommunicationIntent,
+  type BookingOpsGuestIntakeSession,
 } from '@/lib/booking-ops/types';
+import { GUEST_INTAKE_FIELD_LABELS_RU } from '@/lib/booking-ops/guest-intake-state';
 import {
   BOOKING_OPS_TASK_STATUS_LABELS_RU,
   BOOKING_OPS_TASK_STATUSES,
@@ -113,6 +116,7 @@ type RecomputeResponse = TasksResponse & {
   record?: BookingOpsRecord;
   communications?: BookingOpsCommunicationIntent[];
   communicationNextAction?: string | null;
+  guestIntake?: BookingOpsGuestIntakeSession | null;
 };
 
 type CommunicationsResponse = {
@@ -681,6 +685,10 @@ function BookingOpsPageInner() {
       }
       if (payload.tasks) setOpsTasks(payload.tasks);
       if (payload.communications) setCommunications(payload.communications);
+      if (payload.guestIntake) {
+        setRecords((current) => current.map((item) =>
+          item.id === selectedId ? { ...item, guestIntake: payload.guestIntake ?? null } : item));
+      }
       await Promise.all([
         load(),
         reloadOpsTasks(selectedId),
@@ -1049,6 +1057,8 @@ function BookingOpsPageInner() {
               {selectedRecord.readiness ? (
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
+
+              <GuestIntakeCard session={selectedRecord.guestIntake ?? null} />
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
 
@@ -1421,6 +1431,67 @@ function BookingOpsTimelineCard({
         </ol>
       )}
     </section>
+  );
+}
+
+function GuestIntakeCard({ session }: { session: BookingOpsGuestIntakeSession | null }) {
+  const missing = session?.missingFields ?? [];
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-800">Данные гостя</h3>
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+          {session ? BOOKING_OPS_GUEST_INTAKE_STATUS_LABELS_RU[session.intakeStatus] : 'Не начато'}
+        </span>
+      </div>
+      {!session ? (
+        <p className="mt-2 text-slate-600">Сбор данных появится после пересчёта подготовки.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {missing.length > 0 ? (
+            <div>
+              <p className="font-medium text-slate-700">Не хватает</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {missing.map((field) => (
+                  <span
+                    key={field}
+                    className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-xs text-amber-900"
+                  >
+                    {GUEST_INTAKE_FIELD_LABELS_RU[field] ?? field}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-emerald-800">Обязательные данные собраны.</p>
+          )}
+          <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
+            <p>
+              Канал:{' '}
+              {session.channel === 'telegram'
+                ? 'Telegram'
+                : session.channel === 'web'
+                  ? 'Веб'
+                  : 'Ручной'}
+            </p>
+            <p>Активность: {formatWhen(session.lastGuestActivityAt ?? session.updatedAt)}</p>
+          </div>
+          {session.fallbackReason ? (
+            <p className="rounded-md border border-rose-200 bg-white px-3 py-2 text-rose-900">
+              {session.fallbackReason}
+            </p>
+          ) : null}
+          {session.generatedMessage ? (
+            <div>
+              <p className="font-medium text-slate-700">Сообщение гостю</p>
+              <pre className="mt-2 whitespace-pre-wrap rounded-md border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-700">
+                {session.generatedMessage}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
 

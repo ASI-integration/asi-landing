@@ -503,6 +503,49 @@ export type BookingOpsCommunicationIntent = {
   supersededAt: string | null;
 };
 
+export const BOOKING_OPS_GUEST_INTAKE_STATUSES = [
+  'not_started',
+  'waiting_for_guest',
+  'partially_completed',
+  'validation_needed',
+  'completed',
+  'fallback_required',
+  'expired',
+] as const;
+
+export type BookingOpsGuestIntakeStatus =
+  (typeof BOOKING_OPS_GUEST_INTAKE_STATUSES)[number];
+
+export const BOOKING_OPS_GUEST_INTAKE_STATUS_LABELS_RU: Record<
+  BookingOpsGuestIntakeStatus,
+  string
+> = {
+  not_started: 'Не начато',
+  waiting_for_guest: 'Ждём гостя',
+  partially_completed: 'Частично заполнено',
+  validation_needed: 'Нужна проверка',
+  completed: 'Готово',
+  fallback_required: 'Нужна ручная помощь',
+  expired: 'Просрочено',
+};
+
+export type BookingOpsGuestIntakeSession = {
+  id: string;
+  bookingOpsRecordId: string;
+  bookingId: string | null;
+  intakeStatus: BookingOpsGuestIntakeStatus;
+  missingFields: string[];
+  collectedFields: Record<string, unknown>;
+  validationErrors: string[];
+  channel: 'telegram' | 'web' | 'manual';
+  guestContactRef: string | null;
+  lastGuestActivityAt: string | null;
+  fallbackReason: string | null;
+  generatedMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type BookingOpsActionFieldsOnConfirm = {
   documentsStatus?: BookingOpsDocumentsStatus;
   contractStatus?: BookingOpsContractStatus;
@@ -629,6 +672,7 @@ export type BookingOpsRecord = {
   alerts?: BookingOpsAlertSummary;
   operatorAction?: BookingOpsActionTemplate | null;
   readiness?: import('./readiness').BookingReadinessResult;
+  guestIntake?: BookingOpsGuestIntakeSession | null;
 };
 
 export type CreateBookingOpsInput = {

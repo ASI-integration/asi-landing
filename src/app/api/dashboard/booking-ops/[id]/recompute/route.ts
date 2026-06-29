@@ -6,6 +6,7 @@ import {
 } from '@/lib/booking-ops/repository';
 import { planBookingOpsPreparation } from '@/lib/booking-ops/automation-engine';
 import { syncBookingOpsCommunications } from '@/lib/booking-ops/communication-orchestrator';
+import { syncGuestIntakeAutopilot } from '@/lib/booking-ops/guest-intake-autopilot';
 import { listBookingOpsTasksForRecord } from '@/lib/booking-ops/tasks';
 
 export const runtime = 'nodejs';
@@ -37,15 +38,19 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
     );
   }
 
+  const guestIntake = await syncGuestIntakeAutopilot(record);
+  const recordWithIntake = { ...record, guestIntake: guestIntake.session ?? record.guestIntake ?? null };
+
   const communications = await syncBookingOpsCommunications({
-    record,
+    record: recordWithIntake,
     tasks: tasksResult.tasks,
   });
 
   return NextResponse.json({
     ok: true,
-    record,
+    record: recordWithIntake,
     tasks: tasksResult.tasks,
+    guestIntake: recordWithIntake.guestIntake,
     communications: communications.communications,
     communicationNextAction: communications.plan.nextAction,
     preparation: planBookingOpsPreparation(record, tasksResult.tasks),

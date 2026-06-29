@@ -19,6 +19,11 @@ export const BOOKING_OPS_EVENT_TYPES = [
   'communication_draft_created',
   'communication_intent_superseded',
   'communication_waiting_for_external_input',
+  'guest_intake_started',
+  'guest_intake_updated',
+  'guest_intake_completed',
+  'guest_intake_fallback_required',
+  'guest_intake_waiting_for_guest',
 ] as const;
 
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
@@ -87,6 +92,9 @@ const SAFE_METADATA_KEYS = new Set([
   'communicationPurpose',
   'communicationStatus',
   'relatedTaskId',
+  'guestIntakeSessionId',
+  'guestIntakeStatus',
+  'fallbackReason',
 ]);
 
 function text(value: unknown, maxLength = 500): string {
