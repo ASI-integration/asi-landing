@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { getBookingOpsActionTemplateById } from './action-templates';
+import { recordBookingOpsEvent } from './events';
 import { canCreateTelegramDraftForAction, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { syncBookingOpsTasksForRecordId, getBookingOpsRecord } from './repository';
 import {
@@ -52,12 +53,14 @@ type TelegramDraftDependencies = {
   getRecord: typeof getBookingOpsRecord;
   resolveTarget: typeof resolveBookingOpsTelegramTarget;
   insertDraft: typeof insertBookingOpsTelegramDraft;
+  syncTasks?: typeof syncBookingOpsTasksForRecordId;
 };
 
 const DEFAULT_DEPENDENCIES: TelegramDraftDependencies = {
   getRecord: getBookingOpsRecord,
   resolveTarget: resolveBookingOpsTelegramTarget,
   insertDraft: insertBookingOpsTelegramDraft,
+  syncTasks: syncBookingOpsTasksForRecordId,
 };
 
 function text(value: unknown): string {
@@ -292,6 +295,20 @@ export async function createTelegramDraftFromBookingOpsAction(
   if (!inserted.ok) {
     return { ok: false, error: 'database_error', message: inserted.error };
   }
-  await syncBookingOpsTasksForRecordId(record.id);
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: record.id,
+    eventType: 'telegram_draft_created',
+    title: 'Создан черновик Telegram',
+    description: 'Сообщение сохранено для ручной проверки и отправки.',
+    actorType: 'task_runner',
+    metadata: {
+      draftId: inserted.draft.id,
+      draftActionId: inserted.draft.actionId,
+      draftStatus: inserted.draft.status,
+      reused: false,
+    },
+    dedupeKey: `telegram-draft-created:${inserted.draft.id}`,
+  });
+  await (dependencies.syncTasks ?? syncBookingOpsTasksForRecordId)(record.id);
   return inserted;
 }

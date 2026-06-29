@@ -35,7 +35,9 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
     return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 });
   }
 
-  const result = await updateBookingOpsRecord(context.params.id, parsed.input);
+  const result = await updateBookingOpsRecord(context.params.id, parsed.input, {
+    actorType: 'admin',
+  });
   if (!result.ok || !result.record) {
     const status = result.error === 'not_found' ? 404 : 500;
     return NextResponse.json(

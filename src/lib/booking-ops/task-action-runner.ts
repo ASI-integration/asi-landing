@@ -1,4 +1,5 @@
 import { getBookingOpsActionTemplateById } from './action-templates';
+import { recordBookingOpsEvent } from './events';
 import {
   canCreateTelegramDraftForAction,
   computeBookingReadiness,
@@ -122,6 +123,26 @@ function findReusableDraft(
   );
 }
 
+async function recordTelegramDraftReuse(
+  recordId: string,
+  draft: BookingOpsTelegramDraft,
+): Promise<void> {
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: recordId,
+    eventType: 'telegram_draft_reused',
+    title: 'Переиспользован черновик Telegram',
+    description: 'Использован существующий черновик; новое сообщение не создавалось и не отправлялось.',
+    actorType: 'task_runner',
+    metadata: {
+      draftId: draft.id,
+      draftActionId: draft.actionId,
+      draftStatus: draft.status,
+      reused: true,
+    },
+    dedupeKey: `telegram-draft-reused:${draft.id}:${draft.actionId}`,
+  });
+}
+
 async function createOrReuseTelegramDraft(
   record: BookingOpsRecord,
   actionId: BookingOpsTelegramDraftActionId,
@@ -134,6 +155,7 @@ async function createOrReuseTelegramDraft(
   const drafts = listed.ok ? listed.drafts : [];
   const existing = findReusableDraft(drafts, actionId);
   if (existing) {
+    await recordTelegramDraftReuse(record.id, existing);
     return { ok: true, draft: existing, reused: true };
   }
 
@@ -236,7 +258,7 @@ async function runTelegramDraftTask(
   return draftSuccessResult(task, draftResult.draft, draftResult.reused);
 }
 
-export async function runBookingOpsTaskAction(
+async function runBookingOpsTaskActionInternal(
   record: BookingOpsRecord,
   task: BookingOpsTask,
   options?: { createdBy?: string | null },
@@ -394,6 +416,7 @@ export async function runBookingOpsTaskAction(
         }
         const reusable = findReusableDraft(existingDrafts, actionId);
         if (reusable) {
+          await recordTelegramDraftReuse(record.id, reusable);
           createdIds.push(reusable.id);
           continue;
         }
@@ -500,4 +523,30 @@ export async function runBookingOpsTaskAction(
         blockingReason: 'invalid_task_type',
       };
   }
+}
+
+export async function runBookingOpsTaskAction(
+  record: BookingOpsRecord,
+  task: BookingOpsTask,
+  options?: { createdBy?: string | null },
+): Promise<BookingOpsTaskActionResult> {
+  const result = await runBookingOpsTaskActionInternal(record, task, options);
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: record.id,
+    eventType: 'task_action_run',
+    title: result.ok ? 'Действие по задаче выполнено' : 'Действие по задаче требует внимания',
+    description: result.ok
+      ? 'Результат подготовлен внутри Booking Ops; внешняя отправка не выполнялась.'
+      : 'Действие остановлено до устранения условий готовности.',
+    actorType: 'task_runner',
+    metadata: {
+      taskId: task.id,
+      taskType: task.taskType,
+      actionType: result.actionType,
+      actionOutcome: result.ok ? 'completed' : 'blocked',
+      taskStatus: task.status,
+    },
+    dedupeKey: `task-action:${task.id}:${result.actionType}:${result.ok ? 'ok' : 'blocked'}:${result.nextTaskStatusSuggestion ?? 'none'}`,
+  });
+  return result;
 }

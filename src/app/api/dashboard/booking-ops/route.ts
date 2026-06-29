@@ -43,7 +43,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 });
   }
 
-  const result = await createBookingOpsRecord(parsed.input);
+  const result = await createBookingOpsRecord(parsed.input, { actorType: 'admin' });
   if (!result.ok || !result.record) {
     return NextResponse.json(
       { ok: false, message: result.error ?? 'Не удалось создать операционную запись.' },

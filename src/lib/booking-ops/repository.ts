@@ -4,6 +4,7 @@ import { text as cleanText } from '@/lib/pilot-data/test-markers';
 import { attachBookingOpsAlerts } from './alerts';
 import { attachBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { applyBookingOpsTaskSync } from './tasks';
+import { recordBookingOpsEvent, type BookingOpsEventActorType } from './events';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
   BookingOpsRecord,
@@ -224,7 +225,10 @@ export async function getBookingOpsByBookingId(bookingId: string): Promise<Booki
   return enrichRecord(mapRow(data as BookingOpsRow));
 }
 
-export async function createBookingOpsRecord(input: CreateBookingOpsInput): Promise<{
+export async function createBookingOpsRecord(
+  input: CreateBookingOpsInput,
+  options?: { actorType?: BookingOpsEventActorType },
+): Promise<{
   ok: boolean;
   record?: BookingOpsRecord;
   error?: string;
@@ -281,6 +285,15 @@ export async function createBookingOpsRecord(input: CreateBookingOpsInput): Prom
     .single();
 
   if (error) return { ok: false, error: error.message };
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: id,
+    eventType: 'booking_created',
+    title: 'Операционная бронь создана',
+    description: 'Бронь добавлена в рабочий контур Booking Ops.',
+    actorType: options?.actorType ?? 'system',
+    metadata: { status: row.ops_status, source: row.ota_source ?? 'manual' },
+    dedupeKey: `booking-created:${id}`,
+  });
   const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow));
   return { ok: true, record };
 }
@@ -309,6 +322,7 @@ export async function syncBookingOpsTasksForRecordId(
 export async function updateBookingOpsRecord(
   id: string,
   input: UpdateBookingOpsInput,
+  options?: { actorType?: BookingOpsEventActorType },
 ): Promise<{ ok: boolean; record?: BookingOpsRecord; error?: string }> {
   const recordId = text(id);
   if (!recordId) return { ok: false, error: 'id_required' };
@@ -379,6 +393,14 @@ export async function updateBookingOpsRecord(
   }
   if (input.mvdNotes !== undefined) patch.mvd_notes = text(input.mvdNotes) || null;
 
+  const { data: previousData, error: previousError } = await supabase
+    .from('booking_ops_records')
+    .select('*')
+    .eq('id', recordId)
+    .maybeSingle();
+  if (previousError) return { ok: false, error: previousError.message };
+  if (!previousData) return { ok: false, error: 'not_found' };
+
   const { data, error } = await supabase
     .from('booking_ops_records')
     .update(patch)
@@ -388,5 +410,44 @@ export async function updateBookingOpsRecord(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
+  const previous = previousData as BookingOpsRow;
+  const changedKeys = Object.keys(patch).filter((key) => (
+    key !== 'updated_at'
+    && JSON.stringify(previous[key as keyof BookingOpsRow] ?? null)
+      !== JSON.stringify(patch[key] ?? null)
+  ));
+  if (changedKeys.length > 0) {
+    const identityKeys = new Set([
+      'booking_id', 'guest_name', 'guest_phone', 'guest_email', 'guest_telegram',
+      'property_id', 'property_label', 'ota_source', 'check_in_at', 'check_out_at', 'guest_count',
+    ]);
+    const readinessKeys = new Set([
+      'payment_status', 'document_required', 'document_collected',
+      'document_verification_status', 'contract_required', 'contract_provider',
+      'contract_intake_status', 'deposit_required', 'deposit_amount',
+      'deposit_intake_status', 'deposit_payment_method', 'mvd_required', 'mvd_data_status',
+    ]);
+    const statusKeys = new Set([
+      'ops_status', 'documents_status', 'contract_status', 'deposit_status', 'mvd_status',
+      'checkin_readiness_status', 'manual_next_action', 'is_blocked', 'blocker_reason',
+    ]);
+    const groups = [
+      identityKeys.size && changedKeys.some((key) => identityKeys.has(key)) ? 'booking_details' : null,
+      readinessKeys.size && changedKeys.some((key) => readinessKeys.has(key)) ? 'readiness_inputs' : null,
+      statusKeys.size && changedKeys.some((key) => statusKeys.has(key)) ? 'operational_status' : null,
+      changedKeys.some((key) => key.endsWith('_notes') || key === 'notes' || key.endsWith('_link'))
+        ? 'internal_notes'
+        : null,
+    ].filter((group): group is string => Boolean(group));
+    await recordBookingOpsEvent({
+      bookingOpsRecordId: recordId,
+      eventType: 'booking_updated',
+      title: 'Данные брони обновлены',
+      description: 'Изменения сохранены без записи персональных данных в историю.',
+      actorType: options?.actorType ?? 'system',
+      metadata: { changedGroups: groups },
+      dedupeKey: `booking-updated:${(data as BookingOpsRow).updated_at}`,
+    });
+  }
   return { ok: true, record: await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow)) };
 }

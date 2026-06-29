@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { recordBookingOpsEvent } from './events';
 import { getBookingOpsRecord, syncBookingOpsTasksForRecordId, updateBookingOpsRecord } from './repository';
 import { getBookingOpsTask, updateBookingOpsTask } from './tasks';
 import type { BookingOpsTask, BookingOpsTaskStatus, UpdateBookingOpsTaskInput } from './task-types';
@@ -288,6 +289,24 @@ export async function updateBookingOpsTaskWithCompletionEffects(
       effectResult,
     };
   }
+
+  const appliedFields = Object.keys(effectResult.appliedUpdates).sort();
+  const suggestedFields = Object.keys(effectResult.suggestedUpdates).sort();
+  const applied = appliedFields.length > 0;
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: recordId,
+    eventType: applied ? 'completion_effect_applied' : 'completion_effect_suggested',
+    title: applied ? 'Результат завершения применён' : 'После завершения нужна ручная проверка',
+    description: effectResult.message,
+    actorType: 'task_runner',
+    metadata: {
+      taskId: taskResult.task.id,
+      taskType: taskResult.task.taskType,
+      effectFields: applied ? appliedFields : suggestedFields,
+      actionOutcome: applied ? 'applied' : 'suggested',
+    },
+    dedupeKey: `completion-effect:${taskResult.task.id}:${applied ? 'applied' : 'suggested'}:${(applied ? appliedFields : suggestedFields).join(',')}`,
+  });
 
   return { ok: true, task: taskUpdate.task, effectResult };
 }

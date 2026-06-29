@@ -158,13 +158,16 @@ function dependenciesFor(
     ok: true as const,
     draft: draftFromInput(input),
   }));
+  const syncTasks = vi.fn(async () => ({ ok: true as const }));
   return {
     dependencies: {
       getRecord: vi.fn(async () => record),
       resolveTarget: vi.fn(async () => target),
       insertDraft,
+      syncTasks,
     },
     insertDraft,
+    syncTasks,
   };
 }
 
@@ -181,7 +184,7 @@ describe('Booking Ops Telegram Draft Handoff v1', () => {
     it(`creates a copy-ready draft for ${actionId}`, async () => {
       const record = recordForAction(actionId);
       const before = structuredClone(record);
-      const { dependencies, insertDraft } = dependenciesFor(record);
+      const { dependencies, insertDraft, syncTasks } = dependenciesFor(record);
 
       const result = await createTelegramDraftFromBookingOpsAction(
         record.id,
@@ -196,6 +199,7 @@ describe('Booking Ops Telegram Draft Handoff v1', () => {
       expect(input.actionId).toBe(actionId);
       expect(input.messageText.length).toBeGreaterThan(20);
       expect(input.sourceBookingId).toBe('reservation-1');
+      expect(syncTasks).toHaveBeenCalledOnce();
       expect(record).toEqual(before);
       expect(record.notes).toBe('Не менять заметку оператора');
       expect(sendMessage).not.toHaveBeenCalled();

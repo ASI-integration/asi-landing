@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { computeBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
+import { recordBookingOpsEvent, recordBookingOpsReadinessEvent } from './events';
 import { syncBookingOpsTasksForReadiness } from './task-sync';
 import {
   BOOKING_OPS_OPEN_TASK_STATUSES,
@@ -147,7 +148,23 @@ export async function createBookingOpsTask(
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'task_create_failed' };
-  return { ok: true, task: mapRow(data as BookingOpsTaskRow), created: true };
+  const task = mapRow(data as BookingOpsTaskRow);
+  await recordBookingOpsEvent({
+    bookingOpsRecordId: recordId,
+    eventType: 'operational_task_created',
+    title: 'Создана операционная задача',
+    description: BOOKING_OPS_TASK_TYPE_LABELS_RU[task.taskType],
+    actorType: task.source === 'readiness_gate' ? 'readiness_gate' : 'admin',
+    metadata: {
+      taskId: task.id,
+      taskType: task.taskType,
+      taskStatus: task.status,
+      priority: task.priority,
+      source: task.source,
+    },
+    dedupeKey: `task-created:${task.id}`,
+  });
+  return { ok: true, task, created: true };
 }
 
 export async function getBookingOpsTask(
@@ -178,6 +195,9 @@ export async function updateBookingOpsTask(
   const recordId = text(bookingOpsRecordId);
   const id = text(taskId);
   if (!recordId || !id) return { ok: false, error: 'id_required' };
+
+  const previousResult = await getBookingOpsTask(recordId, id);
+  if (!previousResult.ok) return previousResult;
 
   const patch: Record<string, unknown> = { updated_at: nowIso() };
 
@@ -210,7 +230,24 @@ export async function updateBookingOpsTask(
 
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: 'not_found' };
-  return { ok: true, task: mapRow(data as BookingOpsTaskRow) };
+  const task = mapRow(data as BookingOpsTaskRow);
+  if (input.status !== undefined && task.status !== previousResult.task.status) {
+    await recordBookingOpsEvent({
+      bookingOpsRecordId: recordId,
+      eventType: 'task_status_changed',
+      title: 'Статус задачи изменён',
+      description: BOOKING_OPS_TASK_TYPE_LABELS_RU[task.taskType],
+      actorType: 'admin',
+      metadata: {
+        taskId: task.id,
+        taskType: task.taskType,
+        previousStatus: previousResult.task.status,
+        status: task.status,
+      },
+      dedupeKey: `task-status:${task.id}:${previousResult.task.status}:${task.status}:${previousResult.task.updatedAt}`,
+    });
+  }
+  return { ok: true, task };
 }
 
 async function cancelObsoleteReadinessTasks(
@@ -309,6 +346,12 @@ export async function applyBookingOpsTaskSync(
   for (const item of plan.items) {
     await upsertPlannedTask(record, item);
   }
+  await recordBookingOpsReadinessEvent({
+    bookingOpsRecordId: record.id,
+    readinessStatus: readiness.status,
+    missingCount: readiness.missingItems.length,
+    sourceVersion: record.updatedAt,
+  });
 
   const listed = await listBookingOpsTasksForRecord(record.id);
   if (!listed.ok) {

@@ -57,6 +57,7 @@ import {
   type BookingReadinessStatus,
 } from '@/lib/booking-ops/readiness';
 import type { BookingOpsTaskCompletionEffectResult } from '@/lib/booking-ops/task-completion-effects';
+import type { BookingOpsEvent } from '@/lib/booking-ops/events';
 
 type ListResponse = {
   ok: boolean;
@@ -104,6 +105,12 @@ type TaskRunResponse = {
   ok: boolean;
   message?: string;
   actionResult?: TaskActionResult;
+};
+
+type TimelineResponse = {
+  ok: boolean;
+  message?: string;
+  events?: BookingOpsEvent[];
 };
 
 const AUTOMATION_TONE: Record<string, string> = {
@@ -298,6 +305,8 @@ function BookingOpsPageInner() {
   const [creatingTelegramDraft, setCreatingTelegramDraft] = useState(false);
   const [opsTasks, setOpsTasks] = useState<BookingOpsTask[]>([]);
   const [opsTasksLoading, setOpsTasksLoading] = useState(false);
+  const [timelineEvents, setTimelineEvents] = useState<BookingOpsEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [taskActionResults, setTaskActionResults] = useState<Record<string, TaskActionResult>>({});
@@ -407,6 +416,33 @@ function BookingOpsPageInner() {
 
   useEffect(() => {
     if (!selectedId) {
+      setTimelineEvents([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTimelineLoading(true);
+    void fetch(`/api/dashboard/booking-ops/${selectedId}/events`, { credentials: 'include' })
+      .then(async (res) => {
+        const payload = await readResponseJson<TimelineResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setTimelineEvents([]);
+          return;
+        }
+        setTimelineEvents(payload.events ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setTimelineLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) {
       setOpsTasks([]);
       return;
     }
@@ -437,6 +473,7 @@ function BookingOpsPageInner() {
     setDraft(draftFromRecord(record));
     setTelegramDrafts([]);
     setOpsTasks([]);
+    setTimelineEvents([]);
     setTaskActionResults({});
     setMessage('');
   }
@@ -471,7 +508,7 @@ function BookingOpsPageInner() {
       if (payload.actionResult.createdDraftIds?.length) {
         await reloadTelegramDrafts(selectedId);
       }
-      await reloadOpsTasks(selectedId);
+      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
     } finally {
       setRunningTaskId(null);
     }
@@ -483,6 +520,14 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<TasksResponse>(res, { ok: false });
     if (res.ok && payload.ok) setOpsTasks(payload.tasks ?? []);
+  }
+
+  async function reloadTimeline(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/${recordId}/events`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<TimelineResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setTimelineEvents(payload.events ?? []);
   }
 
   async function onUpdateTaskStatus(taskId: string, status: BookingOpsTaskStatus) {
@@ -505,6 +550,7 @@ function BookingOpsPageInner() {
         load(),
         reloadOpsTasks(selectedId),
         reloadTelegramDrafts(selectedId),
+        reloadTimeline(selectedId),
       ]);
     } finally {
       setUpdatingTaskId(null);
@@ -528,7 +574,7 @@ function BookingOpsPageInner() {
         return;
       }
       setTelegramDrafts((current) => [payload.draft!, ...current]);
-      await reloadOpsTasks(selectedId);
+      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
       setMessage('Черновик Telegram создан. Сообщение не отправлено.');
     } finally {
       setCreatingTelegramDraft(false);
@@ -551,6 +597,7 @@ function BookingOpsPageInner() {
         item.id === payload.draft!.id ? payload.draft! : item
       )));
       await reloadOpsTasks(draft.bookingOpsRecordId);
+      await reloadTimeline(draft.bookingOpsRecordId);
     }
   }
 
@@ -594,7 +641,7 @@ function BookingOpsPageInner() {
       }
       setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
       setDraft(draftFromRecord(payload.record));
-      await reloadOpsTasks(selectedId);
+      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
       setMessage('Изменения сохранены.');
     } finally {
       setSaving(false);
@@ -622,6 +669,7 @@ function BookingOpsPageInner() {
       }
       setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
       setDraft(draftFromRecord(payload.record));
+      await reloadTimeline(selectedId);
       setMessage('Действие подтверждено, статус обновлён.');
     } finally {
       setConfirmingAction(false);
@@ -817,6 +865,8 @@ function BookingOpsPageInner() {
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
 
+              <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
+
               <OperationalTasksCard
                 tasks={opsTasks}
                 loading={opsTasksLoading}
@@ -944,6 +994,44 @@ function BookingOpsPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+function BookingOpsTimelineCard({
+  events,
+  loading,
+}: {
+  events: BookingOpsEvent[];
+  loading: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-800">Операционная история</h3>
+        <span className="text-xs text-slate-500">Сначала новые</span>
+      </div>
+      {loading ? (
+        <p className="mt-3 text-sm text-slate-500">Загрузка истории…</p>
+      ) : events.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">История появится после следующего изменения.</p>
+      ) : (
+        <ol className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+          {events.slice(0, 30).map((event) => (
+            <li key={event.id} className="relative border-l-2 border-slate-200 pl-3 text-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="font-medium text-slate-800">{event.title}</p>
+                <time className="text-xs text-slate-500" dateTime={event.createdAt}>
+                  {formatWhen(event.createdAt)}
+                </time>
+              </div>
+              {event.description ? (
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{event.description}</p>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
