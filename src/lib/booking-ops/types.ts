@@ -401,6 +401,108 @@ export type BookingOpsTelegramDraft = {
   updatedAt: string;
 };
 
+export const BOOKING_OPS_COMMUNICATION_ACTOR_TYPES = [
+  'guest',
+  'cleaner',
+  'laundry',
+  'master',
+  'admin',
+  'owner',
+] as const;
+
+export type BookingOpsCommunicationActorType =
+  (typeof BOOKING_OPS_COMMUNICATION_ACTOR_TYPES)[number];
+
+export const BOOKING_OPS_COMMUNICATION_PURPOSES = [
+  'request_guest_documents',
+  'request_contract_confirmation',
+  'request_deposit_payment',
+  'request_mvd_data',
+  'send_checkin_instructions',
+  'remind_guest_before_checkin',
+  'checkout_reminder',
+  'cleaning_assignment',
+  'cleaning_reminder',
+  'inspection_request',
+  'issue_followup',
+  'linen_pickup_request',
+  'linen_delivery_request',
+  'linen_status_check',
+  'maintenance_request',
+  'repair_status_check',
+  'preparation_blocked_notice',
+  'readiness_confirmation_needed',
+  'guest_data_missing_notice',
+  'unit_ready_notice',
+  'issue_escalation_notice',
+] as const;
+
+export type BookingOpsCommunicationPurpose =
+  (typeof BOOKING_OPS_COMMUNICATION_PURPOSES)[number];
+
+export const BOOKING_OPS_COMMUNICATION_CHANNELS = [
+  'telegram',
+  'email',
+  'phone',
+  'internal',
+  'manual',
+] as const;
+
+export type BookingOpsCommunicationChannel =
+  (typeof BOOKING_OPS_COMMUNICATION_CHANNELS)[number];
+
+export const BOOKING_OPS_COMMUNICATION_STATUSES = [
+  'draft_ready',
+  'waiting_for_external_input',
+  'completed',
+  'superseded',
+  'cancelled',
+] as const;
+
+export type BookingOpsCommunicationStatus =
+  (typeof BOOKING_OPS_COMMUNICATION_STATUSES)[number];
+
+export const BOOKING_OPS_COMMUNICATION_STATUS_LABELS_RU: Record<
+  BookingOpsCommunicationStatus,
+  string
+> = {
+  draft_ready: 'Черновик готов',
+  waiting_for_external_input: 'Ждём ответ',
+  completed: 'Завершено',
+  superseded: 'Заменено',
+  cancelled: 'Отменено',
+};
+
+export const BOOKING_OPS_COMMUNICATION_ACTOR_LABELS_RU: Record<
+  BookingOpsCommunicationActorType,
+  string
+> = {
+  guest: 'Гость',
+  cleaner: 'Уборка',
+  laundry: 'Прачечная',
+  master: 'Мастер',
+  admin: 'Оператор',
+  owner: 'Собственник',
+};
+
+export type BookingOpsCommunicationIntent = {
+  id: string;
+  bookingOpsRecordId: string;
+  bookingId: string | null;
+  relatedTaskId: string | null;
+  actorType: BookingOpsCommunicationActorType;
+  actorLabel: string | null;
+  purpose: BookingOpsCommunicationPurpose;
+  channel: BookingOpsCommunicationChannel;
+  status: BookingOpsCommunicationStatus;
+  messageText: string;
+  messageTemplateKey: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  supersededAt: string | null;
+};
+
 export type BookingOpsActionFieldsOnConfirm = {
   documentsStatus?: BookingOpsDocumentsStatus;
   contractStatus?: BookingOpsContractStatus;

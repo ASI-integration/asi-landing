@@ -4,8 +4,9 @@ import {
   getBookingOpsRecord,
   syncBookingOpsTasksForRecordId,
 } from '@/lib/booking-ops/repository';
-import { listBookingOpsTasksForRecord } from '@/lib/booking-ops/tasks';
 import { planBookingOpsPreparation } from '@/lib/booking-ops/automation-engine';
+import { syncBookingOpsCommunications } from '@/lib/booking-ops/communication-orchestrator';
+import { listBookingOpsTasksForRecord } from '@/lib/booking-ops/tasks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,11 +37,18 @@ export async function POST(_req: Request, context: RouteContext): Promise<NextRe
     );
   }
 
+  const communications = await syncBookingOpsCommunications({
+    record,
+    tasks: tasksResult.tasks,
+  });
+
   return NextResponse.json({
     ok: true,
     record,
     tasks: tasksResult.tasks,
+    communications: communications.communications,
+    communicationNextAction: communications.plan.nextAction,
     preparation: planBookingOpsPreparation(record, tasksResult.tasks),
-    message: 'Подготовка пересчитана. Внешние сообщения не отправлялись.',
+    message: 'Подготовка и коммуникации пересчитаны. Внешние сообщения не отправлялись.',
   });
 }

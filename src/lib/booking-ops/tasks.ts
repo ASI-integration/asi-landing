@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { planBookingOpsPreparation } from './automation-engine';
+import { syncBookingOpsCommunications } from './communication-orchestrator';
 import { computeBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { recordBookingOpsEvent, recordBookingOpsReadinessEvent } from './events';
 import { syncBookingOpsTasksForReadiness } from './task-sync';
@@ -431,6 +432,11 @@ export async function applyBookingOpsTaskSync(
     readinessStatus: readiness.status,
     missingCount: readiness.missingItems.length,
     sourceVersion: record.updatedAt,
+  });
+
+  await syncBookingOpsCommunications({
+    record: { ...record, readiness },
+    tasks: allTasks,
   });
 
   if (!listed.ok) {

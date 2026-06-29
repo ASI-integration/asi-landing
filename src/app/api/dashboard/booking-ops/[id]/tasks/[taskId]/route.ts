@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import {
+  listBookingOpsTasksForRecord,
   parseUpdateBookingOpsTaskInput,
 } from '@/lib/booking-ops/tasks';
 import { updateBookingOpsTaskWithCompletionEffects } from '@/lib/booking-ops/task-completion-effects';
+import { getBookingOpsRecord } from '@/lib/booking-ops/repository';
+import { syncBookingOpsCommunications } from '@/lib/booking-ops/communication-orchestrator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +50,17 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
       { ok: false, message: result.message, effectResult: result.effectResult },
       { status },
     );
+  }
+
+  const [record, tasksResult] = await Promise.all([
+    getBookingOpsRecord(context.params.id),
+    listBookingOpsTasksForRecord(context.params.id),
+  ]);
+  if (record && tasksResult.ok) {
+    await syncBookingOpsCommunications({
+      record,
+      tasks: tasksResult.tasks,
+    });
   }
 
   return NextResponse.json({

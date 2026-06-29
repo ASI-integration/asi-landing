@@ -30,6 +30,8 @@ import {
   BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU,
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
+  BOOKING_OPS_COMMUNICATION_ACTOR_LABELS_RU,
+  BOOKING_OPS_COMMUNICATION_STATUS_LABELS_RU,
   type BookingOpsCheckinReadinessStatus,
   type BookingOpsContractIntakeStatus,
   type BookingOpsContractProvider,
@@ -45,6 +47,7 @@ import {
   type BookingOpsAlertSeverity,
   type BookingOpsActionTemplate,
   type BookingOpsTelegramDraft,
+  type BookingOpsCommunicationIntent,
 } from '@/lib/booking-ops/types';
 import {
   BOOKING_OPS_TASK_STATUS_LABELS_RU,
@@ -108,6 +111,15 @@ type TasksResponse = {
 
 type RecomputeResponse = TasksResponse & {
   record?: BookingOpsRecord;
+  communications?: BookingOpsCommunicationIntent[];
+  communicationNextAction?: string | null;
+};
+
+type CommunicationsResponse = {
+  ok: boolean;
+  message?: string;
+  communications?: BookingOpsCommunicationIntent[];
+  nextAction?: string | null;
 };
 
 type TaskUpdateResponse = TasksResponse & {
@@ -332,6 +344,8 @@ function BookingOpsPageInner() {
   const [creatingTelegramDraft, setCreatingTelegramDraft] = useState(false);
   const [opsTasks, setOpsTasks] = useState<BookingOpsTask[]>([]);
   const [opsTasksLoading, setOpsTasksLoading] = useState(false);
+  const [communications, setCommunications] = useState<BookingOpsCommunicationIntent[]>([]);
+  const [communicationsLoading, setCommunicationsLoading] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState<BookingOpsEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
@@ -514,11 +528,41 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setCommunications([]);
+      return;
+    }
+
+    let cancelled = false;
+    setCommunicationsLoading(true);
+    void fetch(`/api/dashboard/booking-ops/${selectedId}/communications`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<CommunicationsResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setCommunications([]);
+          return;
+        }
+        setCommunications(payload.communications ?? []);
+      })
+      .finally(() => {
+        if (!cancelled) setCommunicationsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
     setTelegramDrafts([]);
     setOpsTasks([]);
+    setCommunications([]);
     setTimelineEvents([]);
     setTaskActionResults({});
     setMessage('');
@@ -554,7 +598,11 @@ function BookingOpsPageInner() {
       if (payload.actionResult.createdDraftIds?.length) {
         await reloadTelegramDrafts(selectedId);
       }
-      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
+      await Promise.all([
+        reloadOpsTasks(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+      ]);
     } finally {
       setRunningTaskId(null);
     }
@@ -566,6 +614,14 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<TasksResponse>(res, { ok: false });
     if (res.ok && payload.ok) setOpsTasks(payload.tasks ?? []);
+  }
+
+  async function reloadCommunications(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/${recordId}/communications`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<CommunicationsResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setCommunications(payload.communications ?? []);
   }
 
   async function reloadTimeline(recordId: string) {
@@ -595,6 +651,7 @@ function BookingOpsPageInner() {
       await Promise.all([
         load(),
         reloadOpsTasks(selectedId),
+        reloadCommunications(selectedId),
         reloadTelegramDrafts(selectedId),
         reloadTimeline(selectedId),
       ]);
@@ -623,7 +680,13 @@ function BookingOpsPageInner() {
         setDraft(draftFromRecord(payload.record));
       }
       if (payload.tasks) setOpsTasks(payload.tasks);
-      await Promise.all([load(), reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
+      if (payload.communications) setCommunications(payload.communications);
+      await Promise.all([
+        load(),
+        reloadOpsTasks(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+      ]);
       setMessage(payload.message || 'Подготовка пересчитана.');
     } finally {
       setRecomputingPreparation(false);
@@ -989,6 +1052,12 @@ function BookingOpsPageInner() {
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
 
+              <CommunicationIntentsCard
+                communications={communications}
+                tasks={opsTasks}
+                loading={communicationsLoading}
+              />
+
               <TurnoverOpsCard
                 record={selectedRecord}
                 tasks={opsTasks}
@@ -1195,6 +1264,124 @@ function OperatorGuidanceCard({
           {task ? `К задаче: ${guidance.recommendedActionLabel}` : guidance.recommendedActionLabel}
         </button>
       ) : null}
+    </section>
+  );
+}
+
+const COMMUNICATION_PURPOSE_LABELS_RU: Record<string, string> = {
+  request_guest_documents: 'Запросить документы',
+  request_contract_confirmation: 'Подтвердить договор',
+  request_deposit_payment: 'Запросить депозит',
+  request_mvd_data: 'Запросить данные МВД',
+  send_checkin_instructions: 'Инструкции заезда',
+  remind_guest_before_checkin: 'Напомнить перед заездом',
+  checkout_reminder: 'Напомнить о выезде',
+  cleaning_assignment: 'Назначить уборку',
+  cleaning_reminder: 'Напомнить об уборке',
+  inspection_request: 'Запросить осмотр',
+  issue_followup: 'Проверить проблему',
+  linen_pickup_request: 'Забрать бельё',
+  linen_delivery_request: 'Доставить бельё',
+  linen_status_check: 'Проверить бельё',
+  maintenance_request: 'Передать мастеру',
+  repair_status_check: 'Проверить ремонт',
+  preparation_blocked_notice: 'Подготовка заблокирована',
+  readiness_confirmation_needed: 'Подтвердить готовность',
+  guest_data_missing_notice: 'Не хватает данных гостя',
+  unit_ready_notice: 'Объект готов',
+  issue_escalation_notice: 'Эскалация проблемы',
+};
+
+const COMMUNICATION_CHANNEL_LABELS_RU: Record<string, string> = {
+  telegram: 'Telegram',
+  email: 'E-mail',
+  phone: 'Телефон',
+  internal: 'Внутри ASI',
+  manual: 'Вручную',
+};
+
+function CommunicationIntentsCard({
+  communications,
+  tasks,
+  loading,
+}: {
+  communications: BookingOpsCommunicationIntent[];
+  tasks: BookingOpsTask[];
+  loading: boolean;
+}) {
+  const taskById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
+  const groups = useMemo(() => {
+    const byActor = new Map<string, BookingOpsCommunicationIntent[]>();
+    for (const item of communications) {
+      const key = item.actorType;
+      byActor.set(key, [...(byActor.get(key) ?? []), item]);
+    }
+    return [...byActor.entries()];
+  }, [communications]);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800">Коммуникации</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Черновики и ожидания. Внешняя отправка отключена.
+          </p>
+        </div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+          {communications.length}
+        </span>
+      </div>
+
+      {loading ? (
+        <p className="mt-3 text-sm text-slate-500">Загрузка коммуникаций…</p>
+      ) : communications.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">
+          Коммуникации появятся после пересчёта задач и готовности.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {groups.map(([actorType, items]) => (
+            <div key={actorType} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {BOOKING_OPS_COMMUNICATION_ACTOR_LABELS_RU[
+                  actorType as keyof typeof BOOKING_OPS_COMMUNICATION_ACTOR_LABELS_RU
+                ] ?? actorType}
+              </p>
+              <div className="mt-2 space-y-2">
+                {items.map((item) => {
+                  const task = item.relatedTaskId ? taskById.get(item.relatedTaskId) : null;
+                  return (
+                    <article
+                      key={item.id}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-slate-900">
+                          {COMMUNICATION_PURPOSE_LABELS_RU[item.purpose] ?? item.purpose}
+                        </p>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                          {BOOKING_OPS_COMMUNICATION_STATUS_LABELS_RU[item.status]}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <span>{COMMUNICATION_CHANNEL_LABELS_RU[item.channel] ?? item.channel}</span>
+                        {task ? <span>Задача: {task.title}</span> : null}
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
+                        {formatBookingOpsMessageTextDisplay(item.messageText)}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
