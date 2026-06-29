@@ -4,6 +4,11 @@ import { computeBookingReadiness, fetchTelegramDraftStatusesForRecord } from './
 import { recordBookingOpsEvent, recordBookingOpsReadinessEvent } from './events';
 import { syncBookingOpsTasksForReadiness } from './task-sync';
 import {
+  computeUnitReadinessStatus,
+  isTurnoverTaskType,
+  syncTurnoverTasksForRecord,
+} from './turnover';
+import {
   BOOKING_OPS_OPEN_TASK_STATUSES,
   BOOKING_OPS_TASK_TYPE_LABELS_RU,
   normalizeBookingOpsTaskPriority,
@@ -250,15 +255,16 @@ export async function updateBookingOpsTask(
   return { ok: true, task };
 }
 
-async function cancelObsoleteReadinessTasks(
+async function cancelObsoleteSourceTasks(
   bookingOpsRecordId: string,
+  source: BookingOpsTaskSource,
   plannedTypes: Set<BookingOpsTaskType>,
 ): Promise<void> {
   const { data, error } = await supabase
     .from('booking_ops_tasks')
     .select('id, task_type')
     .eq('booking_ops_record_id', bookingOpsRecordId)
-    .eq('source', 'readiness_gate')
+    .eq('source', source)
     .in('status', BOOKING_OPS_OPEN_TASK_STATUSES);
 
   if (error || !data) return;
@@ -275,10 +281,18 @@ async function cancelObsoleteReadinessTasks(
     .in('id', obsolete.map((row) => row.id));
 }
 
+async function cancelObsoleteReadinessTasks(
+  bookingOpsRecordId: string,
+  plannedTypes: Set<BookingOpsTaskType>,
+): Promise<void> {
+  await cancelObsoleteSourceTasks(bookingOpsRecordId, 'readiness_gate', plannedTypes);
+}
+
 async function upsertPlannedTask(
   record: BookingOpsRecord,
   item: BookingOpsTaskPlanItem,
-): Promise<void> {
+  source: BookingOpsTaskSource = 'readiness_gate',
+): Promise<{ created: boolean; taskType: BookingOpsTaskType }> {
   const existing = await findOpenTaskByType(record.id, item.taskType);
   if (existing) {
     const metadataChanged =
@@ -304,27 +318,31 @@ async function upsertPlannedTask(
         })
         .eq('id', existing.id);
     }
-    return;
+    return { created: false, taskType: item.taskType };
   }
 
   const latest = await findLatestTaskByType(record.id, item.taskType);
   if (latest && (latest.status === 'completed' || latest.status === 'cancelled')) {
-    return;
+    return { created: false, taskType: item.taskType };
   }
 
-  await createBookingOpsTask({
+  const created = await createBookingOpsTask({
     bookingOpsRecordId: record.id,
     bookingId: record.bookingId,
     taskType: item.taskType,
     title: item.title,
     description: item.description,
     priority: item.priority,
-    source: 'readiness_gate',
+    source,
     metadata: {
       ...(item.metadata ?? {}),
       readinessStatus: item.metadata?.readinessStatus,
     },
   });
+  return {
+    created: created.ok ? created.created : false,
+    taskType: item.taskType,
+  };
 }
 
 export type BookingOpsTaskSyncResult = {
@@ -344,8 +362,60 @@ export async function applyBookingOpsTaskSync(
 
   await cancelObsoleteReadinessTasks(record.id, plannedTypes);
   for (const item of plan.items) {
-    await upsertPlannedTask(record, item);
+    await upsertPlannedTask(record, item, 'readiness_gate');
   }
+
+  const listedBeforeTurnover = await listBookingOpsTasksForRecord(record.id);
+  const tasksBeforeTurnover = listedBeforeTurnover.ok ? listedBeforeTurnover.tasks : [];
+  const hadTurnover = tasksBeforeTurnover.some((task) => isTurnoverTaskType(task.taskType));
+
+  const turnoverPlan = syncTurnoverTasksForRecord(record, readiness, tasksBeforeTurnover);
+  const turnoverTypes = new Set(turnoverPlan.items.map((item) => item.taskType));
+  await cancelObsoleteSourceTasks(record.id, 'system', turnoverTypes);
+
+  let turnoverStarted = false;
+  for (const item of turnoverPlan.items) {
+    const result = await upsertPlannedTask(record, item, 'system');
+    if (result.created && item.taskType === 'checkout_confirmed') {
+      turnoverStarted = true;
+    }
+  }
+
+  if (turnoverStarted && !hadTurnover) {
+    await recordBookingOpsEvent({
+      bookingOpsRecordId: record.id,
+      eventType: 'turnover_started',
+      title: 'Начата подготовка объекта после выезда',
+      description: 'Созданы задачи уборки и белья. Внешние уведомления не отправлялись.',
+      actorType: 'system',
+      metadata: { taskType: 'checkout_confirmed' },
+      dedupeKey: `turnover-started:${record.id}`,
+    });
+  }
+
+  const listed = await listBookingOpsTasksForRecord(record.id);
+  const allTasks = listed.ok ? listed.tasks : [];
+  const unitReadiness = computeUnitReadinessStatus(record, allTasks);
+  if (unitReadiness !== record.unitReadinessStatus) {
+    const previous = record.unitReadinessStatus ?? 'not_ready';
+    await supabase
+      .from('booking_ops_records')
+      .update({ unit_readiness_status: unitReadiness, updated_at: nowIso() })
+      .eq('id', record.id);
+    await recordBookingOpsEvent({
+      bookingOpsRecordId: record.id,
+      eventType: 'unit_readiness_changed',
+      title: 'Статус готовности объекта изменился',
+      description: `Новый статус: ${unitReadiness}`,
+      actorType: 'system',
+      metadata: {
+        previousUnitReadinessStatus: previous,
+        unitReadinessStatus: unitReadiness,
+      },
+      dedupeKey: `unit-readiness:${record.id}:${previous}:${unitReadiness}`,
+    });
+  }
+
   await recordBookingOpsReadinessEvent({
     bookingOpsRecordId: record.id,
     readinessStatus: readiness.status,
@@ -353,7 +423,6 @@ export async function applyBookingOpsTaskSync(
     sourceVersion: record.updatedAt,
   });
 
-  const listed = await listBookingOpsTasksForRecord(record.id);
   if (!listed.ok) {
     return { ok: false, plan, tasks: [], error: listed.error };
   }

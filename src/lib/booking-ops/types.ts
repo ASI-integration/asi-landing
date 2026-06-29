@@ -106,6 +106,29 @@ export const BOOKING_OPS_MVD_STATUS_LABELS_RU: Record<BookingOpsMvdStatus, strin
   problem: 'Проблема',
 };
 
+export const BOOKING_OPS_UNIT_READINESS_STATUSES = [
+  'not_ready',
+  'cleaning_pending',
+  'linen_pending',
+  'inspection_pending',
+  'ready',
+  'blocked',
+] as const;
+
+export type BookingOpsUnitReadinessStatus = (typeof BOOKING_OPS_UNIT_READINESS_STATUSES)[number];
+
+export const BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU: Record<
+  BookingOpsUnitReadinessStatus,
+  string
+> = {
+  not_ready: 'Не готов',
+  cleaning_pending: 'Ожидает уборку',
+  linen_pending: 'Ожидает бельё',
+  inspection_pending: 'Ожидает осмотр',
+  ready: 'Готов к заезду',
+  blocked: 'Заблокирован',
+};
+
 export const BOOKING_OPS_CHECKIN_READINESS_STATUSES = [
   'not_started',
   'in_progress',
@@ -493,6 +516,7 @@ export type BookingOpsRecord = {
   depositStatus: BookingOpsDepositStatus;
   mvdStatus: BookingOpsMvdStatus;
   checkinReadinessStatus: BookingOpsCheckinReadinessStatus;
+  unitReadinessStatus: BookingOpsUnitReadinessStatus;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -522,6 +546,7 @@ export type CreateBookingOpsInput = {
   depositStatus?: BookingOpsDepositStatus;
   mvdStatus?: BookingOpsMvdStatus;
   checkinReadinessStatus?: BookingOpsCheckinReadinessStatus;
+  unitReadinessStatus?: BookingOpsUnitReadinessStatus;
   notes?: string | null;
 } & Partial<BookingOpsIntakeFields>;
 
@@ -574,6 +599,14 @@ export function normalizeBookingOpsCheckinReadinessStatus(
   const raw = String(value ?? '').trim();
   if (includesValue(BOOKING_OPS_CHECKIN_READINESS_STATUSES, raw)) return raw;
   return 'not_started';
+}
+
+export function normalizeBookingOpsUnitReadinessStatus(
+  value: unknown,
+): BookingOpsUnitReadinessStatus {
+  const raw = String(value ?? '').trim();
+  if (includesValue(BOOKING_OPS_UNIT_READINESS_STATUSES, raw)) return raw;
+  return 'not_ready';
 }
 
 export function normalizeBookingOpsDocumentVerificationStatus(
