@@ -14,6 +14,18 @@ export const BOOKING_OPS_TASK_TYPES = [
   'generate_telegram_drafts',
   'review_telegram_drafts',
   'manual_send_telegram_drafts',
+  'checkout_confirmed',
+  'cleaning_needed',
+  'cleaning_assigned',
+  'cleaning_in_progress',
+  'cleaning_done',
+  'unit_inspection_needed',
+  'unit_ready_for_next_guest',
+  'linen_pickup_needed',
+  'linen_replaced',
+  'laundry_dropoff_needed',
+  'laundry_return_needed',
+  'supplies_check_needed',
 ] as const;
 
 export type BookingOpsTaskType = (typeof BOOKING_OPS_TASK_TYPES)[number];
@@ -35,6 +47,12 @@ export type BookingOpsTaskPriority = (typeof BOOKING_OPS_TASK_PRIORITIES)[number
 export const BOOKING_OPS_TASK_SOURCES = ['readiness_gate', 'manual', 'system'] as const;
 
 export type BookingOpsTaskSource = (typeof BOOKING_OPS_TASK_SOURCES)[number];
+
+export const BOOKING_OPS_TASK_SOURCE_LABELS_RU: Record<BookingOpsTaskSource, string> = {
+  readiness_gate: 'из готовности',
+  manual: 'ручной ввод',
+  system: 'система',
+};
 
 export const BOOKING_OPS_OPEN_TASK_STATUSES: BookingOpsTaskStatus[] = [
   'open',
@@ -58,6 +76,18 @@ export const BOOKING_OPS_TASK_TYPE_LABELS_RU: Record<BookingOpsTaskType, string>
   generate_telegram_drafts: 'Создать черновики Telegram',
   review_telegram_drafts: 'Проверить черновики Telegram',
   manual_send_telegram_drafts: 'Отправить черновики Telegram вручную',
+  checkout_confirmed: 'Подтвердить выезд',
+  cleaning_needed: 'Нужна уборка',
+  cleaning_assigned: 'Уборка назначена',
+  cleaning_in_progress: 'Уборка в процессе',
+  cleaning_done: 'Уборка завершена',
+  unit_inspection_needed: 'Нужен осмотр объекта',
+  unit_ready_for_next_guest: 'Объект готов к заезду',
+  linen_pickup_needed: 'Забрать бельё',
+  linen_replaced: 'Заменить бельё',
+  laundry_dropoff_needed: 'Сдать бельё в прачечную',
+  laundry_return_needed: 'Получить бельё из прачечной',
+  supplies_check_needed: 'Проверить расходники',
 };
 
 export const BOOKING_OPS_TASK_STATUS_LABELS_RU: Record<BookingOpsTaskStatus, string> = {
@@ -131,6 +161,18 @@ export const BOOKING_OPS_TASK_ACTION_LABELS_RU: Partial<Record<BookingOpsTaskTyp
   generate_telegram_drafts: 'Создать черновики Telegram',
   review_telegram_drafts: 'Показать черновики',
   manual_send_telegram_drafts: 'Пакет для ручной отправки',
+  checkout_confirmed: 'Чеклист выезда',
+  cleaning_needed: 'Черновик инструкции по уборке',
+  cleaning_assigned: 'Черновик инструкции по уборке',
+  cleaning_in_progress: 'Черновик инструкции по уборке',
+  cleaning_done: 'Черновик инструкции по уборке',
+  unit_inspection_needed: 'Чеклист осмотра',
+  unit_ready_for_next_guest: 'Подтвердить готовность',
+  linen_pickup_needed: 'Чеклист белья',
+  linen_replaced: 'Чеклист белья',
+  laundry_dropoff_needed: 'Чеклист прачечной',
+  laundry_return_needed: 'Чеклист прачечной',
+  supplies_check_needed: 'Чеклист расходников',
 };
 
 export function normalizeBookingOpsTaskType(value: unknown): BookingOpsTaskType | null {

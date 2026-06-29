@@ -13,11 +13,16 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 text-sm leading-relaxed">
         <div className="flex flex-col md:flex-row justify-between gap-6">
           <div>
-            <p className="font-semibold text-slate-300">ASI Integrations</p>
-            <p className="mt-1">Individual service provider</p>
+            <p className="font-semibold text-slate-300">{ruSite ? 'ASI' : 'ASI Integrations'}</p>
+            <p className="mt-1">
+              {ruSite ? 'Индивидуальный сервисный провайдер' : 'Individual service provider'}
+            </p>
           </div>
           <div className="space-y-1">
-            <p>© {new Date().getFullYear()} ASI Integrations. All rights reserved.</p>
+            <p>
+              © {new Date().getFullYear()} {ruSite ? 'ASI' : 'ASI Integrations'}
+              {ruSite ? '. Все права защищены.' : '. All rights reserved.'}
+            </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               <Link href={privacyHref} className="hover:text-slate-200 transition-colors">
                 {ruSite ? 'Конфиденциальность' : 'Privacy Policy'}
@@ -32,7 +37,7 @@ export function LegalFooter({ ruSite = false }: { ruSite?: boolean }) {
           </div>
           <div className="space-y-1">
             <p>
-              Email:{' '}
+              {ruSite ? 'E-mail' : 'Email'}:{' '}
               <a
                 href={`mailto:${productSupportEmail}`}
                 className="hover:text-slate-200 transition-colors"

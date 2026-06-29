@@ -27,6 +27,7 @@ import {
   BOOKING_OPS_NEXT_ACTION_LABELS_RU,
   BOOKING_OPS_STATUS_LABELS_RU,
   BOOKING_OPS_STATUSES,
+  BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU,
   BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS,
   BOOKING_OPS_TELEGRAM_DRAFT_STATUS_LABELS_RU,
   type BookingOpsCheckinReadinessStatus,
@@ -49,6 +50,7 @@ import {
   BOOKING_OPS_TASK_STATUS_LABELS_RU,
   BOOKING_OPS_TASK_STATUSES,
   BOOKING_OPS_TASK_ACTION_LABELS_RU,
+  BOOKING_OPS_TASK_SOURCE_LABELS_RU,
   type BookingOpsTask,
   type BookingOpsTaskStatus,
 } from '@/lib/booking-ops/task-types';
@@ -62,6 +64,15 @@ import {
   getBookingOpsOperatorGuidance,
   type BookingOpsOperatorGuidance,
 } from '@/lib/booking-ops/operator-guidance';
+import {
+  computeUnitReadinessStatus,
+  isTurnoverTaskType,
+} from '@/lib/booking-ops/turnover';
+import {
+  formatBookingOpsGuestNameDisplay,
+  formatBookingOpsOtaSourceDisplay,
+  formatBookingOpsPropertyLabelDisplay,
+} from '@/lib/booking-ops/display-labels';
 
 type ListResponse = {
   ok: boolean;
@@ -400,6 +411,11 @@ function BookingOpsPageInner() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (selectedId || records.length !== 1) return;
+    selectRecord(records[0]);
+  }, [records, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -814,12 +830,27 @@ function BookingOpsPageInner() {
                   return (
                     <tr
                       key={record.id}
-                      className={`border-t border-slate-100 cursor-pointer ${isSelected ? 'bg-slate-50' : 'hover:bg-slate-50/70'}`}
+                      tabIndex={0}
+                      className={`border-t border-slate-100 cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-slate-100 ring-1 ring-inset ring-slate-300'
+                          : 'hover:bg-slate-100'
+                      }`}
                       onClick={() => selectRecord(record)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          selectRecord(record);
+                        }
+                      }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">{record.guestName || '—'}</div>
-                        <div className="text-slate-500">{record.propertyLabel || record.propertyId || '—'}</div>
+                        <div className="font-medium text-slate-900">
+                          {formatBookingOpsGuestNameDisplay(record.guestName)}
+                        </div>
+                        <div className="text-slate-500">
+                          {formatBookingOpsPropertyLabelDisplay(record.propertyLabel, record.propertyId)}
+                        </div>
                         {record.bookingId ? (
                           <div className="mt-1 text-xs text-emerald-700">Из брони · {record.bookingId}</div>
                         ) : null}
@@ -863,19 +894,35 @@ function BookingOpsPageInner() {
             </table>
           </div>
 
-          {selectedRecord && draft && isOpsAdmin ? (
-            <form onSubmit={onSave} className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          {selectedRecord ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Редактирование</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {formatBookingOpsGuestNameDisplay(selectedRecord.guestName)}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {formatBookingOpsPropertyLabelDisplay(
+                      selectedRecord.propertyLabel,
+                      selectedRecord.propertyId,
+                    )}
+                  </p>
                   {selectedRecord.bookingId ? (
                     <p className="mt-1 text-xs text-emerald-700">
                       Создано из брони · ID: {selectedRecord.bookingId}
-                      {selectedRecord.otaSource ? ` · ${selectedRecord.otaSource}` : ''}
+                      {selectedRecord.otaSource
+                        ? ` · ${formatBookingOpsOtaSourceDisplay(selectedRecord.otaSource)}`
+                        : ''}
+                    </p>
+                  ) : selectedRecord.otaSource ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatBookingOpsOtaSourceDisplay(selectedRecord.otaSource)}
                     </p>
                   ) : null}
                 </div>
-                <span className="text-xs text-slate-500">Обновлено: {formatWhen(selectedRecord.updatedAt)}</span>
+                <span className="text-xs text-slate-500">
+                  Обновлено: {formatWhen(selectedRecord.updatedAt)}
+                </span>
               </div>
 
               {operatorGuidance ? (
@@ -888,8 +935,20 @@ function BookingOpsPageInner() {
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
 
-              <OperationalTasksCard
+              <TurnoverOpsCard
+                record={selectedRecord}
                 tasks={opsTasks}
+                loading={opsTasksLoading}
+                isOpsAdmin={isOpsAdmin}
+                updatingTaskId={updatingTaskId}
+                runningTaskId={runningTaskId}
+                taskActionResults={taskActionResults}
+                onUpdateStatus={(taskId, status) => void onUpdateTaskStatus(taskId, status)}
+                onRunAction={(taskId) => void onRunTaskAction(taskId)}
+              />
+
+              <OperationalTasksCard
+                tasks={opsTasks.filter((task) => !isTurnoverTaskType(task.taskType))}
                 loading={opsTasksLoading}
                 isOpsAdmin={isOpsAdmin}
                 updatingTaskId={updatingTaskId}
@@ -920,7 +979,7 @@ function BookingOpsPageInner() {
                 </div>
               ) : null}
 
-              {selectedRecord.operatorAction ? (
+              {isOpsAdmin && selectedRecord.operatorAction ? (
                 <OperatorActionPanel
                   action={selectedRecord.operatorAction}
                   confirming={confirmingAction}
@@ -954,58 +1013,64 @@ function BookingOpsPageInner() {
                 </div>
               ) : null}
 
-              <RecordFields draft={draft} onChange={setDraft} />
-              <IntakeFields draft={draft} onChange={setDraft} />
+              {isOpsAdmin && draft ? (
+                <form onSubmit={onSave} className="space-y-4 border-t border-slate-200 pt-4">
+                  <h3 className="text-base font-semibold text-slate-900">Редактирование</h3>
 
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={draft.isBlocked}
-                  onChange={(event) => setDraft({ ...draft, isBlocked: event.target.checked })}
-                />
-                Заблокировано
-              </label>
+                  <RecordFields draft={draft} onChange={setDraft} />
+                  <IntakeFields draft={draft} onChange={setDraft} />
 
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">Причина блокировки</span>
-                <input
-                  value={draft.blockerReason}
-                  onChange={(event) => setDraft({ ...draft, blockerReason: event.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={draft.isBlocked}
+                      onChange={(event) => setDraft({ ...draft, isBlocked: event.target.checked })}
+                    />
+                    Заблокировано
+                  </label>
 
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">Ручной следующий шаг</span>
-                <input
-                  value={draft.manualNextAction}
-                  onChange={(event) => setDraft({ ...draft, manualNextAction: event.target.value })}
-                  placeholder="Оставьте пустым для автоматической подсказки"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
+                  <label className="block text-sm">
+                    <span className="font-medium text-slate-700">Причина блокировки</span>
+                    <input
+                      value={draft.blockerReason}
+                      onChange={(event) => setDraft({ ...draft, blockerReason: event.target.value })}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    />
+                  </label>
 
-              <label className="block text-sm">
-                <span className="font-medium text-slate-700">Заметки</span>
-                <textarea
-                  value={draft.notes}
-                  onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
-                  rows={4}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
+                  <label className="block text-sm">
+                    <span className="font-medium text-slate-700">Ручной следующий шаг</span>
+                    <input
+                      value={draft.manualNextAction}
+                      onChange={(event) => setDraft({ ...draft, manualNextAction: event.target.value })}
+                      placeholder="Оставьте пустым для автоматической подсказки"
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    />
+                  </label>
 
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
-              >
-                {saving ? 'Сохранение…' : 'Сохранить'}
-              </button>
-            </form>
-          ) : selectedRecord ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-              Выберите запись для просмотра. Редактирование доступно администратору OPS.
+                  <label className="block text-sm">
+                    <span className="font-medium text-slate-700">Заметки</span>
+                    <textarea
+                      value={draft.notes}
+                      onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                      rows={4}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                    />
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {saving ? 'Сохранение…' : 'Сохранить'}
+                  </button>
+                </form>
+              ) : !isOpsAdmin ? (
+                <p className="border-t border-slate-200 pt-4 text-sm text-slate-500">
+                  Редактирование доступно администратору OPS.
+                </p>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -1169,6 +1234,140 @@ const OPS_TASK_STATUS_TONE: Record<BookingOpsTaskStatus, string> = {
   cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
 };
 
+const UNIT_READINESS_TONE: Record<string, string> = {
+  not_ready: 'border-slate-200 bg-slate-50 text-slate-700',
+  cleaning_pending: 'border-amber-200 bg-amber-50 text-amber-950',
+  linen_pending: 'border-sky-200 bg-sky-50 text-sky-950',
+  inspection_pending: 'border-violet-200 bg-violet-50 text-violet-950',
+  ready: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  blocked: 'border-red-200 bg-red-50 text-red-950',
+};
+
+function TurnoverOpsCard({
+  record,
+  tasks,
+  loading,
+  isOpsAdmin,
+  updatingTaskId,
+  runningTaskId,
+  taskActionResults,
+  onUpdateStatus,
+  onRunAction,
+}: {
+  record: BookingOpsRecord;
+  tasks: BookingOpsTask[];
+  loading: boolean;
+  isOpsAdmin: boolean;
+  updatingTaskId: string | null;
+  runningTaskId: string | null;
+  taskActionResults: Record<string, TaskActionResult>;
+  onUpdateStatus: (taskId: string, status: BookingOpsTaskStatus) => void;
+  onRunAction: (taskId: string) => void;
+}) {
+  const turnoverTasks = tasks.filter((task) => isTurnoverTaskType(task.taskType));
+  const unitStatus = computeUnitReadinessStatus(record, tasks);
+  const openTurnover = turnoverTasks.filter(
+    (task) => task.status === 'open' || task.status === 'in_progress' || task.status === 'blocked',
+  );
+  const showCard = Boolean(record.checkOutAt) && (turnoverTasks.length > 0 || record.readiness?.status === 'completed');
+
+  if (!showCard) return null;
+
+  return (
+    <section className="rounded-lg border border-teal-200 bg-teal-50/50 px-4 py-3 text-sm space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-teal-950">Подготовка объекта</h3>
+          <p className="mt-1 text-xs leading-relaxed text-teal-900/90">
+            Уборка, бельё, осмотр, расходники, заявки мастеру и готовность к следующему заезду.
+          </p>
+        </div>
+        <span
+          className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+            UNIT_READINESS_TONE[unitStatus] ?? UNIT_READINESS_TONE.not_ready
+          }`}
+        >
+          {BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU[unitStatus]}
+        </span>
+      </div>
+
+      {loading ? <p className="text-xs text-teal-800">Загрузка задач…</p> : null}
+
+      {!loading && turnoverTasks.length === 0 ? (
+        <p className="text-xs text-teal-900">
+          Задачи уборки появятся после завершения ручной отправки черновиков и подтверждения выезда.
+        </p>
+      ) : null}
+
+      {openTurnover.length > 0 ? (
+        <ul className="space-y-2">
+          {openTurnover.map((task) => {
+            const actionResult = taskActionResults[task.id];
+            const actionLabel =
+              BOOKING_OPS_TASK_ACTION_LABELS_RU[task.taskType] ?? 'Выполнить действие';
+            return (
+              <li
+                key={task.id}
+                id={`booking-ops-task-${task.id}`}
+                className={`rounded-md border px-3 py-2 ${OPS_TASK_STATUS_TONE[task.status]}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{task.title}</p>
+                    {task.description ? <p className="mt-1 text-xs">{task.description}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isOpsAdmin ? (
+                      <button
+                        type="button"
+                        disabled={runningTaskId === task.id || updatingTaskId === task.id}
+                        onClick={() => onRunAction(task.id)}
+                        className="rounded border border-teal-400 bg-white px-2 py-1 text-xs font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+                      >
+                        {runningTaskId === task.id ? 'Выполняется…' : actionLabel}
+                      </button>
+                    ) : null}
+                    {isOpsAdmin ? (
+                      <select
+                        value={task.status}
+                        disabled={updatingTaskId === task.id}
+                        onChange={(event) =>
+                          onUpdateStatus(task.id, event.target.value as BookingOpsTaskStatus)}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                      >
+                        {BOOKING_OPS_TASK_STATUSES.filter((status) => status !== 'cancelled').map(
+                          (status) => (
+                            <option key={status} value={status}>
+                              {BOOKING_OPS_TASK_STATUS_LABELS_RU[status]}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    ) : null}
+                  </div>
+                </div>
+                {actionResult?.checklist && actionResult.checklist.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 text-xs space-y-0.5">
+                    {actionResult.checklist.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : turnoverTasks.length > 0 ? (
+        <p className="text-xs text-emerald-800">Все задачи подготовки объекта выполнены.</p>
+      ) : null}
+
+      <p className="text-[11px] text-teal-800/80">
+        Черновики и чеклисты только для внутреннего использования. Telegram и email не отправляются.
+      </p>
+    </section>
+  );
+}
+
 function OperationalTasksCard({
   tasks,
   loading,
@@ -1224,7 +1423,9 @@ function OperationalTasksCard({
                   {task.description ? <p className="mt-1 text-xs">{task.description}</p> : null}
                   <p className="mt-1 text-xs opacity-80">
                     {BOOKING_OPS_TASK_STATUS_LABELS_RU[task.status]}
-                    {task.source === 'readiness_gate' ? ' · из готовности' : ''}
+                    {task.source !== 'system'
+                      ? ` · ${BOOKING_OPS_TASK_SOURCE_LABELS_RU[task.source]}`
+                      : ''}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1687,7 +1888,7 @@ function RecordFields({
         />
       </label>
       <label className="block text-sm">
-        <span className="font-medium text-slate-700">Email</span>
+        <span className="font-medium text-slate-700">E-mail</span>
         <input
           value={draft.guestEmail}
           onChange={(event) => onChange({ ...draft, guestEmail: event.target.value })}
