@@ -53,6 +53,22 @@ describe('Booking Ops action templates v1', () => {
     expect(template.isAllowed).toBe(true);
   });
 
+  it('maps pilot dry-run demo values in guest-facing copy text', () => {
+    const template = getBookingOpsActionTemplateById({
+      ...baseRecord,
+      guestName: 'ASI_BOOKING_OPS_PILOT_DRY_RUN_001',
+      propertyLabel: 'Dry Run Apartments',
+      guestPhone: '+79990000111',
+      guestTelegram: 'tg_dry',
+      documentsStatus: 'not_started',
+      opsStatus: 'created',
+    }, 'request_guest_documents');
+    expect(template.messageTemplate).toContain('Тестовый гость');
+    expect(template.messageTemplate).toContain('Тестовый объект');
+    expect(template.messageTemplate).not.toContain('ASI_BOOKING_OPS_PILOT_DRY_RUN');
+    expect(template.messageTemplate).not.toContain('Dry Run Apartments');
+  });
+
   it('creates warnings and placeholders when property data is missing', () => {
     const sparse: BookingOpsRecord = {
       ...baseRecord,

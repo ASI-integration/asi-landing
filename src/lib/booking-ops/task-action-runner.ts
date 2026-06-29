@@ -1,4 +1,8 @@
 import { getBookingOpsActionTemplateById } from './action-templates';
+import {
+  guestNameForGuestFacingCopy,
+  propertyLabelForGuestFacingCopy,
+} from './display-labels';
 import { recordBookingOpsEvent } from './events';
 import {
   canCreateTelegramDraftForAction,
@@ -59,15 +63,11 @@ const TASK_TELEGRAM_DRAFT_ACTION: Partial<
 };
 
 function guestNameLabel(record: BookingOpsRecord): string {
-  const name = String(record.guestName ?? '').trim();
-  return name || '[имя гостя]';
+  return guestNameForGuestFacingCopy(record.guestName);
 }
 
 function propertyLabel(record: BookingOpsRecord): string {
-  const label = String(record.propertyLabel ?? '').trim();
-  if (label) return label;
-  const id = String(record.propertyId ?? '').trim();
-  return id || '[объект]';
+  return propertyLabelForGuestFacingCopy(record.propertyLabel, record.propertyId);
 }
 
 function contractProviderInstruction(record: BookingOpsRecord): string | null {

@@ -70,8 +70,11 @@ import {
 } from '@/lib/booking-ops/turnover';
 import {
   formatBookingOpsGuestNameDisplay,
+  formatBookingOpsMessageTextDisplay,
   formatBookingOpsOtaSourceDisplay,
   formatBookingOpsPropertyLabelDisplay,
+  resolveBookingOpsEditDraftSaveValue,
+  toBookingOpsEditDraftDisplayValue,
 } from '@/lib/booking-ops/display-labels';
 
 type ListResponse = {
@@ -239,13 +242,17 @@ function booleanFromTriState(value: '' | 'true' | 'false'): boolean | null {
 
 function draftFromRecord(record: BookingOpsRecord): EditDraft {
   return {
-    guestName: record.guestName ?? '',
+    guestName: toBookingOpsEditDraftDisplayValue('guestName', record.guestName),
     guestPhone: record.guestPhone ?? '',
     guestEmail: record.guestEmail ?? '',
     guestTelegram: record.guestTelegram ?? '',
     propertyId: record.propertyId ?? '',
-    propertyLabel: record.propertyLabel ?? '',
-    otaSource: record.otaSource ?? '',
+    propertyLabel: toBookingOpsEditDraftDisplayValue(
+      'propertyLabel',
+      record.propertyLabel,
+      record.propertyId,
+    ),
+    otaSource: toBookingOpsEditDraftDisplayValue('otaSource', record.otaSource),
     checkInAt: formatDateInput(record.checkInAt),
     checkOutAt: formatDateInput(record.checkOutAt),
     guestCount: record.guestCount != null ? String(record.guestCount) : '',
@@ -277,7 +284,7 @@ function draftFromRecord(record: BookingOpsRecord): EditDraft {
     isBlocked: record.isBlocked,
     blockerReason: record.blockerReason ?? '',
     manualNextAction: record.manualNextAction ?? '',
-    notes: record.notes ?? '',
+    notes: toBookingOpsEditDraftDisplayValue('notes', record.notes),
   };
 }
 
@@ -615,7 +622,7 @@ function BookingOpsPageInner() {
   }
 
   async function onCopyTelegramDraft(draft: BookingOpsTelegramDraft) {
-    await navigator.clipboard.writeText(draft.messageText);
+    await navigator.clipboard.writeText(formatBookingOpsMessageTextDisplay(draft.messageText));
     if (draft.status !== 'draft') return;
 
     const res = await fetch(`/api/dashboard/booking-ops/${draft.bookingOpsRecordId}/telegram-drafts`, {
@@ -640,18 +647,32 @@ function BookingOpsPageInner() {
     setSaving(true);
     setMessage('');
     try {
+      const original = records.find((item) => item.id === selectedId);
       const res = await fetch(`/api/dashboard/booking-ops/${selectedId}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          guestName: draft.guestName,
+          guestName: resolveBookingOpsEditDraftSaveValue(
+            'guestName',
+            draft.guestName,
+            original?.guestName,
+          ),
           guestPhone: draft.guestPhone,
           guestEmail: draft.guestEmail,
           guestTelegram: draft.guestTelegram,
           propertyId: draft.propertyId,
-          propertyLabel: draft.propertyLabel,
-          otaSource: draft.otaSource,
+          propertyLabel: resolveBookingOpsEditDraftSaveValue(
+            'propertyLabel',
+            draft.propertyLabel,
+            original?.propertyLabel,
+            original?.propertyId,
+          ),
+          otaSource: resolveBookingOpsEditDraftSaveValue(
+            'otaSource',
+            draft.otaSource,
+            original?.otaSource,
+          ),
           checkInAt: draft.checkInAt || null,
           checkOutAt: draft.checkOutAt || null,
           ...intakePayloadFromDraft(draft),
@@ -664,7 +685,7 @@ function BookingOpsPageInner() {
           isBlocked: draft.isBlocked,
           blockerReason: draft.blockerReason,
           manualNextAction: draft.manualNextAction,
-          notes: draft.notes,
+          notes: resolveBookingOpsEditDraftSaveValue('notes', draft.notes, original?.notes),
         }),
       });
       const payload = await readResponseJson<SaveResponse>(res, { ok: false });
@@ -1717,11 +1738,14 @@ function OperatorActionPanel({
   const supportsTelegramDraft = (
     BOOKING_OPS_TELEGRAM_DRAFT_ACTIONS as readonly string[]
   ).includes(action.actionId);
+  const guestMessageText = action.messageTemplate
+    ? formatBookingOpsMessageTextDisplay(action.messageTemplate)
+    : null;
 
   async function copyMessage() {
-    if (!action.messageTemplate) return;
+    if (!guestMessageText) return;
     try {
-      await navigator.clipboard.writeText(action.messageTemplate);
+      await navigator.clipboard.writeText(guestMessageText);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -1778,7 +1802,7 @@ function OperatorActionPanel({
         </div>
       ) : null}
 
-      {action.messageTemplate ? (
+      {guestMessageText ? (
         <div>
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium">Текст для гостя</p>
@@ -1791,12 +1815,12 @@ function OperatorActionPanel({
             </button>
           </div>
           <pre className="mt-2 whitespace-pre-wrap rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs leading-relaxed">
-            {action.messageTemplate}
+            {guestMessageText}
           </pre>
         </div>
       ) : null}
 
-      {supportsTelegramDraft && action.messageTemplate ? (
+      {supportsTelegramDraft && guestMessageText ? (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-3 text-sky-950">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -1824,7 +1848,7 @@ function OperatorActionPanel({
                 </p>
               )}
               <pre className="whitespace-pre-wrap rounded-md border border-sky-200 bg-white px-3 py-2 text-xs leading-relaxed">
-                {telegramDraft.messageText}
+                {formatBookingOpsMessageTextDisplay(telegramDraft.messageText)}
               </pre>
               <button
                 type="button"

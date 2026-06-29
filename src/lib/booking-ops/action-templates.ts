@@ -1,4 +1,8 @@
 import {
+  guestNameForGuestFacingCopy,
+  propertyLabelForGuestFacingCopy,
+} from './display-labels';
+import {
   buildBookingOpsAutomationPatch,
   evaluateBookingOpsAutomation,
   hasBookingOpsManualOverride,
@@ -81,16 +85,11 @@ function wouldDowngradeRank<T extends string>(
 }
 
 function guestNameLabel(record: BookingOpsRecord): string {
-  const name = String(record.guestName ?? '').trim();
-  return name || '[имя гостя]';
+  return guestNameForGuestFacingCopy(record.guestName);
 }
 
 function propertyLabel(record: BookingOpsRecord): string {
-  const label = String(record.propertyLabel ?? '').trim();
-  if (label) return label;
-  const id = String(record.propertyId ?? '').trim();
-  if (id) return id;
-  return '[объект]';
+  return propertyLabelForGuestFacingCopy(record.propertyLabel, record.propertyId);
 }
 
 function formatRuDate(value: string | null, placeholder: string): string {
@@ -396,7 +395,9 @@ const ACTION_SPECS: Record<BookingOpsOperatorActionId, ActionSpec> = {
     messageTemplate: (record) => {
       const knowledge = record.propertyKnowledge;
       const name = guestNameLabel(record);
-      const property = knowledge?.propertyLabel ?? propertyLabel(record);
+      const property = knowledge?.propertyLabel
+        ? propertyLabelForGuestFacingCopy(knowledge.propertyLabel, knowledge.propertyId)
+        : propertyLabel(record);
       const checkIn = formatRuDate(record.checkInAt, '[дата заезда]');
       const checkOut = formatRuDate(record.checkOutAt, '[дата выезда]');
       const guestNotes = knowledge?.publicGuestNotes
