@@ -58,6 +58,10 @@ import {
 } from '@/lib/booking-ops/readiness';
 import type { BookingOpsTaskCompletionEffectResult } from '@/lib/booking-ops/task-completion-effects';
 import type { BookingOpsEvent } from '@/lib/booking-ops/events';
+import {
+  getBookingOpsOperatorGuidance,
+  type BookingOpsOperatorGuidance,
+} from '@/lib/booking-ops/operator-guidance';
 
 type ListResponse = {
   ok: boolean;
@@ -357,6 +361,19 @@ function BookingOpsPageInner() {
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedId) ?? null,
     [records, selectedId],
+  );
+
+  const operatorGuidance = useMemo(
+    () => selectedRecord?.readiness
+      ? getBookingOpsOperatorGuidance(
+          selectedRecord,
+          selectedRecord.readiness,
+          opsTasks,
+          timelineEvents,
+          telegramDrafts,
+        )
+      : null,
+    [selectedRecord, opsTasks, timelineEvents, telegramDrafts],
   );
 
   const load = useCallback(async () => {
@@ -861,6 +878,10 @@ function BookingOpsPageInner() {
                 <span className="text-xs text-slate-500">Обновлено: {formatWhen(selectedRecord.updatedAt)}</span>
               </div>
 
+              {operatorGuidance ? (
+                <OperatorGuidanceCard guidance={operatorGuidance} tasks={opsTasks} />
+              ) : null}
+
               {selectedRecord.readiness ? (
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
@@ -994,6 +1015,66 @@ function BookingOpsPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+function OperatorGuidanceCard({
+  guidance,
+  tasks,
+}: {
+  guidance: BookingOpsOperatorGuidance;
+  tasks: BookingOpsTask[];
+}) {
+  const task = tasks.find((item) =>
+    item.taskType === guidance.recommendedTaskType
+    && (item.status === 'open' || item.status === 'in_progress' || item.status === 'blocked'),
+  );
+
+  function pointToTask() {
+    if (!task) return;
+    document.getElementById(`booking-ops-task-${task.id}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }
+
+  return (
+    <section className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-950">
+      <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Следующий шаг</p>
+      <p className="mt-1 font-semibold">{guidance.title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-indigo-900">{guidance.description}</p>
+      {guidance.blockingReason ? (
+        <p className="mt-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-900">
+          Блокировка: {guidance.blockingReason}
+        </p>
+      ) : null}
+      <ol className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {guidance.progress.map((item) => (
+          <li
+            key={item.stage}
+            className={
+              item.status === 'completed'
+                ? 'text-emerald-700'
+                : item.status === 'current'
+                  ? 'font-semibold text-indigo-900'
+                  : 'text-slate-400'
+            }
+          >
+            {item.status === 'completed' ? '✓' : item.status === 'current' ? '●' : '○'} {item.label}
+          </li>
+        ))}
+      </ol>
+      {guidance.recommendedActionLabel ? (
+        <button
+          type="button"
+          disabled={!task}
+          onClick={pointToTask}
+          className="mt-3 rounded border border-indigo-300 bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-900 hover:bg-indigo-100 disabled:cursor-default disabled:opacity-60"
+        >
+          {task ? `К задаче: ${guidance.recommendedActionLabel}` : guidance.recommendedActionLabel}
+        </button>
+      ) : null}
+    </section>
   );
 }
 
@@ -1134,6 +1215,7 @@ function OperationalTasksCard({
             return (
             <li
               key={task.id}
+              id={`booking-ops-task-${task.id}`}
               className={`rounded-md border px-3 py-2 ${OPS_TASK_STATUS_TONE[task.status]}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
