@@ -102,6 +102,7 @@ function baseRecord(overrides: Partial<BookingOpsRecord> = {}): BookingOpsRecord
     depositStatus: 'not_started',
     mvdStatus: 'not_required',
     checkinReadinessStatus: 'not_started',
+    unitReadinessStatus: 'not_ready',
     notes: null,
     guestCount: 2,
     paymentStatus: 'paid',

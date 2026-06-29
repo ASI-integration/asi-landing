@@ -13,6 +13,8 @@ export const BOOKING_OPS_EVENT_TYPES = [
   'task_status_changed',
   'completion_effect_applied',
   'completion_effect_suggested',
+  'turnover_started',
+  'unit_readiness_changed',
 ] as const;
 
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
@@ -74,6 +76,8 @@ const SAFE_METADATA_KEYS = new Set([
   'taskId',
   'taskStatus',
   'taskType',
+  'unitReadinessStatus',
+  'previousUnitReadinessStatus',
 ]);
 
 function text(value: unknown, maxLength = 500): string {

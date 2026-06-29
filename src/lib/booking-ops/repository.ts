@@ -23,6 +23,7 @@ import {
   normalizeBookingOpsMvdDataStatus,
   normalizeBookingOpsMvdStatus,
   normalizeBookingOpsStatus,
+  normalizeBookingOpsUnitReadinessStatus,
   DEFAULT_BOOKING_OPS_INTAKE,
 } from './types';
 
@@ -47,6 +48,7 @@ type BookingOpsRow = {
   deposit_status: string;
   mvd_status: string;
   checkin_readiness_status: string;
+  unit_readiness_status: string;
   notes: string | null;
   guest_count: number | null;
   payment_status: string | null;
@@ -151,6 +153,7 @@ function mapRow(row: BookingOpsRow): BookingOpsRecord {
     depositStatus: normalizeBookingOpsDepositStatus(row.deposit_status),
     mvdStatus: normalizeBookingOpsMvdStatus(row.mvd_status),
     checkinReadinessStatus: normalizeBookingOpsCheckinReadinessStatus(row.checkin_readiness_status),
+    unitReadinessStatus: normalizeBookingOpsUnitReadinessStatus(row.unit_readiness_status),
     notes: text(row.notes) || null,
     ...DEFAULT_BOOKING_OPS_INTAKE,
     guestCount: row.guest_count ?? null,
@@ -253,6 +256,7 @@ export async function createBookingOpsRecord(
     deposit_status: normalizeBookingOpsDepositStatus(input.depositStatus),
     mvd_status: normalizeBookingOpsMvdStatus(input.mvdStatus),
     checkin_readiness_status: normalizeBookingOpsCheckinReadinessStatus(input.checkinReadinessStatus),
+    unit_readiness_status: normalizeBookingOpsUnitReadinessStatus(input.unitReadinessStatus),
     notes: text(input.notes) || null,
     guest_count: input.guestCount ?? null,
     payment_status: text(input.paymentStatus) || null,
@@ -360,6 +364,11 @@ export async function updateBookingOpsRecord(
       input.checkinReadinessStatus,
     );
   }
+  if (input.unitReadinessStatus !== undefined) {
+    patch.unit_readiness_status = normalizeBookingOpsUnitReadinessStatus(
+      input.unitReadinessStatus,
+    );
+  }
   if (input.notes !== undefined) patch.notes = text(input.notes) || null;
 
   if (input.guestCount !== undefined) patch.guest_count = input.guestCount ?? null;
@@ -429,7 +438,7 @@ export async function updateBookingOpsRecord(
     ]);
     const statusKeys = new Set([
       'ops_status', 'documents_status', 'contract_status', 'deposit_status', 'mvd_status',
-      'checkin_readiness_status', 'manual_next_action', 'is_blocked', 'blocker_reason',
+      'checkin_readiness_status', 'unit_readiness_status', 'manual_next_action', 'is_blocked', 'blocker_reason',
     ]);
     const groups = [
       identityKeys.size && changedKeys.some((key) => identityKeys.has(key)) ? 'booking_details' : null,

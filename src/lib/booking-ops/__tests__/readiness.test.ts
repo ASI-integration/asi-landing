@@ -44,6 +44,7 @@ function readyBooking(overrides: Partial<BookingOpsRecord> = {}): BookingOpsReco
     depositStatus: 'confirmed',
     mvdStatus: 'not_required',
     checkinReadinessStatus: 'in_progress',
+    unitReadinessStatus: 'not_ready',
     notes: null,
     guestCount: 2,
     paymentStatus: 'paid',

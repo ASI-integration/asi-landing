@@ -27,6 +27,7 @@ const baseRecord: BookingOpsRecord = {
   depositStatus: 'not_started',
   mvdStatus: 'not_required',
   checkinReadinessStatus: 'not_started',
+  unitReadinessStatus: 'not_ready',
   notes: 'Заметка оператора',
   createdAt: '2026-06-27T08:00:00.000Z',
   updatedAt: '2026-06-27T08:00:00.000Z',

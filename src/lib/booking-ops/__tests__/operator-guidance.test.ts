@@ -21,7 +21,7 @@ function readyBooking(overrides: Partial<BookingOpsRecord> = {}): BookingOpsReco
     checkInAt: '2026-08-01T14:00:00.000Z', checkOutAt: '2026-08-03T11:00:00.000Z',
     opsStatus: 'deposit_confirmed', manualNextAction: null, isBlocked: false, blockerReason: null,
     documentsStatus: 'verified', contractStatus: 'signed', depositStatus: 'confirmed',
-    mvdStatus: 'not_required', checkinReadinessStatus: 'in_progress', notes: null,
+    mvdStatus: 'not_required', checkinReadinessStatus: 'in_progress', unitReadinessStatus: 'not_ready', notes: null,
     guestCount: 2, paymentStatus: 'paid', documentRequired: true, documentCollected: true,
     documentVerificationStatus: 'verified', documentNotes: null, contractRequired: true,
     contractProvider: 'manual', contractIntakeStatus: 'signed',

@@ -43,6 +43,7 @@ const baseRecord: BookingOpsRecord = {
   depositStatus: 'not_started',
   mvdStatus: 'not_required',
   checkinReadinessStatus: 'not_started',
+  unitReadinessStatus: 'not_ready',
   notes: 'Не менять заметку оператора',
   guestCount: 2,
   paymentStatus: 'paid',
