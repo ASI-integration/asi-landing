@@ -28,6 +28,8 @@ export type GuestIntakeSubmission = {
   contractConfirmed?: boolean;
   depositConfirmed?: boolean;
   mvdDataPresent?: boolean;
+  guestCannotProceed?: boolean;
+  fallbackReason?: string | null;
 };
 
 export type GuestIntakeStatePlan = {
@@ -92,7 +94,9 @@ function mvdComplete(record: BookingOpsRecord): boolean {
 function documentsComplete(record: BookingOpsRecord): boolean {
   return (
     record.documentRequired === false
+    || record.documentVerificationStatus === 'uploaded'
     || record.documentVerificationStatus === 'verified'
+    || record.documentsStatus === 'received'
     || record.documentsStatus === 'verified'
   );
 }
@@ -136,12 +140,15 @@ export function evaluateGuestIntakeState(input: {
 
   if (!documentsComplete(record)) {
     missing.add('documents');
-    if (record.documentVerificationStatus === 'uploaded' || record.documentsStatus === 'received') {
-      validationErrors.push('Проверить документы вручную');
-    }
     if (record.documentVerificationStatus === 'rejected' || record.documentsStatus === 'problem') {
       validationErrors.push('Проверить документы вручную');
     }
+  } else if (
+    record.documentVerificationStatus === 'uploaded'
+    || record.documentsStatus === 'received'
+  ) {
+    collected.documents = true;
+    validationErrors.push('Проверить документы вручную');
   } else {
     collected.documents = true;
   }
@@ -209,7 +216,14 @@ export function buildBookingOpsPatchFromGuestSubmission(
     if (!/^\+?[0-9 ()-]{7,24}$/.test(phone)) validationErrors.push('Телефон выглядит некорректно');
     else patch.guestPhone = phone;
   }
-  if (submission.email !== undefined) patch.guestEmail = text(submission.email) || null;
+  if (submission.email !== undefined) {
+    const email = text(submission.email);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      validationErrors.push('E-mail выглядит некорректно');
+    } else {
+      patch.guestEmail = email || null;
+    }
+  }
   if (submission.telegram !== undefined) patch.guestTelegram = text(submission.telegram) || null;
   if (submission.arrivalDetails !== undefined) patch.documentNotes = 'Детали заезда получены';
   if (submission.documentAttachmentRefs !== undefined) {
@@ -218,10 +232,23 @@ export function buildBookingOpsPatchFromGuestSubmission(
     } else {
       patch.documentCollected = true;
       patch.documentVerificationStatus = 'uploaded';
+      patch.documentsStatus = 'received';
     }
   }
-  if (submission.contractConfirmed === true) patch.contractIntakeStatus = 'signed';
-  if (submission.depositConfirmed === true) patch.depositIntakeStatus = 'received';
-  if (submission.mvdDataPresent === true) patch.mvdDataStatus = 'collected';
+  if (submission.contractConfirmed === true) {
+    patch.contractIntakeStatus = 'signed';
+    patch.contractStatus = 'signed';
+  }
+  if (submission.depositConfirmed === true) {
+    patch.depositIntakeStatus = 'received';
+    patch.depositStatus = 'confirmed';
+  }
+  if (submission.mvdDataPresent === true) {
+    patch.mvdDataStatus = 'collected';
+    patch.mvdStatus = 'prepared';
+  }
+  if (submission.guestCannotProceed === true) {
+    validationErrors.push(text(submission.fallbackReason) || 'Гость не может завершить ввод данных');
+  }
   return { patch, validationErrors };
 }

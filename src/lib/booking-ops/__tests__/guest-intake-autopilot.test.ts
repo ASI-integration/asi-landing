@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  sanitizeBookingOpsEventMetadata,
+  type BookingOpsEventType,
+} from '../events';
+import {
   buildBookingOpsPatchFromGuestSubmission,
   evaluateGuestIntakeState,
 } from '../guest-intake-state';
@@ -71,6 +75,72 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
     expect(state.generatedMessage).toContain('Документы');
   });
 
+  it('valid web intake submission completes missing document and contact fields', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({
+      guestName: 'Анна Смирнова',
+      phone: '+79990000003',
+      email: 'guest@example.com',
+      documentAttachmentRefs: ['safe-doc-ref-1'],
+    });
+    expect(result.validationErrors).toHaveLength(0);
+    expect(result.patch).toMatchObject({
+      guestName: 'Анна Смирнова',
+      guestPhone: '+79990000003',
+      guestEmail: 'guest@example.com',
+      documentsStatus: 'received',
+      documentCollected: true,
+      documentVerificationStatus: 'uploaded',
+    });
+  });
+
+  it('partial submission leaves intake partially completed', () => {
+    const state = evaluateGuestIntakeState({
+      record: booking({
+        documentsStatus: 'requested',
+        documentCollected: false,
+        documentVerificationStatus: 'missing',
+        contractStatus: 'sent',
+        contractIntakeStatus: 'sent',
+      }),
+      existingSession: {
+        id: 'guest-intake-partial',
+        bookingOpsRecordId: 'ops-guest-intake-v1',
+        bookingId: 'reservation-guest-intake-v1',
+        intakeStatus: 'waiting_for_guest',
+        missingFields: ['documents', 'contract_confirmation'],
+        collectedFields: {},
+        validationErrors: [],
+        channel: 'web',
+        guestContactRef: '+79990000002',
+        lastGuestActivityAt: '2026-06-29T08:30:00.000Z',
+        fallbackReason: null,
+        generatedMessage: null,
+        publicToken: 'token',
+        publicIntakeUrl: 'https://asi-global.ru/guest-intake/token',
+        tokenCreatedAt: '2026-06-29T08:00:00.000Z',
+        tokenOpenedAt: null,
+        createdAt: '2026-06-29T08:00:00.000Z',
+        updatedAt: '2026-06-29T08:00:00.000Z',
+      },
+    });
+    expect(state.intakeStatus).toBe('partially_completed');
+    expect(state.missingFields).toContain('documents');
+  });
+
+  it('missing required document attachment creates validation needed', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({ documentAttachmentRefs: [] });
+    expect(result.validationErrors).toContain('Проверить документы вручную');
+  });
+
+  it('invalid phone and email create validation errors', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({
+      phone: 'abc',
+      email: 'bad-email',
+    });
+    expect(result.validationErrors).toContain('Телефон выглядит некорректно');
+    expect(result.validationErrors).toContain('E-mail выглядит некорректно');
+  });
+
   it('creates a deposit intake need when deposit is missing', () => {
     const state = evaluateGuestIntakeState({
       record: booking({ depositStatus: 'requested', depositIntakeStatus: 'requested' }),
@@ -104,10 +174,29 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
       guestPhone: '+79990000003',
       documentCollected: true,
       documentVerificationStatus: 'uploaded',
+      documentsStatus: 'received',
       contractIntakeStatus: 'signed',
+      contractStatus: 'signed',
       depositIntakeStatus: 'received',
+      depositStatus: 'confirmed',
       mvdDataStatus: 'collected',
+      mvdStatus: 'prepared',
     });
+  });
+
+  it('MVD required plus complete MVD data advances MVD status', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({ mvdDataPresent: true });
+    expect(result.patch).toMatchObject({ mvdDataStatus: 'collected', mvdStatus: 'prepared' });
+  });
+
+  it('contract confirmation advances contract status', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({ contractConfirmed: true });
+    expect(result.patch).toMatchObject({ contractIntakeStatus: 'signed', contractStatus: 'signed' });
+  });
+
+  it('deposit confirmation advances deposit status', () => {
+    const result = buildBookingOpsPatchFromGuestSubmission({ depositConfirmed: true });
+    expect(result.patch).toMatchObject({ depositIntakeStatus: 'received', depositStatus: 'confirmed' });
   });
 
   it('invalid or missing attachments require validation without storing raw document values', () => {
@@ -136,6 +225,10 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
         lastGuestActivityAt: '2026-06-25T08:00:00.000Z',
         fallbackReason: null,
         generatedMessage: null,
+        publicToken: 'token',
+        publicIntakeUrl: 'https://asi-global.ru/guest-intake/token',
+        tokenCreatedAt: '2026-06-25T08:00:00.000Z',
+        tokenOpenedAt: null,
         createdAt: '2026-06-25T08:00:00.000Z',
         updatedAt: '2026-06-25T08:00:00.000Z',
       },
@@ -143,6 +236,33 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
     });
     expect(state.intakeStatus).toBe('fallback_required');
     expect(state.fallbackReason).toBe('Гость не завершил ввод данных');
+  });
+
+  it('completed intake supersedes corresponding communication intents', () => {
+    const existing = [{
+      id: 'comm-documents',
+      bookingOpsRecordId: 'ops-guest-intake-v1',
+      bookingId: 'reservation-guest-intake-v1',
+      relatedTaskId: null,
+      actorType: 'guest' as const,
+      actorLabel: 'Анна Смирнова',
+      purpose: 'request_guest_documents' as const,
+      channel: 'telegram' as const,
+      status: 'draft_ready' as const,
+      messageText: 'Пришлите документы',
+      messageTemplateKey: 'guest.documents_request.v1',
+      metadata: {},
+      createdAt: '2026-06-29T08:00:00.000Z',
+      updatedAt: '2026-06-29T08:00:00.000Z',
+      supersededAt: null,
+    }];
+    const plan = planBookingOpsCommunications({
+      record: booking(),
+      tasks: [],
+      existingCommunications: existing,
+    });
+    expect(plan.toSupersede).toHaveLength(1);
+    expect(plan.toSupersede[0].purpose).toBe('request_guest_documents');
   });
 
   it('fallback integrates with communication intents without duplicate active intents', () => {
@@ -160,6 +280,10 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
         lastGuestActivityAt: null,
         fallbackReason: 'Требуется ручная помощь гостю',
         generatedMessage: null,
+        publicToken: 'token',
+        publicIntakeUrl: 'https://asi-global.ru/guest-intake/token',
+        tokenCreatedAt: '2026-06-29T08:00:00.000Z',
+        tokenOpenedAt: null,
         createdAt: '2026-06-29T08:00:00.000Z',
         updatedAt: '2026-06-29T08:00:00.000Z',
       },
@@ -190,11 +314,37 @@ describe('Booking Ops Guest Intake Autopilot v1', () => {
     expect(second.toCreate).toHaveLength(0);
   });
 
+  it('timeline events allow inbound intake event types and redact raw document data', () => {
+    const eventTypes: BookingOpsEventType[] = [
+      'guest_intake_link_opened',
+      'guest_intake_submission_received',
+      'guest_intake_validation_failed',
+      'guest_intake_partially_completed',
+      'guest_intake_completed',
+      'guest_intake_fallback_required',
+    ];
+    expect(eventTypes).toContain('guest_intake_submission_received');
+    const metadata = sanitizeBookingOpsEventMetadata({
+      guestIntakeSessionId: 'session-1',
+      guestIntakeStatus: 'validation_needed',
+      validationStatus: 'validation_needed',
+      documentNumber: '123456789',
+      passport: 'raw-passport',
+    });
+    expect(JSON.stringify(metadata)).not.toContain('123456789');
+    expect(JSON.stringify(metadata)).not.toContain('raw-passport');
+  });
+
   it('does not include uncontrolled Telegram or email send calls', () => {
     const stateSource = readFileSync('src/lib/booking-ops/guest-intake-state.ts', 'utf8');
     const autopilotSource = readFileSync('src/lib/booking-ops/guest-intake-autopilot.ts', 'utf8');
-    expect(`${stateSource}\n${autopilotSource}`).not.toContain('sendTelegramMessage');
-    expect(`${stateSource}\n${autopilotSource}`).not.toContain('api.telegram.org');
-    expect(`${stateSource}\n${autopilotSource}`).not.toContain('sendMessage');
+    const inboundSource = readFileSync('src/lib/booking-ops/guest-intake-inbound.ts', 'utf8');
+    const routeSource = readFileSync('src/app/api/guest-intake/[token]/route.ts', 'utf8');
+    const pageSource = readFileSync('src/app/guest-intake/[token]/page.tsx', 'utf8');
+    const combined = `${stateSource}\n${autopilotSource}\n${inboundSource}\n${routeSource}\n${pageSource}`;
+    expect(combined).not.toContain('sendTelegramMessage');
+    expect(combined).not.toContain('api.telegram.org');
+    expect(combined).not.toContain('sendMessage');
+    expect(combined).not.toContain('sendMail');
   });
 });

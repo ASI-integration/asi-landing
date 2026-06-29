@@ -24,6 +24,10 @@ export const BOOKING_OPS_EVENT_TYPES = [
   'guest_intake_completed',
   'guest_intake_fallback_required',
   'guest_intake_waiting_for_guest',
+  'guest_intake_link_opened',
+  'guest_intake_submission_received',
+  'guest_intake_validation_failed',
+  'guest_intake_partially_completed',
 ] as const;
 
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
@@ -95,6 +99,8 @@ const SAFE_METADATA_KEYS = new Set([
   'guestIntakeSessionId',
   'guestIntakeStatus',
   'fallbackReason',
+  'submissionSource',
+  'validationStatus',
 ]);
 
 function text(value: unknown, maxLength = 500): string {

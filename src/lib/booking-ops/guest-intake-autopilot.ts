@@ -25,6 +25,9 @@ type GuestIntakeRow = {
   last_guest_activity_at: string | null;
   fallback_reason: string | null;
   generated_message: string | null;
+  public_token?: string | null;
+  token_created_at?: string | null;
+  token_opened_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +37,7 @@ function text(value: unknown): string {
 }
 
 function mapRow(row: GuestIntakeRow): BookingOpsGuestIntakeSession {
+  const publicToken = text(row.public_token) || null;
   return {
     id: row.id,
     bookingOpsRecordId: row.booking_ops_record_id,
@@ -47,9 +51,40 @@ function mapRow(row: GuestIntakeRow): BookingOpsGuestIntakeSession {
     lastGuestActivityAt: row.last_guest_activity_at,
     fallbackReason: text(row.fallback_reason) || null,
     generatedMessage: text(row.generated_message) || null,
+    publicToken,
+    publicIntakeUrl: publicToken ? buildGuestIntakeUrl(publicToken) : null,
+    tokenCreatedAt: row.token_created_at ?? null,
+    tokenOpenedAt: row.token_opened_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export function buildGuestIntakeUrl(token: string): string {
+  const origin = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'https://asi-global.ru')
+    .replace(/\/$/, '');
+  return `${origin}/guest-intake/${encodeURIComponent(token)}`;
+}
+
+export function mapGuestIntakeSessionRow(row: GuestIntakeRow): BookingOpsGuestIntakeSession {
+  return mapRow(row);
+}
+
+export async function ensureGuestIntakePublicToken(
+  session: BookingOpsGuestIntakeSession,
+): Promise<BookingOpsGuestIntakeSession> {
+  if (session.publicToken) return session;
+  const token = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '').slice(0, 16);
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('booking_ops_guest_intake_sessions')
+    .update({ public_token: token, token_created_at: now, updated_at: now })
+    .eq('id', session.id)
+    .is('public_token', null)
+    .select('*')
+    .maybeSingle();
+  if (error || !data) return session;
+  return mapRow(data as GuestIntakeRow);
 }
 
 export async function getGuestIntakeSessionForRecord(
@@ -195,14 +230,16 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
         .single();
       if (error || !data) return { ok: false, plan, error: error?.message ?? 'guest_intake_create_failed' };
       const session = mapRow(data as GuestIntakeRow);
-      await recordIntakeEvent({ recordId: record.id, session, created: true });
-      await ensureFallbackTask(record, session);
-      return { ok: true, session, plan };
+      const withToken = await ensureGuestIntakePublicToken(session);
+      await recordIntakeEvent({ recordId: record.id, session: withToken, created: true });
+      await ensureFallbackTask(record, withToken);
+      return { ok: true, session: withToken, plan };
     }
 
     if (!hasPlanChanged(existing, plan)) {
       await ensureFallbackTask(record, existing);
-      return { ok: true, session: existing, plan };
+      const withToken = await ensureGuestIntakePublicToken(existing);
+      return { ok: true, session: withToken, plan };
     }
 
     const { data, error } = await supabase
@@ -223,9 +260,10 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
       .single();
     if (error || !data) return { ok: false, plan, error: error?.message ?? 'guest_intake_update_failed' };
     const session = mapRow(data as GuestIntakeRow);
-    await recordIntakeEvent({ recordId: record.id, session, created: false });
-    await ensureFallbackTask(record, session);
-    return { ok: true, session, plan };
+    const withToken = await ensureGuestIntakePublicToken(session);
+    await recordIntakeEvent({ recordId: record.id, session: withToken, created: false });
+    await ensureFallbackTask(record, withToken);
+    return { ok: true, session: withToken, plan };
   } catch (error) {
     return { ok: false, plan, error: error instanceof Error ? error.message : 'guest_intake_sync_failed' };
   }

@@ -1058,7 +1058,12 @@ function BookingOpsPageInner() {
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
 
-              <GuestIntakeCard session={selectedRecord.guestIntake ?? null} />
+              <GuestIntakeCard
+                session={selectedRecord.guestIntake ?? null}
+                isOpsAdmin={isOpsAdmin}
+                recomputing={recomputingPreparation}
+                onRecompute={() => void onRecomputePreparation()}
+              />
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
 
@@ -1434,20 +1439,71 @@ function BookingOpsTimelineCard({
   );
 }
 
-function GuestIntakeCard({ session }: { session: BookingOpsGuestIntakeSession | null }) {
+function GuestIntakeCard({
+  session,
+  isOpsAdmin,
+  recomputing,
+  onRecompute,
+}: {
+  session: BookingOpsGuestIntakeSession | null;
+  isOpsAdmin: boolean;
+  recomputing: boolean;
+  onRecompute: () => void;
+}) {
   const missing = session?.missingFields ?? [];
+  const [copied, setCopied] = useState(false);
+  const collected = Object.entries(session?.collectedFields ?? {})
+    .filter(([, value]) => Boolean(value))
+    .map(([field]) => GUEST_INTAKE_FIELD_LABELS_RU[field] ?? field);
+
+  async function copyLink() {
+    if (!session?.publicIntakeUrl) return;
+    try {
+      await navigator.clipboard.writeText(session.publicIntakeUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-800">Данные гостя</h3>
-        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
-          {session ? BOOKING_OPS_GUEST_INTAKE_STATUS_LABELS_RU[session.intakeStatus] : 'Не начато'}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700">
+            {session ? BOOKING_OPS_GUEST_INTAKE_STATUS_LABELS_RU[session.intakeStatus] : 'Не начато'}
+          </span>
+          <button
+            type="button"
+            onClick={onRecompute}
+            disabled={!isOpsAdmin || recomputing}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+          >
+            {recomputing ? 'Пересчёт…' : 'Пересчитать данные гостя'}
+          </button>
+        </div>
       </div>
       {!session ? (
         <p className="mt-2 text-slate-600">Сбор данных появится после пересчёта подготовки.</p>
       ) : (
         <div className="mt-3 space-y-3">
+          {session.publicIntakeUrl ? (
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-slate-700">Ссылка для гостя</p>
+                <button
+                  type="button"
+                  onClick={() => void copyLink()}
+                  className="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  {copied ? 'Скопировано' : 'Скопировать ссылку гостю'}
+                </button>
+              </div>
+              <p className="mt-1 break-all text-xs text-slate-600">{session.publicIntakeUrl}</p>
+            </div>
+          ) : null}
           {missing.length > 0 ? (
             <div>
               <p className="font-medium text-slate-700">Не хватает</p>
@@ -1465,6 +1521,31 @@ function GuestIntakeCard({ session }: { session: BookingOpsGuestIntakeSession | 
           ) : (
             <p className="text-emerald-800">Обязательные данные собраны.</p>
           )}
+          {collected.length > 0 ? (
+            <div>
+              <p className="font-medium text-slate-700">Получено</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {collected.map((field) => (
+                  <span
+                    key={field}
+                    className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-emerald-900"
+                  >
+                    {field}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {session.validationErrors.length > 0 ? (
+            <div className="rounded-md border border-amber-200 bg-white px-3 py-2 text-amber-900">
+              <p className="font-medium">Ошибки проверки</p>
+              <ul className="mt-1 list-disc pl-5">
+                {session.validationErrors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-2">
             <p>
               Канал:{' '}
@@ -1475,6 +1556,7 @@ function GuestIntakeCard({ session }: { session: BookingOpsGuestIntakeSession | 
                   : 'Ручной'}
             </p>
             <p>Активность: {formatWhen(session.lastGuestActivityAt ?? session.updatedAt)}</p>
+            <p>Ссылка открыта: {formatWhen(session.tokenOpenedAt)}</p>
           </div>
           {session.fallbackReason ? (
             <p className="rounded-md border border-rose-200 bg-white px-3 py-2 text-rose-900">

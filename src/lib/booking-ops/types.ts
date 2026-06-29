@@ -542,6 +542,10 @@ export type BookingOpsGuestIntakeSession = {
   lastGuestActivityAt: string | null;
   fallbackReason: string | null;
   generatedMessage: string | null;
+  publicToken: string | null;
+  publicIntakeUrl: string | null;
+  tokenCreatedAt: string | null;
+  tokenOpenedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
