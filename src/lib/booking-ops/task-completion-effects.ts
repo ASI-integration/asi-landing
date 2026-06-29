@@ -162,7 +162,10 @@ export function applyBookingOpsTaskCompletionEffect(
 
     case 'collect_mvd_data':
       return advances(record.mvdDataStatus, 'collected', MVD_ORDER)
-        ? result({ mvdDataStatus: 'collected' }, 'Данные МВД отмечены как собранные.')
+        ? result(
+            { mvdStatus: 'required', mvdDataStatus: 'collected' },
+            'Данные МВД отмечены как собранные.',
+          )
         : result({}, 'Статус данных МВД уже находится на более позднем этапе.');
 
     case 'prepare_mvd_report':

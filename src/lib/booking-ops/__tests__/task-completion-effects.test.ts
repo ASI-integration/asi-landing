@@ -159,6 +159,7 @@ describe('applyBookingOpsTaskCompletionEffect', () => {
     ['send_contract_manual', 'contractStatus', 'sent'],
     ['request_deposit', 'depositStatus', 'requested'],
     ['confirm_deposit', 'depositStatus', 'confirmed'],
+    ['collect_mvd_data', 'mvdStatus', 'required'],
     ['prepare_mvd_report', 'mvdStatus', 'prepared'],
     ['submit_mvd_report', 'mvdStatus', 'submitted'],
   ] as const)('%s completion keeps legacy %s in sync', async (taskType, field, value) => {
