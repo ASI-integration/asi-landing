@@ -37,6 +37,8 @@
   "exclude": [
     "node_modules",
     "playwright.config.ts",
-    "tests"
+    "tests",
+    "tmp",
+    "release"
   ]
 }

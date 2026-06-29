@@ -21,8 +21,26 @@ Do not use the production artifact deploy for staging. Staging must use separate
 
 ## PRE-DEPLOY CHECKLIST
 - [ ] локальный билд чистый: `npm run build` без ошибок
+- [ ] `npm run typecheck` без ошибок
 - [ ] все изменения закоммичены и запушены в `main`
 - [ ] нет незавершённых агентов или параллельных деплоев
+
+### Build hygiene (`tmp/` probes)
+
+Локальные probe-скрипты в `tmp/` (например `tmp/ops-crm-cleanup-api-probe.ts`) **не входят** в production artifact и исключены из `tsconfig.json` / `tsconfig.typecheck.json`. Они не должны ломать `npm run build` или `npm run typecheck`. Не коммитить `tmp/` в `main` (см. `AGENTS.md`).
+
+### GitHub Actions deploy prerequisites
+
+Стандартный путь: GitHub → Actions → **Deploy to VPS** → `Run workflow` с `confirm_production_deploy=DEPLOY_PRODUCTION` и опциональным `sha`.
+
+| Требование | Где проверить |
+| --- | --- |
+| Repo secrets: `VPS_HOST`, `VPS_SSH_KEY` | Settings → Secrets and variables → Actions |
+| Optional: `VPS_PORT` (default 22) | same |
+| Environment `production`: `TWOGIS_CATALOG_API_KEY`, `GOOGLE_MAPS_SERVER_API_KEY` | Settings → Environments → production |
+| Локальный `gh workflow run` | `gh auth login` (без auth CLI не может dispatch; UI всё равно работает) |
+
+Если deploy из dry run шёл вручную на VM — это обходной путь при отсутствии `gh` auth или недоступности Actions UI, не замена стандартного workflow.
 
 ---
 

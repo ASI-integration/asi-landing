@@ -6,7 +6,8 @@
     "playwright.config.ts",
     "tests",
     ".next",
-    "tmp"
+    "tmp",
+    "release"
   ]
 }
 
