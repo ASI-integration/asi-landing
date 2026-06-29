@@ -15,6 +15,10 @@ import type { TelegramDraftReadinessStatus } from './readiness';
 
 export type BookingOpsTaskCompletionUpdates = Pick<
   UpdateBookingOpsInput,
+  | 'documentsStatus'
+  | 'contractStatus'
+  | 'depositStatus'
+  | 'mvdStatus'
   | 'documentCollected'
   | 'documentVerificationStatus'
   | 'contractIntakeStatus'
@@ -107,19 +111,29 @@ export function applyBookingOpsTaskCompletionEffect(
         record.documentVerificationStatus;
       if (current === 'verified') return result({}, 'Документы уже отмечены как проверенные.');
       return result(
-        { documentVerificationStatus: 'verified', documentCollected: true },
+        {
+          documentsStatus: 'verified',
+          documentVerificationStatus: 'verified',
+          documentCollected: true,
+        },
         'Документы отмечены как проверенные оператором.',
       );
     }
 
     case 'prepare_contract':
       return advances(record.contractIntakeStatus, 'prepared', CONTRACT_ORDER)
-        ? result({ contractIntakeStatus: 'prepared' }, 'Договор отмечен как подготовленный.')
+        ? result(
+            { contractStatus: 'prepared', contractIntakeStatus: 'prepared' },
+            'Договор отмечен как подготовленный.',
+          )
         : result({}, 'Статус договора уже находится на более позднем этапе.');
 
     case 'send_contract_manual':
       return advances(record.contractIntakeStatus, 'sent', CONTRACT_ORDER)
-        ? result({ contractIntakeStatus: 'sent' }, 'Договор отмечен как отправленный вручную.')
+        ? result(
+            { contractStatus: 'sent', contractIntakeStatus: 'sent' },
+            'Договор отмечен как отправленный вручную.',
+          )
         : result({}, 'Статус договора уже находится на более позднем этапе.');
 
     case 'follow_up_contract_signature':
@@ -127,12 +141,18 @@ export function applyBookingOpsTaskCompletionEffect(
 
     case 'request_deposit':
       return advances(record.depositIntakeStatus, 'requested', DEPOSIT_ORDER)
-        ? result({ depositIntakeStatus: 'requested' }, 'Депозит отмечен как запрошенный.')
+        ? result(
+            { depositStatus: 'requested', depositIntakeStatus: 'requested' },
+            'Депозит отмечен как запрошенный.',
+          )
         : result({}, 'Статус депозита уже находится на более позднем этапе.');
 
     case 'confirm_deposit':
       return advances(record.depositIntakeStatus, 'received', DEPOSIT_ORDER)
-        ? result({ depositIntakeStatus: 'received' }, 'Получение депозита подтверждено оператором.')
+        ? result(
+            { depositStatus: 'confirmed', depositIntakeStatus: 'received' },
+            'Получение депозита подтверждено оператором.',
+          )
         : result({}, 'Статус депозита уже находится на более позднем этапе.');
 
     case 'track_deposit_return':
@@ -147,12 +167,18 @@ export function applyBookingOpsTaskCompletionEffect(
 
     case 'prepare_mvd_report':
       return advances(record.mvdDataStatus, 'prepared', MVD_ORDER)
-        ? result({ mvdDataStatus: 'prepared' }, 'Отчёт МВД отмечен как подготовленный.')
+        ? result(
+            { mvdStatus: 'prepared', mvdDataStatus: 'prepared' },
+            'Отчёт МВД отмечен как подготовленный.',
+          )
         : result({}, 'Статус данных МВД уже находится на более позднем этапе.');
 
     case 'submit_mvd_report':
       return advances(record.mvdDataStatus, 'submitted', MVD_ORDER)
-        ? result({ mvdDataStatus: 'submitted' }, 'Отчёт МВД отмечен как отправленный вручную.')
+        ? result(
+            { mvdStatus: 'submitted', mvdDataStatus: 'submitted' },
+            'Отчёт МВД отмечен как отправленный вручную.',
+          )
         : result({}, 'Статус данных МВД уже находится на более позднем этапе.');
 
     case 'generate_telegram_drafts':

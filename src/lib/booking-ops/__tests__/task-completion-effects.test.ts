@@ -105,6 +105,7 @@ describe('applyBookingOpsTaskCompletionEffect', () => {
     ['request_deposit', 'depositIntakeStatus', 'requested'],
     ['confirm_deposit', 'depositIntakeStatus', 'received'],
     ['collect_mvd_data', 'mvdDataStatus', 'collected'],
+    ['prepare_mvd_report', 'mvdDataStatus', 'prepared'],
     ['submit_mvd_report', 'mvdDataStatus', 'submitted'],
     ['review_telegram_drafts', 'telegramDraftStatus', 'ready_for_manual_send'],
     ['manual_send_telegram_drafts', 'telegramDraftStatus', 'completed'],
@@ -143,12 +144,27 @@ describe('applyBookingOpsTaskCompletionEffect', () => {
 
     expect(result.ok).toBe(true);
     expect(updateRecord).toHaveBeenCalledWith(booking.id, {
+      documentsStatus: 'verified',
       documentVerificationStatus: 'verified',
       documentCollected: true,
     });
     expect(updateTask).toHaveBeenCalledWith(booking.id, opsTask.id, { status: 'completed' });
     expect(syncTasks).toHaveBeenCalledWith(booking.id);
     expect(applyTelegramDraftStatus).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['verify_guest_documents', 'documentsStatus', 'verified'],
+    ['prepare_contract', 'contractStatus', 'prepared'],
+    ['send_contract_manual', 'contractStatus', 'sent'],
+    ['request_deposit', 'depositStatus', 'requested'],
+    ['confirm_deposit', 'depositStatus', 'confirmed'],
+    ['prepare_mvd_report', 'mvdStatus', 'prepared'],
+    ['submit_mvd_report', 'mvdStatus', 'submitted'],
+  ] as const)('%s completion keeps legacy %s in sync', async (taskType, field, value) => {
+    const { applyBookingOpsTaskCompletionEffect } = await import('../task-completion-effects');
+    const result = applyBookingOpsTaskCompletionEffect(record(), task(taskType), 'completed');
+    expect(result.appliedUpdates[field]).toBe(value);
   });
 
   it('Telegram completion updates draft readiness only and never calls sending functions', async () => {
