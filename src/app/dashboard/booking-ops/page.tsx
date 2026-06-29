@@ -1097,7 +1097,7 @@ function BookingOpsTimelineCard({
         <p className="mt-3 text-sm text-slate-500">История появится после следующего изменения.</p>
       ) : (
         <ol className="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
-          {events.slice(0, 30).map((event) => (
+          {events.map((event) => (
             <li key={event.id} className="relative border-l-2 border-slate-200 pl-3 text-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <p className="font-medium text-slate-800">{event.title}</p>

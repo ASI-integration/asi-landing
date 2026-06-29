@@ -262,4 +262,31 @@ describe('Booking Ops timeline', () => {
     const stored = eventRows('booking_updated').at(-1);
     expect(stored?.metadata).toEqual({ changedGroups: ['readiness_inputs'] });
   });
+
+  it('includes booking_created in timeline even when newer events exceed the default limit', async () => {
+    const record = await createRecord();
+    const { recordBookingOpsEvent, listBookingOpsEvents } = await import('../events');
+    const created = eventRows('booking_created')[0];
+    expect(created).toBeTruthy();
+
+    for (let index = 0; index < 55; index += 1) {
+      await recordBookingOpsEvent({
+        bookingOpsRecordId: record.id,
+        eventType: 'task_status_changed',
+        title: `Статус задачи ${index}`,
+        actorType: 'system',
+        metadata: { taskType: 'request_guest_documents', status: 'open' },
+        dedupeKey: `timeline-overflow-${index}`,
+      });
+    }
+
+    const listed = await listBookingOpsEvents(record.id);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+
+    expect(listed.events.length).toBeGreaterThan(50);
+    expect(listed.events.some((event) => event.eventType === 'booking_created')).toBe(true);
+    expect(JSON.stringify(listed.events)).not.toContain('PASSPORT');
+    expect(JSON.stringify(listed.events)).not.toContain('secret@example.com');
+  });
 });

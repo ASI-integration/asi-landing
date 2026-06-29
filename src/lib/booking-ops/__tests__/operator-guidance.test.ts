@@ -100,9 +100,31 @@ describe('getBookingOpsOperatorGuidance', () => {
     expect(result.title).toContain('отправьте вручную');
   });
 
-  it('marks an operationally completed booking', () => {
+  it('shows post-stay guidance when readiness is completed but deposit return is open', () => {
+    const record = readyBooking({ depositIntakeStatus: 'received' });
+    const readiness = computeBookingReadiness({ ...record, telegramDrafts: drafts(['sent_manually', 'sent_manually']) });
+    const tasks: BookingOpsTask[] = [
+      {
+        id: 'task-deposit-return', bookingOpsRecordId: record.id, bookingId: record.bookingId,
+        taskType: 'track_deposit_return', title: 'Отследить возврат депозита',
+        description: 'Депозит получен — отследите возврат после выезда.', status: 'open',
+        priority: 'normal', source: 'readiness_gate', dueAt: null, completedAt: null,
+        metadata: {}, createdAt: record.createdAt, updatedAt: record.updatedAt,
+      },
+    ];
+    const result = getBookingOpsOperatorGuidance(record, readiness, tasks, [], drafts(['sent_manually', 'sent_manually']));
+    expect(result.stage).toBe('post_stay');
+    expect(result.title).toContain('Основной контур завершён');
+    expect(result.title).not.toContain('Бронь операционно завершена');
+    expect(result.recommendedTaskType).toBe('track_deposit_return');
+    expect(result.progress.find((item) => item.stage === 'post_stay')?.status).toBe('current');
+    expect(result.progress.find((item) => item.stage === 'completed')?.status).toBe('pending');
+  });
+
+  it('marks an operationally completed booking when no post-stay tasks remain open', () => {
     const result = guidance(readyBooking({ depositIntakeStatus: 'returned' }), drafts(['sent_manually', 'sent_manually']));
     expect(result).toMatchObject({ stage: 'completed', recommendedTaskType: null, recommendedActionLabel: null });
+    expect(result.title).toContain('Бронь операционно завершена');
     expect(result.progress.at(-1)?.status).toBe('current');
   });
 

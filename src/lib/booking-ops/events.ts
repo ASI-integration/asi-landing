@@ -18,6 +18,11 @@ export const BOOKING_OPS_EVENT_TYPES = [
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
 export type BookingOpsEventActorType = 'system' | 'admin' | 'readiness_gate' | 'task_runner';
 
+export const BOOKING_OPS_TIMELINE_PINNED_EVENT_TYPES: BookingOpsEventType[] = ['booking_created'];
+
+export const BOOKING_OPS_TIMELINE_DEFAULT_LIMIT = 50;
+export const BOOKING_OPS_TIMELINE_MAX_LIMIT = 150;
+
 export type BookingOpsEvent = {
   id: string;
   bookingOpsRecordId: string;
@@ -145,6 +150,21 @@ export async function recordBookingOpsEvent(
   }
 }
 
+/** Merge newest timeline events with pinned lifecycle anchors (deduped, newest first). */
+export function mergePinnedBookingOpsTimelineEvents(
+  newest: BookingOpsEvent[],
+  pinned: BookingOpsEvent[],
+): BookingOpsEvent[] {
+  const byId = new Map<string, BookingOpsEvent>();
+  for (const event of [...newest, ...pinned]) {
+    byId.set(event.id, event);
+  }
+  return [...byId.values()].sort((left, right) => {
+    const timeCmp = right.createdAt.localeCompare(left.createdAt);
+    return timeCmp !== 0 ? timeCmp : right.id.localeCompare(left.id);
+  });
+}
+
 export async function listBookingOpsEvents(
   bookingOpsRecordId: string,
   options?: { limit?: number },
@@ -152,16 +172,46 @@ export async function listBookingOpsEvents(
   const recordId = text(bookingOpsRecordId, 100);
   if (!recordId) return { ok: false, error: 'id_required' };
 
-  const { data, error } = await supabase
+  const limit = Math.min(
+    Math.max(options?.limit ?? BOOKING_OPS_TIMELINE_DEFAULT_LIMIT, 1),
+    BOOKING_OPS_TIMELINE_MAX_LIMIT,
+  );
+
+  const newestQuery = await supabase
     .from('booking_ops_events')
     .select('*')
     .eq('booking_ops_record_id', recordId)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
-    .limit(Math.min(Math.max(options?.limit ?? 50, 1), 100));
+    .limit(limit);
 
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, events: ((data ?? []) as BookingOpsEventRow[]).map(mapRow) };
+  if (newestQuery.error) return { ok: false, error: newestQuery.error.message };
+
+  const newest = ((newestQuery.data ?? []) as BookingOpsEventRow[]).map(mapRow);
+  const newestIds = new Set(newest.map((event) => event.id));
+  const missingPinnedTypes = BOOKING_OPS_TIMELINE_PINNED_EVENT_TYPES.filter(
+    (eventType) => !newest.some((event) => event.eventType === eventType),
+  );
+
+  if (missingPinnedTypes.length === 0) {
+    return { ok: true, events: newest };
+  }
+
+  const pinnedQuery = await supabase
+    .from('booking_ops_events')
+    .select('*')
+    .eq('booking_ops_record_id', recordId)
+    .in('event_type', missingPinnedTypes)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+
+  if (pinnedQuery.error) return { ok: false, error: pinnedQuery.error.message };
+
+  const pinned = ((pinnedQuery.data ?? []) as BookingOpsEventRow[])
+    .map(mapRow)
+    .filter((event) => !newestIds.has(event.id));
+
+  return { ok: true, events: mergePinnedBookingOpsTimelineEvents(newest, pinned) };
 }
 
 export async function recordBookingOpsReadinessEvent(input: {

@@ -16,8 +16,12 @@ export const BOOKING_OPS_OPERATOR_STAGES = [
   'deposit',
   'mvd',
   'telegram_drafts',
+  'post_stay',
   'completed',
 ] as const;
+
+/** Post-stay tasks that remain after core intake/readiness is completed. */
+export const BOOKING_OPS_POST_STAY_TASK_TYPES: BookingOpsTaskType[] = ['track_deposit_return'];
 
 export type BookingOpsOperatorStage = (typeof BOOKING_OPS_OPERATOR_STAGES)[number];
 export type BookingOpsOperatorProgressStatus = 'completed' | 'current' | 'pending';
@@ -45,6 +49,7 @@ const STAGE_LABELS: Record<BookingOpsOperatorStage, string> = {
   deposit: 'Депозит',
   mvd: 'МВД',
   telegram_drafts: 'Черновики',
+  post_stay: 'После выезда',
   completed: 'Завершено',
 };
 
@@ -152,9 +157,27 @@ function guidanceCopy(
     case 'completed':
       return {
         title: 'Бронь операционно завершена.',
-        description: 'Все обязательные этапы и ручная отправка черновиков подтверждены.',
+        description:
+          'Все обязательные этапы и ручная отправка черновиков подтверждены. '
+          + 'Завершение задачи ручной отправки означает подтверждение оператором, а не доставку в Telegram.',
       };
   }
+}
+
+function postStayGuidanceCopy(): Pick<BookingOpsOperatorGuidance, 'title' | 'description'> {
+  return {
+    title: 'Основной контур завершён. Осталось проконтролировать возврат залога.',
+    description:
+      'Все этапы приёма и ручная отправка черновиков подтверждены. '
+      + 'После выезда завершите задачу возврата депозита — это не влияет на статус готовности, но блокирует полное завершение.',
+  };
+}
+
+function openPostStayTasks(tasks: BookingOpsTask[]): BookingOpsTask[] {
+  return tasks.filter(
+    (task) => BOOKING_OPS_POST_STAY_TASK_TYPES.includes(task.taskType)
+      && BOOKING_OPS_OPEN_TASK_STATUSES.includes(task.status),
+  );
 }
 
 function latestTaskAction(events: BookingOpsEvent[]): BookingOpsEvent | null {
@@ -171,12 +194,17 @@ export function getBookingOpsOperatorGuidance(
   events: BookingOpsEvent[],
   drafts: BookingOpsTelegramDraft[],
 ): BookingOpsOperatorGuidance {
-  const stage = READINESS_STAGE[readiness.status];
-  const plannedTaskType = syncBookingOpsTasksForReadiness(record, readiness).items[0]?.taskType ?? null;
   const openTasks = tasks.filter((task) => BOOKING_OPS_OPEN_TASK_STATUSES.includes(task.status));
+  const postStayOpen = openPostStayTasks(openTasks);
+  const readinessStage = READINESS_STAGE[readiness.status];
+  const stage = readiness.status === 'completed' && postStayOpen.length > 0
+    ? 'post_stay'
+    : readinessStage;
+  const plannedTaskType = syncBookingOpsTasksForReadiness(record, readiness).items[0]?.taskType ?? null;
   const recommendedTask =
     openTasks.find((task) => task.taskType === plannedTaskType)
     ?? openTasks.find((task) => task.source === 'readiness_gate')
+    ?? postStayOpen[0]
     ?? null;
   const recommendedTaskType = recommendedTask?.taskType ?? plannedTaskType;
   const latestAction = latestTaskAction(events);
@@ -190,7 +218,9 @@ export function getBookingOpsOperatorGuidance(
       : latestActionBlocked && latestActionMatches
         ? latestAction?.description || 'Последнее действие остановлено до устранения условий готовности.'
         : null;
-  const copy = guidanceCopy(readiness, recommendedTaskType, drafts);
+  const copy = stage === 'post_stay'
+    ? postStayGuidanceCopy()
+    : guidanceCopy(readiness, recommendedTaskType, drafts);
 
   return {
     stage,
