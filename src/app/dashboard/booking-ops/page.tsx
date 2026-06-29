@@ -68,6 +68,7 @@ import {
   computeUnitReadinessStatus,
   isTurnoverTaskType,
 } from '@/lib/booking-ops/turnover';
+import { planBookingOpsPreparation } from '@/lib/booking-ops/automation-engine';
 import {
   formatBookingOpsGuestNameDisplay,
   formatBookingOpsMessageTextDisplay,
@@ -103,6 +104,10 @@ type TasksResponse = {
   message?: string;
   tasks?: BookingOpsTask[];
   task?: BookingOpsTask;
+};
+
+type RecomputeResponse = TasksResponse & {
+  record?: BookingOpsRecord;
 };
 
 type TaskUpdateResponse = TasksResponse & {
@@ -331,6 +336,7 @@ function BookingOpsPageInner() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const [recomputingPreparation, setRecomputingPreparation] = useState(false);
   const [taskActionResults, setTaskActionResults] = useState<Record<string, TaskActionResult>>({});
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -594,6 +600,33 @@ function BookingOpsPageInner() {
       ]);
     } finally {
       setUpdatingTaskId(null);
+    }
+  }
+
+  async function onRecomputePreparation() {
+    if (!isOpsAdmin || !selectedId) return;
+    setRecomputingPreparation(true);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${selectedId}/recompute`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const payload = await readResponseJson<RecomputeResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok) {
+        setMessage(payload.message || 'Не удалось пересчитать подготовку.');
+        return;
+      }
+      if (payload.record) {
+        setRecords((current) => current.map((item) =>
+          item.id === payload.record!.id ? payload.record! : item));
+        setDraft(draftFromRecord(payload.record));
+      }
+      if (payload.tasks) setOpsTasks(payload.tasks);
+      await Promise.all([load(), reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
+      setMessage(payload.message || 'Подготовка пересчитана.');
+    } finally {
+      setRecomputingPreparation(false);
     }
   }
 
@@ -963,9 +996,11 @@ function BookingOpsPageInner() {
                 isOpsAdmin={isOpsAdmin}
                 updatingTaskId={updatingTaskId}
                 runningTaskId={runningTaskId}
+                recomputing={recomputingPreparation}
                 taskActionResults={taskActionResults}
                 onUpdateStatus={(taskId, status) => void onUpdateTaskStatus(taskId, status)}
                 onRunAction={(taskId) => void onRunTaskAction(taskId)}
+                onRecompute={() => void onRecomputePreparation()}
               />
 
               <OperationalTasksCard
@@ -1271,9 +1306,11 @@ function TurnoverOpsCard({
   isOpsAdmin,
   updatingTaskId,
   runningTaskId,
+  recomputing,
   taskActionResults,
   onUpdateStatus,
   onRunAction,
+  onRecompute,
 }: {
   record: BookingOpsRecord;
   tasks: BookingOpsTask[];
@@ -1281,16 +1318,19 @@ function TurnoverOpsCard({
   isOpsAdmin: boolean;
   updatingTaskId: string | null;
   runningTaskId: string | null;
+  recomputing: boolean;
   taskActionResults: Record<string, TaskActionResult>;
   onUpdateStatus: (taskId: string, status: BookingOpsTaskStatus) => void;
   onRunAction: (taskId: string) => void;
+  onRecompute: () => void;
 }) {
   const turnoverTasks = tasks.filter((task) => isTurnoverTaskType(task.taskType));
   const unitStatus = computeUnitReadinessStatus(record, tasks);
+  const preparation = planBookingOpsPreparation(record, tasks);
   const openTurnover = turnoverTasks.filter(
     (task) => task.status === 'open' || task.status === 'in_progress' || task.status === 'blocked',
   );
-  const showCard = Boolean(record.checkOutAt) && (turnoverTasks.length > 0 || record.readiness?.status === 'completed');
+  const showCard = Boolean(record.checkInAt && record.checkOutAt) || turnoverTasks.length > 0;
 
   if (!showCard) return null;
 
@@ -1303,13 +1343,32 @@ function TurnoverOpsCard({
             Уборка, бельё, осмотр, расходники, заявки мастеру и готовность к следующему заезду.
           </p>
         </div>
-        <span
-          className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-            UNIT_READINESS_TONE[unitStatus] ?? UNIT_READINESS_TONE.not_ready
-          }`}
-        >
-          {BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU[unitStatus]}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {isOpsAdmin ? (
+            <button
+              type="button"
+              disabled={recomputing}
+              onClick={onRecompute}
+              className="rounded border border-teal-400 bg-white px-2.5 py-1 text-xs font-medium text-teal-900 hover:bg-teal-100 disabled:opacity-50"
+            >
+              {recomputing ? 'Пересчитываем…' : 'Пересчитать подготовку'}
+            </button>
+          ) : null}
+          <span
+            className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+              UNIT_READINESS_TONE[unitStatus] ?? UNIT_READINESS_TONE.not_ready
+            }`}
+          >
+            {BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU[unitStatus]}
+          </span>
+        </div>
+      </div>
+
+      <div className="rounded-md border border-teal-200 bg-white/80 px-3 py-2">
+        <p className="text-xs font-medium text-teal-950">Следующее действие: {preparation.nextAction}</p>
+        <p className="mt-1 text-[11px] text-teal-800">
+          План и статус готовности пересчитываются внутри Booking Ops.
+        </p>
       </div>
 
       {loading ? <p className="text-xs text-teal-800">Загрузка задач…</p> : null}
@@ -1335,6 +1394,11 @@ function TurnoverOpsCard({
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{task.title}</p>
+                    {task.source === 'system' ? (
+                      <span className="mt-1 inline-flex rounded-full border border-teal-300 bg-white px-2 py-0.5 text-[10px] font-medium text-teal-800">
+                        Создано автоматически
+                      </span>
+                    ) : null}
                     {task.description ? <p className="mt-1 text-xs">{task.description}</p> : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

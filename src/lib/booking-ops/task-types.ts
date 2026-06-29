@@ -26,6 +26,9 @@ export const BOOKING_OPS_TASK_TYPES = [
   'laundry_dropoff_needed',
   'laundry_return_needed',
   'supplies_check_needed',
+  'inspection_needed',
+  'maintenance_needed',
+  'unit_ready_confirmation',
 ] as const;
 
 export type BookingOpsTaskType = (typeof BOOKING_OPS_TASK_TYPES)[number];
@@ -88,6 +91,9 @@ export const BOOKING_OPS_TASK_TYPE_LABELS_RU: Record<BookingOpsTaskType, string>
   laundry_dropoff_needed: 'Сдать бельё в прачечную',
   laundry_return_needed: 'Получить бельё из прачечной',
   supplies_check_needed: 'Проверить расходники',
+  inspection_needed: 'Провести осмотр',
+  maintenance_needed: 'Устранить поломку',
+  unit_ready_confirmation: 'Подтвердить готовность объекта',
 };
 
 export const BOOKING_OPS_TASK_STATUS_LABELS_RU: Record<BookingOpsTaskStatus, string> = {
@@ -173,6 +179,9 @@ export const BOOKING_OPS_TASK_ACTION_LABELS_RU: Partial<Record<BookingOpsTaskTyp
   laundry_dropoff_needed: 'Чеклист прачечной',
   laundry_return_needed: 'Чеклист прачечной',
   supplies_check_needed: 'Чеклист расходников',
+  inspection_needed: 'Чеклист осмотра',
+  maintenance_needed: 'Чеклист ремонта',
+  unit_ready_confirmation: 'Подтвердить готовность',
 };
 
 export function normalizeBookingOpsTaskType(value: unknown): BookingOpsTaskType | null {

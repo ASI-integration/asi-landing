@@ -7,6 +7,7 @@ import {
 } from './task-types';
 import type { BookingOpsRecord, BookingOpsUnitReadinessStatus } from './types';
 import { BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU } from './types';
+import { BOOKING_OPS_AUTOMATION_TASK_TYPES, planBookingOpsPreparation } from './automation-engine';
 
 export { BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU };
 
@@ -177,7 +178,8 @@ export function syncTurnoverTasksForRecord(
 }
 
 export function isTurnoverTaskType(taskType: BookingOpsTaskType): boolean {
-  return (BOOKING_OPS_TURNOVER_TASK_TYPES as readonly string[]).includes(taskType);
+  return (BOOKING_OPS_TURNOVER_TASK_TYPES as readonly string[]).includes(taskType)
+    || (BOOKING_OPS_AUTOMATION_TASK_TYPES as readonly string[]).includes(taskType);
 }
 
 /** Derive unit readiness from record state and turnover tasks. */
@@ -185,44 +187,7 @@ export function computeUnitReadinessStatus(
   record: BookingOpsRecord,
   tasks: BookingOpsTask[],
 ): BookingOpsUnitReadinessStatus {
-  if (record.isBlocked) return 'blocked';
-
-  const turnoverTasks = tasks.filter((task) => isTurnoverTaskType(task.taskType));
-  const completed = completedTurnoverTypes(tasks);
-  const openTurnover = turnoverTasks.filter(
-    (task) => task.status === 'open' || task.status === 'in_progress' || task.status === 'blocked',
-  );
-
-  if (completed.has('unit_ready_for_next_guest')) return 'ready';
-  if (openTurnover.some((task) => task.status === 'blocked')) return 'blocked';
-
-  if (
-    openTurnover.some((task) =>
-      task.taskType === 'unit_inspection_needed' || task.taskType === 'unit_ready_for_next_guest')
-  ) {
-    return 'inspection_pending';
-  }
-
-  if (
-    openTurnover.some((task) =>
-      (LINEN_CHAIN as readonly string[]).includes(task.taskType as BookingOpsTurnoverTaskType))
-  ) {
-    return 'linen_pending';
-  }
-
-  if (
-    openTurnover.some((task) =>
-      (CLEANING_CHAIN as readonly string[]).includes(task.taskType as BookingOpsTurnoverTaskType)
-      || task.taskType === 'checkout_confirmed')
-  ) {
-    return 'cleaning_pending';
-  }
-
-  if (record.unitReadinessStatus && record.unitReadinessStatus !== 'not_ready') {
-    return record.unitReadinessStatus;
-  }
-
-  return completed.has('checkout_confirmed') ? 'cleaning_pending' : 'not_ready';
+  return planBookingOpsPreparation(record, tasks).unitReadinessStatus;
 }
 
 /** Unit readiness after completing a turnover task. */
@@ -249,7 +214,11 @@ export function unitReadinessAfterTaskCompletion(
     case 'unit_inspection_needed':
       return 'inspection_pending';
     case 'unit_ready_for_next_guest':
+    case 'unit_ready_confirmation':
       return 'ready';
+    case 'inspection_needed':
+    case 'maintenance_needed':
+      return 'inspection_pending';
     default:
       return null;
   }

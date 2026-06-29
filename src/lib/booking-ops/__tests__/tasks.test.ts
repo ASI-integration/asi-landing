@@ -20,7 +20,10 @@ vi.mock('@/lib/supabase', () => ({
         };
       }
       if (table !== 'booking_ops_tasks') {
-        return { select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: [], error: null })) })) };
+        return {
+          select: vi.fn(() => ({ eq: vi.fn(async () => ({ data: [], error: null })) })),
+          update: vi.fn(() => ({ eq: vi.fn(async () => ({ data: null, error: null })) })),
+        };
       }
       return {
         select: vi.fn(() => ({
@@ -156,12 +159,18 @@ describe('applyBookingOpsTaskSync', () => {
     expect(first.ok).toBe(true);
     const openTasks = first.tasks.filter((task) => task.status === 'open');
     expect(openTasks.filter((task) => task.taskType === 'request_guest_documents')).toHaveLength(1);
+    expect(openTasks.filter((task) => task.taskType === 'cleaning_needed')).toHaveLength(1);
 
     const second = await applyBookingOpsTaskSync(record);
     expect(second.ok).toBe(true);
     expect(
       second.tasks.filter(
         (task) => task.taskType === 'request_guest_documents' && task.status === 'open',
+      ),
+    ).toHaveLength(1);
+    expect(
+      second.tasks.filter(
+        (task) => task.taskType === 'cleaning_needed' && task.status === 'open',
       ),
     ).toHaveLength(1);
     expect(sendMessage).not.toHaveBeenCalled();

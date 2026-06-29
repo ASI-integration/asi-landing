@@ -512,6 +512,46 @@ async function runBookingOpsTaskActionInternal(
       };
     }
 
+    case 'cleaning_needed':
+      return successChecklistResult(task, 'План уборки подготовлен для ручной работы.', [
+        'Назначьте ответственного за уборку.',
+        'Согласуйте время до следующего заезда.',
+        'После уборки отметьте задачу выполненной.',
+      ]);
+
+    case 'linen_pickup_needed':
+      return successChecklistResult(task, 'Чеклист белья готов.', [
+        'Соберите использованное бельё и полотенца.',
+        'Проверьте наличие чистого комплекта.',
+        'Замените бельё до осмотра.',
+      ]);
+
+    case 'inspection_needed':
+      return successChecklistResult(task, 'Чеклист осмотра готов.', [
+        'Проверьте чистоту, бельё и расходники.',
+        'Убедитесь, что техника и сантехника работают.',
+        'Зафиксируйте найденные проблемы.',
+      ]);
+
+    case 'supplies_check_needed':
+      return successChecklistResult(task, 'Чеклист расходников готов.', [
+        'Проверьте мыло, шампунь и туалетную бумагу.',
+        'Пополните чай, кофе и другие расходники объекта.',
+      ]);
+
+    case 'maintenance_needed':
+      return successChecklistResult(task, 'Чеклист ремонта готов.', [
+        'Уточните причину блокировки.',
+        'Назначьте мастера и срок работ.',
+        'После ремонта проведите повторный осмотр.',
+      ]);
+
+    case 'unit_ready_confirmation':
+      return successChecklistResult(task, 'Готовность подтверждается только вручную.', [
+        'Убедитесь, что все задачи подготовки выполнены.',
+        'Подтвердите готовность объекта.',
+      ]);
+
     default:
       return {
         ok: false,
