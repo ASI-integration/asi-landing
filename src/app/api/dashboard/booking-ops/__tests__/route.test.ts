@@ -62,6 +62,57 @@ vi.mock('@/lib/booking-ops/legal-payment-autopilot', () => ({
   markMvdReportAccepted: vi.fn(),
 }));
 
+vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
+  getPreCheckinStatus: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'ready_for_checkin',
+    readinessScore: 100,
+    hardBlockers: [],
+    warnings: [],
+    requiredActions: [],
+    timeline: [],
+    topBlocker: null,
+    lifecycleScore: 100,
+    lastRecomputedAt: '2026-06-30T10:00:00.000Z',
+    metadata: {},
+  })),
+  listBookingsByReadinessStatus: vi.fn(async () => []),
+  recomputeBookingCheckinReadiness: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'ready_for_checkin',
+    readinessScore: 100,
+    hardBlockers: [],
+    warnings: [],
+    requiredActions: [],
+    timeline: [],
+    topBlocker: null,
+    lifecycleScore: 100,
+    lastRecomputedAt: '2026-06-30T10:00:00.000Z',
+    metadata: {},
+  })),
+  runPreCheckinAction: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'ready_for_checkin',
+    readinessScore: 100,
+    hardBlockers: [],
+    warnings: [],
+    requiredActions: [],
+    timeline: [],
+    topBlocker: null,
+    lifecycleScore: 100,
+    lastRecomputedAt: '2026-06-30T10:00:00.000Z',
+    metadata: {},
+  })),
+  PRE_CHECKIN_READINESS_STATUSES: [
+    'ready_for_checkin',
+    'needs_attention',
+    'blocked',
+    'overdue',
+    'checked_in',
+    'closed',
+  ],
+}));
+
 describe('Booking Ops dashboard routes', () => {
   it('list route returns 200', async () => {
     const route = await import('../route');
@@ -84,5 +135,26 @@ describe('Booking Ops dashboard routes', () => {
       body: JSON.stringify({ bookingId: 'ops-route', action: 'bad_action' }),
     }));
     expect(response.status).toBe(400);
+  });
+
+  it('pre-checkin recompute endpoint returns readiness', async () => {
+    const route = await import('../pre-checkin/recompute/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route' }),
+    }));
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload.readiness.status).toBe('ready_for_checkin');
+  });
+
+  it('pre-checkin API returns 401 when unauthenticated', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    vi.mocked(auth.requireCrmOperatorSession).mockResolvedValueOnce({
+      error: Response.json({ ok: false }, { status: 401 }) as never,
+    });
+    const route = await import('../pre-checkin/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    expect(response.status).toBe(401);
   });
 });

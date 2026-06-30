@@ -92,6 +92,11 @@ import {
   type BookingLifecycleStatus,
 } from '@/lib/booking-ops/lifecycle-types';
 import type { LegalPaymentStatus } from '@/lib/booking-ops/legal-payment-autopilot';
+import {
+  PRE_CHECKIN_READINESS_STATUS_LABELS_RU,
+  type PreCheckinReadinessSnapshot,
+  type PreCheckinReadinessStatus,
+} from '@/lib/booking-ops/pre-checkin-control-center';
 
 type ListResponse = {
   ok: boolean;
@@ -189,6 +194,22 @@ type LegalPaymentResponse = {
   status?: LegalPaymentStatus;
 };
 
+type PreCheckinResponse = {
+  ok: boolean;
+  message?: string;
+  readiness?: PreCheckinReadinessSnapshot;
+};
+
+type PreCheckinAction =
+  | 'recompute'
+  | 'mark_ready_override'
+  | 'clear_ready_override'
+  | 'create_fallback'
+  | 'resolve_fallback'
+  | 'add_note'
+  | 'block_gate'
+  | 'skip_gate';
+
 const AUTOMATION_TONE: Record<string, string> = {
   action_required: 'border-amber-200 bg-amber-50 text-amber-900',
   waiting: 'border-sky-200 bg-sky-50 text-sky-900',
@@ -210,6 +231,26 @@ const ALERT_SEVERITY_LABEL: Record<BookingOpsAlertSeverity, string> = {
   critical: 'Срочно',
   warning: 'Внимание',
   info: 'Инфо',
+};
+
+const PRE_CHECKIN_TONE: Record<PreCheckinReadinessStatus, string> = {
+  ready_for_checkin: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  needs_attention: 'border-amber-200 bg-amber-50 text-amber-950',
+  blocked: 'border-red-200 bg-red-50 text-red-950',
+  overdue: 'border-rose-300 bg-rose-50 text-rose-950',
+  checked_in: 'border-sky-200 bg-sky-50 text-sky-950',
+  closed: 'border-slate-200 bg-slate-50 text-slate-700',
+};
+
+const PRE_CHECKIN_ACTION_LABELS_RU: Record<PreCheckinAction, string> = {
+  recompute: 'Пересчитать',
+  mark_ready_override: 'Подтвердить готовность',
+  clear_ready_override: 'Снять подтверждение',
+  create_fallback: 'Создать ручной план',
+  resolve_fallback: 'Закрыть ручной план',
+  add_note: 'Добавить заметку',
+  block_gate: 'Заблокировать этап',
+  skip_gate: 'Пропустить этап',
 };
 
 function formatWhen(value: string | null): string {
@@ -395,6 +436,9 @@ function BookingOpsPageInner() {
   const [legalPayment, setLegalPayment] = useState<LegalPaymentStatus | null>(null);
   const [legalPaymentLoading, setLegalPaymentLoading] = useState(false);
   const [legalPaymentAction, setLegalPaymentAction] = useState<LegalPaymentAction | null>(null);
+  const [preCheckin, setPreCheckin] = useState<PreCheckinReadinessSnapshot | null>(null);
+  const [preCheckinLoading, setPreCheckinLoading] = useState(false);
+  const [preCheckinAction, setPreCheckinAction] = useState<PreCheckinAction | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [recomputingPreparation, setRecomputingPreparation] = useState(false);
@@ -662,6 +706,35 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setPreCheckin(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPreCheckinLoading(true);
+    void fetch(`/api/dashboard/booking-ops/pre-checkin?bookingId=${encodeURIComponent(selectedId)}`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<PreCheckinResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setPreCheckin(null);
+          return;
+        }
+        setPreCheckin(payload.readiness ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreCheckinLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
@@ -671,6 +744,7 @@ function BookingOpsPageInner() {
     setTimelineEvents([]);
     setLifecycle(null);
     setLegalPayment(null);
+    setPreCheckin(null);
     setTaskActionResults({});
     setMessage('');
   }
@@ -710,6 +784,7 @@ function BookingOpsPageInner() {
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
         reloadLifecycle(selectedId),
+        reloadPreCheckin(selectedId),
       ]);
     } finally {
       setRunningTaskId(null);
@@ -756,6 +831,14 @@ function BookingOpsPageInner() {
     if (res.ok && payload.ok) setLegalPayment(payload.status ?? null);
   }
 
+  async function reloadPreCheckin(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/pre-checkin?bookingId=${encodeURIComponent(recordId)}`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<PreCheckinResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setPreCheckin(payload.readiness ?? null);
+  }
+
   async function onLegalPaymentAction(action: LegalPaymentAction, extra?: Record<string, unknown>) {
     if (!isOpsAdmin || !selectedId) return;
     setLegalPaymentAction(action);
@@ -778,10 +861,40 @@ function BookingOpsPageInner() {
         reloadLifecycle(selectedId),
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
+        reloadPreCheckin(selectedId),
       ]);
       setMessage('Статус обновлён.');
     } finally {
       setLegalPaymentAction(null);
+    }
+  }
+
+  async function onPreCheckinAction(action: PreCheckinAction, extra?: Record<string, unknown>) {
+    if (!isOpsAdmin || !selectedId) return;
+    setPreCheckinAction(action);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/booking-ops/pre-checkin/action', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<PreCheckinResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.readiness) {
+        setMessage(payload.message || 'Не удалось обновить контроль заезда.');
+        return;
+      }
+      setPreCheckin(payload.readiness);
+      await Promise.all([
+        load(),
+        reloadLifecycle(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+      ]);
+      setMessage(payload.message || 'Контроль заезда обновлён.');
+    } finally {
+      setPreCheckinAction(null);
     }
   }
 
@@ -807,6 +920,7 @@ function BookingOpsPageInner() {
         return;
       }
       setLifecycle(payload.lifecycle ?? null);
+      await reloadPreCheckin(selectedId);
       setMessage('Готовность брони обновлена.');
     } finally {
       setUpdatingLifecycleGate(null);
@@ -836,6 +950,7 @@ function BookingOpsPageInner() {
         reloadTelegramDrafts(selectedId),
         reloadTimeline(selectedId),
         reloadLifecycle(selectedId),
+        reloadPreCheckin(selectedId),
       ]);
     } finally {
       setUpdatingTaskId(null);
@@ -873,6 +988,7 @@ function BookingOpsPageInner() {
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
         reloadLifecycle(selectedId),
+        reloadPreCheckin(selectedId),
       ]);
       setMessage(payload.message || 'Подготовка пересчитана.');
     } finally {
@@ -1239,6 +1355,16 @@ function BookingOpsPageInner() {
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
 
+              <PreCheckinControlCenterCard
+                readiness={preCheckin}
+                loading={preCheckinLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={preCheckinAction}
+                onAction={(action, extra) => void onPreCheckinAction(action, extra)}
+                onOpenLifecycle={() => void reloadLifecycle(selectedRecord.id)}
+                onOpenLegalPayment={() => void reloadLegalPayment(selectedRecord.id)}
+              />
+
               <LifecycleCard
                 lifecycle={lifecycle}
                 loading={lifecycleLoading}
@@ -1477,6 +1603,183 @@ function OperatorGuidanceCard({
           {task ? `К задаче: ${guidance.recommendedActionLabel}` : guidance.recommendedActionLabel}
         </button>
       ) : null}
+    </section>
+  );
+}
+
+function PreCheckinControlCenterCard({
+  readiness,
+  loading,
+  isOpsAdmin,
+  activeAction,
+  onAction,
+  onOpenLifecycle,
+  onOpenLegalPayment,
+}: {
+  readiness: PreCheckinReadinessSnapshot | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: PreCheckinAction | null;
+  onAction: (action: PreCheckinAction, extra?: Record<string, unknown>) => void;
+  onOpenLifecycle: () => void;
+  onOpenLegalPayment: () => void;
+}) {
+  function createFallback() {
+    const reason = window.prompt('Причина ручного плана', readiness?.topBlocker?.reason ?? '');
+    if (!reason) return;
+    onAction('create_fallback', { reason });
+  }
+
+  function addNote() {
+    const note = window.prompt('Заметка к контролю заезда');
+    if (!note) return;
+    onAction('add_note', { note });
+  }
+
+  function blockTopGate() {
+    if (!readiness?.topBlocker?.gateKey) return;
+    const reason = window.prompt('Причина блокировки', readiness.topBlocker.reason);
+    if (!reason) return;
+    onAction('block_gate', { gateKey: readiness.topBlocker.gateKey, reason });
+  }
+
+  function skipTopGate() {
+    if (!readiness?.topBlocker?.gateKey) return;
+    const reason = window.prompt('Почему этап можно пропустить', 'Пропущено вручную');
+    if (!reason) return;
+    onAction('skip_gate', { gateKey: readiness.topBlocker.gateKey, reason });
+  }
+
+  const status = readiness?.status ?? 'needs_attention';
+  const tone = PRE_CHECKIN_TONE[status];
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Контроль заезда</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tone}`}>
+            {PRE_CHECKIN_READINESS_STATUS_LABELS_RU[status]}
+          </span>
+          <span className="text-xl font-semibold text-slate-900">
+            {loading ? '…' : `${readiness?.readinessScore ?? 0}%`}
+          </span>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-slate-500">Загрузка контроля заезда…</p>
+      ) : !readiness ? (
+        <p className="text-slate-500">Контроль заезда появится после пересчёта.</p>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs font-medium text-slate-500">Главный блокер</p>
+              <p className="mt-1 font-medium text-slate-900">
+                {readiness.topBlocker?.title ?? 'Нет блокеров'}
+              </p>
+              {readiness.topBlocker ? (
+                <p className="mt-1 text-xs text-slate-600">{readiness.topBlocker.reason}</p>
+              ) : null}
+            </div>
+            <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2">
+              <p className="text-xs font-medium text-amber-700">Предупреждения</p>
+              <p className="mt-1 text-xl font-semibold text-amber-950">{readiness.warnings.length}</p>
+            </div>
+            <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2">
+              <p className="text-xs font-medium text-sky-700">Lifecycle</p>
+              <p className="mt-1 text-xl font-semibold text-sky-950">{readiness.lifecycleScore}%</p>
+            </div>
+          </div>
+
+          {readiness.requiredActions.length > 0 ? (
+            <div>
+              <p className="font-medium text-slate-800">Следующее действие</p>
+              <p className="mt-1 text-slate-700">
+                {readiness.requiredActions[0].title} · {readiness.requiredActions[0].action}
+              </p>
+            </div>
+          ) : null}
+
+          <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-slate-700">
+              Блокеры и предупреждения
+            </summary>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="font-medium text-slate-800">Блокеры</p>
+                {readiness.hardBlockers.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-slate-700">
+                    {readiness.hardBlockers.map((item) => (
+                      <li key={`${item.key}-${item.source}`}>
+                        {item.title}: {item.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">Нет.</p>
+                )}
+              </div>
+              <div>
+                <p className="font-medium text-slate-800">Предупреждения</p>
+                {readiness.warnings.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-slate-700">
+                    {readiness.warnings.map((item) => (
+                      <li key={`${item.key}-${item.source}`}>
+                        {item.title}: {item.reason}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">Нет.</p>
+                )}
+              </div>
+            </div>
+          </details>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>Пересчёт: {formatWhen(readiness.lastRecomputedAt)}</span>
+            <button type="button" onClick={onOpenLifecycle} className="rounded border border-slate-300 bg-white px-2 py-1 font-medium text-slate-700">
+              Открыть lifecycle
+            </button>
+            <button type="button" onClick={onOpenLegalPayment} className="rounded border border-slate-300 bg-white px-2 py-1 font-medium text-slate-700">
+              Открыть документы/договор/депозит/МВД
+            </button>
+          </div>
+
+          {isOpsAdmin ? (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={activeAction !== null} onClick={() => onAction('recompute')} className="rounded border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-900 disabled:opacity-50">
+                {activeAction === 'recompute' ? 'Пересчёт…' : PRE_CHECKIN_ACTION_LABELS_RU.recompute}
+              </button>
+              <button type="button" disabled={activeAction !== null} onClick={() => onAction('mark_ready_override')} className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.mark_ready_override}
+              </button>
+              <button type="button" disabled={activeAction !== null} onClick={() => onAction('clear_ready_override')} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.clear_ready_override}
+              </button>
+              <button type="button" disabled={activeAction !== null || !readiness.topBlocker?.fallbackEligible} onClick={createFallback} className="rounded border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-900 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.create_fallback}
+              </button>
+              <button type="button" disabled={activeAction !== null || !readiness.topBlocker?.gateKey} onClick={() => onAction('resolve_fallback', { gateKey: readiness.topBlocker?.gateKey })} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.resolve_fallback}
+              </button>
+              <button type="button" disabled={activeAction !== null} onClick={addNote} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.add_note}
+              </button>
+              <button type="button" disabled={activeAction !== null || !readiness.topBlocker?.gateKey} onClick={blockTopGate} className="rounded border border-red-300 bg-white px-2.5 py-1.5 text-xs font-medium text-red-900 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.block_gate}
+              </button>
+              <button type="button" disabled={activeAction !== null || !readiness.topBlocker?.gateKey} onClick={skipTopGate} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                {PRE_CHECKIN_ACTION_LABELS_RU.skip_gate}
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
