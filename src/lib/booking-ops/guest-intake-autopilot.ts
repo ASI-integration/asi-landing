@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { recordBookingOpsEvent } from './events';
 import { createBookingOpsTask } from './tasks';
+import { syncLifecycleFromBookingOpsRecord } from './lifecycle';
 import {
   evaluateGuestIntakeState,
   type GuestIntakeStatePlan,
@@ -233,12 +234,14 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
       const withToken = await ensureGuestIntakePublicToken(session);
       await recordIntakeEvent({ recordId: record.id, session: withToken, created: true });
       await ensureFallbackTask(record, withToken);
+      await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
       return { ok: true, session: withToken, plan };
     }
 
     if (!hasPlanChanged(existing, plan)) {
       await ensureFallbackTask(record, existing);
       const withToken = await ensureGuestIntakePublicToken(existing);
+      await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
       return { ok: true, session: withToken, plan };
     }
 
@@ -263,6 +266,7 @@ export async function syncGuestIntakeAutopilot(record: BookingOpsRecord): Promis
     const withToken = await ensureGuestIntakePublicToken(session);
     await recordIntakeEvent({ recordId: record.id, session: withToken, created: false });
     await ensureFallbackTask(record, withToken);
+    await syncLifecycleFromBookingOpsRecord({ ...record, guestIntake: withToken });
     return { ok: true, session: withToken, plan };
   } catch (error) {
     return { ok: false, plan, error: error instanceof Error ? error.message : 'guest_intake_sync_failed' };

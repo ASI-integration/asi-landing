@@ -4,6 +4,7 @@ import { planBookingOpsPreparation } from './automation-engine';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
 import { computeBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { recordBookingOpsEvent, recordBookingOpsReadinessEvent } from './events';
+import { syncLifecycleFromTask } from './lifecycle';
 import { syncBookingOpsTasksForReadiness } from './task-sync';
 import {
   BOOKING_OPS_OPEN_TASK_STATUSES,
@@ -167,6 +168,7 @@ export async function createBookingOpsTask(
     },
     dedupeKey: `task-created:${task.id}`,
   });
+  await syncLifecycleFromTask(task);
   return { ok: true, task, created: true };
 }
 
@@ -250,6 +252,7 @@ export async function updateBookingOpsTask(
       dedupeKey: `task-status:${task.id}:${previousResult.task.status}:${task.status}:${previousResult.task.updatedAt}`,
     });
   }
+  await syncLifecycleFromTask(task);
   return { ok: true, task };
 }
 

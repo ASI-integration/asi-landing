@@ -83,6 +83,14 @@ import {
   resolveBookingOpsEditDraftSaveValue,
   toBookingOpsEditDraftDisplayValue,
 } from '@/lib/booking-ops/display-labels';
+import {
+  BOOKING_LIFECYCLE_GATE_LABELS_RU,
+  BOOKING_LIFECYCLE_STATUS_LABELS_RU,
+  type BookingLifecycleGate,
+  type BookingLifecycleGateKey,
+  type BookingLifecycleSnapshot,
+  type BookingLifecycleStatus,
+} from '@/lib/booking-ops/lifecycle-types';
 
 type ListResponse = {
   ok: boolean;
@@ -150,6 +158,12 @@ type TimelineResponse = {
   ok: boolean;
   message?: string;
   events?: BookingOpsEvent[];
+};
+
+type LifecycleResponse = {
+  ok: boolean;
+  message?: string;
+  lifecycle?: BookingLifecycleSnapshot;
 };
 
 const AUTOMATION_TONE: Record<string, string> = {
@@ -352,6 +366,9 @@ function BookingOpsPageInner() {
   const [communicationsLoading, setCommunicationsLoading] = useState(false);
   const [timelineEvents, setTimelineEvents] = useState<BookingOpsEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [lifecycle, setLifecycle] = useState<BookingLifecycleSnapshot | null>(null);
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [updatingLifecycleGate, setUpdatingLifecycleGate] = useState<string | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [recomputingPreparation, setRecomputingPreparation] = useState(false);
@@ -561,6 +578,35 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setLifecycle(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLifecycleLoading(true);
+    void fetch(`/api/dashboard/booking-ops/${selectedId}/lifecycle`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<LifecycleResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setLifecycle(null);
+          return;
+        }
+        setLifecycle(payload.lifecycle ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setLifecycleLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
@@ -568,6 +614,7 @@ function BookingOpsPageInner() {
     setOpsTasks([]);
     setCommunications([]);
     setTimelineEvents([]);
+    setLifecycle(null);
     setTaskActionResults({});
     setMessage('');
   }
@@ -606,6 +653,7 @@ function BookingOpsPageInner() {
         reloadOpsTasks(selectedId),
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
+        reloadLifecycle(selectedId),
       ]);
     } finally {
       setRunningTaskId(null);
@@ -636,6 +684,42 @@ function BookingOpsPageInner() {
     if (res.ok && payload.ok) setTimelineEvents(payload.events ?? []);
   }
 
+  async function reloadLifecycle(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/${recordId}/lifecycle`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<LifecycleResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setLifecycle(payload.lifecycle ?? null);
+  }
+
+  async function onUpdateLifecycleGate(
+    gateKey: BookingLifecycleGateKey,
+    status: BookingLifecycleStatus,
+    reason?: string,
+    note?: string,
+  ) {
+    if (!isOpsAdmin || !selectedId) return;
+    setUpdatingLifecycleGate(`${gateKey}:${status}`);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${selectedId}/lifecycle`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ gateKey, status, reason, note }),
+      });
+      const payload = await readResponseJson<LifecycleResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok) {
+        setMessage(payload.message || 'Не удалось обновить готовность брони.');
+        return;
+      }
+      setLifecycle(payload.lifecycle ?? null);
+      setMessage('Готовность брони обновлена.');
+    } finally {
+      setUpdatingLifecycleGate(null);
+    }
+  }
+
   async function onUpdateTaskStatus(taskId: string, status: BookingOpsTaskStatus) {
     if (!isOpsAdmin || !selectedId) return;
     setUpdatingTaskId(taskId);
@@ -658,6 +742,7 @@ function BookingOpsPageInner() {
         reloadCommunications(selectedId),
         reloadTelegramDrafts(selectedId),
         reloadTimeline(selectedId),
+        reloadLifecycle(selectedId),
       ]);
     } finally {
       setUpdatingTaskId(null);
@@ -694,6 +779,7 @@ function BookingOpsPageInner() {
         reloadOpsTasks(selectedId),
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
+        reloadLifecycle(selectedId),
       ]);
       setMessage(payload.message || 'Подготовка пересчитана.');
     } finally {
@@ -718,7 +804,7 @@ function BookingOpsPageInner() {
         return;
       }
       setTelegramDrafts((current) => [payload.draft!, ...current]);
-      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
+      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId), reloadLifecycle(selectedId)]);
       setMessage('Черновик Telegram создан. Сообщение не отправлено.');
     } finally {
       setCreatingTelegramDraft(false);
@@ -742,6 +828,7 @@ function BookingOpsPageInner() {
       )));
       await reloadOpsTasks(draft.bookingOpsRecordId);
       await reloadTimeline(draft.bookingOpsRecordId);
+      await reloadLifecycle(draft.bookingOpsRecordId);
     }
   }
 
@@ -799,7 +886,7 @@ function BookingOpsPageInner() {
       }
       setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
       setDraft(draftFromRecord(payload.record));
-      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId)]);
+      await Promise.all([reloadOpsTasks(selectedId), reloadTimeline(selectedId), reloadLifecycle(selectedId)]);
       setMessage('Изменения сохранены.');
     } finally {
       setSaving(false);
@@ -828,6 +915,7 @@ function BookingOpsPageInner() {
       setRecords((prev) => prev.map((item) => (item.id === payload.record!.id ? payload.record! : item)));
       setDraft(draftFromRecord(payload.record));
       await reloadTimeline(selectedId);
+      await reloadLifecycle(selectedId);
       setMessage('Действие подтверждено, статус обновлён.');
     } finally {
       setConfirmingAction(false);
@@ -1058,6 +1146,15 @@ function BookingOpsPageInner() {
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
 
+              <LifecycleCard
+                lifecycle={lifecycle}
+                loading={lifecycleLoading}
+                isOpsAdmin={isOpsAdmin}
+                updatingGate={updatingLifecycleGate}
+                onUpdateGate={(gateKey, status, reason, note) =>
+                  void onUpdateLifecycleGate(gateKey, status, reason, note)}
+              />
+
               <GuestIntakeCard
                 session={selectedRecord.guestIntake ?? null}
                 isOpsAdmin={isOpsAdmin}
@@ -1279,6 +1376,215 @@ function OperatorGuidanceCard({
           {task ? `К задаче: ${guidance.recommendedActionLabel}` : guidance.recommendedActionLabel}
         </button>
       ) : null}
+    </section>
+  );
+}
+
+const LIFECYCLE_STATUS_TONE: Record<BookingLifecycleStatus, string> = {
+  pending: 'border-slate-200 bg-slate-50 text-slate-700',
+  in_progress: 'border-sky-200 bg-sky-50 text-sky-900',
+  completed: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  blocked: 'border-red-200 bg-red-50 text-red-900',
+  skipped: 'border-slate-200 bg-white text-slate-500',
+  failed: 'border-rose-300 bg-rose-50 text-rose-900',
+};
+
+function LifecycleGatePill({ gate }: { gate: BookingLifecycleGate }) {
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${LIFECYCLE_STATUS_TONE[gate.status]}`}>
+      {BOOKING_LIFECYCLE_GATE_LABELS_RU[gate.gateKey]} · {BOOKING_LIFECYCLE_STATUS_LABELS_RU[gate.status]}
+    </span>
+  );
+}
+
+function LifecycleCard({
+  lifecycle,
+  loading,
+  isOpsAdmin,
+  updatingGate,
+  onUpdateGate,
+}: {
+  lifecycle: BookingLifecycleSnapshot | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  updatingGate: string | null;
+  onUpdateGate: (
+    gateKey: BookingLifecycleGateKey,
+    status: BookingLifecycleStatus,
+    reason?: string,
+    note?: string,
+  ) => void;
+}) {
+  const visibleGates = lifecycle?.gates ?? [];
+  const active = lifecycle?.currentActiveGate ?? null;
+  const completedPreview = lifecycle?.completedGates.slice(-8) ?? [];
+
+  function blockGate(gate: BookingLifecycleGate) {
+    const reason = window.prompt('Причина блокировки');
+    if (!reason) return;
+    onUpdateGate(gate.gateKey, 'blocked', reason);
+  }
+
+  function addNote(gate: BookingLifecycleGate) {
+    const note = window.prompt('Заметка к этапу', gate.note ?? '');
+    if (!note) return;
+    onUpdateGate(gate.gateKey, gate.status, gate.reason ?? undefined, note);
+  }
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Lifecycle / Готовность брони</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Единый список этапов до закрытия брони. Внешние провайдеры пока не подключены.
+          </p>
+        </div>
+        <div className="min-w-28 text-right">
+          <p className="text-2xl font-semibold text-slate-900">
+            {loading ? '…' : `${lifecycle?.readinessScore ?? 0}%`}
+          </p>
+          <p className="text-xs text-slate-500">готовность</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-500">Загрузка готовности брони…</p>
+      ) : !lifecycle ? (
+        <p className="text-sm text-slate-500">Готовность брони появится после пересчета.</p>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs font-medium text-slate-500">Текущий этап</p>
+              <p className="mt-1 font-medium text-slate-900">
+                {active ? BOOKING_LIFECYCLE_GATE_LABELS_RU[active.gateKey] : 'Нет активных этапов'}
+              </p>
+              {active ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {BOOKING_LIFECYCLE_STATUS_LABELS_RU[active.status]}
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
+              <p className="text-xs font-medium text-red-700">Блокеры</p>
+              <p className="mt-1 text-xl font-semibold text-red-900">{lifecycle.blockedGates.length}</p>
+            </div>
+            <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2">
+              <p className="text-xs font-medium text-emerald-700">Выполнено</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-900">{lifecycle.completedGates.length}</p>
+            </div>
+          </div>
+
+          {lifecycle.blockedGates.length > 0 ? (
+            <div>
+              <p className="font-medium text-slate-800">Проблемы</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {lifecycle.blockedGates.map((gate) => (
+                  <LifecycleGatePill key={gate.gateKey} gate={gate} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div>
+            <p className="font-medium text-slate-800">Следующие действия</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {lifecycle.nextRequiredGates.length > 0 ? lifecycle.nextRequiredGates.map((gate) => (
+                <LifecycleGatePill key={gate.gateKey} gate={gate} />
+              )) : (
+                <span className="text-xs text-slate-500">Все обязательные этапы закрыты.</span>
+              )}
+            </div>
+          </div>
+
+          {completedPreview.length > 0 ? (
+            <div>
+              <p className="font-medium text-slate-800">Последние выполненные</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {completedPreview.map((gate) => (
+                  <LifecycleGatePill key={gate.gateKey} gate={gate} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {lifecycle.exceptions.length > 0 ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-950">
+              <p className="font-medium">Исключения</p>
+              <ul className="mt-1 list-disc pl-5 text-xs space-y-1">
+                {lifecycle.exceptions.map((item) => (
+                  <li key={item.id}>
+                    {BOOKING_LIFECYCLE_GATE_LABELS_RU[item.gateKey]}: {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {isOpsAdmin ? (
+            <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                Ручные действия по этапам
+              </summary>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {visibleGates.map((gate) => (
+                  <div key={gate.gateKey} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium text-slate-900">
+                          {BOOKING_LIFECYCLE_GATE_LABELS_RU[gate.gateKey]}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {BOOKING_LIFECYCLE_STATUS_LABELS_RU[gate.status]}
+                          {gate.note ? ` · ${gate.note}` : ''}
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${LIFECYCLE_STATUS_TONE[gate.status]}`}>
+                        {BOOKING_LIFECYCLE_STATUS_LABELS_RU[gate.status]}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={updatingGate !== null}
+                        onClick={() => onUpdateGate(gate.gateKey, 'completed')}
+                        className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900 disabled:opacity-50"
+                      >
+                        Готово
+                      </button>
+                      <button
+                        type="button"
+                        disabled={updatingGate !== null}
+                        onClick={() => blockGate(gate)}
+                        className="rounded border border-red-300 bg-red-50 px-2 py-1 text-xs font-medium text-red-900 disabled:opacity-50"
+                      >
+                        Блок
+                      </button>
+                      <button
+                        type="button"
+                        disabled={updatingGate !== null}
+                        onClick={() => onUpdateGate(gate.gateKey, 'skipped', 'Пропущено вручную')}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        Пропустить
+                      </button>
+                      <button
+                        type="button"
+                        disabled={updatingGate !== null}
+                        onClick={() => addNote(gate)}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
+                      >
+                        Заметка
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

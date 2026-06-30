@@ -10,6 +10,7 @@ import {
   syncGuestIntakeAutopilot,
 } from './guest-intake-autopilot';
 import { recordBookingOpsEvent, type BookingOpsEventActorType } from './events';
+import { initializeLifecycleForBooking, syncLifecycleFromBookingOpsRecord } from './lifecycle';
 import { lookupPropertyKnowledge, lookupPropertyKnowledgeBatch } from './property-knowledge';
 import type {
   BookingOpsRecord,
@@ -119,7 +120,9 @@ async function enrichRecordWithTaskSync(record: BookingOpsRecord): Promise<Booki
   const enriched = await enrichRecord(record);
   await applyBookingOpsTaskSync(enriched);
   const intake = await syncGuestIntakeAutopilot(enriched);
-  return { ...enriched, guestIntake: intake.session ?? enriched.guestIntake ?? null };
+  const withIntake = { ...enriched, guestIntake: intake.session ?? enriched.guestIntake ?? null };
+  await syncLifecycleFromBookingOpsRecord(withIntake);
+  return withIntake;
 }
 
 async function enrichRecords(records: BookingOpsRecord[]): Promise<BookingOpsRecord[]> {
@@ -311,6 +314,7 @@ export async function createBookingOpsRecord(
     metadata: { status: row.ops_status, source: row.ota_source ?? 'manual' },
     dedupeKey: `booking-created:${id}`,
   });
+  await initializeLifecycleForBooking(id);
   const record = await enrichRecordWithTaskSync(mapRow(data as BookingOpsRow));
   return { ok: true, record };
 }
