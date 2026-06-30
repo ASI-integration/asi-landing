@@ -92,10 +92,9 @@ import {
   type BookingLifecycleStatus,
 } from '@/lib/booking-ops/lifecycle-types';
 import type { LegalPaymentStatus } from '@/lib/booking-ops/legal-payment-autopilot';
-import {
-  PRE_CHECKIN_READINESS_STATUS_LABELS_RU,
-  type PreCheckinReadinessSnapshot,
-  type PreCheckinReadinessStatus,
+import type {
+  PreCheckinReadinessSnapshot,
+  PreCheckinReadinessStatus,
 } from '@/lib/booking-ops/pre-checkin-control-center';
 
 type ListResponse = {
@@ -240,6 +239,15 @@ const PRE_CHECKIN_TONE: Record<PreCheckinReadinessStatus, string> = {
   overdue: 'border-rose-300 bg-rose-50 text-rose-950',
   checked_in: 'border-sky-200 bg-sky-50 text-sky-950',
   closed: 'border-slate-200 bg-slate-50 text-slate-700',
+};
+
+const PRE_CHECKIN_READINESS_STATUS_LABELS_RU: Record<PreCheckinReadinessStatus, string> = {
+  ready_for_checkin: 'Готово к заезду',
+  needs_attention: 'Требует внимания',
+  blocked: 'Заблокировано',
+  overdue: 'Просрочено',
+  checked_in: 'Заселён',
+  closed: 'Закрыто',
 };
 
 const PRE_CHECKIN_ACTION_LABELS_RU: Record<PreCheckinAction, string> = {
