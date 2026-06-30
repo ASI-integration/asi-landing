@@ -209,6 +209,9 @@ export function ChannelManagerConnectionFlow({ contactId, objectId, source }: Fl
             {statusLabel}
           </p>
         ) : null}
+        <p className="max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-900">
+          На пилоте ASI готовит данные и контролирует этап подключения. Публикация на площадках и импорт могут выполняться вручную или полуавтоматически — прямой отправки во все площадки сейчас нет.
+        </p>
       </header>
 
       <StepCard

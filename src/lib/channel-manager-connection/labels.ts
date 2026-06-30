@@ -22,9 +22,9 @@ export const CHANNEL_MANAGER_CONNECTION_STATUS_LABELS: Record<ChannelManagerConn
   ready_to_connect: 'Готов к подключению',
   waiting_access: 'Ждём доступы',
   verifying_data: 'Проверяем данные',
-  prepared: 'Подключение подготовлено',
+  prepared: 'Данные готовы — публикация вручную',
   needs_operator: 'Требует оператора',
-  connected: 'Подключено',
+  connected: 'Подключено или ведётся вручную',
   primary_setup_needed: 'Нужна первичная настройка',
 };
 

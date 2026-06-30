@@ -28,6 +28,14 @@ export const CRM_LEGACY_STATUS_VALUES = [
   'not_relevant',
 ] as const;
 
+export const PILOT_SETUP_STATUS_VALUES = [
+  'instruction_sent',
+  'access_received',
+  'test_object_selected',
+  'object_setup',
+  'ready_for_test',
+] as const;
+
 export const CRM_STATUS_VALUES = [
   ...PILOT_ROLLOUT_STATUS_VALUES,
   ...CRM_LEGACY_STATUS_VALUES,
@@ -189,7 +197,7 @@ export const CRM_STATUS_LABELS: Record<CrmStatus, string> = {
   waiting_object_data: 'Ждём данные объекта',
   access_received: 'Доступ получен',
   test_object_selected: 'Выбран тестовый объект',
-  object_setup: 'Объект на настройке',
+  object_setup: 'Готов к настройке',
   ready_for_test: 'Готов к тесту',
   pilot: 'Участник пилота',
   not_relevant: 'Не подходит сейчас',

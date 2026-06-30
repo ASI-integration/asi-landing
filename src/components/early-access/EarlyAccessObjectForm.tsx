@@ -38,23 +38,22 @@ const objectCountOptions = [
 const communityOptions: Array<{ value: CommunityStatus; label: string }> = [
   {
     value: 'community_member',
-    label: 'Участник сообщества Стригунова или Брагина — 1 000 ₽/мес на год',
+    label: 'Участник группы Ярослава Стригунова',
   },
   {
     value: 'standard_terms',
-    label: 'Стандартные условия',
+    label: 'Участник группы Анатолия Брагина',
   },
   {
     value: 'community_info',
-    label: 'Хочу узнать про сообщество и скидку',
+    label: 'Другая рекомендация или источник',
   },
 ];
 
 const communitySubmissionLabels: Record<CommunityStatus, string> = {
-  community_member:
-    'Участник сообщества Ярослава Стригунова или Анатолия Брагина. Зафиксировать стартовую цену на 1 год.',
-  standard_terms: 'Стандартные условия участия.',
-  community_info: 'Хочет узнать, как вступить в сообщество и получить скидку на год.',
+  community_member: 'Участник группы Ярослава Стригунова.',
+  standard_terms: 'Участник группы Анатолия Брагина.',
+  community_info: 'Другая рекомендация или источник.',
 };
 
 export function EarlyAccessObjectForm() {
@@ -81,7 +80,7 @@ export function EarlyAccessObjectForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          city: 'Заявка раннего доступа',
+          city: 'Заявка пилота ASI',
           objectName: form.name,
           addressOrArea: '',
           wifiName: '',

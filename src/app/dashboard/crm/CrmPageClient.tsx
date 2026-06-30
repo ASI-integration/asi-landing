@@ -11,6 +11,8 @@ import {
   CRM_SOURCE_VALUES,
   PILOT_ROLLOUT_STATUS_LABELS,
   PILOT_ROLLOUT_STATUS_VALUES,
+  PILOT_SETUP_STATUS_VALUES,
+  CRM_STATUS_LABELS,
   CrmCommunicationStatus,
   CrmContact,
   CrmSource,
@@ -304,7 +306,7 @@ export default function CrmPageClient() {
     <div className="mx-auto max-w-7xl space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-950">CRM раннего доступа</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Заявки пилота ASI</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Заявки, владельцы, объекты, этап подключения и следующий ручной шаг.
           </p>
@@ -560,6 +562,22 @@ export default function CrmPageClient() {
                           <option key={value} value={value}>
                             {PILOT_ROLLOUT_STATUS_LABELS[value]}
                           </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs font-medium uppercase text-slate-500">
+                      Этап подготовки
+                      <select
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={(PILOT_SETUP_STATUS_VALUES as readonly string[]).includes(contact.status) ? contact.status : ''}
+                        disabled={savingId === contact.id}
+                        onChange={(e) => {
+                          if (e.target.value) void patchContact(contact.id, { status: e.target.value as CrmStatus });
+                        }}
+                      >
+                        <option value="">Не выбран</option>
+                        {PILOT_SETUP_STATUS_VALUES.map((value) => (
+                          <option key={value} value={value}>{CRM_STATUS_LABELS[value]}</option>
                         ))}
                       </select>
                     </label>

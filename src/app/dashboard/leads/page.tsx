@@ -1,11 +1,11 @@
-import CrmPageClient from './CrmPageClient';
+import CrmPageClient from '../crm/CrmPageClient';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 
 export const metadata = {
-  title: 'CRM пилота | ASI',
+  title: 'Заявки пилота | ASI',
 };
 
-export default function CrmPage() {
+export default function LeadsPage() {
   return (
     <CrmAccessGuard>
       <CrmPageClient />

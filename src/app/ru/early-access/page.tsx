@@ -6,8 +6,8 @@ import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 
 export const metadata: Metadata = {
-  title: 'Ранний доступ ASI для посуточной аренды',
-  description: 'Ранний доступ ASI для владельцев посуточных объектов: ответы гостям, меньше рутины в переписке.',
+  title: 'Пилот ASI для посуточной аренды',
+  description: 'Пилот ASI для владельцев посуточных объектов: подготовка объекта, работа с бронированиями и меньше ручной рутины.',
 };
 
 const featureItems = [
@@ -17,8 +17,8 @@ const featureItems = [
     text: 'Сервис помогает отвечать гостям в Telegram текстом и голосом круглосуточно: про заселение, Wi-Fi, парковку, правила объекта, заезд, выезд, уборку и бытовые вопросы. Владелец подключается только к срочным, важным или нестандартным ситуациям, где нужно решение человека.',
   },
   {
-    title: 'Работа с площадками в одном месте',
-    text: 'Синхронизация Avito, Островка, Суточно.ру и других площадок — внутри ASI, без отдельных подписок на сторонние сервисы.',
+    title: 'Подготовка к работе с площадками',
+    text: 'ASI собирает данные объекта и готовит их для менеджера каналов и площадок. На пилоте публикация и импорт выполняются вручную или полуавтоматически.',
   },
   {
     title: 'Автоматические цены на ночь',
@@ -53,12 +53,6 @@ const securityItems = [
   },
 ];
 
-const pricingRows = [
-  ['Первые 7–14 дней', '0 ₽ (пробный период)'],
-  ['До 31 августа 2026 года', '1 000 ₽ / мес. за объект'],
-  ['С 1 сентября 2026 года', '3 000 ₽ за объект / мес. на 12 месяцев (всего 100 ₽ в сутки — цена чашки кофе)'],
-];
-
 export default function RuEarlyAccessPage() {
   return (
     <ThemeProvider defaultTheme="light" className="theme-transition min-h-screen bg-[var(--t-bg)] text-[var(--t-text)]">
@@ -87,7 +81,7 @@ export default function RuEarlyAccessPage() {
                     href="#pilot-form"
                     className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] px-7 py-3 text-sm font-bold text-[var(--t-text)] transition hover:bg-[var(--t-surface-2)]"
                   >
-                    1000 ₽/мес за объект
+                    Участвовать в пилоте
                   </a>
                 </div>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--t-muted)]">
@@ -164,22 +158,11 @@ export default function RuEarlyAccessPage() {
         </section>
 
         <section className="px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mx-auto max-w-5xl">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Стоимость и прозрачные условия</p>
-            <div className="mt-6 overflow-hidden rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)]">
-              <div className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] bg-[var(--t-surface-2)] text-sm font-bold text-[var(--t-text)]">
-                <div className="px-4 py-3">Период</div>
-                <div className="border-l border-[var(--t-border)] px-4 py-3">Стоимость за 1 объект</div>
-              </div>
-              {pricingRows.map(([period, price]) => (
-                <div key={period} className="grid grid-cols-[0.9fr_1.1fr] border-b border-[var(--t-border)] text-sm leading-6 text-[var(--t-text-2)] last:border-b-0">
-                  <div className="px-4 py-4 font-semibold text-[var(--t-text)]">{period}</div>
-                  <div className="border-l border-[var(--t-border)] px-4 py-4">{price}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-5 rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-5 text-sm leading-7 text-[var(--t-text-2)]">
-              🛡 Полная свобода и никаких обязательств. Если по какой-либо причине система вам не подошла, вы можете отменить подписку в один клик. Сервис продолжит полноценно работать на ваших объектах до окончания уже оплаченного периода.
+          <div className="mx-auto max-w-5xl rounded-lg border border-[var(--t-border)] bg-[var(--t-surface)] p-6">
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--t-muted)]">Условия пилота</p>
+            <h2 className="mt-3 text-2xl font-bold text-[var(--t-text)]">Запуск с ручным сопровождением</h2>
+            <p className="mt-3 text-sm leading-7 text-[var(--t-text-2)]">
+              Для первых объектов команда ASI помогает собрать данные, подготовить рабочий контур и пройти одну бронь от заявки до закрытия. Условия подключения подтверждаются отдельно с участником пилота.
             </p>
           </div>
         </section>
