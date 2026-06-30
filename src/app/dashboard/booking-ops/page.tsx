@@ -100,6 +100,10 @@ import type {
   CheckinExecutionSnapshot,
   CheckinExecutionStatus,
 } from '@/lib/booking-ops/checkin-execution-autopilot';
+import type {
+  InStayCheckoutSnapshot,
+  InStayCheckoutStatus,
+} from '@/lib/booking-ops/instay-checkout-autopilot';
 
 type ListResponse = {
   ok: boolean;
@@ -209,6 +213,12 @@ type CheckinExecutionResponse = {
   checkin?: CheckinExecutionSnapshot;
 };
 
+type InStayCheckoutResponse = {
+  ok: boolean;
+  message?: string;
+  instayCheckout?: InStayCheckoutSnapshot;
+};
+
 type PreCheckinAction =
   | 'recompute'
   | 'mark_ready_override'
@@ -229,6 +239,23 @@ type CheckinExecutionAction =
   | 'report_access_issue'
   | 'resolve_access_issue'
   | 'mark_guest_checked_in'
+  | 'create_fallback'
+  | 'add_note';
+
+type InStayCheckoutAction =
+  | 'open_support_window'
+  | 'create_guest_issue'
+  | 'triage_guest_issue'
+  | 'resolve_guest_issue'
+  | 'prepare_checkout_instructions'
+  | 'queue_checkout_instructions'
+  | 'mark_checkout_instructions_sent'
+  | 'request_checkout_confirmation'
+  | 'mark_guest_checked_out'
+  | 'trigger_post_checkout_inspection'
+  | 'mark_post_checkout_inspection_done'
+  | 'mark_deposit_return_ready'
+  | 'mark_booking_closed'
   | 'create_fallback'
   | 'add_note';
 
@@ -343,6 +370,97 @@ const CHECKIN_EXECUTION_ACTION_LABELS_RU: Record<CheckinExecutionAction, string>
   report_access_issue: 'Проблема доступа',
   resolve_access_issue: 'Разобрать проблему',
   mark_guest_checked_in: 'Гость заехал',
+  create_fallback: 'Открыть ручной план',
+  add_note: 'Заметка',
+};
+
+const INSTAY_CHECKOUT_TONE: Record<InStayCheckoutStatus, string> = {
+  not_checked_in: 'border-slate-200 bg-slate-50 text-slate-700',
+  in_stay: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  guest_issue_open: 'border-amber-200 bg-amber-50 text-amber-950',
+  guest_issue_blocked: 'border-red-200 bg-red-50 text-red-950',
+  checkout_preparing: 'border-sky-200 bg-sky-50 text-sky-950',
+  checkout_instructions_queued: 'border-indigo-200 bg-indigo-50 text-indigo-950',
+  checkout_pending: 'border-amber-200 bg-amber-50 text-amber-950',
+  checked_out: 'border-slate-200 bg-white text-slate-800',
+  inspection_pending: 'border-violet-200 bg-violet-50 text-violet-950',
+  inspection_done: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  deposit_return_ready: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  ready_to_close: 'border-sky-200 bg-sky-50 text-sky-950',
+  closed: 'border-slate-200 bg-slate-50 text-slate-700',
+  blocked: 'border-red-200 bg-red-50 text-red-950',
+};
+
+const INSTAY_CHECKOUT_STATUS_LABELS_RU: Record<InStayCheckoutStatus, string> = {
+  not_checked_in: 'Гость не заехал',
+  in_stay: 'Проживание',
+  guest_issue_open: 'Есть обращение',
+  guest_issue_blocked: 'Проблема блокирует',
+  checkout_preparing: 'Готовим выезд',
+  checkout_instructions_queued: 'Инструкции в очереди',
+  checkout_pending: 'Ждём выезд',
+  checked_out: 'Гость выехал',
+  inspection_pending: 'Осмотр',
+  inspection_done: 'Осмотр готов',
+  deposit_return_ready: 'Депозит готов',
+  ready_to_close: 'Можно закрыть',
+  closed: 'Закрыто',
+  blocked: 'Заблокировано',
+};
+
+const INSTAY_CHECKOUT_INSTRUCTIONS_LABELS_RU = {
+  not_prepared: 'Не подготовлены',
+  prepared: 'Подготовлены',
+  queued: 'В очереди',
+  sent: 'Отправлены',
+  failed: 'Ошибка',
+} as const;
+
+const INSTAY_CHECKOUT_CONFIRMATION_LABELS_RU = {
+  not_requested: 'Не запрошено',
+  requested: 'Запрошено',
+  confirmed: 'Подтверждено',
+  missed: 'Пропущено',
+} as const;
+
+const INSTAY_CHECKOUT_INSPECTION_LABELS_RU = {
+  not_started: 'Не начат',
+  scheduled: 'Назначен',
+  done: 'Готов',
+  issue_found: 'Есть проблема',
+  failed: 'Ошибка',
+} as const;
+
+const INSTAY_CHECKOUT_DEPOSIT_LABELS_RU = {
+  not_ready: 'Не готов',
+  ready: 'Готов',
+  held: 'Удержан',
+  partially_held: 'Частично',
+  returned: 'Возвращён',
+  waived: 'Не требуется',
+} as const;
+
+const INSTAY_CHECKOUT_CLOSURE_LABELS_RU = {
+  open: 'Открыта',
+  ready_to_close: 'К закрытию',
+  closed: 'Закрыта',
+  blocked: 'Заблокирована',
+} as const;
+
+const INSTAY_CHECKOUT_ACTION_LABELS_RU: Record<InStayCheckoutAction, string> = {
+  open_support_window: 'Открыть поддержку',
+  create_guest_issue: 'Обращение гостя',
+  triage_guest_issue: 'Разобрать',
+  resolve_guest_issue: 'Закрыть обращение',
+  prepare_checkout_instructions: 'Подготовить выезд',
+  queue_checkout_instructions: 'В очередь',
+  mark_checkout_instructions_sent: 'Инструкции отправлены',
+  request_checkout_confirmation: 'Запросить выезд',
+  mark_guest_checked_out: 'Гость выехал',
+  trigger_post_checkout_inspection: 'Запустить осмотр',
+  mark_post_checkout_inspection_done: 'Осмотр готов',
+  mark_deposit_return_ready: 'Депозит готов',
+  mark_booking_closed: 'Закрыть бронь',
   create_fallback: 'Открыть ручной план',
   add_note: 'Заметка',
 };
@@ -536,6 +654,9 @@ function BookingOpsPageInner() {
   const [checkinExecution, setCheckinExecution] = useState<CheckinExecutionSnapshot | null>(null);
   const [checkinExecutionLoading, setCheckinExecutionLoading] = useState(false);
   const [checkinExecutionAction, setCheckinExecutionAction] = useState<CheckinExecutionAction | null>(null);
+  const [instayCheckout, setInstayCheckout] = useState<InStayCheckoutSnapshot | null>(null);
+  const [instayCheckoutLoading, setInstayCheckoutLoading] = useState(false);
+  const [instayCheckoutAction, setInstayCheckoutAction] = useState<InStayCheckoutAction | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [recomputingPreparation, setRecomputingPreparation] = useState(false);
@@ -861,6 +982,35 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setInstayCheckout(null);
+      return;
+    }
+
+    let cancelled = false;
+    setInstayCheckoutLoading(true);
+    void fetch(`/api/dashboard/booking-ops/instay-checkout?bookingId=${encodeURIComponent(selectedId)}`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<InStayCheckoutResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setInstayCheckout(null);
+          return;
+        }
+        setInstayCheckout(payload.instayCheckout ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setInstayCheckoutLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
@@ -872,6 +1022,7 @@ function BookingOpsPageInner() {
     setLegalPayment(null);
     setPreCheckin(null);
     setCheckinExecution(null);
+    setInstayCheckout(null);
     setTaskActionResults({});
     setMessage('');
   }
@@ -913,6 +1064,7 @@ function BookingOpsPageInner() {
         reloadLifecycle(selectedId),
         reloadPreCheckin(selectedId),
         reloadCheckinExecution(selectedId),
+        reloadInstayCheckout(selectedId),
       ]);
     } finally {
       setRunningTaskId(null);
@@ -975,6 +1127,14 @@ function BookingOpsPageInner() {
     if (res.ok && payload.ok) setCheckinExecution(payload.checkin ?? null);
   }
 
+  async function reloadInstayCheckout(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/instay-checkout?bookingId=${encodeURIComponent(recordId)}`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<InStayCheckoutResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setInstayCheckout(payload.instayCheckout ?? null);
+  }
+
   async function onLegalPaymentAction(action: LegalPaymentAction, extra?: Record<string, unknown>) {
     if (!isOpsAdmin || !selectedId) return;
     setLegalPaymentAction(action);
@@ -999,6 +1159,7 @@ function BookingOpsPageInner() {
         reloadTimeline(selectedId),
         reloadPreCheckin(selectedId),
         reloadCheckinExecution(selectedId),
+        reloadInstayCheckout(selectedId),
       ]);
       setMessage('Статус обновлён.');
     } finally {
@@ -1059,10 +1220,41 @@ function BookingOpsPageInner() {
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
         reloadPreCheckin(selectedId),
+        reloadInstayCheckout(selectedId),
       ]);
       setMessage('Заселение обновлено.');
     } finally {
       setCheckinExecutionAction(null);
+    }
+  }
+
+  async function onInstayCheckoutAction(action: InStayCheckoutAction, extra?: Record<string, unknown>) {
+    if (!isOpsAdmin || !selectedId) return;
+    setInstayCheckoutAction(action);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/booking-ops/instay-checkout/action', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<InStayCheckoutResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.instayCheckout) {
+        setMessage(payload.message || 'Не удалось обновить проживание.');
+        return;
+      }
+      setInstayCheckout(payload.instayCheckout);
+      await Promise.all([
+        load(),
+        reloadLifecycle(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+        reloadInstayCheckout(selectedId),
+      ]);
+      setMessage('Проживание обновлено.');
+    } finally {
+      setInstayCheckoutAction(null);
     }
   }
 
@@ -1090,6 +1282,7 @@ function BookingOpsPageInner() {
       setLifecycle(payload.lifecycle ?? null);
       await reloadPreCheckin(selectedId);
       await reloadCheckinExecution(selectedId);
+      await reloadInstayCheckout(selectedId);
       setMessage('Готовность брони обновлена.');
     } finally {
       setUpdatingLifecycleGate(null);
@@ -1540,6 +1733,14 @@ function BookingOpsPageInner() {
                 isOpsAdmin={isOpsAdmin}
                 activeAction={checkinExecutionAction}
                 onAction={(action, extra) => void onCheckinExecutionAction(action, extra)}
+              />
+
+              <InStayCheckoutCard
+                instay={instayCheckout}
+                loading={instayCheckoutLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={instayCheckoutAction}
+                onAction={(action, extra) => void onInstayCheckoutAction(action, extra)}
               />
 
               <LifecycleCard
@@ -2116,6 +2317,175 @@ function CheckinActionButton({
       className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
     >
       {activeAction === action ? 'Сохранение…' : CHECKIN_EXECUTION_ACTION_LABELS_RU[action]}
+    </button>
+  );
+}
+
+function InStayCheckoutCard({
+  instay,
+  loading,
+  isOpsAdmin,
+  activeAction,
+  onAction,
+}: {
+  instay: InStayCheckoutSnapshot | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: InStayCheckoutAction | null;
+  onAction: (action: InStayCheckoutAction, extra?: Record<string, unknown>) => void;
+}) {
+  const status = instay?.status ?? 'not_checked_in';
+  const tone = INSTAY_CHECKOUT_TONE[status];
+
+  function createGuestIssue() {
+    const issueType = window.prompt('Тип обращения', 'general');
+    if (!issueType) return;
+    const description = window.prompt('Описание для гостя');
+    if (!description) return;
+    const severity = window.prompt('Срочность: low / medium / high / urgent', 'medium') || 'medium';
+    onAction('create_guest_issue', { issueType, description, severity });
+  }
+
+  function resolveGuestIssue() {
+    const issueId = instay?.openIssues[0]?.id;
+    if (!issueId) {
+      window.alert('Нет открытых обращений.');
+      return;
+    }
+    const resolution = window.prompt('Как закрыли обращение?');
+    if (!resolution) return;
+    onAction('resolve_guest_issue', { issueId, resolution });
+  }
+
+  function markInspectionDone() {
+    const result = window.prompt('Результат осмотра: ok / issue_found / failed', 'ok');
+    if (!result) return;
+    onAction('mark_post_checkout_inspection_done', { result });
+  }
+
+  function createFallback() {
+    const reason = window.prompt('Причина ручного плана', instay?.blockers[0]?.reason ?? '');
+    if (!reason) return;
+    onAction('create_fallback', { reason });
+  }
+
+  function addNote() {
+    const note = window.prompt('Заметка по проживанию');
+    if (!note) return;
+    onAction('add_note', { note });
+  }
+
+  const canCreateFallback = Boolean(instay?.blockers.some((item) => item.fallbackEligible));
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Проживание / выезд</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Поддержка гостя, выезд, осмотр и возврат депозита без автоотправки.
+          </p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tone}`}>
+          {INSTAY_CHECKOUT_STATUS_LABELS_RU[status]}
+        </span>
+      </div>
+
+      {loading ? (
+        <p className="text-slate-500">Загрузка проживания…</p>
+      ) : !instay ? (
+        <p className="text-slate-500">Статус проживания появится после проверки брони.</p>
+      ) : (
+        <>
+          <div className="grid gap-2 md:grid-cols-3 lg:grid-cols-6">
+            <CheckinMetric label="Обращения" value={String(instay.openIssuesCount)} />
+            <CheckinMetric label="Инструкции" value={INSTAY_CHECKOUT_INSTRUCTIONS_LABELS_RU[instay.checkoutInstructionsStatus]} />
+            <CheckinMetric label="Выезд" value={INSTAY_CHECKOUT_CONFIRMATION_LABELS_RU[instay.checkoutConfirmationStatus]} />
+            <CheckinMetric label="Осмотр" value={INSTAY_CHECKOUT_INSPECTION_LABELS_RU[instay.inspectionStatus]} />
+            <CheckinMetric label="Депозит" value={INSTAY_CHECKOUT_DEPOSIT_LABELS_RU[instay.depositReturnStatus]} />
+            <CheckinMetric label="Закрытие" value={INSTAY_CHECKOUT_CLOSURE_LABELS_RU[instay.closureStatus]} />
+          </div>
+
+          {instay.nextAction ? (
+            <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sky-950">
+              <p className="text-xs font-medium text-sky-700">Следующее действие</p>
+              <p className="mt-1">{instay.nextAction}</p>
+            </div>
+          ) : null}
+
+          {instay.blockers.length > 0 ? (
+            <details className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-red-900">
+                Блокеры: {instay.blockers.length}
+              </summary>
+              <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-red-950">
+                {instay.blockers.map((item) => (
+                  <li key={item.key}>
+                    {item.title}: {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <p className="text-xs text-slate-500">Блокеров по проживанию нет.</p>
+          )}
+
+          {isOpsAdmin ? (
+            <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                Действия оператора
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <InStayActionButton action="open_support_window" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null} onClick={createGuestIssue} className="rounded border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-900 disabled:opacity-50">
+                  {INSTAY_CHECKOUT_ACTION_LABELS_RU.create_guest_issue}
+                </button>
+                <button type="button" disabled={activeAction !== null} onClick={resolveGuestIssue} className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900 disabled:opacity-50">
+                  {INSTAY_CHECKOUT_ACTION_LABELS_RU.resolve_guest_issue}
+                </button>
+                <InStayActionButton action="prepare_checkout_instructions" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="queue_checkout_instructions" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="mark_checkout_instructions_sent" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="request_checkout_confirmation" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="mark_guest_checked_out" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="trigger_post_checkout_inspection" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null} onClick={markInspectionDone} className="rounded border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-900 disabled:opacity-50">
+                  {INSTAY_CHECKOUT_ACTION_LABELS_RU.mark_post_checkout_inspection_done}
+                </button>
+                <InStayActionButton action="mark_deposit_return_ready" activeAction={activeAction} onAction={onAction} />
+                <InStayActionButton action="mark_booking_closed" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null || !canCreateFallback} onClick={createFallback} className="rounded border border-red-300 bg-white px-2.5 py-1.5 text-xs font-medium text-red-900 disabled:opacity-50">
+                  {INSTAY_CHECKOUT_ACTION_LABELS_RU.create_fallback}
+                </button>
+                <button type="button" disabled={activeAction !== null} onClick={addNote} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                  {INSTAY_CHECKOUT_ACTION_LABELS_RU.add_note}
+                </button>
+              </div>
+            </details>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function InStayActionButton({
+  action,
+  activeAction,
+  onAction,
+}: {
+  action: InStayCheckoutAction;
+  activeAction: InStayCheckoutAction | null;
+  onAction: (action: InStayCheckoutAction, extra?: Record<string, unknown>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={activeAction !== null}
+      onClick={() => onAction(action)}
+      className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+    >
+      {activeAction === action ? 'Сохранение…' : INSTAY_CHECKOUT_ACTION_LABELS_RU[action]}
     </button>
   );
 }

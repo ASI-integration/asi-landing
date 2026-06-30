@@ -146,6 +146,43 @@ vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => ({
   })),
 }));
 
+vi.mock('@/lib/booking-ops/instay-checkout-autopilot', () => ({
+  getInStayCheckoutStatus: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'in_stay',
+    execution: null,
+    checkoutInstructionsStatus: 'not_prepared',
+    checkoutConfirmationStatus: 'not_requested',
+    inspectionStatus: 'not_started',
+    depositReturnStatus: 'not_ready',
+    closureStatus: 'open',
+    openIssuesCount: 0,
+    openIssues: [],
+    lifecycle: null,
+    blockers: [],
+    communications: [],
+    nextAction: 'Следить за проживанием и готовить выезд',
+    updatedAt: '2026-06-30T10:00:00.000Z',
+  })),
+  runInStayCheckoutAction: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'checkout_instructions_queued',
+    execution: null,
+    checkoutInstructionsStatus: 'queued',
+    checkoutConfirmationStatus: 'not_requested',
+    inspectionStatus: 'not_started',
+    depositReturnStatus: 'not_ready',
+    closureStatus: 'open',
+    openIssuesCount: 0,
+    openIssues: [],
+    lifecycle: null,
+    blockers: [],
+    communications: [],
+    nextAction: 'Проверить черновик и отметить отправку',
+    updatedAt: '2026-06-30T10:00:00.000Z',
+  })),
+}));
+
 describe('Booking Ops dashboard routes', () => {
   it('list route returns 200', async () => {
     const route = await import('../route');
@@ -203,6 +240,25 @@ describe('Booking Ops dashboard routes', () => {
 
   it('check-in execution API rejects invalid action', async () => {
     const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'bad_action' }),
+    }));
+    expect(response.status).toBe(400);
+  });
+
+  it('instay-checkout API returns 401 when unauthenticated', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    vi.mocked(auth.requireCrmOperatorSession).mockResolvedValueOnce({
+      error: Response.json({ ok: false }, { status: 401 }) as never,
+    });
+    const route = await import('../instay-checkout/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    expect(response.status).toBe(401);
+  });
+
+  it('instay-checkout API rejects invalid action', async () => {
+    const route = await import('../instay-checkout/route');
     const response = await route.POST(new Request('https://asi.test', {
       method: 'POST',
       body: JSON.stringify({ bookingId: 'ops-route', action: 'bad_action' }),
