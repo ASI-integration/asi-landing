@@ -36,6 +36,8 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
@@ -84,6 +86,6 @@ jobs:
 
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -lc 'set -euo pipefail
             cp \"${REMOTE_TMP}/booking_lifecycle_gates_v1.sql\" /tmp/booking_lifecycle_gates_v1.sql
-            python3 \"${REMOTE_TMP}/apply-booking-lifecycle-migration-remote.py\"
+            SUPABASE_DB_URL=\"${SUPABASE_DB_URL:-}\" DATABASE_URL=\"${DATABASE_URL:-}\" python3 \"${REMOTE_TMP}/apply-booking-lifecycle-migration-remote.py\"
             rm -f /tmp/booking_lifecycle_gates_v1.sql \"${REMOTE_TMP}/booking_lifecycle_gates_v1.sql\" \"${REMOTE_TMP}/apply-booking-lifecycle-migration-remote.py\"
           '"
