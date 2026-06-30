@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
 import { getBookingOpsRecord, listBookingOpsRecords, updateBookingOpsRecord } from './repository';
 import {
   adminUpdateLifecycleGate,
@@ -512,6 +513,19 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     && (item.status === 'draft_ready' || item.status === 'waiting_for_external_input'));
   if (existing) return;
   const now = new Date().toISOString();
+  const channel = record.guestTelegram ? 'telegram' : record.guestEmail ? 'email' : 'manual';
+  const messageText = 'Здравствуйте. Инструкции заезда готовы к проверке оператором.';
+  const metadata = await buildAutoSendDecisionMetadata({
+    actorType: 'guest',
+    purpose: 'send_checkin_instructions',
+    channel,
+    messageText,
+    metadata: { source: 'pre_checkin_control_center_v1' },
+  }, {
+    bookingId: record.bookingId,
+    propertyId: record.propertyId,
+    guestRef: record.guestTelegram ?? record.guestEmail ?? record.guestPhone,
+  });
   await supabase.from('booking_ops_communication_intents').insert({
     id: randomUUID(),
     booking_ops_record_id: record.id,
@@ -520,11 +534,11 @@ async function ensureCheckinInstructionsDraft(record: BookingOpsRecord): Promise
     actor_type: 'guest',
     actor_label: text(record.guestName) || 'Гость',
     purpose: 'send_checkin_instructions',
-    channel: record.guestTelegram ? 'telegram' : record.guestEmail ? 'email' : 'manual',
+    channel,
     status: 'draft_ready',
-    message_text: 'Здравствуйте. Инструкции заезда готовы к проверке оператором.',
+    message_text: messageText,
     message_template_key: 'guest.pre_checkin.instructions.v1',
-    metadata: { source: 'pre_checkin_control_center_v1' },
+    metadata,
     created_at: now,
     updated_at: now,
     superseded_at: null,

@@ -147,6 +147,13 @@ type CommunicationsResponse = {
   nextAction?: string | null;
 };
 
+type CommunicationAutoSendAction =
+  | 'approve_send'
+  | 'force_review'
+  | 'block_auto_send'
+  | 'mark_safe_type'
+  | 'disable_booking';
+
 type TaskUpdateResponse = TasksResponse & {
   effectResult?: BookingOpsTaskCompletionEffectResult | null;
 };
@@ -640,6 +647,7 @@ function BookingOpsPageInner() {
   const [opsTasksLoading, setOpsTasksLoading] = useState(false);
   const [communications, setCommunications] = useState<BookingOpsCommunicationIntent[]>([]);
   const [communicationsLoading, setCommunicationsLoading] = useState(false);
+  const [updatingCommunicationId, setUpdatingCommunicationId] = useState<string | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<BookingOpsEvent[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [lifecycle, setLifecycle] = useState<BookingLifecycleSnapshot | null>(null);
@@ -1085,6 +1093,36 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<CommunicationsResponse>(res, { ok: false });
     if (res.ok && payload.ok) setCommunications(payload.communications ?? []);
+  }
+
+  async function onCommunicationAutoSendAction(
+    communicationId: string,
+    action: CommunicationAutoSendAction,
+  ) {
+    if (!isOpsAdmin || !selectedId) return;
+    setUpdatingCommunicationId(communicationId);
+    setMessage('');
+    try {
+      const res = await fetch(
+        `/api/dashboard/booking-ops/${selectedId}/communications/${communicationId}/auto-send`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        },
+      );
+      const payload = await readResponseJson<CommunicationsResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok) {
+        setMessage(payload.message || 'Не удалось изменить правило автоотправки.');
+        return;
+      }
+      if (payload.communications) setCommunications(payload.communications);
+      else await reloadCommunications(selectedId);
+      setMessage(payload.message || 'Правило автоотправки обновлено.');
+    } finally {
+      setUpdatingCommunicationId(null);
+    }
   }
 
   async function reloadTimeline(recordId: string) {
@@ -1773,6 +1811,10 @@ function BookingOpsPageInner() {
                 communications={communications}
                 tasks={opsTasks}
                 loading={communicationsLoading}
+                isOpsAdmin={isOpsAdmin}
+                updatingCommunicationId={updatingCommunicationId}
+                onAutoSendAction={(communicationId, action) =>
+                  void onCommunicationAutoSendAction(communicationId, action)}
               />
 
               <TurnoverOpsCard
@@ -2958,14 +3000,46 @@ const COMMUNICATION_CHANNEL_LABELS_RU: Record<string, string> = {
   manual: 'Вручную',
 };
 
+const AUTO_SEND_DECISION_LABELS_RU: Record<string, string> = {
+  allowed: 'Разрешено',
+  review_required: 'Нужна проверка',
+  blocked: 'Заблокировано',
+  rate_limited: 'Достигнут лимит',
+  quiet_hours: 'Тихие часы',
+  missing_metadata: 'Не хватает данных',
+  unsafe_content: 'Небезопасное содержание',
+  unknown_message_type: 'Неизвестный тип',
+};
+
+function communicationAutoSendDecision(item: BookingOpsCommunicationIntent): {
+  code: string;
+  summary: string;
+} {
+  const raw = item.metadata.auto_send_decision;
+  if (!raw || typeof raw !== 'object') {
+    return { code: 'review_required', summary: 'Классификация ещё не выполнена.' };
+  }
+  const value = raw as Record<string, unknown>;
+  return {
+    code: String(value.decision ?? 'review_required'),
+    summary: String(value.safe_to_display_summary ?? 'Нужна проверка оператора.'),
+  };
+}
+
 function CommunicationIntentsCard({
   communications,
   tasks,
   loading,
+  isOpsAdmin,
+  updatingCommunicationId,
+  onAutoSendAction,
 }: {
   communications: BookingOpsCommunicationIntent[];
   tasks: BookingOpsTask[];
   loading: boolean;
+  isOpsAdmin: boolean;
+  updatingCommunicationId: string | null;
+  onAutoSendAction: (communicationId: string, action: CommunicationAutoSendAction) => void;
 }) {
   const taskById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
@@ -3012,6 +3086,8 @@ function CommunicationIntentsCard({
               <div className="mt-2 space-y-2">
                 {items.map((item) => {
                   const task = item.relatedTaskId ? taskById.get(item.relatedTaskId) : null;
+                  const autoSend = communicationAutoSendDecision(item);
+                  const updating = updatingCommunicationId === item.id;
                   return (
                     <article
                       key={item.id}
@@ -3029,9 +3105,42 @@ function CommunicationIntentsCard({
                         <span>{COMMUNICATION_CHANNEL_LABELS_RU[item.channel] ?? item.channel}</span>
                         {task ? <span>Задача: {task.title}</span> : null}
                       </div>
+                      <div className="mt-2 rounded-md bg-slate-50 px-2.5 py-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium text-slate-700">
+                            Автоотправка: {AUTO_SEND_DECISION_LABELS_RU[autoSend.code] ?? 'Нужна проверка'}
+                          </span>
+                          <span className="text-slate-500">Отправка выключена</span>
+                        </div>
+                        <p className="mt-1 text-slate-600">{autoSend.summary}</p>
+                      </div>
                       <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
                         {formatBookingOpsMessageTextDisplay(item.messageText)}
                       </p>
+                      {isOpsAdmin ? (
+                        <details className="mt-2 text-xs">
+                          <summary className="cursor-pointer font-medium text-slate-600">
+                            {updating ? 'Сохранение…' : 'Действия автоотправки'}
+                          </summary>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'approve_send')} className="rounded border border-emerald-300 px-2 py-1 text-emerald-700 disabled:opacity-50">
+                              Разрешить в очередь
+                            </button>
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'force_review')} className="rounded border border-amber-300 px-2 py-1 text-amber-700 disabled:opacity-50">
+                              Нужна проверка
+                            </button>
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'block_auto_send')} className="rounded border border-rose-300 px-2 py-1 text-rose-700 disabled:opacity-50">
+                              Заблокировать
+                            </button>
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'mark_safe_type')} className="rounded border border-slate-300 px-2 py-1 text-slate-700 disabled:opacity-50">
+                              Разрешить этот тип
+                            </button>
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'disable_booking')} className="rounded border border-slate-300 px-2 py-1 text-slate-700 disabled:opacity-50">
+                              Отключить для брони
+                            </button>
+                          </div>
+                        </details>
+                      ) : null}
                     </article>
                   );
                 })}

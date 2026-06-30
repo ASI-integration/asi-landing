@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import {
+  attachAutoSendDecisionMetadata,
+  canAutoSendCommunicationIntent,
+  evaluateAndPersistIntentAutoSendDecision,
+} from './communication-auto-send-policy';
 import { recordBookingOpsEvent } from './events';
 import { computeBookingReadiness } from './readiness';
 import {
@@ -481,6 +486,12 @@ export async function syncBookingOpsCommunications(input: {
   }
 
   for (const item of plan.toUpdate) {
+    const autoSendDecision = await canAutoSendCommunicationIntent(item.desired, {
+      bookingId: input.record.bookingId,
+      propertyId: input.record.propertyId,
+      guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
+      unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
+    });
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .update({
@@ -489,7 +500,7 @@ export async function syncBookingOpsCommunications(input: {
         status: item.desired.status,
         message_text: item.desired.messageText,
         message_template_key: item.desired.messageTemplateKey,
-        metadata: item.desired.metadata ?? {},
+        metadata: attachAutoSendDecisionMetadata(item.desired.metadata ?? {}, autoSendDecision),
         updated_at: now,
       })
       .eq('id', item.existing.id)
@@ -506,6 +517,12 @@ export async function syncBookingOpsCommunications(input: {
   }
 
   for (const item of plan.toCreate) {
+    const autoSendDecision = await canAutoSendCommunicationIntent(item, {
+      bookingId: input.record.bookingId,
+      propertyId: input.record.propertyId,
+      guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
+      unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
+    });
     const { data } = await supabase
       .from('booking_ops_communication_intents')
       .insert({
@@ -520,7 +537,7 @@ export async function syncBookingOpsCommunications(input: {
         status: item.status,
         message_text: item.messageText,
         message_template_key: item.messageTemplateKey,
-        metadata: item.metadata ?? {},
+        metadata: attachAutoSendDecisionMetadata(item.metadata ?? {}, autoSendDecision),
         created_at: now,
         updated_at: now,
       })
@@ -541,6 +558,16 @@ export async function syncBookingOpsCommunications(input: {
         });
       }
     }
+  }
+
+  for (const item of existingResult.communications) {
+    if (!ACTIVE_STATUSES.has(item.status) || item.metadata.auto_send_decision) continue;
+    await evaluateAndPersistIntentAutoSendDecision(item, {
+      bookingId: input.record.bookingId,
+      propertyId: input.record.propertyId,
+      guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
+      unresolvedComplaint: input.record.guestIntake?.intakeStatus === 'fallback_required',
+    });
   }
 
   const finalResult = await listBookingOpsCommunicationsForRecord(input.record.id);

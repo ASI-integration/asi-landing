@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
 import { listBookingOpsCommunicationsForRecord } from './communication-orchestrator';
 import {
   adminUpdateLifecycleGate,
@@ -524,6 +525,24 @@ async function ensureCommunicationIntent(input: {
   }
 
   const now = new Date().toISOString();
+  const channel = preferredChannel(input.record, input.channel);
+  const baseMetadata = {
+    source: 'instay_checkout_autopilot_v1',
+    bookingOpsRecordId: input.record.id,
+    ...safeMetadata(input.metadata),
+  };
+  const metadata = await buildAutoSendDecisionMetadata({
+    actorType: 'guest',
+    purpose: input.purpose,
+    channel,
+    messageText: input.messageText,
+    metadata: baseMetadata,
+  }, {
+    bookingId: input.record.bookingId,
+    propertyId: input.record.propertyId,
+    guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
+    unresolvedComplaint: input.purpose === 'guest_stay_issue_followup',
+  });
   const { data, error } = await supabase
     .from('booking_ops_communication_intents')
     .insert({
@@ -534,15 +553,11 @@ async function ensureCommunicationIntent(input: {
       actor_type: 'guest',
       actor_label: text(input.record.guestName) || 'Гость',
       purpose: input.purpose,
-      channel: preferredChannel(input.record, input.channel),
+      channel,
       status: 'draft_ready',
       message_text: input.messageText,
       message_template_key: input.messageTemplateKey,
-      metadata: {
-        source: 'instay_checkout_autopilot_v1',
-        bookingOpsRecordId: input.record.id,
-        ...safeMetadata(input.metadata),
-      },
+      metadata,
       created_at: now,
       updated_at: now,
       superseded_at: null,

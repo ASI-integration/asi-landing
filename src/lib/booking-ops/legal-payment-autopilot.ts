@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { buildAutoSendDecisionMetadata } from './communication-auto-send-policy';
 import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
 import {
   blockGate,
@@ -480,6 +481,18 @@ async function createOrUpdateCommunication(input: {
   metadata?: Record<string, unknown>;
 }): Promise<void> {
   const now = new Date().toISOString();
+  const channel = preferredGuestChannel(input.record);
+  const metadata = await buildAutoSendDecisionMetadata({
+    actorType: 'guest',
+    purpose: input.purpose,
+    channel,
+    messageText: input.messageText,
+    metadata: input.metadata ?? {},
+  }, {
+    bookingId: input.record.bookingId,
+    propertyId: input.record.propertyId,
+    guestRef: input.record.guestTelegram ?? input.record.guestEmail ?? input.record.guestPhone,
+  });
   const { data } = await supabase
     .from('booking_ops_communication_intents')
     .select('*')
@@ -498,11 +511,11 @@ async function createOrUpdateCommunication(input: {
     actor_type: 'guest',
     actor_label: guestName(input.record),
     purpose: input.purpose,
-    channel: preferredGuestChannel(input.record),
+    channel,
     status: input.status ?? 'draft_ready',
     message_text: input.messageText,
     message_template_key: input.templateKey,
-    metadata: input.metadata ?? {},
+    metadata,
     updated_at: now,
   };
 

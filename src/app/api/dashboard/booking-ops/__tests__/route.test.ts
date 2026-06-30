@@ -265,4 +265,19 @@ describe('Booking Ops dashboard routes', () => {
     }));
     expect(response.status).toBe(400);
   });
+
+  it('auto-send policy API returns 401 when unauthenticated', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    vi.mocked(auth.requireOpsAdminSession).mockResolvedValueOnce({
+      error: Response.json({ ok: false }, { status: 401 }) as never,
+    });
+    const route = await import('../[id]/communications/[communicationId]/auto-send/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'block_auto_send' }),
+    }), {
+      params: { id: 'ops-route', communicationId: 'communication-route' },
+    });
+    expect(response.status).toBe(401);
+  });
 });
