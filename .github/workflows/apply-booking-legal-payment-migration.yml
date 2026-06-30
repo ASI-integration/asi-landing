@@ -1,0 +1,91 @@
+name: Apply Booking Legal Payment Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_migration:
+        description: Type APPLY_BOOKING_LEGAL_PAYMENT_MIGRATION to run production DDL
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apply_booking_legal_payment_migration:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require explicit confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_production_migration }}" != "APPLY_BOOKING_LEGAL_PAYMENT_MIGRATION" ]; then
+            echo "Set confirm_production_migration to APPLY_BOOKING_LEGAL_PAYMENT_MIGRATION."
+            exit 1
+          fi
+
+      - name: Checkout migration files
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Apply migration on production VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          REMOTE_TMP="/home/project_ayfaar/asi-migration-tmp"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+          SCP_OPTS=(
+            -i "$SSH_KEY"
+            -P "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=4
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}' && chmod 700 '${REMOTE_TMP}'"
+          scp "${SCP_OPTS[@]}" \
+            supabase/migrations/20260630000002_booking_legal_payment_autopilot_v1.sql \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/booking_legal_payment_autopilot_v1.sql"
+          scp "${SCP_OPTS[@]}" \
+            scripts/apply-booking-legal-payment-migration-remote.py \
+            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/apply-booking-legal-payment-migration-remote.py"
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -lc 'set -euo pipefail
+            cp \"${REMOTE_TMP}/booking_legal_payment_autopilot_v1.sql\" /tmp/booking_legal_payment_autopilot_v1.sql
+            SUPABASE_DB_URL=\"${SUPABASE_DB_URL:-}\" DATABASE_URL=\"${DATABASE_URL:-}\" python3 \"${REMOTE_TMP}/apply-booking-legal-payment-migration-remote.py\"
+            rm -f /tmp/booking_legal_payment_autopilot_v1.sql \"${REMOTE_TMP}/booking_legal_payment_autopilot_v1.sql\" \"${REMOTE_TMP}/apply-booking-legal-payment-migration-remote.py\"
+          '"
