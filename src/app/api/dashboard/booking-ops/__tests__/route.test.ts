@@ -35,6 +35,33 @@ vi.mock('@/lib/booking-ops/lifecycle', () => ({
   })),
 }));
 
+vi.mock('@/lib/booking-ops/legal-payment-autopilot', () => ({
+  getLegalPaymentStatus: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    documents: [],
+    contract: null,
+    deposit: null,
+    mvdReport: null,
+    blockers: [],
+    communications: [],
+    lifecycle: null,
+  })),
+  initializeLegalPaymentForBooking: vi.fn(),
+  requestGuestDocuments: vi.fn(),
+  markDocumentsReceived: vi.fn(),
+  verifyGuestDocuments: vi.fn(),
+  rejectGuestDocuments: vi.fn(),
+  prepareContract: vi.fn(),
+  markContractSent: vi.fn(),
+  markContractSigned: vi.fn(),
+  requestDeposit: vi.fn(),
+  markDepositReceived: vi.fn(),
+  waiveDeposit: vi.fn(),
+  prepareMvdReport: vi.fn(),
+  markMvdReportSubmitted: vi.fn(),
+  markMvdReportAccepted: vi.fn(),
+}));
+
 describe('Booking Ops dashboard routes', () => {
   it('list route returns 200', async () => {
     const route = await import('../route');
@@ -48,5 +75,14 @@ describe('Booking Ops dashboard routes', () => {
       params: { id: 'ops-route' },
     });
     expect(response.status).toBe(200);
+  });
+
+  it('legal/payment route rejects invalid actions', async () => {
+    const route = await import('../legal-payment/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'bad_action' }),
+    }));
+    expect(response.status).toBe(400);
   });
 });

@@ -91,6 +91,7 @@ import {
   type BookingLifecycleSnapshot,
   type BookingLifecycleStatus,
 } from '@/lib/booking-ops/lifecycle-types';
+import type { LegalPaymentStatus } from '@/lib/booking-ops/legal-payment-autopilot';
 
 type ListResponse = {
   ok: boolean;
@@ -164,6 +165,28 @@ type LifecycleResponse = {
   ok: boolean;
   message?: string;
   lifecycle?: BookingLifecycleSnapshot;
+};
+
+type LegalPaymentAction =
+  | 'initialize'
+  | 'request_documents'
+  | 'documents_received'
+  | 'verify_documents'
+  | 'reject_documents'
+  | 'prepare_contract'
+  | 'contract_sent'
+  | 'contract_signed'
+  | 'request_deposit'
+  | 'deposit_received'
+  | 'waive_deposit'
+  | 'prepare_mvd_report'
+  | 'mvd_report_submitted'
+  | 'mvd_report_accepted';
+
+type LegalPaymentResponse = {
+  ok: boolean;
+  message?: string;
+  status?: LegalPaymentStatus;
 };
 
 const AUTOMATION_TONE: Record<string, string> = {
@@ -369,6 +392,9 @@ function BookingOpsPageInner() {
   const [lifecycle, setLifecycle] = useState<BookingLifecycleSnapshot | null>(null);
   const [lifecycleLoading, setLifecycleLoading] = useState(false);
   const [updatingLifecycleGate, setUpdatingLifecycleGate] = useState<string | null>(null);
+  const [legalPayment, setLegalPayment] = useState<LegalPaymentStatus | null>(null);
+  const [legalPaymentLoading, setLegalPaymentLoading] = useState(false);
+  const [legalPaymentAction, setLegalPaymentAction] = useState<LegalPaymentAction | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [recomputingPreparation, setRecomputingPreparation] = useState(false);
@@ -607,6 +633,35 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setLegalPayment(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLegalPaymentLoading(true);
+    void fetch(`/api/dashboard/booking-ops/legal-payment?bookingId=${encodeURIComponent(selectedId)}`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<LegalPaymentResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setLegalPayment(null);
+          return;
+        }
+        setLegalPayment(payload.status ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setLegalPaymentLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
@@ -615,6 +670,7 @@ function BookingOpsPageInner() {
     setCommunications([]);
     setTimelineEvents([]);
     setLifecycle(null);
+    setLegalPayment(null);
     setTaskActionResults({});
     setMessage('');
   }
@@ -690,6 +746,43 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<LifecycleResponse>(res, { ok: false });
     if (res.ok && payload.ok) setLifecycle(payload.lifecycle ?? null);
+  }
+
+  async function reloadLegalPayment(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/legal-payment?bookingId=${encodeURIComponent(recordId)}`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<LegalPaymentResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setLegalPayment(payload.status ?? null);
+  }
+
+  async function onLegalPaymentAction(action: LegalPaymentAction, extra?: Record<string, unknown>) {
+    if (!isOpsAdmin || !selectedId) return;
+    setLegalPaymentAction(action);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/booking-ops/legal-payment/action', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<LegalPaymentResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.status) {
+        setMessage(payload.message || 'Не удалось обновить документы, договор, депозит или МВД.');
+        return;
+      }
+      setLegalPayment(payload.status);
+      await Promise.all([
+        load(),
+        reloadLifecycle(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+      ]);
+      setMessage('Статус обновлён.');
+    } finally {
+      setLegalPaymentAction(null);
+    }
   }
 
   async function onUpdateLifecycleGate(
@@ -1155,6 +1248,14 @@ function BookingOpsPageInner() {
                   void onUpdateLifecycleGate(gateKey, status, reason, note)}
               />
 
+              <LegalPaymentCard
+                status={legalPayment}
+                loading={legalPaymentLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={legalPaymentAction}
+                onAction={(action, extra) => void onLegalPaymentAction(action, extra)}
+              />
+
               <GuestIntakeCard
                 session={selectedRecord.guestIntake ?? null}
                 isOpsAdmin={isOpsAdmin}
@@ -1583,6 +1684,230 @@ function LifecycleCard({
               </div>
             </details>
           ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+const LEGAL_PAYMENT_ACTION_LABELS_RU: Record<LegalPaymentAction, string> = {
+  initialize: 'Инициализировать',
+  request_documents: 'Запросить документы',
+  documents_received: 'Документы получены',
+  verify_documents: 'Проверить документы',
+  reject_documents: 'Отклонить документы',
+  prepare_contract: 'Подготовить договор',
+  contract_sent: 'Договор отправлен',
+  contract_signed: 'Договор подписан',
+  request_deposit: 'Запросить депозит',
+  deposit_received: 'Депозит получен',
+  waive_deposit: 'Отменить депозит',
+  prepare_mvd_report: 'Подготовить МВД',
+  mvd_report_submitted: 'МВД отправлен',
+  mvd_report_accepted: 'МВД принят',
+};
+
+const LEGAL_PAYMENT_STATUS_TONE: Record<string, string> = {
+  requested: 'border-sky-200 bg-sky-50 text-sky-900',
+  received: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+  verified: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  rejected: 'border-red-200 bg-red-50 text-red-900',
+  expired: 'border-red-200 bg-red-50 text-red-900',
+  missing: 'border-amber-200 bg-amber-50 text-amber-900',
+  not_started: 'border-slate-200 bg-slate-50 text-slate-700',
+  prepared: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+  sent: 'border-sky-200 bg-sky-50 text-sky-900',
+  signed: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  not_requested: 'border-slate-200 bg-slate-50 text-slate-700',
+  refunded: 'border-slate-200 bg-slate-50 text-slate-700',
+  partially_refunded: 'border-slate-200 bg-slate-50 text-slate-700',
+  waived: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  submitted: 'border-sky-200 bg-sky-50 text-sky-900',
+  accepted: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  failed: 'border-red-200 bg-red-50 text-red-900',
+};
+
+const LEGAL_PAYMENT_STATUS_LABELS_RU: Record<string, string> = {
+  requested: 'Запрошено',
+  received: 'Получено',
+  verified: 'Проверено',
+  rejected: 'Отклонено',
+  expired: 'Просрочено',
+  missing: 'Нет',
+  not_started: 'Не начато',
+  prepared: 'Подготовлено',
+  sent: 'Отправлено',
+  signed: 'Подписано',
+  not_requested: 'Не запрошен',
+  refunded: 'Возвращён',
+  partially_refunded: 'Частично возвращён',
+  waived: 'Отменён',
+  submitted: 'Отправлено',
+  accepted: 'Принято',
+  failed: 'Ошибка',
+};
+
+function StatusBadge({ value }: { value: string }) {
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${
+      LEGAL_PAYMENT_STATUS_TONE[value] ?? LEGAL_PAYMENT_STATUS_TONE.not_started
+    }`}>
+      {LEGAL_PAYMENT_STATUS_LABELS_RU[value] ?? value}
+    </span>
+  );
+}
+
+function LegalPaymentCard({
+  status,
+  loading,
+  isOpsAdmin,
+  activeAction,
+  onAction,
+}: {
+  status: LegalPaymentStatus | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: LegalPaymentAction | null;
+  onAction: (action: LegalPaymentAction, extra?: Record<string, unknown>) => void;
+}) {
+  const firstDocumentStatus = status?.documents[0]?.status ?? 'not_started';
+  const blockers = status?.blockers ?? [];
+
+  function runAction(action: LegalPaymentAction) {
+    if (action === 'reject_documents') {
+      const reason = window.prompt('Причина отклонения документов');
+      if (!reason) return;
+      onAction(action, { reason });
+      return;
+    }
+    if (action === 'request_deposit') {
+      const amountRaw = window.prompt('Сумма депозита', status?.deposit?.amount ? String(status.deposit.amount) : '0');
+      if (amountRaw == null) return;
+      const currency = window.prompt('Валюта', status?.deposit?.currency ?? 'RUB');
+      onAction(action, { amount: Number(amountRaw), currency: currency || 'RUB' });
+      return;
+    }
+    if (action === 'waive_deposit') {
+      const reason = window.prompt('Причина отмены депозита');
+      if (!reason) return;
+      onAction(action, { reason });
+      return;
+    }
+    if (action === 'request_documents') {
+      onAction(action, { requiredDocuments: ['passport'] });
+      return;
+    }
+    onAction(action);
+  }
+
+  const groups: Array<{
+    title: string;
+    status: string;
+    details: string;
+    actions: LegalPaymentAction[];
+  }> = [
+    {
+      title: 'Документы',
+      status: firstDocumentStatus,
+      details: status?.documents.length
+        ? `${status.documents.length} записей`
+        : 'Запрос ещё не создан',
+      actions: ['request_documents', 'documents_received', 'verify_documents', 'reject_documents'],
+    },
+    {
+      title: 'Договор',
+      status: status?.contract?.status ?? 'not_started',
+      details: status?.contract?.provider ? `Провайдер: ${status.contract.provider}` : 'Ручной режим',
+      actions: ['prepare_contract', 'contract_sent', 'contract_signed'],
+    },
+    {
+      title: 'Депозит',
+      status: status?.deposit?.status ?? 'not_requested',
+      details: status?.deposit
+        ? `${status.deposit.amount} ${status.deposit.currency}`
+        : 'Сумма не задана',
+      actions: ['request_deposit', 'deposit_received', 'waive_deposit'],
+    },
+    {
+      title: 'МВД',
+      status: status?.mvdReport?.status ?? 'not_started',
+      details: status?.mvdReport?.provider ? `Провайдер: ${status.mvdReport.provider}` : 'Ручной режим',
+      actions: ['prepare_mvd_report', 'mvd_report_submitted', 'mvd_report_accepted'],
+    },
+  ];
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Документы / договор / залог / МВД</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Ручной контур статусов и черновиков. Внешние отправки отключены.
+          </p>
+        </div>
+        {isOpsAdmin ? (
+          <button
+            type="button"
+            disabled={activeAction !== null}
+            onClick={() => runAction('initialize')}
+            className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+          >
+            {activeAction === 'initialize' ? 'Обновление…' : 'Инициализировать'}
+          </button>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-500">Загрузка статусов…</p>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            {groups.map((group) => (
+              <article key={group.title} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-slate-900">{group.title}</p>
+                    <p className="mt-1 text-xs text-slate-500">{group.details}</p>
+                  </div>
+                  <StatusBadge value={group.status} />
+                </div>
+                {isOpsAdmin ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {group.actions.map((action) => (
+                      <button
+                        key={action}
+                        type="button"
+                        disabled={activeAction !== null}
+                        onClick={() => runAction(action)}
+                        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {activeAction === action ? '...' : LEGAL_PAYMENT_ACTION_LABELS_RU[action]}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="font-medium text-slate-800">Влияние на готовность</p>
+            {blockers.length > 0 ? (
+              <ul className="mt-2 list-disc pl-5 text-xs text-red-900 space-y-1">
+                {blockers.map((blocker) => (
+                  <li key={`${blocker.gateKey}-${blocker.reason}`}>
+                    {BOOKING_LIFECYCLE_GATE_LABELS_RU[
+                      blocker.gateKey as keyof typeof BOOKING_LIFECYCLE_GATE_LABELS_RU
+                    ] ?? blocker.gateKey}: {blocker.reason}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">
+                Критических блокеров по этому блоку нет. Готовность считается по lifecycle-этапам.
+              </p>
+            )}
+          </div>
         </>
       )}
     </section>
