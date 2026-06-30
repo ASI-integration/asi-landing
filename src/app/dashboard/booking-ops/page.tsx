@@ -96,6 +96,10 @@ import type {
   PreCheckinReadinessSnapshot,
   PreCheckinReadinessStatus,
 } from '@/lib/booking-ops/pre-checkin-control-center';
+import type {
+  CheckinExecutionSnapshot,
+  CheckinExecutionStatus,
+} from '@/lib/booking-ops/checkin-execution-autopilot';
 
 type ListResponse = {
   ok: boolean;
@@ -199,6 +203,12 @@ type PreCheckinResponse = {
   readiness?: PreCheckinReadinessSnapshot;
 };
 
+type CheckinExecutionResponse = {
+  ok: boolean;
+  message?: string;
+  checkin?: CheckinExecutionSnapshot;
+};
+
 type PreCheckinAction =
   | 'recompute'
   | 'mark_ready_override'
@@ -208,6 +218,19 @@ type PreCheckinAction =
   | 'add_note'
   | 'block_gate'
   | 'skip_gate';
+
+type CheckinExecutionAction =
+  | 'prepare_instructions'
+  | 'queue_instructions'
+  | 'mark_instructions_sent'
+  | 'request_arrival_confirmation'
+  | 'mark_arrival_confirmed'
+  | 'mark_access_ready'
+  | 'report_access_issue'
+  | 'resolve_access_issue'
+  | 'mark_guest_checked_in'
+  | 'create_fallback'
+  | 'add_note';
 
 const AUTOMATION_TONE: Record<string, string> = {
   action_required: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -259,6 +282,69 @@ const PRE_CHECKIN_ACTION_LABELS_RU: Record<PreCheckinAction, string> = {
   add_note: 'Добавить заметку',
   block_gate: 'Заблокировать этап',
   skip_gate: 'Пропустить этап',
+};
+
+const CHECKIN_EXECUTION_TONE: Record<CheckinExecutionStatus, string> = {
+  not_ready: 'border-slate-200 bg-slate-50 text-slate-700',
+  ready_to_send_instructions: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  instructions_queued: 'border-sky-200 bg-sky-50 text-sky-950',
+  instructions_sent: 'border-indigo-200 bg-indigo-50 text-indigo-950',
+  arrival_pending: 'border-amber-200 bg-amber-50 text-amber-950',
+  arrival_confirmed: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  access_ready: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+  access_issue: 'border-red-200 bg-red-50 text-red-950',
+  checked_in: 'border-slate-200 bg-white text-slate-800',
+  blocked: 'border-red-200 bg-red-50 text-red-950',
+};
+
+const CHECKIN_EXECUTION_STATUS_LABELS_RU: Record<CheckinExecutionStatus, string> = {
+  not_ready: 'Не готово',
+  ready_to_send_instructions: 'Можно готовить инструкции',
+  instructions_queued: 'Инструкции в очереди',
+  instructions_sent: 'Инструкции отправлены',
+  arrival_pending: 'Ждём подтверждение',
+  arrival_confirmed: 'Прибытие подтверждено',
+  access_ready: 'Доступ готов',
+  access_issue: 'Проблема доступа',
+  checked_in: 'Гость заехал',
+  blocked: 'Заблокировано',
+};
+
+const CHECKIN_INSTRUCTIONS_STATUS_LABELS_RU = {
+  not_prepared: 'Не подготовлены',
+  prepared: 'Подготовлены',
+  queued: 'В очереди',
+  sent: 'Отправлены',
+  failed: 'Ошибка',
+} as const;
+
+const CHECKIN_ARRIVAL_STATUS_LABELS_RU = {
+  unknown: 'Неизвестно',
+  requested: 'Запрошено',
+  confirmed: 'Подтверждено',
+  missed: 'Пропущено',
+  changed: 'Изменено',
+} as const;
+
+const CHECKIN_ACCESS_STATUS_LABELS_RU = {
+  unknown: 'Неизвестно',
+  ready: 'Готов',
+  issue: 'Проблема',
+  resolved: 'Разобрано',
+} as const;
+
+const CHECKIN_EXECUTION_ACTION_LABELS_RU: Record<CheckinExecutionAction, string> = {
+  prepare_instructions: 'Подготовить',
+  queue_instructions: 'В очередь',
+  mark_instructions_sent: 'Отправлено',
+  request_arrival_confirmation: 'Запросить прибытие',
+  mark_arrival_confirmed: 'Прибытие подтверждено',
+  mark_access_ready: 'Доступ готов',
+  report_access_issue: 'Проблема доступа',
+  resolve_access_issue: 'Разобрать проблему',
+  mark_guest_checked_in: 'Гость заехал',
+  create_fallback: 'Открыть ручной план',
+  add_note: 'Заметка',
 };
 
 function formatWhen(value: string | null): string {
@@ -447,6 +533,9 @@ function BookingOpsPageInner() {
   const [preCheckin, setPreCheckin] = useState<PreCheckinReadinessSnapshot | null>(null);
   const [preCheckinLoading, setPreCheckinLoading] = useState(false);
   const [preCheckinAction, setPreCheckinAction] = useState<PreCheckinAction | null>(null);
+  const [checkinExecution, setCheckinExecution] = useState<CheckinExecutionSnapshot | null>(null);
+  const [checkinExecutionLoading, setCheckinExecutionLoading] = useState(false);
+  const [checkinExecutionAction, setCheckinExecutionAction] = useState<CheckinExecutionAction | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const [recomputingPreparation, setRecomputingPreparation] = useState(false);
@@ -743,6 +832,35 @@ function BookingOpsPageInner() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) {
+      setCheckinExecution(null);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckinExecutionLoading(true);
+    void fetch(`/api/dashboard/booking-ops/checkin-execution?bookingId=${encodeURIComponent(selectedId)}`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const payload = await readResponseJson<CheckinExecutionResponse>(res, { ok: false });
+        if (cancelled) return;
+        if (!res.ok || !payload.ok) {
+          setCheckinExecution(null);
+          return;
+        }
+        setCheckinExecution(payload.checkin ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckinExecutionLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
   function selectRecord(record: BookingOpsRecord) {
     setSelectedId(record.id);
     setDraft(draftFromRecord(record));
@@ -753,6 +871,7 @@ function BookingOpsPageInner() {
     setLifecycle(null);
     setLegalPayment(null);
     setPreCheckin(null);
+    setCheckinExecution(null);
     setTaskActionResults({});
     setMessage('');
   }
@@ -793,6 +912,7 @@ function BookingOpsPageInner() {
         reloadTimeline(selectedId),
         reloadLifecycle(selectedId),
         reloadPreCheckin(selectedId),
+        reloadCheckinExecution(selectedId),
       ]);
     } finally {
       setRunningTaskId(null);
@@ -847,6 +967,14 @@ function BookingOpsPageInner() {
     if (res.ok && payload.ok) setPreCheckin(payload.readiness ?? null);
   }
 
+  async function reloadCheckinExecution(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/checkin-execution?bookingId=${encodeURIComponent(recordId)}`, {
+      credentials: 'include',
+    });
+    const payload = await readResponseJson<CheckinExecutionResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setCheckinExecution(payload.checkin ?? null);
+  }
+
   async function onLegalPaymentAction(action: LegalPaymentAction, extra?: Record<string, unknown>) {
     if (!isOpsAdmin || !selectedId) return;
     setLegalPaymentAction(action);
@@ -870,6 +998,7 @@ function BookingOpsPageInner() {
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
         reloadPreCheckin(selectedId),
+        reloadCheckinExecution(selectedId),
       ]);
       setMessage('Статус обновлён.');
     } finally {
@@ -899,10 +1028,41 @@ function BookingOpsPageInner() {
         reloadLifecycle(selectedId),
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
+        reloadCheckinExecution(selectedId),
       ]);
       setMessage(payload.message || 'Контроль заезда обновлён.');
     } finally {
       setPreCheckinAction(null);
+    }
+  }
+
+  async function onCheckinExecutionAction(action: CheckinExecutionAction, extra?: Record<string, unknown>) {
+    if (!isOpsAdmin || !selectedId) return;
+    setCheckinExecutionAction(action);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/booking-ops/checkin-execution/action', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<CheckinExecutionResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.checkin) {
+        setMessage(payload.message || 'Не удалось обновить заселение.');
+        return;
+      }
+      setCheckinExecution(payload.checkin);
+      await Promise.all([
+        load(),
+        reloadLifecycle(selectedId),
+        reloadCommunications(selectedId),
+        reloadTimeline(selectedId),
+        reloadPreCheckin(selectedId),
+      ]);
+      setMessage('Заселение обновлено.');
+    } finally {
+      setCheckinExecutionAction(null);
     }
   }
 
@@ -929,6 +1089,7 @@ function BookingOpsPageInner() {
       }
       setLifecycle(payload.lifecycle ?? null);
       await reloadPreCheckin(selectedId);
+      await reloadCheckinExecution(selectedId);
       setMessage('Готовность брони обновлена.');
     } finally {
       setUpdatingLifecycleGate(null);
@@ -1373,6 +1534,14 @@ function BookingOpsPageInner() {
                 onOpenLegalPayment={() => void reloadLegalPayment(selectedRecord.id)}
               />
 
+              <CheckinExecutionCard
+                checkin={checkinExecution}
+                loading={checkinExecutionLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={checkinExecutionAction}
+                onAction={(action, extra) => void onCheckinExecutionAction(action, extra)}
+              />
+
               <LifecycleCard
                 lifecycle={lifecycle}
                 loading={lifecycleLoading}
@@ -1789,6 +1958,165 @@ function PreCheckinControlCenterCard({
         </>
       )}
     </section>
+  );
+}
+
+function CheckinExecutionCard({
+  checkin,
+  loading,
+  isOpsAdmin,
+  activeAction,
+  onAction,
+}: {
+  checkin: CheckinExecutionSnapshot | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: CheckinExecutionAction | null;
+  onAction: (action: CheckinExecutionAction, extra?: Record<string, unknown>) => void;
+}) {
+  const status = checkin?.status ?? 'not_ready';
+  const tone = CHECKIN_EXECUTION_TONE[status];
+
+  function reportAccessIssue() {
+    const reason = window.prompt('Что случилось с доступом?');
+    if (!reason) return;
+    onAction('report_access_issue', { reason });
+  }
+
+  function createFallback() {
+    const reason = window.prompt('Причина ручного плана', checkin?.blockers[0]?.reason ?? '');
+    if (!reason) return;
+    onAction('create_fallback', { reason });
+  }
+
+  function addNote() {
+    const note = window.prompt('Заметка по заселению');
+    if (!note) return;
+    onAction('add_note', { note });
+  }
+
+  function markArrivalConfirmed() {
+    const arrivalTime = window.prompt('Время прибытия', new Date().toISOString());
+    onAction('mark_arrival_confirmed', arrivalTime ? { arrivalTime } : undefined);
+  }
+
+  const canCreateFallback = Boolean(checkin?.blockers.some((item) => item.fallbackEligible));
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Заселение</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Инструкции, прибытие гостя и доступ без автоотправки.
+          </p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-medium ${tone}`}>
+          {CHECKIN_EXECUTION_STATUS_LABELS_RU[status]}
+        </span>
+      </div>
+
+      {loading ? (
+        <p className="text-slate-500">Загрузка заселения…</p>
+      ) : !checkin ? (
+        <p className="text-slate-500">Статус заселения появится после проверки брони.</p>
+      ) : (
+        <>
+          <div className="grid gap-2 md:grid-cols-4">
+            <CheckinMetric label="Инструкции" value={CHECKIN_INSTRUCTIONS_STATUS_LABELS_RU[checkin.instructionsStatus]} />
+            <CheckinMetric label="Прибытие" value={CHECKIN_ARRIVAL_STATUS_LABELS_RU[checkin.arrivalStatus]} />
+            <CheckinMetric label="Доступ" value={CHECKIN_ACCESS_STATUS_LABELS_RU[checkin.accessStatus]} />
+            <CheckinMetric
+              label="Гость"
+              value={checkin.status === 'checked_in' ? 'Заехал' : 'Не отмечен'}
+            />
+          </div>
+
+          {checkin.nextAction ? (
+            <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-sky-950">
+              <p className="text-xs font-medium text-sky-700">Следующее действие</p>
+              <p className="mt-1">{checkin.nextAction}</p>
+            </div>
+          ) : null}
+
+          {checkin.blockers.length > 0 ? (
+            <details className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-red-900">
+                Блокеры: {checkin.blockers.length}
+              </summary>
+              <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-red-950">
+                {checkin.blockers.map((item) => (
+                  <li key={item.key}>
+                    {item.title}: {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <p className="text-xs text-slate-500">Блокеров по заселению нет.</p>
+          )}
+
+          {isOpsAdmin ? (
+            <details className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                Действия оператора
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <CheckinActionButton action="prepare_instructions" activeAction={activeAction} onAction={onAction} />
+                <CheckinActionButton action="queue_instructions" activeAction={activeAction} onAction={onAction} />
+                <CheckinActionButton action="mark_instructions_sent" activeAction={activeAction} onAction={onAction} />
+                <CheckinActionButton action="request_arrival_confirmation" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null} onClick={markArrivalConfirmed} className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900 disabled:opacity-50">
+                  {CHECKIN_EXECUTION_ACTION_LABELS_RU.mark_arrival_confirmed}
+                </button>
+                <CheckinActionButton action="mark_access_ready" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null} onClick={reportAccessIssue} className="rounded border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-900 disabled:opacity-50">
+                  {CHECKIN_EXECUTION_ACTION_LABELS_RU.report_access_issue}
+                </button>
+                <CheckinActionButton action="resolve_access_issue" activeAction={activeAction} onAction={onAction} />
+                <CheckinActionButton action="mark_guest_checked_in" activeAction={activeAction} onAction={onAction} />
+                <button type="button" disabled={activeAction !== null || !canCreateFallback} onClick={createFallback} className="rounded border border-red-300 bg-white px-2.5 py-1.5 text-xs font-medium text-red-900 disabled:opacity-50">
+                  {CHECKIN_EXECUTION_ACTION_LABELS_RU.create_fallback}
+                </button>
+                <button type="button" disabled={activeAction !== null} onClick={addNote} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50">
+                  {CHECKIN_EXECUTION_ACTION_LABELS_RU.add_note}
+                </button>
+              </div>
+            </details>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function CheckinMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-1 font-medium text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function CheckinActionButton({
+  action,
+  activeAction,
+  onAction,
+}: {
+  action: CheckinExecutionAction;
+  activeAction: CheckinExecutionAction | null;
+  onAction: (action: CheckinExecutionAction, extra?: Record<string, unknown>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={activeAction !== null}
+      onClick={() => onAction(action)}
+      className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+    >
+      {activeAction === action ? 'Сохранение…' : CHECKIN_EXECUTION_ACTION_LABELS_RU[action]}
+    </button>
   );
 }
 
@@ -2237,6 +2565,9 @@ const COMMUNICATION_PURPOSE_LABELS_RU: Record<string, string> = {
   cleaning_reminder: 'Напомнить об уборке',
   inspection_request: 'Запросить осмотр',
   issue_followup: 'Проверить проблему',
+  checkin_instructions: 'Инструкции заезда',
+  arrival_confirmation_request: 'Подтвердить прибытие',
+  access_issue_followup: 'Проблема доступа',
   linen_pickup_request: 'Забрать бельё',
   linen_delivery_request: 'Доставить бельё',
   linen_status_check: 'Проверить бельё',

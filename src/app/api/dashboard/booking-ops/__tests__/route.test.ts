@@ -113,6 +113,39 @@ vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
   ],
 }));
 
+vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => ({
+  getCheckinExecutionStatus: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'ready_to_send_instructions',
+    execution: null,
+    instructionsStatus: 'not_prepared',
+    arrivalStatus: 'unknown',
+    accessStatus: 'unknown',
+    lifecycleReady: true,
+    lifecycle: null,
+    preCheckin: { status: 'ready_for_checkin' },
+    blockers: [],
+    communications: [],
+    nextAction: 'Подготовить или поставить инструкции в очередь',
+    updatedAt: '2026-06-30T10:00:00.000Z',
+  })),
+  runCheckinExecutionAction: vi.fn(async () => ({
+    bookingId: 'ops-route',
+    status: 'instructions_queued',
+    execution: null,
+    instructionsStatus: 'queued',
+    arrivalStatus: 'unknown',
+    accessStatus: 'unknown',
+    lifecycleReady: true,
+    lifecycle: null,
+    preCheckin: { status: 'ready_for_checkin' },
+    blockers: [],
+    communications: [],
+    nextAction: 'Проверить черновик и отметить отправку',
+    updatedAt: '2026-06-30T10:00:00.000Z',
+  })),
+}));
+
 describe('Booking Ops dashboard routes', () => {
   it('list route returns 200', async () => {
     const route = await import('../route');
@@ -156,5 +189,24 @@ describe('Booking Ops dashboard routes', () => {
     const route = await import('../pre-checkin/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
     expect(response.status).toBe(401);
+  });
+
+  it('check-in execution API returns 401 when unauthenticated', async () => {
+    const auth = await import('@/lib/crm/api-auth');
+    vi.mocked(auth.requireCrmOperatorSession).mockResolvedValueOnce({
+      error: Response.json({ ok: false }, { status: 401 }) as never,
+    });
+    const route = await import('../checkin-execution/route');
+    const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
+    expect(response.status).toBe(401);
+  });
+
+  it('check-in execution API rejects invalid action', async () => {
+    const route = await import('../checkin-execution/route');
+    const response = await route.POST(new Request('https://asi.test', {
+      method: 'POST',
+      body: JSON.stringify({ bookingId: 'ops-route', action: 'bad_action' }),
+    }));
+    expect(response.status).toBe(400);
   });
 });
