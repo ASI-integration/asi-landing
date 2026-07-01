@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupReadinessPanel';
 import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManagerImportPanel';
+import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1705,6 +1706,7 @@ function BookingOpsPageInner() {
       <ObjectSetupReadinessPanel />
 
       <ChannelManagerImportPanel />
+      <ChannelPublishingPreparationPanel />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
