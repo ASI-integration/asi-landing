@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import { labelMissingField } from '@/lib/booking-ops/owner-object-setup-autopilot';
+import { labelMissingField } from '@/lib/booking-ops/owner-object-setup-display';
 
 type PropertySetupRow = {
   id: string;

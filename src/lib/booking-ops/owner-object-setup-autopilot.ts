@@ -7,61 +7,65 @@ import {
   canAutoSendCommunicationIntent,
 } from './communication-auto-send-policy';
 
-export const OWNER_SETUP_STATUSES = [
-  'new',
-  'instruction_sent',
-  'data_collection_started',
-  'data_incomplete',
-  'data_ready',
-  'access_requested',
-  'access_received',
-  'test_object_selected',
-  'ready_for_setup',
-  'blocked',
-] as const;
+import {
+  CHANNEL_HANDOFF_STATUSES,
+  computePropertySetupReadiness,
+  getMissingPropertySetupFields,
+  labelMissingField,
+  ownerSetupStatusLabel,
+  OWNER_SETUP_PILOT_GROUPS,
+  OWNER_SETUP_STATUSES,
+  PROPERTY_ASSET_STATUSES,
+  PROPERTY_ASSET_TYPES,
+  PROPERTY_CHANNEL_ACCESS_STATUSES,
+  PROPERTY_PHOTOS_STATUSES,
+  PROPERTY_PRICING_STATUSES,
+  PROPERTY_RULES_STATUSES,
+  PROPERTY_SETUP_STATUSES,
+  PROPERTY_WIFI_STATUSES,
+  type ChannelHandoffStatus,
+  type OwnerSetupPilotGroup,
+  type OwnerSetupStatus,
+  type PropertyAssetStatus,
+  type PropertyAssetType,
+  type PropertyChannelAccessStatus,
+  type PropertyPhotosStatus,
+  type PropertyPricingStatus,
+  type PropertyRulesStatus,
+  type PropertySetupStatus,
+  type PropertyWifiStatus,
+} from './owner-object-setup-display';
 
-export type OwnerSetupStatus = (typeof OWNER_SETUP_STATUSES)[number];
-
-export const PROPERTY_SETUP_STATUSES = [
-  'new',
-  'collecting_data',
-  'incomplete',
-  'ready_for_review',
-  'ready_for_channel_preparation',
-  'blocked',
-] as const;
-
-export type PropertySetupStatus = (typeof PROPERTY_SETUP_STATUSES)[number];
-
-export const OWNER_SETUP_PILOT_GROUPS = ['bragin', 'strigunov', 'other'] as const;
-export type OwnerSetupPilotGroup = (typeof OWNER_SETUP_PILOT_GROUPS)[number];
-
-export const PROPERTY_WIFI_STATUSES = ['unknown', 'missing', 'provided', 'verified'] as const;
-export type PropertyWifiStatus = (typeof PROPERTY_WIFI_STATUSES)[number];
-
-export const PROPERTY_RULES_STATUSES = ['missing', 'partial', 'complete'] as const;
-export type PropertyRulesStatus = (typeof PROPERTY_RULES_STATUSES)[number];
-
-export const PROPERTY_PHOTOS_STATUSES = ['missing', 'partial', 'enough', 'ready'] as const;
-export type PropertyPhotosStatus = (typeof PROPERTY_PHOTOS_STATUSES)[number];
-
-export const PROPERTY_PRICING_STATUSES = ['missing', 'partial', 'ready'] as const;
-export type PropertyPricingStatus = (typeof PROPERTY_PRICING_STATUSES)[number];
-
-export const PROPERTY_CHANNEL_ACCESS_STATUSES = [
-  'not_requested',
-  'requested',
-  'received',
-  'invalid',
-  'blocked',
-] as const;
-export type PropertyChannelAccessStatus = (typeof PROPERTY_CHANNEL_ACCESS_STATUSES)[number];
-
-export const PROPERTY_ASSET_TYPES = ['photo', 'document', 'instruction', 'video', 'other'] as const;
-export type PropertyAssetType = (typeof PROPERTY_ASSET_TYPES)[number];
-
-export const PROPERTY_ASSET_STATUSES = ['uploaded', 'accepted', 'rejected', 'needs_replacement'] as const;
-export type PropertyAssetStatus = (typeof PROPERTY_ASSET_STATUSES)[number];
+export {
+  CHANNEL_HANDOFF_STATUSES,
+  computePropertySetupReadiness,
+  getMissingPropertySetupFields,
+  labelMissingField,
+  ownerSetupStatusLabel,
+  OWNER_SETUP_PILOT_GROUPS,
+  OWNER_SETUP_STATUSES,
+  PROPERTY_ASSET_STATUSES,
+  PROPERTY_ASSET_TYPES,
+  PROPERTY_CHANNEL_ACCESS_STATUSES,
+  PROPERTY_PHOTOS_STATUSES,
+  PROPERTY_PRICING_STATUSES,
+  PROPERTY_RULES_STATUSES,
+  PROPERTY_SETUP_STATUSES,
+  PROPERTY_WIFI_STATUSES,
+};
+export type {
+  ChannelHandoffStatus,
+  OwnerSetupPilotGroup,
+  OwnerSetupStatus,
+  PropertyAssetStatus,
+  PropertyAssetType,
+  PropertyChannelAccessStatus,
+  PropertyPhotosStatus,
+  PropertyPricingStatus,
+  PropertyRulesStatus,
+  PropertySetupStatus,
+  PropertyWifiStatus,
+};
 
 export const OWNER_SETUP_MESSAGE_TYPES = [
   'owner_setup_started',
@@ -74,16 +78,6 @@ export const OWNER_SETUP_MESSAGE_TYPES = [
 ] as const;
 
 export type OwnerSetupMessageType = (typeof OWNER_SETUP_MESSAGE_TYPES)[number];
-
-export const CHANNEL_HANDOFF_STATUSES = [
-  'ready_for_channel_preparation',
-  'manual_channel_publication_pending',
-  'channel_access_received',
-  'object_data_ready',
-  'publication_blocked',
-] as const;
-
-export type ChannelHandoffStatus = (typeof CHANNEL_HANDOFF_STATUSES)[number];
 
 export type OwnerSetupProfile = {
   id: string;
@@ -188,32 +182,6 @@ export type OwnerObjectSetupBlockers = {
 
 const CREDENTIAL_FIELD_RE = /(?:password|пароль|token|токен|api[_-]?key|secret|код\s*доступа|логин\s*и\s*пароль)/iu;
 const CREDENTIAL_VALUE_RE = /(?:^|\s)(?:pass(?:word)?|пароль)\s*[:=]\s*\S+/iu;
-
-const MISSING_FIELD_LABELS_RU: Record<string, string> = {
-  title: 'название объекта',
-  address: 'город или район',
-  property_type: 'тип объекта',
-  capacity: 'вместимость',
-  checkin_checkout: 'время заезда и выезда',
-  rules: 'правила проживания',
-  photos: 'фотографии',
-  pricing: 'базовая цена',
-  channel_access: 'доступ к менеджеру каналов',
-  wifi: 'данные Wi-Fi',
-};
-
-const OWNER_SETUP_STATUS_LABELS_RU: Record<OwnerSetupStatus, string> = {
-  new: 'Новый',
-  instruction_sent: 'Инструкция отправлена',
-  data_collection_started: 'Сбор данных начат',
-  data_incomplete: 'Данные неполные',
-  data_ready: 'Данные готовы',
-  access_requested: 'Запрошен доступ',
-  access_received: 'Доступ получен',
-  test_object_selected: 'Тестовый объект выбран',
-  ready_for_setup: 'Готов к настройке',
-  blocked: 'Заблокирован',
-};
 
 function text(value: unknown): string {
   return String(value ?? '').trim();
@@ -396,14 +364,6 @@ function mapAssetRow(row: PropertyAssetRow): PropertyAsset {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-export function labelMissingField(key: string): string {
-  return MISSING_FIELD_LABELS_RU[key] ?? key;
-}
-
-export function ownerSetupStatusLabel(status: OwnerSetupStatus): string {
-  return OWNER_SETUP_STATUS_LABELS_RU[status] ?? status;
 }
 
 export async function ensureOwnerSetupPublicToken(
@@ -815,56 +775,6 @@ async function recomputePhotosStatus(propertySetupId: string): Promise<PropertyS
     .eq('id', propertySetupId);
 
   return validatePropertySetup(propertySetupId);
-}
-
-export function getMissingPropertySetupFields(profile: PropertySetupProfile): string[] {
-  const missing: string[] = [];
-  if (!text(profile.title)) missing.push('title');
-  if (!text(profile.addressCity) && !text(profile.addressSafeSummary)) missing.push('address');
-  if (!text(profile.propertyType)) missing.push('property_type');
-  if (!profile.guestCapacity && !profile.roomCount) missing.push('capacity');
-  if (!text(profile.checkinTime) || !text(profile.checkoutTime)) missing.push('checkin_checkout');
-  if (profile.rulesStatus === 'missing') missing.push('rules');
-  if (!['enough', 'ready', 'partial'].includes(profile.photosStatus)) missing.push('photos');
-  if (profile.pricingStatus === 'missing') missing.push('pricing');
-  if (!['received', 'requested'].includes(profile.channelAccessStatus)) missing.push('channel_access');
-  if (profile.wifiStatus === 'missing') missing.push('wifi');
-  return missing;
-}
-
-export function computePropertySetupReadiness(profile: PropertySetupProfile): {
-  readinessScore: number;
-  missingFields: string[];
-  status: PropertySetupStatus;
-} {
-  const missingFields = getMissingPropertySetupFields(profile);
-  const weights = {
-    title: 12,
-    address: 12,
-    property_type: 10,
-    capacity: 10,
-    checkin_checkout: 12,
-    rules: 10,
-    photos: 14,
-    pricing: 10,
-    channel_access: 10,
-  };
-  const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
-  const lost = missingFields.reduce((sum, key) => sum + (weights[key as keyof typeof weights] ?? 5), 0);
-  const readinessScore = Math.max(0, Math.round(((total - lost) / total) * 100));
-
-  let status: PropertySetupStatus = profile.status;
-  if (profile.status !== 'blocked') {
-    if (missingFields.length === 0 && readinessScore >= 85) {
-      status = profile.channelAccessStatus === 'received'
-        ? 'ready_for_channel_preparation'
-        : 'ready_for_review';
-    } else if (missingFields.length > 0) {
-      status = profile.status === 'new' ? 'collecting_data' : 'incomplete';
-    }
-  }
-
-  return { readinessScore, missingFields, status };
 }
 
 export async function validatePropertySetup(propertySetupId: string): Promise<PropertySetupProfile> {

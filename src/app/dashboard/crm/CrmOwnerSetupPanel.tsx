@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import { labelMissingField, ownerSetupStatusLabel } from '@/lib/booking-ops/owner-object-setup-autopilot';
-import type { OwnerSetupStatus } from '@/lib/booking-ops/owner-object-setup-autopilot';
+import { labelMissingField, ownerSetupStatusLabel } from '@/lib/booking-ops/owner-object-setup-display';
+import type { OwnerSetupStatus } from '@/lib/booking-ops/owner-object-setup-display';
 
 type OwnerSetupSummary = {
   id: string;

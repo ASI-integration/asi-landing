@@ -100,6 +100,8 @@ vi.mock('../communication-auto-send-policy', () => ({
 import {
   computePropertySetupReadiness,
   getMissingPropertySetupFields,
+} from '../owner-object-setup-display';
+import {
   initializeOwnerSetupFromLead,
   startObjectDataCollection,
   type PropertySetupProfile,
