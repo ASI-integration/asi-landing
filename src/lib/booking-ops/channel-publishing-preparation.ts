@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { attachAutoSendDecisionMetadata, canAutoSendCommunicationIntent } from './communication-auto-send-policy';
 import { findSecretPath, type ChannelManagerProvider } from './channel-manager-access-import';
+import { buildPricingSnapshotForPublicationPackage, getPricingReadiness } from './pricing-intelligence-autopilot';
 
 export const PUBLICATION_PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 export const PUBLICATION_PACKAGE_STATUSES = ['draft', 'incomplete', 'ready_for_review', 'ready_for_publication', 'publication_pending', 'published_placeholder', 'blocked'] as const;
@@ -202,8 +203,8 @@ function buildDescription(setup: Row): string | null {
   return parts.length >= 2 ? parts.join(', ') : null;
 }
 
-function checksFor(input: { setup: Row; assets: Row[]; connection: Row | null; selectedChannels: PublicationChannel[]; payload: Record<string, unknown> }): CheckDraft[] {
-  const { setup, assets, connection, selectedChannels, payload } = input; const metadata = object(setup.metadata);
+function checksFor(input: { setup: Row; assets: Row[]; connection: Row | null; selectedChannels: PublicationChannel[]; payload: Record<string, unknown>; pricingReadiness?: { readinessScore: number; missingFields: string[]; status: string } }): CheckDraft[] {
+  const { setup, assets, connection, selectedChannels, payload, pricingReadiness } = input; const metadata = object(setup.metadata);
   const photos = assets.filter((asset) => text(asset.asset_type) === 'photo' && ['uploaded', 'accepted'].includes(text(asset.status)));
   const description = nullableText(payload.description);
   const accessReady = connection
@@ -218,7 +219,22 @@ function checksFor(input: { setup: Row; assets: Row[]; connection: Row | null; s
     { checkKey: 'description', status: description ? 'pass' : 'fail', message: description ? 'Описание готово.' : 'Добавьте описание или данные для его безопасной генерации.' },
     { checkKey: 'rules', status: text(setup.rules_status) === 'complete' ? 'pass' : 'fail', message: text(setup.rules_status) === 'complete' ? 'Правила подтверждены.' : 'Дополните правила проживания.' },
     { checkKey: 'checkin_checkout', status: nullableText(setup.checkin_time) && nullableText(setup.checkout_time) ? 'pass' : 'fail', message: nullableText(setup.checkin_time) && nullableText(setup.checkout_time) ? 'Время заезда и выезда заполнено.' : 'Добавьте время заезда и выезда.' },
-    { checkKey: 'pricing', status: text(setup.pricing_status) === 'ready' && nullableText(metadata.base_price_label) ? 'pass' : 'fail', message: text(setup.pricing_status) === 'ready' && nullableText(metadata.base_price_label) ? 'Базовая цена заполнена.' : 'Добавьте базовую цену.' },
+    {
+      checkKey: 'pricing',
+      status: pricingReadiness && pricingReadiness.readinessScore >= 75 && !pricingReadiness.missingFields.length
+        ? 'pass'
+        : text(setup.pricing_status) === 'ready' && nullableText(metadata.base_price_label)
+          ? 'warning'
+          : 'fail',
+      message: pricingReadiness?.status === 'recommendations_ready' || pricingReadiness?.status === 'auto_apply_ready' || pricingReadiness?.status === 'auto_apply_enabled'
+        ? 'Рекомендации по ценам готовы.'
+        : pricingReadiness && pricingReadiness.readinessScore >= 75
+          ? 'Профиль ценообразования заполнен.'
+          : text(setup.pricing_status) === 'ready' && nullableText(metadata.base_price_label)
+            ? 'Базовая цена есть, но профиль ценообразования неполный.'
+            : 'Инициализируйте профиль ценообразования и укажите базовую цену.',
+      metadata: pricingReadiness ? { pricing_status: pricingReadiness.status, readiness_score: pricingReadiness.readinessScore } : {},
+    },
     { checkKey: 'selected_channels', status: selectedChannels.length ? 'pass' : 'fail', message: selectedChannels.length ? 'Каналы выбраны.' : 'Выберите хотя бы один канал.' },
     { checkKey: 'provider_connection', status: connection ? 'pass' : 'fail', message: connection ? 'Провайдер и подключение выбраны.' : 'Выберите провайдера и подключение.' },
     { checkKey: 'channel_manager_access', status: accessReady ? 'pass' : 'fail', message: accessReady ? 'Подготовка доступа подтверждена.' : 'Нужен статус доступа: получен, готов к импорту или ожидает пилотной активации.' },
@@ -265,6 +281,15 @@ export async function buildPublicationPackage(propertySetupId: string, options?:
   const metadata = object(setup.metadata);
   const photos = ((assetsResult.data ?? []) as Row[]).filter((asset) => text(asset.asset_type) === 'photo' && ['uploaded', 'accepted'].includes(text(asset.status)));
   const selectedChannels = pkg.channels.filter((channel) => channel.selected);
+  const pricingSnapshot = await buildPricingSnapshotForPublicationPackage(text(setup.id));
+  const pricingReadiness = await getPricingReadiness(text(setup.id));
+  const pricingLabel = pricingSnapshot.pricing_status === 'recommendations_ready'
+    ? 'Рекомендации по ценам готовы'
+    : pricingSnapshot.pricing_status === 'auto_apply_ready'
+      ? 'Авто-применение готово к пилоту (не live OTA)'
+      : pricingSnapshot.pricing_status === 'auto_apply_enabled'
+        ? 'Пилотное авто-применение включено (не live OTA)'
+        : nullableText(metadata.base_price_label);
   const payload: Record<string, unknown> = {
     title: nullableText(setup.title), location_summary: nullableText(setup.address_safe_summary ?? setup.address_city),
     property_type: nullableText(setup.property_type), capacity: Number(setup.guest_capacity ?? 0) || null,
@@ -273,11 +298,13 @@ export async function buildPublicationPackage(propertySetupId: string, options?:
     checkin_time: nullableText(setup.checkin_time), checkout_time: nullableText(setup.checkout_time),
     checkin_description: nullableText(metadata.non_secret_checkin_description ?? metadata.public_checkin_description),
     photos: photos.map((asset) => ({ storage_ref: nullableText(asset.storage_ref), safe_label: nullableText(asset.safe_label) })).filter((asset) => asset.storage_ref || asset.safe_label),
-    pricing_summary: nullableText(metadata.base_price_label), selected_channels: selectedChannels.map((channel) => channel.channelKey),
+    pricing_summary: pricingLabel,
+    pricing_intelligence: pricingSnapshot,
+    selected_channels: selectedChannels.map((channel) => channel.channelKey),
     provider_key: pkg.provider, readiness_checks: [], real_ota_publishing_enabled: false,
   };
   assertSafePublicationInput(payload);
-  const checks = checksFor({ setup, assets: (assetsResult.data ?? []) as Row[], connection: connectionResult.data as Row | null, selectedChannels, payload });
+  const checks = checksFor({ setup, assets: (assetsResult.data ?? []) as Row[], connection: connectionResult.data as Row | null, selectedChannels, payload, pricingReadiness });
   payload.readiness_checks = checks.map(({ checkKey, status, message }) => ({ check_key: checkKey, status, message }));
   return persistValidation(pkg, payload, checks);
 }

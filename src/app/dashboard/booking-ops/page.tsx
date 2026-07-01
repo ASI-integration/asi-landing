@@ -5,6 +5,7 @@ import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupReadinessPanel';
 import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManagerImportPanel';
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
+import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1706,6 +1707,7 @@ function BookingOpsPageInner() {
       <ObjectSetupReadinessPanel />
 
       <ChannelManagerImportPanel />
+      <PricingIntelligencePanel />
       <ChannelPublishingPreparationPanel />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">

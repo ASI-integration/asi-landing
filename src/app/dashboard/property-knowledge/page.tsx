@@ -5,6 +5,7 @@ import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupReadinessPanel';
 import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManagerImportPanel';
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
+import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { BookingOpsPropertyKnowledge } from '@/lib/booking-ops/types';
 import {
@@ -280,6 +281,7 @@ function PropertyKnowledgePageInner() {
       <ObjectSetupReadinessPanel />
 
       <ChannelManagerImportPanel />
+      <PricingIntelligencePanel />
       <ChannelPublishingPreparationPanel />
 
       <form onSubmit={parseIntake} className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/40 p-5">
