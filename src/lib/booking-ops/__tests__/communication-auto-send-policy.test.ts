@@ -12,6 +12,7 @@ const allowedPolicy: CommunicationAutoSendPolicy = {
   messageType: 'guest_data_missing_notice',
   channel: 'any',
   autoSendEnabled: true,
+  actualSendEnabled: true,
   requiresReview: false,
   quietHoursEnabled: false,
   quietHoursStart: null,
@@ -31,7 +32,7 @@ function intent(overrides: Partial<BookingOpsCommunicationIntent> = {}): Booking
     relatedTaskId: null,
     actorType: 'guest',
     actorLabel: 'Гость',
-    purpose: 'guest_data_missing_notice',
+    purpose: 'request_arrival_time',
     channel: 'telegram',
     status: 'draft_ready',
     messageText: 'Здравствуйте. Подскажите, пожалуйста, время прибытия.',
@@ -52,6 +53,7 @@ describe('communication auto-send guardrails', () => {
       guestAutoSendsToday: 0,
     });
     expect(result).toMatchObject({ decision: 'allowed', allowed: true, rule_key: 'policy.allowed' });
+    expect(result.actual_send_enabled).toBe(true);
   });
 
   it('requires review for an unknown message type', () => {
@@ -64,9 +66,22 @@ describe('communication auto-send guardrails', () => {
     expect(result).toMatchObject({ decision: 'unsafe_content', rule_key: 'content.raw_access_code' });
   });
 
+  it('does not allow metadata to bypass a raw access code', () => {
+    const result = classifyMessageForAutoSend(intent({
+      messageText: 'Код от двери: 4829',
+      metadata: { safe_secret_reference: true },
+    }));
+    expect(result).toMatchObject({ decision: 'unsafe_content', rule_key: 'content.raw_access_code' });
+  });
+
   it('blocks a full document number', () => {
     const result = classifyMessageForAutoSend(intent({ messageText: 'Паспорт 4510 123456 получен' }));
     expect(result).toMatchObject({ decision: 'unsafe_content', rule_key: 'content.document_number' });
+  });
+
+  it('blocks payment secrets', () => {
+    const result = classifyMessageForAutoSend(intent({ messageText: 'CVV 123' }));
+    expect(result).toMatchObject({ decision: 'unsafe_content', rule_key: 'content.payment_secret' });
   });
 
   it.each([
@@ -107,6 +122,16 @@ describe('communication auto-send guardrails', () => {
       unresolvedComplaint: true,
     });
     expect(result).toMatchObject({ decision: 'blocked', rule_key: 'guest.unresolved_complaint' });
+  });
+
+  it('rejects a recipient role that does not match the scoped policy', async () => {
+    const result = await canAutoSendCommunicationIntent(intent({
+      purpose: 'cleaner_task_assignment',
+      actorType: 'guest',
+    }), {
+      policy: { ...allowedPolicy, allowedRecipientRoles: ['cleaner'] },
+    });
+    expect(result).toMatchObject({ decision: 'blocked', rule_key: 'policy.recipient_role' });
   });
 
   it('defers a safe message during quiet hours', async () => {

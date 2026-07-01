@@ -148,6 +148,9 @@ type CommunicationsResponse = {
 };
 
 type CommunicationAutoSendAction =
+  | 'run_dry_run'
+  | 'send_now'
+  | 'retry_failed'
   | 'approve_send'
   | 'force_review'
   | 'block_auto_send'
@@ -1103,6 +1106,21 @@ function BookingOpsPageInner() {
     setUpdatingCommunicationId(communicationId);
     setMessage('');
     try {
+      if (action === 'run_dry_run' || action === 'send_now' || action === 'retry_failed') {
+        const res = await fetch(
+          `/api/dashboard/booking-ops/${selectedId}/communications/${communicationId}/auto-send/execute`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dryRun: action === 'run_dry_run' }),
+          },
+        );
+        const payload = await readResponseJson<CommunicationsResponse>(res, { ok: false });
+        setMessage(payload.message || (res.ok ? 'Действие выполнено.' : 'Отправка не разрешена.'));
+        await reloadCommunications(selectedId);
+        return;
+      }
       const res = await fetch(
         `/api/dashboard/booking-ops/${selectedId}/communications/${communicationId}/auto-send`,
         {
@@ -2966,6 +2984,19 @@ function LegalPaymentCard({
 }
 
 const COMMUNICATION_PURPOSE_LABELS_RU: Record<string, string> = {
+  request_missing_guest_data: 'Запросить недостающие данные',
+  request_arrival_time: 'Уточнить время прибытия',
+  neutral_booking_acknowledgement: 'Подтвердить получение',
+  neutral_status_update: 'Сообщить статус',
+  cleaner_task_assignment: 'Назначить уборку',
+  cleaner_task_reminder: 'Напомнить об уборке',
+  linen_task_assignment: 'Назначить работу с бельём',
+  inspection_task_assignment: 'Назначить проверку',
+  master_task_assignment: 'Назначить задачу мастеру',
+  master_task_reminder: 'Напомнить мастеру',
+  internal_status_notice: 'Внутреннее уведомление',
+  fallback_created_notice: 'Уведомить о ручной обработке',
+  task_overdue_notice: 'Уведомить о просроченной задаче',
   request_guest_documents: 'Запросить документы',
   request_contract_confirmation: 'Подтвердить договор',
   request_deposit_payment: 'Запросить депозит',
@@ -3011,19 +3042,41 @@ const AUTO_SEND_DECISION_LABELS_RU: Record<string, string> = {
   unknown_message_type: 'Неизвестный тип',
 };
 
+const DELIVERY_STATUS_LABELS_RU: Record<string, string> = {
+  queued: 'В очереди',
+  sending: 'Отправляется',
+  sent: 'Отправлено',
+  failed: 'Ошибка',
+  skipped: 'Пропущено',
+  blocked: 'Заблокировано',
+  dry_run: 'Проверено без отправки',
+};
+
 function communicationAutoSendDecision(item: BookingOpsCommunicationIntent): {
   code: string;
   summary: string;
+  actualSendEnabled: boolean;
 } {
   const raw = item.metadata.auto_send_decision;
   if (!raw || typeof raw !== 'object') {
-    return { code: 'review_required', summary: 'Классификация ещё не выполнена.' };
+    return { code: 'review_required', summary: 'Классификация ещё не выполнена.', actualSendEnabled: false };
   }
   const value = raw as Record<string, unknown>;
   return {
     code: String(value.decision ?? 'review_required'),
     summary: String(value.safe_to_display_summary ?? 'Нужна проверка оператора.'),
+    actualSendEnabled: value.actual_send_enabled === true,
   };
+}
+
+function communicationDelivery(item: BookingOpsCommunicationIntent) {
+  const raw = item.metadata.auto_send_delivery;
+  return raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
+}
+
+function formatCommunicationAttemptTime(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'нет' : parsed.toLocaleString('ru-RU');
 }
 
 function CommunicationIntentsCard({
@@ -3060,7 +3113,7 @@ function CommunicationIntentsCard({
         <div>
           <h3 className="text-sm font-semibold text-slate-800">Коммуникации</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Черновики и ожидания. Внешняя отправка отключена.
+            Черновики, решения и состояние безопасной отправки.
           </p>
         </div>
         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
@@ -3087,6 +3140,7 @@ function CommunicationIntentsCard({
                 {items.map((item) => {
                   const task = item.relatedTaskId ? taskById.get(item.relatedTaskId) : null;
                   const autoSend = communicationAutoSendDecision(item);
+                  const delivery = communicationDelivery(item);
                   const updating = updatingCommunicationId === item.id;
                   return (
                     <article
@@ -3110,9 +3164,20 @@ function CommunicationIntentsCard({
                           <span className="font-medium text-slate-700">
                             Автоотправка: {AUTO_SEND_DECISION_LABELS_RU[autoSend.code] ?? 'Нужна проверка'}
                           </span>
-                          <span className="text-slate-500">Отправка выключена</span>
+                          <span className="text-slate-500">
+                            Фактическая отправка: {autoSend.actualSendEnabled ? 'включена' : 'выключена'}
+                          </span>
                         </div>
                         <p className="mt-1 text-slate-600">{autoSend.summary}</p>
+                        {delivery ? (
+                          <div className="mt-2 grid gap-1 text-slate-600 sm:grid-cols-2">
+                            <span>Доставка: {DELIVERY_STATUS_LABELS_RU[String(delivery.status ?? '')] ?? 'Нет'}</span>
+                            <span>Попыток: {String(delivery.attemptCount ?? 0)}</span>
+                            <span>Последняя попытка: {delivery.lastAttemptAt ? formatCommunicationAttemptTime(String(delivery.lastAttemptAt)) : 'нет'}</span>
+                            <span>Ключ: {String(delivery.idempotencyKey ?? 'нет')}</span>
+                            {delivery.failureReason ? <span className="sm:col-span-2">Причина: {String(delivery.failureReason)}</span> : null}
+                          </div>
+                        ) : null}
                       </div>
                       <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
                         {formatBookingOpsMessageTextDisplay(item.messageText)}
@@ -3123,8 +3188,11 @@ function CommunicationIntentsCard({
                             {updating ? 'Сохранение…' : 'Действия автоотправки'}
                           </summary>
                           <div className="mt-2 flex flex-wrap gap-1.5">
-                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'approve_send')} className="rounded border border-emerald-300 px-2 py-1 text-emerald-700 disabled:opacity-50">
-                              Разрешить в очередь
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'run_dry_run')} className="rounded border border-sky-300 px-2 py-1 text-sky-700 disabled:opacity-50">
+                              Проверить без отправки
+                            </button>
+                            <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'send_now')} className="rounded border border-emerald-300 px-2 py-1 text-emerald-700 disabled:opacity-50">
+                              Отправить сейчас, если безопасно
                             </button>
                             <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'force_review')} className="rounded border border-amber-300 px-2 py-1 text-amber-700 disabled:opacity-50">
                               Нужна проверка
@@ -3138,6 +3206,11 @@ function CommunicationIntentsCard({
                             <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'disable_booking')} className="rounded border border-slate-300 px-2 py-1 text-slate-700 disabled:opacity-50">
                               Отключить для брони
                             </button>
+                            {delivery?.status === 'failed' ? (
+                              <button type="button" disabled={updating} onClick={() => onAutoSendAction(item.id, 'retry_failed')} className="rounded border border-violet-300 px-2 py-1 text-violet-700 disabled:opacity-50">
+                                Повторить безопасную отправку
+                              </button>
+                            ) : null}
                           </div>
                         </details>
                       ) : null}

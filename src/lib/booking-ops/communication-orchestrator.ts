@@ -404,7 +404,38 @@ export async function listBookingOpsCommunicationsForRecord(
     .order('updated_at', { ascending: false });
 
   if (error) return { ok: false, error: error.message };
-  return { ok: true, communications: ((data ?? []) as CommunicationRow[]).map(mapRow) };
+  const communications = ((data ?? []) as CommunicationRow[]).map(mapRow);
+  if (communications.length === 0) return { ok: true, communications };
+
+  const { data: deliveries } = await supabase
+    .from('booking_ops_communication_deliveries')
+    .select('communication_intent_id,status,attempt_count,last_attempt_at,sent_at,failure_reason,idempotency_key,safe_summary,created_at')
+    .in('communication_intent_id', communications.map((item) => item.id))
+    .order('created_at', { ascending: false });
+  const latestDelivery = new Map<string, Record<string, unknown>>();
+  for (const raw of (deliveries ?? []) as Array<Record<string, unknown>>) {
+    const intentId = String(raw.communication_intent_id ?? '');
+    if (!intentId || latestDelivery.has(intentId)) continue;
+    latestDelivery.set(intentId, {
+      status: raw.status,
+      attemptCount: raw.attempt_count,
+      lastAttemptAt: raw.last_attempt_at,
+      sentAt: raw.sent_at,
+      failureReason: raw.failure_reason,
+      idempotencyKey: `${String(raw.idempotency_key ?? '').slice(0, 10)}…`,
+      safeSummary: raw.safe_summary,
+    });
+  }
+  return {
+    ok: true,
+    communications: communications.map((item) => ({
+      ...item,
+      metadata: {
+        ...item.metadata,
+        auto_send_delivery: latestDelivery.get(item.id) ?? null,
+      },
+    })),
+  };
 }
 
 async function recordCommunicationEvent(input: {

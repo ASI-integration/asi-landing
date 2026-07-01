@@ -414,6 +414,19 @@ export type BookingOpsCommunicationActorType =
   (typeof BOOKING_OPS_COMMUNICATION_ACTOR_TYPES)[number];
 
 export const BOOKING_OPS_COMMUNICATION_PURPOSES = [
+  'request_missing_guest_data',
+  'request_arrival_time',
+  'neutral_booking_acknowledgement',
+  'neutral_status_update',
+  'cleaner_task_assignment',
+  'cleaner_task_reminder',
+  'linen_task_assignment',
+  'inspection_task_assignment',
+  'master_task_assignment',
+  'master_task_reminder',
+  'internal_status_notice',
+  'fallback_created_notice',
+  'task_overdue_notice',
   'request_guest_documents',
   'request_contract_confirmation',
   'request_deposit_payment',

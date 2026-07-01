@@ -27,6 +27,8 @@ export type CommunicationAutoSendDecision = {
   reason: string;
   rule_key: string;
   safe_to_display_summary: string;
+  actual_send_enabled: boolean;
+  policy_decision_id: string | null;
 };
 
 export type CommunicationAutoSendPolicy = {
@@ -36,6 +38,7 @@ export type CommunicationAutoSendPolicy = {
   messageType: string;
   channel: BookingOpsCommunicationChannel | 'web' | 'sms' | 'any';
   autoSendEnabled: boolean;
+  actualSendEnabled?: boolean;
   requiresReview: boolean;
   quietHoursEnabled: boolean;
   quietHoursStart: string | null;
@@ -72,6 +75,7 @@ type PolicyRow = {
   message_type: string;
   channel: CommunicationAutoSendPolicy['channel'];
   auto_send_enabled: boolean;
+  actual_send_enabled?: boolean;
   requires_review: boolean;
   quiet_hours_enabled: boolean;
   quiet_hours_start: string | null;
@@ -83,7 +87,44 @@ type PolicyRow = {
   required_metadata: unknown;
 };
 
+export const SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES = [
+  'request_missing_guest_data',
+  'request_arrival_time',
+  'neutral_booking_acknowledgement',
+  'neutral_status_update',
+  'cleaner_task_assignment',
+  'cleaner_task_reminder',
+  'linen_task_assignment',
+  'inspection_task_assignment',
+  'master_task_assignment',
+  'master_task_reminder',
+  'internal_status_notice',
+  'fallback_created_notice',
+  'task_overdue_notice',
+] as const;
+
+export type SupportedActualAutoSendMessageType =
+  (typeof SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES)[number];
+
+const ACTUAL_AUTO_SEND_TYPES = new Set<string>(SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES);
+const ACTUAL_AUTO_SEND_ALLOWED_ROLES: Record<string, string[]> = {
+  request_missing_guest_data: ['guest'],
+  request_arrival_time: ['guest'],
+  neutral_booking_acknowledgement: ['guest'],
+  neutral_status_update: ['guest'],
+  cleaner_task_assignment: ['cleaner'],
+  cleaner_task_reminder: ['cleaner'],
+  linen_task_assignment: ['laundry'],
+  inspection_task_assignment: ['admin'],
+  master_task_assignment: ['master'],
+  master_task_reminder: ['master'],
+  internal_status_notice: ['admin', 'owner'],
+  fallback_created_notice: ['admin', 'owner'],
+  task_overdue_notice: ['admin', 'owner'],
+};
+
 const KNOWN_MESSAGE_TYPES = new Set<string>([
+  ...SUPPORTED_ACTUAL_AUTO_SEND_MESSAGE_TYPES,
   'request_guest_documents',
   'request_contract_confirmation',
   'request_deposit_payment',
@@ -155,6 +196,7 @@ function mapPolicy(row: PolicyRow): CommunicationAutoSendPolicy {
     messageType: row.message_type,
     channel: row.channel,
     autoSendEnabled: row.auto_send_enabled,
+    actualSendEnabled: row.actual_send_enabled === true,
     requiresReview: row.requires_review,
     quietHoursEnabled: row.quiet_hours_enabled,
     quietHoursStart: row.quiet_hours_start,
@@ -174,6 +216,7 @@ function failClosedPolicy(messageType: string): CommunicationAutoSendPolicy {
     messageType,
     channel: 'any',
     autoSendEnabled: false,
+    actualSendEnabled: false,
     requiresReview: true,
     quietHoursEnabled: true,
     quietHoursStart: '22:00',
@@ -191,6 +234,7 @@ function decision(
   ruleKey: string,
   reason: string,
   summary: string,
+  options: { actualSendEnabled?: boolean; policyId?: string | null } = {},
 ): CommunicationAutoSendDecision {
   return {
     decision: code,
@@ -198,6 +242,8 @@ function decision(
     reason,
     rule_key: ruleKey,
     safe_to_display_summary: summary,
+    actual_send_enabled: options.actualSendEnabled === true,
+    policy_decision_id: options.policyId ?? null,
   };
 }
 
@@ -245,7 +291,7 @@ export function classifyMessageForAutoSend(intent: IntentLike): CommunicationAut
   if (!KNOWN_MESSAGE_TYPES.has(messageType)) {
     return decision('unknown_message_type', 'message_type.unknown', 'Неизвестный тип сообщения.', 'Нужна ручная проверка типа сообщения.');
   }
-  if (ACCESS_SECRET_RE.test(message) && metadata.safe_secret_reference !== true) {
+  if (ACCESS_SECRET_RE.test(message)) {
     return decision('unsafe_content', 'content.raw_access_code', 'Обнаружены реквизиты доступа.', 'Автоотправка заблокирована: сообщение может содержать код доступа.');
   }
   if (DOCUMENT_NUMBER_RE.test(message)) {
@@ -346,7 +392,15 @@ export async function canAutoSendCommunicationIntent(
   ) {
     return decision('rate_limited', 'rate.guest_daily', 'Достигнут дневной лимит по гостю.', 'Дневной лимит автоматических сообщений гостю исчерпан.');
   }
-  return decision('allowed', 'policy.allowed', 'Сообщение прошло правила безопасной автоотправки.', 'Можно поставить в очередь автоматической отправки.');
+  return decision(
+    'allowed',
+    'policy.allowed',
+    'Сообщение прошло правила безопасной автоотправки.',
+    policy.actualSendEnabled
+      ? 'Можно выполнить безопасную отправку.'
+      : 'Можно поставить в очередь, но фактическая отправка для этого уровня выключена.',
+    { actualSendEnabled: policy.actualSendEnabled, policyId: policy.id },
+  );
 }
 
 export async function explainAutoSendDecision(
@@ -362,7 +416,7 @@ function decisionMetadata(decisionResult: CommunicationAutoSendDecision, metadat
     auto_send_decision: decisionResult,
     auto_send_eligible: decisionResult.allowed,
     auto_send_evaluated_at: new Date().toISOString(),
-    actual_send_enabled: false,
+    actual_send_enabled: decisionResult.actual_send_enabled,
   };
 }
 
@@ -433,7 +487,15 @@ export async function markIntentAutoSendEligible(intentId: string, reason: strin
     await updateIntentDecision(intentId, deniedDecision, metadata);
     return { ok: false, error: 'unsafe_override_denied', decision: deniedDecision };
   }
-  return updateIntentDecision(intentId, decision('allowed', 'operator.approved', reason, 'Оператор разрешил постановку в очередь.'), metadata);
+  return updateIntentDecision(intentId, decision(
+    'allowed',
+    'operator.approved',
+    reason,
+    metadata.actual_send_enabled === true
+      ? 'Оператор разрешил безопасную фактическую отправку для этой брони.'
+      : 'Оператор разрешил постановку в очередь.',
+    { actualSendEnabled: metadata.actual_send_enabled === true },
+  ), metadata);
 }
 
 export async function evaluateAndPersistIntentAutoSendDecision(
@@ -496,7 +558,9 @@ async function saveBookingPolicy(input: {
   messageType: string;
   channel?: CommunicationAutoSendPolicy['channel'];
   enabled: boolean;
+  actualSendEnabled: boolean;
   requiresReview: boolean;
+  allowedRecipientRoles?: string[];
 }) {
   const channel = input.channel ?? 'any';
   const { data: existing, error: readError } = await supabase
@@ -514,13 +578,14 @@ async function saveBookingPolicy(input: {
     message_type: input.messageType,
     channel,
     auto_send_enabled: input.enabled,
+    actual_send_enabled: input.actualSendEnabled,
     requires_review: input.requiresReview,
     quiet_hours_enabled: true,
     quiet_hours_start: '22:00',
     quiet_hours_end: '08:00',
     max_auto_sends_per_booking_per_day: 3,
     max_auto_sends_per_guest_per_day: 3,
-    allowed_recipient_roles: [],
+    allowed_recipient_roles: input.allowedRecipientRoles ?? [],
     blocked_keywords: [],
     required_metadata: [],
     updated_at: new Date().toISOString(),
@@ -541,14 +606,27 @@ async function saveBookingPolicy(input: {
 }
 
 export async function markBookingMessageTypeSafe(bookingId: string, messageType: string) {
-  if (!KNOWN_MESSAGE_TYPES.has(messageType) || REVIEW_REQUIRED_TYPES.has(messageType) || CONFLICT_TYPES.has(messageType)) {
+  if (!ACTUAL_AUTO_SEND_TYPES.has(messageType)) {
     return { ok: false, error: 'message_type_cannot_be_marked_safe' };
   }
-  return saveBookingPolicy({ bookingId, messageType, enabled: true, requiresReview: false });
+  return saveBookingPolicy({
+    bookingId,
+    messageType,
+    enabled: true,
+    actualSendEnabled: true,
+    requiresReview: false,
+    allowedRecipientRoles: ACTUAL_AUTO_SEND_ALLOWED_ROLES[messageType] ?? [],
+  });
 }
 
 export async function disableAutoSendForBooking(bookingId: string) {
-  return saveBookingPolicy({ bookingId, messageType: '*', enabled: false, requiresReview: true });
+  return saveBookingPolicy({
+    bookingId,
+    messageType: '*',
+    enabled: false,
+    actualSendEnabled: false,
+    requiresReview: true,
+  });
 }
 
 export type AutoSendPolicyIntent = IntentLike & {

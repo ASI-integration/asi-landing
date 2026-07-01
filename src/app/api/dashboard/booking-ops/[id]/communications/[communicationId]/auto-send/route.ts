@@ -75,7 +75,11 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
     case 'mark_safe_type':
       result = await markBookingMessageTypeSafe(bookingScope, row.purpose);
       if (result.ok) {
-        result = await markIntentAutoSendEligible(row.id, 'Тип сообщения разрешён оператором для этой брони.', operatorMetadata);
+        result = await markIntentAutoSendEligible(
+          row.id,
+          'Тип сообщения разрешён оператором для этой брони.',
+          { ...operatorMetadata, actual_send_enabled: true },
+        );
       }
       break;
     case 'disable_booking':
