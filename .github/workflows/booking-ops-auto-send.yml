@@ -1,0 +1,44 @@
+name: Booking Ops safe auto-send runner
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run without provider calls
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: booking-ops-safe-auto-send
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-safe-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call protected runner
+        env:
+          RUNNER_SECRET: ${{ secrets.BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
+          MANUAL_DRY_RUN: ${{ inputs.dry_run }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_SECRET:-}"
+          BODY='{}'
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_DRY_RUN" = "true" ]; then
+            BODY='{"dryRun":true}'
+          fi
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-all-errors --max-time 60 \
+            -X POST 'https://asi-global.ru/api/internal/booking-ops/communications/auto-send/run' \
+            -H "Authorization: Bearer ${RUNNER_SECRET}" \
+            -H 'Content-Type: application/json' \
+            --data "$BODY"

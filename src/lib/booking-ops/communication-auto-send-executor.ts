@@ -9,6 +9,12 @@ import {
   recordAutoSendAttempt,
   type CommunicationAutoSendDecision,
 } from './communication-auto-send-policy';
+import {
+  finishAutoSendRun,
+  resolveAutoSendScope,
+  startAutoSendRun,
+  type AutoSendScope,
+} from './communication-auto-send-scopes';
 import type {
   BookingOpsCommunicationActorType,
   BookingOpsCommunicationChannel,
@@ -80,6 +86,11 @@ export type ExecuteAutoSendOptions = {
   allowedChannels?: ActualAutoSendChannel[];
   allowedMessageTypes?: string[];
   forcePolicyRecheck?: boolean;
+  source?: 'scheduled' | 'operator';
+  /** Shared only inside one batch invocation. */
+  scopeUsage?: Map<string, number>;
+  /** Test-only seam. Production callers always resolve persisted scope state. */
+  scopeResolver?: typeof resolveAutoSendScope;
   /** Test-only seam. Production callers never pass a sender. */
   sender?: AutoSendSender;
 };
@@ -239,6 +250,7 @@ async function resolveExecutionContext(intent: BookingOpsCommunicationIntent) {
       bookingId: intent.bookingId ?? record?.bookingId ?? intent.bookingOpsRecordId,
       propertyId: record?.propertyId ?? safeText(intent.metadata.property_id),
       ownerId: safeText(intent.metadata.owner_id),
+      pilotScopeRef: safeText(intent.metadata.pilot_scope_ref ?? intent.metadata.pilot_scope),
       guestRef: safeText(recipientRef),
       unresolvedComplaint: unresolvedFallback,
     },
@@ -441,10 +453,28 @@ export async function executeAutoSendDelivery(
     const blocked = await blockDelivery(delivery, decision, decision.decision);
     return { ok: false as const, error: decision.decision, delivery: blocked, decision };
   }
-  if (!decision.actual_send_enabled) {
-    const blocked = await blockDelivery(delivery, decision, 'actual_send_disabled');
-    return { ok: false as const, error: 'actual_send_disabled', delivery: blocked, decision };
+  const scopeResult = await (options.scopeResolver ?? resolveAutoSendScope)({
+    bookingId: executionContext.policyContext.bookingId,
+    propertyId: executionContext.policyContext.propertyId,
+    ownerId: executionContext.policyContext.ownerId,
+    pilotScopeRef: executionContext.policyContext.pilotScopeRef,
+    channel,
+    messageType: intent.purpose,
+  });
+  if (!scopeResult.enabled || !scopeResult.scope) {
+    const reason = scopeResult.error === 'emergency_stop' ? 'emergency_stop' : 'actual_send_disabled';
+    const blocked = await blockDelivery(delivery, decision, reason);
+    return { ok: false as const, error: reason, delivery: blocked, decision };
   }
+  const scope = scopeResult.scope;
+  const scopeKey = `${scope.scopeType}:${scope.scopeRef ?? ''}`;
+  const scopeUsage = options.scopeUsage;
+  const used = scopeUsage?.get(scopeKey) ?? 0;
+  if (used >= scope.maxBatchSize) {
+    const blocked = await blockDelivery(delivery, decision, 'scope_batch_limit');
+    return { ok: false as const, error: 'scope_batch_limit', delivery: blocked, decision };
+  }
+  scopeUsage?.set(scopeKey, used + 1);
   if (!executionContext.recipientRef) {
     const blocked = await blockDelivery(delivery, decision, 'recipient_missing');
     return { ok: false as const, error: 'recipient_missing', delivery: blocked, decision };
@@ -473,7 +503,8 @@ export async function executeAutoSendDelivery(
       : { ok: false as const, error: 'delivery_already_running', delivery: latest };
   }
 
-  if (options.dryRun === true) {
+  const effectiveDryRun = options.dryRun === true || scope.dryRunOnly;
+  if (effectiveDryRun) {
     await recordAutoSendAttempt(intent.id, 'dry_run', {
       booking_id: delivery.bookingId,
       guest_ref: intent.actorType === 'guest' ? executionContext.recipientRef : null,
@@ -484,7 +515,7 @@ export async function executeAutoSendDelivery(
       failure_reason: null,
       metadata: safeMetadata({ dry_run: true }),
     });
-    return { ok: true as const, delivery: dryRunDelivery, dryRun: true, decision };
+    return { ok: true as const, delivery: dryRunDelivery, dryRun: true, decision, scope: safeScopeView(scope) };
   }
 
   const sender = options.sender ?? defaultSender;
@@ -518,7 +549,7 @@ export async function executeAutoSendDelivery(
       status: 'completed',
       updated_at: new Date().toISOString(),
     }).eq('id', intent.id);
-    return { ok: true as const, delivery: sent, decision };
+    return { ok: true as const, delivery: sent, decision, scope: safeScopeView(scope) };
   } catch {
     await recordAutoSendAttempt(intent.id, 'failed', {
       booking_id: delivery.bookingId,
@@ -530,19 +561,45 @@ export async function executeAutoSendDelivery(
 }
 
 export async function executeEligibleAutoSendBatch(options: ExecuteAutoSendOptions = {}) {
-  const maxBatchSize = Math.min(Math.max(options.maxBatchSize ?? 20, 1), 50);
+  const maxBatchSize = Math.min(Math.max(options.maxBatchSize ?? 10, 1), 20);
+  const runId = await startAutoSendRun({ source: options.source ?? 'operator', dryRun: options.dryRun === true });
   const eligible = await getEligibleAutoSendIntents({ limit: maxBatchSize });
-  if (!eligible.ok) return { ok: false as const, error: eligible.error, results: [] };
+  if (!eligible.ok) {
+    await finishAutoSendRun(runId, {
+      status: 'failed', processed: 0, sent: 0, failed: 1, blocked: 0,
+      safeSummary: 'Не удалось прочитать очередь безопасных сообщений.',
+    });
+    return { ok: false as const, error: eligible.error, processed: 0, sent: 0, failed: 1, blocked: 0, results: [] };
+  }
   const results: unknown[] = [];
+  const scopeUsage = new Map<string, number>();
   for (const intent of eligible.intents.slice(0, maxBatchSize)) {
-    const enqueued = await enqueueAutoSendDelivery(intent.id, { source: 'manual_batch' });
+    const enqueued = await enqueueAutoSendDelivery(intent.id, { source: options.source === 'scheduled' ? 'scheduled_batch' : 'manual_batch' });
     if (!enqueued.ok) {
       results.push(enqueued);
       continue;
     }
-    results.push(await executeAutoSendDelivery(enqueued.delivery.id, options));
+    results.push(await executeAutoSendDelivery(enqueued.delivery.id, { ...options, scopeUsage }));
   }
-  return { ok: true as const, processed: results.length, results };
+  const compact = results as Array<{ ok?: boolean; dryRun?: boolean; error?: string; delivery?: { status?: string } | null }>;
+  const sent = compact.filter((item) => item.delivery?.status === 'sent').length;
+  const failed = compact.filter((item) => item.delivery?.status === 'failed').length;
+  const blocked = compact.filter((item) => item.ok === false && item.delivery?.status === 'blocked').length;
+  const dryRun = compact.filter((item) => item.dryRun === true).length;
+  const safeSummary = `Обработано: ${results.length}; отправлено: ${sent}; без отправки: ${dryRun}; заблокировано: ${blocked}; ошибок: ${failed}.`;
+  await finishAutoSendRun(runId, {
+    status: 'completed', processed: results.length, sent, failed, blocked, safeSummary,
+  });
+  return { ok: true as const, processed: results.length, sent, dryRun, failed, blocked, safeSummary, results };
+}
+
+function safeScopeView(scope: AutoSendScope) {
+  return {
+    scopeType: scope.scopeType,
+    scopeRef: scope.scopeRef,
+    dryRunOnly: scope.dryRunOnly,
+    maxBatchSize: scope.maxBatchSize,
+  };
 }
 
 export async function getDeliveryStatus(intentId: string) {

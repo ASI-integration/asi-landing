@@ -1825,6 +1825,12 @@ function BookingOpsPageInner() {
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
 
+              <AutoSendOperationsCard
+                record={selectedRecord}
+                isOpsAdmin={isOpsAdmin}
+                onMessage={setMessage}
+              />
+
               <CommunicationIntentsCard
                 communications={communications}
                 tasks={opsTasks}
@@ -3072,6 +3078,129 @@ function communicationAutoSendDecision(item: BookingOpsCommunicationIntent): {
 function communicationDelivery(item: BookingOpsCommunicationIntent) {
   const raw = item.metadata.auto_send_delivery;
   return raw && typeof raw === 'object' ? raw as Record<string, unknown> : null;
+}
+
+type AutoSendScopeView = {
+  scopeType: 'owner' | 'property' | 'booking' | 'pilot';
+  scopeRef: string;
+  actualSendEnabled: boolean;
+  dryRunOnly: boolean;
+  emergencyStop: boolean;
+  maxBatchSize: number;
+  enabledAt: string | null;
+};
+
+type AutoSendOperationalStatus = {
+  ok: boolean;
+  globalActualSendEnabled: boolean;
+  emergencyStop: boolean;
+  scopes: AutoSendScopeView[];
+  lastRun: null | {
+    dry_run?: boolean;
+    status?: string;
+    processed_count?: number;
+    sent_count?: number;
+    failed_count?: number;
+    blocked_count?: number;
+    started_at?: string;
+    safe_summary?: string;
+  };
+  counts: { queued: number; sent: number; failed: number };
+};
+
+function AutoSendOperationsCard({
+  record,
+  isOpsAdmin,
+  onMessage,
+}: {
+  record: BookingOpsRecord;
+  isOpsAdmin: boolean;
+  onMessage: (message: string) => void;
+}) {
+  const [status, setStatus] = useState<AutoSendOperationalStatus | null>(null);
+  const [scopeType, setScopeType] = useState<AutoSendScopeView['scopeType']>('booking');
+  const [scopeRef, setScopeRef] = useState(record.bookingId ?? record.id);
+  const [dryRunOnly, setDryRunOnly] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    if (!isOpsAdmin) return;
+    const response = await fetch('/api/dashboard/booking-ops/communications/auto-send/scope/status', { credentials: 'include' });
+    const payload = await readResponseJson<AutoSendOperationalStatus>(response, {
+      ok: false,
+      globalActualSendEnabled: false,
+      emergencyStop: true,
+      scopes: [],
+      lastRun: null,
+      counts: { queued: 0, sent: 0, failed: 0 },
+    });
+    if (response.ok && payload.ok) setStatus(payload);
+  }, [isOpsAdmin]);
+
+  useEffect(() => { void loadStatus(); }, [loadStatus]);
+  useEffect(() => {
+    if (scopeType === 'booking') setScopeRef(record.bookingId ?? record.id);
+    if (scopeType === 'property') setScopeRef(record.propertyId ?? '');
+  }, [record.bookingId, record.id, record.propertyId, scopeType]);
+
+  async function mutate(path: string, body: Record<string, unknown>) {
+    setBusy(true);
+    try {
+      const response = await fetch(path, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string; summary?: string }>(response, { ok: false });
+      onMessage(payload.message ?? payload.summary ?? (response.ok ? 'Действие выполнено.' : 'Действие не выполнено.'));
+      await loadStatus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!isOpsAdmin) return null;
+  const current = status?.scopes.find((scope) => scope.scopeType === scopeType && scope.scopeRef === scopeRef) ?? null;
+  return (
+    <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-emerald-950">Безопасная автоотправка</h3>
+          <p className="mt-1 text-xs text-emerald-900">Глобально: выключена. Работает только для явно включённых уровней.</p>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <span className={`rounded-full px-2.5 py-1 ${status?.emergencyStop ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
+            {status?.emergencyStop ? 'Аварийная остановка' : 'Остановка снята'}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-1 text-slate-700">
+            {current?.actualSendEnabled ? (current.dryRunOnly ? 'Только проверка' : 'Включена') : 'Выключена'}
+          </span>
+        </div>
+      </div>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs font-medium text-emerald-900">Управление и последний запуск</summary>
+        <div className="mt-3 space-y-3 rounded-md border border-emerald-200 bg-white p-3">
+          <div className="grid gap-2 sm:grid-cols-[160px_1fr_auto]">
+            <select value={scopeType} onChange={(event) => setScopeType(event.target.value as AutoSendScopeView['scopeType'])} className="rounded border border-slate-300 px-2 py-1.5 text-xs">
+              <option value="booking">Бронь</option><option value="property">Объект</option><option value="owner">Владелец</option><option value="pilot">Пилот / демо</option>
+            </select>
+            <input value={scopeRef} onChange={(event) => setScopeRef(event.target.value)} placeholder="ID уровня" className="rounded border border-slate-300 px-2 py-1.5 text-xs" />
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={dryRunOnly} onChange={(event) => setDryRunOnly(event.target.checked)} />Только проверка</label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy || !scopeRef.trim()} onClick={() => void mutate('/api/dashboard/booking-ops/communications/auto-send/scope/enable', { scopeType, scopeRef, dryRunOnly, maxBatchSize: 10, reason: 'Включено оператором для пилотного уровня.' })} className="rounded border border-emerald-300 px-2.5 py-1.5 text-xs text-emerald-800 disabled:opacity-50">Включить уровень</button>
+            <button type="button" disabled={busy || !scopeRef.trim()} onClick={() => void mutate('/api/dashboard/booking-ops/communications/auto-send/scope/disable', { scopeType, scopeRef })} className="rounded border border-slate-300 px-2.5 py-1.5 text-xs disabled:opacity-50">Отключить</button>
+            <button type="button" disabled={busy} onClick={() => void mutate('/api/dashboard/booking-ops/communications/auto-send/dry-run', { maxBatchSize: 10 })} className="rounded border border-sky-300 px-2.5 py-1.5 text-xs text-sky-800 disabled:opacity-50">Проверить очередь</button>
+            <button type="button" disabled={busy} onClick={() => void mutate('/api/dashboard/booking-ops/communications/auto-send/execute', { maxBatchSize: 10 })} className="rounded border border-violet-300 px-2.5 py-1.5 text-xs text-violet-800 disabled:opacity-50">Запустить безопасную отправку</button>
+            <button type="button" disabled={busy} onClick={() => void mutate('/api/dashboard/booking-ops/communications/auto-send/emergency-stop', { enabled: !status?.emergencyStop, reason: 'Изменено оператором.' })} className="rounded border border-rose-300 px-2.5 py-1.5 text-xs text-rose-800 disabled:opacity-50">{status?.emergencyStop ? 'Снять остановку' : 'Остановить всё'}</button>
+          </div>
+          <div className="grid gap-1 text-xs text-slate-600 sm:grid-cols-3">
+            <span>В очереди: {status?.counts.queued ?? 0}</span><span>Отправлено: {status?.counts.sent ?? 0}</span><span>Ошибок: {status?.counts.failed ?? 0}</span>
+          </div>
+          <p className="text-xs text-slate-600">Последний запуск: {status?.lastRun?.started_at ? formatCommunicationAttemptTime(status.lastRun.started_at) : 'ещё не выполнялся'}. {status?.lastRun?.safe_summary ?? ''}</p>
+        </div>
+      </details>
+    </section>
+  );
 }
 
 function formatCommunicationAttemptTime(value: string): string {

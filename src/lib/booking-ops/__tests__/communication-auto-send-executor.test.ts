@@ -84,6 +84,34 @@ vi.mock('@/lib/crm/api-auth', () => ({
   })),
 }));
 
+const enabledScope = {
+  id: '44444444-4444-4444-8444-444444444444',
+  scopeType: 'booking' as const,
+  scopeRef: 'booking-1',
+  actualSendEnabled: true,
+  enabledBy: 'admin@example.test',
+  enabledAt: '2026-07-01T09:00:00.000Z',
+  disabledAt: null,
+  reason: 'pilot',
+  maxBatchSize: 10,
+  allowedChannels: ['telegram' as const, 'email' as const],
+  allowedMessageTypes: ['request_arrival_time'],
+  dryRunOnly: false,
+  emergencyStop: false,
+  createdAt: '2026-07-01T09:00:00.000Z',
+  updatedAt: '2026-07-01T09:00:00.000Z',
+};
+const scopeDecision = vi.fn(async (_context?: unknown): Promise<any> => ({
+  enabled: true,
+  scope: { ...enabledScope },
+  globalEmergencyStop: false,
+}));
+vi.mock('@/lib/booking-ops/communication-auto-send-scopes', () => ({
+  resolveAutoSendScope: (...args: unknown[]) => scopeDecision(args[0]),
+  startAutoSendRun: vi.fn(async () => 'run-1'),
+  finishAutoSendRun: vi.fn(async () => undefined),
+}));
+
 import {
   enqueueAutoSendDelivery,
   executeAutoSendDelivery,
@@ -128,6 +156,8 @@ beforeEach(() => {
   policyDecision.mockReset();
   policyDecision.mockResolvedValue({ ...allowedDecision });
   recordAttempt.mockClear();
+  scopeDecision.mockReset();
+  scopeDecision.mockResolvedValue({ enabled: true, scope: { ...enabledScope }, globalEmergencyStop: false });
 });
 
 describe('controlled actual auto-send executor', () => {
@@ -140,15 +170,37 @@ describe('controlled actual auto-send executor', () => {
     expect(tables.booking_ops_communication_deliveries).toHaveLength(1);
   });
 
-  it('does not send when actual sending is disabled', async () => {
+  it('does not send when the explicit scope is disabled', async () => {
     const intent = seedIntent();
-    policyDecision
-      .mockResolvedValueOnce({ ...allowedDecision, actual_send_enabled: false })
-      .mockResolvedValueOnce({ ...allowedDecision, actual_send_enabled: false });
+    scopeDecision.mockResolvedValueOnce({ enabled: false, error: 'scope_disabled', scope: null, globalEmergencyStop: false });
     const queued = await enqueueAutoSendDelivery(intent.id);
     const sender = vi.fn();
     const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
     expect(result).toMatchObject({ ok: false, error: 'actual_send_disabled' });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('records a scope dry-run-only execution without calling a provider', async () => {
+    const intent = seedIntent();
+    scopeDecision.mockResolvedValueOnce({
+      enabled: true,
+      scope: { ...enabledScope, dryRunOnly: true },
+      globalEmergencyStop: false,
+    });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn();
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(result).toMatchObject({ ok: true, dryRun: true, delivery: { status: 'dry_run' } });
+    expect(sender).not.toHaveBeenCalled();
+  });
+
+  it('blocks every provider call while the global emergency stop is active', async () => {
+    const intent = seedIntent();
+    scopeDecision.mockResolvedValueOnce({ enabled: false, error: 'emergency_stop', scope: null, globalEmergencyStop: true });
+    const queued = await enqueueAutoSendDelivery(intent.id);
+    const sender = vi.fn();
+    const result = await executeAutoSendDelivery(queued.ok ? queued.delivery.id : '', { sender });
+    expect(result).toMatchObject({ ok: false, error: 'emergency_stop' });
     expect(sender).not.toHaveBeenCalled();
   });
 
@@ -237,6 +289,10 @@ describe('controlled actual auto-send executor', () => {
     const execute = await import('@/app/api/dashboard/booking-ops/communications/auto-send/execute/route');
     const dryRun = await import('@/app/api/dashboard/booking-ops/communications/auto-send/dry-run/route');
     const individual = await import('@/app/api/dashboard/booking-ops/[id]/communications/[communicationId]/auto-send/execute/route');
+    const status = await import('@/app/api/dashboard/booking-ops/communications/auto-send/scope/status/route');
+    const enable = await import('@/app/api/dashboard/booking-ops/communications/auto-send/scope/enable/route');
+    const disable = await import('@/app/api/dashboard/booking-ops/communications/auto-send/scope/disable/route');
+    const emergency = await import('@/app/api/dashboard/booking-ops/communications/auto-send/emergency-stop/route');
     const responses = await Promise.all([
       queue.GET(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/queue')),
       execute.POST(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/execute', { method: 'POST', body: '{}' })),
@@ -244,7 +300,22 @@ describe('controlled actual auto-send executor', () => {
       individual.POST(new Request('https://asi.test/api/dashboard/booking-ops/record/communications/33333333-3333-4333-8333-333333333333/auto-send/execute', { method: 'POST', body: '{}' }), {
         params: { id: 'record', communicationId: '33333333-3333-4333-8333-333333333333' },
       }),
+      status.GET(),
+      enable.POST(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/scope/enable', { method: 'POST', body: '{}' })),
+      disable.POST(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/scope/disable', { method: 'POST', body: '{}' })),
+      emergency.POST(new Request('https://asi.test/api/dashboard/booking-ops/communications/auto-send/emergency-stop', { method: 'POST', body: '{}' })),
     ]);
-    expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401]);
+    expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401, 401, 401]);
+  });
+
+  it('requires a valid internal runner secret', async () => {
+    vi.stubEnv('BOOKING_OPS_AUTO_SEND_RUNNER_SECRET', 'runner-secret');
+    const internal = await import('@/app/api/internal/booking-ops/communications/auto-send/run/route');
+    const missing = await internal.POST(new Request('https://asi.test/api/internal/booking-ops/communications/auto-send/run', { method: 'POST' }));
+    const invalid = await internal.POST(new Request('https://asi.test/api/internal/booking-ops/communications/auto-send/run', {
+      method: 'POST', headers: { Authorization: 'Bearer wrong-secret' },
+    }));
+    expect([missing.status, invalid.status]).toEqual([401, 401]);
+    vi.unstubAllEnvs();
   });
 });
