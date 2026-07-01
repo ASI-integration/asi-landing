@@ -8,6 +8,25 @@ import { processInboundBookingRequest } from './real-booking-intake-autopilot';
 
 export const CHANNEL_MANAGER_PROVIDERS = ['manual', 'bnovo', 'realtycalendar', 'travelline', 'other'] as const;
 export type ChannelManagerProvider = (typeof CHANNEL_MANAGER_PROVIDERS)[number];
+export const CHANNEL_MANAGER_ONBOARDING_STATUSES = [
+  'not_started', 'provider_selected', 'account_required', 'access_requested', 'access_received',
+  'operator_review', 'import_ready', 'manual_snapshot_available', 'pilot_activation_pending',
+  'connected_placeholder', 'blocked',
+] as const;
+export type ChannelManagerOnboardingStatus = (typeof CHANNEL_MANAGER_ONBOARDING_STATUSES)[number];
+export const CHANNEL_MANAGER_ONBOARDING_STATUS_LABELS: Record<ChannelManagerOnboardingStatus, string> = {
+  not_started: 'Не начато',
+  provider_selected: 'Провайдер выбран',
+  account_required: 'Нужен аккаунт провайдера',
+  access_requested: 'Доступ запрошен',
+  access_received: 'Доступ получен безопасно',
+  operator_review: 'Проверка оператором',
+  import_ready: 'Готово к импорту',
+  manual_snapshot_available: 'Доступен импорт snapshot',
+  pilot_activation_pending: 'Ожидает пилотной активации',
+  connected_placeholder: 'Подготовка завершена — API ещё не активен',
+  blocked: 'Подключение заблокировано',
+};
 export const CHANNEL_IMPORT_TYPES = ['full', 'objects', 'bookings', 'calendar', 'pricing', 'availability', 'manual_snapshot'] as const;
 export type ChannelImportType = (typeof CHANNEL_IMPORT_TYPES)[number];
 
@@ -103,6 +122,14 @@ function normalizeProvider(value: unknown): ChannelManagerProvider {
   return 'other';
 }
 
+export function parseChannelManagerProvider(value: unknown): ChannelManagerProvider {
+  const provider = text(value).toLowerCase();
+  if (!(CHANNEL_MANAGER_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new Error('Выберите поддерживаемого провайдера.');
+  }
+  return provider as ChannelManagerProvider;
+}
+
 function assertUuid(value: unknown, label = 'ID'): string {
   const id = text(value);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
@@ -181,7 +208,7 @@ async function getConnection(connectionId: string): Promise<ChannelManagerConnec
   return mapConnection(data as Record<string, unknown>);
 }
 
-async function queueCommunication(connection: ChannelManagerConnection, messageType: string, messageText: string): Promise<string | null> {
+export async function queueChannelManagerCommunication(connection: ChannelManagerConnection, messageType: string, messageText: string): Promise<string | null> {
   if (!connection.ownerSetupId) return null;
   const decision = await canAutoSendCommunicationIntent({
     actorType: 'owner', purpose: 'internal_status_notice', channel: 'manual', messageText,
@@ -234,7 +261,7 @@ export async function initializeChannelManagerConnection(propertySetupId: string
   const now = new Date().toISOString();
   const row = {
     id: randomUUID(), owner_setup_id: property.owner_setup_id ?? null, property_setup_id: propertyId,
-    owner_id: null, provider: normalizedProvider, status: 'not_requested', access_status: 'unknown',
+    owner_id: null, provider: normalizedProvider, status: 'not_started', access_status: 'unknown',
     metadata: safeMetadata(metadata), created_at: now, updated_at: now,
   };
   const { data, error } = await supabase.from('booking_channel_manager_connections').upsert(row, { onConflict: 'property_setup_id,provider', ignoreDuplicates: true }).select('*').maybeSingle();
@@ -252,7 +279,7 @@ export async function requestChannelManagerAccess(propertySetupId: string, provi
   if (error || !data) throw new Error(error?.message ?? 'Не удалось запросить доступ.');
   const updated = mapConnection(data as Record<string, unknown>);
   await supabase.from('booking_property_setup_profiles').update({ channel_access_status: 'requested', updated_at: now }).eq('id', propertySetupId);
-  await queueCommunication(updated, 'request_channel_manager_access', 'Для подготовки импорта нужен доступ к менеджеру каналов. Передайте его безопасным способом — не отправляйте пароль или токен в сообщении.');
+  await queueChannelManagerCommunication(updated, 'request_channel_manager_access', 'Для подготовки импорта нужен доступ к менеджеру каналов. Передайте его безопасным способом — не отправляйте пароль или токен в сообщении.');
   return updated;
 }
 
@@ -267,7 +294,7 @@ export async function markChannelManagerAccessReceived(connectionId: string, saf
   if (error || !data) throw new Error(error?.message ?? 'Не удалось отметить получение доступа.');
   if (connection.propertySetupId) await supabase.from('booking_property_setup_profiles').update({ channel_access_status: 'received', updated_at: now }).eq('id', connection.propertySetupId);
   const updated = mapConnection(data as Record<string, unknown>);
-  await queueCommunication(updated, 'channel_access_received_acknowledgement', 'Доступ к менеджеру каналов отмечен как полученный. Пароли и токены в ASI не сохранены.');
+  await queueChannelManagerCommunication(updated, 'channel_access_received_acknowledgement', 'Доступ к менеджеру каналов отмечен как полученный. Пароли и токены в ASI не сохранены.');
   return updated;
 }
 
@@ -464,7 +491,7 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,
     });
-    await queueCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
+    await queueChannelManagerCommunication(connection, conflicts.length ? 'channel_import_needs_review_notice' : 'channel_import_completed_notice',
       conflicts.length ? `Импорт менеджера каналов завершён. Нужна проверка: ${conflicts.length} несоответствий.` : 'Импорт менеджера каналов завершён без найденных несоответствий.');
     return { run: completed, summary: { objects, bookings, calendar, prices }, conflicts };
   } catch (error) {
@@ -641,4 +668,101 @@ export async function addChannelManagerNote(connectionId: string, note: string):
   const notes = Array.isArray(connection.metadata.notes) ? connection.metadata.notes : [];
   const { data, error } = await supabase.from('booking_channel_manager_connections').update({ metadata: { ...connection.metadata, notes: [...notes, { text: text(note).slice(0, 1000), createdAt: new Date().toISOString() }] }, updated_at: new Date().toISOString() }).eq('id', connection.id).select('*').single();
   if (error || !data) throw new Error(error?.message ?? 'Не удалось добавить заметку.'); return mapConnection(data as Record<string, unknown>);
+}
+
+export type ChannelManagerProviderOnboardingAction =
+  | 'select_provider' | 'request_account_creation' | 'mark_account_created' | 'request_access'
+  | 'mark_access_received' | 'mark_operator_review' | 'mark_import_ready' | 'upload_manual_snapshot'
+  | 'run_reconciliation' | 'mark_pilot_activation_pending' | 'mark_connected_placeholder'
+  | 'block_connection' | 'add_note';
+
+export type ChannelManagerProviderOnboardingResult = {
+  connection: ChannelManagerConnection;
+  importSummary?: Record<string, number>;
+  conflicts?: ChannelImportConflict[];
+};
+
+async function updateProviderOnboardingStatus(
+  connectionId: string,
+  status: ChannelManagerOnboardingStatus,
+  metadata?: Record<string, unknown>,
+): Promise<ChannelManagerConnection> {
+  const connection = await getConnection(connectionId);
+  const now = new Date().toISOString();
+  const { data, error } = await supabase.from('booking_channel_manager_connections').update({
+    status,
+    metadata: { ...connection.metadata, ...safeMetadata(metadata), realApiSyncEnabled: false },
+    failure_reason: status === 'blocked' ? connection.failureReason : null,
+    updated_at: now,
+  }).eq('id', connection.id).select('*').single();
+  if (error || !data) throw new Error(error?.message ?? 'Не удалось обновить этап подключения.');
+  return mapConnection(data as Record<string, unknown>);
+}
+
+export async function performChannelManagerProviderOnboardingAction(input: {
+  action: ChannelManagerProviderOnboardingAction;
+  propertySetupId?: string;
+  connectionId?: string;
+  provider?: ChannelManagerProvider;
+  safeAccessRef?: string | null;
+  snapshot?: ManualChannelSnapshot;
+  note?: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<ChannelManagerProviderOnboardingResult> {
+  assertNoSecrets(input.metadata);
+  const provider = input.provider === undefined ? undefined : parseChannelManagerProvider(input.provider);
+  let connection: ChannelManagerConnection;
+
+  if (input.action === 'select_provider') {
+    if (!provider) throw new Error('Выберите провайдера.');
+    connection = await initializeChannelManagerConnection(input.propertySetupId ?? '', provider, input.metadata);
+    connection = await updateProviderOnboardingStatus(connection.id, 'provider_selected', { selectedAt: new Date().toISOString() });
+    await queueChannelManagerCommunication(connection, 'channel_provider_selected_notice', `Выбран менеджер каналов ${provider}. API-синхронизация пока не активна; доступен контролируемый этап подготовки.`);
+    return { connection };
+  }
+
+  connection = await getConnection(input.connectionId ?? '');
+  if (input.action === 'request_account_creation') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'account_required', { accountCreationRequestedAt: new Date().toISOString() });
+    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Для продолжения нужен аккаунт выбранного менеджера каналов.');
+  } else if (input.action === 'mark_account_created') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'provider_selected', { accountCreatedAt: new Date().toISOString() });
+  } else if (input.action === 'request_access') {
+    if (!connection.propertySetupId) throw new Error('У подключения не указан профиль объекта.');
+    connection = await requestChannelManagerAccess(connection.propertySetupId, connection.provider, input.metadata);
+    connection = await updateProviderOnboardingStatus(connection.id, 'access_requested');
+  } else if (input.action === 'mark_access_received') {
+    if (!input.safeAccessRef) throw new Error('Укажите безопасную ссылку на доступ. Пароль или API-токен сюда вставлять нельзя.');
+    connection = await markChannelManagerAccessReceived(connection.id, input.safeAccessRef, input.metadata);
+    connection = await updateProviderOnboardingStatus(connection.id, 'access_received', { accessReceivedSafelyAt: new Date().toISOString() });
+  } else if (input.action === 'mark_operator_review') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'operator_review', { operatorReviewAt: new Date().toISOString() });
+    await queueChannelManagerCommunication(connection, 'internal_status_notice', 'Подключение передано оператору на проверку.');
+  } else if (input.action === 'mark_import_ready') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready');
+    await queueChannelManagerCommunication(connection, 'channel_snapshot_upload_request', 'Можно загрузить безопасный snapshot объектов, броней, календаря и цен.');
+  } else if (input.action === 'upload_manual_snapshot') {
+    const result = await registerManualChannelSnapshot(connection.id, input.snapshot ?? {}, input.metadata);
+    connection = await updateProviderOnboardingStatus(connection.id, 'manual_snapshot_available', { snapshotImportedAt: new Date().toISOString() });
+    return { connection, importSummary: result.summary, conflicts: result.conflicts };
+  } else if (input.action === 'run_reconciliation') {
+    await reconcileImportedObjects(connection.id);
+    await reconcileImportedBookings(connection.id);
+    const conflicts = await getChannelImportConflicts(connection.id);
+    connection = await updateProviderOnboardingStatus(connection.id, 'import_ready', { reconciledAt: new Date().toISOString(), conflictCount: conflicts.length });
+    return { connection, conflicts };
+  } else if (input.action === 'mark_pilot_activation_pending') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'pilot_activation_pending');
+    await queueChannelManagerCommunication(connection, 'channel_pilot_activation_pending_notice', 'Подготовка завершена. API-синхронизация будет включена отдельно после настройки провайдера оператором.');
+  } else if (input.action === 'mark_connected_placeholder') {
+    connection = await updateProviderOnboardingStatus(connection.id, 'connected_placeholder', { onboardingCompletedAt: new Date().toISOString() });
+  } else if (input.action === 'block_connection') {
+    connection = await blockChannelManagerConnection(connection.id, input.reason ?? 'Заблокировано оператором.');
+  } else if (input.action === 'add_note') {
+    connection = await addChannelManagerNote(connection.id, input.note ?? '');
+  } else {
+    throw new Error('Недопустимое действие.');
+  }
+  return { connection };
 }

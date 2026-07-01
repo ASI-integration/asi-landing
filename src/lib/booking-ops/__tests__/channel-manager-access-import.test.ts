@@ -58,7 +58,8 @@ vi.mock('../real-booking-intake-autopilot', () => ({ processInboundBookingReques
 import {
   CHANNEL_PROVIDER_ADAPTERS, createBookingFromImportedChannelBooking, findSecretPath, getChannelImportConflicts,
   importChannelObjects, initializeChannelManagerConnection, markChannelManagerAccessReceived,
-  reconcileImportedObjects, registerManualChannelSnapshot, requestChannelManagerAccess, startChannelImportRun,
+  performChannelManagerProviderOnboardingAction, reconcileImportedObjects, registerManualChannelSnapshot,
+  requestChannelManagerAccess, startChannelImportRun,
 } from '../channel-manager-access-import';
 
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
@@ -144,6 +145,47 @@ describe('Channel Manager Access & Import v1', () => {
     expect(CHANNEL_PROVIDER_ADAPTERS.travelline.supports_real_api).toBe(false);
     await expect(startChannelImportRun(connection.id, 'full', { executeProvider: true })).rejects.toThrow(/не подключён/i);
   });
+
+  it('selects Bnovo, RealtyCalendar and TravelLine as provider-ready connections', async () => {
+    for (const provider of ['bnovo', 'realtycalendar', 'travelline'] as const) {
+      const result = await performChannelManagerProviderOnboardingAction({ action: 'select_provider', propertySetupId: PROPERTY_ID, provider });
+      expect(result.connection).toMatchObject({ provider, status: 'provider_selected' });
+    }
+    expect(rows('booking_channel_manager_connections')).toHaveLength(3);
+    expect(rows('booking_owner_setup_communication_intents').map((item) => item.message_type)).toEqual([
+      'channel_provider_selected_notice', 'channel_provider_selected_notice', 'channel_provider_selected_notice',
+    ]);
+  });
+
+  it('progresses access safely without enabling a real provider API', async () => {
+    const selected = await performChannelManagerProviderOnboardingAction({ action: 'select_provider', propertySetupId: PROPERTY_ID, provider: 'bnovo' });
+    const requested = await performChannelManagerProviderOnboardingAction({ action: 'request_access', connectionId: selected.connection.id });
+    expect(requested.connection.status).toBe('access_requested');
+    const received = await performChannelManagerProviderOnboardingAction({ action: 'mark_access_received', connectionId: selected.connection.id, safeAccessRef: 'operator:confirmed' });
+    expect(received.connection).toMatchObject({ status: 'access_received', safeAccessRef: 'operator:confirmed' });
+    const completed = await performChannelManagerProviderOnboardingAction({ action: 'mark_connected_placeholder', connectionId: selected.connection.id });
+    expect(completed.connection.status).toBe('connected_placeholder');
+    expect(completed.connection.metadata.realApiSyncEnabled).toBe(false);
+    expect(CHANNEL_PROVIDER_ADAPTERS.bnovo.supports_real_api).toBe(false);
+  });
+
+  it('keeps manual snapshot import and reconciliation available for a selected provider', async () => {
+    const selected = await performChannelManagerProviderOnboardingAction({ action: 'select_provider', propertySetupId: PROPERTY_ID, provider: 'realtycalendar' });
+    const uploaded = await performChannelManagerProviderOnboardingAction({
+      action: 'upload_manual_snapshot', connectionId: selected.connection.id,
+      snapshot: { objects: [{ external_object_id: 'rc-1', title: 'Лесной дом', city: 'Тверь', capacity: 4 }] },
+    });
+    expect(uploaded.connection.status).toBe('manual_snapshot_available');
+    expect(uploaded.importSummary?.objects).toBe(1);
+    const reconciled = await performChannelManagerProviderOnboardingAction({ action: 'run_reconciliation', connectionId: selected.connection.id });
+    expect(reconciled.connection.status).toBe('import_ready');
+  });
+
+  it('rejects secret fields in provider onboarding metadata', async () => {
+    await expect(performChannelManagerProviderOnboardingAction({
+      action: 'select_provider', propertySetupId: PROPERTY_ID, provider: 'travelline', metadata: { password: 'never-store-this' },
+    })).rejects.toThrow(/секреты/i);
+  });
 });
 
 describe('Channel Manager dashboard API auth', () => {
@@ -156,12 +198,15 @@ describe('Channel Manager dashboard API auth', () => {
       import('@/app/api/dashboard/channel-manager/connections/route'), import('@/app/api/dashboard/channel-manager/import-runs/route'),
       import('@/app/api/dashboard/channel-manager/imported-objects/route'), import('@/app/api/dashboard/channel-manager/imported-bookings/route'),
       import('@/app/api/dashboard/channel-manager/calendar/route'), import('@/app/api/dashboard/channel-manager/reconcile/route'),
+      import('@/app/api/dashboard/channel-manager/provider-onboarding/route'),
+      import('@/app/api/dashboard/channel-manager/provider-onboarding/action/route'),
     ]);
     const responses = await Promise.all([
       endpoints[0].GET(new Request('http://localhost')), endpoints[1].GET(new Request('http://localhost')),
       endpoints[2].GET(new Request('http://localhost')), endpoints[3].GET(new Request('http://localhost')),
       endpoints[4].GET(new Request('http://localhost')), endpoints[5].POST(new Request('http://localhost', { method: 'POST', body: '{}' })),
+      endpoints[6].GET(new Request('http://localhost')), endpoints[7].POST(new Request('http://localhost', { method: 'POST', body: '{}' })),
     ]);
-    expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401]);
+    expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401, 401, 401, 401]);
   });
 });
