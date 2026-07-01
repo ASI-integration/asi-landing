@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
+import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupReadinessPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1699,6 +1700,8 @@ function BookingOpsPageInner() {
           {message}
         </div>
       ) : null}
+
+      <ObjectSetupReadinessPanel />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">

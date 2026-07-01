@@ -154,6 +154,12 @@ const KNOWN_MESSAGE_TYPES = new Set<string>([
   'guest_data_missing_notice',
   'unit_ready_notice',
   'issue_escalation_notice',
+  'owner_setup_started',
+  'request_property_missing_data',
+  'request_property_photos',
+  'request_channel_manager_access',
+  'object_data_received_acknowledgement',
+  'object_ready_for_review_notice',
 ]);
 
 const REVIEW_REQUIRED_TYPES = new Set<string>([
@@ -164,6 +170,7 @@ const REVIEW_REQUIRED_TYPES = new Set<string>([
   'send_checkin_instructions',
   'checkin_instructions',
   'deposit_return_readiness_notice',
+  'request_channel_manager_access',
 ]);
 
 const CONFLICT_TYPES = new Set<string>([

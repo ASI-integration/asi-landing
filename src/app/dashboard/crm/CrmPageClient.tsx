@@ -28,6 +28,7 @@ import { sanitizeCrmMessageTextForDisplay } from '@/lib/crm/message-display';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { CrmSuggestInput } from './CrmSuggestInput';
 import { CrmPilotChainActions } from './CrmPilotChainActions';
+import { CrmOwnerSetupPanel } from './CrmOwnerSetupPanel';
 
 type Draft = {
   name: string;
@@ -545,6 +546,7 @@ export default function CrmPageClient() {
                       </div>
                     ) : null}
                     <CrmPilotChainActions contact={contact} />
+                    <CrmOwnerSetupPanel leadId={contact.id} />
                   </div>
 
                   <div className="space-y-3">

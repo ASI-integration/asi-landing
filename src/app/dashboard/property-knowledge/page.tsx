@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
+import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupReadinessPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { BookingOpsPropertyKnowledge } from '@/lib/booking-ops/types';
 import {
@@ -273,6 +274,8 @@ function PropertyKnowledgePageInner() {
       </div>
 
       {message ? <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">{message}</div> : null}
+
+      <ObjectSetupReadinessPanel />
 
       <form onSubmit={parseIntake} className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/40 p-5">
         <div>
