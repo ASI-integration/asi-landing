@@ -1012,3 +1012,10 @@ export async function runInStayCheckoutAction(input: {
       throw new Error('invalid_action');
   }
 }
+
+/** Baseline row for inbound intake — checkout flow not started. */
+export async function initializeInStayCheckoutBaseline(bookingId: string): Promise<InStayCheckoutRow> {
+  return upsertExecution(bookingId, {
+    metadata: { source: 'inbound_intake_autopilot_v1', initializedAt: new Date().toISOString() },
+  });
+}

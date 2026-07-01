@@ -113,6 +113,28 @@ type ListResponse = {
   refreshedAt?: string;
 };
 
+type IntakeEventRow = {
+  id: string;
+  source: string;
+  status: string;
+  bookingId: string | null;
+  guestContactStatus: string;
+  propertyStatus: string;
+  datesStatus: string;
+  missingFields: string[];
+  nextAction: string | null;
+  duplicateOfBookingId: string | null;
+  automationResult: Record<string, unknown>;
+  createdAt: string;
+  safeSummary?: string;
+};
+
+type IntakeEventsResponse = {
+  ok: boolean;
+  message?: string;
+  events?: IntakeEventRow[];
+};
+
 type SaveResponse = {
   ok: boolean;
   message?: string;
@@ -674,6 +696,10 @@ function BookingOpsPageInner() {
   const [taskActionResults, setTaskActionResults] = useState<Record<string, TaskActionResult>>({});
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [intakeEvents, setIntakeEvents] = useState<IntakeEventRow[]>([]);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+  const [intakeActionId, setIntakeActionId] = useState<string | null>(null);
+  const [expandedIntakeId, setExpandedIntakeId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<EditDraft>({
     guestName: '',
     guestPhone: '',
@@ -738,7 +764,10 @@ function BookingOpsPageInner() {
     setLoading(true);
     setMessage('');
     try {
-      const res = await fetch('/api/dashboard/booking-ops', { credentials: 'include' });
+      const [res, intakeRes] = await Promise.all([
+        fetch('/api/dashboard/booking-ops', { credentials: 'include' }),
+        fetch('/api/dashboard/booking-ops/intake/events?limit=20', { credentials: 'include' }),
+      ]);
       const payload = await readResponseJson<ListResponse>(res, { ok: false, records: [] });
       if (!res.ok || !payload.ok) {
         setMessage(payload.message || 'Не удалось загрузить операционные брони.');
@@ -749,6 +778,12 @@ function BookingOpsPageInner() {
       if (selectedId) {
         const fresh = payload.records.find((record) => record.id === selectedId);
         if (fresh) setDraft(draftFromRecord(fresh));
+      }
+      if (intakeRes.ok) {
+        const intakePayload = await readResponseJson<IntakeEventsResponse>(intakeRes, { ok: false, events: [] });
+        if (intakePayload.ok && intakePayload.events) {
+          setIntakeEvents(intakePayload.events);
+        }
       }
     } finally {
       setLoading(false);
@@ -1549,6 +1584,43 @@ function BookingOpsPageInner() {
     }
   }
 
+  async function onIntakeAction(
+    eventId: string,
+    action: 'process' | 'mark_duplicate' | 'attach_property' | 'attach_guest' | 'request_missing_data' | 'create_fallback',
+    extra?: Record<string, string>,
+  ) {
+    if (!isOpsAdmin) return;
+    setIntakeActionId(eventId);
+    setMessage('');
+    try {
+      const event = intakeEvents.find((item) => item.id === eventId);
+      const res = await fetch('/api/dashboard/booking-ops/intake/process', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          source: event?.source ?? 'admin',
+          action,
+          intakeEventId: eventId,
+          duplicateOfBookingId: event?.bookingId ?? undefined,
+          ...extra,
+        }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string; result?: { safeSummary?: string } }>(
+        res,
+        { ok: false },
+      );
+      if (!res.ok || !payload.ok) {
+        setMessage(payload.message || 'Не удалось обработать заявку.');
+        return;
+      }
+      setMessage(payload.result?.safeSummary || 'Заявка обработана.');
+      await load();
+    } finally {
+      setIntakeActionId(null);
+    }
+  }
+
   async function onCreate(event: FormEvent) {
     event.preventDefault();
     if (!isOpsAdmin) return;
@@ -1627,6 +1699,124 @@ function BookingOpsPageInner() {
           {message}
         </div>
       ) : null}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-slate-900">Входящие заявки</h2>
+          <button
+            type="button"
+            onClick={() => {
+              setIntakeLoading(true);
+              void fetch('/api/dashboard/booking-ops/intake/events?limit=20', { credentials: 'include' })
+                .then((res) => readResponseJson<IntakeEventsResponse>(res, { ok: false, events: [] }))
+                .then((payload) => {
+                  if (payload.ok && payload.events) setIntakeEvents(payload.events);
+                })
+                .finally(() => setIntakeLoading(false));
+            }}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {intakeLoading ? 'Обновление…' : 'Обновить заявки'}
+          </button>
+        </div>
+        {intakeEvents.length === 0 ? (
+          <p className="text-sm text-slate-500">Пока нет входящих заявок.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="text-left text-slate-500">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Источник</th>
+                  <th className="px-2 py-2 font-medium">Контакт</th>
+                  <th className="px-2 py-2 font-medium">Объект</th>
+                  <th className="px-2 py-2 font-medium">Даты</th>
+                  <th className="px-2 py-2 font-medium">Статус</th>
+                  <th className="px-2 py-2 font-medium">Бронь</th>
+                  <th className="px-2 py-2 font-medium">Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                {intakeEvents.map((event) => {
+                  const modules = Array.isArray(event.automationResult?.initializedModules)
+                    ? (event.automationResult.initializedModules as string[])
+                    : [];
+                  const expanded = expandedIntakeId === event.id;
+                  return (
+                    <tr key={event.id} className="border-t border-slate-100 align-top">
+                      <td className="px-2 py-2">{event.source}</td>
+                      <td className="px-2 py-2">{event.guestContactStatus}</td>
+                      <td className="px-2 py-2">{event.propertyStatus}</td>
+                      <td className="px-2 py-2">{event.datesStatus}</td>
+                      <td className="px-2 py-2">
+                        {event.status}
+                        {event.duplicateOfBookingId ? (
+                          <div className="text-amber-700">дубликат</div>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-2">
+                        {event.bookingId ? (
+                          <button
+                            type="button"
+                            className="text-emerald-700 hover:underline"
+                            onClick={() => {
+                              const record = records.find((item) => item.id === event.bookingId);
+                              if (record) selectRecord(record);
+                            }}
+                          >
+                            открыть
+                          </button>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {isOpsAdmin ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={intakeActionId === event.id}
+                                onClick={() => void onIntakeAction(event.id, 'process')}
+                                className="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                обработать
+                              </button>
+                              <button
+                                type="button"
+                                disabled={intakeActionId === event.id}
+                                onClick={() => void onIntakeAction(event.id, 'request_missing_data')}
+                                className="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                запросить данные
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedIntakeId(expanded ? null : event.id)}
+                                className="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-50"
+                              >
+                                {expanded ? 'скрыть' : 'детали'}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-slate-400">{event.nextAction ?? '—'}</span>
+                          )}
+                        </div>
+                        {expanded ? (
+                          <div className="mt-2 rounded border border-slate-100 bg-slate-50 p-2 text-[11px] text-slate-600 space-y-1">
+                            <div>Недостаёт: {event.missingFields.join(', ') || '—'}</div>
+                            <div>Модули: {modules.join(', ') || '—'}</div>
+                            <div>След. шаг: {event.nextAction ?? '—'}</div>
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {showCreate && isOpsAdmin ? (
         <form onSubmit={onCreate} className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">

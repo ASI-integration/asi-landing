@@ -644,3 +644,10 @@ export async function runCheckinExecutionAction(input: {
       throw new Error('invalid_action');
   }
 }
+
+/** Baseline row for inbound intake — no instructions sent, no secrets. */
+export async function initializeCheckinExecutionBaseline(bookingId: string): Promise<CheckinExecutionRow> {
+  return upsertExecution(bookingId, {
+    metadata: { source: 'inbound_intake_autopilot_v1', initializedAt: new Date().toISOString() },
+  });
+}
