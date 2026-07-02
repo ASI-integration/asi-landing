@@ -21,6 +21,7 @@ import type {
   BookingOpsCommunicationIntent,
   BookingOpsCommunicationPurpose,
 } from './types';
+import { shouldBlockCommunicationIntent } from './availability-overbooking-protection';
 
 export const AUTO_SEND_DELIVERY_STATUSES = [
   'queued', 'sending', 'sent', 'failed', 'skipped', 'blocked', 'dry_run',
@@ -320,6 +321,14 @@ export async function enqueueAutoSendDelivery(
   const channel = channelForIntent(intent);
   if (!channel) return { ok: false as const, error: 'unsupported_channel' };
   const context = await resolveExecutionContext(intent);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  if (availabilityGuard.block) {
+    return {
+      ok: false as const,
+      error: 'availability_blocked',
+      availabilityGuard,
+    };
+  }
   const decision = persistedOperatorBlock(intent)
     ?? await canAutoSendCommunicationIntent(intent, context.policyContext);
   if (!decision.allowed) return { ok: false as const, error: decision.decision, decision };
@@ -447,6 +456,11 @@ export async function executeAutoSendDelivery(
   }
 
   const executionContext = await resolveExecutionContext(intent);
+  const availabilityGuard = await shouldBlockCommunicationIntent(intent);
+  if (availabilityGuard.block) {
+    const blocked = await blockDelivery(delivery, null, 'availability_blocked');
+    return { ok: false as const, error: 'availability_blocked', delivery: blocked, availabilityGuard };
+  }
   const decision = persistedOperatorBlock(intent)
     ?? await canAutoSendCommunicationIntent(intent, executionContext.policyContext);
   if (!decision.allowed) {

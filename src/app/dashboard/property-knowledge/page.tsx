@@ -7,6 +7,7 @@ import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManag
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
 import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
 import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
+import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { BookingOpsPropertyKnowledge } from '@/lib/booking-ops/types';
 import {
@@ -280,6 +281,8 @@ function PropertyKnowledgePageInner() {
       {message ? <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">{message}</div> : null}
 
       <PilotAutorunPanel scope="property_setup" />
+
+      <AvailabilityOverbookingPanel propertyId={draft.propertyId || undefined} />
 
       <ObjectSetupReadinessPanel />
 

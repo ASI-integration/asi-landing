@@ -7,6 +7,7 @@ import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManag
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
 import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
 import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
+import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1706,6 +1707,13 @@ function BookingOpsPageInner() {
       ) : null}
 
       <PilotAutorunPanel scope="booking" initialRef={selectedRecord?.id ?? ''} />
+
+      <AvailabilityOverbookingPanel
+        bookingId={selectedRecord?.id}
+        propertyId={selectedRecord?.propertyId}
+        initialDateFrom={selectedRecord?.checkInAt}
+        initialDateTo={selectedRecord?.checkOutAt}
+      />
 
       <ObjectSetupReadinessPanel />
 

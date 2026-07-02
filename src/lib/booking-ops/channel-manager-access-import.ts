@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
+import { auditChannelImportAvailability } from './availability-overbooking-protection';
 import {
   attachAutoSendDecisionMetadata,
   canAutoSendCommunicationIntent,
@@ -486,7 +487,16 @@ export async function registerManualChannelSnapshot(connectionId: string, snapsh
     const prices = await importChannelCalendar(connection.id, normalized.pricing, { importRunId: run.id, pricing: true });
     await reconcileImportedObjects(connection.id);
     await reconcileImportedBookings(connection.id);
+    const availabilityChecks = await auditChannelImportAvailability(connection.id);
     const conflicts = await getChannelImportConflicts(connection.id);
+    for (const check of availabilityChecks) {
+      if (check.status === 'no_conflict') continue;
+      conflicts.push({
+        type: 'availability_conflict',
+        severity: check.status === 'confirmed_conflict' ? 'blocker' : 'warning',
+        message: check.safeSummary,
+      });
+    }
     const completed = await completeChannelImportRun(run.id, {
       objects, bookings, calendarDays: calendar, prices, warnings: conflicts,
       safeSummary: `Импортировано: объектов ${objects}, броней ${bookings}, строк календаря ${calendar}, цен ${prices}.`,

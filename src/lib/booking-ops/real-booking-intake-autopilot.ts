@@ -23,6 +23,11 @@ import type {
   BookingOpsRecord,
   CreateBookingOpsInput,
 } from './types';
+import {
+  checkAvailabilityConflict,
+  createAvailabilityHold,
+  type AvailabilityConflictStatus,
+} from './availability-overbooking-protection';
 
 export const INBOUND_BOOKING_SOURCES = [
   'web',
@@ -637,6 +642,31 @@ export async function initializeBookingAutomationStack(
   return { initializedModules: modules };
 }
 
+async function initializeBookingAvailability(
+  record: BookingOpsRecord,
+): Promise<{ status: AvailabilityConflictStatus; initialized: boolean }> {
+  if (!record.propertyId || !record.checkInAt || !record.checkOutAt) {
+    const check = await checkAvailabilityConflict(
+      { bookingId: record.id },
+      { checkType: 'pre_intake' },
+    );
+    return { status: check.status, initialized: false };
+  }
+  const hold = await createAvailabilityHold({
+    bookingId: record.id,
+    propertyId: record.propertyId,
+    dateFrom: record.checkInAt,
+    dateTo: record.checkOutAt,
+    source: 'booking_intake',
+    holdMinutes: 30,
+    safeSummary: 'Даты заявки временно удерживаются на время проверки.',
+  }, { metadata: { intake_autopilot: true } });
+  return {
+    status: String(hold.conflict_status ?? 'failed') as AvailabilityConflictStatus,
+    initialized: hold.status === 'active',
+  };
+}
+
 async function getIntakeEventByKey(idempotencyKey: string): Promise<InboundBookingIntakeEvent | null> {
   const { data, error } = await supabase
     .from('booking_inbound_intake_events')
@@ -897,10 +927,19 @@ export async function processInboundBookingRequest(
     let initializedModules: string[] = [];
     let createdCommunicationIntents: string[] = [];
     const fallbackCreated = record.guestIntake?.intakeStatus === 'fallback_required';
+    let availabilityStatus: AvailabilityConflictStatus = 'missing_data';
+
+    try {
+      const availability = await initializeBookingAvailability(record);
+      availabilityStatus = availability.status;
+      if (availability.initialized) initializedModules.push('availability_hold');
+    } catch {
+      availabilityStatus = 'failed';
+    }
 
     if (created || options?.force || options?.action === 'process' || !options?.action) {
       const stack = await initializeBookingAutomationStack(record.id, { missingFields, source });
-      initializedModules = stack.initializedModules;
+      initializedModules = [...initializedModules, ...stack.initializedModules];
       createdCommunicationIntents = await queueInitialBookingCommunications(record.id, { missingFields });
     }
 
@@ -935,6 +974,7 @@ export async function processInboundBookingRequest(
         fallbackCreated,
         safeSummary,
         created,
+        availabilityStatus,
       },
     });
 

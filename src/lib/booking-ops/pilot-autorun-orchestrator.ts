@@ -36,6 +36,10 @@ import { initializeInStayCheckoutBaseline } from './instay-checkout-autopilot';
 import { recomputeBookingCheckinReadiness } from './pre-checkin-control-center';
 import { listBookingOpsTasksForRecord } from './tasks';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
+import {
+  checkBookingOverbookingRisk,
+  getAvailabilityStatus,
+} from './availability-overbooking-protection';
 
 export type PilotAutorunScopeType = 'lead' | 'property_setup' | 'booking' | 'batch';
 export type PilotAutorunStatusValue =
@@ -287,6 +291,11 @@ export async function runPilotAutorunForPropertySetup(
     return finishRun(run);
   }
 
+  const availability = await getAvailabilityStatus({ propertySetupId: scope.scopeRef });
+  if (availability.conflicts.length > 0) {
+    addBlocker(run, `Активных конфликтов доступности: ${availability.conflicts.length}.`, 'Проверить доступность и пересечения дат.');
+  }
+
   await executeStep(run, 'property.validate_setup', 'Будет пересчитана готовность объекта.', async () => {
     setup = await validatePropertySetup(scope.scopeRef);
     return 'Готовность объекта пересчитана.';
@@ -393,6 +402,22 @@ export async function runPilotAutorunForBooking(
     addBlocker(run, 'Операционная бронь не найдена.', 'Проверить ID операционной брони.');
     return finishRun(run);
   }
+  const availability = await checkBookingOverbookingRisk(record.id, { checkType: 'pre_autorun' });
+  await addEvent(run, {
+    key: 'booking.check_availability',
+    status: availability.status === 'no_conflict' ? 'completed' : 'blocked',
+    summary: availability.safeSummary,
+  });
+  run.stepsAttempted.push('booking.check_availability');
+  if (availability.status !== 'no_conflict') {
+    addBlocker(
+      run,
+      availability.blockers[0] ?? 'Доступность не подтверждена.',
+      'Проверить даты и конфликты доступности вручную.',
+    );
+    return finishRun(run);
+  }
+  run.stepsCompleted.push('booking.check_availability');
   await executeStep(run, 'booking.initialize_lifecycle_legal', 'Будут созданы lifecycle и ручные legal/payment/MVD placeholders.', async () => {
     await initializeBookingOpsCoreLoop(record.id);
     return 'Lifecycle и ручные legal/payment/MVD контуры инициализированы.';
