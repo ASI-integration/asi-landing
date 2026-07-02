@@ -73,6 +73,12 @@ import {
   validateManualMarketSnapshot,
 } from '../pricing-intelligence-autopilot';
 import { inferPropertyAudience, getAudiencePricingWeights } from '../property-audience-intelligence';
+import {
+  computeMarketPressureScore,
+  getAudienceRadiusWeights,
+  ingestManualMarketSnapshot,
+  validateMarketSnapshot,
+} from '../market-signals-ingestion';
 import { buildPublicationPackage, initializePublicationPackage, selectPublicationChannels } from '../channel-publishing-preparation';
 
 const OWNER_ID = '10000000-0000-4000-8000-000000000001';
@@ -197,6 +203,50 @@ describe('Pricing Intelligence & Tariff Grid v1', () => {
     expect(() => validateManualMarketSnapshot({ radius_km: 2, date: '2026-07-10' })).toThrow();
   });
 
+  it('rejects unsafe market payloads and invalid counts', () => {
+    expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', competitor_prices: { count: -1 } })).toThrow(/конкурентов/iu);
+    expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', available_supply: { available_count: 8, total_count: 4 } })).toThrow(/меньше доступного/iu);
+    expect(() => validateMarketSnapshot({ radius_km: 3, date: '2026-07-10', events: [{ name: '<script>alert(1)</script>' }] })).toThrow(/недопустимые/iu);
+  });
+
+  it('combined manual snapshot records all normalized signal types and ingestion run', async () => {
+    const result = await ingestManualMarketSnapshot(SETUP_ID, {
+      radius_km: 3,
+      date: '2026-07-10',
+      competitor_prices: { median: 4500, p25: 3800, p75: 6200, count: 42 },
+      available_supply: { available_count: 18, total_count: 57 },
+      events: [{ name: 'Концерт', date: '2026-07-10', distance_km: 2.4, expected_impact: 'high' }],
+      weather: { date: '2026-07-10', condition: 'дождь', precipitation_probability: 0.7, impact: 'medium_negative' },
+    });
+    expect(result.signals.map((signal) => signal.signalType).sort()).toEqual(['available_supply', 'competitor_prices', 'event_pressure', 'weather_pressure']);
+    expect(rows('booking_market_signal_ingestion_runs')).toHaveLength(1);
+    expect(rows('booking_market_signal_ingestion_runs')[0].status).toBe('completed');
+  });
+
+  it('audience-specific radius weights prioritize the intended areas', () => {
+    const business = getAudienceRadiusWeights('business_center', 'competitor_prices');
+    const seasideWeather = getAudienceRadiusWeights('leisure_seaside', 'weather_pressure');
+    const eventVisitors = getAudienceRadiusWeights('event_visitors', 'event_pressure');
+    expect(business[1]).toBeGreaterThan(business[7]);
+    expect(business[3]).toBeGreaterThan(business[10]);
+    expect(seasideWeather[7]).toBeGreaterThan(seasideWeather[1]);
+    expect(seasideWeather[10]).toBeGreaterThan(1);
+    expect(eventVisitors[1]).toBeGreaterThan(1);
+    expect(eventVisitors[10]).toBeGreaterThan(1);
+  });
+
+  it('market pressure uses competitor, supply, events and weather signals', async () => {
+    await ingestManualMarketSnapshot(SETUP_ID, {
+      radius_km: 3, date: '2026-07-10', competitor_prices: { median: 7000, count: 30 },
+      available_supply: { available_count: 5, total_count: 50 },
+      events: [{ name: 'Форум', expected_impact: 'high' }],
+      weather: { condition: 'ясно', impact: 'positive' },
+    });
+    const pressure = await computeMarketPressureScore(SETUP_ID, '2026-07-10', { audience: 'event_visitors' });
+    expect(Object.keys(pressure.components)).toEqual(expect.arrayContaining(['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure']));
+    expect(pressure.signalsUsed).toHaveLength(4);
+  });
+
   it('competitor prices affect recommendation', async () => {
     const profile = await initializePricingProfile(SETUP_ID);
     await updatePricingGuardrails(profile.id, { base_price: 5000, min_price: 3000, max_price: 10000 });
@@ -292,6 +342,21 @@ describe('Pricing Intelligence & Tariff Grid v1', () => {
     expect(grid[0].adjustment_reason.length).toBeGreaterThan(0);
   });
 
+  it('missing signals create warnings while a recommendation still completes', async () => {
+    const profile = await initializePricingProfile(SETUP_ID);
+    const run = await runPricingRecommendation(profile.id, '2026-07-01', '2026-07-02', { dryRun: true });
+    expect(run.status).toBe('dry_run');
+    expect(run.warnings.some((warning) => warning.includes('Нет сигнала'))).toBe(true);
+    expect(run.errors).toEqual([]);
+  });
+
+  it('recommendation run records normalized signals_used', async () => {
+    const profile = await initializePricingProfile(SETUP_ID);
+    await ingestManualMarketSnapshot(SETUP_ID, { radius_km: 7, date: '2026-07-10', competitor_prices: { median: 6000, count: 20 } });
+    const run = await runPricingRecommendation(profile.id, '2026-07-10', '2026-07-10', { dryRun: true });
+    expect(run.signalsUsed).toContain('competitor_prices');
+  });
+
   it('publication package sees pricing incomplete/ready', async () => {
     const snapshot = await buildPricingSnapshotForPublicationPackage(SETUP_ID);
     expect(snapshot.pricing_status).toBe('missing');
@@ -343,6 +408,27 @@ describe('pricing dashboard API auth', () => {
       gridRoute.GET(new Request('http://localhost/api/dashboard/pricing/tariff-grid')),
       audienceRoute.GET(new Request('http://localhost/api/dashboard/pricing/audience')),
       ingestRoute.POST(new Request('http://localhost/api/dashboard/pricing/signals/ingest', { method: 'POST', body: '{}' })),
+    ]);
+    for (const response of responses) expect(response.status).toBe(401);
+  });
+
+  it('returns 401 for all market signal endpoints when unauthenticated', async () => {
+    vi.doMock('@/lib/crm/api-auth', () => ({
+      requireOpsAdminSession: vi.fn(async () => ({ error: Response.json({ ok: false }, { status: 401 }) })),
+    }));
+    const [signals, action, ingest, coverage, explain] = await Promise.all([
+      import('@/app/api/dashboard/pricing/market-signals/route'),
+      import('@/app/api/dashboard/pricing/market-signals/action/route'),
+      import('@/app/api/dashboard/pricing/market-signals/ingest/route'),
+      import('@/app/api/dashboard/pricing/market-signals/coverage/route'),
+      import('@/app/api/dashboard/pricing/market-signals/explain/route'),
+    ]);
+    const responses = await Promise.all([
+      signals.GET(new Request('http://localhost/api/dashboard/pricing/market-signals')),
+      action.POST(new Request('http://localhost/api/dashboard/pricing/market-signals/action', { method: 'POST', body: '{}' })),
+      ingest.POST(new Request('http://localhost/api/dashboard/pricing/market-signals/ingest', { method: 'POST', body: '{}' })),
+      coverage.GET(new Request('http://localhost/api/dashboard/pricing/market-signals/coverage')),
+      explain.GET(new Request('http://localhost/api/dashboard/pricing/market-signals/explain')),
     ]);
     for (const response of responses) expect(response.status).toBe(401);
   });

@@ -7,6 +7,13 @@ import {
   inferPropertyAudience,
   type AudienceProfile,
 } from './property-audience-intelligence';
+import {
+  computeMarketPressureScore,
+  getAudienceRadiusWeights,
+  getSignalsForPricingDate,
+  ingestManualMarketSnapshot,
+  validateMarketSnapshot,
+} from './market-signals-ingestion';
 
 export const PRICING_PROFILE_STATUSES = [
   'draft', 'incomplete', 'ready_for_recommendations', 'recommendations_ready',
@@ -122,10 +129,10 @@ export type RecommendationRun = {
 export type ManualMarketSnapshot = {
   radius_km: number;
   date: string;
-  competitor_prices?: { median?: number; p25?: number; p75?: number; count?: number };
-  available_supply?: { available_count?: number; total_count?: number; availability_ratio?: number };
-  events?: Array<{ name?: string; distance_km?: number; expected_impact?: string }>;
-  weather?: { condition?: string; temperature_c?: number; impact?: string };
+  competitor_prices?: { median?: number; p25?: number; p75?: number; min?: number; max?: number; count?: number; confidence_score?: number };
+  available_supply?: { available_count?: number; total_count?: number; availability_ratio?: number; booked_count?: number; confidence_score?: number };
+  events?: Array<{ name?: string; type?: string; date?: string; distance_km?: number; expected_impact?: string; confidence_score?: number }>;
+  weather?: { date?: string; condition?: string; temperature_c?: number; precipitation_probability?: number; impact?: string; confidence_score?: number };
 };
 
 type Row = Record<string, unknown>;
@@ -399,19 +406,7 @@ export async function updatePricingGuardrails(
 }
 
 export function validateManualMarketSnapshot(snapshot: unknown): ManualMarketSnapshot {
-  const value = object(snapshot);
-  assertSafePayload(value);
-  const radius = assertAllowedRadius(value.radius_km);
-  const date = text(value.date);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new Error('Укажите дату в формате YYYY-MM-DD.');
-  return {
-    radius_km: radius,
-    date,
-    competitor_prices: value.competitor_prices ? object(value.competitor_prices) as ManualMarketSnapshot['competitor_prices'] : undefined,
-    available_supply: value.available_supply ? object(value.available_supply) as ManualMarketSnapshot['available_supply'] : undefined,
-    events: Array.isArray(value.events) ? value.events.map((e) => object(e)) as ManualMarketSnapshot['events'] : undefined,
-    weather: value.weather ? object(value.weather) as ManualMarketSnapshot['weather'] : undefined,
-  };
+  return validateMarketSnapshot(snapshot) as ManualMarketSnapshot;
 }
 
 export async function ingestMarketSignals(
@@ -419,69 +414,8 @@ export async function ingestMarketSignals(
   signals: ManualMarketSnapshot | ManualMarketSnapshot[],
   metadata?: Record<string, unknown>,
 ): Promise<MarketSignal[]> {
-  const setupId = assertPricingUuid(propertySetupId, 'propertySetupId');
-  const setup = await getPropertySetupById(setupId);
-  if (!setup) throw new Error('Профиль объекта не найден.');
-
-  const items = Array.isArray(signals) ? signals : [signals];
-  const now = new Date().toISOString();
-  const rows: Row[] = [];
-
-  for (const item of items) {
-    const validated = validateManualMarketSnapshot(item);
-    const confidence = computeSnapshotConfidence(validated);
-
-    if (validated.competitor_prices) {
-      rows.push({
-        id: randomUUID(), property_setup_id: setupId, property_id: setup.propertyId,
-        signal_date: validated.date, radius_km: validated.radius_km,
-        signal_type: 'competitor_prices', source: 'manual',
-        value: validated.competitor_prices, confidence_score: confidence,
-        metadata: safeMetadata(metadata), created_at: now, updated_at: now,
-      });
-    }
-    if (validated.available_supply) {
-      rows.push({
-        id: randomUUID(), property_setup_id: setupId, property_id: setup.propertyId,
-        signal_date: validated.date, radius_km: validated.radius_km,
-        signal_type: 'available_supply', source: 'manual',
-        value: validated.available_supply, confidence_score: confidence,
-        metadata: safeMetadata(metadata), created_at: now, updated_at: now,
-      });
-    }
-    if (validated.events?.length) {
-      rows.push({
-        id: randomUUID(), property_setup_id: setupId, property_id: setup.propertyId,
-        signal_date: validated.date, radius_km: validated.radius_km,
-        signal_type: 'event_pressure', source: 'manual',
-        value: { events: validated.events }, confidence_score: confidence,
-        metadata: safeMetadata(metadata), created_at: now, updated_at: now,
-      });
-    }
-    if (validated.weather) {
-      rows.push({
-        id: randomUUID(), property_setup_id: setupId, property_id: setup.propertyId,
-        signal_date: validated.date, radius_km: validated.radius_km,
-        signal_type: 'weather_pressure', source: 'manual',
-        value: validated.weather, confidence_score: confidence,
-        metadata: safeMetadata(metadata), created_at: now, updated_at: now,
-      });
-    }
-  }
-
-  if (!rows.length) throw new Error('Снимок не содержит распознаваемых сигналов.');
-  const { data, error } = await supabase.from('booking_pricing_market_signals').insert(rows).select('*');
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => mapMarketSignal(row as Row));
-}
-
-function computeSnapshotConfidence(snapshot: ManualMarketSnapshot): number {
-  let score = 40;
-  if (snapshot.competitor_prices?.count && snapshot.competitor_prices.count >= 10) score += 20;
-  if (snapshot.available_supply?.total_count) score += 15;
-  if (snapshot.events?.length) score += 15;
-  if (snapshot.weather) score += 10;
-  return Math.min(95, score);
+  const result = await ingestManualMarketSnapshot(propertySetupId, signals, metadata);
+  return result.signals as MarketSignal[];
 }
 
 export async function getMarketSignals(
@@ -613,38 +547,45 @@ function leadTimeFactor(date: string): { factor: number; reason: AdjustmentReaso
   return { factor: 1, reason: { factor: 'lead_time', direction: 'neutral', percent: 0, explanation: 'Достаточный запас по дате' } };
 }
 
-function competitorFactor(basePrice: number, signals: MarketSignal[]): { factor: number; reason: AdjustmentReason } {
-  const comp = signals.find((s) => s.signalType === 'competitor_prices');
-  if (!comp?.value?.median) return { factor: 1, reason: { factor: 'competitor', direction: 'neutral', percent: 0, explanation: 'Нет данных конкурентов' } };
-  const median = Number(comp.value.median);
+function weightedSignalValue(signals: MarketSignal[], signalType: SignalType, key: string, radiusWeights: Record<number, number>): number | null {
+  const matches = signals.filter((signal) => signal.signalType === signalType && Number.isFinite(Number(signal.value[key])));
+  if (!matches.length) return null;
+  let weighted = 0; let total = 0;
+  for (const signal of matches) {
+    const weight = (radiusWeights[signal.radiusKm] ?? 0.5) * signal.confidenceScore / 100;
+    weighted += Number(signal.value[key]) * weight; total += weight;
+  }
+  return total ? weighted / total : null;
+}
+
+function competitorFactor(basePrice: number, signals: MarketSignal[], radiusWeights: Record<number, number>): { factor: number; reason: AdjustmentReason } {
+  const medianValue = weightedSignalValue(signals, 'competitor_prices', 'median', radiusWeights);
+  if (medianValue == null) return { factor: 1, reason: { factor: 'competitor', direction: 'neutral', percent: 0, explanation: 'Нет данных конкурентов' } };
+  const median = Math.round(medianValue);
   const delta = (median - basePrice) / basePrice;
   const capped = Math.max(-0.15, Math.min(0.15, delta * 0.5));
-  const confidence = comp.confidenceScore / 100;
-  const adjusted = 1 + capped * confidence;
   return {
-    factor: adjusted,
+    factor: 1 + capped,
     reason: {
       factor: 'competitor',
       direction: capped > 0 ? 'up' : capped < 0 ? 'down' : 'neutral',
-      percent: Math.round(capped * confidence * 100),
-      explanation: `Медиана конкурентов ${median} ₽`,
+      percent: Math.round(capped * 100),
+      explanation: `Взвешенная медиана конкурентов ${median} ₽`,
     },
   };
 }
 
-function supplyFactor(signals: MarketSignal[]): { factor: number; reason: AdjustmentReason } {
-  const supply = signals.find((s) => s.signalType === 'available_supply');
-  if (!supply?.value) return { factor: 1, reason: { factor: 'supply', direction: 'neutral', percent: 0, explanation: 'Нет данных о предложении' } };
-  const ratio = Number(supply.value.availability_ratio ?? 0.5);
+function supplyFactor(signals: MarketSignal[], radiusWeights: Record<number, number>): { factor: number; reason: AdjustmentReason } {
+  const ratio = weightedSignalValue(signals, 'available_supply', 'availability_ratio', radiusWeights);
+  if (ratio == null) return { factor: 1, reason: { factor: 'supply', direction: 'neutral', percent: 0, explanation: 'Нет данных о предложении' } };
   if (ratio < 0.25) return { factor: 1.1, reason: { factor: 'supply', direction: 'up', percent: 10, explanation: 'Низкая доступность на рынке' } };
   if (ratio > 0.65) return { factor: 0.95, reason: { factor: 'supply', direction: 'down', percent: 5, explanation: 'Высокая доступность на рынке' } };
   return { factor: 1, reason: { factor: 'supply', direction: 'neutral', percent: 0, explanation: 'Средняя доступность' } };
 }
 
 function eventFactor(signals: MarketSignal[], eventWeight: number): { factor: number; reason: AdjustmentReason } {
-  const eventSignal = signals.find((s) => s.signalType === 'event_pressure');
-  if (!eventSignal?.value?.events) return { factor: 1, reason: { factor: 'events', direction: 'neutral', percent: 0, explanation: 'Нет событий' } };
-  const events = eventSignal.value.events as Array<{ name?: string; expected_impact?: string }>;
+  const events = signals.filter((s) => s.signalType === 'event_pressure').flatMap((signal) => Array.isArray(signal.value.events) ? signal.value.events as Array<{ name?: string; expected_impact?: string }> : []);
+  if (!events.length) return { factor: 1, reason: { factor: 'events', direction: 'neutral', percent: 0, explanation: 'Нет событий' } };
   const hasHigh = events.some((e) => text(e.expected_impact).toLowerCase() === 'high');
   if (hasHigh) {
     const pct = Math.round(20 * eventWeight);
@@ -654,7 +595,7 @@ function eventFactor(signals: MarketSignal[], eventWeight: number): { factor: nu
 }
 
 function weatherFactor(signals: MarketSignal[], weatherWeight: number): { factor: number; reason: AdjustmentReason } {
-  const weather = signals.find((s) => s.signalType === 'weather_pressure');
+  const weather = signals.filter((s) => s.signalType === 'weather_pressure').sort((a, b) => b.confidenceScore - a.confidenceScore)[0];
   if (!weather?.value) return { factor: 1, reason: { factor: 'weather', direction: 'neutral', percent: 0, explanation: 'Нет данных о погоде' } };
   const impact = text(weather.value.impact).toLowerCase();
   if (impact.includes('negative')) {
@@ -668,7 +609,7 @@ export async function recommendPriceForDate(
   pricingProfileId: string,
   date: string,
   options?: { radiusKm?: number; audienceProfile?: AudienceProfile | null },
-): Promise<{ recommendedPrice: number; reasons: AdjustmentReason[]; scores: Pick<TariffGridDay, 'demandScore' | 'supplyScore' | 'eventScore' | 'weatherScore' | 'audienceScore'> }> {
+): Promise<{ recommendedPrice: number; reasons: AdjustmentReason[]; scores: Pick<TariffGridDay, 'demandScore' | 'supplyScore' | 'eventScore' | 'weatherScore' | 'audienceScore'>; signalsUsed: string[]; missingSignals: string[] }> {
   const profile = await getPricingProfile(pricingProfileId);
   if (!profile.basePrice) throw new Error('Укажите базовую цену.');
 
@@ -677,7 +618,10 @@ export async function recommendPriceForDate(
 
   const audience = options?.audienceProfile ?? await getAudienceProfile(setupId);
   const weights = getAudiencePricingWeights(audience);
-  const signals = await signalsForDate(setupId, date, options?.radiusKm ?? 3);
+  const signals = (await getSignalsForPricingDate(setupId, date, options?.radiusKm)) as MarketSignal[];
+  const primaryAudience = audience?.primaryAudience ?? 'unknown';
+  const competitorRadiusWeights = getAudienceRadiusWeights(primaryAudience, 'competitor_prices');
+  const supplyRadiusWeights = getAudienceRadiusWeights(primaryAudience, 'available_supply');
 
   const reasons: AdjustmentReason[] = [];
   let price = profile.basePrice;
@@ -694,12 +638,12 @@ export async function recommendPriceForDate(
   price *= lead.factor * (lead.factor !== 1 ? weights.leadTimeWeight : 1);
   reasons.push(lead.reason);
 
-  const comp = competitorFactor(profile.basePrice, signals);
-  price *= comp.factor * (comp.factor !== 1 ? weights.competitorWeight : 1);
+  const comp = competitorFactor(profile.basePrice, signals, competitorRadiusWeights);
+  price *= 1 + (comp.factor - 1) * weights.competitorWeight;
   reasons.push(comp.reason);
 
-  const sup = supplyFactor(signals);
-  price *= sup.factor * (sup.factor !== 1 ? weights.supplyWeight : 1);
+  const sup = supplyFactor(signals, supplyRadiusWeights);
+  price *= 1 + (sup.factor - 1) * weights.supplyWeight;
   reasons.push(sup.reason);
 
   const evt = eventFactor(signals, weights.eventWeight);
@@ -725,15 +669,26 @@ export async function recommendPriceForDate(
     reasons.push({ factor: 'guardrails', direction: clamped < raw ? 'down' : 'up', percent: Math.round(Math.abs(clamped - raw) / profile.basePrice * 100), explanation: `Ограничено: ${minP}–${maxP} ₽` });
   }
 
-  const [demandScore, supplyScore, eventScore, weatherScore, audienceScore] = await Promise.all([
-    computeDemandScore(setupId, date, options),
-    computeSupplyScore(setupId, date, options),
-    computeEventScore(setupId, date, options),
-    computeWeatherScore(setupId, date, options),
+  const [pressure, audienceScore] = await Promise.all([
+    computeMarketPressureScore(setupId, date, { audience: primaryAudience }),
     computeAudienceScore(setupId, date, audience),
   ]);
-
-  return { recommendedPrice: clamped, reasons, scores: { demandScore, supplyScore, eventScore, weatherScore, audienceScore } };
+  const signalsUsed = [...new Set(signals.map((signal) => signal.signalType))];
+  const requiredSignals = ['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure'];
+  const missingSignals = requiredSignals.filter((signal) => !signalsUsed.includes(signal as SignalType));
+  return {
+    recommendedPrice: clamped,
+    reasons,
+    scores: {
+      demandScore: pressure.score,
+      supplyScore: pressure.components.available_supply ?? 50,
+      eventScore: pressure.components.event_pressure ?? 50,
+      weatherScore: pressure.components.weather_pressure ?? 50,
+      audienceScore,
+    },
+    signalsUsed,
+    missingSignals,
+  };
 }
 
 function dateRange(from: string, days: number): string[] {
@@ -833,9 +788,12 @@ export async function runPricingRecommendation(
 
   const setupId = profile.propertySetupId;
   if (setupId) {
-    const signals = await getMarketSignals(setupId, { from: dateFrom, to: dateTo }, options?.radiusKm ?? 3);
+    const signals = await getMarketSignals(setupId, { from: dateFrom, to: dateTo }, options?.radiusKm);
     if (!signals.length) warnings.push('Нет рыночных сигналов — рекомендации основаны на базовых правилах.');
     signalsUsed.push(...[...new Set(signals.map((s) => s.signalType))]);
+    for (const type of ['competitor_prices', 'available_supply', 'event_pressure', 'weather_pressure']) {
+      if (!signalsUsed.includes(type)) warnings.push(`Нет сигнала «${type}» — применены базовые правила.`);
+    }
   }
 
   let status = 'running';

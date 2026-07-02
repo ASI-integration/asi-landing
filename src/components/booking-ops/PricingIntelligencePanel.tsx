@@ -11,6 +11,23 @@ type ProfilesResponse = { ok: boolean; profiles?: PricingProfile[]; message?: st
 type SetupsResponse = { ok: boolean; records?: PropertySetup[] };
 type AudienceResponse = { ok: boolean; profile?: AudienceProfile | null; explanation?: string };
 type GridResponse = { ok: boolean; days?: TariffGridDay[]; message?: string };
+type MarketSource = { id: string; status: string; sourceType: string; lastSuccessAt: string | null };
+type MarketCoverage = {
+  coverageScore: number;
+  supportedRadiiKm: number[];
+  signalStatuses: Record<string, string>;
+  sources: MarketSource[];
+  latestIngestion: { created_at?: string; status?: string } | null;
+  warnings: string[];
+  nextAction: string;
+};
+type MarketSummaryResponse = {
+  ok: boolean;
+  coverage?: MarketCoverage;
+  signals?: Array<{ id: string; signalDate: string; radiusKm: number; signalType: string }>;
+  next7Days?: Array<{ date: string; signalTypes: string[]; radiiKm: number[]; count: number }>;
+  message?: string;
+};
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Черновик',
@@ -257,8 +274,145 @@ export function PricingIntelligencePanel() {
         </>
       )}
 
+      <MarketSignalsPanel propertySetupId={setupId} />
+
       {message ? <p className="mt-2 text-xs text-slate-600">{message}</p> : null}
     </section>
+  );
+}
+
+const SIGNAL_LABELS: Record<string, string> = {
+  competitor_prices: 'Цены конкурентов',
+  available_supply: 'Доступное предложение',
+  event_pressure: 'События',
+  weather_pressure: 'Погода',
+  channel_snapshot: 'Снимок каналов',
+};
+
+function MarketSignalsPanel({ propertySetupId }: { propertySetupId: string }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [summary, setSummary] = useState<MarketSummaryResponse | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [date, setDate] = useState(today);
+  const [radius, setRadius] = useState(3);
+  const [median, setMedian] = useState('');
+  const [competitorCount, setCompetitorCount] = useState('');
+  const [availableCount, setAvailableCount] = useState('');
+  const [totalCount, setTotalCount] = useState('');
+  const [eventName, setEventName] = useState('');
+  const [weatherCondition, setWeatherCondition] = useState('');
+  const [weatherImpact, setWeatherImpact] = useState('neutral');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const load = useCallback(async () => {
+    if (!propertySetupId) { setSummary(null); return; }
+    const response = await fetch(`/api/dashboard/pricing/market-signals?propertySetupId=${encodeURIComponent(propertySetupId)}`, { credentials: 'include' });
+    const payload = await readResponseJson<MarketSummaryResponse>(response, { ok: false });
+    setSummary(payload);
+    if (!payload.ok) setMessage(payload.message ?? 'Не удалось загрузить сигналы.');
+  }, [propertySetupId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function marketAction(action: string, extra: Record<string, unknown> = {}) {
+    setBusy(true); setMessage('');
+    try {
+      const response = await fetch('/api/dashboard/pricing/market-signals/action', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, propertySetupId, ...extra }),
+      });
+      const payload = await readResponseJson<{ ok: boolean; message?: string; result?: { score?: number } }>(response, { ok: false });
+      if (!response.ok || !payload.ok) throw new Error(payload.message ?? 'Действие не выполнено.');
+      setMessage(action === 'compute_market_pressure' && payload.result?.score != null ? `Рыночное давление: ${payload.result.score}/100.` : 'Готово.');
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Действие не выполнено.'); }
+    finally { setBusy(false); }
+  }
+
+  async function submitSnapshot() {
+    const competitor = median || competitorCount ? { median: median ? Number(median) : undefined, count: competitorCount ? Number(competitorCount) : undefined } : undefined;
+    const supply = availableCount || totalCount ? {
+      available_count: availableCount ? Number(availableCount) : undefined,
+      total_count: totalCount ? Number(totalCount) : undefined,
+    } : undefined;
+    const events = eventName ? [{ name: eventName, date, expected_impact: 'high' }] : undefined;
+    const weather = weatherCondition ? { date, condition: weatherCondition, impact: weatherImpact } : undefined;
+    await marketAction('ingest_manual_snapshot', { snapshot: { date, radius_km: radius, competitor_prices: competitor, available_supply: supply, events, weather } });
+    setShowForm(false);
+  }
+
+  const coverage = summary?.coverage;
+  const primarySource = coverage?.sources[0];
+  return (
+    <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/40 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-slate-900">Рынок / спрос</h3>
+          <p className="mt-0.5 text-xs text-slate-600">Ручные и подготовленные к подключению источники. Live-поставщики не подключены.</p>
+        </div>
+        <button type="button" disabled={busy || !propertySetupId} onClick={() => void load()} className="rounded border border-sky-300 px-2 py-1 text-xs disabled:opacity-50">Обновить</button>
+      </div>
+
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Покрытие" value={coverage ? `${coverage.coverageScore}%` : '—'} />
+        <Stat label="Радиусы" value={coverage?.supportedRadiiKm.map((value) => `${value} км`).join(' / ') ?? '1 / 3 / 7 / 10 км'} />
+        <Stat label="Последняя загрузка" value={coverage?.latestIngestion?.created_at?.slice(0, 16).replace('T', ' ') ?? 'Нет'} />
+        <Stat label="Следующий шаг" value={coverage?.nextAction ?? 'Выберите объект'} />
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        {Object.entries(SIGNAL_LABELS).map(([type, label]) => (
+          <span key={type} className={`rounded-full border px-2 py-1 ${coverage?.signalStatuses[type] === 'available' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-300 bg-white text-slate-600'}`}>
+            {label}: {coverage?.signalStatuses[type] === 'available' ? 'есть' : 'нет'}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !propertySetupId} onClick={() => setShowForm(!showForm)} className="rounded border border-sky-400 px-2 py-1 text-xs disabled:opacity-50">Добавить снимок рынка</button>
+        <button type="button" disabled={busy || !propertySetupId} onClick={() => void marketAction('import_channel_pricing_signals')} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Импортировать цены каналов</button>
+        <button type="button" disabled={busy || !primarySource} onClick={() => void marketAction('run_ingestion', { sourceId: primarySource?.id, dryRun: true })} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Пробный запуск</button>
+        <button type="button" disabled={busy || !propertySetupId} onClick={() => void marketAction('compute_market_pressure', { date })} className="rounded border border-violet-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Рассчитать давление</button>
+        {!primarySource ? <button type="button" disabled={busy || !propertySetupId} onClick={() => void marketAction('initialize_source', { sourceType: 'manual', provider: 'manual' })} className="rounded border border-emerald-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Создать источник</button> : null}
+        <button type="button" disabled={busy || !primarySource} onClick={() => void marketAction('block_source', { sourceId: primarySource?.id, reason: 'Заблокировано оператором.' })} className="rounded border border-red-300 bg-white px-2 py-1 text-xs text-red-700 disabled:opacity-50">Заблокировать источник</button>
+        <button type="button" disabled={busy || !primarySource} onClick={() => { const note = window.prompt('Заметка об источнике'); if (note) void marketAction('add_note', { sourceId: primarySource?.id, note }); }} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Добавить заметку</button>
+      </div>
+
+      {showForm ? (
+        <div className="mt-3 grid gap-2 rounded-lg border border-sky-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-xs">Дата<input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Радиус<select value={radius} onChange={(e) => setRadius(Number(e.target.value))} className="mt-1 w-full rounded border px-2 py-1">{[1, 3, 7, 10].map((value) => <option key={value} value={value}>{value} км</option>)}</select></label>
+          <label className="text-xs">Медианная цена<input inputMode="numeric" value={median} onChange={(e) => setMedian(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Конкурентов<input inputMode="numeric" value={competitorCount} onChange={(e) => setCompetitorCount(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Доступно<input inputMode="numeric" value={availableCount} onChange={(e) => setAvailableCount(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Всего предложений<input inputMode="numeric" value={totalCount} onChange={(e) => setTotalCount(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Событие<input value={eventName} onChange={(e) => setEventName(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Погода<input value={weatherCondition} onChange={(e) => setWeatherCondition(e.target.value)} className="mt-1 w-full rounded border px-2 py-1" /></label>
+          <label className="text-xs">Влияние погоды<select value={weatherImpact} onChange={(e) => setWeatherImpact(e.target.value)} className="mt-1 w-full rounded border px-2 py-1"><option value="positive">Положительное</option><option value="neutral">Нейтральное</option><option value="medium_negative">Умеренно негативное</option><option value="high_negative">Сильно негативное</option></select></label>
+          <div className="flex items-end"><button type="button" disabled={busy} onClick={() => void submitSnapshot()} className="rounded bg-sky-700 px-3 py-1.5 text-xs text-white disabled:opacity-50">Сохранить снимок</button></div>
+        </div>
+      ) : null}
+
+      {(summary?.next7Days?.length ?? 0) > 0 ? (
+        <div className="mt-3">
+          <div className="text-xs font-medium text-slate-700">Ближайшие 7 дней</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {summary?.next7Days?.map((day) => <span key={day.date} className="rounded border border-slate-200 bg-white px-2 py-1 text-xs">{day.date}: {day.count}</span>)}
+          </div>
+        </div>
+      ) : null}
+
+      <button type="button" onClick={() => setShowDetails(!showDetails)} className="mt-2 text-xs text-sky-700 underline">{showDetails ? 'Скрыть детали' : 'Детали по радиусам'}</button>
+      {showDetails ? (
+        <div className="mt-1 grid gap-1 sm:grid-cols-4">
+          {[1, 3, 7, 10].map((value) => <Stat key={value} label={`${value} км`} value={`${summary?.signals?.filter((signal) => signal.radiusKm === value).length ?? 0} сигналов`} />)}
+        </div>
+      ) : null}
+      {coverage?.warnings?.length ? <p className="mt-2 text-xs text-amber-700">{coverage.warnings.join(' ')}</p> : null}
+      {message ? <p className="mt-2 text-xs text-slate-700">{message}</p> : null}
+    </div>
   );
 }
 
