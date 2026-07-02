@@ -5,6 +5,8 @@ type Row = Record<string, unknown>;
 const tables = {
   booking_checkin_execution: [] as Row[],
   booking_ops_communication_intents: [] as Row[],
+  booking_ops_communication_policies: [] as Row[],
+  booking_ops_communication_auto_send_attempts: [] as Row[],
 };
 
 const lifecycle = {
@@ -29,6 +31,12 @@ const record = {
 
 const updateBookingOpsRecord = vi.fn(async () => ({ ok: true, record }));
 
+vi.mock('../guest-legal-deposit-mvd-execution', () => ({
+  shouldBlockCheckinInstructions: vi.fn(async () => ({ block: false, readiness: null, reason: null })),
+  getGuestLegalReadiness: vi.fn(async () => null),
+  shouldBlockLegalCommunication: vi.fn(() => ({ block: false, reviewRequired: false, reason: null })),
+}));
+
 function rows(table: keyof typeof tables): Row[] {
   return tables[table];
 }
@@ -38,6 +46,10 @@ function makeSelect(table: keyof typeof tables) {
   const query = {
     eq(column: string, value: unknown) {
       result = result.filter((row) => row[column] === value);
+      return query;
+    },
+    in(column: string, values: unknown[]) {
+      result = result.filter((row) => values.includes(row[column]));
       return query;
     },
     order() {

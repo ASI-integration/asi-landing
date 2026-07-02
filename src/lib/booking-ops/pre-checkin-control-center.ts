@@ -93,7 +93,7 @@ const REQUIRED_GATES: Array<{ gateKey: BookingLifecycleGateKey; title: string }>
   { gateKey: 'documents_verified', title: 'Документы проверены' },
   { gateKey: 'contract_signed', title: 'Договор подписан' },
   { gateKey: 'deposit_received', title: 'Депозит получен' },
-  { gateKey: 'mvd_report_prepared', title: 'Отчёт МВД подготовлен' },
+  { gateKey: 'mvd_report_submitted', title: 'Статус МВД подтверждён' },
   { gateKey: 'cleaning_scheduled', title: 'Уборка назначена' },
   { gateKey: 'linen_scheduled', title: 'Бельё запланировано' },
   { gateKey: 'inspection_scheduled', title: 'Осмотр назначен' },
@@ -101,13 +101,7 @@ const REQUIRED_GATES: Array<{ gateKey: BookingLifecycleGateKey; title: string }>
   { gateKey: 'checkin_instructions_sent', title: 'Инструкции заезда отправлены' },
 ];
 
-const WARNING_GATES: Array<{ gateKey: BookingLifecycleGateKey; title: string; reason: string }> = [
-  {
-    gateKey: 'mvd_report_submitted',
-    title: 'Отчёт МВД не отправлен',
-    reason: 'Отправка МВД не блокирует заезд, но требует контроля.',
-  },
-];
+const WARNING_GATES: Array<{ gateKey: BookingLifecycleGateKey; title: string; reason: string }> = [];
 
 const COMMUNICATION_DRAFT_PURPOSES = new Set<BookingOpsCommunicationPurpose>([
   'send_checkin_instructions',
@@ -480,14 +474,40 @@ async function loadSnapshotInputs(bookingId: string) {
 }
 
 export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
+  const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+  const legal = await recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' });
   const input = await loadSnapshotInputs(bookingId);
-  return computePreCheckinReadinessSnapshot({
+  const snapshot = computePreCheckinReadinessSnapshot({
     bookingId: input.record.id,
     record: input.record,
     lifecycle: input.lifecycle,
     tasks: input.tasks,
     communications: input.communications,
   });
+  const extra = legal.blockers
+    .filter((item) => item.key === 'availability' || item.key === 'legal_flow')
+    .map((item) => ({
+      key: `legal:${item.key}`,
+      gateKey: item.key === 'availability' ? null : 'documents_verified' as BookingLifecycleGateKey,
+      title: item.key === 'availability' ? 'Доступность подтверждена' : 'Юридический контур',
+      reason: item.reason,
+      severity: 'blocked' as const,
+      source: 'legal_payment' as const,
+      fallbackEligible: true,
+    }));
+  if (!extra.length) return snapshot;
+  const hardBlockers = dedupeItems([...extra, ...snapshot.hardBlockers]);
+  return {
+    ...snapshot,
+    status: 'blocked',
+    readinessScore: Math.min(snapshot.readinessScore, 99),
+    hardBlockers,
+    requiredActions: hardBlockers.slice(0, 6).map((item) => ({
+      key: item.key, title: item.title, action: 'Разобрать блокер', gateKey: item.gateKey,
+    })),
+    topBlocker: hardBlockers[0] ?? null,
+    metadata: { ...snapshot.metadata, legalReadinessStatus: legal.status },
+  };
 }
 
 export async function getPreCheckinBlockers(bookingId: string): Promise<PreCheckinReadinessItem[]> {

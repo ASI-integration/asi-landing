@@ -40,6 +40,14 @@ import {
   checkBookingOverbookingRisk,
   getAvailabilityStatus,
 } from './availability-overbooking-protection';
+import {
+  createContractDraft,
+  createDepositRequestDraft,
+  createMvdDraft,
+  initializeGuestLegalExecution,
+  recomputeGuestLegalReadiness,
+  requestGuestDocumentsDraft,
+} from './guest-legal-deposit-mvd-execution';
 
 export type PilotAutorunScopeType = 'lead' | 'property_setup' | 'booking' | 'batch';
 export type PilotAutorunStatusValue =
@@ -418,9 +426,18 @@ export async function runPilotAutorunForBooking(
     return finishRun(run);
   }
   run.stepsCompleted.push('booking.check_availability');
-  await executeStep(run, 'booking.initialize_lifecycle_legal', 'Будут созданы lifecycle и ручные legal/payment/MVD placeholders.', async () => {
+  await executeStep(run, 'booking.initialize_lifecycle_legal', 'Будут созданы lifecycle и безопасные юридические черновики.', async () => {
     await initializeBookingOpsCoreLoop(record.id);
-    return 'Lifecycle и ручные legal/payment/MVD контуры инициализированы.';
+    await initializeGuestLegalExecution(record.id, { source: 'pilot_autorun' });
+    await requestGuestDocumentsDraft(record.id, { source: 'pilot_autorun' });
+    await createContractDraft(record.id, { source: 'pilot_autorun' });
+    await createDepositRequestDraft(record.id, { source: 'pilot_autorun' });
+    await createMvdDraft(record.id, { source: 'pilot_autorun', enoughData: Boolean(record.guestName) });
+    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'pilot_autorun' });
+    if (legal.status !== 'ready_for_checkin') {
+      addBlocker(run, legal.nextAction ?? 'Нужна ручная проверка юридического контура.', 'Проверить документы, договор, залог и МВД.');
+    }
+    return 'Юридический контур и черновики созданы; завершённые статусы не подставлялись.';
   });
   await executeStep(run, 'booking.initialize_checkin', 'Будет создан базовый контур заезда.', async () => {
     await initializeCheckinExecutionBaseline(record.id); return 'Контур заезда инициализирован.';

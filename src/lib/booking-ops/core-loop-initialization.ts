@@ -18,10 +18,9 @@ export async function initializeBookingOpsCoreLoop(
     throw new Error(lifecycle.error ?? 'lifecycle_initialization_failed');
   }
 
-  // Loaded lazily because the legal/payment module reads records through the
-  // Booking Ops repository. At runtime the new record is already persisted.
-  const { initializeLegalPaymentForBooking } = await import('./legal-payment-autopilot');
-  await initializeLegalPaymentForBooking(bookingOpsRecordId);
+  // Loaded lazily because the legal execution module reads the persisted record.
+  const { initializeGuestLegalExecution } = await import('./guest-legal-deposit-mvd-execution');
+  await initializeGuestLegalExecution(bookingOpsRecordId);
 
   return {
     lifecycleInitialized: true,

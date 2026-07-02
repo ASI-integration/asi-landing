@@ -98,6 +98,7 @@ import {
   type BookingLifecycleStatus,
 } from '@/lib/booking-ops/lifecycle-types';
 import type { LegalPaymentStatus } from '@/lib/booking-ops/legal-payment-autopilot';
+import type { GuestLegalReadiness } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
 import type {
   PreCheckinReadinessSnapshot,
   PreCheckinReadinessStatus,
@@ -219,24 +220,34 @@ type LifecycleResponse = {
 
 type LegalPaymentAction =
   | 'initialize'
-  | 'request_documents'
-  | 'documents_received'
-  | 'verify_documents'
-  | 'reject_documents'
-  | 'prepare_contract'
-  | 'contract_sent'
-  | 'contract_signed'
-  | 'request_deposit'
-  | 'deposit_received'
-  | 'waive_deposit'
-  | 'prepare_mvd_report'
-  | 'mvd_report_submitted'
-  | 'mvd_report_accepted';
+  | 'recompute_readiness'
+  | 'create_documents_request_draft'
+  | 'record_documents_received'
+  | 'mark_documents_needs_review'
+  | 'mark_documents_verified_manual'
+  | 'create_contract_draft'
+  | 'mark_contract_signed_manual'
+  | 'create_deposit_request_draft'
+  | 'mark_deposit_paid_manual'
+  | 'mark_deposit_waived_manual'
+  | 'create_mvd_draft'
+  | 'mark_mvd_not_required'
+  | 'mark_mvd_submitted_manual'
+  | 'mark_mvd_accepted_manual'
+  | 'block_legal_flow'
+  | 'add_note';
 
 type LegalPaymentResponse = {
   ok: boolean;
   message?: string;
   status?: LegalPaymentStatus;
+};
+
+type GuestLegalResponse = {
+  ok: boolean;
+  message?: string;
+  readiness?: GuestLegalReadiness;
+  status?: { readiness: GuestLegalReadiness | null };
 };
 
 type PreCheckinResponse = {
@@ -685,6 +696,7 @@ function BookingOpsPageInner() {
   const [lifecycleLoading, setLifecycleLoading] = useState(false);
   const [updatingLifecycleGate, setUpdatingLifecycleGate] = useState<string | null>(null);
   const [legalPayment, setLegalPayment] = useState<LegalPaymentStatus | null>(null);
+  const [guestLegal, setGuestLegal] = useState<GuestLegalReadiness | null>(null);
   const [legalPaymentLoading, setLegalPaymentLoading] = useState(false);
   const [legalPaymentAction, setLegalPaymentAction] = useState<LegalPaymentAction | null>(null);
   const [preCheckin, setPreCheckin] = useState<PreCheckinReadinessSnapshot | null>(null);
@@ -950,6 +962,7 @@ function BookingOpsPageInner() {
   useEffect(() => {
     if (!selectedId) {
       setLegalPayment(null);
+      setGuestLegal(null);
       return;
     }
 
@@ -969,6 +982,11 @@ function BookingOpsPageInner() {
       })
       .finally(() => {
         if (!cancelled) setLegalPaymentLoading(false);
+      });
+    void fetch(`/api/dashboard/guest-legal/status?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
+      .then(async (res) => {
+        const payload = await readResponseJson<GuestLegalResponse>(res, { ok: false });
+        if (!cancelled) setGuestLegal(res.ok && payload.ok ? payload.status?.readiness ?? null : null);
       });
 
     return () => {
@@ -1206,6 +1224,9 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<LegalPaymentResponse>(res, { ok: false });
     if (res.ok && payload.ok) setLegalPayment(payload.status ?? null);
+    const legalRes = await fetch(`/api/dashboard/guest-legal/status?bookingId=${encodeURIComponent(recordId)}`, { credentials: 'include' });
+    const legalPayload = await readResponseJson<GuestLegalResponse>(legalRes, { ok: false });
+    if (legalRes.ok && legalPayload.ok) setGuestLegal(legalPayload.status?.readiness ?? null);
   }
 
   async function reloadPreCheckin(recordId: string) {
@@ -1237,20 +1258,21 @@ function BookingOpsPageInner() {
     setLegalPaymentAction(action);
     setMessage('');
     try {
-      const res = await fetch('/api/dashboard/booking-ops/legal-payment/action', {
+      const res = await fetch('/api/dashboard/guest-legal/action', {
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
       });
-      const payload = await readResponseJson<LegalPaymentResponse>(res, { ok: false });
-      if (!res.ok || !payload.ok || !payload.status) {
+      const payload = await readResponseJson<GuestLegalResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.readiness) {
         setMessage(payload.message || 'Не удалось обновить документы, договор, депозит или МВД.');
         return;
       }
-      setLegalPayment(payload.status);
+      setGuestLegal(payload.readiness);
       await Promise.all([
         load(),
+        reloadLegalPayment(selectedId),
         reloadLifecycle(selectedId),
         reloadCommunications(selectedId),
         reloadTimeline(selectedId),
@@ -2021,6 +2043,7 @@ function BookingOpsPageInner() {
 
               <LegalPaymentCard
                 status={legalPayment}
+                readiness={guestLegal}
                 loading={legalPaymentLoading}
                 isOpsAdmin={isOpsAdmin}
                 activeAction={legalPaymentAction}
@@ -2978,19 +3001,22 @@ function LifecycleCard({
 
 const LEGAL_PAYMENT_ACTION_LABELS_RU: Record<LegalPaymentAction, string> = {
   initialize: 'Инициализировать',
-  request_documents: 'Запросить документы',
-  documents_received: 'Документы получены',
-  verify_documents: 'Проверить документы',
-  reject_documents: 'Отклонить документы',
-  prepare_contract: 'Подготовить договор',
-  contract_sent: 'Договор отправлен',
-  contract_signed: 'Договор подписан',
-  request_deposit: 'Запросить депозит',
-  deposit_received: 'Депозит получен',
-  waive_deposit: 'Отменить депозит',
-  prepare_mvd_report: 'Подготовить МВД',
-  mvd_report_submitted: 'МВД отправлен',
-  mvd_report_accepted: 'МВД принят',
+  recompute_readiness: 'Пересчитать',
+  create_documents_request_draft: 'Черновик запроса',
+  record_documents_received: 'Документы получены',
+  mark_documents_needs_review: 'Нужна проверка',
+  mark_documents_verified_manual: 'Проверено вручную',
+  create_contract_draft: 'Черновик договора',
+  mark_contract_signed_manual: 'Подписано вручную',
+  create_deposit_request_draft: 'Черновик залога',
+  mark_deposit_paid_manual: 'Оплачено вручную',
+  mark_deposit_waived_manual: 'Отменить залог',
+  create_mvd_draft: 'Черновик МВД',
+  mark_mvd_not_required: 'МВД не требуется',
+  mark_mvd_submitted_manual: 'Отправлено вручную',
+  mark_mvd_accepted_manual: 'Принято вручную',
+  block_legal_flow: 'Заблокировать',
+  add_note: 'Добавить заметку',
 };
 
 const LEGAL_PAYMENT_STATUS_TONE: Record<string, string> = {
@@ -3011,6 +3037,21 @@ const LEGAL_PAYMENT_STATUS_TONE: Record<string, string> = {
   submitted: 'border-sky-200 bg-sky-50 text-sky-900',
   accepted: 'border-emerald-200 bg-emerald-50 text-emerald-900',
   failed: 'border-red-200 bg-red-50 text-red-900',
+  blocked: 'border-red-200 bg-red-50 text-red-900',
+  incomplete: 'border-amber-200 bg-amber-50 text-amber-900',
+  ready_for_operator_review: 'border-sky-200 bg-sky-50 text-sky-900',
+  ready_for_checkin: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  partially_received: 'border-amber-200 bg-amber-50 text-amber-900',
+  needs_review: 'border-amber-200 bg-amber-50 text-amber-900',
+  draft_needed: 'border-amber-200 bg-amber-50 text-amber-900',
+  draft_ready: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+  request_draft_ready: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+  signed_manual: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  paid_manual: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  waived_manual: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  not_required: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  submitted_manual: 'border-sky-200 bg-sky-50 text-sky-900',
+  accepted_manual: 'border-emerald-200 bg-emerald-50 text-emerald-900',
 };
 
 const LEGAL_PAYMENT_STATUS_LABELS_RU: Record<string, string> = {
@@ -3031,6 +3072,31 @@ const LEGAL_PAYMENT_STATUS_LABELS_RU: Record<string, string> = {
   submitted: 'Отправлено',
   accepted: 'Принято',
   failed: 'Ошибка',
+  blocked: 'Заблокировано',
+  incomplete: 'Не готово',
+  ready_for_operator_review: 'Нужна проверка',
+  ready_for_checkin: 'Готово к заезду',
+  partially_received: 'Получено частично',
+  needs_review: 'Нужна проверка',
+  draft_needed: 'Нужен черновик',
+  draft_ready: 'Черновик готов',
+  request_draft_ready: 'Черновик запроса готов',
+  requested_placeholder: 'Запрос подготовлен',
+  sent_for_signature_placeholder: 'Подготовлено к подписи',
+  signed_manual: 'Подписано вручную',
+  signed_provider_placeholder: 'Подпись провайдера',
+  pending: 'Ожидается',
+  paid_manual: 'Оплачено вручную',
+  paid_provider_placeholder: 'Оплата провайдера',
+  refunded_manual: 'Возвращено вручную',
+  disputed: 'Спор',
+  waived_manual: 'Отменено вручную',
+  not_required: 'Не требуется',
+  data_needed: 'Нужны данные',
+  export_ready: 'Экспорт готов',
+  submitted_manual: 'Отправлено вручную',
+  submitted_provider_placeholder: 'Отправка провайдера',
+  accepted_manual: 'Принято вручную',
 };
 
 function StatusBadge({ value }: { value: string }) {
@@ -3045,12 +3111,14 @@ function StatusBadge({ value }: { value: string }) {
 
 function LegalPaymentCard({
   status,
+  readiness,
   loading,
   isOpsAdmin,
   activeAction,
   onAction,
 }: {
   status: LegalPaymentStatus | null;
+  readiness: GuestLegalReadiness | null;
   loading: boolean;
   isOpsAdmin: boolean;
   activeAction: LegalPaymentAction | null;
@@ -3060,27 +3128,33 @@ function LegalPaymentCard({
   const blockers = status?.blockers ?? [];
 
   function runAction(action: LegalPaymentAction) {
-    if (action === 'reject_documents') {
-      const reason = window.prompt('Причина отклонения документов');
+    if (action === 'mark_documents_needs_review' || action === 'block_legal_flow') {
+      const reason = window.prompt(action === 'block_legal_flow' ? 'Причина блокировки' : 'Причина ручной проверки');
       if (!reason) return;
       onAction(action, { reason });
       return;
     }
-    if (action === 'request_deposit') {
+    if (action === 'create_deposit_request_draft') {
       const amountRaw = window.prompt('Сумма депозита', status?.deposit?.amount ? String(status.deposit.amount) : '0');
       if (amountRaw == null) return;
       const currency = window.prompt('Валюта', status?.deposit?.currency ?? 'RUB');
       onAction(action, { amount: Number(amountRaw), currency: currency || 'RUB' });
       return;
     }
-    if (action === 'waive_deposit') {
-      const reason = window.prompt('Причина отмены депозита');
+    if (action === 'mark_deposit_waived_manual' || action === 'mark_mvd_not_required') {
+      const reason = window.prompt(action === 'mark_mvd_not_required' ? 'Почему МВД не требуется' : 'Причина отмены залога');
       if (!reason) return;
       onAction(action, { reason });
       return;
     }
-    if (action === 'request_documents') {
-      onAction(action, { requiredDocuments: ['passport'] });
+    if (action === 'record_documents_received') {
+      onAction(action, { documentReceived: true, documentType: 'guest_identity' });
+      return;
+    }
+    if (action === 'add_note') {
+      const note = window.prompt('Безопасная заметка без паспортных и платёжных данных');
+      if (!note) return;
+      onAction(action, { note });
       return;
     }
     onAction(action);
@@ -3094,31 +3168,31 @@ function LegalPaymentCard({
   }> = [
     {
       title: 'Документы',
-      status: firstDocumentStatus,
+      status: readiness?.documentsStatus ?? firstDocumentStatus,
       details: status?.documents.length
         ? `${status.documents.length} записей`
         : 'Запрос ещё не создан',
-      actions: ['request_documents', 'documents_received', 'verify_documents', 'reject_documents'],
+      actions: ['create_documents_request_draft', 'record_documents_received', 'mark_documents_needs_review', 'mark_documents_verified_manual'],
     },
     {
       title: 'Договор',
-      status: status?.contract?.status ?? 'not_started',
+      status: readiness?.contractStatus ?? status?.contract?.status ?? 'not_started',
       details: status?.contract?.provider ? `Провайдер: ${status.contract.provider}` : 'Ручной режим',
-      actions: ['prepare_contract', 'contract_sent', 'contract_signed'],
+      actions: ['create_contract_draft', 'mark_contract_signed_manual'],
     },
     {
       title: 'Депозит',
-      status: status?.deposit?.status ?? 'not_requested',
+      status: readiness?.depositStatus ?? status?.deposit?.status ?? 'not_requested',
       details: status?.deposit
         ? `${status.deposit.amount} ${status.deposit.currency}`
         : 'Сумма не задана',
-      actions: ['request_deposit', 'deposit_received', 'waive_deposit'],
+      actions: ['create_deposit_request_draft', 'mark_deposit_paid_manual', 'mark_deposit_waived_manual'],
     },
     {
       title: 'МВД',
-      status: status?.mvdReport?.status ?? 'not_started',
+      status: readiness?.mvdStatus ?? status?.mvdReport?.status ?? 'not_started',
       details: status?.mvdReport?.provider ? `Провайдер: ${status.mvdReport.provider}` : 'Ручной режим',
-      actions: ['prepare_mvd_report', 'mvd_report_submitted', 'mvd_report_accepted'],
+      actions: ['create_mvd_draft', 'mark_mvd_not_required', 'mark_mvd_submitted_manual', 'mark_mvd_accepted_manual'],
     },
   ];
 
@@ -3130,6 +3204,7 @@ function LegalPaymentCard({
           <p className="mt-1 text-xs text-slate-500">
             Ручной контур статусов и черновиков. Внешние отправки отключены.
           </p>
+          {readiness ? <p className="mt-1 text-xs font-medium text-slate-700">Готовность: {LEGAL_PAYMENT_STATUS_LABELS_RU[readiness.status] ?? readiness.status}</p> : null}
         </div>
         {isOpsAdmin ? (
           <button
@@ -3178,13 +3253,11 @@ function LegalPaymentCard({
 
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
             <p className="font-medium text-slate-800">Влияние на готовность</p>
-            {blockers.length > 0 ? (
+            {(readiness?.blockers.length ?? blockers.length) > 0 ? (
               <ul className="mt-2 list-disc pl-5 text-xs text-red-900 space-y-1">
-                {blockers.map((blocker) => (
-                  <li key={`${blocker.gateKey}-${blocker.reason}`}>
-                    {BOOKING_LIFECYCLE_GATE_LABELS_RU[
-                      blocker.gateKey as keyof typeof BOOKING_LIFECYCLE_GATE_LABELS_RU
-                    ] ?? blocker.gateKey}: {blocker.reason}
+                {(readiness?.blockers ?? blockers.map((item) => ({ key: item.gateKey, reason: item.reason }))).map((blocker) => (
+                  <li key={`${blocker.key}-${blocker.reason}`}>
+                    {blocker.reason}
                   </li>
                 ))}
               </ul>
@@ -3193,7 +3266,21 @@ function LegalPaymentCard({
                 Критических блокеров по этому блоку нет. Готовность считается по lifecycle-этапам.
               </p>
             )}
+            {readiness?.nextAction ? <p className="mt-2 text-xs font-medium text-slate-700">Следующее действие: {readiness.nextAction}</p> : null}
+            {readiness?.availabilityStatus ? <p className="mt-1 text-xs text-slate-500">Доступность: {readiness.availabilityStatus}</p> : null}
           </div>
+          {isOpsAdmin ? (
+            <details className="rounded-md border border-slate-200 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">Дополнительные действия</summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(['recompute_readiness', 'add_note', 'block_legal_flow'] as LegalPaymentAction[]).map((action) => (
+                  <button key={action} type="button" disabled={activeAction !== null} onClick={() => runAction(action)} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 disabled:opacity-50">
+                    {LEGAL_PAYMENT_ACTION_LABELS_RU[action]}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </>
       )}
     </section>

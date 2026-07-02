@@ -12,6 +12,7 @@ import {
 } from './lifecycle';
 import { getPreCheckinStatus, type PreCheckinReadinessSnapshot } from './pre-checkin-control-center';
 import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import { shouldBlockCheckinInstructions } from './guest-legal-deposit-mvd-execution';
 import type {
   BookingOpsCommunicationChannel,
   BookingOpsCommunicationIntent,
@@ -393,6 +394,8 @@ export async function prepareCheckinInstructions(
   metadata?: Record<string, unknown>,
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
   await markGateInProgress(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
@@ -411,6 +414,8 @@ export async function queueCheckinInstructions(
   metadata?: Record<string, unknown>,
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
   await ensureCommunicationIntent({
     record,
     purpose: 'checkin_instructions',
@@ -432,6 +437,8 @@ export async function markCheckinInstructionsSent(
   metadata?: Record<string, unknown>,
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
+  const legalGuard = await shouldBlockCheckinInstructions(record.id);
+  if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Нельзя отметить инструкции отправленными: есть юридические ограничения.');
   await completeGate(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),

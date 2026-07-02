@@ -349,6 +349,33 @@ export async function canAutoSendCommunicationIntent(
 ): Promise<CommunicationAutoSendDecision> {
   const contentDecision = classifyMessageForAutoSend(intent);
   if (contentDecision) return contentDecision;
+  const bookingId = context.bookingId ?? intent.bookingId;
+  if (bookingId && intent.actorType === 'guest') {
+    const sensitivePurpose = ['send_checkin_instructions', 'checkin_instructions', 'unit_ready_notice'].includes(String(intent.purpose));
+    const validBookingId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(bookingId);
+    if (!validBookingId && sensitivePurpose) {
+      return decision('blocked', 'legal.booking_id_invalid', 'Нет корректного ID брони для проверки.', 'Отправка заблокирована до проверки юридической готовности.');
+    }
+    if (!validBookingId) return continueAutoSendPolicy(intent, context);
+    const { getGuestLegalReadiness, shouldBlockLegalCommunication } = await import('./guest-legal-deposit-mvd-execution');
+    const readiness = await getGuestLegalReadiness(bookingId);
+    if (!readiness && sensitivePurpose) {
+      return decision('blocked', 'legal.readiness_missing', 'Юридическая готовность не рассчитана.', 'Отправка заблокирована до проверки документов, договора, залога и МВД.');
+    }
+    if (readiness) {
+      const legalDecision = shouldBlockLegalCommunication(intent, readiness);
+      if (legalDecision.block) {
+        return decision('blocked', 'legal.readiness_blocked', legalDecision.reason ?? 'Юридическая готовность не подтверждена.', 'Подтверждение и инструкции заезда заблокированы до снятия ограничений.');
+      }
+    }
+  }
+  return continueAutoSendPolicy(intent, context);
+}
+
+async function continueAutoSendPolicy(
+  intent: IntentLike,
+  context: CommunicationAutoSendContext,
+): Promise<CommunicationAutoSendDecision> {
   if (intent.actorType === 'guest' && context.unresolvedComplaint) {
     return decision('blocked', 'guest.unresolved_complaint', 'У гостя есть нерешённое обращение.', 'Автоотправка приостановлена до решения обращения.');
   }
