@@ -3,6 +3,7 @@ import { initializeLifecycleForBooking } from './lifecycle';
 export type BookingOpsCoreLoopInitialization = {
   lifecycleInitialized: true;
   legalPaymentInitialized: true;
+  physicalReadinessInitialized: true;
 };
 
 /**
@@ -21,9 +22,12 @@ export async function initializeBookingOpsCoreLoop(
   // Loaded lazily because the legal execution module reads the persisted record.
   const { initializeGuestLegalExecution } = await import('./guest-legal-deposit-mvd-execution');
   await initializeGuestLegalExecution(bookingOpsRecordId);
+  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
+  await ensurePhysicalTasks(bookingOpsRecordId);
 
   return {
     lifecycleInitialized: true,
     legalPaymentInitialized: true,
+    physicalReadinessInitialized: true,
   };
 }

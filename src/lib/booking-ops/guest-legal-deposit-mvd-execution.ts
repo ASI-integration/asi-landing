@@ -490,9 +490,15 @@ export async function listGuestLegalEvents(bookingId: string): Promise<GuestLega
 
 export async function shouldBlockCheckinInstructions(bookingId: string): Promise<{ block: boolean; readiness: GuestLegalReadiness; reason: string | null }> {
   const readiness = await recomputeGuestLegalReadiness(bookingId);
-  const block = readiness.status !== 'ready_for_checkin';
-  if (block) await recordEvent(readiness.bookingId, 'checkin_blocked', readiness.status, readiness.nextAction ?? 'Инструкции заезда заблокированы.');
-  return { block, readiness, reason: readiness.nextAction };
+  const { canReleaseCheckInInstructions, ensurePhysicalTasks } = await import('./physical-readiness-execution');
+  const physical = await ensurePhysicalTasks(bookingId);
+  const gate = canReleaseCheckInInstructions({ legalReady: readiness.status === 'ready_for_checkin', physical });
+  const block = !gate.allowed;
+  const reason = readiness.status !== 'ready_for_checkin'
+    ? readiness.nextAction
+    : physical.blockers[0]?.reason ?? null;
+  if (block) await recordEvent(readiness.bookingId, 'checkin_blocked', readiness.status, reason ?? 'Инструкции заезда заблокированы.');
+  return { block, readiness, reason };
 }
 
 export function shouldBlockLegalCommunication(input: { purpose: BookingOpsCommunicationPurpose; messageText?: string }, readiness: GuestLegalReadiness): { block: boolean; reviewRequired: boolean; reason: string | null } {

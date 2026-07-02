@@ -99,6 +99,7 @@ import {
 } from '@/lib/booking-ops/lifecycle-types';
 import type { LegalPaymentStatus } from '@/lib/booking-ops/legal-payment-autopilot';
 import type { GuestLegalReadiness } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
+import type { PhysicalReadiness } from '@/lib/booking-ops/physical-readiness-execution';
 import type {
   PreCheckinReadinessSnapshot,
   PreCheckinReadinessStatus,
@@ -248,6 +249,12 @@ type GuestLegalResponse = {
   message?: string;
   readiness?: GuestLegalReadiness;
   status?: { readiness: GuestLegalReadiness | null };
+};
+
+type PhysicalReadinessResponse = {
+  ok: boolean;
+  message?: string;
+  readiness?: PhysicalReadiness | null;
 };
 
 type PreCheckinResponse = {
@@ -699,6 +706,9 @@ function BookingOpsPageInner() {
   const [guestLegal, setGuestLegal] = useState<GuestLegalReadiness | null>(null);
   const [legalPaymentLoading, setLegalPaymentLoading] = useState(false);
   const [legalPaymentAction, setLegalPaymentAction] = useState<LegalPaymentAction | null>(null);
+  const [physicalReadiness, setPhysicalReadiness] = useState<PhysicalReadiness | null>(null);
+  const [physicalReadinessLoading, setPhysicalReadinessLoading] = useState(false);
+  const [physicalReadinessAction, setPhysicalReadinessAction] = useState<string | null>(null);
   const [preCheckin, setPreCheckin] = useState<PreCheckinReadinessSnapshot | null>(null);
   const [preCheckinLoading, setPreCheckinLoading] = useState(false);
   const [preCheckinAction, setPreCheckinAction] = useState<PreCheckinAction | null>(null);
@@ -845,6 +855,22 @@ function BookingOpsPageInner() {
     return () => {
       cancelled = true;
     };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setPhysicalReadiness(null);
+      return;
+    }
+    let cancelled = false;
+    setPhysicalReadinessLoading(true);
+    void fetch(`/api/dashboard/booking-ops/physical-readiness?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
+      .then(async (res) => {
+        const payload = await readResponseJson<PhysicalReadinessResponse>(res, { ok: false });
+        if (!cancelled) setPhysicalReadiness(res.ok && payload.ok ? payload.readiness ?? null : null);
+      })
+      .finally(() => { if (!cancelled) setPhysicalReadinessLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedId]);
 
   useEffect(() => {
@@ -1090,6 +1116,7 @@ function BookingOpsPageInner() {
     setTimelineEvents([]);
     setLifecycle(null);
     setLegalPayment(null);
+    setPhysicalReadiness(null);
     setPreCheckin(null);
     setCheckinExecution(null);
     setInstayCheckout(null);
@@ -1235,6 +1262,34 @@ function BookingOpsPageInner() {
     });
     const payload = await readResponseJson<PreCheckinResponse>(res, { ok: false });
     if (res.ok && payload.ok) setPreCheckin(payload.readiness ?? null);
+  }
+
+  async function reloadPhysicalReadiness(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/physical-readiness?bookingId=${encodeURIComponent(recordId)}`, { credentials: 'include' });
+    const payload = await readResponseJson<PhysicalReadinessResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setPhysicalReadiness(payload.readiness ?? null);
+  }
+
+  async function onPhysicalReadinessAction(action: string, extra: Record<string, unknown> = {}) {
+    if (!isOpsAdmin || !selectedId) return;
+    setPhysicalReadinessAction(action);
+    setMessage('');
+    try {
+      const res = await fetch('/api/dashboard/booking-ops/physical-readiness', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<PhysicalReadinessResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.readiness) {
+        setMessage(payload.message || 'Не удалось обновить физическую готовность объекта.');
+        return;
+      }
+      setPhysicalReadiness(payload.readiness);
+      await Promise.all([reloadPreCheckin(selectedId), reloadCheckinExecution(selectedId), reloadLifecycle(selectedId)]);
+      setMessage(action === 'create_draft' ? 'Черновик сохранён. Ничего не отправлено.' : 'Физическая готовность обновлена.');
+    } finally {
+      setPhysicalReadinessAction(null);
+    }
   }
 
   async function reloadCheckinExecution(recordId: string) {
@@ -2022,6 +2077,14 @@ function BookingOpsPageInner() {
                 isOpsAdmin={isOpsAdmin}
                 activeAction={checkinExecutionAction}
                 onAction={(action, extra) => void onCheckinExecutionAction(action, extra)}
+              />
+
+              <PhysicalReadinessCard
+                readiness={physicalReadiness}
+                loading={physicalReadinessLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={physicalReadinessAction}
+                onAction={(action, extra) => void onPhysicalReadinessAction(action, extra)}
               />
 
               <InStayCheckoutCard
@@ -3018,6 +3081,93 @@ const LEGAL_PAYMENT_ACTION_LABELS_RU: Record<LegalPaymentAction, string> = {
   block_legal_flow: 'Заблокировать',
   add_note: 'Добавить заметку',
 };
+
+const PHYSICAL_STATUS_LABELS_RU: Record<string, string> = {
+  pending: 'Ожидает', assigned: 'Назначено', in_progress: 'В работе', completed: 'Выполнено', verified: 'Проверено',
+  blocked: 'Заблокировано', cancelled: 'Отменено', pickup_needed: 'Нужно забрать', picked_up: 'Забрано',
+  in_laundry: 'В прачечной', delivered: 'Доставлено', shortage: 'Не хватает', ready: 'Готово', missing: 'Не хватает',
+  waived: 'Не требуется', open: 'Открыто', resolved: 'Выполнено, нужна проверка', deferred: 'Отложено',
+  not_ready: 'Не готово', ready_for_review: 'Готово к финальной проверке', approved: 'Подтверждено',
+};
+
+function PhysicalReadinessCard({
+  readiness, loading, isOpsAdmin, activeAction, onAction,
+}: {
+  readiness: PhysicalReadiness | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: string | null;
+  onAction: (action: string, extra?: Record<string, unknown>) => void;
+}) {
+  const busy = activeAction !== null;
+  function draft(taskType: 'cleaning' | 'linen' | 'maintenance' | 'operator', taskId?: string) {
+    onAction('create_draft', { taskType, taskId });
+  }
+  function addMaintenance() {
+    const title = window.prompt('Что нужно исправить');
+    if (!title) return;
+    const isBlocking = window.confirm('Эта проблема блокирует заезд?');
+    onAction('create_maintenance', { title, isBlocking, priority: isBlocking ? 'high' : 'normal' });
+  }
+  function waiveSupplies() {
+    const waiverReason = window.prompt('Почему расходники можно не готовить');
+    if (waiverReason) onAction('update_supplies', { status: 'waived', waiverReason });
+  }
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-slate-900">Физическая готовность объекта</h3>
+          <p className="mt-1 text-xs text-slate-500">Черновик, назначение и выполнение не равны проверке. Внешняя отправка отключена.</p>
+          {readiness ? <p className="mt-1 text-xs font-medium text-slate-700">Итог: {PHYSICAL_STATUS_LABELS_RU[readiness.status] ?? readiness.status}</p> : null}
+        </div>
+        {isOpsAdmin && !readiness ? (
+          <button type="button" disabled={busy} onClick={() => onAction('ensure_tasks')} className="rounded border border-slate-300 px-2.5 py-1.5 text-xs font-medium disabled:opacity-50">
+            Создать задачи
+          </button>
+        ) : null}
+      </div>
+      {loading ? <p className="text-slate-500">Загрузка готовности…</p> : readiness ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              { key: 'cleaning', title: 'Уборка', task: readiness.cleaning, actions: ['assigned', 'in_progress', 'completed', 'verified'] },
+              { key: 'linen', title: 'Бельё', task: readiness.linen, actions: ['pickup_needed', 'delivered', 'verified'] },
+              { key: 'supplies', title: 'Расходники', task: readiness.supplies, actions: ['ready', 'verified'] },
+            ].map((group) => (
+              <article key={group.key} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div><p className="font-medium text-slate-900">{group.title}</p>{group.task?.dueAt ? <p className="text-xs text-slate-500">Срок: {formatWhen(group.task.dueAt)}</p> : null}</div>
+                  <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs">{PHYSICAL_STATUS_LABELS_RU[group.task?.status ?? 'pending'] ?? group.task?.status}</span>
+                </div>
+                {isOpsAdmin ? <div className="mt-3 flex flex-wrap gap-1.5">
+                  {group.actions.map((status) => <button key={status} type="button" disabled={busy} onClick={() => onAction(`update_${group.key}`, { status })} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">{PHYSICAL_STATUS_LABELS_RU[status]}</button>)}
+                  {group.key === 'supplies' ? <button type="button" disabled={busy} onClick={waiveSupplies} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Не требуется</button> : null}
+                  {group.key !== 'supplies' ? <button type="button" disabled={busy} onClick={() => draft(group.key as 'cleaning' | 'linen', group.task?.id)} className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 disabled:opacity-50">Черновик Telegram</button> : null}
+                </div> : null}
+              </article>
+            ))}
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium text-slate-900">Ремонт и неисправности</p>{isOpsAdmin ? <button type="button" disabled={busy} onClick={addMaintenance} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Добавить задачу</button> : null}</div>
+            {readiness.maintenance.length ? <div className="mt-2 space-y-2">{readiness.maintenance.map((ticket) => (
+              <div key={ticket.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-2">
+                <div><p className="text-xs font-medium text-slate-800">{ticket.title}{ticket.isBlocking ? ' · блокирует заезд' : ''}</p><p className="text-xs text-slate-500">{PHYSICAL_STATUS_LABELS_RU[ticket.status] ?? ticket.status}</p></div>
+                {isOpsAdmin ? <div className="flex flex-wrap gap-1.5"><button type="button" disabled={busy} onClick={() => onAction('update_maintenance', { ticketId: ticket.id, status: 'resolved' })} className="rounded border px-2 py-1 text-xs disabled:opacity-50">Выполнено</button><button type="button" disabled={busy} onClick={() => onAction('update_maintenance', { ticketId: ticket.id, status: 'verified' })} className="rounded border px-2 py-1 text-xs disabled:opacity-50">Проверено</button><button type="button" disabled={busy} onClick={() => draft('maintenance', ticket.id)} className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 disabled:opacity-50">Черновик Telegram</button></div> : null}
+              </div>
+            ))}</div> : <p className="mt-2 text-xs text-slate-500">Открытых задач ремонта нет.</p>}
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="font-medium text-slate-900">Блокеры готовности</p>
+            {readiness.blockers.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-red-900">{readiness.blockers.map((item) => <li key={item.key}>{item.reason}</li>)}</ul> : <p className="mt-1 text-xs text-emerald-700">Все физические условия подтверждены.</p>}
+            {isOpsAdmin ? <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => draft('operator')} className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 disabled:opacity-50">Черновик оператору</button><button type="button" disabled={busy || readiness.operationalBlockers.length > 0 || readiness.finalReady} onClick={() => onAction('final_approval')} className="rounded bg-emerald-700 px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40">Подтвердить финальную готовность</button></div> : null}
+            <p className="mt-2 text-xs text-slate-500">Черновиков: {readiness.drafts.length}. Они не меняют статус выполнения.</p>
+          </div>
+        </>
+      ) : <p className="text-xs text-slate-500">Физические задачи ещё не созданы.</p>}
+    </section>
+  );
+}
 
 const LEGAL_PAYMENT_STATUS_TONE: Record<string, string> = {
   requested: 'border-sky-200 bg-sky-50 text-sky-900',

@@ -9,10 +9,12 @@ import {
 } from '../lifecycle-types';
 
 const initializeLifecycleForBooking = vi.fn(async () => ({ ok: true, gates: [] }));
-const initializeLegalPaymentForBooking = vi.fn(async () => ({ bookingId: 'ASI_PILOT_CORE_LOOP_DEMO' }));
+const initializeGuestLegalExecution = vi.fn(async () => ({ bookingId: 'ASI_PILOT_CORE_LOOP_DEMO' }));
+const ensurePhysicalTasks = vi.fn(async () => ({ bookingId: 'ASI_PILOT_CORE_LOOP_DEMO' }));
 
 vi.mock('../lifecycle', () => ({ initializeLifecycleForBooking }));
-vi.mock('../legal-payment-autopilot', () => ({ initializeLegalPaymentForBooking }));
+vi.mock('../guest-legal-deposit-mvd-execution', () => ({ initializeGuestLegalExecution }));
+vi.mock('../physical-readiness-execution', () => ({ ensurePhysicalTasks }));
 
 describe('Pilot Core Loop Readiness v1', () => {
   beforeEach(() => {
@@ -25,9 +27,11 @@ describe('Pilot Core Loop Readiness v1', () => {
     await expect(initializeBookingOpsCoreLoop('ASI_PILOT_CORE_LOOP_DEMO')).resolves.toEqual({
       lifecycleInitialized: true,
       legalPaymentInitialized: true,
+      physicalReadinessInitialized: true,
     });
     expect(initializeLifecycleForBooking).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
-    expect(initializeLegalPaymentForBooking).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
+    expect(initializeGuestLegalExecution).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
+    expect(ensurePhysicalTasks).toHaveBeenCalledWith('ASI_PILOT_CORE_LOOP_DEMO');
   });
 
   it('represents owner setup and manual OTA publication without a live OTA API', () => {

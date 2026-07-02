@@ -368,6 +368,18 @@ export async function canAutoSendCommunicationIntent(
         return decision('blocked', 'legal.readiness_blocked', legalDecision.reason ?? 'Юридическая готовность не подтверждена.', 'Подтверждение и инструкции заезда заблокированы до снятия ограничений.');
       }
     }
+    if (sensitivePurpose) {
+      const { getPhysicalReadiness } = await import('./physical-readiness-execution');
+      const physical = await getPhysicalReadiness(bookingId);
+      if (!physical?.finalReady) {
+        return decision(
+          'blocked',
+          'physical.readiness_blocked',
+          physical?.blockers[0]?.reason ?? 'Физическая готовность объекта не подтверждена.',
+          'Инструкции заезда заблокированы до проверки уборки, белья, расходников и ремонта.',
+        );
+      }
+    }
   }
   return continueAutoSendPolicy(intent, context);
 }

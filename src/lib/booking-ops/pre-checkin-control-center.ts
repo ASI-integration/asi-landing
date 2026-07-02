@@ -47,7 +47,7 @@ export type PreCheckinReadinessItem = {
   title: string;
   reason: string;
   severity: PreCheckinSeverity;
-  source: 'lifecycle' | 'legal_payment' | 'task' | 'communication' | 'booking';
+  source: 'lifecycle' | 'legal_payment' | 'physical_readiness' | 'task' | 'communication' | 'booking';
   fallbackEligible: boolean;
 };
 
@@ -475,7 +475,11 @@ async function loadSnapshotInputs(bookingId: string) {
 
 export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckinReadinessSnapshot> {
   const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
-  const legal = await recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' });
+  const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
+  const [legal, physical] = await Promise.all([
+    recomputeGuestLegalReadiness(bookingId, { source: 'pre_checkin' }),
+    ensurePhysicalTasks(bookingId),
+  ]);
   const input = await loadSnapshotInputs(bookingId);
   const snapshot = computePreCheckinReadinessSnapshot({
     bookingId: input.record.id,
@@ -484,7 +488,7 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
     tasks: input.tasks,
     communications: input.communications,
   });
-  const extra = legal.blockers
+  const legalBlockers = legal.blockers
     .filter((item) => item.key === 'availability' || item.key === 'legal_flow')
     .map((item) => ({
       key: `legal:${item.key}`,
@@ -495,6 +499,23 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
       source: 'legal_payment' as const,
       fallbackEligible: true,
     }));
+  const physicalTitles: Record<string, string> = {
+    cleaning_not_verified: 'Уборка проверена',
+    linen_not_verified: 'Бельё проверено',
+    critical_supplies_missing: 'Расходники готовы',
+    blocking_maintenance_open: 'Ремонт завершён и проверен',
+    final_readiness_not_approved: 'Финальная готовность подтверждена',
+  };
+  const physicalBlockers = physical.blockers.map((item) => ({
+    key: `physical:${item.key}`,
+    gateKey: item.key === 'final_readiness_not_approved' ? 'property_ready' as BookingLifecycleGateKey : null,
+    title: physicalTitles[item.key] ?? 'Физическая готовность объекта',
+    reason: item.reason,
+    severity: 'blocked' as const,
+    source: 'physical_readiness' as const,
+    fallbackEligible: true,
+  }));
+  const extra = [...legalBlockers, ...physicalBlockers];
   if (!extra.length) return snapshot;
   const hardBlockers = dedupeItems([...extra, ...snapshot.hardBlockers]);
   return {
@@ -506,7 +527,12 @@ export async function getPreCheckinStatus(bookingId: string): Promise<PreCheckin
       key: item.key, title: item.title, action: 'Разобрать блокер', gateKey: item.gateKey,
     })),
     topBlocker: hardBlockers[0] ?? null,
-    metadata: { ...snapshot.metadata, legalReadinessStatus: legal.status },
+    metadata: {
+      ...snapshot.metadata,
+      legalReadinessStatus: legal.status,
+      physicalReadinessStatus: physical.status,
+      physicalFinalReady: physical.finalReady,
+    },
   };
 }
 
