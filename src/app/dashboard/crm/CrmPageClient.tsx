@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CRM_COMMUNICATION_STATUS_LABELS,
@@ -328,6 +329,8 @@ export default function CrmPageClient() {
           </button>
         </div>
       </div>
+
+      <PilotAutorunPanel scope="lead" />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4">

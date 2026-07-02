@@ -6,6 +6,7 @@ import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupR
 import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManagerImportPanel';
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
 import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
+import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import type { BookingOpsPropertyKnowledge } from '@/lib/booking-ops/types';
 import {
@@ -277,6 +278,8 @@ function PropertyKnowledgePageInner() {
       </div>
 
       {message ? <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">{message}</div> : null}
+
+      <PilotAutorunPanel scope="property_setup" />
 
       <ObjectSetupReadinessPanel />
 

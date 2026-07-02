@@ -6,6 +6,7 @@ import { ObjectSetupReadinessPanel } from '@/components/booking-ops/ObjectSetupR
 import { ChannelManagerImportPanel } from '@/components/booking-ops/ChannelManagerImportPanel';
 import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/ChannelPublishingPreparationPanel';
 import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
+import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1703,6 +1704,8 @@ function BookingOpsPageInner() {
           {message}
         </div>
       ) : null}
+
+      <PilotAutorunPanel scope="booking" initialRef={selectedRecord?.id ?? ''} />
 
       <ObjectSetupReadinessPanel />
 
