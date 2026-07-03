@@ -257,6 +257,36 @@ type PhysicalReadinessResponse = {
   readiness?: PhysicalReadiness | null;
 };
 
+type GuestIntakeReleaseSnapshotView = {
+  session: {
+    intake_status: string;
+    missing_fields: string[];
+    validation_errors: string[];
+    escalation_status: string;
+    fallback_reason: string | null;
+    completed_at: string | null;
+    verified_at: string | null;
+  };
+  validation: { dataStatus: string; missingFields: string[]; validationErrors: string[] };
+  blockers: string[];
+  canPrepareCheckinReleaseDraft: boolean;
+  release: null | {
+    status: string;
+    blockerReasons: string[];
+    draftBody: string | null;
+    preparedAt: string | null;
+    releasedSimulatedAt: string | null;
+  };
+  events: Array<{ id: string; event_type: string; created_at: string }>;
+  drafts: Array<{ id: string; action_id: string; status: string }>;
+};
+
+type GuestIntakeReleaseResponse = {
+  ok: boolean;
+  message?: string;
+  snapshot?: GuestIntakeReleaseSnapshotView;
+};
+
 type PreCheckinResponse = {
   ok: boolean;
   message?: string;
@@ -709,6 +739,9 @@ function BookingOpsPageInner() {
   const [physicalReadiness, setPhysicalReadiness] = useState<PhysicalReadiness | null>(null);
   const [physicalReadinessLoading, setPhysicalReadinessLoading] = useState(false);
   const [physicalReadinessAction, setPhysicalReadinessAction] = useState<string | null>(null);
+  const [guestIntakeRelease, setGuestIntakeRelease] = useState<GuestIntakeReleaseSnapshotView | null>(null);
+  const [guestIntakeReleaseLoading, setGuestIntakeReleaseLoading] = useState(false);
+  const [guestIntakeReleaseAction, setGuestIntakeReleaseAction] = useState<string | null>(null);
   const [preCheckin, setPreCheckin] = useState<PreCheckinReadinessSnapshot | null>(null);
   const [preCheckinLoading, setPreCheckinLoading] = useState(false);
   const [preCheckinAction, setPreCheckinAction] = useState<PreCheckinAction | null>(null);
@@ -855,6 +888,19 @@ function BookingOpsPageInner() {
     return () => {
       cancelled = true;
     };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) { setGuestIntakeRelease(null); return; }
+    let cancelled = false;
+    setGuestIntakeReleaseLoading(true);
+    void fetch(`/api/dashboard/booking-ops/guest-intake-release?bookingId=${encodeURIComponent(selectedId)}`, { credentials: 'include' })
+      .then(async (res) => {
+        const payload = await readResponseJson<GuestIntakeReleaseResponse>(res, { ok: false });
+        if (!cancelled) setGuestIntakeRelease(res.ok && payload.ok ? payload.snapshot ?? null : null);
+      })
+      .finally(() => { if (!cancelled) setGuestIntakeReleaseLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedId]);
 
   useEffect(() => {
@@ -1117,6 +1163,7 @@ function BookingOpsPageInner() {
     setLifecycle(null);
     setLegalPayment(null);
     setPhysicalReadiness(null);
+    setGuestIntakeRelease(null);
     setPreCheckin(null);
     setCheckinExecution(null);
     setInstayCheckout(null);
@@ -1268,6 +1315,34 @@ function BookingOpsPageInner() {
     const res = await fetch(`/api/dashboard/booking-ops/physical-readiness?bookingId=${encodeURIComponent(recordId)}`, { credentials: 'include' });
     const payload = await readResponseJson<PhysicalReadinessResponse>(res, { ok: false });
     if (res.ok && payload.ok) setPhysicalReadiness(payload.readiness ?? null);
+  }
+
+  async function reloadGuestIntakeRelease(recordId: string) {
+    const res = await fetch(`/api/dashboard/booking-ops/guest-intake-release?bookingId=${encodeURIComponent(recordId)}`, { credentials: 'include' });
+    const payload = await readResponseJson<GuestIntakeReleaseResponse>(res, { ok: false });
+    if (res.ok && payload.ok) setGuestIntakeRelease(payload.snapshot ?? null);
+  }
+
+  async function onGuestIntakeReleaseAction(path: 'guest-intake-release' | 'checkin-release', action: string, extra: Record<string, unknown> = {}) {
+    if (!isOpsAdmin || !selectedId) return;
+    setGuestIntakeReleaseAction(action);
+    setMessage('');
+    try {
+      const res = await fetch(`/api/dashboard/booking-ops/${path}`, {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bookingId: selectedId, action, ...extra }),
+      });
+      const payload = await readResponseJson<GuestIntakeReleaseResponse>(res, { ok: false });
+      if (!res.ok || !payload.ok || !payload.snapshot) {
+        setMessage(payload.message || 'Действие не выполнено.');
+        return;
+      }
+      setGuestIntakeRelease(payload.snapshot);
+      setMessage(action.includes('draft') ? 'Черновик подготовлен. Ничего не отправлено.' : 'Тестовое действие выполнено без внешней отправки.');
+      await reloadGuestIntakeRelease(selectedId);
+    } finally {
+      setGuestIntakeReleaseAction(null);
+    }
   }
 
   async function onPhysicalReadinessAction(action: string, extra: Record<string, unknown> = {}) {
@@ -2118,6 +2193,14 @@ function BookingOpsPageInner() {
                 isOpsAdmin={isOpsAdmin}
                 recomputing={recomputingPreparation}
                 onRecompute={() => void onRecomputePreparation()}
+              />
+
+              <GuestIntakeReleaseCard
+                snapshot={guestIntakeRelease}
+                loading={guestIntakeReleaseLoading}
+                isOpsAdmin={isOpsAdmin}
+                activeAction={guestIntakeReleaseAction}
+                onAction={(path, action, extra) => void onGuestIntakeReleaseAction(path, action, extra)}
               />
 
               <BookingOpsTimelineCard events={timelineEvents} loading={timelineLoading} />
@@ -3976,6 +4059,130 @@ function GuestIntakeCard({
         </div>
       )}
     </div>
+  );
+}
+
+const GUEST_RELEASE_BLOCKER_LABELS_RU: Record<string, string> = {
+  guest_intake_incomplete: 'Данные гостя заполнены не полностью',
+  guest_required_fields_missing: 'Не хватает обязательных данных гостя',
+  guest_intake_needs_operator: 'Сбор данных передан оператору',
+  legal_gate_blocked: 'Не завершены документы, договор, залог или МВД',
+  physical_readiness_blocked: 'Объект ещё не готов к заезду',
+};
+const GUEST_RELEASE_FIELD_LABELS_RU: Record<string, string> = {
+  full_name: 'имя и фамилия', contact: 'телефон или Telegram', guest_count: 'количество гостей',
+  arrival_window: 'время прибытия', identity_status: 'статус документов',
+  citizenship_status: 'гражданство или статус проживания', consent_acknowledged: 'подтверждение согласия',
+};
+const GUEST_RELEASE_STATUS_LABELS_RU: Record<string, string> = {
+  not_started: 'не начат', waiting_for_guest: 'ожидаем гостя', partially_completed: 'заполнено частично',
+  validation_needed: 'нужна проверка', completed: 'данные собраны', fallback_required: 'нужен оператор',
+  missing: 'нет данных', partial: 'частично', complete: 'заполнено', verified: 'проверено', blocked: 'заблокировано',
+  none: 'не требуется', needed: 'нужен оператор', draft_prepared: 'черновик готов', resolved: 'решено',
+  ready_for_draft: 'можно подготовить', released_simulated: 'тестовая выдача выполнена', cancelled: 'отменено',
+};
+
+function GuestIntakeReleaseCard({
+  snapshot,
+  loading,
+  isOpsAdmin,
+  activeAction,
+  onAction,
+}: {
+  snapshot: GuestIntakeReleaseSnapshotView | null;
+  loading: boolean;
+  isOpsAdmin: boolean;
+  activeAction: string | null;
+  onAction: (
+    path: 'guest-intake-release' | 'checkin-release',
+    action: string,
+    extra?: Record<string, unknown>,
+  ) => void;
+}) {
+  function submitComplete() {
+    const fullName = window.prompt('Имя и фамилия тестового гостя', 'Тестовый Гость');
+    if (!fullName) return;
+    onAction('guest-intake-release', 'submit_simulated', {
+      fields: {
+        fullName, phone: '+70000000000', guestCount: 1,
+        arrivalWindow: 'После 15:00', identityStatus: 'complete',
+        citizenshipStatus: 'указано', consentAcknowledged: true,
+      },
+    });
+  }
+
+  function escalate() {
+    const reason = window.prompt('Причина передачи оператору');
+    if (reason) onAction('guest-intake-release', 'escalate', { reason });
+  }
+
+  function simulateRelease() {
+    if (!window.confirm('Подтвердить только тестовую выдачу? Реальное сообщение отправлено не будет.')) return;
+    onAction('checkin-release', 'simulate_release', { confirmSimulatedRelease: true });
+  }
+
+  const intakeStatus = snapshot?.session.intake_status ?? 'not_started';
+  const releaseStatus = snapshot?.release?.status ?? 'blocked';
+  const missing = snapshot?.validation.missingFields ?? [];
+  const lastEvent = snapshot?.events[0] ?? null;
+  return (
+    <section className="rounded-lg border border-indigo-200 bg-indigo-50/40 px-4 py-3 text-sm space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-indigo-950">Данные гостя и выдача инструкций</h3>
+          <p className="mt-1 text-xs text-indigo-900">Telegram-черновики и тестовый сбор данных. Реальная отправка отключена.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full bg-white px-2.5 py-1">Данные: {GUEST_RELEASE_STATUS_LABELS_RU[intakeStatus] ?? 'нужна проверка'}</span>
+          <span className="rounded-full bg-white px-2.5 py-1">Инструкции: {GUEST_RELEASE_STATUS_LABELS_RU[releaseStatus] ?? 'нужна проверка'}</span>
+        </div>
+      </div>
+      {loading ? <p className="text-slate-600">Загрузка…</p> : null}
+      {!loading && snapshot ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-md border border-indigo-100 bg-white p-3">
+              <p className="font-medium text-slate-800">Сбор данных гостя</p>
+              <p className="mt-1 text-xs text-slate-600">Проверка: {GUEST_RELEASE_STATUS_LABELS_RU[snapshot.validation.dataStatus] ?? 'нужна проверка'}</p>
+              {missing.length ? (
+                <p className="mt-2 text-xs text-amber-900">Не заполнено: {missing.map((item) => GUEST_RELEASE_FIELD_LABELS_RU[item] ?? 'обязательное поле').join(', ')}</p>
+              ) : <p className="mt-2 text-xs text-emerald-800">Обязательные данные заполнены.</p>}
+              <p className="mt-2 text-xs text-slate-600">Передача оператору: {GUEST_RELEASE_STATUS_LABELS_RU[snapshot.session.escalation_status] ?? 'нужна проверка'}</p>
+            </div>
+            <div className="rounded-md border border-indigo-100 bg-white p-3">
+              <p className="font-medium text-slate-800">Выдача инструкций</p>
+              <p className={`mt-2 text-xs ${snapshot.canPrepareCheckinReleaseDraft ? 'text-emerald-800' : 'text-rose-900'}`}>
+                {snapshot.canPrepareCheckinReleaseDraft ? 'Все проверки пройдены: можно подготовить черновик.' : 'Черновик пока заблокирован.'}
+              </p>
+              {snapshot.blockers.length ? (
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-rose-900">
+                  {snapshot.blockers.map((item) => <li key={item}>{GUEST_RELEASE_BLOCKER_LABELS_RU[item] ?? item}</li>)}
+                </ul>
+              ) : null}
+            </div>
+          </div>
+          {lastEvent ? <p className="text-xs text-slate-600">Последнее обновление: {formatWhen(lastEvent.created_at)}</p> : null}
+          {snapshot.release?.draftBody ? (
+            <details className="rounded-md border border-indigo-100 bg-white px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-700">Финальный черновик инструкций</summary>
+              <pre className="mt-2 whitespace-pre-wrap text-xs text-slate-700">{snapshot.release.draftBody}</pre>
+            </details>
+          ) : null}
+        </>
+      ) : null}
+      {isOpsAdmin ? (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={activeAction !== null} onClick={() => onAction('guest-intake-release', 'ensure_session')} className="rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs disabled:opacity-50">Начать сбор</button>
+          <button type="button" disabled={activeAction !== null} onClick={() => onAction('guest-intake-release', 'prepare_initial_draft')} className="rounded border border-sky-300 bg-white px-2.5 py-1.5 text-xs text-sky-800 disabled:opacity-50">Черновик гостю</button>
+          <button type="button" disabled={activeAction !== null} onClick={() => onAction('guest-intake-release', 'submit_simulated', { fields: { fullName: 'Тестовый Гость' } })} className="rounded border border-amber-300 bg-white px-2.5 py-1.5 text-xs text-amber-900 disabled:opacity-50">Тест: частичные данные</button>
+          <button type="button" disabled={activeAction !== null} onClick={submitComplete} className="rounded border border-emerald-300 bg-white px-2.5 py-1.5 text-xs text-emerald-800 disabled:opacity-50">Тест: полные данные</button>
+          <button type="button" disabled={activeAction !== null} onClick={() => onAction('guest-intake-release', 'prepare_reminder_draft')} className="rounded border border-sky-300 bg-white px-2.5 py-1.5 text-xs text-sky-800 disabled:opacity-50">Черновик напоминания</button>
+          <button type="button" disabled={activeAction !== null} onClick={escalate} className="rounded border border-rose-300 bg-white px-2.5 py-1.5 text-xs text-rose-800 disabled:opacity-50">Передать оператору</button>
+          <button type="button" disabled={activeAction !== null || !snapshot?.canPrepareCheckinReleaseDraft} onClick={() => onAction('checkin-release', 'prepare_draft')} className="rounded border border-violet-300 bg-white px-2.5 py-1.5 text-xs text-violet-800 disabled:opacity-50">Подготовить инструкции</button>
+          <button type="button" disabled={activeAction !== null || snapshot?.release?.status !== 'draft_prepared'} onClick={simulateRelease} className="rounded border border-slate-400 bg-white px-2.5 py-1.5 text-xs disabled:opacity-50">Тестовая выдача</button>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
