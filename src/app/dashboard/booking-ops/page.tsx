@@ -8,6 +8,7 @@ import { ChannelPublishingPreparationPanel } from '@/components/booking-ops/Chan
 import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntelligencePanel';
 import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
+import { LifecycleOrchestratorPanel } from '@/components/booking-ops/LifecycleOrchestratorPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -2135,6 +2136,8 @@ function BookingOpsPageInner() {
               {selectedRecord.readiness ? (
                 <ReadinessCard readiness={selectedRecord.readiness} />
               ) : null}
+
+              <LifecycleOrchestratorPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
 
               <PreCheckinControlCenterCard
                 readiness={preCheckin}

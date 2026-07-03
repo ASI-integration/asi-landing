@@ -1,0 +1,44 @@
+name: Booking Lifecycle Orchestrator v1 acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact production SHA expected from /api/version
+        required: true
+        type: string
+      confirm_production_acceptance:
+        description: Type RUN_BOOKING_LIFECYCLE_ACCEPTANCE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  production_acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm_production_acceptance }}" != "RUN_BOOKING_LIFECYCLE_ACCEPTANCE" ]; then
+            echo "Explicit production acceptance confirmation is required."
+            exit 1
+          fi
+      - name: Run safe probe on production VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          test -n "${VPS_HOST:-}" && test -n "${VPS_SSH_KEY:-}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          PORT="${VPS_PORT:-22}"
+          ssh -i ~/.ssh/id_ed25519 -p "$PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            project_ayfaar@"$VPS_HOST" \
+            "cd /var/www/asi/current && EXPECTED_SHA='${EXPECTED_SHA}' BASE_URL='http://127.0.0.1:3000' node scripts/booking-lifecycle-orchestrator-v1-prod-acceptance.mjs"

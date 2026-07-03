@@ -285,9 +285,15 @@ export async function initializeGuestLegalExecution(bookingId: string, options: 
     });
     if (error) throw new Error(error.message);
   }
-  await upsertSingleton('booking_contracts', record.id, { status: 'not_started', metadata: { initialized: true } });
-  await upsertSingleton('booking_deposits', record.id, { status: 'not_requested', amount: 0, currency: 'RUB', metadata: { initialized: true } });
-  await upsertSingleton('booking_mvd_reports', record.id, { status: 'not_started', metadata: { initialized: true } });
+  if (!await latestStatus('booking_contracts', record.id)) {
+    await upsertSingleton('booking_contracts', record.id, { status: 'not_started', metadata: { initialized: true } });
+  }
+  if (!await latestStatus('booking_deposits', record.id)) {
+    await upsertSingleton('booking_deposits', record.id, { status: 'not_requested', amount: 0, currency: 'RUB', metadata: { initialized: true } });
+  }
+  if (!await latestStatus('booking_mvd_reports', record.id)) {
+    await upsertSingleton('booking_mvd_reports', record.id, { status: 'not_started', metadata: { initialized: true } });
+  }
   return recomputeGuestLegalReadiness(record.id, options);
 }
 

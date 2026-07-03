@@ -24,6 +24,8 @@ export async function initializeBookingOpsCoreLoop(
   await initializeGuestLegalExecution(bookingOpsRecordId);
   const { ensurePhysicalTasks } = await import('./physical-readiness-execution');
   await ensurePhysicalTasks(bookingOpsRecordId);
+  const { orchestrateBookingLifecycle } = await import('./lifecycle-orchestrator');
+  await orchestrateBookingLifecycle({ bookingId: bookingOpsRecordId, runType: 'single_booking' });
 
   return {
     lifecycleInitialized: true,
