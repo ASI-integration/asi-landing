@@ -27,13 +27,22 @@ const sealed = await sealData({ userId: 'guest-intake-release-acceptance', email
 const headers = { Cookie: `asi_session=${sealed}`, 'Content-Type': 'application/json' };
 function assert(value, message) { if (!value) throw new Error(message); }
 async function post(path, bookingId, action, extra = {}, expected = 200) {
-  const response = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: JSON.stringify({ bookingId, action, ...extra }) });
-  const body = await response.json().catch(() => ({}));
-  assert(response.status === expected, `${action}_unexpected_${response.status}_${body.message || ''}`);
-  return body;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: JSON.stringify({ bookingId, action, ...extra }) });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === expected) return body;
+    if (attempt < 3 && String(body.message || '').includes('fetch failed')) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 1000));
+      continue;
+    }
+    assert(false, `${action}_unexpected_${response.status}_${body.message || ''}`);
+  }
+  throw new Error(`${action}_retry_exhausted`);
 }
 async function cleanup(ids) {
   if (!ids.length) return 0;
+  const drafts = await sb.from('booking_ops_telegram_drafts').delete().in('booking_ops_record_id', ids);
+  if (drafts.error) throw drafts.error;
   const result = await sb.from('booking_ops_records').delete().in('id', ids);
   if (result.error) throw result.error;
   return ids.length;
@@ -89,15 +98,15 @@ try {
   assert(complete.snapshot.validation.isComplete, 'complete_intake_not_completed');
   assert(complete.snapshot.blockers.includes('legal_gate_blocked'), 'legal_gate_not_blocking');
 
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'initialize');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'create_documents_request_draft');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'record_documents_received', { documentReceived: true, documentType: 'guest_identity' });
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'mark_documents_verified_manual');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'create_contract_draft');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'mark_contract_signed_manual');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'create_deposit_request_draft', { amount: 1000, currency: 'RUB' });
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'mark_deposit_paid_manual');
-  await post('/api/dashboard/booking-ops/legal-payment', bookingId, 'mark_mvd_not_required', { reason: 'Тестовый сценарий' });
+  await post('/api/dashboard/guest-legal/action', bookingId, 'initialize');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'create_documents_request_draft');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'record_documents_received', { documentReceived: true, documentType: 'guest_identity' });
+  await post('/api/dashboard/guest-legal/action', bookingId, 'mark_documents_verified_manual');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'create_contract_draft');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'mark_contract_signed_manual');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'create_deposit_request_draft', { amount: 1000, currency: 'RUB' });
+  await post('/api/dashboard/guest-legal/action', bookingId, 'mark_deposit_paid_manual');
+  await post('/api/dashboard/guest-legal/action', bookingId, 'mark_mvd_not_required', { reason: 'Тестовый сценарий' });
   const afterLegal = await post('/api/dashboard/booking-ops/guest-intake-release', bookingId, 'ensure_session');
   assert(afterLegal.snapshot.blockers.includes('physical_readiness_blocked'), 'physical_gate_not_blocking');
 
