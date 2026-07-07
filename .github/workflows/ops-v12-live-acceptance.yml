@@ -1,0 +1,152 @@
+name: OPS v12 Live Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_acceptance:
+        description: Type RUN_OPS_ACCEPTANCE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ops_v12_acceptance:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+    steps:
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm_production_acceptance }}" != "RUN_OPS_ACCEPTANCE" ]; then
+            echo "Explicit production acceptance confirmation is required."
+            exit 1
+          fi
+
+      - name: Wire env symlink and run OPS v12 acceptance on production VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+
+          echo "=== SSH user / hostname ==="
+          whoami
+          hostname
+
+          echo ""
+          echo "=== Env file existence checks (metadata only) ==="
+          PATHS=(
+            /var/www/asi/current/.env.local
+            /var/www/asi/source/.env.local
+            /var/www/asi/shared/.env.local
+            /var/www/asi/.env.local
+            /var/www/asi/current/.env
+            /var/www/asi/source/.env
+            /var/www/asi/shared/.env.production.live
+            /var/www/asi/current/.env.production.local
+            /var/www/asi/current/.env.production.live
+          )
+
+          REAL_ENV=""
+          for p in "${PATHS[@]}"; do
+            if test -f "$p" || test -L "$p"; then
+              echo "FOUND: $p"
+              ls -la "$p"
+              if test -L "$p"; then
+                echo "  symlink target: $(readlink -f "$p")"
+              fi
+              echo "  size: $(stat -c '%s bytes' "$p" 2>/dev/null || echo unknown)"
+              if [[ -z "$REAL_ENV" && "$p" != /var/www/asi/source/.env.local ]]; then
+                REAL_ENV="$p"
+              fi
+            else
+              echo "MISSING: $p"
+            fi
+          done
+
+          echo ""
+          echo "=== current symlink ==="
+          readlink -f /var/www/asi/current 2>/dev/null || echo "current missing"
+
+          echo ""
+          echo "=== git SHA in source ==="
+          if test -d /var/www/asi/source/.git; then
+            git -C /var/www/asi/source rev-parse HEAD 2>/dev/null || echo "git rev-parse failed"
+          else
+            echo "no .git in source"
+          fi
+
+          TARGET="/var/www/asi/source/.env.local"
+          if test -f /var/www/asi/current/.env.local || test -L /var/www/asi/current/.env.local; then
+            SRC="/var/www/asi/current/.env.local"
+            echo "Using preferred source: $SRC"
+          elif [[ -n "$REAL_ENV" ]]; then
+            SRC="$REAL_ENV"
+            echo "Using alternate source: $SRC"
+          else
+            echo "NO_ENV_FILE_FOUND"
+            exit 2
+          fi
+
+          ln -sfn "$SRC" "$TARGET"
+          echo "Symlink created:"
+          ls -la "$TARGET"
+          echo "Resolved: $(readlink -f "$TARGET")"
+
+          echo ""
+          echo "=== Variable name presence (no values) ==="
+          ENV_RESOLVED="$(readlink -f "$TARGET")"
+          for key in SUPABASE_URL NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            if grep -q "^${key}=" "$ENV_RESOLVED" 2>/dev/null; then
+              echo "${key} present: yes"
+            else
+              echo "${key} present: no"
+            fi
+          done
+
+          echo ""
+          echo "=== Running OPS v12 acceptance ==="
+          cd /var/www/asi/source
+          export OPS_ACCEPTANCE_CONFIRM=RUN_OPS_ACCEPTANCE
+          set +e
+          npm run acceptance:ops-v12 2>&1 | tee /tmp/ops-v12-acceptance.log
+          ACCEPT_RC=${PIPESTATUS[0]}
+          set -e
+
+          echo ""
+          echo "=== Acceptance exit code: $ACCEPT_RC ==="
+          if [[ "$ACCEPT_RC" -ne 0 ]]; then
+            echo "=== Last 80 lines of output ==="
+            tail -n 80 /tmp/ops-v12-acceptance.log
+            exit "$ACCEPT_RC"
+          fi
+
+          echo "PASS"
+          REMOTE
