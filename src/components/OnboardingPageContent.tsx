@@ -1,3 +1,4 @@
+/** Shared onboarding body for `/connect` and related auth entry flows. */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
