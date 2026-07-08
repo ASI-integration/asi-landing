@@ -394,7 +394,9 @@ function warnAutoSyncSourceUnavailable(source: string, error: unknown): void {
 
 async function loadCrmContactsSafe(): Promise<CrmContact[]> {
   try {
-    return await listCrmContacts({ excludeArchived: true });
+    // OPS auto-sync must consider acceptance/test/synthetic contacts too; otherwise the
+    // acceptance runner creates a CRM contact that never gets synced into OPS tasks.
+    return await listCrmContacts({ excludeArchived: true, includeTest: true });
   } catch (error) {
     warnAutoSyncSourceUnavailable('CRM', error);
     return [];

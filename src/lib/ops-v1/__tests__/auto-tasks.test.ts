@@ -104,6 +104,7 @@ describe('ops v1 auto tasks', () => {
     const first = await syncAutoOpsTasks();
     const second = await syncAutoOpsTasks();
 
+    expect(mocks.listCrmContacts).toHaveBeenCalledWith({ excludeArchived: true, includeTest: true });
     expect(first.created).toBe(1);
     expect(second.created).toBe(0);
     expect(mocks.createOpsOperatorTask).toHaveBeenCalledTimes(2);
