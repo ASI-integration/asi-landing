@@ -6,6 +6,8 @@ const tables = {
   booking_instay_checkout: [] as Row[],
   booking_guest_stay_issues: [] as Row[],
   booking_ops_communication_intents: [] as Row[],
+  booking_ops_communication_policies: [] as Row[],
+  booking_ops_communication_auto_send_attempts: [] as Row[],
 };
 
 const lifecycle = {
@@ -39,6 +41,10 @@ function makeSelect(table: keyof typeof tables) {
   const query = {
     eq(column: string, value: unknown) {
       result = result.filter((row) => row[column] === value);
+      return query;
+    },
+    in(column: string, values: unknown[]) {
+      result = result.filter((row) => values.includes(row[column]));
       return query;
     },
     order() {
@@ -261,6 +267,33 @@ describe('In-stay & Checkout Autopilot v1', () => {
     await queueCheckoutInstructions(record.id);
 
     expect(tables.booking_ops_communication_intents).toHaveLength(1);
+  });
+
+  it('markCheckoutInstructionsSent creates checkout_reminder intent', async () => {
+    guestCheckedIn = true;
+    const { queueCheckoutInstructions, markCheckoutInstructionsSent } = await import('../instay-checkout-autopilot');
+
+    await queueCheckoutInstructions(record.id);
+    const status = await markCheckoutInstructionsSent(record.id);
+
+    expect(status.status).toBe('checkout_pending');
+    const purposes = tables.booking_ops_communication_intents.map((item) => item.purpose);
+    expect(purposes).toContain('checkout_instructions');
+    expect(purposes).toContain('checkout_reminder');
+    expect(tables.booking_ops_communication_intents.filter((item) => item.purpose === 'checkout_reminder')).toHaveLength(1);
+  });
+
+  it('does not duplicate checkout_reminder on repeated mark_checkout_instructions_sent', async () => {
+    guestCheckedIn = true;
+    const { queueCheckoutInstructions, markCheckoutInstructionsSent } = await import('../instay-checkout-autopilot');
+
+    await queueCheckoutInstructions(record.id);
+    await markCheckoutInstructionsSent(record.id);
+    const countAfterFirst = tables.booking_ops_communication_intents.length;
+    await markCheckoutInstructionsSent(record.id);
+
+    expect(tables.booking_ops_communication_intents).toHaveLength(countAfterFirst);
+    expect(tables.booking_ops_communication_intents.filter((item) => item.purpose === 'checkout_reminder')).toHaveLength(1);
   });
 
   it('mark guest checked out completes guest_checked_out gate', async () => {
