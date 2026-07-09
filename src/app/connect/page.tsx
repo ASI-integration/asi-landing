@@ -1,10 +1,10 @@
 'use client';
 
 import { Suspense } from 'react';
-import OnboardingPageContent from '@/components/OnboardingPageContent';
-import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
-import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
-import { RuLegalTrustBlock } from '@/components/ru/RuLegalTrustBlock';
+import OnboardingPageContent from '../../components/OnboardingPageContent';
+import { RuBottomQuickLinks } from '../../components/ru/RuBottomQuickLinks';
+import { RuComplianceFooter } from '../../components/ru/RuComplianceFooter';
+import { RuLegalTrustBlock } from '../../components/ru/RuLegalTrustBlock';
 
 export default function ConnectPage() {
   return (

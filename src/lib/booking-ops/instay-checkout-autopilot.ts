@@ -390,6 +390,7 @@ function resolveStatus(input: {
     return 'inspection_pending';
   }
   if (input.lifecycleGuestCheckedOut || row?.actualCheckoutAt) return 'checked_out';
+  if (row?.status === 'checkout_pending') return 'checkout_pending';
   if (row?.checkoutConfirmationStatus === 'requested' || row?.checkoutConfirmationStatus === 'missed') {
     return 'checkout_pending';
   }
@@ -762,6 +763,18 @@ export async function markCheckoutInstructionsSent(
     status: 'checkout_pending',
     checkout_instructions_status: 'sent',
     metadata: { source: 'instay_checkout_autopilot_v1', sentAt: new Date().toISOString(), ...safeMetadata(metadata) },
+  });
+  const propertyLabel = record.propertyLabel ?? record.propertyId ?? 'вашей брони';
+  const checkoutDateLabel = record.checkOutAt
+    ? new Date(record.checkOutAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    : null;
+  const dateHint = checkoutDateLabel ? ` (${checkoutDateLabel})` : '';
+  await ensureCommunicationIntent({
+    record,
+    purpose: 'checkout_reminder',
+    messageTemplateKey: 'guest.checkout.reminder.v1',
+    messageText: `Здравствуйте. Напоминаем о выезде из объекта «${propertyLabel}»${dateHint}. Пожалуйста, следуйте инструкциям по выезду и подготовьтесь к сдаче объекта.`,
+    metadata: safeMetadata(metadata),
   });
   return getInStayCheckoutStatus(record.id);
 }

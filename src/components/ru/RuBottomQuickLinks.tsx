@@ -1,3 +1,4 @@
+/** Shared quick links footer for RU public pages and `/connect`. */
 'use client';
 
 import Link from 'next/link';

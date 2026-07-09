@@ -1,3 +1,4 @@
+/** Shared compliance footer for RU public pages and `/connect`. */
 import Link from 'next/link';
 import { ruCompliance, ruComplianceRoutes } from '@/config/ruCompliance';
 
