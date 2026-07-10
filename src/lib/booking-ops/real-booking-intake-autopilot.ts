@@ -836,7 +836,11 @@ export async function processInboundBookingRequest(
   };
 
   const existingEvent = await getIntakeEventByKey(idempotencyKey);
-  if (existingEvent?.status === 'processed' && !options?.force) {
+  if (
+    existingEvent?.bookingId
+    && !options?.force
+    && (!options?.action || options.action === 'process')
+  ) {
     return {
       intakeId: existingEvent.id,
       bookingId: existingEvent.bookingId,

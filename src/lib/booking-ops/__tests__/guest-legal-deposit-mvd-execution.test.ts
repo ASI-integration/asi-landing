@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   computeGuestLegalReadiness,
   markDepositWaivedManual,
   markMvdNotRequired,
   shouldBlockLegalCommunication,
+  syncGuestLegalReadinessToBookingOpsRecord,
   type GuestLegalReadiness,
 } from '../guest-legal-deposit-mvd-execution';
+
+const getBookingOpsRecord = vi.fn();
+const updateBookingOpsRecord = vi.fn();
+
+vi.mock('../repository', () => ({
+  getBookingOpsRecord: (...args: unknown[]) => getBookingOpsRecord(...args),
+  updateBookingOpsRecord: (...args: unknown[]) => updateBookingOpsRecord(...args),
+}));
 
 function complete(overrides: Partial<GuestLegalReadiness> = {}): GuestLegalReadiness {
   return {
@@ -32,6 +41,11 @@ function complete(overrides: Partial<GuestLegalReadiness> = {}): GuestLegalReadi
 }
 
 describe('Guest Legal, Deposit & MVD Execution Pack v1', () => {
+  beforeEach(() => {
+    getBookingOpsRecord.mockReset();
+    updateBookingOpsRecord.mockReset();
+  });
+
   it('missing documents block readiness', () => {
     const result = computeGuestLegalReadiness({
       documentsStatus: 'requested', contractStatus: 'signed_manual', depositStatus: 'paid_manual',
@@ -112,5 +126,41 @@ describe('Guest Legal, Deposit & MVD Execution Pack v1', () => {
 
   it('MVD not_required requires a reason before any database action', async () => {
     await expect(markMvdNotRequired(complete().bookingId, '')).rejects.toThrow('Укажите причину');
+  });
+
+  it('bridges legal v1 readiness into booking ops summary fields', async () => {
+    getBookingOpsRecord.mockResolvedValue({
+      id: complete().bookingId,
+      documentsStatus: 'requested',
+      contractStatus: 'prepared',
+      depositStatus: 'requested',
+      mvdStatus: 'prepared',
+    });
+    updateBookingOpsRecord.mockResolvedValue({ ok: true });
+
+    const result = await syncGuestLegalReadinessToBookingOpsRecord(complete());
+
+    expect(result).toEqual({ ok: true, changed: true });
+    expect(updateBookingOpsRecord).toHaveBeenCalledWith(complete().bookingId, {
+      documentsStatus: 'verified',
+      contractStatus: 'signed',
+      depositStatus: 'confirmed',
+      mvdStatus: 'submitted',
+    }, { actorType: 'system' });
+  });
+
+  it('keeps legal v1 summary sync idempotent', async () => {
+    getBookingOpsRecord.mockResolvedValue({
+      id: complete().bookingId,
+      documentsStatus: 'verified',
+      contractStatus: 'signed',
+      depositStatus: 'confirmed',
+      mvdStatus: 'submitted',
+    });
+
+    const result = await syncGuestLegalReadinessToBookingOpsRecord(complete());
+
+    expect(result).toEqual({ ok: true, changed: false });
+    expect(updateBookingOpsRecord).not.toHaveBeenCalled();
   });
 });

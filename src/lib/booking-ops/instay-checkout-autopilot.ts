@@ -89,6 +89,23 @@ export type InStayCheckoutBlocker = {
   fallbackEligible: boolean;
 };
 
+export type BookingCloseMissingPrerequisite = {
+  key: string;
+  category: 'guest_data' | 'documents' | 'contract' | 'deposit' | 'mvd' | 'lifecycle' | 'incident';
+  message: string;
+};
+
+export class BookingClosePrerequisiteError extends Error {
+  readonly code = 'booking_close_prerequisites_incomplete';
+  readonly missingPrerequisites: BookingCloseMissingPrerequisite[];
+
+  constructor(missingPrerequisites: BookingCloseMissingPrerequisite[]) {
+    super(`booking_close_prerequisites_incomplete:${missingPrerequisites.map((item) => item.key).join(',')}`);
+    this.name = 'BookingClosePrerequisiteError';
+    this.missingPrerequisites = missingPrerequisites;
+  }
+}
+
 export type InStayCheckoutSnapshot = {
   bookingId: string;
   status: InStayCheckoutStatus;
@@ -460,6 +477,101 @@ function buildBlockers(input: {
     });
   }
   return blockers;
+}
+
+function missingPrerequisite(
+  key: string,
+  category: BookingCloseMissingPrerequisite['category'],
+  message: string,
+): BookingCloseMissingPrerequisite {
+  return { key, category, message };
+}
+
+export async function validateBookingClosePrerequisites(
+  record: BookingOpsRecord,
+): Promise<BookingCloseMissingPrerequisite[]> {
+  const missing: BookingCloseMissingPrerequisite[] = [];
+
+  if (!text(record.guestName)) {
+    missing.push(missingPrerequisite('guest_name_missing', 'guest_data', 'Guest name is missing.'));
+  }
+  if (!text(record.guestPhone) && !text(record.guestEmail) && !text(record.guestTelegram)) {
+    missing.push(missingPrerequisite('guest_contact_missing', 'guest_data', 'Guest contact is missing.'));
+  }
+  if (!text(record.propertyId) && !text(record.propertyLabel)) {
+    missing.push(missingPrerequisite('property_missing', 'guest_data', 'Property is missing.'));
+  }
+  if (!record.checkInAt || !record.checkOutAt) {
+    missing.push(missingPrerequisite('booking_dates_missing', 'guest_data', 'Check-in or check-out date is missing.'));
+  }
+  if (record.guestCount == null || record.guestCount <= 0) {
+    missing.push(missingPrerequisite('guest_count_missing', 'guest_data', 'Guest count is missing.'));
+  }
+
+  try {
+    const { recomputeGuestLegalReadiness } = await import('./guest-legal-deposit-mvd-execution');
+    const legal = await recomputeGuestLegalReadiness(record.id, { source: 'close_guard' });
+    if (record.documentRequired !== false && legal.documentsStatus !== 'verified') {
+      missing.push(missingPrerequisite('documents_incomplete', 'documents', 'Required guest documents are not verified.'));
+    }
+    if (
+      record.contractRequired !== false
+      && !['signed_manual', 'signed_provider_placeholder'].includes(legal.contractStatus)
+    ) {
+      missing.push(missingPrerequisite('contract_incomplete', 'contract', 'Required contract is not signed.'));
+    }
+    if (
+      record.depositRequired !== false
+      && !['paid_manual', 'paid_provider_placeholder', 'waived_manual'].includes(legal.depositStatus)
+    ) {
+      missing.push(missingPrerequisite('deposit_incomplete', 'deposit', 'Required deposit is not collected or waived.'));
+    }
+    if (
+      record.mvdRequired !== false
+      && !['not_required', 'submitted_manual', 'submitted_provider_placeholder', 'accepted_manual'].includes(legal.mvdStatus)
+    ) {
+      missing.push(missingPrerequisite('mvd_incomplete', 'mvd', 'MVD/reporting preparation is incomplete.'));
+    }
+  } catch (error) {
+    missing.push(missingPrerequisite(
+      'legal_readiness_unavailable',
+      'lifecycle',
+      error instanceof Error ? error.message : 'Legal readiness could not be checked.',
+    ));
+  }
+
+  const [execution, issues, lifecycleResult] = await Promise.all([
+    getExecutionRow(record.id),
+    listIssueRows(record.id),
+    getLifecycleStatus(record.id),
+  ]);
+  const lifecycle = lifecycleResult.ok ? lifecycleResult.lifecycle : null;
+
+  if (!gateCompleted(lifecycle, 'guest_checked_in')) {
+    missing.push(missingPrerequisite('guest_not_checked_in', 'lifecycle', 'Guest check-in is not completed.'));
+  }
+  if (!gateCompleted(lifecycle, 'guest_checked_out') && !execution?.actualCheckoutAt) {
+    missing.push(missingPrerequisite('guest_not_checked_out', 'lifecycle', 'Guest check-out is not completed.'));
+  }
+  if (!gateCompleted(lifecycle, 'post_checkout_inspection_done') && execution?.inspectionStatus !== 'done') {
+    missing.push(missingPrerequisite('post_checkout_inspection_incomplete', 'lifecycle', 'Post-checkout inspection is not completed.'));
+  }
+  if (
+    record.depositRequired !== false
+    && !gateCompleted(lifecycle, 'deposit_return_ready')
+    && execution?.depositReturnStatus !== 'ready'
+    && execution?.depositReturnStatus !== 'returned'
+    && execution?.depositReturnStatus !== 'waived'
+  ) {
+    missing.push(missingPrerequisite('deposit_return_not_ready', 'deposit', 'Deposit return or resolution is not ready.'));
+  }
+
+  const openIssues = issues.filter((issue) => OPEN_ISSUE_STATUSES.has(issue.status));
+  if (openIssues.length > 0) {
+    missing.push(missingPrerequisite('open_stay_issues', 'incident', 'There are unresolved guest stay issues.'));
+  }
+
+  return missing;
 }
 
 function nextAction(status: InStayCheckoutStatus): string | null {
@@ -909,6 +1021,10 @@ export async function markBookingClosed(
   metadata?: Record<string, unknown>,
 ): Promise<InStayCheckoutSnapshot> {
   const record = await loadRecord(bookingId);
+  const missingPrerequisites = await validateBookingClosePrerequisites(record);
+  if (missingPrerequisites.length > 0) {
+    throw new BookingClosePrerequisiteError(missingPrerequisites);
+  }
   await completeGate(record.id, 'booking_closed', {
     source: 'instay_checkout_autopilot_v1',
     ...safeMetadata(metadata),

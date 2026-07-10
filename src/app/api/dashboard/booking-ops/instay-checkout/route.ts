@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
-import { getInStayCheckoutStatus, runInStayCheckoutAction } from '@/lib/booking-ops/instay-checkout-autopilot';
+import {
+  BookingClosePrerequisiteError,
+  getInStayCheckoutStatus,
+  runInStayCheckoutAction,
+} from '@/lib/booking-ops/instay-checkout-autopilot';
 import {
   BOOKING_OPS_COMMUNICATION_CHANNELS,
   type BookingOpsCommunicationChannel,
@@ -33,6 +37,7 @@ function text(value: unknown): string {
 
 function statusForError(message: string): number {
   if (message === 'booking_id_required' || message === 'invalid_action' || message === 'issue_id_required') return 400;
+  if (message.startsWith('booking_close_prerequisites_incomplete')) return 400;
   if (message === 'booking_not_found' || message === 'issue_not_found') return 404;
   if (message === 'guest_not_checked_in') return 400;
   return 500;
@@ -102,6 +107,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true, instayCheckout });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось обновить проживание.';
+    if (error instanceof BookingClosePrerequisiteError) {
+      return NextResponse.json({
+        ok: false,
+        message,
+        code: error.code,
+        missingPrerequisites: error.missingPrerequisites,
+      }, { status: 400 });
+    }
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }
 }

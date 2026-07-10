@@ -1,5 +1,5 @@
-import { importBookingFromText } from '@/lib/bookings/import-service';
-import type { PropertyLookup } from '@/lib/bookings/text-import';
+import { processInboundBookingRequest } from '@/lib/booking-ops/real-booking-intake-autopilot';
+import { parseBookingTextImport, type PropertyLookup } from '@/lib/bookings/text-import';
 import { listOwnerObjectRecords } from '@/lib/communication/telegram-owner-object-session';
 import type { CommunicationChannel, InboundMessageEnvelope } from '@/lib/communication/types';
 
@@ -29,6 +29,15 @@ function propertiesFromOwnerSession(chatId: number, channel: CommunicationChanne
     .filter((item) => item.propertyId);
 }
 
+function metadataText(metadata: InboundMessageEnvelope['metadata'], keys: string[]): string | null {
+  for (const key of keys) {
+    const value = (metadata as Record<string, unknown> | undefined)?.[key];
+    const normalized = text(value, 256);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 export type OwnerTelegramBookingIntakeResult = {
   handled: boolean;
   replyText: string;
@@ -40,6 +49,11 @@ export async function tryTelegramOwnerBookingIntake(input: {
   chatId: number;
   knownProperties?: PropertyLookup[];
 }): Promise<OwnerTelegramBookingIntakeResult> {
+  const senderIdentity = metadataText(input.envelope.metadata, ['senderIdentity']);
+  if (senderIdentity === 'guest' || senderIdentity === 'support_problem') {
+    return { handled: false, replyText: '', bookingId: null };
+  }
+
   const message = text(input.envelope.messageText);
   if (!looksLikeBookingText(message)) {
     return { handled: false, replyText: '', bookingId: null };
@@ -48,22 +62,41 @@ export async function tryTelegramOwnerBookingIntake(input: {
   const properties =
     input.knownProperties
     ?? propertiesFromOwnerSession(input.chatId, input.envelope.channel);
-
-  const imported = await importBookingFromText({
+  const candidate = parseBookingTextImport({
     text: message,
     properties,
-    forceCreate: false,
   });
+  const metadata = input.envelope.metadata;
+  const sourceMessageId =
+    metadataText(metadata, ['inboundIdempotencyKey', 'providerMessageId', 'externalMessageId'])
+    ?? `${input.envelope.channel}:${input.chatId}:${message}`;
+  const telegramUserId = metadataText(metadata, ['telegram_user_id']);
+  const telegramUsername = metadataText(metadata, ['telegram_username']);
 
-  if (imported.needsReview) {
-    return {
-      handled: true,
-      replyText: `Не хватает: ${imported.candidate.missingFields.join(', ') || 'данных'}. Передала на проверку.`,
-      bookingId: null,
-    };
-  }
+  const intake = await processInboundBookingRequest({
+    guestName: candidate.guestName,
+    guestPhone: candidate.guestContact,
+    guestTelegram: telegramUsername ? `@${telegramUsername.replace(/^@/, '')}` : null,
+    telegramUserId,
+    telegramChatId: String(input.chatId),
+    checkInAt: candidate.checkIn,
+    checkOutAt: candidate.checkOut,
+    propertyId: candidate.propertyId,
+    propertyLabel: candidate.propertyLabel,
+    bookingReference: candidate.reservationRef,
+    sourceMessageId,
+    rawMessageText: message,
+    metadata: {
+      ownerTelegramBookingSignal: true,
+      channel: candidate.channel,
+      confidence: candidate.confidence,
+      parserMissingFields: candidate.missingFields,
+      senderIdentity,
+      providerMessageId: metadataText(metadata, ['providerMessageId']),
+    },
+  }, 'telegram');
 
-  if (!imported.ok) {
+  if (intake.intakeStatus === 'failed') {
     return {
       handled: true,
       replyText: 'Не удалось создать бронь. Передала на проверку.',
@@ -71,9 +104,17 @@ export async function tryTelegramOwnerBookingIntake(input: {
     };
   }
 
+  if (intake.missingRequiredFields.length > 0 || intake.intakeStatus === 'needs_review') {
+    return {
+      handled: true,
+      replyText: `Не хватает: ${intake.missingRequiredFields.join(', ') || 'данных'}. Передала на проверку.`,
+      bookingId: intake.bookingId,
+    };
+  }
+
   return {
     handled: true,
     replyText: 'Поняла бронь. Создала задачи заезда, выезда и уборки.',
-    bookingId: imported.bookingId,
+    bookingId: intake.bookingId,
   };
 }
