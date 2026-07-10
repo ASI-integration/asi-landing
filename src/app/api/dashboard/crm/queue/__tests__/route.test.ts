@@ -8,9 +8,15 @@ vi.mock('@/lib/auth', () => ({
 const listCrmContacts = vi.fn();
 const listCrmEventsByContactIds = vi.fn();
 const listRecentCrmEventsForFeed = vi.fn();
+const loadCrmBookingSignalsForQueue = vi.fn();
+const summarizeOpenOpsTasksByContactIds = vi.fn();
 
 vi.mock('@/lib/crm/repository', () => ({
   listCrmContacts,
+}));
+
+vi.mock('@/lib/crm/booking-signals', () => ({
+  loadCrmBookingSignalsForQueue,
 }));
 
 vi.mock('@/lib/crm/queue-events', () => ({
@@ -18,11 +24,19 @@ vi.mock('@/lib/crm/queue-events', () => ({
   listRecentCrmEventsForFeed,
 }));
 
+vi.mock('@/lib/ops-board/repository', () => ({
+  summarizeOpenOpsTasksByContactIds,
+}));
+
 beforeEach(() => {
   vi.resetModules();
   listCrmContacts.mockReset();
   listCrmEventsByContactIds.mockReset();
   listRecentCrmEventsForFeed.mockReset();
+  loadCrmBookingSignalsForQueue.mockReset();
+  summarizeOpenOpsTasksByContactIds.mockReset();
+  summarizeOpenOpsTasksByContactIds.mockResolvedValue({});
+  loadCrmBookingSignalsForQueue.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -105,6 +119,8 @@ describe('/api/dashboard/crm/queue', () => {
     expect(body.items[0].operationalStatus).toBe('needs_attention');
     expect(body.items[0].recentActivities.length).toBeGreaterThan(0);
     expect(body.activityFeed.length).toBeGreaterThan(0);
+    expect(body.bookingSignals).toEqual([]);
     expect(body.refreshedAt).toBeTruthy();
+    expect(loadCrmBookingSignalsForQueue).toHaveBeenCalledTimes(1);
   });
 });
