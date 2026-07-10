@@ -95,6 +95,14 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+vi.mock('../lifecycle', () => ({
+  syncLifecycleFromTask: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock('../communication-orchestrator', () => ({
+  syncBookingOpsCommunications: vi.fn(async () => ({ ok: true, created: 0, superseded: 0 })),
+}));
+
 function readyBooking(overrides: Partial<BookingOpsRecord> = {}): BookingOpsRecord {
   return {
     id: 'ops-ready',

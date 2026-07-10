@@ -15,7 +15,7 @@ const lifecycle = {
   inProgress: [] as Array<{ bookingId: string; gateKey: string }>,
 };
 
-let preCheckinStatus: 'needs_attention' | 'ready_for_checkin' = 'ready_for_checkin';
+let preCheckinStatus: 'needs_attention' | 'ready_for_checkin' | 'blocked' = 'ready_for_checkin';
 let preCheckinBlockers: Array<Record<string, unknown>> = [];
 let guestCheckedIn = false;
 
@@ -216,6 +216,24 @@ describe('Check-in Execution Autopilot v1', () => {
     expect(tables.booking_ops_communication_intents[0]).toMatchObject({
       purpose: 'checkin_instructions',
       status: 'draft_ready',
+    });
+  });
+
+  it('blocks check-in instructions when property readiness is incomplete', async () => {
+    preCheckinStatus = 'blocked';
+    preCheckinBlockers = [{
+      key: 'physical:cleaning_not_verified',
+      title: 'Уборка проверена',
+      reason: 'Уборка не завершена.',
+      fallbackEligible: true,
+    }];
+    const { queueCheckinInstructions, CheckinReadinessPrerequisiteError } = await import('../checkin-execution-autopilot');
+
+    await expect(queueCheckinInstructions(record.id)).rejects.toBeInstanceOf(CheckinReadinessPrerequisiteError);
+    await expect(queueCheckinInstructions(record.id)).rejects.toMatchObject({
+      missingPrerequisites: [
+        expect.objectContaining({ key: 'physical:cleaning_not_verified' }),
+      ],
     });
   });
 

@@ -187,6 +187,25 @@ export function computeUnitReadinessStatus(
   record: BookingOpsRecord,
   tasks: BookingOpsTask[],
 ): BookingOpsUnitReadinessStatus {
+  if (tasks.some((task) =>
+    task.status === 'completed'
+    && (task.taskType === 'unit_ready_for_next_guest' || task.taskType === 'unit_ready_confirmation'))) {
+    return 'ready';
+  }
+  if (record.isBlocked || tasks.some((task) => task.status === 'blocked' && isTurnoverTaskType(task.taskType))) {
+    return 'blocked';
+  }
+  if (tasks.some((task) => task.status === 'open' || task.status === 'in_progress')) {
+    if (tasks.some((task) => task.status !== 'completed' && CLEANING_CHAIN.includes(task.taskType as BookingOpsTurnoverTaskType))) {
+      return 'cleaning_pending';
+    }
+    if (tasks.some((task) => task.status !== 'completed' && LINEN_CHAIN.includes(task.taskType as BookingOpsTurnoverTaskType))) {
+      return 'linen_pending';
+    }
+    if (tasks.some((task) => task.status !== 'completed' && (task.taskType === 'unit_inspection_needed' || task.taskType === 'inspection_needed'))) {
+      return 'inspection_pending';
+    }
+  }
   return planBookingOpsPreparation(record, tasks).unitReadinessStatus;
 }
 

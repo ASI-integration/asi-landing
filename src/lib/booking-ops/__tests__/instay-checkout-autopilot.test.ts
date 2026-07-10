@@ -26,6 +26,7 @@ let legalContractStatus = 'signed_manual';
 let legalDepositStatus = 'paid_manual';
 let legalMvdStatus = 'accepted_manual';
 let recordOverrides: Row = {};
+const syncBookingOpsTasksForRecordId = vi.fn(async () => ({ ok: true }));
 
 const baseRecord = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -131,6 +132,7 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('../repository', () => ({
   getBookingOpsRecord: vi.fn(async () => currentRecord()),
+  syncBookingOpsTasksForRecordId,
 }));
 
 vi.mock('../guest-legal-deposit-mvd-execution', () => ({
@@ -242,6 +244,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
     legalDepositStatus = 'paid_manual';
     legalMvdStatus = 'accepted_manual';
     recordOverrides = {};
+    syncBookingOpsTasksForRecordId.mockClear();
   });
 
   it('returns not_checked_in when guest has not checked in', async () => {
@@ -355,6 +358,7 @@ describe('In-stay & Checkout Autopilot v1', () => {
 
     expect(status.status).toBe('checked_out');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('guest_checked_out');
+    expect(syncBookingOpsTasksForRecordId).toHaveBeenCalledWith(record.id);
   });
 
   it('mark inspection done completes post_checkout_inspection_done gate', async () => {

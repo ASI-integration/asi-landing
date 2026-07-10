@@ -14,6 +14,10 @@ export const CRM_BOOKING_SIGNAL_KINDS = [
   'checkin_blocked',
   'checkout_due',
   'closure_blocked',
+  'cleaning_required',
+  'linen_required',
+  'inspection_required',
+  'property_not_ready',
   'documents_incomplete',
   'contract_incomplete',
   'deposit_incomplete',
@@ -52,6 +56,10 @@ const PRIORITY_BY_KIND: Record<CrmBookingSignalKind, number> = {
   checkin_blocked: 2,
   checkout_due: 3,
   closure_blocked: 3,
+  cleaning_required: 3,
+  linen_required: 3,
+  inspection_required: 3,
+  property_not_ready: 3,
   documents_incomplete: 4,
   contract_incomplete: 4,
   deposit_incomplete: 4,
@@ -327,6 +335,49 @@ function deriveIntakeSignal(record: BookingOpsRecord): CrmBookingSignalDraft | n
   return null;
 }
 
+function deriveReadinessSignal(record: BookingOpsRecord): CrmBookingSignalDraft | null {
+  switch (record.unitReadinessStatus) {
+    case 'cleaning_pending':
+      return baseDraft(record, {
+        kind: 'cleaning_required',
+        severity: 'warning',
+        priority: PRIORITY_BY_KIND.cleaning_required,
+        title: 'Нужна уборка',
+        reason: 'После выезда объект не готов: уборка не завершена.',
+        nextAction: 'Завершить уборку в Booking Ops',
+      });
+    case 'linen_pending':
+      return baseDraft(record, {
+        kind: 'linen_required',
+        severity: 'warning',
+        priority: PRIORITY_BY_KIND.linen_required,
+        title: 'Нужно белье',
+        reason: 'После выезда объект не готов: белье не заменено или не подтверждено.',
+        nextAction: 'Завершить шаг по белью в Booking Ops',
+      });
+    case 'inspection_pending':
+      return baseDraft(record, {
+        kind: 'inspection_required',
+        severity: 'warning',
+        priority: PRIORITY_BY_KIND.inspection_required,
+        title: 'Нужен осмотр',
+        reason: 'После уборки и белья нужен осмотр или подтверждение готовности.',
+        nextAction: 'Подтвердить осмотр и готовность в Booking Ops',
+      });
+    case 'blocked':
+      return baseDraft(record, {
+        kind: 'property_not_ready',
+        severity: 'critical',
+        priority: PRIORITY_BY_KIND.property_not_ready,
+        title: 'Объект не готов',
+        reason: record.blockerReason ?? 'Есть блокер готовности объекта перед следующим заездом.',
+        nextAction: 'Разобрать блокер готовности в Booking Ops',
+      });
+    default:
+      return null;
+  }
+}
+
 function deriveRecentBookingSignal(
   record: BookingOpsRecord,
   evaluatedAt: string,
@@ -385,6 +436,9 @@ export function deriveCrmBookingSignalForRecord(
 
   const intakeSignal = deriveIntakeSignal(record);
   if (intakeSignal) candidates.push(intakeSignal);
+
+  const readinessSignal = deriveReadinessSignal(record);
+  if (readinessSignal) candidates.push(readinessSignal);
 
   if (candidates.length === 0) {
     const recent = deriveRecentBookingSignal(record, evaluatedAt);

@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
-import { getCheckinExecutionStatus, runCheckinExecutionAction } from '@/lib/booking-ops/checkin-execution-autopilot';
+import {
+  CheckinReadinessPrerequisiteError,
+  getCheckinExecutionStatus,
+  runCheckinExecutionAction,
+} from '@/lib/booking-ops/checkin-execution-autopilot';
 import {
   BOOKING_OPS_COMMUNICATION_CHANNELS,
   type BookingOpsCommunicationChannel,
@@ -53,6 +57,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     const checkin = await getCheckinExecutionStatus(bookingId);
     return NextResponse.json({ ok: true, checkin });
   } catch (error) {
+    if (error instanceof CheckinReadinessPrerequisiteError) {
+      return NextResponse.json({
+        ok: false,
+        code: error.code,
+        message: error.message,
+        missingPrerequisites: error.missingPrerequisites,
+      }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : 'Не удалось загрузить заселение.';
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }
@@ -90,6 +102,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     });
     return NextResponse.json({ ok: true, checkin });
   } catch (error) {
+    if (error instanceof CheckinReadinessPrerequisiteError) {
+      return NextResponse.json({
+        ok: false,
+        code: error.code,
+        message: error.message,
+        missingPrerequisites: error.missingPrerequisites,
+      }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : 'Не удалось обновить заселение.';
     return NextResponse.json({ ok: false, message }, { status: statusForError(message) });
   }
