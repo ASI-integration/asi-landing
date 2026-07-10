@@ -246,7 +246,7 @@ describe('Real Booking Intake Autopilot v1', () => {
   it('duplicate partial telegram request does not create duplicate booking', async () => {
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
     const payload = {
-      guestName: 'РњР°СЂРёСЏ',
+      guestName: 'Мария',
       guestPhone: '+79990000002',
       checkInAt: '2026-08-10',
       checkOutAt: '2026-08-12',
