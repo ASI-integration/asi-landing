@@ -169,6 +169,47 @@ describe('crm booking signals', () => {
     expect(needsReview?.kind).toBe('intake_needs_review');
   });
 
+  it('creates CRM signals for readiness blockers', () => {
+    const cleaning = deriveCrmBookingSignalForRecord(
+      {
+        ...baseRecord,
+        documentsStatus: 'verified',
+        contractStatus: 'signed',
+        depositStatus: 'confirmed',
+        checkinReadinessStatus: 'ready',
+        unitReadinessStatus: 'cleaning_pending',
+      },
+      { evaluatedAt: '2026-07-10T09:00:00.000Z' },
+    );
+    expect(cleaning?.kind).toBe('cleaning_required');
+
+    const linen = deriveCrmBookingSignalForRecord(
+      {
+        ...baseRecord,
+        documentsStatus: 'verified',
+        contractStatus: 'signed',
+        depositStatus: 'confirmed',
+        checkinReadinessStatus: 'ready',
+        unitReadinessStatus: 'linen_pending',
+      },
+      { evaluatedAt: '2026-07-10T09:00:00.000Z' },
+    );
+    expect(linen?.kind).toBe('linen_required');
+
+    const inspection = deriveCrmBookingSignalForRecord(
+      {
+        ...baseRecord,
+        documentsStatus: 'verified',
+        contractStatus: 'signed',
+        depositStatus: 'confirmed',
+        checkinReadinessStatus: 'ready',
+        unitReadinessStatus: 'inspection_pending',
+      },
+      { evaluatedAt: '2026-07-10T09:00:00.000Z' },
+    );
+    expect(inspection?.kind).toBe('inspection_required');
+  });
+
   it('does not create an active blocker signal for closed bookings', () => {
     const closedRecord: BookingOpsRecord = {
       ...baseRecord,

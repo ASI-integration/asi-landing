@@ -64,6 +64,23 @@ export type CheckinExecutionBlocker = {
   fallbackEligible: boolean;
 };
 
+export type CheckinReadinessMissingPrerequisite = {
+  key: string;
+  title: string;
+  message: string;
+};
+
+export class CheckinReadinessPrerequisiteError extends Error {
+  readonly code = 'checkin_readiness_prerequisites_incomplete';
+  readonly missingPrerequisites: CheckinReadinessMissingPrerequisite[];
+
+  constructor(missingPrerequisites: CheckinReadinessMissingPrerequisite[]) {
+    super(`checkin_readiness_prerequisites_incomplete:${missingPrerequisites.map((item) => item.key).join(',')}`);
+    this.name = 'CheckinReadinessPrerequisiteError';
+    this.missingPrerequisites = missingPrerequisites;
+  }
+}
+
 export type CheckinExecutionSnapshot = {
   bookingId: string;
   status: CheckinExecutionStatus;
@@ -260,6 +277,30 @@ function buildBlockers(input: {
   return blockers;
 }
 
+function checkinMissingPrerequisites(snapshot: CheckinExecutionSnapshot): CheckinReadinessMissingPrerequisite[] {
+  return snapshot.blockers
+    .filter((item) => item.key !== 'checkin_instructions_sent')
+    .map((item) => ({
+      key: item.key,
+      title: item.title,
+      message: item.reason,
+    }));
+}
+
+async function assertCheckinReadiness(bookingId: string): Promise<void> {
+  const snapshot = await getCheckinExecutionStatus(bookingId);
+  const missing = checkinMissingPrerequisites(snapshot);
+  if (missing.length > 0 || snapshot.preCheckin.status === 'blocked' || snapshot.preCheckin.status === 'overdue') {
+    throw new CheckinReadinessPrerequisiteError(missing.length > 0
+      ? missing
+      : [{
+          key: snapshot.preCheckin.topBlocker?.key ?? 'property_not_ready',
+          title: snapshot.preCheckin.topBlocker?.title ?? 'Property readiness',
+          message: snapshot.preCheckin.topBlocker?.reason ?? 'Property is not ready for check-in.',
+        }]);
+  }
+}
+
 function nextAction(status: CheckinExecutionStatus): string | null {
   switch (status) {
     case 'ready_to_send_instructions':
@@ -396,6 +437,7 @@ export async function prepareCheckinInstructions(
   const record = await loadRecord(bookingId);
   const legalGuard = await shouldBlockCheckinInstructions(record.id);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
+  await assertCheckinReadiness(record.id);
   await markGateInProgress(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
@@ -416,6 +458,7 @@ export async function queueCheckinInstructions(
   const record = await loadRecord(bookingId);
   const legalGuard = await shouldBlockCheckinInstructions(record.id);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Инструкции заезда заблокированы до снятия юридических ограничений.');
+  await assertCheckinReadiness(record.id);
   await ensureCommunicationIntent({
     record,
     purpose: 'checkin_instructions',
@@ -439,6 +482,7 @@ export async function markCheckinInstructionsSent(
   const record = await loadRecord(bookingId);
   const legalGuard = await shouldBlockCheckinInstructions(record.id);
   if (legalGuard.block) throw new Error(legalGuard.reason ?? 'Нельзя отметить инструкции отправленными: есть юридические ограничения.');
+  await assertCheckinReadiness(record.id);
   await completeGate(record.id, 'checkin_instructions_sent', {
     source: 'checkin_execution_autopilot_v1',
     ...safeMetadata(metadata),
@@ -495,6 +539,7 @@ export async function markAccessReady(
   metadata?: Record<string, unknown>,
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
+  await assertCheckinReadiness(record.id);
   await completeGate(record.id, 'property_ready', {
     source: 'checkin_execution_autopilot_v1',
     accessReady: true,
@@ -547,6 +592,7 @@ export async function markGuestCheckedIn(
   metadata?: Record<string, unknown>,
 ): Promise<CheckinExecutionSnapshot> {
   const record = await loadRecord(bookingId);
+  await assertCheckinReadiness(record.id);
   const now = new Date().toISOString();
   await completeGate(record.id, 'guest_checked_in', {
     source: 'checkin_execution_autopilot_v1',

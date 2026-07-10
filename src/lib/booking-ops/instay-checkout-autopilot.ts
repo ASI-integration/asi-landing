@@ -10,7 +10,7 @@ import {
   initializeLifecycleForBooking,
   markGateInProgress,
 } from './lifecycle';
-import { getBookingOpsRecord } from './repository';
+import { getBookingOpsRecord, syncBookingOpsTasksForRecordId } from './repository';
 import type {
   BookingOpsCommunicationChannel,
   BookingOpsCommunicationIntent,
@@ -928,6 +928,7 @@ export async function markGuestCheckedOut(
     actual_checkout_at: checkoutAt,
     metadata: { source: 'instay_checkout_autopilot_v1', checkedOutAt: checkoutAt, ...safeMetadata(metadata) },
   });
+  await syncBookingOpsTasksForRecordId(record.id);
   return getInStayCheckoutStatus(record.id);
 }
 

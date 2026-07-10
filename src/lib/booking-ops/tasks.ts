@@ -4,6 +4,7 @@ import { planBookingOpsPreparation } from './automation-engine';
 import { syncBookingOpsCommunications } from './communication-orchestrator';
 import { computeBookingReadiness, fetchTelegramDraftStatusesForRecord } from './readiness';
 import { recordBookingOpsEvent, recordBookingOpsReadinessEvent } from './events';
+import { computePropertyReadinessGate } from './readiness-gate';
 import { syncLifecycleFromTask } from './lifecycle';
 import { syncBookingOpsTasksForReadiness } from './task-sync';
 import {
@@ -21,7 +22,7 @@ import {
   type CreateBookingOpsTaskInput,
   type UpdateBookingOpsTaskInput,
 } from './task-types';
-import type { BookingOpsRecord } from './types';
+import type { BookingOpsRecord, BookingOpsUnitReadinessStatus } from './types';
 import { BOOKING_OPS_UNIT_READINESS_STATUS_LABELS_RU } from './types';
 
 type BookingOpsTaskRow = {
@@ -409,7 +410,15 @@ export async function applyBookingOpsTaskSync(
   const listed = await listBookingOpsTasksForRecord(record.id);
   const allTasks = listed.ok ? listed.tasks : [];
   const finalPreparation = planBookingOpsPreparation(record, allTasks);
-  const unitReadiness = finalPreparation.unitReadinessStatus;
+  const readinessGate = computePropertyReadinessGate(record, allTasks);
+  const gateToUnitStatus: Record<typeof readinessGate.status, BookingOpsUnitReadinessStatus> = {
+    not_ready: finalPreparation.unitReadinessStatus,
+    cleaning_required: 'cleaning_pending',
+    linen_required: 'linen_pending',
+    inspection_required: 'inspection_pending',
+    ready: 'ready',
+  };
+  const unitReadiness = gateToUnitStatus[readinessGate.status];
   if (unitReadiness !== record.unitReadinessStatus) {
     const previous = record.unitReadinessStatus ?? 'not_ready';
     await supabase
