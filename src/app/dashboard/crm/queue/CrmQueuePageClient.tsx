@@ -27,6 +27,7 @@ import {
   isQueueItemArchivable,
   resolveVisibleKanbanColumns,
 } from '@/lib/crm/queue';
+import type { CrmBookingSignal } from '@/lib/crm/booking-signals';
 import { OPS_TASK_PRIORITY_LABELS } from '@/lib/ops-board/types';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import { useSession } from '@/contexts/SessionContext';
@@ -50,6 +51,7 @@ type QueueResponse = {
   operatorInbox: CrmQueueItem[];
   columns: Record<CrmQueueColumn, CrmQueueItem[]>;
   items: CrmQueueItem[];
+  bookingSignals: CrmBookingSignal[];
   activityFeed: CrmActivityFeedEntry[];
   refreshedAt?: string;
 };
@@ -377,6 +379,83 @@ function QueueCard({
   );
 }
 
+function bookingSignalBadgeClass(severity: CrmBookingSignal['severity']): string {
+  switch (severity) {
+    case 'critical':
+      return 'bg-rose-50 text-rose-700 border-rose-200';
+    case 'warning':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    default:
+      return 'bg-sky-50 text-sky-700 border-sky-200';
+  }
+}
+
+function BookingSignalCard({ signal }: { signal: CrmBookingSignal }) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-slate-900">{signal.displayName}</h3>
+        <p className="text-xs text-slate-500">
+          Бронь {signal.bookingReference}
+          {signal.propertyLabel ? ` · ${signal.propertyLabel}` : ''}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <span
+          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${bookingSignalBadgeClass(signal.severity)}`}
+        >
+          {signal.title}
+        </span>
+        {signal.linkedContactName ? (
+          <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+            CRM: {signal.linkedContactName}
+          </span>
+        ) : (
+          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+            Без связи с CRM
+          </span>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-600">{signal.reason}</p>
+
+      <dl className="grid grid-cols-1 gap-1 text-xs text-slate-600">
+        <div className="flex justify-between gap-2">
+          <dt>Заезд</dt>
+          <dd className="text-slate-800">{formatDate(signal.checkInAt)}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt>Выезд</dt>
+          <dd className="text-slate-800">{formatDate(signal.checkOutAt)}</dd>
+        </div>
+      </dl>
+
+      <div>
+        <p className="text-xs font-medium text-slate-700">Следующий шаг</p>
+        <p className="text-xs text-slate-600">{signal.nextAction}</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Link
+          href={signal.bookingOpsHref}
+          className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Открыть Booking Ops
+        </Link>
+        {signal.linkedContactId ? (
+          <Link
+            href={`/dashboard/crm?search=${encodeURIComponent(signal.linkedContactName ?? '')}`}
+            className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            CRM карточка
+          </Link>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -429,6 +508,7 @@ export default function CrmQueuePageClient() {
         operatorInbox: [],
         columns: emptyQueueColumns(),
         items: [],
+        bookingSignals: [],
         activityFeed: [],
         message: '',
       });
@@ -586,6 +666,7 @@ export default function CrmQueuePageClient() {
 
   const metrics = data?.metrics;
   const operatorInbox = data?.operatorInbox ?? [];
+  const bookingSignals = data?.bookingSignals ?? [];
   const columns = data?.columns;
   const activityFeed = data?.activityFeed ?? [];
 
@@ -645,6 +726,26 @@ export default function CrmQueuePageClient() {
         loading={loading}
         refreshedAt={data?.refreshedAt ?? null}
       />
+
+      <section className="rounded-2xl border border-sky-200 bg-sky-50/40 p-4 md:p-5 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Сигналы по броням</h2>
+          <p className="text-sm text-slate-600">
+            Операционные блокеры из Booking Ops без переключения из CRM.
+          </p>
+        </div>
+        {loading ? (
+          <p className="text-sm text-slate-500">Загрузка...</p>
+        ) : bookingSignals.length === 0 ? (
+          <p className="text-sm text-slate-500">Активных сигналов по броням сейчас нет.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {bookingSignals.map((signal) => (
+              <BookingSignalCard key={signal.id} signal={signal} />
+            ))}
+          </div>
+        )}
+      </section>
 
       {metrics ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">

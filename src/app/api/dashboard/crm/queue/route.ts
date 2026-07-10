@@ -17,6 +17,7 @@ import {
 } from '@/lib/crm/queue';
 import type { CrmEventRow } from '@/lib/crm/queue-events';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
+import { loadCrmBookingSignalsForQueue } from '@/lib/crm/booking-signals';
 import { summarizeOpenOpsTasksByContactIds } from '@/lib/ops-board/repository';
 
 export const runtime = 'nodejs';
@@ -87,7 +88,12 @@ export async function GET(req: Request): Promise<NextResponse> {
       }),
     );
 
-    const items = buildQueueItems(contacts, messagesByContact, activitiesByContact, opsSummaryByContact);
+    const [items, bookingSignals] = await Promise.all([
+      Promise.resolve(
+        buildQueueItems(contacts, messagesByContact, activitiesByContact, opsSummaryByContact),
+      ),
+      loadCrmBookingSignalsForQueue(contacts),
+    ]);
     const filtered = filterQueueItems(items, filter);
     const activityFeed = buildActivityFeed(contacts, feedEvents);
     const pilot = computePilotRolloutMetrics(contacts);
@@ -101,6 +107,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       operatorInbox: buildOperatorInbox(items),
       columns: groupQueueByColumn(filtered),
       items: filtered,
+      bookingSignals,
       activityFeed,
       refreshedAt: new Date().toISOString(),
     });
