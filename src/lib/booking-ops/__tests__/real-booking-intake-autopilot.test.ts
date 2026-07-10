@@ -243,6 +243,23 @@ describe('Real Booking Intake Autopilot v1', () => {
     expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
   });
 
+  it('duplicate partial telegram request does not create duplicate booking', async () => {
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    const payload = {
+      guestName: 'РњР°СЂРёСЏ',
+      guestPhone: '+79990000002',
+      checkInAt: '2026-08-10',
+      checkOutAt: '2026-08-12',
+      sourceMessageId: 'telegram:message:9001:77:original',
+    };
+    const first = await process(payload, 'telegram');
+    const second = await process(payload, 'telegram');
+
+    expect(first.intakeStatus).toBe('needs_review');
+    expect(second.intakeStatus).toBe('duplicate');
+    expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
+  });
+
   it('missing property creates needs_review intake status', async () => {
     const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
     const result = await process({
