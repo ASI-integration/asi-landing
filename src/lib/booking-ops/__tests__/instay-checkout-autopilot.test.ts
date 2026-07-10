@@ -21,8 +21,13 @@ let guestCheckedOut = false;
 let inspectionDone = false;
 let depositReady = false;
 let bookingClosed = false;
+let legalDocumentsStatus = 'verified';
+let legalContractStatus = 'signed_manual';
+let legalDepositStatus = 'paid_manual';
+let legalMvdStatus = 'accepted_manual';
+let recordOverrides: Row = {};
 
-const record = {
+const baseRecord = {
   id: '11111111-1111-4111-8111-111111111111',
   bookingId: 'reservation-1',
   guestName: 'Анна',
@@ -30,7 +35,20 @@ const record = {
   guestTelegram: '@anna',
   propertyId: 'prop-1',
   propertyLabel: 'Квартира 7',
+  checkInAt: '2026-07-10T12:00:00.000Z',
+  checkOutAt: '2026-07-12T10:00:00.000Z',
+  guestCount: 2,
+  documentRequired: true,
+  contractRequired: true,
+  depositRequired: true,
+  mvdRequired: true,
 };
+
+const record = baseRecord;
+
+function currentRecord() {
+  return { ...baseRecord, ...recordOverrides };
+}
 
 function rows(table: keyof typeof tables): Row[] {
   return tables[table];
@@ -112,7 +130,35 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('../repository', () => ({
-  getBookingOpsRecord: vi.fn(async () => record),
+  getBookingOpsRecord: vi.fn(async () => currentRecord()),
+}));
+
+vi.mock('../guest-legal-deposit-mvd-execution', () => ({
+  recomputeGuestLegalReadiness: vi.fn(async (bookingId: string) => ({
+    id: 'legal-readiness-1',
+    bookingId,
+    propertySetupId: null,
+    propertyId: 'prop-1',
+    status: legalDocumentsStatus === 'verified'
+      && legalContractStatus === 'signed_manual'
+      && legalDepositStatus === 'paid_manual'
+      && legalMvdStatus === 'accepted_manual'
+      ? 'ready_for_checkin'
+      : 'incomplete',
+    documentsStatus: legalDocumentsStatus,
+    contractStatus: legalContractStatus,
+    depositStatus: legalDepositStatus,
+    mvdStatus: legalMvdStatus,
+    availabilityStatus: 'no_conflict',
+    blockers: [],
+    warnings: [],
+    safeSummary: 'ok',
+    nextAction: null,
+    lastCheckedAt: '2026-07-10T00:00:00.000Z',
+    metadata: {},
+    createdAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:00:00.000Z',
+  })),
 }));
 
 function buildLifecycleGates() {
@@ -191,6 +237,11 @@ describe('In-stay & Checkout Autopilot v1', () => {
     inspectionDone = false;
     depositReady = false;
     bookingClosed = false;
+    legalDocumentsStatus = 'verified';
+    legalContractStatus = 'signed_manual';
+    legalDepositStatus = 'paid_manual';
+    legalMvdStatus = 'accepted_manual';
+    recordOverrides = {};
   });
 
   it('returns not_checked_in when guest has not checked in', async () => {
@@ -340,6 +391,55 @@ describe('In-stay & Checkout Autopilot v1', () => {
 
     expect(status.status).toBe('closed');
     expect(lifecycle.completed.map((item) => item.gateKey)).toContain('booking_closed');
+  });
+
+  it('blocks booking close when documents are incomplete', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    depositReady = true;
+    legalDocumentsStatus = 'requested';
+    const { markBookingClosed, BookingClosePrerequisiteError } = await import('../instay-checkout-autopilot');
+
+    await expect(markBookingClosed(record.id)).rejects.toBeInstanceOf(BookingClosePrerequisiteError);
+    await expect(markBookingClosed(record.id)).rejects.toMatchObject({
+      missingPrerequisites: expect.arrayContaining([
+        expect.objectContaining({ key: 'documents_incomplete' }),
+      ]),
+    });
+    expect(lifecycle.completed.map((item) => item.gateKey)).not.toContain('booking_closed');
+  });
+
+  it('blocks booking close when deposit is incomplete', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    depositReady = true;
+    legalDepositStatus = 'pending';
+    const { markBookingClosed } = await import('../instay-checkout-autopilot');
+
+    await expect(markBookingClosed(record.id)).rejects.toMatchObject({
+      missingPrerequisites: expect.arrayContaining([
+        expect.objectContaining({ key: 'deposit_incomplete' }),
+      ]),
+    });
+    expect(lifecycle.completed.map((item) => item.gateKey)).not.toContain('booking_closed');
+  });
+
+  it('blocks booking close when required guest data is missing', async () => {
+    guestCheckedIn = true;
+    guestCheckedOut = true;
+    inspectionDone = true;
+    depositReady = true;
+    recordOverrides = { guestName: null };
+    const { markBookingClosed } = await import('../instay-checkout-autopilot');
+
+    await expect(markBookingClosed(record.id)).rejects.toMatchObject({
+      missingPrerequisites: expect.arrayContaining([
+        expect.objectContaining({ key: 'guest_name_missing' }),
+      ]),
+    });
+    expect(lifecycle.completed.map((item) => item.gateKey)).not.toContain('booking_closed');
   });
 
   it('does not create fallback for normal pending checkout', async () => {

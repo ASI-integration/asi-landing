@@ -2,8 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { checkBookingOverbookingRisk } from './availability-overbooking-protection';
 import { blockGate, completeGate, initializeLifecycleForBooking, markGateInProgress, skipGate } from './lifecycle';
-import { getBookingOpsRecord } from './repository';
-import type { BookingOpsCommunicationPurpose, BookingOpsRecord } from './types';
+import { getBookingOpsRecord, updateBookingOpsRecord } from './repository';
+import type {
+  BookingOpsCommunicationPurpose,
+  BookingOpsContractStatus,
+  BookingOpsDepositStatus,
+  BookingOpsDocumentsStatus,
+  BookingOpsMvdStatus,
+  BookingOpsRecord,
+} from './types';
 
 export const GUEST_DOCUMENT_STATUSES = [
   'not_requested', 'requested', 'partially_received', 'received', 'needs_review',
@@ -260,6 +267,63 @@ function mapReadinessRow(row: Record<string, unknown>): GuestLegalReadiness {
   };
 }
 
+function mapDocumentsStatusToBookingOps(status: GuestDocumentStatus): BookingOpsDocumentsStatus {
+  if (status === 'verified') return 'verified';
+  if (status === 'received' || status === 'partially_received') return 'received';
+  if (status === 'requested') return 'requested';
+  if (status === 'needs_review' || status === 'rejected' || status === 'blocked') return 'problem';
+  return 'not_started';
+}
+
+function mapContractStatusToBookingOps(status: ContractStatus): BookingOpsContractStatus {
+  if (status === 'signed_manual' || status === 'signed_provider_placeholder') return 'signed';
+  if (status === 'sent_for_signature_placeholder') return 'sent';
+  if (status === 'draft_ready') return 'prepared';
+  if (status === 'needs_review' || status === 'blocked') return 'problem';
+  return 'not_started';
+}
+
+function mapDepositStatusToBookingOps(status: DepositStatus): BookingOpsDepositStatus {
+  if (status === 'paid_manual' || status === 'paid_provider_placeholder' || status === 'waived_manual') return 'confirmed';
+  if (status === 'request_draft_ready' || status === 'requested_placeholder' || status === 'pending') return 'requested';
+  if (status === 'failed' || status === 'disputed' || status === 'blocked') return 'problem';
+  return 'not_started';
+}
+
+function mapMvdStatusToBookingOps(status: MvdStatus): BookingOpsMvdStatus {
+  if (status === 'not_required') return 'not_required';
+  if (status === 'submitted_manual' || status === 'submitted_provider_placeholder' || status === 'accepted_manual') return 'submitted';
+  if (status === 'draft_ready' || status === 'export_ready') return 'prepared';
+  if (status === 'rejected' || status === 'needs_review' || status === 'blocked') return 'problem';
+  return 'required';
+}
+
+export async function syncGuestLegalReadinessToBookingOpsRecord(
+  readiness: GuestLegalReadiness,
+): Promise<{ ok: boolean; changed: boolean; error?: string }> {
+  const record = await getBookingOpsRecord(readiness.bookingId);
+  if (!record) return { ok: false, changed: false, error: 'booking_not_found' };
+
+  const next = {
+    documentsStatus: mapDocumentsStatusToBookingOps(readiness.documentsStatus),
+    contractStatus: mapContractStatusToBookingOps(readiness.contractStatus),
+    depositStatus: mapDepositStatusToBookingOps(readiness.depositStatus),
+    mvdStatus: mapMvdStatusToBookingOps(readiness.mvdStatus),
+  };
+  const changed =
+    record.documentsStatus !== next.documentsStatus
+    || record.contractStatus !== next.contractStatus
+    || record.depositStatus !== next.depositStatus
+    || record.mvdStatus !== next.mvdStatus;
+
+  if (!changed) return { ok: true, changed: false };
+
+  const result = await updateBookingOpsRecord(record.id, next, { actorType: 'system' });
+  return result.ok
+    ? { ok: true, changed: true }
+    : { ok: false, changed: false, error: result.error };
+}
+
 async function syncLifecycle(bookingId: string, readiness: GuestLegalReadiness): Promise<void> {
   await initializeLifecycleForBooking(bookingId);
   if (readiness.documentsStatus === 'verified') await completeGate(bookingId, 'documents_verified', { source: 'guest_legal_execution_v1', manual: true });
@@ -326,6 +390,8 @@ export async function recomputeGuestLegalReadiness(bookingId: string, options: R
   if (error || !data) throw new Error(error?.message ?? 'Не удалось пересчитать готовность.');
   const readiness = mapReadinessRow(data as Record<string, unknown>);
   await syncLifecycle(record.id, readiness);
+  const bridge = await syncGuestLegalReadinessToBookingOpsRecord(readiness);
+  if (!bridge.ok) throw new Error(bridge.error ?? 'booking_ops_summary_sync_failed');
   await recordEvent(record.id, 'readiness_recomputed', readiness.status, readiness.safeSummary ?? 'Готовность пересчитана.', { blockerCount: readiness.blockers.length });
   return readiness;
 }
