@@ -143,8 +143,8 @@ jobs:
         run: |
           set -euo pipefail
           OUT="${{ steps.build_meta.outputs.artifact_file }}"
-          tar -tzf "$OUT" | grep -Fx 'scripts/ops-alert-scheduler.mjs'
-          tar -tzf "$OUT" | grep -Fx 'scripts/pm2-sync-ops-alert-scheduler.sh'
+          tar -tzf "$OUT" | grep -Fx './scripts/ops-alert-scheduler.mjs'
+          tar -tzf "$OUT" | grep -Fx './scripts/pm2-sync-ops-alert-scheduler.sh'
 
       - name: Artifact smoke (isolated local port)
         shell: bash
