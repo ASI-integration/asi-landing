@@ -118,6 +118,7 @@ jobs:
           cp scripts/ops-sync.runner.ts release/scripts/
           cp scripts/support-bot-live-acceptance.mjs release/scripts/
           cp scripts/support-bot-live-acceptance.runner.ts release/scripts/
+          cp scripts/ops-alert-scheduler.mjs release/scripts/
           cp tsconfig.json release/
           cp -R src release/
           cp tests/telegram-live-cases.ru.json release/tests/

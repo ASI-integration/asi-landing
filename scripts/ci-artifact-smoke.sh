@@ -50,6 +50,10 @@ fi
   echo "ERROR: missing scripts/check-location-pdf-chromium.mjs in artifact" >&2
   exit 1
 }
+[[ -f scripts/ops-alert-scheduler.mjs ]] || {
+  echo "ERROR: missing scripts/ops-alert-scheduler.mjs in artifact" >&2
+  exit 1
+}
 
 [[ -f scripts/communication-ops-live-acceptance.mjs ]] || {
   echo "ERROR: missing scripts/communication-ops-live-acceptance.mjs in artifact" >&2

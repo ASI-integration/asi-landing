@@ -28,6 +28,14 @@ export const BOOKING_OPS_EVENT_TYPES = [
   'guest_intake_submission_received',
   'guest_intake_validation_failed',
   'guest_intake_partially_completed',
+  'ops_alert_created',
+  'ops_alert_updated',
+  'ops_alert_escalated',
+  'ops_alert_acknowledged',
+  'ops_alert_resolved',
+  'sla_warning_triggered',
+  'sla_critical_triggered',
+  'turnover_deadlines_recalculated',
 ] as const;
 
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
@@ -101,6 +109,10 @@ const SAFE_METADATA_KEYS = new Set([
   'fallbackReason',
   'submissionSource',
   'validationStatus',
+  'alertId',
+  'alertCode',
+  'severity',
+  'sourceGate',
 ]);
 
 function text(value: unknown, maxLength = 500): string {
