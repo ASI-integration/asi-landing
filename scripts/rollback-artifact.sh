@@ -22,6 +22,10 @@ PM2_ONLY="${PM2_ONLY:-$APP_NAME}"
 log() { printf "\n[%s] %s\n" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/pm2-sync-ops-alert-scheduler.sh
+source "${SCRIPT_DIR}/pm2-sync-ops-alert-scheduler.sh"
+
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 require_cmd pm2
 require_cmd node
@@ -160,6 +164,8 @@ pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
 
 log "Starting PM2 (clean: stop→kill-port→delete→start→save)"
 pm2_clean_start "$PM2_ONLY" "/var/www/asi/current/ecosystem.config.cjs" "3000" || die "PM2 start aborted: port 3000 not free"
+
+pm2_sync_ops_alert_scheduler_rollback
 
 log "Resolved current symlink (readlink -f /var/www/asi/current):"
 readlink -f /var/www/asi/current || true

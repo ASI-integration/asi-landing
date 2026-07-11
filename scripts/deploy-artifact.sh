@@ -32,6 +32,10 @@ LIVE_ENV_FILE="${SHARED_DIR}/.env.production.live"
 log() { printf "\n[%s] %s\n" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/pm2-sync-ops-alert-scheduler.sh
+source "${SCRIPT_DIR}/pm2-sync-ops-alert-scheduler.sh"
+
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
 require_cmd tar
@@ -216,6 +220,49 @@ ensure_ops_admin_allowlist() {
   ensure_email_in_env_list OPS_ADMIN_EMAILS "$required_email"
 }
 
+# Persist BOOKING_OPS_ALERT_RUNNER_SECRET in shared env: generate only when absent.
+# Never logs the secret value. Never overwrites an existing non-empty value.
+ensure_ops_alert_runner_secret() {
+  local existing
+  existing="$(read_env_value BOOKING_OPS_ALERT_RUNNER_SECRET)"
+  if [[ -n "${existing:-}" ]]; then
+    log "BOOKING_OPS_ALERT_RUNNER_SECRET: present in shared env (unchanged)"
+    chmod 600 "$LIVE_ENV_FILE" 2>/dev/null || true
+    return 0
+  fi
+
+  local secret="${BOOKING_OPS_ALERT_RUNNER_SECRET:-}"
+  if [[ -z "${secret}" ]]; then
+    if command -v openssl >/dev/null 2>&1; then
+      secret="$(openssl rand -hex 32)"
+    else
+      secret="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
+    fi
+    log "BOOKING_OPS_ALERT_RUNNER_SECRET: generated and stored in shared env"
+  else
+    log "BOOKING_OPS_ALERT_RUNNER_SECRET: bootstrapped from deploy env into shared env"
+  fi
+
+  merge_env_kv BOOKING_OPS_ALERT_RUNNER_SECRET "$secret"
+  chmod 600 "$LIVE_ENV_FILE" 2>/dev/null || true
+}
+
+pm2_start_ops_alert_scheduler() {
+  local script_path="${CURRENT_LINK}/scripts/ops-alert-scheduler.mjs"
+  if [[ ! -f "$script_path" ]]; then
+    die "OPS alert scheduler missing at ${script_path}"
+  fi
+  log "PM2 OPS alert scheduler: ensure single process asi-ops-alert-scheduler (5m cadence)"
+  pm2 delete asi-ops-alert-scheduler >/dev/null 2>&1 || true
+  (
+    cd "$CURRENT_LINK"
+    pm2 start "$script_path" \
+      --name asi-ops-alert-scheduler \
+      --cwd "$CURRENT_LINK" \
+      --interpreter node
+  ) || die "Failed to start asi-ops-alert-scheduler"
+}
+
 read_git_sha_from_release_dir() {
   local dir="$1"
   node -e "
@@ -278,6 +325,7 @@ rollback_to() {
   log "PM2 status (before reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   pm2_clean_start "$PM2_ONLY" "3000" || die "PM2 start aborted: port 3000 not free"
+  pm2_sync_ops_alert_scheduler_rollback
   log "PM2 status (after reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   if [[ -n "${expect_sha:-}" ]]; then
@@ -399,6 +447,7 @@ merge_env_kv ASI_RELEASE_DEPLOYED_AT_ISO "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 merge_env_kv ASI_RELEASE_PATH "$RELEASE_DIR"
 merge_env_kv TWOGIS_CATALOG_API_KEY "${TWOGIS_CATALOG_API_KEY:-}"
 merge_env_kv GOOGLE_MAPS_SERVER_API_KEY "${GOOGLE_MAPS_SERVER_API_KEY:-}"
+ensure_ops_alert_runner_secret
 
 log "Linking env into release"
 ln -sfn "$LIVE_ENV_FILE" "${RELEASE_DIR}/.env.production.live"
@@ -429,8 +478,10 @@ ln -sfn "$RELEASE_DIR" "$SWAP_LINK"
 mv -Tf "$SWAP_LINK" "$CURRENT_LINK"
 unset SWAP_LINK
 
-log "Starting PM2 with direct Next command (single app: $PM2_ONLY)"
+log "Starting PM2 application and OPS alert scheduler (5 minute cadence)"
 pm2_clean_start "$PM2_ONLY" "3000" || die "PM2 start aborted: port 3000 not free"
+pm2_start_ops_alert_scheduler
+pm2 save
 
 log "Resolved current symlink (readlink -f /var/www/asi/current):"
 readlink -f /var/www/asi/current || true

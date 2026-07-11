@@ -9,6 +9,7 @@ import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntell
 import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
 import { LifecycleOrchestratorPanel } from '@/components/booking-ops/LifecycleOrchestratorPanel';
+import { OpsAlertsPanel } from '@/components/booking-ops/OpsAlertsPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1858,6 +1859,8 @@ function BookingOpsPageInner() {
           {message}
         </div>
       ) : null}
+
+      <OpsAlertsPanel />
 
       <PilotAutorunPanel scope="booking" initialRef={selectedRecord?.id ?? ''} />
 

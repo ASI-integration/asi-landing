@@ -1,0 +1,160 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (OPS v15.1 focused)
+        run: |
+          npx vitest run \
+            src/lib/booking-ops/__tests__/ops-alert-engine.test.ts \
+            src/app/api/internal/booking-ops/alerts/run/__tests__/route.test.ts
+
+      - name: Syntax check ops-alert-scheduler.mjs
+        run: node --check scripts/ops-alert-scheduler.mjs
+
+      - name: Syntax check deploy-artifact.sh
+        run: bash -n scripts/deploy-artifact.sh
+
+      - name: Syntax check rollback-artifact.sh
+        run: bash -n scripts/rollback-artifact.sh
+
+      - name: Syntax check pm2-sync-ops-alert-scheduler.sh
+        run: bash -n scripts/pm2-sync-ops-alert-scheduler.sh
+
+      - name: Syntax check ci-artifact-smoke.sh
+        run: bash -n scripts/ci-artifact-smoke.sh
+
+      - name: Build
+        run: npm run build
+
+      - name: Prune devDependencies for runtime bundle
+        run: npm prune --omit=dev
+
+      - name: Resolve artifact metadata
+        id: build_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          FULL="$(git rev-parse HEAD)"
+          echo "sha=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_file=asi-release-${FULL}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Create release artifact (.tgz)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.build_meta.outputs.sha }}"
+
+          rm -rf release
+          mkdir -p release
+
+          cp package.json package-lock.json next.config.js ecosystem.config.cjs release/
+          mkdir -p release/scripts release/tests
+          cp scripts/telegram-live-acceptance.mjs release/scripts/
+          cp scripts/check-location-pdf-chromium.mjs release/scripts/
+          cp scripts/verify-location-report-pdf-production.mjs release/scripts/
+          cp scripts/communication-ops-live-acceptance.mjs release/scripts/
+          cp scripts/communication-ops-live-acceptance.runner.ts release/scripts/
+          cp scripts/telegram-ops-live-acceptance.mjs release/scripts/
+          cp scripts/pilot-readiness-live-acceptance.mjs release/scripts/
+          cp scripts/pilot-readiness-live-acceptance.runner.ts release/scripts/
+          cp scripts/ops-sync.mjs release/scripts/
+          cp scripts/ops-sync.runner.ts release/scripts/
+          cp scripts/support-bot-live-acceptance.mjs release/scripts/
+          cp scripts/support-bot-live-acceptance.runner.ts release/scripts/
+          cp scripts/ops-alert-scheduler.mjs release/scripts/
+          cp scripts/pm2-sync-ops-alert-scheduler.sh release/scripts/
+          cp tsconfig.json release/
+          cp -R src release/
+          cp tests/telegram-live-cases.ru.json release/tests/
+          cp tests/location-report-production-cases.json release/tests/
+          if [ -d public ]; then cp -R public release/; fi
+          cp -R .next release/
+          cp -a node_modules release/
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const gitSha = (process.env.GIT_SHA_EXACT || '').trim();
+          const meta = {
+            gitSha,
+            builtAt: new Date().toISOString(),
+            workflowRunId: process.env.GITHUB_RUN_ID || null,
+            github: {
+              run_number: process.env.GITHUB_RUN_NUMBER || null,
+              workflow: process.env.GITHUB_WORKFLOW || null,
+              repository: process.env.GITHUB_REPOSITORY || null,
+            },
+            node: process.version,
+          };
+          fs.writeFileSync('release/release-meta.json', JSON.stringify(meta, null, 2) + '\n');
+          NODE
+        env:
+          GIT_SHA_EXACT: ${{ steps.build_meta.outputs.sha }}
+
+      - name: Tar release
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
+          tar -czf "$OUT" -C release .
+
+      - name: Verify scheduler files in artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
+          tar -tzf "$OUT" | grep -Fx './scripts/ops-alert-scheduler.mjs'
+          tar -tzf "$OUT" | grep -Fx './scripts/pm2-sync-ops-alert-scheduler.sh'
+
+      - name: Artifact smoke (isolated local port)
+        shell: bash
+        env:
+          EXPECT_SHA: ${{ steps.build_meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          OUT="${{ steps.build_meta.outputs.artifact_file }}"
+          chmod +x scripts/ci-artifact-smoke.sh
+          bash scripts/ci-artifact-smoke.sh "$OUT" 13077
+
+      - name: Whitespace check (git diff --check)
+        run: git diff --check
