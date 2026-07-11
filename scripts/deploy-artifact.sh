@@ -32,6 +32,10 @@ LIVE_ENV_FILE="${SHARED_DIR}/.env.production.live"
 log() { printf "\n[%s] %s\n" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/pm2-sync-ops-alert-scheduler.sh
+source "${SCRIPT_DIR}/pm2-sync-ops-alert-scheduler.sh"
+
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
 
 require_cmd tar
@@ -321,8 +325,7 @@ rollback_to() {
   log "PM2 status (before reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   pm2_clean_start "$PM2_ONLY" "3000" || die "PM2 start aborted: port 3000 not free"
-  pm2_start_ops_alert_scheduler
-  pm2 save || true
+  pm2_sync_ops_alert_scheduler_rollback
   log "PM2 status (after reload after rollback):"
   pm2 status "$PM2_ONLY" 2>/dev/null || pm2 status || true
   if [[ -n "${expect_sha:-}" ]]; then
