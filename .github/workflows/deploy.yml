@@ -119,6 +119,7 @@ jobs:
           cp scripts/support-bot-live-acceptance.mjs release/scripts/
           cp scripts/support-bot-live-acceptance.runner.ts release/scripts/
           cp scripts/ops-alert-scheduler.mjs release/scripts/
+          cp scripts/pm2-sync-ops-alert-scheduler.sh release/scripts/
           cp tsconfig.json release/
           cp -R src release/
           cp tests/telegram-live-cases.ru.json release/tests/
@@ -332,7 +333,7 @@ jobs:
 
           echo "Cleaning stale remote deploy temp artifacts..."
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
+            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh \"${REMOTE_TMP}\"/pm2-sync-ops-alert-scheduler.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
 
           echo "Cleaning old remote releases before artifact upload..."
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -s" <<'REMOTE_RELEASE_CLEANUP'
@@ -390,6 +391,7 @@ jobs:
 
           echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
           scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
+          scp "${SCP_OPTS[@]}" scripts/pm2-sync-ops-alert-scheduler.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh"
           scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/${ARTIFACT_FILE}"
 
           echo "Verifying artifact on VPS..."
@@ -420,7 +422,7 @@ jobs:
               chmod +x ${REMOTE_TMP}/asi-deploy-artifact.sh || true
               ASI_BASE_DIR=\"/var/www/asi\" bash ${REMOTE_TMP}/asi-deploy-artifact.sh \"${SHA}\" \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
-              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
+              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh ${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
               echo \"LIVE_SHA_EXPECTED=${SHA}\"
               curl -fsS http://127.0.0.1:3000/api/version
