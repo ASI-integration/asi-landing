@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { processInboundBookingRequest } from '@/lib/booking-ops/real-booking-intake-autopilot';
+import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     duplicateOfBookingId: typeof body.duplicateOfBookingId === 'string' ? body.duplicateOfBookingId : undefined,
     intakeEventId: typeof body.intakeEventId === 'string' ? body.intakeEventId : undefined,
   });
+
+  if (result.bookingId && result.intakeStatus !== 'duplicate') {
+    await recordAndProcessBookingEvent({
+      id: result.intakeId, bookingId: result.bookingId, type: 'booking.received', actorType: 'operator',
+      actorId: auth.session.email ?? auth.session.userId ?? null, source: `booking_intake:${source}`,
+      correlationId: result.intakeId, payload: { intakeStatus: result.intakeStatus },
+    });
+  }
 
   return NextResponse.json({ ok: true, result }, { status: 200 });
 }

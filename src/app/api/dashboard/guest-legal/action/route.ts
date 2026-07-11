@@ -19,6 +19,7 @@ import {
   recordGuestDocumentsReceived,
   requestGuestDocumentsDraft,
 } from '@/lib/booking-ops/guest-legal-deposit-mvd-execution';
+import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const meta = metadata(body.metadata);
   try {
     const readiness = await runAction(action, bookingId, body, meta);
+    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'guest_legal', payload: meta });
     return NextResponse.json({ ok: true, readiness });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Действие не выполнено.' }, { status: 400 });

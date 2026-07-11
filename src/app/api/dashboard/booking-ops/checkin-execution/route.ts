@@ -9,6 +9,7 @@ import {
   BOOKING_OPS_COMMUNICATION_CHANNELS,
   type BookingOpsCommunicationChannel,
 } from '@/lib/booking-ops/types';
+import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -100,6 +101,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       arrivalTime: body.arrivalTime ?? body.arrival_time,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
     });
+    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'checkin_execution', payload: { arrivalTime: body.arrivalTime ?? body.arrival_time ?? null } });
     return NextResponse.json({ ok: true, checkin });
   } catch (error) {
     if (error instanceof CheckinReadinessPrerequisiteError) {

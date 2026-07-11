@@ -10,6 +10,7 @@ import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
 import { LifecycleOrchestratorPanel } from '@/components/booking-ops/LifecycleOrchestratorPanel';
 import { OpsAlertsPanel } from '@/components/booking-ops/OpsAlertsPanel';
+import { WorkerAssignmentPanel } from '@/components/booking-ops/WorkerAssignmentPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
 import {
   BOOKING_OPS_CHECKIN_READINESS_STATUS_LABELS_RU,
@@ -1854,6 +1855,13 @@ function BookingOpsPageInner() {
         </div>
       </header>
 
+      <div className="flex flex-wrap gap-2 text-xs" aria-label="Типы действий">
+        <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-900">Автоматически</span>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">Нужно действие человека</span>
+        <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-900">Исключение</span>
+        <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-slate-700">Ручное управление</span>
+      </div>
+
       {message ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           {message}
@@ -2141,6 +2149,7 @@ function BookingOpsPageInner() {
               ) : null}
 
               <LifecycleOrchestratorPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
+              <WorkerAssignmentPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
 
               <PreCheckinControlCenterCard
                 readiness={preCheckin}

@@ -6,6 +6,7 @@ import {
   submitGuestIntake,
 } from '@/lib/booking-ops/guest-intake-inbound';
 import { GUEST_INTAKE_FIELD_LABELS_RU } from '@/lib/booking-ops/guest-intake-state';
+import { durableEventId, recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,17 @@ export async function POST(req: Request, context: RouteContext): Promise<NextRes
       { ok: false, message: result.error ?? 'Не удалось сохранить данные.' },
       { status },
     );
+  }
+
+  if (result.session.intakeStatus === 'completed') {
+    await recordAndProcessBookingEvent({
+      id: durableEventId('guest.data_submitted', result.record.id, result.session.id), bookingId: result.record.id,
+      objectId: result.record.propertyId, type: 'guest.data_submitted', actorType: 'guest', actorId: result.session.id,
+      source: 'guest_intake_web', correlationId: durableEventId('guest-intake', result.session.id), payload: { complete: true },
+    });
+  }
+  if (result.record.documentVerificationStatus === 'uploaded') {
+    await recordAndProcessBookingEvent({ id: durableEventId('guest.documents_uploaded', result.record.id, result.session.id), bookingId: result.record.id, objectId: result.record.propertyId, type: 'guest.documents_uploaded', actorType: 'guest', actorId: result.session.id, source: 'guest_intake_web', correlationId: durableEventId('guest-intake', result.session.id), payload: { uploaded: true } });
   }
 
   return NextResponse.json({

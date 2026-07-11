@@ -18,6 +18,7 @@ import {
   verifyGuestDocuments,
   waiveDeposit,
 } from '@/lib/booking-ops/legal-payment-autopilot';
+import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -112,6 +113,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   try {
     const status = await runAction(action, booking.id, body, metadata);
+    await emitLifecycleForAction({ bookingId: booking.id, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'legal_payment', payload: metadata });
     return NextResponse.json({ ok: true, status });
   } catch (error) {
     return NextResponse.json(

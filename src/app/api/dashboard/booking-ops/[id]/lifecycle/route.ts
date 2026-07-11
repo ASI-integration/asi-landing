@@ -6,6 +6,7 @@ import {
   getLifecycleStatus,
   syncLifecycleFromBookingOpsRecord,
 } from '@/lib/booking-ops/lifecycle';
+import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,6 +62,11 @@ export async function PATCH(req: Request, context: RouteContext): Promise<NextRe
       { status: 400 },
     );
   }
+
+  await recordAndProcessBookingEvent({
+    bookingId: record.id, type: 'manual.override', actorType: 'operator', actorId: auth.session.email ?? auth.session.userId ?? null,
+    source: 'booking_ops_lifecycle_override', payload: { reason: String(body.reason ?? body.note ?? ''), gateKey: body.gateKey ?? body.gate_key, previousState: 'unknown', resultingState: body.status, timestamp: new Date().toISOString() },
+  });
 
   const lifecycle = await getLifecycleStatus(record.id);
   return NextResponse.json({ ok: true, gate: result.gate, lifecycle: lifecycle.lifecycle });
