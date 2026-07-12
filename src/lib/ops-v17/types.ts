@@ -1,4 +1,4 @@
-export const onboardingSteps = ['business', 'owner', 'properties', 'units', 'operations', 'channel_manager', 'communications', 'legal_payments', 'staff', 'verification', 'launch'] as const;
+export const onboardingSteps = ['business', 'owner', 'properties', 'units', 'operations', 'channel_manager', 'reservations', 'communications', 'legal_payments', 'staff', 'verification', 'launch'] as const;
 export type OnboardingStep = typeof onboardingSteps[number];
 
 export type LaunchStatus = 'draft' | 'collecting_data' | 'needs_verification' | 'blocked' | 'ready_for_pilot' | 'pilot_active' | 'degraded';
@@ -17,6 +17,7 @@ export type OnboardingData = {
   units?: UnitDraft[];
   operations?: { checkInTime?: string; checkOutTime?: string; cleaningRule?: string; linenRule?: string; inspectionRule?: string; maintenanceRule?: string };
   channelManager?: { provider?: string; credentialsRef?: string; snapshotReady?: boolean; status?: ChannelLaunchStatus };
+  reservations?: { choice?: 'channel_manager' | 'csv' | 'manual' | 'skip'; completed?: boolean; skippedAt?: string; criticalConflicts?: number; mappingsComplete?: boolean; ledgerInitialized?: boolean; directIntakeReady?: boolean };
   communications?: { guestChannel?: string; workerChannel?: string; scopedPilotSendingEnabled?: boolean };
   legalPayments?: { legalMode?: string; depositMode?: string; mvdMode?: string };
   staff?: StaffDraft[];
@@ -38,5 +39,12 @@ export interface ChannelManagerLiveAdapter {
   incrementalSync(checkpoint?: string): Promise<AdapterBatch>;
   ingestWebhook?(event: unknown, idempotencyKey: string): Promise<{ accepted: boolean }>;
   health(): Promise<{ status: ChannelLaunchStatus; checkedAt: string; message?: string }>;
+  upsertReservation(record: unknown, idempotencyKey: string): Promise<{ reservationId: string; created: boolean }>;
+  cancelReservation(externalReservationId: string, idempotencyKey: string): Promise<{ changed: boolean }>;
+  importReservations(checkpoint?: string): Promise<AdapterBatch>;
+  importAvailabilityBlocks(checkpoint?: string): Promise<AdapterBatch>;
+  reconcileReservation(externalReservationId: string): Promise<{ status: string; reservationId?: string }>;
+  readSyncCheckpoint(stream: string): Promise<string | undefined>;
+  saveSyncCheckpoint(stream: string, checkpoint: string, idempotencyKey: string): Promise<void>;
 }
 export type AdapterBatch = { records: unknown[]; checkpoint: string; idempotencyKey: string; conflicts?: { key: string; reason: string }[]; retryAfterMs?: number };
