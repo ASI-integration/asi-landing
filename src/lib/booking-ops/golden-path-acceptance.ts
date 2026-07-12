@@ -21,7 +21,7 @@ export type GoldenPathReport = {
   finalLifecycleStage: string | null; domainEvents: number;
   workerTasks: Record<string, Record<string, number>>; readinessResult: string | null;
   blockers: string[]; communicationIntents: number; communicationDrafts: number;
-  realMessagesSent: 0; externalCalls: 0; processingErrors: Array<{ type: string; error: string }>;
+  realMessagesSent: number; externalCalls: 0; processingErrors: Array<{ type: string; error: string }>;
   idempotency: { deterministicEventIds: true; duplicateEvents: number; changed: boolean };
   messagingDisabled: true; otaCallsDisabled: true; paymentCallsDisabled: true;
   missingPrerequisites: string[]; proposedEvents: string[]; proposedWorkerTasks: string[];
@@ -87,11 +87,12 @@ function plan(row: ReservationRow, stage: string | null, missing: string[]): Gol
 export async function runGoldenPathAcceptance(input: { identifier: string; accountId: string; actorId: string; dryRun?: boolean; confirm?: boolean; featureEnabled?: boolean }): Promise<GoldenPathReport> {
   const row = await loadReservation(input.identifier, input.accountId);
   const before = await getBookingLifecycleSummary(row.id);
-  const missing = [...new Set([...before.blockers, !row.property_id ? 'property' : null, !isAcceptanceSafe(row.reservation_metadata) ? 'acceptance_safe_marker' : null].filter((x): x is string => Boolean(x)))];
+  const hardMissing = [!row.property_id ? 'property' : null, !isAcceptanceSafe(row.reservation_metadata) ? 'acceptance_safe_marker' : null].filter((x): x is string => Boolean(x));
+  const missing = [...new Set([...before.blockers, ...hardMissing])];
   if (input.dryRun !== false) return plan(row, before.stage, missing);
   if (input.confirm !== true) throw new Error('explicit_confirmation_required');
   if (!input.featureEnabled) throw new Error('golden_path_feature_disabled');
-  if (!isAcceptanceSafe(row.reservation_metadata)) throw new Error('reservation_not_acceptance_safe');
+  if (hardMissing.length > 0) throw new Error(`golden_path_prerequisites_missing:${hardMissing.join(',')}`);
 
   const steps: GoldenPathStep[] = [];
   let duplicateEvents = 0;
@@ -135,6 +136,7 @@ export async function runGoldenPathAcceptance(input: { identifier: string; accou
     finalLifecycleStage: after.stage, domainEvents: after.domainEventCount, workerTasks: tasks,
     readinessResult: after.readiness, blockers: after.blockers, communicationIntents: communications.intents,
     communicationDrafts: communications.drafts, processingErrors: after.processingErrors.map((x) => ({ type: x.type, error: String(x.error) })),
+    realMessagesSent: communications.realSends,
     idempotency: { deterministicEventIds: true, duplicateEvents, changed: duplicateEvents !== EVENT_TYPES.length },
     steps, overall: completed ? 'PASS' : 'FAIL', missingPrerequisites: after.blockers,
   };

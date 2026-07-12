@@ -43,11 +43,18 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Tests (OPS v15.1 focused)
+      - name: Tests (Booking Ops focused regression coverage)
         run: |
           npx vitest run \
             src/lib/booking-ops/__tests__/ops-alert-engine.test.ts \
-            src/app/api/internal/booking-ops/alerts/run/__tests__/route.test.ts
+            src/app/api/internal/booking-ops/alerts/run/__tests__/route.test.ts \
+            src/lib/booking-ops/__tests__/golden-path-acceptance.test.ts \
+            src/lib/booking-ops/__tests__/lifecycle.test.ts \
+            src/lib/booking-ops/__tests__/lifecycle-orchestrator.test.ts \
+            src/lib/booking-ops/__tests__/lifecycle-entry-adapter.test.ts \
+            src/lib/booking-ops/__tests__/lifecycle-autopilot.test.ts \
+            src/app/api/dashboard/booking-ops/lifecycle-orchestrator/__tests__/route.test.ts \
+            src/lib/reservations/__tests__/visibility-hotfix.test.ts
 
       - name: Syntax check ops-alert-scheduler.mjs
         run: node --check scripts/ops-alert-scheduler.mjs
