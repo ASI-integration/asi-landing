@@ -28,6 +28,7 @@ import {
   createAvailabilityHold,
   type AvailabilityConflictStatus,
 } from './availability-overbooking-protection';
+import { durableEventId, recordAndProcessBookingEvent } from './lifecycle-autopilot-service';
 
 export const INBOUND_BOOKING_SOURCES = [
   'web',
@@ -404,9 +405,10 @@ function toCreateInput(
 export async function findOrCreateBookingFromInbound(
   input: NormalizedInboundBookingRequest,
   source: InboundBookingSource,
-): Promise<{ record: BookingOpsRecord; created: boolean }> {
+): Promise<{ record: BookingOpsRecord; created: boolean; guestDataBecameComplete: boolean }> {
   const existing = await findMatchingBookingRecord(input);
   if (existing) {
+    const wasGuestDataComplete = hasCompleteGuestData(existing);
     const patch: Record<string, unknown> = {};
     if (!existing.guestPhone && input.guestPhone) patch.guestPhone = input.guestPhone;
     if (!existing.guestEmail && input.guestEmail) patch.guestEmail = input.guestEmail;
@@ -417,16 +419,24 @@ export async function findOrCreateBookingFromInbound(
     if (!existing.propertyLabel && input.propertyLabel) patch.propertyLabel = input.propertyLabel;
     if (Object.keys(patch).length > 0) {
       const updated = await updateBookingOpsRecord(existing.id, patch, { actorType: 'system' });
-      if (updated.ok && updated.record) return { record: updated.record, created: false };
+      if (updated.ok && updated.record) return {
+        record: updated.record,
+        created: false,
+        guestDataBecameComplete: !wasGuestDataComplete && hasCompleteGuestData(updated.record),
+      };
     }
-    return { record: existing, created: false };
+    return { record: existing, created: false, guestDataBecameComplete: false };
   }
 
   const result = await createBookingOpsRecord(toCreateInput(input, source), { actorType: 'system' });
   if (!result.ok || !result.record) {
     throw new Error(result.error ?? 'booking_create_failed');
   }
-  return { record: result.record, created: true };
+  return { record: result.record, created: true, guestDataBecameComplete: false };
+}
+
+function hasCompleteGuestData(record: Pick<BookingOpsRecord, 'guestName' | 'guestPhone' | 'guestEmail' | 'guestTelegram'>): boolean {
+  return Boolean(record.guestName?.trim() && (record.guestPhone?.trim() || record.guestEmail?.trim() || record.guestTelegram?.trim()));
 }
 
 export async function attachBookingToOwnerProperty(
@@ -891,6 +901,7 @@ export async function processInboundBookingRequest(
     const { guestId } = await findOrCreateGuestFromInbound(normalized);
     let record: BookingOpsRecord;
     let created = false;
+    let guestDataBecameComplete = false;
 
     if (options?.action === 'attach_property' && options.intakeEventId) {
       const status = await getInboundBookingIntakeStatus({ intakeId: options.intakeEventId });
@@ -917,6 +928,7 @@ export async function processInboundBookingRequest(
       const bookingResult = await findOrCreateBookingFromInbound(normalized, source);
       record = bookingResult.record;
       created = bookingResult.created;
+      guestDataBecameComplete = bookingResult.guestDataBecameComplete;
 
       if (normalized.ownerId || normalized.propertyId) {
         const attached = await attachBookingToOwnerProperty(record.id, {
@@ -981,6 +993,33 @@ export async function processInboundBookingRequest(
         availabilityStatus,
       },
     });
+
+    const correlationId = durableEventId('real_booking_intake', event.id);
+    if (created) {
+      await recordAndProcessBookingEvent({
+        id: durableEventId(event.id, 'booking.received'),
+        bookingId: record.id,
+        objectId: record.propertyId,
+        type: 'booking.received',
+        actorType: 'system',
+        source: 'real_booking_intake',
+        correlationId,
+        causationId: null,
+        payload: { intakeEventId: event.id, intakeSource: source },
+      });
+    } else if (guestDataBecameComplete) {
+      await recordAndProcessBookingEvent({
+        id: durableEventId(event.id, 'guest.data_submitted'),
+        bookingId: record.id,
+        objectId: record.propertyId,
+        type: 'guest.data_submitted',
+        actorType: 'system',
+        source: 'real_booking_intake',
+        correlationId,
+        causationId: null,
+        payload: { intakeEventId: event.id, intakeSource: source, complete: true },
+      });
+    }
 
     return {
       intakeId: event.id,

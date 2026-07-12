@@ -10,6 +10,7 @@ const {
   syncBookingOpsTasksForRecordId,
   getLifecycleStatus,
   canAutoSendCommunicationIntent,
+  recordAndProcessBookingEvent,
 } = vi.hoisted(() => ({
   createBookingOpsRecord: vi.fn(),
   getBookingOpsRecord: vi.fn(),
@@ -20,6 +21,7 @@ const {
   syncBookingOpsTasksForRecordId: vi.fn(),
   getLifecycleStatus: vi.fn(),
   canAutoSendCommunicationIntent: vi.fn(),
+  recordAndProcessBookingEvent: vi.fn(),
 }));
 
 import {
@@ -114,6 +116,10 @@ vi.mock('../lifecycle', () => ({ getLifecycleStatus }));
 vi.mock('../events', () => ({
   recordBookingOpsEvent: vi.fn(async () => undefined),
 }));
+vi.mock('../lifecycle-autopilot-service', () => ({
+  durableEventId: (...parts: string[]) => `deterministic:${parts.join(':')}`,
+  recordAndProcessBookingEvent,
+}));
 vi.mock('../communication-orchestrator', () => ({
   listBookingOpsCommunicationsForRecord: vi.fn(async () => ({ ok: true, communications: [] })),
 }));
@@ -166,6 +172,7 @@ describe('Real Booking Intake Autopilot v1', () => {
       actual_send_enabled: false,
       policy_decision_id: null,
     });
+    recordAndProcessBookingEvent.mockResolvedValue({ eventId: 'domain-event-1', processed: true, duplicate: false });
   });
 
   it('normalizes web and telegram inbound payloads', () => {
@@ -225,6 +232,15 @@ describe('Real Booking Intake Autopilot v1', () => {
     expect(result.intakeStatus).toBe('processed');
     expect(initializeCheckinExecutionBaseline).toHaveBeenCalledWith('booking-ops-intake-1');
     expect(initializeInStayCheckoutBaseline).toHaveBeenCalledWith('booking-ops-intake-1');
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledTimes(1);
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({
+      id: expect.stringContaining('booking.received'),
+      bookingId: 'booking-ops-intake-1',
+      objectId: 'OBJ-1',
+      type: 'booking.received',
+      actorType: 'system',
+      source: 'real_booking_intake',
+    }));
   });
 
   it('duplicate inbound request does not create duplicate booking', async () => {
@@ -241,6 +257,18 @@ describe('Real Booking Intake Autopilot v1', () => {
     const second = await process(payload, 'web');
     expect(second.intakeStatus).toBe('duplicate');
     expect(createBookingOpsRecord).toHaveBeenCalledTimes(1);
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('existing booking emits guest.data_submitted only on incomplete-to-complete transition', async () => {
+    const incomplete = { ...bookingRecord, guestName: 'Guest', guestPhone: null, guestEmail: null, guestTelegram: null };
+    getBookingOpsRecord.mockResolvedValueOnce(incomplete);
+    updateBookingOpsRecord.mockResolvedValueOnce({ ok: true, record: { ...incomplete, guestPhone: '+79990000001' } });
+    tables.booking_ops_records.push({ id: incomplete.id, guest_name: incomplete.guestName, property_id: 'OBJ-1' });
+    const { processInboundBookingRequest: process } = await import('../real-booking-intake-autopilot');
+    await process({ guestName: 'Guest', guestPhone: '+79990000001', propertyId: 'OBJ-1', externalSourceId: 'sync-complete-1' }, 'web');
+    expect(recordAndProcessBookingEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'guest.data_submitted', source: 'real_booking_intake' }));
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'booking.received' }));
   });
 
   it('duplicate partial telegram request does not create duplicate booking', async () => {

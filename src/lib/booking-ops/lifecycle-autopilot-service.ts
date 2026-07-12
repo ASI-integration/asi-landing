@@ -70,7 +70,13 @@ export async function recordAndProcessBookingEvent(input: RecordEventInput) {
   });
   if (insert.error?.code === '23505') return { eventId, processed: false, duplicate: true };
   if (insert.error) throw new Error(insert.error.message);
-  return { eventId, ...(await processBookingDomainEvent(eventId)) };
+  try {
+    return { eventId, ...(await processBookingDomainEvent(eventId)) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'event_processing_failed';
+    await supabase.from('booking_ops_domain_events').update({ processing_error: message }).eq('id', eventId);
+    throw error;
+  }
 }
 
 export async function recoverUnprocessedBookingEvents(limit = 100) {
@@ -82,4 +88,41 @@ export async function recoverUnprocessedBookingEvents(limit = 100) {
     catch (error) { errors.push(error instanceof Error ? error.message : 'event_processing_failed'); }
   }
   return { evaluated: result.data?.length ?? 0, processed, errors };
+}
+
+export async function bootstrapBookingLifecycle(input: { bookingId: string; objectId?: string | null; actorId?: string | null }) {
+  const id = durableEventId('ops-v16-bootstrap', input.bookingId, 'booking.received');
+  return recordAndProcessBookingEvent({
+    id,
+    bookingId: input.bookingId,
+    objectId: input.objectId ?? null,
+    type: 'booking.received',
+    actorType: 'system',
+    actorId: input.actorId ?? null,
+    source: 'ops_v16_admin_bootstrap',
+    correlationId: durableEventId('ops-v16-bootstrap', input.bookingId),
+    causationId: null,
+    payload: { bootstrap: true, messagingDisabled: true },
+  });
+}
+
+export async function getBookingLifecycleSummary(bookingId: string) {
+  const [events, state, tasks, errors] = await Promise.all([
+    supabase.from('booking_ops_domain_events').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId),
+    supabase.from('booking_ops_autopilot_states').select('stage,state,last_event_id,updated_at').eq('booking_id', bookingId).maybeSingle(),
+    supabase.from('booking_ops_worker_tasks').select('id', { count: 'exact', head: true }).eq('booking_id', bookingId),
+    supabase.from('booking_ops_domain_events').select('id,event_type,processing_error,created_at').eq('booking_id', bookingId).not('processing_error', 'is', null).order('created_at', { ascending: false }).limit(20),
+  ]);
+  for (const result of [events, state, tasks, errors]) if (result.error) throw new Error(result.error.message);
+  const lifecycle = state.data?.state as LifecycleState | undefined;
+  return {
+    domainEventCount: events.count ?? 0,
+    stage: state.data?.stage ?? null,
+    readiness: lifecycle?.readiness ?? null,
+    blockers: lifecycle?.blockers ?? [],
+    workerTaskCount: tasks.count ?? 0,
+    lastProcessedEvent: state.data?.last_event_id ?? null,
+    processingErrors: (errors.data ?? []).map((row) => ({ id: row.id, type: row.event_type, error: row.processing_error, createdAt: row.created_at })),
+    updatedAt: state.data?.updated_at ?? null,
+  };
 }

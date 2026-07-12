@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
+import { durableEventId, recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 import { auditWorkerLinkAction } from '@/lib/booking-ops/secure-worker-links';
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, context: { params: { token: st
   if (updated.error) return NextResponse.json({ ok: false, error: updated.error.message }, { status: 500 });
   const role = String(loaded.task.assigned_role);
   const eventType = action === 'complete' ? ({ cleaner: 'cleaner.task_completed', linen_worker: 'linen.task_completed', consumables: 'consumables.task_completed', inspector: 'inspection.completed', maintenance_technician: 'maintenance.task_completed' }[role] ?? 'worker.task_completed') : action === 'report_issue' ? 'damage.reported' : action === 'start' ? `${role}.task_started` : `${role}.task_updated`;
-  await recordAndProcessBookingEvent({ bookingId: String(loaded.task.booking_id), objectId: loaded.task.object_id ? String(loaded.task.object_id) : null, type: eventType, actorType: loaded.link.actor_type, actorId: String(loaded.task.id), source: 'secure_task_workspace', payload: { taskId: loaded.task.id, action } });
+  await recordAndProcessBookingEvent({ id: durableEventId('secure_task_workspace', String(loaded.task.id), action), bookingId: String(loaded.task.booking_id), objectId: loaded.task.object_id ? String(loaded.task.object_id) : null, type: eventType, actorType: loaded.link.actor_type, actorId: String(loaded.task.id), source: 'secure_task_workspace', correlationId: durableEventId('worker_task', String(loaded.task.id)), payload: { taskId: loaded.task.id, action } });
   const auditAction = action === 'start' ? 'started' : action === 'report_issue' ? 'issue_reported' : action === 'complete' ? 'completed' : 'updated';
   await auditWorkerLinkAction({ linkId: String(loaded.link.id), taskId: String(loaded.task.id), bookingId: String(loaded.task.booking_id), action: auditAction, actorType: String(loaded.link.actor_type), actorId: String(loaded.task.id) });
   return NextResponse.json({ ok: true, task: updated.data });
