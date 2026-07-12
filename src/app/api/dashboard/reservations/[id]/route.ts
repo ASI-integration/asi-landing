@@ -3,20 +3,19 @@ import { requireCrmOperatorSession, requireOpsAdminSession } from '@/lib/crm/api
 import { updateBookingOpsRecord } from '@/lib/booking-ops/repository';
 import { supabase } from '@/lib/supabase';
 import { auditReservationMutation, getUnifiedAvailability } from '@/lib/reservations/ledger';
-
-const accountId = (session: { userId?: string | null }) => session.userId ?? '';
+import { resolveReservationAccess } from '@/lib/reservations/access';
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireCrmOperatorSession(); if ('error' in auth) return auth.error;
-  const { id } = await context.params;
-  const result = await supabase.from('booking_ops_records').select('*,reservation_source_links(*)').eq('id', id).eq('account_id', accountId(auth.session)).maybeSingle();
+  const { id } = await context.params; const access = await resolveReservationAccess(auth.session);
+  const result = await supabase.from('booking_ops_records').select('*,reservation_source_links(*)').eq('id', id).eq('account_id', access.accountId).maybeSingle();
   if (result.error) return NextResponse.json({ ok: false, message: result.error.message }, { status: 400 });
   return result.data ? NextResponse.json({ ok: true, reservation: result.data }) : NextResponse.json({ ok: false, message: 'not_found' }, { status: 404 });
 }
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireOpsAdminSession(); if ('error' in auth) return auth.error;
-  const { id } = await context.params; const account = accountId(auth.session);
+  const { id } = await context.params; const access = await resolveReservationAccess(auth.session); const account = access.accountId;
   const scoped = await supabase.from('booking_ops_records').select('id,property_id,unit_id,check_in_at,check_out_at,guest_count,payment_status,deposit_status,notes').eq('id', id).eq('account_id', account).maybeSingle();
   if (!scoped.data) return NextResponse.json({ ok: false, message: 'not_found' }, { status: 404 });
   const body = await req.json() as Record<string, unknown>;
@@ -29,6 +28,6 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   const result = await updateBookingOpsRecord(id, { propertyId: body.propertyId as string | undefined, guestName: body.guestName as string | undefined, guestPhone: body.guestPhone as string | undefined, guestEmail: body.guestEmail as string | undefined, guestTelegram: body.guestTelegram as string | undefined, checkInAt: body.checkIn as string | undefined, checkOutAt: body.checkOut as string | undefined, guestCount: body.guestCount as number | undefined, notes: body.notes as string | undefined, paymentStatus: body.paymentStatus as string | undefined, depositStatus: body.depositStatus as never }, { actorType: 'admin' });
   if (!result.ok) return NextResponse.json({ ok: false, message: result.error }, { status: 400 });
   if (body.unitId !== undefined) { const unit = await supabase.from('booking_ops_records').update({ unit_id: unitId, updated_at: new Date().toISOString() }).eq('id', id).eq('account_id', account); if (unit.error) return NextResponse.json({ ok: false, message: unit.error.message }, { status: 400 }); }
-  await auditReservationMutation({ accountId: account, actorId: auth.session.userId!, reservationId: id, action: 'reservation_updated', before: scoped.data, after: { propertyId, unitId, checkIn, checkOut, guestCount: body.guestCount ?? scoped.data.guest_count, paymentStatus: body.paymentStatus ?? scoped.data.payment_status, depositStatus: body.depositStatus ?? scoped.data.deposit_status, notesChanged: body.notes !== undefined } });
+  await auditReservationMutation({ accountId: account, actorId: access.actorId, reservationId: id, action: 'reservation_updated', before: scoped.data, after: { propertyId, unitId, checkIn, checkOut, guestCount: body.guestCount ?? scoped.data.guest_count, paymentStatus: body.paymentStatus ?? scoped.data.payment_status, depositStatus: body.depositStatus ?? scoped.data.deposit_status, notesChanged: body.notes !== undefined } });
   return NextResponse.json({ ok: true, reservation: result.record });
 }
