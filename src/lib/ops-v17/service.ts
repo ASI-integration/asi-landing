@@ -71,8 +71,17 @@ export async function activatePilot(accountId: string, actorId: string) {
 export async function bootstrapPilot(input: { accountId: string; actorId: string; confirm: boolean }) {
   const workspace = await getWorkspace(input.accountId);
   if (!workspace) throw new Error('onboarding_not_found');
-  const preview = { accountId: input.accountId, modules: workspace.modules.filter((m) => m.status !== 'initialized').map((m) => m.key), messagesWillBeSent: false };
+  const records = await supabase.from('booking_ops_records').select('id,account_id,booking_id,ota_source,property_id,check_in_at,check_out_at,guest_phone,guest_email,guest_telegram,source_type,asi_reference').or(`account_id.eq.${input.accountId},account_id.is.null`).limit(500);
+  if (records.error) throw new Error(records.error.message);
+  const ambiguous = (records.data ?? []).filter((r) => !r.property_id || !r.check_in_at || !r.check_out_at || !(r.guest_phone || r.guest_email || r.guest_telegram));
+  const eligible = (records.data ?? []).filter((r) => !ambiguous.some((a) => a.id === r.id));
+  const preview = { accountId: input.accountId, modules: workspace.modules.filter((m) => m.status !== 'initialized').map((m) => m.key), inspectedRecords: records.data?.length ?? 0, eligibleRecords: eligible.length, ambiguousRecords: ambiguous.map((r) => ({ id: r.id, reference: r.asi_reference ?? null, missing: [!r.property_id && 'property', !r.check_in_at && 'check_in', !r.check_out_at && 'check_out', !(r.guest_phone || r.guest_email || r.guest_telegram) && 'guest_contact'].filter(Boolean) })), messagesWillBeSent: false };
   if (!input.confirm) return { dryRun: true, preview };
+  for (const record of eligible) {
+    const saved = await supabase.from('booking_ops_records').update({ account_id: input.accountId, source_type: record.source_type || 'manual', source_provider: record.ota_source || null, sync_status: record.booking_id ? 'imported' : 'local_only', created_by_actor: record.account_id ? undefined : input.actorId }).eq('id', record.id).or(`account_id.eq.${input.accountId},account_id.is.null`);
+    if (saved.error) throw new Error(saved.error.message);
+    if (record.booking_id) { const link = await supabase.from('reservation_source_links').upsert({ id: randomUUID(), account_id: input.accountId, booking_ops_record_id: record.id, provider: record.ota_source || 'legacy', external_reservation_id: record.booking_id, source_status: 'seen', metadata: { bootstrap: true }, last_seen_at: new Date().toISOString() }, { onConflict: 'account_id,provider,external_reservation_id' }); if (link.error) throw new Error(link.error.message); }
+  }
   const modules = await synchronizeModules(workspace.onboarding.id, workspace.onboarding.data, input.actorId);
   await audit(workspace.onboarding.id, 'single_pilot_bootstrap', input.actorId, { preview, confirmed: true, messagesSent: false });
   return { dryRun: false, preview, modules };

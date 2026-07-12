@@ -8,6 +8,7 @@ const required: Record<OnboardingStep, (data: OnboardingData) => string[]> = {
   units: (d) => d.units?.length && d.units.every((u) => u.name && u.propertyKey) ? [] : ['Помещения каждого объекта'],
   operations: (d) => [!d.operations?.checkInTime && 'Время заезда', !d.operations?.checkOutTime && 'Время выезда', !d.operations?.cleaningRule && 'Правила уборки'].filter(Boolean) as string[],
   channel_manager: (d) => d.channelManager?.provider && (d.channelManager.credentialsRef || d.channelManager.snapshotReady) ? [] : ['Подключение менеджера каналов или файл для импорта'],
+  reservations: (d) => d.reservations?.completed || d.reservations?.choice === 'skip' ? [] : ['Импортируйте существующие брони или явно пропустите этот шаг'],
   communications: (d) => d.communications?.guestChannel && d.communications?.workerChannel ? [] : ['Каналы связи с гостями и сотрудниками'],
   legal_payments: (d) => d.legalPayments?.legalMode && d.legalPayments?.depositMode && d.legalPayments?.mvdMode ? [] : ['Правила документов, депозита и МВД'],
   staff: (d) => d.staff?.length && d.staff.every((s) => s.name && s.role && s.contact && s.propertyKeys?.length) ? [] : ['Сотрудники, роли, контакты и объекты'],
@@ -27,7 +28,7 @@ export function onboardingProgress(data: OnboardingData) {
 }
 
 const moduleRequirements: Record<ModuleKey, OnboardingStep[]> = {
-  owner_setup: ['business', 'owner'], property_setup: ['properties'], object_readiness: ['properties', 'units', 'operations'], channel_manager: ['channel_manager'], channel_publication: ['properties', 'units', 'channel_manager'], pricing: ['properties', 'units'], availability: ['units', 'channel_manager'], booking_intake: ['properties', 'communications'], lifecycle_v16: ['operations', 'staff'], communication_policies: ['communications', 'legal_payments'], sla_alerts: ['operations', 'staff'], checkin_checkout: ['operations', 'legal_payments'], worker_roles: ['staff'], task_templates: ['operations', 'staff'],
+  owner_setup: ['business', 'owner'], property_setup: ['properties'], object_readiness: ['properties', 'units', 'operations'], channel_manager: ['channel_manager'], channel_publication: ['properties', 'units', 'channel_manager'], pricing: ['properties', 'units'], availability: ['units', 'reservations'], booking_intake: ['properties', 'reservations', 'communications'], lifecycle_v16: ['operations', 'staff'], communication_policies: ['communications', 'legal_payments'], sla_alerts: ['operations', 'staff'], checkin_checkout: ['operations', 'legal_payments'], worker_roles: ['staff'], task_templates: ['operations', 'staff'],
 };
 
 export function initializeModules(onboardingId: string, data: OnboardingData, existing: ModuleState[] = []): ModuleState[] {
@@ -57,9 +58,13 @@ export function computeLaunchReadiness(data: OnboardingData, modules: ModuleStat
   const issues = verification.filter((v) => v.status === 'issue' || v.reinspectionRequired);
   const blockingItems: string[] = [...Object.values(progress.missing).flatMap((items) => items ?? []), ...issues.filter((v) => v.blocking !== false).map((v) => `Не решена проблема проверки: ${v.key}`)];
   const warnings = issues.filter((v) => v.blocking === false).map((v) => `Требует внимания: ${v.key}`);
+  if ((data.reservations?.criticalConflicts ?? 0) > 0) blockingItems.push('Не устранены критические пересечения броней');
+  if (data.reservations?.mappingsComplete === false) blockingItems.push('Не все брони связаны с объектами и помещениями');
+  if (!data.reservations?.ledgerInitialized && data.reservations?.choice !== 'skip') blockingItems.push('Единый календарь ещё не подготовлен');
+  if (!data.reservations?.directIntakeReady) blockingItems.push('Прямое добавление брони ещё не готово');
   const initializedModules = modules.filter((m) => m.status === 'initialized').map((m) => m.key);
   const channelManagerReady = data.channelManager?.status === 'synchronized' || (data.channelManager?.provider === 'manual_import' && data.channelManager.snapshotReady === true);
-  if (!channelManagerReady) blockingItems.push('Менеджер каналов не синхронизирован');
+  if (!channelManagerReady) warnings.push('Менеджер каналов не подключён: доступен только ручной и прямой пилот');
   const propertiesTotal = data.properties?.length ?? 0;
   const readyPropertyKeys = new Set((data.properties ?? []).filter((p) => verification.filter((v) => v.propertyKey === p.key).every((v) => v.status === 'passed')).map((p) => p.key));
   const staffTotal = data.staff?.length ?? 0;
