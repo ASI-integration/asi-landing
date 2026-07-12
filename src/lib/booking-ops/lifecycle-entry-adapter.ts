@@ -11,6 +11,7 @@ const ACTION_EVENTS: Record<string, string | null> = {
   mark_guest_checked_out: 'checkout.started', mark_post_checkout_inspection_done: 'checkout.inspection_completed',
   mark_deposit_return_ready: 'deposit.returned', mark_booking_closed: 'booking.closed',
   mark_instructions_sent: 'checkin.instructions_released', mark_guest_checked_in: 'guest.checked_in',
+  simulate_release: 'checkin.instructions_released',
 };
 
 export async function emitLifecycleForAction(input: { bookingId: string; action: string; actorType?: BookingEventActor; actorId?: string | null; source: string; payload?: Record<string, unknown>; occurrence?: string }) {

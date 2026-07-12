@@ -5,6 +5,7 @@ import {
   prepareCheckinReleaseDraft,
   simulateCheckinRelease,
 } from '@/lib/booking-ops/guest-intake-checkin-release';
+import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   const bookingId = body.bookingId ?? body.booking_id;
   try {
     if (body.action === 'prepare_draft') await prepareCheckinReleaseDraft(bookingId, auth.session.email ?? undefined);
-    else if (body.action === 'simulate_release') await simulateCheckinRelease(bookingId, body.confirmSimulatedRelease, auth.session.email ?? undefined);
+    else if (body.action === 'simulate_release') {
+      await simulateCheckinRelease(bookingId, body.confirmSimulatedRelease, auth.session.email ?? undefined);
+      await emitLifecycleForAction({ bookingId: String(bookingId ?? ''), action: 'simulate_release', actorId: auth.session.email ?? auth.session.userId ?? null, source: 'checkin_release' });
+    }
     else return NextResponse.json({ ok: false, message: 'Недопустимое действие.' }, { status: 400 });
     return NextResponse.json({ ok: true, snapshot: await getGuestIntakeReleaseSnapshot(bookingId) });
   } catch (error) {
