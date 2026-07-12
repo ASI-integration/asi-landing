@@ -57,7 +57,8 @@ export async function convergeLifecycleEvent(event: LifecycleEvent, state: Lifec
   if (!target) return;
   let taskQuery = supabase.from('booking_ops_worker_tasks').update({
     status: 'completed', completed_at: now, completion_event_id: event.id, updated_at: now,
-  }).eq('booking_id', event.bookingId).eq('assigned_role', target.role).neq('status', 'cancelled').neq('completion_event_id', event.id);
+  }).eq('booking_id', event.bookingId).eq('assigned_role', target.role).neq('status', 'cancelled')
+    .or(`completion_event_id.is.null,completion_event_id.neq.${event.id}`);
   if (target.taskId) taskQuery = taskQuery.eq('id', target.taskId);
   if (target.taskKey) taskQuery = taskQuery.eq('task_key', target.taskKey);
   taskQuery = target.checkout ? taskQuery.like('task_key', '%:checkout:inspector') : taskQuery.not('task_key', 'like', '%:checkout:inspector');

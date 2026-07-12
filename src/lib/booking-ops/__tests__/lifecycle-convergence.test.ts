@@ -10,7 +10,13 @@ function taskQuery() {
   const api = {
     update: vi.fn((value: Partial<Task>) => { patch = value; return api; }),
     eq: vi.fn((key: keyof Task, value: unknown) => { filters.push((task) => task[key] === value); return api; }),
-    neq: vi.fn((key: keyof Task, value: unknown) => { filters.push((task) => task[key] !== value); return api; }),
+    neq: vi.fn((key: keyof Task, value: unknown) => { filters.push((task) => task[key] != null && task[key] !== value); return api; }),
+    or: vi.fn((expression: string) => {
+      const match = expression.match(/^completion_event_id\.is\.null,completion_event_id\.neq\.(.+)$/);
+      if (!match) throw new Error(`unsupported_or_filter:${expression}`);
+      filters.push((task) => task.completion_event_id == null || task.completion_event_id !== match[1]);
+      return api;
+    }),
     like: vi.fn((key: keyof Task, value: string) => { const suffix = value.replace('%', ''); filters.push((task) => String(task[key]).endsWith(suffix)); return api; }),
     not: vi.fn((key: keyof Task, _operator: string, value: string) => { const suffix = value.replace('%', ''); filters.push((task) => !String(task[key]).endsWith(suffix)); return api; }),
     then: (resolve: (value: { error: null }) => unknown) => {
@@ -35,9 +41,9 @@ const now = '2026-07-12T01:00:00.000Z';
 describe('OPS v17.3 lifecycle convergence', () => {
   beforeEach(() => {
     tasks = [
-      { id: 'pre', booking_id: 'booking-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', status: 'pending' },
-      { id: 'checkout', booking_id: 'booking-1', task_key: 'booking-1:checkout:inspector', assigned_role: 'inspector', status: 'pending' },
-      { id: 'reinspect', booking_id: 'booking-1', task_key: 'booking-1:reinspection:inspector', assigned_role: 'inspector', status: 'pending' },
+      { id: 'pre', booking_id: 'booking-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
+      { id: 'checkout', booking_id: 'booking-1', task_key: 'booking-1:checkout:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
+      { id: 'reinspect', booking_id: 'booking-1', task_key: 'booking-1:reinspection:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
     ];
   });
 
@@ -57,6 +63,13 @@ describe('OPS v17.3 lifecycle convergence', () => {
     expect(tasks.map(({ id, status }) => ({ id, status }))).toEqual([{ id: 'pre', status: 'pending' }, { id: 'checkout', status: 'completed' }, { id: 'reinspect', status: 'pending' }]);
   });
 
+  it('backfills an event id on an already completed workspace task with a NULL event id', async () => {
+    tasks[2].status = 'completed';
+    await convergeLifecycleEvent(event('inspection.completed', 'workspace-event', { taskId: 'reinspect', taskKey: 'booking-1:reinspection:inspector' }), initialLifecycleState(), now);
+    expect(tasks[2]).toMatchObject({ status: 'completed', completed_at: now, completion_event_id: 'workspace-event' });
+    expect(tasks[0].completion_event_id).toBeNull();
+  });
+
   it('a reinspection event targets its exact task and duplicate processing changes nothing', async () => {
     const exact = event('inspection.completed', 'reinspect-event', { taskId: 'reinspect', taskKey: 'booking-1:reinspection:inspector' });
     await convergeLifecycleEvent(exact, initialLifecycleState(), now);
@@ -70,5 +83,19 @@ describe('OPS v17.3 lifecycle convergence', () => {
   it('uses exact deterministic keys only for synthetic events without task identity', () => {
     expect(taskCompletionTarget(event('inspection.completed'))?.taskKey).toBe('booking-1:inspector');
     expect(taskCompletionTarget(event('checkout.inspection_completed'))?.taskKey).toBe('booking-1:checkout:inspector');
+  });
+
+  it('completes every synthetic golden-path fallback task with initially NULL event ids', async () => {
+    tasks = [
+      { id: 'cleaner', booking_id: 'booking-1', task_key: 'booking-1:cleaner', assigned_role: 'cleaner', status: 'pending', completion_event_id: null },
+      { id: 'linen', booking_id: 'booking-1', task_key: 'booking-1:linen_worker', assigned_role: 'linen_worker', status: 'pending', completion_event_id: null },
+      { id: 'consumables', booking_id: 'booking-1', task_key: 'booking-1:consumables', assigned_role: 'consumables', status: 'pending', completion_event_id: null },
+      { id: 'inspection', booking_id: 'booking-1', task_key: 'booking-1:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
+      { id: 'checkout', booking_id: 'booking-1', task_key: 'booking-1:checkout:inspector', assigned_role: 'inspector', status: 'pending', completion_event_id: null },
+    ];
+    for (const type of ['cleaner.task_completed', 'linen.task_completed', 'consumables.task_completed', 'inspection.completed', 'checkout.inspection_completed']) {
+      await convergeLifecycleEvent(event(type, `${type}:event`), initialLifecycleState(), now);
+    }
+    expect(tasks).toEqual(tasks.map((task) => expect.objectContaining({ status: 'completed', completed_at: now, completion_event_id: expect.any(String) })));
   });
 });
