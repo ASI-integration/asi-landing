@@ -9,6 +9,7 @@ import {
   BOOKING_OPS_COMMUNICATION_CHANNELS,
   type BookingOpsCommunicationChannel,
 } from '@/lib/booking-ops/types';
+import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,6 +105,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at,
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
     });
+    await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'instay_checkout', payload: { actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at ?? null } });
     return NextResponse.json({ ok: true, instayCheckout });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось обновить проживание.';

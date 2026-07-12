@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { orchestrateAllRelevantOpsAlerts } from '@/lib/booking-ops/ops-alert-orchestrator';
+import { recoverUnprocessedBookingEvents } from '@/lib/booking-ops/lifecycle-autopilot-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,5 +16,7 @@ function authorized(request: Request): boolean {
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, message: 'Нет доступа.' }, { status: 401 });
   const result = await orchestrateAllRelevantOpsAlerts(new Date().toISOString(), 'scheduled');
-  return NextResponse.json({ ok: result.errors.length === 0, result }, { status: result.errors.length ? 500 : 200 });
+  const recovery = await recoverUnprocessedBookingEvents();
+  const ok = result.errors.length === 0 && recovery.errors.length === 0;
+  return NextResponse.json({ ok, result: { ...result, lifecycleRecovery: recovery } }, { status: ok ? 200 : 500 });
 }

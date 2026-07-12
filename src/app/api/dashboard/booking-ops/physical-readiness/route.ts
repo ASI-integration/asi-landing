@@ -12,6 +12,7 @@ import {
   updateMaintenanceTicket,
   updateSuppliesTask,
 } from '@/lib/booking-ops/physical-readiness-execution';
+import { emitPhysicalLifecycle } from '@/lib/booking-ops/lifecycle-entry-adapter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!ACTIONS.has(action)) return NextResponse.json({ ok: false, message: 'Недопустимое действие.' }, { status: 400 });
   try {
     const readiness = await runAction(action, bookingId, body, auth.session.email ?? 'Оператор');
+    await emitPhysicalLifecycle({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, body });
     return NextResponse.json({ ok: true, readiness });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'Действие не выполнено.' }, { status: 400 });
