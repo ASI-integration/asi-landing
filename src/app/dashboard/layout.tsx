@@ -22,12 +22,14 @@ type DashboardNavItem = {
     | 'bookingOps'
     | 'propertyKnowledge'
     | 'automations'
-    | 'settings';
+    | 'settings'
+    | 'onboarding';
   label?: string;
 };
 
 const navItems: DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard/onboarding', key: 'onboarding', label: 'Запуск объектов' },
   { href: '/dashboard/crm/queue', key: 'crmQueue', label: 'Очередь CRM' },
   { href: '/dashboard/crm', key: 'crm', label: 'CRM' },
   { href: '/dashboard/reports', key: 'reports' },
