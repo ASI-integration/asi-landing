@@ -9,6 +9,7 @@ import { PricingIntelligencePanel } from '@/components/booking-ops/PricingIntell
 import { PilotAutorunPanel } from '@/components/booking-ops/PilotAutorunPanel';
 import { AvailabilityOverbookingPanel } from '@/components/booking-ops/AvailabilityOverbookingPanel';
 import { LifecycleOrchestratorPanel } from '@/components/booking-ops/LifecycleOrchestratorPanel';
+import { GoldenPathAcceptancePanel } from '@/components/booking-ops/GoldenPathAcceptancePanel';
 import { OpsAlertsPanel } from '@/components/booking-ops/OpsAlertsPanel';
 import { WorkerAssignmentPanel } from '@/components/booking-ops/WorkerAssignmentPanel';
 import { readResponseJson } from '@/lib/safeResponseJson';
@@ -2149,6 +2150,7 @@ function BookingOpsPageInner() {
               ) : null}
 
               <LifecycleOrchestratorPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
+              {isOpsAdmin ? <GoldenPathAcceptancePanel bookingId={selectedRecord.id} /> : null}
               <WorkerAssignmentPanel bookingId={selectedRecord.id} isOpsAdmin={isOpsAdmin} />
 
               <PreCheckinControlCenterCard
