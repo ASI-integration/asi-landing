@@ -61,12 +61,59 @@ describe('OPS v16 lifecycle autopilot', () => {
     expect(decision.state.blockers).toContain('reinspection_required');
   });
 
+  it('normal inspection completes only the canonical pre-check-in inspector task', () => {
+    let state = apply(turnover(), 'checkout.started');
+    state = apply(state, 'inspection.completed');
+
+    expect(state.tasks.find((task) => task.key === 'booking-1:inspector')?.status).toBe('completed');
+    expect(state.tasks.find((task) => task.key === 'booking-1:checkout:inspector')?.status).toBe('pending');
+  });
+
+  it('checkout inspection completes only the checkout inspector task and its checklist', () => {
+    let state = apply(turnover(), 'checkout.started');
+    const originalInspector = state.tasks.find((task) => task.key === 'booking-1:inspector');
+    state = apply(state, 'checkout.inspection_completed');
+
+    expect(state.tasks.find((task) => task.key === 'booking-1:inspector')).toEqual(originalInspector);
+    expect(state.tasks.find((task) => task.key === 'booking-1:checkout:inspector')).toMatchObject({
+      status: 'completed',
+      checklist: [{ completed: true }],
+    });
+    expect(state.tasks).not.toContainEqual(expect.objectContaining({ key: 'booking-1:checkout:inspector', status: 'pending' }));
+    expect(state.stage).toBe('checkout_inspected');
+  });
+
+  it('reinspection completion targets only the supplied task key', () => {
+    let state = apply(turnover(), 'inspection.completed');
+    const originalInspector = state.tasks.find((task) => task.key === 'booking-1:inspector');
+    state = apply(state, 'damage.reported');
+    state = apply(state, 'maintenance.task_completed');
+    const reinspection = state.tasks.find((task) => task.key.includes(':reinspection:'));
+    expect(reinspection).toBeDefined();
+
+    state = apply(state, 'inspection.completed', { taskKey: reinspection?.key });
+
+    expect(state.tasks.find((task) => task.key === reinspection?.key)?.status).toBe('completed');
+    expect(state.tasks.find((task) => task.key === 'booking-1:inspector')).toEqual(originalInspector);
+  });
+
   it('deduplicates an already processed event id', () => {
     const input = event('booking.received');
     const state = initialLifecycleState();
     const decision = reduceLifecycle(state, input, new Set([input.id]));
     expect(decision).toMatchObject({ duplicate: true, tasksToCreate: [], eventsToEmit: [] });
     expect(decision.state).toBe(state);
+  });
+
+  it('keeps exact task completion idempotent for duplicate events', () => {
+    const input = event('checkout.inspection_completed');
+    const state = apply(turnover(), 'checkout.started');
+    const first = reduceLifecycle(state, input).state;
+    const duplicate = reduceLifecycle(first, input, new Set([input.id]));
+
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.state).toBe(first);
+    expect(first.tasks.filter((task) => task.key === 'booking-1:checkout:inspector' && task.status === 'completed')).toHaveLength(1);
   });
 
   it('scheduler recovery produces no duplicate role tasks', () => {

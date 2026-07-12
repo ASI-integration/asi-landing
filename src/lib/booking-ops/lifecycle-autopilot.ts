@@ -52,8 +52,9 @@ function ensureTask(state: LifecycleState, role: WorkerTaskRole, bookingId: stri
   const next = task(role, bookingId); state.tasks.push(next); created.push(next);
 }
 
-function finishTask(state: LifecycleState, role: WorkerTaskRole) {
-  const current = state.tasks.find((item) => item.role === role && item.status !== 'cancelled');
+function finishTask(state: LifecycleState, event: LifecycleEvent, fallbackKey: string) {
+  const payloadTaskKey = typeof event.payload.taskKey === 'string' ? event.payload.taskKey : undefined;
+  const current = state.tasks.find((item) => item.key === (payloadTaskKey ?? fallbackKey) && item.status !== 'cancelled');
   if (current) { current.status = 'completed'; current.checklist = current.checklist.map((item) => ({ ...item, completed: true })); }
 }
 
@@ -100,15 +101,15 @@ export function reduceLifecycle(previous: LifecycleState, event: LifecycleEvent,
     case 'mvd.completed': case 'mvd.not_required':
       complete(state, 'mvd_completed');
       ensureTurnover(state, event.bookingId, created, emitted); audit('MVD gate completed'); break;
-    case 'cleaner.task_completed': finishTask(state, 'cleaner'); complete(state, 'cleaning_completed'); audit('cleaning completed'); break;
-    case 'linen.task_completed': finishTask(state, 'linen_worker'); complete(state, 'linen_completed'); audit('linen completed'); break;
-    case 'consumables.task_completed': finishTask(state, 'consumables'); complete(state, 'consumables_completed'); audit('consumables completed'); break;
-    case 'inspection.completed': finishTask(state, 'inspector'); state.inspectionRequired = false; complete(state, 'inspection_completed'); audit('inspection completed'); break;
+    case 'cleaner.task_completed': finishTask(state, event, `${event.bookingId}:cleaner`); complete(state, 'cleaning_completed'); audit('cleaning completed'); break;
+    case 'linen.task_completed': finishTask(state, event, `${event.bookingId}:linen_worker`); complete(state, 'linen_completed'); audit('linen completed'); break;
+    case 'consumables.task_completed': finishTask(state, event, `${event.bookingId}:consumables`); complete(state, 'consumables_completed'); audit('consumables completed'); break;
+    case 'inspection.completed': finishTask(state, event, `${event.bookingId}:inspector`); state.inspectionRequired = false; complete(state, 'inspection_completed'); audit('inspection completed'); break;
     case 'damage.reported':
       state.maintenanceRequired = true; state.inspectionRequired = true; ensureTask(state, 'maintenance_technician', event.bookingId, created);
       emitted.push('maintenance.task_created'); audit('damage blocks readiness; maintenance created'); break;
     case 'maintenance.task_completed': {
-      finishTask(state, 'maintenance_technician'); state.inspectionRequired = true;
+      finishTask(state, event, `${event.bookingId}:maintenance_technician`); state.inspectionRequired = true;
       const reinspection = task('inspector', `${event.bookingId}:reinspection:${event.id}`);
       state.tasks.push(reinspection); created.push(reinspection);
       complete(state, 'maintenance_completed'); emitted.push('inspection.reinspection_requested'); audit('maintenance completed; returned to inspection'); break;
@@ -118,7 +119,7 @@ export function reduceLifecycle(previous: LifecycleState, event: LifecycleEvent,
     case 'guest.checked_in': if (state.completed.includes('checkin_released')) complete(state, 'checked_in'); audit('check-in recorded'); break;
     case 'stay.started': complete(state, 'in_stay'); audit('in-stay started'); break;
     case 'checkout.started': complete(state, 'checkout_started'); ensureTask(state, 'inspector', `${event.bookingId}:checkout`, created); audit('checkout inspection created'); break;
-    case 'checkout.inspection_completed': complete(state, 'checkout_inspected'); emitted.push('deposit.return_requested'); audit('checkout inspection completed'); break;
+    case 'checkout.inspection_completed': finishTask(state, event, `${event.bookingId}:checkout:inspector`); complete(state, 'checkout_inspected'); emitted.push('deposit.return_requested'); audit('checkout inspection completed'); break;
     case 'deposit.return_completed': if (state.completed.includes('checkout_inspected')) { complete(state, 'deposit_returned'); emitted.push('booking.close_requested'); } audit('deposit returned'); break;
     case 'booking.closed': if (state.completed.includes('checkout_inspected') && state.completed.includes('deposit_returned')) complete(state, 'closed'); audit('booking closure evaluated'); break;
     case 'alert.acknowledged': audit('alert acknowledged; lifecycle unchanged'); break;

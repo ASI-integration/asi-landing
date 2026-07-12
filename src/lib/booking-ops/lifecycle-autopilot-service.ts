@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type BookingEventActor, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
+import { convergeLifecycleEvent } from './lifecycle-convergence';
 
 type RecordEventInput = {
   id?: string; bookingId: string; objectId?: string | null; type: string; actorType: BookingEventActor;
@@ -45,6 +46,7 @@ export async function processBookingDomainEvent(eventId: string) {
   }
   const stateWrite = await supabase.from('booking_ops_autopilot_states').upsert({ booking_id: event.bookingId, stage: decision.state.stage, state: decision.state, last_event_id: event.id, updated_at: now }, { onConflict: 'booking_id' });
   if (stateWrite.error) throw new Error(stateWrite.error.message);
+  await convergeLifecycleEvent(event, decision.state, now);
   const audit = decision.state.audit.at(-1)?.decision ?? 'event processed';
   const auditWrite = await supabase.from('booking_ops_lifecycle_decisions').insert({ id: randomUUID(), booking_id: event.bookingId, event_id: event.id, previous_stage: previous.stage, next_stage: decision.state.stage, decision: audit, blockers: decision.state.blockers, actions: decision.eventsToEmit });
   if (auditWrite.error?.code === '23505') return { processed: false, duplicate: true };
