@@ -206,9 +206,9 @@ export type BookingOpsAutomationDecision = {
   evaluatedAt: string;
 };
 
-export type BookingOpsAlertSeverity = 'info' | 'warning' | 'critical';
+export type ComputedBookingOpsAlertSeverity = 'info' | 'warning' | 'critical';
 
-export type BookingOpsAlertKind =
+export type ComputedBookingOpsAlertKind =
   | 'guest_contact_missing'
   | 'documents_not_requested'
   | 'documents_not_received'
@@ -219,23 +219,23 @@ export type BookingOpsAlertKind =
   | 'booking_blocked'
   | 'checkin_approaching_incomplete';
 
-export type BookingOpsAlert = {
+export type ComputedBookingOpsAlert = {
   bookingOpsId: string;
   sourceBookingId: string | null;
-  kind: BookingOpsAlertKind;
+  kind: ComputedBookingOpsAlertKind;
   title: string;
   reason: string;
-  severity: BookingOpsAlertSeverity;
-  /** v1 computed-only — always open; no resolve/ignore persistence. */
+  severity: ComputedBookingOpsAlertSeverity;
+  /** Legacy computed projection only; canonical persistence uses OperatorAlert. */
   status: 'open';
   dueAt: string | null;
   relatedNextAction: BookingOpsNextAction | null;
 };
 
-export type BookingOpsAlertSummary = {
-  alerts: BookingOpsAlert[];
-  primaryAlert: BookingOpsAlert | null;
-  maxSeverity: BookingOpsAlertSeverity | null;
+export type ComputedBookingOpsAlertSummary = {
+  alerts: ComputedBookingOpsAlert[];
+  primaryAlert: ComputedBookingOpsAlert | null;
+  maxSeverity: ComputedBookingOpsAlertSeverity | null;
 };
 
 /** Operator-confirmable workflow actions (excludes blocked/pause/attention). */
@@ -694,7 +694,7 @@ export type BookingOpsRecord = {
   propertyKnowledge?: BookingOpsPropertyKnowledge | null;
   propertyKnowledgeMatch?: PropertyKnowledgeMatch;
   automation?: BookingOpsAutomationDecision;
-  alerts?: BookingOpsAlertSummary;
+  alerts?: ComputedBookingOpsAlertSummary;
   operatorAction?: BookingOpsActionTemplate | null;
   readiness?: import('./readiness').BookingReadinessResult;
   guestIntake?: BookingOpsGuestIntakeSession | null;

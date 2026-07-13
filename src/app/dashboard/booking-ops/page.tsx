@@ -55,7 +55,7 @@ import {
   type BookingOpsMvdStatus,
   type BookingOpsRecord,
   type BookingOpsStatus,
-  type BookingOpsAlertSeverity,
+  type ComputedBookingOpsAlertSeverity,
   type BookingOpsActionTemplate,
   type BookingOpsTelegramDraft,
   type BookingOpsCommunicationIntent,
@@ -360,13 +360,13 @@ const AUTOMATION_TONE: Record<string, string> = {
   automatic_action_available: 'border-indigo-200 bg-indigo-50 text-indigo-900',
 };
 
-const ALERT_SEVERITY_TONE: Record<BookingOpsAlertSeverity, string> = {
+const ALERT_SEVERITY_TONE: Record<ComputedBookingOpsAlertSeverity, string> = {
   critical: 'border-red-300 bg-red-50 text-red-900',
   warning: 'border-amber-200 bg-amber-50 text-amber-900',
   info: 'border-sky-200 bg-sky-50 text-sky-900',
 };
 
-const ALERT_SEVERITY_LABEL: Record<BookingOpsAlertSeverity, string> = {
+const ALERT_SEVERITY_LABEL: Record<ComputedBookingOpsAlertSeverity, string> = {
   critical: 'Срочно',
   warning: 'Внимание',
   info: 'Инфо',

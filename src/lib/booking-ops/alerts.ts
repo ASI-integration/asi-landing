@@ -1,25 +1,25 @@
 import { evaluateBookingOpsAutomation } from './decision-engine';
 import { attachBookingOpsOperatorAction } from './action-templates';
 import type {
-  BookingOpsAlert,
-  BookingOpsAlertKind,
-  BookingOpsAlertSeverity,
-  BookingOpsAlertSummary,
+  ComputedBookingOpsAlert,
+  ComputedBookingOpsAlertKind,
+  ComputedBookingOpsAlertSeverity,
+  ComputedBookingOpsAlertSummary,
   BookingOpsNextAction,
   BookingOpsRecord,
 } from './types';
 import { bookingOpsHasProblemSignals, hasGuestContact } from './types';
 
 export type {
-  BookingOpsAlert,
-  BookingOpsAlertKind,
-  BookingOpsAlertSeverity,
-  BookingOpsAlertSummary,
+  ComputedBookingOpsAlert,
+  ComputedBookingOpsAlertKind,
+  ComputedBookingOpsAlertSeverity,
+  ComputedBookingOpsAlertSummary,
 };
 
 /**
- * Booking Ops Alerts v1 — computed server-side (no DB persistence).
- * Resolve/ignore actions are intentionally omitted until a DB-backed v2.
+ * Legacy Booking Ops computed projection. This is intentionally isolated from
+ * the canonical persistent OperatorAlert contract.
  */
 
 /** Check-in within this many hours escalates incomplete steps to critical. */
@@ -28,7 +28,7 @@ export const BOOKING_OPS_CHECKIN_CRITICAL_HOURS = 48;
 /** Check-in within this many days escalates incomplete steps to at least warning. */
 export const BOOKING_OPS_CHECKIN_WARNING_DAYS = 7;
 
-const SEVERITY_RANK: Record<BookingOpsAlertSeverity, number> = {
+const SEVERITY_RANK: Record<ComputedBookingOpsAlertSeverity, number> = {
   info: 0,
   warning: 1,
   critical: 2,
@@ -72,8 +72,8 @@ function hasIncompleteRequiredSteps(record: BookingOpsRecord): boolean {
 function baseSeverityForIncompleteStep(
   record: BookingOpsRecord,
   nowMs: number,
-  defaultSeverity: BookingOpsAlertSeverity,
-): BookingOpsAlertSeverity {
+  defaultSeverity: ComputedBookingOpsAlertSeverity,
+): ComputedBookingOpsAlertSeverity {
   if (isCheckInVerySoon(record.checkInAt, nowMs) && hasIncompleteRequiredSteps(record)) {
     return 'critical';
   }
@@ -102,8 +102,8 @@ function depositIsIncomplete(record: BookingOpsRecord): boolean {
 
 function makeAlert(
   record: BookingOpsRecord,
-  draft: Omit<BookingOpsAlert, 'bookingOpsId' | 'sourceBookingId' | 'status'>,
-): BookingOpsAlert {
+  draft: Omit<ComputedBookingOpsAlert, 'bookingOpsId' | 'sourceBookingId' | 'status'>,
+): ComputedBookingOpsAlert {
   return {
     bookingOpsId: record.id,
     sourceBookingId: record.bookingId,
@@ -112,14 +112,14 @@ function makeAlert(
   };
 }
 
-function pickPrimaryAlert(alerts: BookingOpsAlert[]): BookingOpsAlert | null {
+function pickPrimaryAlert(alerts: ComputedBookingOpsAlert[]): ComputedBookingOpsAlert | null {
   if (alerts.length === 0) return null;
   return alerts.reduce((best, current) =>
     SEVERITY_RANK[current.severity] > SEVERITY_RANK[best.severity] ? current : best,
   );
 }
 
-function maxSeverity(alerts: BookingOpsAlert[]): BookingOpsAlertSeverity | null {
+function maxSeverity(alerts: ComputedBookingOpsAlert[]): ComputedBookingOpsAlertSeverity | null {
   const primary = pickPrimaryAlert(alerts);
   return primary?.severity ?? null;
 }
@@ -127,10 +127,10 @@ function maxSeverity(alerts: BookingOpsAlert[]): BookingOpsAlertSeverity | null 
 export function computeBookingOpsAlerts(
   record: BookingOpsRecord,
   evaluatedAt = new Date().toISOString(),
-): BookingOpsAlertSummary {
+): ComputedBookingOpsAlertSummary {
   const nowMs = new Date(evaluatedAt).getTime();
   const decision = record.automation ?? evaluateBookingOpsAutomation(record, evaluatedAt);
-  const alerts: BookingOpsAlert[] = [];
+  const alerts: ComputedBookingOpsAlert[] = [];
   const dueAt = record.checkInAt;
 
   if (record.isBlocked || record.opsStatus === 'problem_blocked') {

@@ -2,8 +2,8 @@ import { computeBookingOpsAlerts } from '@/lib/booking-ops/alerts';
 import type { InStayCheckoutSnapshot } from '@/lib/booking-ops/instay-checkout-autopilot';
 import { BOOKING_OPS_NEXT_ACTION_LABELS_RU } from '@/lib/booking-ops/types';
 import type {
-  BookingOpsAlert,
-  BookingOpsAlertKind,
+  ComputedBookingOpsAlert,
+  ComputedBookingOpsAlertKind,
   BookingOpsNextAction,
   BookingOpsRecord,
 } from '@/lib/booking-ops/types';
@@ -75,7 +75,7 @@ const SEVERITY_RANK: Record<CrmBookingSignalSeverity, number> = {
   critical: 3,
 };
 
-const ALERT_KIND_TO_SIGNAL_KIND: Partial<Record<BookingOpsAlertKind, CrmBookingSignalKind>> = {
+const ALERT_KIND_TO_SIGNAL_KIND: Partial<Record<ComputedBookingOpsAlertKind, CrmBookingSignalKind>> = {
   booking_blocked: 'incident_blocker',
   guest_contact_missing: 'missing_guest_data',
   documents_not_requested: 'documents_incomplete',
@@ -274,7 +274,7 @@ function deriveInstaySignal(
 }
 
 function deriveAlertSignal(
-  alert: BookingOpsAlert,
+  alert: ComputedBookingOpsAlert,
   record: BookingOpsRecord,
 ): CrmBookingSignalDraft | null {
   const kind = ALERT_KIND_TO_SIGNAL_KIND[alert.kind];
