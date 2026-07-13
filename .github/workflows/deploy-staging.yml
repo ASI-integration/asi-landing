@@ -1,0 +1,238 @@
+name: Deploy Booking Ops to staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA or ref to deploy (defaults to latest main)
+        required: false
+        type: string
+
+concurrency:
+  group: booking-ops-staging
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Resolve checkout ref
+        id: checkout_ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF_INPUT="${{ inputs.ref }}"
+          echo "ref=${REF_INPUT:-main}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout selected ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ steps.checkout_ref.outputs.ref }}
+
+      - name: Resolve deployed SHA
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "artifact=asi-staging-${SHA}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Verify staging database identity
+        shell: bash
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const ref = (process.env.STAGING_SUPABASE_PROJECT_REF || '').trim();
+          const api = (process.env.STAGING_SUPABASE_URL || '').trim();
+          const database = (process.env.STAGING_DATABASE_URL || '').trim();
+          if (!ref || !/^[a-z0-9]{20}$/.test(ref)) {
+            throw new Error('Missing or invalid STAGING_SUPABASE_PROJECT_REF');
+          }
+          if (!api || !database) {
+            throw new Error('Missing STAGING_SUPABASE_URL or STAGING_DATABASE_URL');
+          }
+          let apiUrl;
+          let databaseUrl;
+          try {
+            apiUrl = new URL(api);
+            databaseUrl = new URL(database);
+          } catch {
+            throw new Error('A staging database URL is invalid');
+          }
+          const apiIdentity = apiUrl.hostname.toLowerCase();
+          const databaseIdentity = `${databaseUrl.hostname}:${decodeURIComponent(databaseUrl.username)}`.toLowerCase();
+          if (!apiIdentity.includes(ref) || !databaseIdentity.includes(ref)) {
+            throw new Error('Staging database identity does not match STAGING_SUPABASE_PROJECT_REF');
+          }
+          console.log(`Staging Supabase project: ${ref}`);
+          NODE
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Create staging release artifact
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.meta.outputs.sha }}
+          ARTIFACT: ${{ steps.meta.outputs.artifact }}
+        run: |
+          set -euo pipefail
+          npm prune --omit=dev
+          rm -rf staging-release
+          mkdir -p staging-release
+          cp package.json package-lock.json next.config.js staging-release/
+          cp -R .next node_modules staging-release/
+          if [ -d public ]; then cp -R public staging-release/; fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = require('./package.json');
+          fs.writeFileSync('staging-release/release-meta.json', JSON.stringify({
+            gitSha: process.env.DEPLOY_SHA,
+            appVersion: pkg.version || null,
+            environment: 'staging',
+            builtAt: new Date().toISOString(),
+          }, null, 2) + '\n');
+          NODE
+          tar -czf "$ARTIFACT" -C staging-release .
+
+      - name: Prepare staging runtime environment
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.meta.outputs.sha }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_SESSION_SECRET: ${{ secrets.STAGING_SESSION_SECRET }}
+          STAGING_ADMIN_SECRET: ${{ secrets.STAGING_ADMIN_SECRET }}
+          STAGING_INTERNAL_TEST_SECRET: ${{ secrets.STAGING_INTERNAL_TEST_SECRET }}
+          STAGING_BOOKING_OPS_INBOUND_INTAKE_SECRET: ${{ secrets.STAGING_BOOKING_OPS_INBOUND_INTAKE_SECRET }}
+          STAGING_BOOKING_OPS_AUTO_SEND_RUNNER_SECRET: ${{ secrets.STAGING_BOOKING_OPS_AUTO_SEND_RUNNER_SECRET }}
+          STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET: ${{ secrets.STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET }}
+        run: |
+          set -euo pipefail
+          required=(
+            STAGING_SUPABASE_PROJECT_REF STAGING_SUPABASE_URL
+            STAGING_SUPABASE_SERVICE_ROLE_KEY STAGING_SESSION_SECRET
+            STAGING_ADMIN_SECRET STAGING_INTERNAL_TEST_SECRET
+            STAGING_BOOKING_OPS_INBOUND_INTAKE_SECRET
+            STAGING_BOOKING_OPS_AUTO_SEND_RUNNER_SECRET
+            STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required staging secret: ${key}"
+              exit 1
+            fi
+          done
+          umask 077
+          {
+            printf 'ASI_DEPLOY_ENV=staging\n'
+            printf 'ASI_RELEASE_SHA=%s\n' "$DEPLOY_SHA"
+            printf 'STAGING_SUPABASE_PROJECT_REF=%s\n' "$STAGING_SUPABASE_PROJECT_REF"
+            printf 'SUPABASE_URL=%s\n' "$STAGING_SUPABASE_URL"
+            printf 'NEXT_PUBLIC_SUPABASE_URL=%s\n' "$STAGING_SUPABASE_URL"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$STAGING_SUPABASE_SERVICE_ROLE_KEY"
+            printf 'NEXT_PUBLIC_APP_URL=https://staging.asi-global.ru\n'
+            printf 'NEXT_PUBLIC_URL=https://staging.asi-global.ru\n'
+            printf 'HOST_VARIANT=ru\n'
+            printf 'SESSION_SECRET=%s\n' "$STAGING_SESSION_SECRET"
+            printf 'ADMIN_SECRET=%s\n' "$STAGING_ADMIN_SECRET"
+            printf 'INTERNAL_TEST_SECRET=%s\n' "$STAGING_INTERNAL_TEST_SECRET"
+            printf 'BOOKING_OPS_INBOUND_INTAKE_SECRET=%s\n' "$STAGING_BOOKING_OPS_INBOUND_INTAKE_SECRET"
+            printf 'BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=%s\n' "$STAGING_BOOKING_OPS_AUTO_SEND_RUNNER_SECRET"
+            printf 'BOOKING_OPS_ALERT_RUNNER_SECRET=%s\n' "$STAGING_BOOKING_OPS_ALERT_RUNNER_SECRET"
+            printf 'OPS_GOLDEN_PATH_ACCEPTANCE_ENABLED=true\n'
+            printf 'EMAIL_AUTO_SEND=false\nEMAIL_DRAFT_ONLY=true\n'
+            printf 'DRY_RUN_TELEGRAM_OUTBOUND=true\nALLOW_REAL_TELEGRAM_SYNTHETIC=false\n'
+            printf 'TELEGRAM_GUEST_AGENT_MODE=off\nLLM_ENABLED=false\nYOOKASSA_ENABLED=false\n'
+          } > staging.env
+
+      - name: Deploy staging over SSH
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.meta.outputs.sha }}
+          ARTIFACT: ${{ steps.meta.outputs.artifact }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          STAGING_APP_PATH: ${{ secrets.STAGING_APP_PATH }}
+          STAGING_PORT: ${{ secrets.STAGING_PORT }}
+        run: |
+          set -euo pipefail
+          for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY STAGING_APP_PATH STAGING_PORT; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required staging secret: ${key}"
+              exit 1
+            fi
+          done
+          if [ "$STAGING_APP_PATH" != "/var/www/asi-staging" ] || [ "$STAGING_PORT" != "3001" ]; then
+            echo "Refusing unexpected staging target; expected /var/www/asi-staging on port 3001"
+            exit 1
+          fi
+          SSH_PORT="${STAGING_SSH_PORT:-22}"
+          REMOTE_TMP="/tmp/asi-staging-${GITHUB_RUN_ID}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/staging_deploy_key
+          chmod 600 ~/.ssh/staging_deploy_key
+          ssh-keygen -lf ~/.ssh/staging_deploy_key
+          SSH_OPTS=(-i ~/.ssh/staging_deploy_key -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          SCP_OPTS=(-i ~/.ssh/staging_deploy_key -P "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" "mkdir -p '$REMOTE_TMP' && chmod 700 '$REMOTE_TMP'"
+          scp "${SCP_OPTS[@]}" "$ARTIFACT" scripts/deploy-staging-artifact.sh staging.env "$STAGING_SSH_USER@$STAGING_SSH_HOST:$REMOTE_TMP/"
+          ssh "${SSH_OPTS[@]}" "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "ASI_BASE_DIR='$STAGING_APP_PATH' PM2_APP_NAME='asi-landing-staging' APP_PORT='$STAGING_PORT' bash '$REMOTE_TMP/deploy-staging-artifact.sh' '$DEPLOY_SHA' '$REMOTE_TMP/$ARTIFACT' '$REMOTE_TMP/staging.env'; rc=\$?; rm -rf '$REMOTE_TMP'; exit \$rc"
+
+      - name: Verify public staging JSON endpoints
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const base = 'https://staging.asi-global.ru';
+          const expectedSha = process.env.EXPECTED_SHA;
+          async function readJson(path) {
+            const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(15000) });
+            const contentType = response.headers.get('content-type') || '';
+            if (!response.ok || !contentType.toLowerCase().includes('application/json')) {
+              throw new Error(`${path} did not return successful JSON`);
+            }
+            return response.json();
+          }
+          (async () => {
+            const health = await readJson('/api/health');
+            const version = await readJson('/api/version');
+            if (health.ok !== true) throw new Error('/api/health payload is not healthy');
+            if (version.environment !== 'staging' || version.sha !== expectedSha || !version.appVersion) {
+              throw new Error('/api/version does not identify this staging release');
+            }
+            console.log(`Staging deploy verified: environment=${version.environment} sha=${version.sha} appVersion=${version.appVersion}`);
+          })().catch((error) => {
+            console.error(error.message);
+            process.exit(1);
+          });
+          NODE

@@ -5,6 +5,8 @@ const ORIGINAL_ENV = { ...process.env };
 beforeEach(() => {
   process.env = {
     ...ORIGINAL_ENV,
+    ASI_DEPLOY_ENV: 'staging',
+    ASI_APP_VERSION: '0.1.0',
     ASI_RELEASE_DEPLOYED_AT_ISO: '2026-06-04T10:00:00Z',
     ASI_RELEASE_PATH: '/var/www/asi/releases/abc1234',
   };
@@ -35,7 +37,9 @@ describe('/api/version', () => {
 
     expect(res.status).toBe(200);
     expect(json).toEqual({
+      environment: 'staging',
       sha: 'abc1234',
+      appVersion: '0.1.0',
       deployedAt: '2026-06-04T10:00:00Z',
       releasePath: '/var/www/asi/releases/abc1234',
       appRoot: '/var/www/asi/current',
