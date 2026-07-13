@@ -99,6 +99,7 @@ const condition: OperatorAlertCondition = {
 };
 const reconcile = (conditions: OperatorAlertCondition[] = [condition], at = now) => reconcileOperatorAlertConditions({
   accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1', conditions, now: at,
+  managedSourceDomains: ['turnover'],
   nextCheckInAt: '2026-07-13T06:00:00.000Z',
 });
 
@@ -183,9 +184,51 @@ describe('canonical Operator Alert reconciliation', () => {
 
   it('rejects a supplied account that does not own the booking', async () => {
     await expect(reconcileOperatorAlertConditions({
-      accountId: 'account-b', bookingId: 'booking-1', propertyId: 'property-1', conditions: [condition], now,
+      accountId: 'account-b', bookingId: 'booking-1', propertyId: 'property-1', managedSourceDomains: ['turnover'], conditions: [condition], now,
     })).rejects.toThrow('booking_account_mismatch');
     expect(database.state.alerts).toEqual([]);
+  });
+
+  it('does not resolve a pre-check-in alert during turnover reconciliation', async () => {
+    database.state.alerts = [alertRow({
+      id: 'guest-alert', source_domain: 'guest', source_gate: 'guest_data_completed',
+      incident_family: 'GUEST_DATA', alert_code: 'GUEST_DATA_INCOMPLETE', dedupe_key: 'guest-dedupe',
+    })];
+    const result = await reconcile([]);
+    expect(result.alertsResolved).toBe(0);
+    expect(database.state.alerts[0].status).toBe('open');
+  });
+
+  it('does not resolve a turnover alert during pre-check-in reconciliation', async () => {
+    database.state.alerts = [alertRow()];
+    const result = await reconcileOperatorAlertConditions({
+      accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1',
+      managedSourceDomains: ['guest', 'legal', 'payment', 'compliance', 'communication', 'booking'],
+      conditions: [], now,
+    });
+    expect(result.alertsResolved).toBe(0);
+    expect(database.state.alerts[0].status).toBe('open');
+  });
+
+  it('resolves active pre-check-in alerts when a terminal evaluation returns no conditions', async () => {
+    database.state.alerts = [alertRow({
+      id: 'guest-alert', source_domain: 'guest', source_gate: 'guest_data_completed',
+      incident_family: 'GUEST_DATA', alert_code: 'GUEST_DATA_INCOMPLETE', dedupe_key: 'guest-dedupe',
+    })];
+    const result = await reconcileOperatorAlertConditions({
+      accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1',
+      managedSourceDomains: ['guest', 'legal', 'payment', 'compliance', 'communication', 'booking'],
+      conditions: [], now,
+    });
+    expect(result.alertsResolved).toBe(1);
+    expect(database.state.alerts[0].status).toBe('resolved');
+  });
+
+  it('rejects conditions outside the managed source domains', async () => {
+    await expect(reconcileOperatorAlertConditions({
+      accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1',
+      managedSourceDomains: ['guest'], conditions: [condition], now,
+    })).rejects.toThrow('operator_alert_source_domain_not_managed');
   });
 
   it('filters sensitive and unknown metadata', () => {
