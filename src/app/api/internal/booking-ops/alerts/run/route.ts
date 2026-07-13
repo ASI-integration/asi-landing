@@ -18,5 +18,12 @@ export async function POST(request: Request) {
   const result = await orchestrateAllRelevantOpsAlerts(new Date().toISOString(), 'scheduled');
   const recovery = await recoverUnprocessedBookingEvents();
   const ok = result.errors.length === 0 && recovery.errors.length === 0;
-  return NextResponse.json({ ok, result: { ...result, lifecycleRecovery: recovery } }, { status: ok ? 200 : 500 });
+  return NextResponse.json({
+    ok,
+    automationMode: result.automationMode ?? 'shadow',
+    automationExecutedCount: result.automationExecutedCount ?? 0,
+    automationPreviewCount: result.automationPreviewCount ?? 0,
+    canaryMatchedCount: result.canaryMatchedCount ?? 0,
+    result: { ...result, lifecycleRecovery: recovery },
+  }, { status: ok ? 200 : 500 });
 }

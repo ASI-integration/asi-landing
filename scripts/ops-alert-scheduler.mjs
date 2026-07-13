@@ -54,7 +54,23 @@ async function tick() {
     const response = await fetch(endpoint, { method: 'POST', headers: { authorization: `Bearer ${secret}` } });
     const payload = await response.json().catch(() => ({}));
     const result = payload && typeof payload === 'object' ? payload.result : null;
-    console.info('[ops-alert-scheduler]', JSON.stringify({ ok: response.ok, status: response.status, runId: result?.runId, lockAcquired: result?.lockAcquired, evaluated: result?.evaluated, created: result?.alertsCreated, updated: result?.alertsUpdated, escalated: result?.alertsEscalated, resolved: result?.alertsResolved, skipped: result?.skipped, errors: Array.isArray(result?.errors) ? result.errors.length : undefined }));
+    console.info('[ops-alert-scheduler]', JSON.stringify({
+      ok: response.ok,
+      status: response.status,
+      runId: result?.runId,
+      lockAcquired: result?.lockAcquired,
+      automationMode: payload?.automationMode ?? result?.automationMode,
+      automationExecutedCount: payload?.automationExecutedCount ?? result?.automationExecutedCount ?? 0,
+      automationPreviewCount: payload?.automationPreviewCount ?? result?.automationPreviewCount ?? 0,
+      canaryMatchedCount: payload?.canaryMatchedCount ?? result?.canaryMatchedCount ?? 0,
+      evaluated: result?.evaluated,
+      created: result?.alertsCreated,
+      updated: result?.alertsUpdated,
+      escalated: result?.alertsEscalated,
+      resolved: result?.alertsResolved,
+      skipped: result?.skipped,
+      errors: Array.isArray(result?.errors) ? result.errors.length : undefined,
+    }));
   } catch {
     console.error('[ops-alert-scheduler]', JSON.stringify({ ok: false, error: 'request_failed' }));
   } finally {

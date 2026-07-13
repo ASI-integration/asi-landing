@@ -46,6 +46,8 @@ jobs:
       - name: Tests (Booking Ops focused regression coverage)
         run: |
           npx vitest run \
+            src/lib/booking-ops/__tests__/booking-automation-rollout.test.ts \
+            src/app/api/dashboard/booking-ops/alerts/orchestrate/__tests__/route.test.ts \
             src/lib/booking-ops/__tests__/ops-alert-engine.test.ts \
             src/app/api/internal/booking-ops/alerts/run/__tests__/route.test.ts \
             src/lib/booking-ops/__tests__/golden-path-acceptance.test.ts \
