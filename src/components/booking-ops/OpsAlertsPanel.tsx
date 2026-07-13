@@ -1,14 +1,31 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { OperatorAlert } from '@/lib/booking-ops/operator-alerts';
 
-type Alert = { id: string; booking_id: string; property_id: string; alert_code: string; source_gate: string; severity: 'info' | 'warning' | 'critical'; status: 'open' | 'acknowledged' | 'resolved'; title: string; next_check_in_at: string | null; deadline_at: string | null; resolved_at: string | null };
-type Response = { ok: boolean; message?: string; alerts?: Alert[]; alert?: Alert };
+type OperatorAlertView = { id: string; booking_id: string; property_id: string; alert_code: string; source_gate: string; severity: 'info' | 'warning' | 'critical'; status: 'open' | 'acknowledged' | 'resolved'; title: string; next_check_in_at: string | null; deadline_at: string | null; resolved_at: string | null };
+type Response = { ok: boolean; message?: string; alerts?: OperatorAlert[]; alert?: OperatorAlert };
+
+function toUiAlert(alert: OperatorAlert): OperatorAlertView {
+  return {
+    id: alert.id,
+    booking_id: alert.bookingId,
+    property_id: alert.propertyId,
+    alert_code: alert.alertCode,
+    source_gate: alert.sourceGate,
+    severity: alert.severity,
+    status: alert.status,
+    title: alert.title,
+    next_check_in_at: alert.nextCheckInAt,
+    deadline_at: alert.deadlineAt,
+    resolved_at: alert.resolvedAt,
+  };
+}
 
 const gateLabel: Record<string, string> = { cleaning: 'Уборка', linen: 'Бельё', inspection: 'Осмотр', maintenance: 'Обслуживание', readiness: 'Готовность' };
 const severityLabel = { critical: 'Срочно', warning: 'Требует внимания', info: 'Информация' } as const;
 
-function timeLabel(alert: Alert) {
+function timeLabel(alert: OperatorAlertView) {
   const target = alert.deadline_at || alert.next_check_in_at;
   if (!target) return 'Срок не указан';
   const minutes = Math.round((new Date(target).getTime() - Date.now()) / 60_000);
@@ -17,7 +34,7 @@ function timeLabel(alert: Alert) {
 }
 
 export function OpsAlertsPanel() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<OperatorAlertView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState<string | null>(null);
@@ -27,7 +44,7 @@ export function OpsAlertsPanel() {
       const response = await fetch('/api/dashboard/booking-ops/alerts?activeOnly=false', { credentials: 'include' });
       const body = await response.json() as Response;
       if (!response.ok || !body.ok) throw new Error(body.message || 'Не удалось загрузить уведомления.');
-      setAlerts(body.alerts ?? []);
+      setAlerts((body.alerts ?? []).map(toUiAlert));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось загрузить уведомления.'); }
     finally { setLoading(false); }
   }, []);
@@ -46,7 +63,7 @@ export function OpsAlertsPanel() {
       const response = await fetch(`/api/dashboard/booking-ops/alerts/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'acknowledge' }) });
       const body = await response.json() as Response;
       if (!response.ok || !body.ok || !body.alert) throw new Error(body.message || 'Не удалось подтвердить уведомление.');
-      setAlerts((current) => current.map((item) => item.id === id ? body.alert! : item));
+      setAlerts((current) => current.map((item) => item.id === id ? toUiAlert(body.alert!) : item));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось подтвердить уведомление.'); }
     finally { setUpdating(null); }
   }

@@ -37,9 +37,13 @@ export type OpsTurnoverEvaluationInput = {
 export type OpsAlertCondition = {
   code: OpsAlertCode;
   gate: OpsAlertGate;
+  incidentFamily: string;
+  sourceDomain: 'turnover';
+  sourceGate: OpsAlertGate;
   severity: OpsAlertSeverity;
   title: string;
   description: string;
+  recommendedAction: string;
   deadlineAt: string;
   nextCheckInAt: string;
   dedupeKey: string;
@@ -83,9 +87,10 @@ export function evaluateOpsTurnover(input: OpsTurnoverEvaluationInput): { deadli
         : code.startsWith('UNIT_NOT_READY_') || code === 'READY_DEADLINE_MISSED' ? 'READINESS_DELAY'
           : code;
   const add = (code: OpsAlertCode, gate: OpsAlertGate, deadlineAt: string, severity: OpsAlertSeverity, title: string, description: string) => conditions.push({
-    code, gate, deadlineAt, severity, title, description, nextCheckInAt: deadlines.nextCheckInAt,
+    code, gate, incidentFamily: incidentFamily(code), sourceDomain: 'turnover', sourceGate: gate,
+    deadlineAt, severity, title, description, recommendedAction: description, nextCheckInAt: deadlines.nextCheckInAt,
     dedupeKey: `${input.turnoverId}:${input.propertyId}:${incidentFamily(code)}:${gate}:${input.nextBookingId}`,
-    metadata: { minutesToCheckIn, checkoutAt: input.checkoutAt ?? null, previousBookingId: input.previousBookingId ?? null },
+    metadata: { turnoverId: input.turnoverId, minutesToCheckIn, checkoutAt: input.checkoutAt ?? null, previousBookingId: input.previousBookingId ?? null },
   });
   const severityFor = (deadlineAt: string): OpsAlertSeverity => nowMs >= new Date(deadlineAt).getTime() || minutesToCheckIn <= OPS_ALERT_THRESHOLDS_MINUTES.imminentCheckIn ? 'critical' : 'warning';
 
