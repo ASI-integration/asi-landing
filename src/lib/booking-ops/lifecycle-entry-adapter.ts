@@ -28,10 +28,12 @@ export async function emitLifecycleForAction(input: { bookingId: string; action:
 export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown> }) {
   const status = String(input.body.status ?? '');
   let type: string | null = null;
+  if (input.action === 'update_cleaning' && status === 'verified') type = 'cleaner.task_completed';
   if (input.action === 'update_linen' && ['completed', 'delivered', 'verified'].includes(status)) type = 'linen.task_completed';
   if (input.action === 'update_supplies' && ['completed', 'verified', 'waived'].includes(status)) type = 'consumables.task_completed';
   if (input.action === 'create_maintenance') type = 'damage.reported';
   if (input.action === 'update_maintenance' && ['completed', 'resolved'].includes(status)) type = 'maintenance.task_completed';
+  if (input.action === 'final_approval') type = 'inspection.completed';
   if (!type) return null;
   return recordAndProcessBookingEvent({ id: durableEventId('physical_readiness', input.bookingId, input.action, String(input.body.id ?? ''), status), bookingId: input.bookingId, type, actorType: 'operator', actorId: input.actorId, source: 'physical_readiness', correlationId: durableEventId('physical_readiness', input.bookingId, input.action), payload: { action: input.action, status } });
 }

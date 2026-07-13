@@ -33,7 +33,7 @@ describe('OPS v16 lifecycle entry adapters', () => {
   });
 
   it.each([
-    ['update_cleaning', 'completed', 'cleaner.task_completed'],
+    ['update_cleaning', 'verified', 'cleaner.task_completed'],
     ['update_linen', 'delivered', 'linen.task_completed'],
     ['update_supplies', 'completed', 'consumables.task_completed'],
     ['create_maintenance', '', 'damage.reported'],
@@ -42,6 +42,11 @@ describe('OPS v16 lifecycle entry adapters', () => {
   ])('maps worker action %s to %s', async (action, status, type) => {
     await emitPhysicalLifecycle({ bookingId: 'booking-1', action, body: { id: 'work-1', status } });
     expect(recordAndProcessBookingEvent).toHaveBeenLastCalledWith(expect.objectContaining({ type, bookingId: 'booking-1' }));
+  });
+
+  it('does not map completed cleaning to cleaner.task_completed before verification', async () => {
+    await emitPhysicalLifecycle({ bookingId: 'booking-1', action: 'update_cleaning', body: { id: 'work-1', status: 'completed' } });
+    expect(recordAndProcessBookingEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cleaner.task_completed' }));
   });
 
   it('uses deterministic IDs so repeated action values deduplicate in persistence', async () => {
