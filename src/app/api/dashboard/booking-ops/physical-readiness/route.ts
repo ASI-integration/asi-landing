@@ -7,12 +7,14 @@ import {
   ensurePhysicalTasks,
   getPhysicalReadiness,
   recomputePhysicalReadiness,
+  requirePhysicalReadinessBookingAccount,
   updateCleaningTask,
   updateLinenTask,
   updateMaintenanceTicket,
   updateSuppliesTask,
 } from '@/lib/booking-ops/physical-readiness-execution';
 import { emitPhysicalLifecycle } from '@/lib/booking-ops/lifecycle-entry-adapter';
+import { resolveReservationAccess } from '@/lib/reservations/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +30,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   if ('error' in auth) return auth.error;
   const bookingId = text(new URL(req.url).searchParams.get('bookingId'));
   try {
+    const access = await resolveReservationAccess(auth.session);
+    await requirePhysicalReadinessBookingAccount(bookingId, access.accountId);
     const readiness = await getPhysicalReadiness(bookingId);
     return NextResponse.json({ ok: true, readiness });
   } catch (error) {
@@ -45,6 +49,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   const action = text(body.action);
   if (!ACTIONS.has(action)) return NextResponse.json({ ok: false, message: 'Недопустимое действие.' }, { status: 400 });
   try {
+    const access = await resolveReservationAccess(auth.session);
+    await requirePhysicalReadinessBookingAccount(bookingId, access.accountId);
     const readiness = await runAction(action, bookingId, body, auth.session.email ?? 'Оператор');
     await emitPhysicalLifecycle({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, body });
     return NextResponse.json({ ok: true, readiness });

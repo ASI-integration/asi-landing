@@ -28,7 +28,7 @@ export async function emitLifecycleForAction(input: { bookingId: string; action:
 export async function emitPhysicalLifecycle(input: { bookingId: string; action: string; actorId?: string | null; body: Record<string, unknown> }) {
   const status = String(input.body.status ?? '');
   let type: string | null = null;
-  if (input.action === 'update_cleaning' && ['completed', 'verified'].includes(status)) type = 'cleaner.task_completed';
+  if (input.action === 'update_cleaning' && status === 'verified') type = 'cleaner.task_completed';
   if (input.action === 'update_linen' && ['completed', 'delivered', 'verified'].includes(status)) type = 'linen.task_completed';
   if (input.action === 'update_supplies' && ['completed', 'verified', 'waived'].includes(status)) type = 'consumables.task_completed';
   if (input.action === 'create_maintenance') type = 'damage.reported';

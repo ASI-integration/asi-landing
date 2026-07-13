@@ -81,6 +81,20 @@ export async function recordAndProcessBookingEvent(input: RecordEventInput) {
   }
 }
 
+export async function recordProcessedBookingAuditEvent(input: RecordEventInput) {
+  const eventId = input.id ?? randomUUID();
+  const now = input.createdAt ?? new Date().toISOString();
+  const insert = await supabase.from('booking_ops_domain_events').insert({
+    id: eventId, booking_id: input.bookingId, object_id: input.objectId ?? null, event_type: input.type,
+    actor_type: input.actorType, actor_id: input.actorId ?? null, payload: input.payload ?? {}, source: input.source,
+    correlation_id: input.correlationId ?? randomUUID(), causation_id: input.causationId ?? null,
+    created_at: now, processed_at: now, processing_error: null,
+  });
+  if (insert.error?.code === '23505') return { eventId, processed: false, duplicate: true };
+  if (insert.error) throw new Error(insert.error.message);
+  return { eventId, processed: true, duplicate: false };
+}
+
 export async function recoverUnprocessedBookingEvents(limit = 100) {
   const result = await supabase.from('booking_ops_domain_events').select('id').is('processed_at', null).is('processing_error', null).order('created_at').limit(limit);
   if (result.error) throw new Error(result.error.message);

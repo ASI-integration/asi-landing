@@ -9,6 +9,7 @@ vi.mock('@/lib/crm/api-auth', () => ({
 vi.mock('@/lib/booking-ops/physical-readiness-execution', () => ({
   approveFinalPhysicalReadiness: vi.fn(), createMaintenanceTicket: vi.fn(), createPhysicalCoordinationDraft: vi.fn(),
   ensurePhysicalTasks: vi.fn(), getPhysicalReadiness: vi.fn(), recomputePhysicalReadiness: vi.fn(),
+  requirePhysicalReadinessBookingAccount: vi.fn(),
   updateCleaningTask: vi.fn(), updateLinenTask: vi.fn(), updateMaintenanceTicket: vi.fn(), updateSuppliesTask: vi.fn(),
 }));
 

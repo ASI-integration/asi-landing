@@ -3213,6 +3213,16 @@ function PhysicalReadinessCard({
     const waiverReason = window.prompt('Почему расходники можно не готовить');
     if (waiverReason) onAction('update_supplies', { status: 'waived', waiverReason });
   }
+  function assignCleaner() {
+    const assignedToName = window.prompt('Имя исполнителя (можно оставить пустым)')?.trim() ?? '';
+    const assignedToPhone = window.prompt('Телефон (можно оставить пустым)')?.trim() ?? '';
+    const assignedToTelegram = window.prompt('Telegram (можно оставить пустым)')?.trim() ?? '';
+    if (!assignedToName && !assignedToPhone && !assignedToTelegram) {
+      window.alert('Укажите имя, телефон или Telegram исполнителя.');
+      return;
+    }
+    onAction('update_cleaning', { status: 'assigned', assignedToName, assignedToPhone, assignedToTelegram });
+  }
   return (
     <section className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3241,7 +3251,7 @@ function PhysicalReadinessCard({
                   <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs">{PHYSICAL_STATUS_LABELS_RU[group.task?.status ?? 'pending'] ?? group.task?.status}</span>
                 </div>
                 {isOpsAdmin ? <div className="mt-3 flex flex-wrap gap-1.5">
-                  {group.actions.map((status) => <button key={status} type="button" disabled={busy} onClick={() => onAction(`update_${group.key}`, { status })} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">{PHYSICAL_STATUS_LABELS_RU[status]}</button>)}
+                  {group.actions.map((status) => <button key={status} type="button" disabled={busy} onClick={() => group.key === 'cleaning' && status === 'assigned' ? assignCleaner() : onAction(`update_${group.key}`, { status })} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">{PHYSICAL_STATUS_LABELS_RU[status]}</button>)}
                   {group.key === 'supplies' ? <button type="button" disabled={busy} onClick={waiveSupplies} className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Не требуется</button> : null}
                   {group.key !== 'supplies' ? <button type="button" disabled={busy} onClick={() => draft(group.key as 'cleaning' | 'linen', group.task?.id)} className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800 disabled:opacity-50">Черновик Telegram</button> : null}
                 </div> : null}

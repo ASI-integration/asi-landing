@@ -10,6 +10,7 @@ import {
   type BookingOpsCommunicationChannel,
 } from '@/lib/booking-ops/types';
 import { emitLifecycleForAction } from '@/lib/booking-ops/lifecycle-entry-adapter';
+import { activateTurnoverCleaningAfterCheckout } from '@/lib/booking-ops/turnover-cleaning-activation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -106,6 +107,9 @@ export async function POST(req: Request): Promise<NextResponse> {
       metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata as Record<string, unknown> : {},
     });
     await emitLifecycleForAction({ bookingId, action, actorId: auth.session.email ?? auth.session.userId ?? null, source: 'instay_checkout', payload: { actualCheckoutAt: body.actualCheckoutAt ?? body.actual_checkout_at ?? null } });
+    if (action === 'mark_guest_checked_out') {
+      await activateTurnoverCleaningAfterCheckout(bookingId, text(body.actualCheckoutAt ?? body.actual_checkout_at) || undefined);
+    }
     return NextResponse.json({ ok: true, instayCheckout });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось обновить проживание.';
