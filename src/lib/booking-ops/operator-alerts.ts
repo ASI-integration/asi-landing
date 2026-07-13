@@ -77,6 +77,13 @@ const SAFE_METADATA_KEYS = new Set([
   'state',
   'taskId',
   'turnoverId',
+  'automationStatus',
+  'automationLastAction',
+  'automationAttemptCount',
+  'automationNextRetryAt',
+  'failureCode',
+  'requiresApproval',
+  'policyDecision',
 ]);
 
 const text = (value: unknown, maxLength = 500) => String(value ?? '').trim().slice(0, maxLength);
@@ -372,5 +379,19 @@ export async function acknowledgeOperatorAlert(accountId: string, alertId: strin
   if (result.error) throw new Error(result.error.message);
   if (!result.data) throw new Error('alert_not_found_or_not_open');
   await emitAlertEvent(String(result.data.booking_id), 'ops_alert_acknowledged', result.data as Row, `ack:${now}`);
+  return mapOperatorAlertRow(result.data as Row);
+}
+
+export async function resolveOperatorAlertOccurrence(accountId: string, alertId: string, _actor: string, reason: string) {
+  const cleanReason = text(reason, 500);
+  if (!cleanReason) throw new Error('resolution_reason_required');
+  const now = new Date().toISOString();
+  const result = await supabase.from('booking_ops_alerts').update({
+    status: 'resolved', resolved_at: now, resolution_reason: cleanReason,
+    updated_at: now,
+  }).eq('id', alertId).eq('account_id', accountId).in('status', ACTIVE_STATUSES).select('*').maybeSingle();
+  if (result.error) throw new Error(result.error.message);
+  if (!result.data) throw new Error('alert_not_found_or_resolved');
+  await emitAlertEvent(String(result.data.booking_id), 'ops_alert_resolved', result.data as Row, `operator:${now}`);
   return mapOperatorAlertRow(result.data as Row);
 }
