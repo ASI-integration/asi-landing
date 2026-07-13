@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
-import { acknowledgeOperatorAlert, getOperatorAlert } from '@/lib/booking-ops/operator-alerts';
+import { getOperatorAlert } from '@/lib/booking-ops/operator-alerts';
+import { applyOperatorExceptionAction, OPERATOR_EXCEPTION_ACTIONS, type OperatorExceptionAction } from '@/lib/booking-ops/operator-exception-actions';
 import { recordAndProcessBookingEvent } from '@/lib/booking-ops/lifecycle-autopilot-service';
 import { resolveReservationAccess } from '@/lib/reservations/access';
 
@@ -27,29 +28,31 @@ export async function GET(_request: Request, context: { params: { id: string } }
 export async function PATCH(request: Request, context: { params: { id: string } }) {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
-  const body = await request.json().catch(() => ({})) as { action?: string };
-  if (body.action !== 'acknowledge') {
+  const body = await request.json().catch(() => ({})) as { action?: string; reason?: string; assignedToName?: string; assignedToPhone?: string; assignedToTelegram?: string };
+  if (!OPERATOR_EXCEPTION_ACTIONS.includes(body.action as OperatorExceptionAction)) {
     return NextResponse.json({ ok: false, message: 'Действие не поддерживается.' }, { status: 400 });
   }
   try {
     const access = await resolveReservationAccess(auth.session);
     if (access.accountId === 'legacy') throw new Error('account_workspace_unavailable');
     const actor = auth.session.email ?? auth.session.userId ?? 'operator';
-    const alert = await acknowledgeOperatorAlert(access.accountId, context.params.id, actor);
+    const result = await applyOperatorExceptionAction({ accountId: access.accountId, alertId: context.params.id, action: body.action as OperatorExceptionAction, actor, reason: body.reason, assignedToName: body.assignedToName, assignedToPhone: body.assignedToPhone, assignedToTelegram: body.assignedToTelegram });
+    const alert = result.alert;
+    if (!alert) throw new Error('alert_not_found');
     await recordAndProcessBookingEvent({
       bookingId: alert.bookingId,
-      type: 'alert.acknowledged',
+      type: body.action === 'acknowledge' ? 'alert.acknowledged' : 'alert.exception_action',
       actorType: 'operator',
       actorId: auth.session.email ?? auth.session.userId ?? null,
       source: 'booking_ops_dashboard',
-      payload: { alertId: context.params.id },
+      payload: { alertId: context.params.id, action: body.action },
     });
-    return NextResponse.json({ ok: true, alert });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не удалось подтвердить уведомление.';
     return NextResponse.json(
       { ok: false, message },
-      { status: message === 'alert_not_found_or_not_open' ? 404 : 400 },
+      { status: message === 'alert_not_found_or_not_open' || message === 'alert_not_found' ? 404 : 400 },
     );
   }
 }

@@ -36,6 +36,15 @@ export const BOOKING_OPS_EVENT_TYPES = [
   'sla_warning_triggered',
   'sla_critical_triggered',
   'turnover_deadlines_recalculated',
+  'booking_automation_run_started',
+  'booking_automation_step_planned',
+  'booking_automation_step_started',
+  'booking_automation_step_completed',
+  'booking_automation_step_waiting',
+  'booking_automation_retry_scheduled',
+  'booking_automation_step_failed',
+  'booking_automation_handoff_created',
+  'booking_automation_run_completed',
 ] as const;
 
 export type BookingOpsEventType = (typeof BOOKING_OPS_EVENT_TYPES)[number];
@@ -113,6 +122,14 @@ const SAFE_METADATA_KEYS = new Set([
   'alertCode',
   'severity',
   'sourceGate',
+  'actionCode',
+  'domain',
+  'gateKey',
+  'outcome',
+  'reasonCode',
+  'attemptCount',
+  'retryAt',
+  'communicationIntentId',
 ]);
 
 function text(value: unknown, maxLength = 500): string {
