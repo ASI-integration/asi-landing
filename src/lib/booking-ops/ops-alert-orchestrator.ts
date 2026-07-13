@@ -8,13 +8,86 @@ import type { BookingLifecycleGate } from './lifecycle-types';
 import type { BookingOpsTask } from './task-types';
 import type { BookingOpsCommunicationIntent } from './types';
 import { runBookingOpsAutomationForBooking, type BookingAutomationRunSummary } from './booking-automation-runner';
+import {
+  isBookingAutomationExecutionAllowed,
+  resolveBookingAutomationCanaryBookingIds,
+  resolveBookingAutomationRolloutMode,
+  type BookingAutomationRolloutMode,
+} from './booking-automation-rollout';
+import type { BookingAutomationStep } from './booking-automation-planner';
 
 const FULL_RUN_LEASE_TTL_SECONDS = 900;
 const FULL_RUN_LEASE_RENEW_INTERVAL_MS = 60_000;
 
-export type OpsAlertRunSummary = { runId?: string; trigger?: 'scheduled' | 'manual' | 'targeted'; startedAt?: string; completedAt?: string; lockAcquired?: boolean; automation?: BookingAutomationRunSummary; evaluated: number; alertsCreated: number; alertsUpdated: number; alertsEscalated: number; alertsResolved: number; skipped: number; unchanged: number; errors: string[] };
+export type BookingAutomationPreview = {
+  bookingId: string;
+  plannedActions: Array<{
+    actionCode: BookingAutomationStep['code'];
+    disposition: BookingAutomationStep['disposition'];
+    reasonCode: string;
+    retryAt: string | null;
+    requiresApproval: boolean;
+    requiresHandoff: boolean;
+  }>;
+};
+
+export type OpsAlertRunSummary = {
+  runId?: string; trigger?: 'scheduled' | 'manual' | 'targeted'; startedAt?: string; completedAt?: string; lockAcquired?: boolean;
+  automation?: BookingAutomationRunSummary; automationPreview?: BookingAutomationPreview;
+  automationMode?: BookingAutomationRolloutMode; automationExecutedCount?: number; automationPreviewCount?: number;
+  canaryMatchedCount?: number; automationPreviews?: BookingAutomationPreview[];
+  evaluated: number; alertsCreated: number; alertsUpdated: number; alertsEscalated: number; alertsResolved: number;
+  skipped: number; unchanged: number; errors: string[];
+};
 type Row = Record<string, unknown>;
 const text = (value: unknown) => String(value ?? '').trim();
+
+type RolloutContext = { mode: BookingAutomationRolloutMode; canaryBookingIds: ReadonlySet<string> };
+type OrchestrationOptions = { dryRun?: boolean; executeAutomation?: boolean; rollout?: RolloutContext };
+
+function currentRollout(): RolloutContext {
+  return { mode: resolveBookingAutomationRolloutMode(), canaryBookingIds: resolveBookingAutomationCanaryBookingIds() };
+}
+
+function emptySummary(mode: BookingAutomationRolloutMode): OpsAlertRunSummary {
+  return {
+    automationMode: mode, automationExecutedCount: 0, automationPreviewCount: 0, canaryMatchedCount: 0, automationPreviews: [],
+    evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: [],
+  };
+}
+
+function safeAutomationPreview(automation: BookingAutomationRunSummary): BookingAutomationPreview {
+  return {
+    bookingId: automation.bookingId,
+    plannedActions: automation.planned.map((step) => ({
+      actionCode: step.code,
+      disposition: step.disposition,
+      reasonCode: step.reasonCode,
+      retryAt: step.retryAt,
+      requiresApproval: step.requiresApproval,
+      requiresHandoff: step.disposition === 'handoff_required',
+    })),
+  };
+}
+
+function addSummary(total: OpsAlertRunSummary, current: OpsAlertRunSummary) {
+  for (const key of ['evaluated','alertsCreated','alertsUpdated','alertsEscalated','alertsResolved','skipped','unchanged','automationExecutedCount','automationPreviewCount','canaryMatchedCount'] as const) {
+    total[key] = (total[key] ?? 0) + (current[key] ?? 0);
+  }
+  total.automationPreviews?.push(...(current.automationPreviews ?? []));
+  total.errors.push(...current.errors);
+}
+
+function safeRunLog(summary: OpsAlertRunSummary) {
+  return {
+    runId: summary.runId, trigger: summary.trigger, startedAt: summary.startedAt, completedAt: summary.completedAt,
+    lockAcquired: summary.lockAcquired, automationMode: summary.automationMode,
+    automationExecutedCount: summary.automationExecutedCount ?? 0, automationPreviewCount: summary.automationPreviewCount ?? 0,
+    canaryMatchedCount: summary.canaryMatchedCount ?? 0, evaluated: summary.evaluated, alertsCreated: summary.alertsCreated,
+    alertsUpdated: summary.alertsUpdated, alertsEscalated: summary.alertsEscalated, alertsResolved: summary.alertsResolved,
+    skipped: summary.skipped, unchanged: summary.unchanged, errors: summary.errors.length,
+  };
+}
 
 async function rows(table: string, bookingId: string, column = 'booking_id'): Promise<Row[]> {
   const result = await supabase.from(table).select('*').eq(column, bookingId);
@@ -106,25 +179,44 @@ async function reconcileOpsAlertsForBooking(bookingId: string, now = new Date().
 
 export async function orchestrateBookingAutomationAndAlertsForBooking(input: {
   bookingId: string; now?: string; expectedAccountId?: string; dryRun?: boolean; maxActions?: number;
+  executeAutomation?: boolean; reconcileLegacyInPreview?: boolean; rollout?: RolloutContext;
 }): Promise<OpsAlertRunSummary> {
   const now = input.now ?? new Date().toISOString();
+  const rollout = input.rollout ?? currentRollout();
+  const canaryMatched = rollout.mode === 'canary' && rollout.canaryBookingIds.has(input.bookingId);
+  const executionAllowed = isBookingAutomationExecutionAllowed({ mode: rollout.mode, bookingId: input.bookingId, canaryBookingIds: rollout.canaryBookingIds });
+  const executeAutomation = input.dryRun !== true && input.executeAutomation !== false && executionAllowed;
   const automation = await runBookingOpsAutomationForBooking({
     bookingId: input.bookingId, expectedAccountId: input.expectedAccountId, now,
-    dryRun: input.dryRun, maxActions: input.maxActions,
+    dryRun: !executeAutomation, maxActions: input.maxActions,
   });
-  if (input.dryRun) {
-    return { automation, evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 1, unchanged: 0, errors: automation.errors };
+  const preview = executeAutomation ? undefined : safeAutomationPreview(automation);
+  const rolloutSummary: Pick<OpsAlertRunSummary, 'automationMode' | 'automationExecutedCount' | 'automationPreviewCount' | 'canaryMatchedCount' | 'automationPreviews'> = {
+    automationMode: rollout.mode,
+    automationExecutedCount: executeAutomation ? 1 : 0,
+    automationPreviewCount: executeAutomation ? 0 : 1,
+    canaryMatchedCount: canaryMatched ? 1 : 0,
+    automationPreviews: preview ? [preview] : [],
+  };
+  if (input.dryRun || (!executeAutomation && input.reconcileLegacyInPreview !== true)) {
+    return { ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview, evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 1, unchanged: 0, errors: automation.errors };
   }
-  const alerts = await reconcileOpsAlertsForBooking(input.bookingId, new Date().toISOString(), input.expectedAccountId, automation);
-  return { ...alerts, automation, alertsCreated: alerts.alertsCreated + automation.alertsCreated, alertsResolved: alerts.alertsResolved + automation.alertsResolved, errors: [...automation.errors, ...alerts.errors] };
+  const alerts = await reconcileOpsAlertsForBooking(input.bookingId, now, input.expectedAccountId, executeAutomation ? automation : undefined);
+  return {
+    ...alerts, ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview,
+    alertsCreated: alerts.alertsCreated + (executeAutomation ? automation.alertsCreated : 0),
+    alertsResolved: alerts.alertsResolved + (executeAutomation ? automation.alertsResolved : 0),
+    errors: [...automation.errors, ...alerts.errors],
+  };
 }
 
 export async function orchestrateOpsAlertsForBooking(bookingId: string, now = new Date().toISOString(), expectedAccountId?: string): Promise<OpsAlertRunSummary> {
-  return orchestrateBookingAutomationAndAlertsForBooking({ bookingId, now, expectedAccountId });
+  return orchestrateBookingAutomationAndAlertsForBooking({ bookingId, now, expectedAccountId, reconcileLegacyInPreview: true });
 }
 
-async function sweepAllRelevantOpsAlerts(now: string, accountId?: string): Promise<OpsAlertRunSummary> {
-  const empty: OpsAlertRunSummary = { evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: [] };
+async function sweepAllRelevantOpsAlerts(now: string, accountId?: string, options: OrchestrationOptions = {}): Promise<OpsAlertRunSummary> {
+  const rollout = options.rollout ?? currentRollout();
+  const empty = emptySummary(rollout.mode);
   let query = supabase.from('booking_ops_records').select('id').not('check_in_at', 'is', null)
     .not('ops_status', 'in', '(cancelled,completed,archived,inactive)')
     .gte('check_in_at', new Date(new Date(now).getTime() - 24 * 60 * 60_000).toISOString())
@@ -134,20 +226,24 @@ async function sweepAllRelevantOpsAlerts(now: string, accountId?: string): Promi
   const result = await query;
   if (result.error) return { ...empty, errors: [result.error.message] };
   for (const item of result.data ?? []) {
-    const current = await orchestrateOpsAlertsForBooking(String(item.id), now, accountId);
-    for (const key of ['evaluated','alertsCreated','alertsUpdated','alertsEscalated','alertsResolved','skipped','unchanged'] as const) empty[key] += current[key];
-    empty.errors.push(...current.errors);
+    const current = await orchestrateBookingAutomationAndAlertsForBooking({
+      bookingId: String(item.id), now, expectedAccountId: accountId, dryRun: options.dryRun,
+      executeAutomation: options.executeAutomation, reconcileLegacyInPreview: options.dryRun !== true, rollout,
+    });
+    addSummary(empty, current);
   }
   return empty;
 }
 
-export async function orchestrateAllRelevantOpsAlerts(now = new Date().toISOString(), trigger: 'scheduled' | 'manual' = 'manual', accountId?: string): Promise<OpsAlertRunSummary> {
+export async function orchestrateAllRelevantOpsAlerts(now = new Date().toISOString(), trigger: 'scheduled' | 'manual' = 'manual', accountId?: string, options: OrchestrationOptions = {}): Promise<OpsAlertRunSummary> {
+  const rollout = options.rollout ?? currentRollout();
+  if (options.dryRun) return sweepAllRelevantOpsAlerts(now, accountId, { ...options, rollout });
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const lock = await supabase.rpc('acquire_booking_ops_alert_run_lock', { p_lock_scope: 'ops-alerts:full', p_owner_id: runId, p_ttl_seconds: FULL_RUN_LEASE_TTL_SECONDS });
   if (lock.error || lock.data !== true) {
-    const summary: OpsAlertRunSummary = { runId, trigger, startedAt, completedAt: new Date().toISOString(), lockAcquired: false, evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: lock.error ? ['lock_unavailable'] : [] };
-    console.info('[booking-ops-alert-run]', JSON.stringify({ ...summary, errors: summary.errors.length }));
+    const summary: OpsAlertRunSummary = { ...emptySummary(rollout.mode), runId, trigger, startedAt, completedAt: new Date().toISOString(), lockAcquired: false, errors: lock.error ? ['lock_unavailable'] : [] };
+    console.info('[booking-ops-alert-run]', JSON.stringify(safeRunLog(summary)));
     return summary;
   }
   let leaseRenewalFailed = false;
@@ -164,10 +260,10 @@ export async function orchestrateAllRelevantOpsAlerts(now = new Date().toISOStri
     });
   }, FULL_RUN_LEASE_RENEW_INTERVAL_MS);
   try {
-    const result = await sweepAllRelevantOpsAlerts(now, accountId);
+    const result = await sweepAllRelevantOpsAlerts(now, accountId, { ...options, rollout });
     if (leaseRenewalFailed) result.errors.push('lock_renewal_failed');
     const summary = { ...result, runId, trigger, startedAt, completedAt: new Date().toISOString(), lockAcquired: true };
-    console.info('[booking-ops-alert-run]', JSON.stringify({ ...summary, errors: summary.errors.length }));
+    console.info('[booking-ops-alert-run]', JSON.stringify(safeRunLog(summary)));
     return summary;
   } finally {
     clearInterval(renewalTimer);
@@ -176,16 +272,19 @@ export async function orchestrateAllRelevantOpsAlerts(now = new Date().toISOStri
   }
 }
 
-export async function orchestrateOpsAlertsForProperty(propertyId: string, now = new Date().toISOString(), accountId?: string): Promise<OpsAlertRunSummary> {
+export async function orchestrateOpsAlertsForProperty(propertyId: string, now = new Date().toISOString(), accountId?: string, options: OrchestrationOptions = {}): Promise<OpsAlertRunSummary> {
+  const rollout = options.rollout ?? currentRollout();
   let query = supabase.from('booking_ops_records').select('id').eq('property_id', propertyId).not('check_in_at', 'is', null).order('check_in_at').limit(100);
   if (accountId) query = query.eq('account_id', accountId);
   const result = await query;
-  const total: OpsAlertRunSummary = { evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: [] };
+  const total = emptySummary(rollout.mode);
   if (result.error) { total.errors.push(result.error.message); return total; }
   for (const item of result.data ?? []) {
-    const current = await orchestrateOpsAlertsForBooking(String(item.id), now, accountId);
-    for (const key of ['evaluated','alertsCreated','alertsUpdated','alertsEscalated','alertsResolved','skipped','unchanged'] as const) total[key] += current[key];
-    total.errors.push(...current.errors);
+    const current = await orchestrateBookingAutomationAndAlertsForBooking({
+      bookingId: String(item.id), now, expectedAccountId: accountId, dryRun: options.dryRun,
+      executeAutomation: options.executeAutomation, reconcileLegacyInPreview: options.dryRun !== true, rollout,
+    });
+    addSummary(total, current);
   }
   return total;
 }
