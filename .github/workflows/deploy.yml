@@ -333,7 +333,7 @@ jobs:
 
           echo "Cleaning stale remote deploy temp artifacts..."
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh \"${REMOTE_TMP}\"/pm2-sync-ops-alert-scheduler.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
+            "rm -f \"${REMOTE_TMP}\"/asi-release-*.tgz \"${REMOTE_TMP}\"/asi-deploy-artifact.sh \"${REMOTE_TMP}\"/deploy-shadow-env-guard.sh \"${REMOTE_TMP}\"/pm2-sync-ops-alert-scheduler.sh && df -h \"${REMOTE_TMP}\" && du -sh \"${REMOTE_TMP}\" || true"
 
           echo "Cleaning old remote releases before artifact upload..."
           ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -s" <<'REMOTE_RELEASE_CLEANUP'
@@ -391,6 +391,7 @@ jobs:
 
           echo "Copying deploy script + artifact to VPS ${REMOTE_TMP}..."
           scp "${SCP_OPTS[@]}" scripts/deploy-artifact.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi-deploy-artifact.sh"
+          scp "${SCP_OPTS[@]}" scripts/deploy-shadow-env-guard.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/deploy-shadow-env-guard.sh"
           scp "${SCP_OPTS[@]}" scripts/pm2-sync-ops-alert-scheduler.sh "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh"
           scp "${SCP_OPTS[@]}" "$ARTIFACT_PATH" "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/${ARTIFACT_FILE}"
 
@@ -403,26 +404,18 @@ jobs:
             exit 1
           fi
 
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
-            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' BOOKING_OPS_AUTO_SEND_RUNNER_SECRET='${BOOKING_OPS_AUTO_SEND_RUNNER_SECRET}' bash -lc 'set -euo pipefail
-              echo \"Deploying SHA: ${SHA}\"
+          printf '%s' "$BOOKING_OPS_AUTO_SEND_RUNNER_SECRET" | \
+            ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+              "bash \"${REMOTE_TMP}/deploy-shadow-env-guard.sh\" apply /var/www/asi/shared/.env.production.live"
 
-              ENV_FILE=\"/var/www/asi/shared/.env.production.live\"
-              ENV_TMP=\"${REMOTE_TMP}/.env.production.live.tmp\"
-              umask 077
-              if [ -f \"\${ENV_FILE}\" ]; then
-                grep -v \"^BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=\" \"\${ENV_FILE}\" > \"\${ENV_TMP}\" || true
-              else
-                : > \"\${ENV_TMP}\"
-              fi
-              printf \"BOOKING_OPS_AUTO_SEND_RUNNER_SECRET=%s\\n\" \"\${BOOKING_OPS_AUTO_SEND_RUNNER_SECRET}\" >> \"\${ENV_TMP}\"
-              mv \"\${ENV_TMP}\" \"\${ENV_FILE}\"
-              chmod 600 \"\${ENV_FILE}\"
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "TWOGIS_CATALOG_API_KEY='${TWOGIS_CATALOG_API_KEY:-}' GOOGLE_MAPS_SERVER_API_KEY='${GOOGLE_MAPS_SERVER_API_KEY:-}' bash -lc 'set -euo pipefail
+              echo \"Deploying SHA: ${SHA}\"
 
               chmod +x ${REMOTE_TMP}/asi-deploy-artifact.sh || true
               ASI_BASE_DIR=\"/var/www/asi\" bash ${REMOTE_TMP}/asi-deploy-artifact.sh \"${SHA}\" \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
-              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh ${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
+              rm -f ${REMOTE_TMP}/asi-deploy-artifact.sh ${REMOTE_TMP}/deploy-shadow-env-guard.sh ${REMOTE_TMP}/pm2-sync-ops-alert-scheduler.sh \"${REMOTE_TMP}/${ARTIFACT_FILE}\"
 
               echo \"LIVE_SHA_EXPECTED=${SHA}\"
               curl -fsS http://127.0.0.1:3000/api/version
