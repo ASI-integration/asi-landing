@@ -104,7 +104,7 @@ function taskState(row: Row | null, assignmentField = false) {
   return { status: text(row.status), assigned: assignmentField ? Boolean(text(row.assigned_to_name) || text(row.assigned_to_phone) || text(row.assigned_to_telegram)) : true };
 }
 
-async function reconcileOpsAlertsForBooking(bookingId: string, now = new Date().toISOString(), expectedAccountId?: string, automation?: BookingAutomationRunSummary): Promise<OpsAlertRunSummary> {
+export async function reconcileOperatorAlertsForBooking(bookingId: string, now = new Date().toISOString(), expectedAccountId?: string, automation?: BookingAutomationRunSummary): Promise<OpsAlertRunSummary> {
   const summary: OpsAlertRunSummary = { evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 0, unchanged: 0, errors: [] };
   try {
     const bookingResult = await supabase.from('booking_ops_records').select('*').eq('id', bookingId).maybeSingle();
@@ -201,7 +201,7 @@ export async function orchestrateBookingAutomationAndAlertsForBooking(input: {
   if (input.dryRun || (!executeAutomation && input.reconcileLegacyInPreview !== true)) {
     return { ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview, evaluated: 0, alertsCreated: 0, alertsUpdated: 0, alertsEscalated: 0, alertsResolved: 0, skipped: 1, unchanged: 0, errors: automation.errors };
   }
-  const alerts = await reconcileOpsAlertsForBooking(input.bookingId, now, input.expectedAccountId, executeAutomation ? automation : undefined);
+  const alerts = await reconcileOperatorAlertsForBooking(input.bookingId, now, input.expectedAccountId, executeAutomation ? automation : undefined);
   return {
     ...alerts, ...rolloutSummary, automation: executeAutomation ? automation : undefined, automationPreview: preview,
     alertsCreated: alerts.alertsCreated + (executeAutomation ? automation.alertsCreated : 0),

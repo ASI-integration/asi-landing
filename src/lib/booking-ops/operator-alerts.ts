@@ -4,6 +4,14 @@ import { recordBookingOpsEvent, type BookingOpsEventType } from './events';
 
 export type OperatorAlertSeverity = 'info' | 'warning' | 'critical';
 export type OperatorAlertStatus = 'open' | 'acknowledged' | 'resolved';
+export const OPERATOR_ALERT_RESOLUTION_CATEGORIES = [
+  'issue_fixed',
+  'duplicate_alert',
+  'false_positive',
+  'no_longer_applicable',
+  'manually_overridden',
+] as const;
+export type OperatorAlertResolutionCategory = (typeof OPERATOR_ALERT_RESOLUTION_CATEGORIES)[number];
 
 export type OperatorAlert = {
   id: string;
@@ -24,7 +32,9 @@ export type OperatorAlert = {
   deadlineAt: string | null;
   nextCheckInAt: string | null;
   acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
   resolvedAt: string | null;
+  resolutionReason: string | null;
   metadata: Record<string, unknown>;
 };
 
@@ -150,7 +160,9 @@ export function mapOperatorAlertRow(row: Row): OperatorAlert {
     deadlineAt: nullableText(row.deadline_at),
     nextCheckInAt: nullableText(row.next_check_in_at),
     acknowledgedAt: nullableText(row.acknowledged_at),
+    acknowledgedBy: nullableText(row.acknowledged_by),
     resolvedAt: nullableText(row.resolved_at),
+    resolutionReason: nullableText(row.resolution_reason),
     metadata: sanitizeOperatorAlertMetadata(row.metadata as Record<string, unknown> | null),
   };
 }
@@ -377,21 +389,34 @@ export async function acknowledgeOperatorAlert(accountId: string, alertId: strin
     .select('*')
     .maybeSingle();
   if (result.error) throw new Error(result.error.message);
-  if (!result.data) throw new Error('alert_not_found_or_not_open');
+  if (!result.data) {
+    const existing = await supabase.from('booking_ops_alerts').select('*')
+      .eq('id', alertId).eq('account_id', accountId).maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    if (!existing.data) throw new Error('alert_not_found_or_not_open');
+    if (existing.data.status === 'acknowledged') return mapOperatorAlertRow(existing.data as Row);
+    throw new Error('alert_not_found_or_not_open');
+  }
   await emitAlertEvent(String(result.data.booking_id), 'ops_alert_acknowledged', result.data as Row, `ack:${now}`);
   return mapOperatorAlertRow(result.data as Row);
 }
 
-export async function resolveOperatorAlertOccurrence(accountId: string, alertId: string, _actor: string, reason: string) {
+export async function resolveOperatorAlertOccurrence(accountId: string, alertId: string, _actor: string, category: OperatorAlertResolutionCategory, reason: string) {
+  if (!OPERATOR_ALERT_RESOLUTION_CATEGORIES.includes(category)) throw new Error('resolution_category_unsupported');
   const cleanReason = text(reason, 500);
   if (!cleanReason) throw new Error('resolution_reason_required');
   const now = new Date().toISOString();
   const result = await supabase.from('booking_ops_alerts').update({
-    status: 'resolved', resolved_at: now, resolution_reason: cleanReason,
+    status: 'resolved', resolved_at: now, resolution_reason: `${category}:${cleanReason}`,
     updated_at: now,
   }).eq('id', alertId).eq('account_id', accountId).in('status', ACTIVE_STATUSES).select('*').maybeSingle();
   if (result.error) throw new Error(result.error.message);
-  if (!result.data) throw new Error('alert_not_found_or_resolved');
+  if (!result.data) {
+    const existing = await supabase.from('booking_ops_alerts').select('*').eq('id', alertId).eq('account_id', accountId).maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    if (existing.data?.status === 'resolved' && existing.data.resolution_reason === `${category}:${cleanReason}`) return mapOperatorAlertRow(existing.data as Row);
+    throw new Error('alert_not_found_or_resolved');
+  }
   await emitAlertEvent(String(result.data.booking_id), 'ops_alert_resolved', result.data as Row, `operator:${now}`);
   return mapOperatorAlertRow(result.data as Row);
 }

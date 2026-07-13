@@ -3,6 +3,7 @@ import { requireCrmOperatorSession } from '@/lib/crm/api-auth';
 import { supabase } from '@/lib/supabase';
 import { resolveReservationAccess } from '@/lib/reservations/access';
 import { mapOperatorAlertRow } from '@/lib/booking-ops/operator-alerts';
+import { getOperatorAlertControl } from '@/lib/booking-ops/operator-exception-actions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,8 +12,11 @@ export async function GET(request: Request) {
   const auth = await requireCrmOperatorSession();
   if ('error' in auth) return auth.error;
   let accountId: string;
+  let isOpsAdmin = false;
   try {
-    accountId = (await resolveReservationAccess(auth.session)).accountId;
+    const access = await resolveReservationAccess(auth.session);
+    accountId = access.accountId;
+    isOpsAdmin = access.isOpsAdmin;
     if (accountId === 'legacy') throw new Error('account_workspace_unavailable');
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : 'account_workspace_unavailable' }, { status: 503 });
@@ -33,6 +37,9 @@ export async function GET(request: Request) {
     || (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)
     || String(a.next_check_in_at ?? '9999').localeCompare(String(b.next_check_in_at ?? '9999'))
     || String(a.deadline_at ?? '9999').localeCompare(String(b.deadline_at ?? '9999')));
-  const alerts = rows.map((row) => mapOperatorAlertRow(row));
+  const alerts = await Promise.all(rows.map(async (row) => {
+    const alert = mapOperatorAlertRow(row);
+    return { ...alert, control: await getOperatorAlertControl(alert, isOpsAdmin) };
+  }));
   return NextResponse.json({ ok: true, alerts });
 }

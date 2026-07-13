@@ -5,6 +5,9 @@ const database = vi.hoisted(() => {
   const state = {
     bookings: [] as Row[],
     alerts: [] as Row[],
+    workerTasks: [] as Row[],
+    cleaningTasks: [] as Row[],
+    domainEvents: [] as Row[],
     duplicateRaceRow: null as Row | null,
   };
 
@@ -30,7 +33,13 @@ const database = vi.hoisted(() => {
       return this.execute(false).then(resolve, reject);
     }
 
-    private rows() { return this.table === 'booking_ops_records' ? state.bookings : state.alerts; }
+    private rows() {
+      if (this.table === 'booking_ops_records') return state.bookings;
+      if (this.table === 'booking_ops_worker_tasks') return state.workerTasks;
+      if (this.table === 'booking_cleaning_tasks') return state.cleaningTasks;
+      if (this.table === 'booking_ops_domain_events') return state.domainEvents;
+      return state.alerts;
+    }
     private matching() {
       const rows = this.rows().filter((row) => this.filters.every((filter) => filter(row)));
       return this.maxRows === null ? rows : rows.slice(0, this.maxRows);
@@ -119,6 +128,9 @@ function alertRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   database.state.bookings = [{ id: 'booking-1', account_id: 'account-a', property_id: 'property-1' }];
   database.state.alerts = [];
+  database.state.workerTasks = [];
+  database.state.cleaningTasks = [];
+  database.state.domainEvents = [];
   database.state.duplicateRaceRow = null;
   vi.clearAllMocks();
 });
@@ -180,6 +192,15 @@ describe('canonical Operator Alert reconciliation', () => {
     const escalated = await reconcile([{ ...condition, severity: 'critical' }]);
     expect(escalated.alertsEscalated).toBe(1);
     expect(database.state.alerts[0]).toMatchObject({ id: 'alert-1', status: 'acknowledged', severity: 'critical', resolved_at: null });
+  });
+
+  it('records acknowledgement identity and treats a repeated acknowledgement as success', async () => {
+    database.state.alerts = [alertRow()];
+    const first = await acknowledgeOperatorAlert('account-a', 'alert-1', 'operator-1');
+    const second = await acknowledgeOperatorAlert('account-a', 'alert-1', 'operator-1');
+    expect(first).toMatchObject({ status: 'acknowledged', acknowledgedBy: 'operator-1' });
+    expect(second).toMatchObject({ status: 'acknowledged', acknowledgedBy: 'operator-1' });
+    expect(recordBookingOpsEvent).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a supplied account that does not own the booking', async () => {
@@ -272,6 +293,15 @@ describe('account-scoped alert routes', () => {
       method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'acknowledge' }),
     }), { params: { id: 'alert-b' } });
     expect(response.status).toBe(404);
+    expect(database.state.alerts[0].status).toBe('open');
+  });
+
+  it('rejects an action outside the server allowlist', async () => {
+    database.state.alerts = [alertRow()];
+    const response = await patchAlert(new Request('http://localhost', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'update_any_table' }),
+    }), { params: { id: 'alert-1' } });
+    expect(response.status).toBe(400);
     expect(database.state.alerts[0].status).toBe('open');
   });
 });

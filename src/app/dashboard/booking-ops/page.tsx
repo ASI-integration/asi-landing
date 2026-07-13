@@ -865,6 +865,13 @@ function BookingOpsPageInner() {
   }, [records, selectedId]);
 
   useEffect(() => {
+    if (selectedId || records.length === 0) return;
+    const requestedId = new URLSearchParams(window.location.search).get('bookingId');
+    const requestedRecord = records.find((record) => record.id === requestedId);
+    if (requestedRecord) selectRecord(requestedRecord);
+  }, [records, selectedId]);
+
+  useEffect(() => {
     if (!selectedId) {
       setTelegramDrafts([]);
       return;

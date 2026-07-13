@@ -44,6 +44,32 @@ export type BookingOpsCommunicationPlan = {
   nextAction: string | null;
 };
 
+export const OPERATOR_MISSING_DATA_REASONS = [
+  'guest_data',
+  'guest_documents',
+  'legal_confirmation',
+  'payment',
+  'compliance',
+  'arrival',
+  'communication',
+] as const;
+
+export type OperatorMissingDataReason = (typeof OPERATOR_MISSING_DATA_REASONS)[number];
+
+const OPERATOR_REQUEST_DEFINITION: Record<OperatorMissingDataReason, {
+  purpose: BookingOpsCommunicationPurpose;
+  message: string;
+  template: string;
+}> = {
+  guest_data: { purpose: 'request_missing_guest_data', message: 'Запросить у гостя недостающие данные.', template: 'operator.missing_guest_data.v1' },
+  guest_documents: { purpose: 'request_guest_documents', message: 'Запросить у гостя недостающие документы.', template: 'guest.documents_request.v1' },
+  legal_confirmation: { purpose: 'request_contract_confirmation', message: 'Запросить недостающее подтверждение по договору.', template: 'guest.contract_confirmation.v1' },
+  payment: { purpose: 'request_deposit_payment', message: 'Запросить недостающие данные об оплате или депозите.', template: 'guest.deposit_request.v1' },
+  compliance: { purpose: 'request_mvd_data', message: 'Запросить недостающие данные для обязательной отчётности.', template: 'guest.mvd_data_request.v1' },
+  arrival: { purpose: 'request_arrival_time', message: 'Запросить у гостя время прибытия.', template: 'guest.arrival_time_request.v1' },
+  communication: { purpose: 'guest_data_missing_notice', message: 'Запросить недостающие данные для связи с гостем.', template: 'operator.missing_communication_data.v1' },
+};
+
 const ACTIVE_STATUSES = new Set<BookingOpsCommunicationStatus>([
   'draft_ready',
   'waiting_for_external_input',
@@ -436,6 +462,63 @@ export async function listBookingOpsCommunicationsForRecord(
       },
     })),
   };
+}
+
+export async function createOperatorMissingDataRequestDraft(input: {
+  bookingOpsRecordId: string;
+  bookingId: string | null;
+  alertId: string;
+  reason: OperatorMissingDataReason;
+  actorId: string;
+}): Promise<{ communication: BookingOpsCommunicationIntent; created: boolean; actuallySent: false }> {
+  if (!OPERATOR_MISSING_DATA_REASONS.includes(input.reason)) throw new Error('missing_data_reason_unsupported');
+  const definition = OPERATOR_REQUEST_DEFINITION[input.reason];
+  const active = await supabase
+    .from('booking_ops_communication_intents')
+    .select('*')
+    .eq('booking_ops_record_id', input.bookingOpsRecordId)
+    .eq('purpose', definition.purpose)
+    .in('status', ['draft_ready', 'waiting_for_external_input'])
+    .maybeSingle();
+  if (active.error) throw new Error(active.error.message);
+  if (active.data) return { communication: mapRow(active.data as CommunicationRow), created: false, actuallySent: false };
+
+  const now = new Date().toISOString();
+  const inserted = await supabase.from('booking_ops_communication_intents').insert({
+    id: randomUUID(),
+    booking_ops_record_id: input.bookingOpsRecordId,
+    booking_id: input.bookingId,
+    related_task_id: null,
+    actor_type: 'guest',
+    actor_label: 'Гость',
+    purpose: definition.purpose,
+    channel: 'manual',
+    status: 'draft_ready',
+    message_text: definition.message,
+    message_template_key: definition.template,
+    metadata: {
+      operatorRequested: true,
+      alertId: input.alertId,
+      missingDataReason: input.reason,
+      requestedBy: input.actorId,
+      noExternalSend: true,
+      autoSendEligible: false,
+    },
+    created_at: now,
+    updated_at: now,
+  }).select('*').single();
+  if (inserted.error?.code === '23505') {
+    const raced = await supabase.from('booking_ops_communication_intents').select('*')
+      .eq('booking_ops_record_id', input.bookingOpsRecordId)
+      .eq('purpose', definition.purpose)
+      .in('status', ['draft_ready', 'waiting_for_external_input'])
+      .maybeSingle();
+    if (raced.error) throw new Error(raced.error.message);
+    if (!raced.data) throw new Error('missing_data_request_duplicate_race');
+    return { communication: mapRow(raced.data as CommunicationRow), created: false, actuallySent: false };
+  }
+  if (inserted.error || !inserted.data) throw new Error(inserted.error?.message ?? 'missing_data_request_create_failed');
+  return { communication: mapRow(inserted.data as CommunicationRow), created: true, actuallySent: false };
 }
 
 async function recordCommunicationEvent(input: {
