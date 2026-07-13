@@ -45,6 +45,7 @@ export type ReconcileOperatorAlertConditionsInput = {
   accountId: string;
   bookingId: string;
   propertyId: string;
+  managedSourceDomains: string[];
   conditions: OperatorAlertCondition[];
   now: string;
   previousBookingId?: string | null;
@@ -65,10 +66,13 @@ const severityRank: Record<OperatorAlertSeverity, number> = { info: 0, warning: 
 const SAFE_METADATA_KEYS = new Set([
   'attemptCount',
   'checkoutAt',
+  'communicationState',
+  'gateStatus',
   'minutesToCheckIn',
   'nextCheckInAt',
   'previousBookingId',
   'reasonCode',
+  'readinessStatus',
   'referenceId',
   'state',
   'taskId',
@@ -239,6 +243,11 @@ export async function reconcileOperatorAlertConditions(
     unchanged: 0,
   };
   if (!input.accountId || input.accountId === 'legacy') throw new Error('operator_alert_account_required');
+  const managedSourceDomains = [...new Set(input.managedSourceDomains.map((domain) => text(domain, 120)).filter(Boolean))];
+  if (managedSourceDomains.length === 0) throw new Error('operator_alert_managed_source_domains_required');
+  if (input.conditions.some((condition) => !managedSourceDomains.includes(text(condition.sourceDomain, 120)))) {
+    throw new Error('operator_alert_source_domain_not_managed');
+  }
 
   const bookingResult = await supabase
     .from('booking_ops_records')
@@ -255,6 +264,7 @@ export async function reconcileOperatorAlertConditions(
     .select('*')
     .eq('account_id', input.accountId)
     .eq('booking_id', input.bookingId)
+    .in('source_domain', managedSourceDomains)
     .in('status', ACTIVE_STATUSES);
   if (activeResult.error) throw new Error(activeResult.error.message);
   const active = (activeResult.data ?? []) as Row[];
@@ -315,6 +325,7 @@ export async function reconcileOperatorAlertConditions(
         .select('*')
         .eq('account_id', input.accountId)
         .eq('dedupe_key', dedupeKey)
+        .eq('source_domain', condition.sourceDomain)
         .in('status', ACTIVE_STATUSES)
         .maybeSingle();
       if (raced.error) throw new Error(raced.error.message);

@@ -3,6 +3,10 @@ import { supabase } from '@/lib/supabase';
 import { recordBookingOpsEvent } from './events';
 import { evaluateOpsTurnover } from './ops-alert-engine';
 import { reconcileOperatorAlertConditions } from './operator-alerts';
+import { evaluatePreCheckinAlerts, PRE_CHECKIN_ALERT_SOURCE_DOMAINS } from './pre-checkin-alert-engine';
+import type { BookingLifecycleGate } from './lifecycle-types';
+import type { BookingOpsTask } from './task-types';
+import type { BookingOpsCommunicationIntent } from './types';
 
 const FULL_RUN_LEASE_TTL_SECONDS = 900;
 const FULL_RUN_LEASE_RENEW_INTERVAL_MS = 60_000;
@@ -36,7 +40,14 @@ export async function orchestrateOpsAlertsForBooking(bookingId: string, now = ne
     const accountId = text(booking.account_id);
     if (!accountId || accountId === 'legacy') throw new Error('booking_account_missing');
     if (expectedAccountId && expectedAccountId !== accountId) throw new Error('booking_account_mismatch');
-    if (!booking.check_in_at || !booking.property_id || ['cancelled', 'completed', 'archived', 'inactive'].includes(text(booking.ops_status))) { summary.skipped = 1; return summary; }
+    if (!booking.property_id) { summary.skipped = 1; return summary; }
+    const turnoverEligible = Boolean(booking.check_in_at) && !TERMINAL_BOOKING_STATUSES.includes(text(booking.ops_status));
+    if (!turnoverEligible) {
+      await reconcilePreCheckinAlerts(booking, now, summary);
+      summary.evaluated = 1;
+      summary.skipped = 1;
+      return summary;
+    }
     const previousResult = await supabase.from('booking_ops_records').select('id,check_out_at').eq('account_id', accountId).eq('property_id', booking.property_id).neq('id', bookingId).lte('check_out_at', booking.check_in_at).order('check_out_at', { ascending: false }).limit(1).maybeSingle();
     if (previousResult.error) throw new Error(previousResult.error.message);
     const [cleaningRows, linenRows, maintenanceRows, readinessRows, tasks] = await Promise.all([
@@ -66,6 +77,7 @@ export async function orchestrateOpsAlertsForBooking(bookingId: string, now = ne
       accountId,
       bookingId,
       propertyId: text(booking.property_id),
+      managedSourceDomains: ['turnover'],
       previousBookingId: text(previousResult.data?.id) || null,
       nextCheckInAt: evaluated.deadlines?.nextCheckInAt ?? null,
       now,
@@ -82,11 +94,8 @@ export async function orchestrateOpsAlertsForBooking(bookingId: string, now = ne
         metadata: condition.metadata,
       })),
     });
-    summary.alertsCreated += reconciled.alertsCreated;
-    summary.alertsUpdated += reconciled.alertsUpdated;
-    summary.alertsEscalated += reconciled.alertsEscalated;
-    summary.alertsResolved += reconciled.alertsResolved;
-    summary.unchanged += reconciled.unchanged;
+    addReconcileSummary(summary, reconciled);
+    await reconcilePreCheckinAlerts(booking, now, summary, tasks);
     return summary;
   } catch (error) { summary.errors.push(error instanceof Error ? error.message : 'orchestration_failed'); return summary; }
 }
@@ -156,4 +165,66 @@ export async function orchestrateOpsAlertsForProperty(propertyId: string, now = 
     total.errors.push(...current.errors);
   }
   return total;
+}
+
+const TERMINAL_BOOKING_STATUSES = ['checked_in', 'closed', 'cancelled', 'canceled', 'completed', 'archived', 'inactive'];
+
+function mapLifecycleGate(row: Row): BookingLifecycleGate {
+  return {
+    id: text(row.id), bookingId: text(row.booking_id), gateKey: text(row.gate_key) as BookingLifecycleGate['gateKey'],
+    status: text(row.status) as BookingLifecycleGate['status'], source: text(row.source) as BookingLifecycleGate['source'],
+    updatedAt: text(row.updated_at), completedAt: text(row.completed_at) || null, reason: text(row.reason) || null,
+    note: text(row.note) || null, metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : {},
+  };
+}
+
+function mapTask(row: Row): BookingOpsTask {
+  return {
+    id: text(row.id), bookingOpsRecordId: text(row.booking_ops_record_id), bookingId: text(row.booking_id) || null,
+    taskType: text(row.task_type) as BookingOpsTask['taskType'], title: text(row.title), description: text(row.description) || null,
+    status: text(row.status) as BookingOpsTask['status'], priority: text(row.priority) as BookingOpsTask['priority'],
+    source: text(row.source) as BookingOpsTask['source'], dueAt: text(row.due_at) || null, completedAt: text(row.completed_at) || null,
+    metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : {},
+    createdAt: text(row.created_at), updatedAt: text(row.updated_at),
+  };
+}
+
+function mapCommunication(row: Row): BookingOpsCommunicationIntent {
+  return {
+    id: text(row.id), bookingOpsRecordId: text(row.booking_ops_record_id), bookingId: text(row.booking_id) || null,
+    relatedTaskId: text(row.related_task_id) || null, actorType: text(row.actor_type) as BookingOpsCommunicationIntent['actorType'],
+    actorLabel: text(row.actor_label) || null, purpose: text(row.purpose) as BookingOpsCommunicationIntent['purpose'],
+    channel: text(row.channel) as BookingOpsCommunicationIntent['channel'], status: text(row.status) as BookingOpsCommunicationIntent['status'],
+    messageText: text(row.message_text), messageTemplateKey: text(row.message_template_key),
+    metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata as Record<string, unknown> : {},
+    createdAt: text(row.created_at), updatedAt: text(row.updated_at), supersededAt: text(row.superseded_at) || null,
+  };
+}
+
+function addReconcileSummary(summary: OpsAlertRunSummary, reconciled: Awaited<ReturnType<typeof reconcileOperatorAlertConditions>>) {
+  summary.alertsCreated += reconciled.alertsCreated;
+  summary.alertsUpdated += reconciled.alertsUpdated;
+  summary.alertsEscalated += reconciled.alertsEscalated;
+  summary.alertsResolved += reconciled.alertsResolved;
+  summary.unchanged += reconciled.unchanged;
+}
+
+async function reconcilePreCheckinAlerts(booking: Row, now: string, summary: OpsAlertRunSummary, loadedTasks?: Row[]) {
+  const bookingId = text(booking.id);
+  const [gateRows, taskRows, communicationRows] = await Promise.all([
+    rows('booking_lifecycle_gates', bookingId),
+    loadedTasks ? Promise.resolve(loadedTasks) : rows('booking_ops_tasks', bookingId, 'booking_ops_record_id'),
+    rows('booking_ops_communication_intents', bookingId, 'booking_ops_record_id'),
+  ]);
+  const conditions = evaluatePreCheckinAlerts({
+    bookingId, bookingStatus: text(booking.ops_status), checkInAt: text(booking.check_in_at) || null,
+    manualNextAction: text(booking.manual_next_action) || null, lifecycleGates: gateRows.map(mapLifecycleGate),
+    tasks: taskRows.map(mapTask), communications: communicationRows.map(mapCommunication), now,
+  });
+  const reconciled = await reconcileOperatorAlertConditions({
+    accountId: text(booking.account_id), bookingId, propertyId: text(booking.property_id),
+    managedSourceDomains: [...PRE_CHECKIN_ALERT_SOURCE_DOMAINS], conditions, now,
+    nextCheckInAt: text(booking.check_in_at) || null,
+  });
+  addReconcileSummary(summary, reconciled);
 }
