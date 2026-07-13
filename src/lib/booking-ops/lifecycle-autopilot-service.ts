@@ -96,7 +96,7 @@ export async function recordProcessedBookingAuditEvent(input: RecordEventInput) 
 }
 
 export async function recoverUnprocessedBookingEvents(limit = 100) {
-  const result = await supabase.from('booking_ops_domain_events').select('id').is('processed_at', null).is('processing_error', null).order('created_at').limit(limit);
+  const result = await supabase.from('booking_ops_domain_events').select('id').is('processed_at', null).order('created_at').limit(limit);
   if (result.error) throw new Error(result.error.message);
   let processed = 0; const errors: string[] = [];
   for (const row of result.data ?? []) {
