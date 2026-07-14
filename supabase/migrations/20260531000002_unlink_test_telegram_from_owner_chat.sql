@@ -1,7 +1,10 @@
 -- Unlink test/demo Telegram fixtures from the real owner chat (931919812).
 -- Synthetic HTTP/live tests must use TELEGRAM_TEST_CHAT_ID (e.g. 920001), not owner chat.
 
-UPDATE tg_guest_reservations
+ALTER TABLE public.tg_guest_reservations
+  ADD COLUMN IF NOT EXISTS reservation_ref TEXT;
+
+UPDATE public.tg_guest_reservations
 SET chat_id = NULL,
     updated_at = now()
 WHERE chat_id = 931919812
@@ -18,19 +21,19 @@ WHERE chat_id = 931919812
     OR property_id LIKE 'mock-%'
   );
 
-UPDATE tg_guest_identities
+UPDATE public.tg_guest_identities
 SET telegram_chat_id = NULL,
     updated_at = now()
 WHERE telegram_chat_id = 931919812
   AND guest_id LIKE 'test-%';
 
-UPDATE tg_guest_reservations
+UPDATE public.tg_guest_reservations
 SET chat_id = 920001,
     updated_at = now()
 WHERE id = 'test-res-tg-live'
   AND chat_id = 931919812;
 
-UPDATE tg_guest_identities
+UPDATE public.tg_guest_identities
 SET telegram_chat_id = 920001,
     updated_at = now()
 WHERE guest_id = 'test-guest-tg-live'

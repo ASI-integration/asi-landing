@@ -7,6 +7,11 @@ on:
         description: Commit SHA or ref to deploy (defaults to latest main)
         required: false
         type: string
+      run_smoke_test:
+        description: Run the staging-only Booking Ops release gate after deploy
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: booking-ops-staging
@@ -86,6 +91,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Supabase CLI for staging smoke
+        if: ${{ inputs.run_smoke_test == true }}
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.101.0
+
+      - name: Verify staging migrations and schema
+        if: ${{ inputs.run_smoke_test == true }}
+        shell: bash
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: bash scripts/staging-booking-ops-schema-smoke.sh
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -158,6 +177,8 @@ jobs:
             printf 'NEXT_PUBLIC_URL=https://staging.asi-global.ru\n'
             printf 'HOST_VARIANT=ru\n'
             printf 'SESSION_SECRET=%s\n' "$STAGING_SESSION_SECRET"
+            printf 'OPS_ADMIN_EMAILS=staging-acceptance@asi.local\n'
+            printf 'CRM_OPERATOR_EMAILS=staging-acceptance@asi.local\n'
             printf 'ADMIN_SECRET=%s\n' "$STAGING_ADMIN_SECRET"
             printf 'INTERNAL_TEST_SECRET=%s\n' "$STAGING_INTERNAL_TEST_SECRET"
             printf 'BOOKING_OPS_INBOUND_INTAKE_SECRET=%s\n' "$STAGING_BOOKING_OPS_INBOUND_INTAKE_SECRET"
@@ -168,6 +189,24 @@ jobs:
             printf 'DRY_RUN_TELEGRAM_OUTBOUND=true\nALLOW_REAL_TELEGRAM_SYNTHETIC=false\n'
             printf 'TELEGRAM_GUEST_AGENT_MODE=off\nLLM_ENABLED=false\nYOOKASSA_ENABLED=false\n'
           } > staging.env
+
+      - name: Verify staging smoke safety flags
+        if: ${{ inputs.run_smoke_test == true }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for expected in \
+            'OPS_ADMIN_EMAILS=staging-acceptance@asi.local' \
+            'CRM_OPERATOR_EMAILS=staging-acceptance@asi.local' \
+            'DRY_RUN_TELEGRAM_OUTBOUND=true' \
+            'ALLOW_REAL_TELEGRAM_SYNTHETIC=false' \
+            'EMAIL_AUTO_SEND=false' \
+            'EMAIL_DRAFT_ONLY=true' \
+            'LLM_ENABLED=false' \
+            'YOOKASSA_ENABLED=false'; do
+            grep -Fx "$expected" staging.env >/dev/null
+          done
+          echo 'STAGING_EXTERNAL_EFFECT_GUARDS PASS'
 
       - name: Deploy staging over SSH
         shell: bash
@@ -236,3 +275,20 @@ jobs:
             process.exit(1);
           });
           NODE
+
+      - name: Run final Booking Ops staging acceptance
+        if: ${{ inputs.run_smoke_test == true }}
+        env:
+          ACCEPTANCE_BASE_URL: https://staging.asi-global.ru
+          SESSION_SECRET: ${{ secrets.STAGING_SESSION_SECRET }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          OPS_ADMIN_EMAILS: staging-acceptance@asi.local
+          CRM_OPERATOR_EMAILS: staging-acceptance@asi.local
+          DRY_RUN_TELEGRAM_OUTBOUND: 'true'
+          ALLOW_REAL_TELEGRAM_SYNTHETIC: 'false'
+          EMAIL_AUTO_SEND: 'false'
+          EMAIL_DRAFT_ONLY: 'true'
+          LLM_ENABLED: 'false'
+          YOOKASSA_ENABLED: 'false'
+        run: node scripts/booking-ops-v13-full-lifecycle-acceptance.mjs
