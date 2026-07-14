@@ -90,4 +90,26 @@ describe('telegram guest memory foundation migration', () => {
     expect(reservationHistory).toContain('CREATE TABLE IF NOT EXISTS tg_guest_reservations');
     expect(migrationsBeforeTarget).not.toContain('CREATE TABLE IF NOT EXISTS tg_guest_identities');
   });
+
+  it('defines reservation_ref before the owner chat cleanup uses it', () => {
+    const cleanupMigration = readMigration(
+      '20260531000002_unlink_test_telegram_from_owner_chat.sql',
+    );
+    const addColumnIndex = cleanupMigration.search(
+      /ALTER TABLE public\.tg_guest_reservations\s+ADD COLUMN IF NOT EXISTS reservation_ref TEXT;/i,
+    );
+    const firstUpdateIndex = cleanupMigration.indexOf(
+      'UPDATE public.tg_guest_reservations',
+    );
+    const laterPilotMigration = readMigration('20260623000001_pilot_readiness_v1.sql');
+
+    expect(addColumnIndex).toBeGreaterThanOrEqual(0);
+    expect(firstUpdateIndex).toBeGreaterThan(addColumnIndex);
+    expect(laterPilotMigration).toMatch(
+      /ADD COLUMN IF NOT EXISTS reservation_ref TEXT/i,
+    );
+    expect(cleanupMigration).not.toMatch(
+      /\b(?:ALTER TABLE|UPDATE)\s+(?:tg_guest_reservations|tg_guest_identities)\b/i,
+    );
+  });
 });
