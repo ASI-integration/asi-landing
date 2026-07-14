@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { sealData } from 'iron-session';
 import { createClient } from '@supabase/supabase-js';
 
 const BASE = String(process.env.ACCEPTANCE_BASE_URL || process.env.BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
 const PREFIX = 'ASI_OPS_V13_LIFECYCLE_ACCEPTANCE_';
+const ACCEPTANCE_EMAIL = 'staging-acceptance@asi.local';
+const FIXTURE_ACCOUNT_PREFIX = 'ASI staging acceptance ';
 
 const EXPECTED_COMMUNICATION_PURPOSES = [
   'checkin_instructions',
@@ -58,12 +61,25 @@ const supabaseUrl = String(env.NEXT_PUBLIC_SUPABASE_URL || env.SUPABASE_URL || '
 const supabaseKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '');
 
 assert(adminEmail, 'missing_ops_admin_email');
+assert(adminEmail.toLowerCase() === ACCEPTANCE_EMAIL, 'staging_acceptance_email_required');
+assert(operators.has(ACCEPTANCE_EMAIL), 'staging_acceptance_operator_required');
 assert(sessionSecret.length >= 32, 'missing_session_secret');
 assert(supabaseUrl && supabaseKey, 'missing_supabase_env');
+for (const [key, expected] of Object.entries({
+  DRY_RUN_TELEGRAM_OUTBOUND: 'true',
+  ALLOW_REAL_TELEGRAM_SYNTHETIC: 'false',
+  EMAIL_AUTO_SEND: 'false',
+  EMAIL_DRAFT_ONLY: 'true',
+  LLM_ENABLED: 'false',
+  YOOKASSA_ENABLED: 'false',
+})) assert(String(env[key] ?? '').toLowerCase() === expected, `unsafe_runtime_flag:${key}`);
 
 const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+const userId = randomUUID();
+const accountId = randomUUID();
+const propertyId = randomUUID();
 const sealed = await sealData(
-  { userId: 'ops-v13-lifecycle-acceptance', email: adminEmail },
+  { userId, email: adminEmail },
   { password: sessionSecret, ttl: 3600 },
 );
 const headers = { Cookie: `asi_session=${sealed}`, 'Content-Type': 'application/json' };
@@ -113,6 +129,137 @@ async function cleanup(ids) {
   if (error) throw new Error(`cleanup_failed:${error.message}`);
   const { count } = await sb.from('booking_ops_records').select('id', { count: 'exact', head: true }).in('id', ids);
   return count ?? 0;
+}
+
+async function cleanupSyntheticIdentity() {
+  const staleAccounts = await sb.from('accounts').select('id').like('name', `${FIXTURE_ACCOUNT_PREFIX}%`);
+  if (staleAccounts.error) throw new Error(`cleanup_failed:accounts_lookup:${staleAccounts.error.message}`);
+  if (staleAccounts.data?.length) {
+    const result = await sb.from('accounts').delete().in('id', staleAccounts.data.map((row) => row.id));
+    if (result.error) throw new Error(`cleanup_failed:accounts:${result.error.message}`);
+  }
+  const users = await sb.from('users').delete().eq('email', ACCEPTANCE_EMAIL);
+  if (users.error) throw new Error(`cleanup_failed:users:${users.error.message}`);
+}
+
+async function createSyntheticIdentity(runId) {
+  const user = await sb.from('users').insert({
+    id: userId,
+    email: ACCEPTANCE_EMAIL,
+    password_hash: `${PREFIX}${runId}`,
+  });
+  if (user.error) throw new Error(`fixture_user_failed:${user.error.message}`);
+  const account = await sb.from('accounts').insert({
+    id: accountId,
+    name: `${FIXTURE_ACCOUNT_PREFIX}${runId}`,
+    plan_code: 'small',
+    subscription_status: 'trial',
+  });
+  if (account.error) throw new Error(`fixture_account_failed:${account.error.message}`);
+  const member = await sb.from('account_members').insert({ account_id: accountId, user_id: userId, role: 'owner' });
+  if (member.error) throw new Error(`fixture_member_failed:${member.error.message}`);
+  const property = await sb.from('properties').insert({
+    id: propertyId,
+    account_id: accountId,
+    name: `${PREFIX}${runId}`,
+    status: 'active',
+  });
+  if (property.error) throw new Error(`fixture_property_failed:${property.error.message}`);
+}
+
+async function listAlerts() {
+  const { data, error } = await sb
+    .from('booking_ops_alerts')
+    .select('id, booking_id, status, dedupe_key')
+    .eq('booking_id', recordId)
+    .order('id');
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function countRows(table, column = 'booking_id') {
+  const { count, error } = await sb.from(table).select('id', { count: 'exact', head: true }).eq(column, recordId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+async function verifyAlerts(checkIn) {
+  const alertNow = new Date(checkIn.getTime() - 30 * 60 * 1000).toISOString();
+  const first = await post('/api/dashboard/booking-ops/alerts/orchestrate', {
+    bookingId: recordId,
+    now: alertNow,
+    dryRun: false,
+    executeAutomation: false,
+  });
+  assert(first.result?.errors?.length === 0, `alerts_first_errors:${JSON.stringify(first.result?.errors)}`);
+  const before = await listAlerts();
+  assert(before.length > 0 && first.result?.alertsCreated > 0, 'alerts_not_created');
+  const operatorTasks = await listTasks();
+  assert(operatorTasks.length > 0, 'alert_operator_task_missing');
+  assert(before.every((alert) => alert.booking_id === recordId), 'alert_booking_link_missing');
+
+  const second = await post('/api/dashboard/booking-ops/alerts/orchestrate', {
+    bookingId: recordId,
+    now: alertNow,
+    dryRun: false,
+    executeAutomation: false,
+  });
+  assert(second.result?.errors?.length === 0, `alerts_second_errors:${JSON.stringify(second.result?.errors)}`);
+  const after = await listAlerts();
+  assert(second.result?.alertsCreated === 0, `alerts_duplicated:${second.result?.alertsCreated}`);
+  assert(after.length === before.length, `alerts_count_grew:${before.length}->${after.length}`);
+  assert(after.map((alert) => alert.id).join(',') === before.map((alert) => alert.id).join(','), 'alert_ids_changed');
+  duplicatesAvoided.alerts = 'PASS';
+  console.log('ALERTS_IDEMPOTENCY', 'PASS', `alerts=${after.length}`, `operatorTasks=${operatorTasks.length}`);
+}
+
+async function verifyReconciliation() {
+  const state = await sb.from('booking_ops_lifecycle_states').select('booking_id,next_action').eq('booking_id', recordId).single();
+  if (state.error) throw new Error(`reconciliation_state_missing:${state.error.message}`);
+  const forced = await sb.from('booking_ops_lifecycle_states')
+    .update({ next_action: `${PREFIX}FORCED_DIFF`, updated_at: new Date().toISOString() })
+    .eq('booking_id', recordId)
+    .select('booking_id')
+    .single();
+  if (forced.error) throw new Error(`reconciliation_fixture_failed:${forced.error.message}`);
+
+  const beforeDryRun = {
+    tasks: await countRows('booking_ops_tasks', 'booking_ops_record_id'),
+    alerts: await countRows('booking_ops_alerts'),
+    events: await countRows('booking_ops_lifecycle_events'),
+  };
+  const preview = await post('/api/admin/booking-ops-lifecycle-reconciliation', {
+    bookingOpsRecordId: recordId,
+    dryRun: true,
+  });
+  assert(preview.result?.dryRun === true && preview.result?.changed === true, 'reconciliation_preview_diff_missing');
+  assert(preview.result?.projectionChanged === true, 'reconciliation_preview_projection_diff_missing');
+  assert(await countRows('booking_ops_tasks', 'booking_ops_record_id') === beforeDryRun.tasks, 'reconciliation_dry_run_tasks_changed');
+  assert(await countRows('booking_ops_alerts') === beforeDryRun.alerts, 'reconciliation_dry_run_alerts_changed');
+  assert(await countRows('booking_ops_lifecycle_events') === beforeDryRun.events, 'reconciliation_dry_run_events_changed');
+
+  const applied = await post('/api/admin/booking-ops-lifecycle-reconciliation', {
+    bookingOpsRecordId: recordId,
+    dryRun: false,
+  });
+  assert(applied.result?.dryRun === false && applied.result?.changed === true, 'reconciliation_apply_missing');
+  const afterApply = {
+    tasks: await countRows('booking_ops_tasks', 'booking_ops_record_id'),
+    alerts: await countRows('booking_ops_alerts'),
+    events: await countRows('booking_ops_lifecycle_events'),
+  };
+  const repeated = await post('/api/admin/booking-ops-lifecycle-reconciliation', {
+    bookingOpsRecordId: recordId,
+    dryRun: true,
+  });
+  assert(repeated.result?.changed === false, 'reconciliation_repeated_changed');
+  assert(repeated.result?.projectionChanged === false, 'reconciliation_repeated_projection_changed');
+  assert(repeated.result?.taskRepairs === 0, `reconciliation_repeated_task_repairs:${repeated.result?.taskRepairs}`);
+  assert(await countRows('booking_ops_tasks', 'booking_ops_record_id') === afterApply.tasks, 'reconciliation_repeated_tasks_changed');
+  assert(await countRows('booking_ops_alerts') === afterApply.alerts, 'reconciliation_repeated_alerts_changed');
+  assert(await countRows('booking_ops_lifecycle_events') === afterApply.events, 'reconciliation_repeated_events_changed');
+  duplicatesAvoided.reconciliation = 'PASS';
+  console.log('RECONCILIATION_IDEMPOTENCY', 'PASS', JSON.stringify(repeated.result));
 }
 
 async function countCommunicationsByPurpose(purpose) {
@@ -205,8 +352,10 @@ try {
   const stale = await sb.from('booking_ops_records').select('id').like('guest_name', `${PREFIX}%`);
   if (stale.error) throw stale.error;
   await cleanup((stale.data ?? []).map((row) => row.id));
+  await cleanupSyntheticIdentity();
 
   const runId = Date.now().toString(36);
+  await createSyntheticIdentity(runId);
   const checkIn = new Date(Date.now() + 48 * 60 * 60 * 1000);
   const checkOut = new Date(checkIn.getTime() + 48 * 60 * 60 * 1000);
 
@@ -214,7 +363,7 @@ try {
     guestName: `${PREFIX}${runId}`,
     guestPhone: '+79990000999',
     guestTelegram: `tg_v13_${runId}`,
-    propertyId: `ops_v13_${runId}`,
+    propertyId,
     propertyLabel: 'Тестовый объект OPS v13',
     otaSource: 'manual',
     checkInAt: checkIn.toISOString(),
@@ -230,12 +379,19 @@ try {
 
   recordId = created.record?.id;
   assert(recordId, 'booking_record_missing');
+  const scoped = await sb.from('booking_ops_records').update({
+    account_id: accountId,
+    reservation_metadata: { acceptance_safe: true, environment: 'test', fixture: PREFIX },
+  }).eq('id', recordId).select('id').single();
+  if (scoped.error) throw new Error(`booking_scope_failed:${scoped.error.message}`);
   const { count: bookingsCount } = await sb
     .from('booking_ops_records')
     .select('id', { count: 'exact', head: true })
     .eq('id', recordId);
   assert(bookingsCount === 1, 'bookings_count_not_1');
   lifecycleStagesPassed.push('new');
+
+  await verifyAlerts(checkIn);
 
   await post('/api/dashboard/booking-ops/guest-intake-release', {
     bookingId: recordId,
@@ -372,6 +528,8 @@ try {
   assert(commsAfterRecompute === commsBeforeRecompute, `recompute_comms_grew:${commsBeforeRecompute}->${commsAfterRecompute}`);
   duplicatesAvoided.recompute = 'PASS';
 
+  await verifyReconciliation();
+
   console.log('BOOKINGS_COUNT', bookingsCount);
   console.log('TASKS_CREATED', tasksCreated);
   console.log('COMMUNICATION_PLAN_ITEMS_CREATED', communicationPurposesFound.length, communicationPurposesFound.join(','));
@@ -383,8 +541,17 @@ try {
 } finally {
   try {
     const leftovers = await cleanup(recordId ? [recordId] : []);
-    console.log('CLEANUP_LEFTOVERS', leftovers);
-    if (leftovers !== 0 && !failure) failure = new Error(`cleanup_leftovers:${leftovers}`);
+    const account = await sb.from('accounts').delete().eq('id', accountId);
+    if (account.error) throw new Error(`cleanup_failed:account:${account.error.message}`);
+    const user = await sb.from('users').delete().eq('id', userId);
+    if (user.error) throw new Error(`cleanup_failed:user:${user.error.message}`);
+    const [accountsLeft, usersLeft] = await Promise.all([
+      sb.from('accounts').select('id', { count: 'exact', head: true }).eq('id', accountId),
+      sb.from('users').select('id', { count: 'exact', head: true }).eq('id', userId),
+    ]);
+    const identityLeftovers = (accountsLeft.count ?? 0) + (usersLeft.count ?? 0);
+    console.log('CLEANUP_LEFTOVERS', leftovers + identityLeftovers);
+    if (leftovers + identityLeftovers !== 0 && !failure) failure = new Error(`cleanup_leftovers:${leftovers + identityLeftovers}`);
   } catch (cleanupError) {
     if (!failure) failure = cleanupError;
   }
