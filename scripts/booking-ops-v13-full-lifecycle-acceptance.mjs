@@ -494,7 +494,15 @@ try {
     action: 'mark_guest_checked_out',
     actualCheckoutAt: new Date().toISOString(),
   });
-  assert(checkedOut.instayCheckout?.status === 'checked_out', 'checked_out_missing');
+  assert(checkedOut.instayCheckout, 'checked_out_snapshot_missing');
+  const checkedOutExecution = await sb.from('booking_instay_checkout')
+    .select('status,checkout_confirmation_status,actual_checkout_at')
+    .eq('booking_id', recordId)
+    .single();
+  if (checkedOutExecution.error) throw checkedOutExecution.error;
+  assert(checkedOutExecution.data.status === 'checked_out', `checked_out_execution_status:${checkedOutExecution.data.status}`);
+  assert(checkedOutExecution.data.checkout_confirmation_status === 'confirmed', 'checkout_confirmation_not_confirmed');
+  assert(checkedOutExecution.data.actual_checkout_at, 'actual_checkout_at_missing');
   assert(await gateStatus('guest_checked_out') === 'completed', 'guest_checked_out_gate_missing');
   lifecycleStagesPassed.push('checked_out');
 
