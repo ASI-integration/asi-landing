@@ -13,11 +13,11 @@ CREATE TABLE IF NOT EXISTS public.tg_contacts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_tg_contacts_telegram_id
+CREATE INDEX IF NOT EXISTS idx_tg_contacts_telegram_id
   ON public.tg_contacts (telegram_id);
-CREATE INDEX IF NOT EXISTS public.idx_tg_contacts_phone
+CREATE INDEX IF NOT EXISTS idx_tg_contacts_phone
   ON public.tg_contacts (phone);
-CREATE INDEX IF NOT EXISTS public.idx_tg_contacts_email
+CREATE INDEX IF NOT EXISTS idx_tg_contacts_email
   ON public.tg_contacts (email);
 
 CREATE TABLE IF NOT EXISTS public.tg_conversations (
@@ -35,13 +35,13 @@ CREATE TABLE IF NOT EXISTS public.tg_conversations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_tg_conversations_channel_chat
+CREATE INDEX IF NOT EXISTS idx_tg_conversations_channel_chat
   ON public.tg_conversations (channel, chat_id);
-CREATE INDEX IF NOT EXISTS public.idx_tg_conversations_contact
+CREATE INDEX IF NOT EXISTS idx_tg_conversations_contact
   ON public.tg_conversations (contact_id);
-CREATE INDEX IF NOT EXISTS public.idx_tg_conversations_reservation
+CREATE INDEX IF NOT EXISTS idx_tg_conversations_reservation
   ON public.tg_conversations (reservation_id);
-CREATE INDEX IF NOT EXISTS public.idx_tg_conversations_status
+CREATE INDEX IF NOT EXISTS idx_tg_conversations_status
   ON public.tg_conversations (status);
 
 CREATE TABLE IF NOT EXISTS public.comm_messages (
@@ -56,11 +56,11 @@ CREATE TABLE IF NOT EXISTS public.comm_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_comm_messages_conversation
+CREATE INDEX IF NOT EXISTS idx_comm_messages_conversation
   ON public.comm_messages (conversation_id);
-CREATE INDEX IF NOT EXISTS public.idx_comm_messages_direction
+CREATE INDEX IF NOT EXISTS idx_comm_messages_direction
   ON public.comm_messages (direction);
-CREATE INDEX IF NOT EXISTS public.idx_comm_messages_created
+CREATE INDEX IF NOT EXISTS idx_comm_messages_created
   ON public.comm_messages (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.comm_dlq (
@@ -75,11 +75,11 @@ CREATE TABLE IF NOT EXISTS public.comm_dlq (
   updated_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_comm_dlq_status
+CREATE INDEX IF NOT EXISTS idx_comm_dlq_status
   ON public.comm_dlq (status);
-CREATE INDEX IF NOT EXISTS public.idx_comm_dlq_conv_key
+CREATE INDEX IF NOT EXISTS idx_comm_dlq_conv_key
   ON public.comm_dlq (conversation_key);
-CREATE INDEX IF NOT EXISTS public.idx_comm_dlq_created
+CREATE INDEX IF NOT EXISTS idx_comm_dlq_created
   ON public.comm_dlq (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.comm_events (
@@ -92,11 +92,11 @@ CREATE TABLE IF NOT EXISTS public.comm_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_comm_events_type
+CREATE INDEX IF NOT EXISTS idx_comm_events_type
   ON public.comm_events (type);
-CREATE INDEX IF NOT EXISTS public.idx_comm_events_conv
+CREATE INDEX IF NOT EXISTS idx_comm_events_conv
   ON public.comm_events (conversation_id);
-CREATE INDEX IF NOT EXISTS public.idx_comm_events_created
+CREATE INDEX IF NOT EXISTS idx_comm_events_created
   ON public.comm_events (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.pending_messages (
@@ -110,11 +110,11 @@ CREATE TABLE IF NOT EXISTS public.pending_messages (
   resolved_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS public.idx_pending_messages_chat_id
+CREATE INDEX IF NOT EXISTS idx_pending_messages_chat_id
   ON public.pending_messages (chat_id);
-CREATE INDEX IF NOT EXISTS public.idx_pending_messages_status
+CREATE INDEX IF NOT EXISTS idx_pending_messages_status
   ON public.pending_messages (status);
-CREATE INDEX IF NOT EXISTS public.idx_pending_messages_created
+CREATE INDEX IF NOT EXISTS idx_pending_messages_created
   ON public.pending_messages (created_at DESC);
 
 ALTER TABLE public.tg_conversation_sessions
