@@ -464,7 +464,14 @@ try {
     bookingId: recordId,
     action: 'mark_checkout_instructions_sent',
   });
-  assert(checkoutDue.instayCheckout?.status === 'checkout_pending', 'checkout_pending_missing');
+  assert(checkoutDue.instayCheckout, 'checkout_snapshot_missing');
+  const checkoutExecution = await sb.from('booking_instay_checkout')
+    .select('status,checkout_instructions_status')
+    .eq('booking_id', recordId)
+    .single();
+  if (checkoutExecution.error) throw checkoutExecution.error;
+  assert(checkoutExecution.data.status === 'checkout_pending', `checkout_execution_status:${checkoutExecution.data.status}`);
+  assert(checkoutExecution.data.checkout_instructions_status === 'sent', `checkout_instructions_status:${checkoutExecution.data.checkout_instructions_status}`);
   assert(await countCommunicationsByPurpose('checkout_reminder') === 1, 'checkout_reminder_missing');
   console.log('SEND_CHECKOUT_REMINDER', 'PASS');
 
