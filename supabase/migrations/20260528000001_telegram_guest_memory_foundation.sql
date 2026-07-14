@@ -41,6 +41,30 @@ CREATE TABLE IF NOT EXISTS tg_property_knowledge (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.tg_property_knowledge
+  ADD COLUMN IF NOT EXISTS location TEXT,
+  ADD COLUMN IF NOT EXISTS check_in_time TEXT,
+  ADD COLUMN IF NOT EXISTS check_out_time TEXT,
+  ADD COLUMN IF NOT EXISTS wifi_name TEXT,
+  ADD COLUMN IF NOT EXISTS wifi_password TEXT,
+  ADD COLUMN IF NOT EXISTS wifi_notes TEXT,
+  ADD COLUMN IF NOT EXISTS checkin_instructions TEXT,
+  ADD COLUMN IF NOT EXISTS door_code_notes TEXT,
+  ADD COLUMN IF NOT EXISTS access_notes TEXT,
+  ADD COLUMN IF NOT EXISTS parking_rules TEXT,
+  ADD COLUMN IF NOT EXISTS parking_paid_or_free TEXT,
+  ADD COLUMN IF NOT EXISTS parking_location_notes TEXT,
+  ADD COLUMN IF NOT EXISTS quiet_hours TEXT,
+  ADD COLUMN IF NOT EXISTS house_rules TEXT,
+  ADD COLUMN IF NOT EXISTS heating_notes TEXT,
+  ADD COLUMN IF NOT EXISTS emergency_contact_notes TEXT,
+  ADD COLUMN IF NOT EXISTS checkout_notes TEXT,
+  ADD COLUMN IF NOT EXISTS late_checkout_policy TEXT,
+  ADD COLUMN IF NOT EXISTS early_checkin_policy TEXT,
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE TABLE IF NOT EXISTS tg_guest_identities (
   guest_id TEXT PRIMARY KEY,
   telegram_chat_id BIGINT,
