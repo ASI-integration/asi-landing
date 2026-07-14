@@ -401,11 +401,8 @@ try {
   lifecycleStagesPassed.push('confirmed');
 
   await satisfyLegalAndPhysicalReadiness();
-  const readinessOrchestration = await post('/api/dashboard/booking-ops/lifecycle-orchestrator', {
-    bookingId: recordId,
-    action: 'orchestrate',
-  });
-  assert(readinessOrchestration.orchestration, 'readiness_orchestration_missing');
+  const lifecycleRefresh = await json(`/api/dashboard/booking-ops/${recordId}/lifecycle`, { headers });
+  assert(lifecycleRefresh.response.status === 200 && lifecycleRefresh.body.ok, 'readiness_lifecycle_refresh_failed');
   assert(await gateStatus('guest_data_completed') === 'completed', 'guest_data_completed_gate_missing');
   lifecycleStagesPassed.push('pre_checkin');
 
