@@ -446,6 +446,13 @@ try {
   });
   assert(await countCommunicationsByPurpose('guest_issue_acknowledgement') >= 1, 'guest_issue_ack_missing');
   assert(await countCommunicationsByPurpose('guest_stay_issue_followup') >= 1, 'guest_issue_followup_missing');
+  const issueResolved = await post('/api/dashboard/booking-ops/instay-checkout', {
+    bookingId: recordId,
+    action: 'resolve_guest_issue',
+    issueId,
+    resolution: 'Synthetic staging acceptance issue resolved',
+  });
+  assert(issueResolved.instayCheckout?.openIssuesCount === 0, 'guest_issue_not_resolved');
   console.log('IN_STAY_SUPPORT_WATCH', 'PASS (mapped)');
   lifecycleStagesPassed.push('in_stay');
 
