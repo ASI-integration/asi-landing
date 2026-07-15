@@ -1,0 +1,128 @@
+name: Agent-ready task
+description: Задача с достаточным контрактом для автономной работы Codex
+title: "[Agent] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Заполните контракт результата. Не вставляйте secrets, production credentials или персональные данные.
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Цель
+      description: Какой проверяемый результат должен получить пользователь или проект?
+      placeholder: После этой задачи...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст и источники истины
+      description: Ссылки на код, документы, issue/PR и текущий baseline.
+      placeholder: "Файлы, документы, предыдущие решения..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope
+      description: Что агент должен изменить или проверить.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: Что нельзя менять или выполнять.
+      placeholder: |
+        - Production не менять
+        - Утверждённый UX не менять
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Наблюдаемые критерии завершения, включая negative cases.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: autonomy
+    attributes:
+      label: Ожидаемый уровень автономности
+      description: Финальный уровень агент обязан перепроверить по AUTONOMY_POLICY.md.
+      options:
+        - green — выполнить самостоятельно
+        - yellow — выполнить с обязательным отчётом
+        - red — остановиться перед рискованным действием
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: red_surfaces
+    attributes:
+      label: Возможные red-действия
+      description: Отметьте всё, что может понадобиться. Отметка не является разрешением.
+      options:
+        - label: Merge или изменение release source
+        - label: Production deploy/rollback
+        - label: Production migration или data mutation
+        - label: Secrets, DNS или repository/environment settings
+        - label: Платежи или реальные внешние сообщения/provider calls
+        - label: Изменение утверждённого UX/public copy
+        - label: Location scoring/SSOT/public contracts
+        - label: Broad test suite
+        - label: Нет известных red-действий
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Требуемая проверка
+      description: Focused tests, typecheck, touched-file lint, acceptance или visual evidence.
+      placeholder: |
+        - npm.cmd run typecheck
+        - focused test: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Staging, rollout и rollback
+      description: Нужен ли staging; какой exact target/SHA; какой rollback. Для local-only напишите «не требуется».
+    validations:
+      required: true
+
+  - type: textarea
+    id: owner_decisions
+    attributes:
+      label: Решения Николая
+      description: Бизнес-решения или red-разрешения, которые ожидаются. Для отсутствующих напишите «не требуются».
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Готовность задачи
+      options:
+        - label: Цель и acceptance criteria проверяемы
+          required: true
+        - label: Out of scope указан явно
+          required: true
+        - label: В Issue нет secrets и персональных данных
+          required: true
+        - label: Я понимаю, что red-действия потребуют отдельного явного разрешения
+          required: true
