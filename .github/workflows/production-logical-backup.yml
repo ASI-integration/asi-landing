@@ -48,31 +48,83 @@ jobs:
           PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
           PRODUCTION_BACKUP_PASSPHRASE: ${{ secrets.PRODUCTION_BACKUP_PASSPHRASE }}
           EXPECTED_PROJECT_REF: jwinifeienvzejofmbua
+          ENVIRONMENT_NAME: production
         run: |
           set -euo pipefail
 
-          if [[ -z "${PRODUCTION_DATABASE_URL:-}" ]]; then
-            echo "::error::PRODUCTION_DATABASE_URL is not configured."
-            exit 1
-          fi
           if [[ -z "${PRODUCTION_BACKUP_PASSPHRASE:-}" ]]; then
             echo "::error::PRODUCTION_BACKUP_PASSPHRASE is not configured."
             exit 1
           fi
-          echo "::add-mask::${PRODUCTION_DATABASE_URL}"
           echo "::add-mask::${PRODUCTION_BACKUP_PASSPHRASE}"
 
+          normalized_url_path="${RUNNER_TEMP}/production-database-url-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           python3 - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
 
+          raw = os.environ.get("PRODUCTION_DATABASE_URL", "")
           expected = os.environ["EXPECTED_PROJECT_REF"]
-          parsed = urlparse(os.environ["PRODUCTION_DATABASE_URL"])
-          identity_fields = (parsed.hostname or "", unquote(parsed.username or ""))
-          if not parsed.scheme.startswith("postgres") or not any(expected in value for value in identity_fields):
+
+          has_edge_whitespace = raw != raw.strip()
+          has_cr_or_lf = "\r" in raw or "\n" in raw
+          normalized = raw.strip()
+          has_outer_wrapper = (
+              len(normalized) >= 2
+              and normalized[0] in ("'", '"', "`")
+              and normalized[-1] == normalized[0]
+          )
+          if has_outer_wrapper:
+              normalized = normalized[1:-1]
+          normalized = normalized.strip("\r\n")
+
+          parsed = urlparse(normalized)
+          hostname = parsed.hostname or ""
+          username = unquote(parsed.username or "")
+          scheme_is_postgres = parsed.scheme in ("postgres", "postgresql")
+          hostname_has_expected_ref = expected in hostname
+          username_has_expected_ref = expected in username
+          try:
+              parsed_port = parsed.port
+          except ValueError:
+              parsed_port = None
+          parsed_database_name = unquote(parsed.path.removeprefix("/"))
+
+          def bool_text(value):
+              return str(value).lower()
+
+          print(f"secret_present: {bool_text(bool(raw))}")
+          print(f"secret_length: {len(raw)}")
+          print(f"scheme_is_postgres: {bool_text(scheme_is_postgres)}")
+          print(f"has_leading_or_trailing_whitespace: {bool_text(has_edge_whitespace)}")
+          print(f"has_cr_or_lf: {bool_text(has_cr_or_lf)}")
+          print(f"has_outer_quotes_or_backticks: {bool_text(has_outer_wrapper)}")
+          print(f"hostname_has_expected_ref: {bool_text(hostname_has_expected_ref)}")
+          print(f"username_has_expected_ref: {bool_text(username_has_expected_ref)}")
+          print(f"parsed_port: {parsed_port if parsed_port is not None else 'null'}")
+          print(f"parsed_database_name: {parsed_database_name}")
+          print(f"environment_name: {os.environ['ENVIRONMENT_NAME']}")
+
+          if (
+              not raw
+              or not scheme_is_postgres
+              or not (hostname_has_expected_ref or username_has_expected_ref)
+              or "\r" in normalized
+              or "\n" in normalized
+          ):
               raise SystemExit("Production database project identity mismatch.")
-          print(f"Production project identity verified: {expected}")
+
+          path = os.path.join(
+              os.environ["RUNNER_TEMP"],
+              f"production-database-url-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}",
+          )
+          descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+              handle.write(normalized)
           PY
+          PRODUCTION_DATABASE_URL="$(<"$normalized_url_path")"
+          rm -f "$normalized_url_path"
+          echo "::add-mask::${PRODUCTION_DATABASE_URL}"
 
           supabase --version
           supabase db dump --help >/dev/null
@@ -180,4 +232,5 @@ jobs:
         run: |
           rm -rf \
             "${RUNNER_TEMP}/production-logical-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            "${RUNNER_TEMP}/production-logical-backup-artifact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            "${RUNNER_TEMP}/production-logical-backup-artifact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "${RUNNER_TEMP}/production-database-url-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
