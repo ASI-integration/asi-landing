@@ -12,8 +12,8 @@
 | 2 | Единый owner-gate contract; typed confirmation не является approval | implemented |
 | 3 | Change-to-test map с protected/red hints | implemented |
 | 4 | Repository Skill `asi-task-execution` и локальные validators | implemented |
-| 5 | Docs-only agent-ready pilot Issue | planned after draft PR publication |
-| 6 | Safe internal-tooling code-fix Issue | planned after docs-only pilot |
+| 5 | Docs-only agent-ready pilot Issue | created: `#103` |
+| 6 | Safe internal-tooling code-fix Issue | created: `#104`, scheduled after `#103` |
 | 7 | Staging acceptance | contract-only; допускаются только isolated fixtures |
 | 8 | Production rollout | read-only preflight artifacts only; dispatch отсутствует |
 
