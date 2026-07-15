@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/production-preflight.schema.json",
+  "title": "ASI production read-only preflight",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "mode", "dispatchAllowed", "mutationAllowed", "secretValuesAllowed", "requestedAction", "evidence", "status"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.production-preflight.v1" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "mode": { "const": "read-only-preflight" },
+    "dispatchAllowed": { "const": false },
+    "mutationAllowed": { "const": false },
+    "secretValuesAllowed": { "const": false },
+    "requestedAction": { "$ref": "owner-gate.schema.json#/$defs/redAction" },
+    "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "status": { "enum": ["PREFLIGHT_ONLY", "AWAITING_OWNER", "BLOCKED"] }
+  }
+}

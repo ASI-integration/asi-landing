@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "pilot-red-preflight",
+  "status": "missing",
+  "action": "production_deploy",
+  "target": "production",
+  "identity": { "sha": "2222222222222222222222222222222222222222" },
+  "allowedSideEffect": "none before explicit approval",
+  "postActionVerification": ["Exact runtime SHA would be verified after an approved action."],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": true,
+    "countsAsOwnerApproval": false
+  }
+}

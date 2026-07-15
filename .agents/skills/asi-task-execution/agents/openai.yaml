@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASI Task Execution"
+  short_description: "Safe ASI task execution from intake to draft PR"
+  default_prompt: "Use $asi-task-execution to execute this agent-ready ASI repository task through focused validation and a draft PR."

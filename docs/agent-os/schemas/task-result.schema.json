@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/task-result.schema.json",
+  "title": "ASI Agent OS task result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "status", "branch", "commitSha", "prUrl", "changedFiles", "checks", "sideEffects", "blockers", "ownerDecision"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.task-result.v1" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["DONE", "PARTIAL", "BLOCKED", "AWAITING_OWNER"] },
+    "branch": { "type": "string", "minLength": 1 },
+    "commitSha": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+    "prUrl": { "type": ["string", "null"], "format": "uri" },
+    "changedFiles": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidence"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["PASS", "FAIL", "SKIP"] },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "sideEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["production", "database", "secrets", "dns", "payments", "realMessages", "approvedUx"],
+      "properties": {
+        "production": { "const": false },
+        "database": { "type": "boolean" },
+        "secrets": { "const": false },
+        "dns": { "const": false },
+        "payments": { "const": false },
+        "realMessages": { "const": false },
+        "approvedUx": { "const": false }
+      }
+    },
+    "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "ownerDecision": { "type": ["string", "null"] }
+  }
+}

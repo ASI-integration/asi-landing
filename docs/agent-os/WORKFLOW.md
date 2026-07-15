@@ -31,6 +31,8 @@
 - Определить минимальный patch и focused validation.
 - Для red подготовить preflight, но остановиться до side effect.
 
+Phase 2 preflight записывается по [`schemas/task-preflight.schema.json`](schemas/task-preflight.schema.json). Проверки выбираются через [`change-to-test-map.json`](change-to-test-map.json), а red-действие дополнительно следует [`OWNER_GATE.md`](OWNER_GATE.md). Typed confirmation остаётся только техническим предохранителем.
+
 ### 4. Реализация
 
 Агент вносит минимальное изменение, сохраняет существующие seams, добавляет focused evidence и обновляет документацию только там, где изменился контракт. При новом факте, повышающем риск, уровень пересчитывается немедленно.
@@ -94,6 +96,8 @@ Merge, production deploy, production migration/data mutation, secrets, DNS, пл
 ### 10. Завершение
 
 Агент сверяет `DEFINITION_OF_DONE.md`, обновляет `CURRENT_RELEASE.md` только в release-changing PR, регистрирует новые системные blocker gaps и выдаёт итоговый отчёт. Draft PR остаётся unmerged до решения владельца.
+
+Phase 2 result artifact соответствует [`schemas/task-result.schema.json`](schemas/task-result.schema.json). Repository Skill [`.agents/skills/asi-task-execution/SKILL.md`](../../.agents/skills/asi-task-execution/SKILL.md) автоматизирует этот локальный цикл, но не расширяет полномочия агента.
 
 ## Статусы
 

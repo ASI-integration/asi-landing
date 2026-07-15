@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "asi.agent-os.production-preflight.v1",
+  "taskId": "agent-os-phase-2-production-tabletop",
+  "mode": "read-only-preflight",
+  "dispatchAllowed": false,
+  "mutationAllowed": false,
+  "secretValuesAllowed": false,
+  "requestedAction": "production_deploy",
+  "evidence": ["Requested SHA is represented only as preflight input.", "No workflow dispatch implementation exists in Phase 2."],
+  "status": "PREFLIGHT_ONLY"
+}

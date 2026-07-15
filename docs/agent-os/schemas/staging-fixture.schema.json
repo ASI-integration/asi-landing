@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/staging-fixture.schema.json",
+  "title": "ASI isolated staging acceptance fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixtureId", "environment", "isolated", "ownership", "cleanup", "safety"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.staging-fixture.v1" },
+    "fixtureId": { "type": "string", "pattern": "^asi-fixture-[a-z0-9-]+$" },
+    "environment": { "const": "staging" },
+    "isolated": { "const": true },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "namespace"],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "pattern": "^asi_fixture_" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "strategy", "verifyZeroResidue"],
+      "properties": {
+        "required": { "const": true },
+        "strategy": { "type": "string", "minLength": 1 },
+        "verifyZeroResidue": { "const": true }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noExternalActions", "productionCredentials", "payments", "realMessages"],
+      "properties": {
+        "noExternalActions": { "const": true },
+        "productionCredentials": { "const": false },
+        "payments": { "const": false },
+        "realMessages": { "const": false }
+      }
+    }
+  }
+}

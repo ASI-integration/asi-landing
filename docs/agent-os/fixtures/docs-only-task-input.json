@@ -1,0 +1,24 @@
+{
+  "task": {
+    "id": "agent-os-phase-2",
+    "title": "Implement Agent OS Phase 2 contracts",
+    "objective": "Add machine-readable contracts and a safe repository task Skill.",
+    "acceptanceCriteria": [
+      "Contracts validate locally.",
+      "The Skill stops before every red action."
+    ],
+    "inScope": [
+      "docs/agent-os/",
+      "scripts/agent-os/",
+      ".agents/skills/asi-task-execution/"
+    ],
+    "outOfScope": [
+      "Product behavior and external environment actions"
+    ]
+  },
+  "classification": "yellow",
+  "redActions": [],
+  "focusedTests": [
+    "scripts/agent-os/__tests__/contracts.test.mjs"
+  ]
+}
