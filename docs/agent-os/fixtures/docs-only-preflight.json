@@ -31,5 +31,6 @@
     "noExternalActions": true,
     "secretsAccessed": false
   },
-  "status": "READY"
+  "status": "READY",
+  "blockers": []
 }

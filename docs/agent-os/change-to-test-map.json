@@ -22,6 +22,7 @@
       "prefixes": ["src/lib/location/"],
       "checks": ["consumer-search", "focused-location-test", "typecheck", "touched-file-eslint"],
       "protected": true,
+      "redActions": ["location_scoring_or_public_contract_change"],
       "notes": "Scoring, SSOT and public contracts require explicit red approval; do not run test:location-golden unless AGENTS.md permits it."
     },
     {

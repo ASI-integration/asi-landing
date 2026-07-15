@@ -8,9 +8,9 @@
 
 | Этап | Результат | Статус |
 | --- | --- | --- |
-| 1 | JSON schemas для task preflight, result и owner gate | implemented |
+| 1 | Draft 2020-12 validation для task preflight, result, owner gate и safety artifacts | implemented |
 | 2 | Единый owner-gate contract; typed confirmation не является approval | implemented |
-| 3 | Change-to-test map с protected/red hints | implemented |
+| 3 | Change-to-test map с fail-closed protected/red classification | implemented |
 | 4 | Repository Skill `asi-task-execution` и локальные validators | implemented |
 | 5 | Docs-only agent-ready pilot Issue | created: `#103` |
 | 6 | Safe internal-tooling code-fix Issue | created: `#104`, scheduled after `#103` |

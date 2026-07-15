@@ -22,6 +22,8 @@ Approval атомарен: разрешение deploy не разрешает m
 
 Schema: [`schemas/owner-gate.schema.json`](schemas/owner-gate.schema.json).
 
+Runtime validation compiles the Draft 2020-12 schema and then compares the artifact with the expected task, action, exact target, identity, allowed side effect, verification plan and task cycle. Structural validity alone never authorizes an action.
+
 Fail-closed правила:
 
 - `missing`, `rejected`, `expired` и `consumed` блокируют red action;
@@ -29,6 +31,7 @@ Fail-closed правила:
 - несовпадение target, SHA/record identity или action блокирует выполнение;
 - секреты указываются только именами, значения запрещены;
 - artifact не переносится между tasks и не переиспользуется после action.
+- approved artifact без ожидаемого runtime contract, а также artifact со статусом `consumed`, всегда блокирует действие.
 
 ## Safe default
 
