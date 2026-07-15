@@ -1,0 +1,183 @@
+name: Production Logical Backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_backup:
+        description: Type BACKUP_PRODUCTION to create an encrypted production backup
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-logical-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - name: Require explicit confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.confirm_backup }}" != "BACKUP_PRODUCTION" ]]; then
+            echo "::error::Set confirm_backup to BACKUP_PRODUCTION."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.109.1
+          github-token: ${{ github.token }}
+
+      - name: Create encrypted logical backup
+        id: backup
+        shell: bash
+        env:
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          PRODUCTION_BACKUP_PASSPHRASE: ${{ secrets.PRODUCTION_BACKUP_PASSPHRASE }}
+          EXPECTED_PROJECT_REF: jwinifeienvzejofmbua
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PRODUCTION_DATABASE_URL:-}" ]]; then
+            echo "::error::PRODUCTION_DATABASE_URL is not configured."
+            exit 1
+          fi
+          if [[ -z "${PRODUCTION_BACKUP_PASSPHRASE:-}" ]]; then
+            echo "::error::PRODUCTION_BACKUP_PASSPHRASE is not configured."
+            exit 1
+          fi
+          echo "::add-mask::${PRODUCTION_DATABASE_URL}"
+          echo "::add-mask::${PRODUCTION_BACKUP_PASSPHRASE}"
+
+          python3 - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+
+          expected = os.environ["EXPECTED_PROJECT_REF"]
+          parsed = urlparse(os.environ["PRODUCTION_DATABASE_URL"])
+          identity_fields = (parsed.hostname or "", unquote(parsed.username or ""))
+          if not parsed.scheme.startswith("postgres") or not any(expected in value for value in identity_fields):
+              raise SystemExit("Production database project identity mismatch.")
+          print(f"Production project identity verified: {expected}")
+          PY
+
+          supabase --version
+          supabase db dump --help >/dev/null
+          gpg --version | head -n 1
+
+          work_dir="${RUNNER_TEMP}/production-logical-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          artifact_dir="${RUNNER_TEMP}/production-logical-backup-artifact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          artifact_base="production-logical-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          archive_path="${work_dir}/${artifact_base}.tar.gz"
+          encrypted_path="${artifact_dir}/${artifact_base}.tar.gz.gpg"
+          checksums_path="${artifact_dir}/checksums.txt"
+          files=(roles.sql schema.sql data.sql history_schema.sql history_data.sql)
+
+          mkdir -p "$work_dir" "$artifact_dir"
+          chmod 700 "$work_dir" "$artifact_dir"
+
+          cleanup_plaintext() {
+            rm -f "$work_dir"/*.sql "$archive_path"
+          }
+          trap cleanup_plaintext EXIT
+
+          supabase db dump --db-url "$PRODUCTION_DATABASE_URL" -f "$work_dir/roles.sql" --role-only
+          supabase db dump --db-url "$PRODUCTION_DATABASE_URL" -f "$work_dir/schema.sql"
+          supabase db dump --db-url "$PRODUCTION_DATABASE_URL" -f "$work_dir/data.sql" --use-copy --data-only \
+            -x "storage.buckets_vectors" \
+            -x "storage.vector_indexes"
+          supabase db dump --db-url "$PRODUCTION_DATABASE_URL" -f "$work_dir/history_schema.sql" \
+            --schema supabase_migrations
+          supabase db dump --db-url "$PRODUCTION_DATABASE_URL" -f "$work_dir/history_data.sql" \
+            --use-copy --data-only --schema supabase_migrations
+
+          printf 'SHA256\tBYTES\tFILE\n' > "$checksums_path"
+          for file in "${files[@]}"; do
+            path="$work_dir/$file"
+            if [[ ! -s "$path" ]]; then
+              echo "::error::Backup file is missing or empty: $file"
+              exit 1
+            fi
+            size="$(stat -c '%s' "$path")"
+            sha256="$(sha256sum "$path" | awk '{print $1}')"
+            printf '%s\t%s\t%s\n' "$sha256" "$size" "$file" >> "$checksums_path"
+            printf 'BACKUP_FILE file=%s bytes=%s sha256=%s\n' "$file" "$size" "$sha256"
+          done
+
+          tar -czf "$archive_path" -C "$work_dir" "${files[@]}"
+          printf '%s' "$PRODUCTION_BACKUP_PASSPHRASE" | gpg \
+            --batch \
+            --yes \
+            --pinentry-mode loopback \
+            --passphrase-fd 0 \
+            --symmetric \
+            --cipher-algo AES256 \
+            --output "$encrypted_path" \
+            "$archive_path"
+
+          if [[ ! -s "$encrypted_path" ]]; then
+            echo "::error::Encrypted backup is missing or empty."
+            exit 1
+          fi
+
+          cleanup_plaintext
+          if find "$work_dir" -maxdepth 1 -type f \( -name '*.sql' -o -name '*.tar.gz' \) -print -quit | grep -q .; then
+            echo "::error::Plaintext backup cleanup failed."
+            exit 1
+          fi
+
+          mapfile -t payload_files < <(find "$artifact_dir" -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [[ "${#payload_files[@]}" -ne 2 \
+             || "${payload_files[0]}" != "checksums.txt" \
+             || "${payload_files[1]}" != "${artifact_base}.tar.gz.gpg" ]]; then
+            echo "::error::Artifact payload contains unexpected files."
+            exit 1
+          fi
+
+          {
+            echo "### Production logical backup"
+            echo
+            echo "- Project: \`${EXPECTED_PROJECT_REF}\`"
+            echo "- Encrypted file: \`${artifact_base}.tar.gz.gpg\`"
+            echo "- Plaintext SQL and tar.gz deleted before artifact upload: yes"
+            echo
+            echo '```text'
+            cat "$checksums_path"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "artifact_name=${artifact_base}" >> "$GITHUB_OUTPUT"
+          echo "artifact_dir=${artifact_dir}" >> "$GITHUB_OUTPUT"
+          echo "encrypted_file=${artifact_base}.tar.gz.gpg" >> "$GITHUB_OUTPUT"
+          echo "Plaintext SQL and unencrypted tar.gz deletion verified."
+
+      - name: Upload encrypted backup only
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.backup.outputs.artifact_name }}
+          path: |
+            ${{ steps.backup.outputs.artifact_dir }}/${{ steps.backup.outputs.encrypted_file }}
+            ${{ steps.backup.outputs.artifact_dir }}/checksums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Remove runner backup files
+        if: always()
+        shell: bash
+        run: |
+          rm -rf \
+            "${RUNNER_TEMP}/production-logical-backup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "${RUNNER_TEMP}/production-logical-backup-artifact-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
