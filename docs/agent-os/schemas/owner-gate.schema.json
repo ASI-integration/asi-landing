@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/owner-gate.schema.json",
+  "title": "ASI Agent OS owner gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "status", "action", "target", "identity", "allowedSideEffect", "postActionVerification", "authorization", "typedConfirmation"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.owner-gate.v1" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["missing", "approved", "rejected", "expired", "consumed"] },
+    "action": { "$ref": "#/$defs/redAction" },
+    "target": { "type": "string", "minLength": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "migration": { "type": "string", "minLength": 1 },
+        "recordId": { "type": "string", "minLength": 1 }
+      },
+      "minProperties": 1
+    },
+    "allowedSideEffect": { "type": "string", "minLength": 1 },
+    "postActionVerification": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "authorization": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "owner", "scope", "taskCycle"],
+          "properties": {
+            "source": { "const": "explicit_owner_message" },
+            "owner": { "const": "Nikolay" },
+            "scope": { "type": "string", "minLength": 1 },
+            "taskCycle": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "typedConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "countsAsOwnerApproval"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "countsAsOwnerApproval": { "const": false }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "approved" } }, "required": ["status"] },
+      "then": { "properties": { "authorization": { "type": "object" } } },
+      "else": { "properties": { "authorization": { "type": "null" } } }
+    }
+  ],
+  "$defs": {
+    "redAction": {
+      "enum": [
+        "merge",
+        "release_source_change",
+        "production_deploy",
+        "production_rollback",
+        "production_migration",
+        "production_data_mutation",
+        "secret_value_access",
+        "dns_or_tls_change",
+        "payment_or_financial_operation",
+        "real_external_message_or_provider_call",
+        "approved_ux_or_public_copy_change",
+        "location_scoring_or_public_contract_change",
+        "repository_or_environment_settings_change",
+        "production_backup_access",
+        "published_branch_rewrite",
+        "broad_test_suite"
+      ]
+    }
+  }
+}

@@ -58,6 +58,8 @@
 
 ## 6. Финальный отчёт
 
+Machine-readable result соответствует [`schemas/task-result.schema.json`](schemas/task-result.schema.json).
+
 Отчёт содержит:
 
 - branch, commit SHA и PR URL;

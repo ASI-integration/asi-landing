@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "asi.agent-os.change-to-test-map.v1",
+  "default": {
+    "checks": ["touched-file-eslint", "typecheck", "focused-test", "git-diff-check", "exact-diff-review"],
+    "focusedTestLimit": { "files": 2, "tests": 30 }
+  },
+  "rules": [
+    {
+      "id": "agent-os-contracts",
+      "prefixes": ["docs/agent-os/", ".agents/skills/asi-task-execution/", "scripts/agent-os/"],
+      "checks": ["agent-os-contract-validation", "skill-quick-validate", "focused-contract-test", "git-diff-check"],
+      "protected": false
+    },
+    {
+      "id": "github-templates",
+      "prefixes": [".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE.md"],
+      "checks": ["yaml-or-markdown-parse", "local-link-check", "git-diff-check"],
+      "protected": false
+    },
+    {
+      "id": "location-protected",
+      "prefixes": ["src/lib/location/"],
+      "checks": ["consumer-search", "focused-location-test", "typecheck", "touched-file-eslint"],
+      "protected": true,
+      "redActions": ["location_scoring_or_public_contract_change"],
+      "notes": "Scoring, SSOT and public contracts require explicit red approval; do not run test:location-golden unless AGENTS.md permits it."
+    },
+    {
+      "id": "booking-lifecycle",
+      "prefixes": ["src/lib/booking-lifecycle", "src/app/api/booking", "src/app/api/cron/booking"],
+      "checks": ["exact-task-identity-review", "focused-lifecycle-test", "typecheck", "touched-file-eslint"],
+      "protected": false
+    },
+    {
+      "id": "migration",
+      "prefixes": ["supabase/migrations/"],
+      "checks": ["destructive-sql-review", "migration-dependency-order-test", "git-diff-check"],
+      "protected": true,
+      "notes": "Creating a migration can be yellow; applying it to any database is outside this map and requires the applicable gate."
+    },
+    {
+      "id": "staging-scripts",
+      "prefixes": ["scripts/deploy-artifact-staging", "scripts/rollback-artifact-staging", "scripts/staging-"],
+      "checks": ["shell-or-node-syntax", "fail-closed-guard", "staging-identity-review", "git-diff-check"],
+      "protected": true,
+      "notes": "Do not execute against an external staging target unless every v0 blocker prerequisite is closed."
+    },
+    {
+      "id": "production-operations",
+      "prefixes": [".github/workflows/deploy.yml", "scripts/deploy-artifact.sh", "scripts/rollback-artifact.sh"],
+      "checks": ["read-only-workflow-review", "owner-gate-review", "git-diff-check"],
+      "protected": true,
+      "redActions": ["production_deploy", "production_rollback"]
+    }
+  ]
+}

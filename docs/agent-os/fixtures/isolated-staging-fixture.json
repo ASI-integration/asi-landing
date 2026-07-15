@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "asi.agent-os.staging-fixture.v1",
+  "fixtureId": "asi-fixture-agent-os-phase-2",
+  "environment": "staging",
+  "isolated": true,
+  "ownership": {
+    "taskId": "agent-os-phase-2",
+    "namespace": "asi_fixture_agent_os_phase_2"
+  },
+  "cleanup": {
+    "required": true,
+    "strategy": "Delete only records carrying the exact fixture namespace.",
+    "verifyZeroResidue": true
+  },
+  "safety": {
+    "noExternalActions": true,
+    "productionCredentials": false,
+    "payments": false,
+    "realMessages": false
+  }
+}

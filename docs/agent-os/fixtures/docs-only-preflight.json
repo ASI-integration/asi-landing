@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "asi.agent-os.task-preflight.v1",
+  "task": {
+    "id": "pilot-docs-only",
+    "title": "Clarify Agent OS terminology",
+    "objective": "Clarify one internal Agent OS term without changing product behavior.",
+    "acceptanceCriteria": ["The clarification is linked from the relevant contract."],
+    "inScope": ["docs/agent-os/"],
+    "outOfScope": ["Product code and external environments"]
+  },
+  "repository": {
+    "name": "ASI-integration/asi-landing",
+    "baselineSha": "0000000000000000000000000000000000000000",
+    "headRef": "codex/pilot-docs-only"
+  },
+  "classification": "green",
+  "redActions": [],
+  "ownerGate": { "required": false, "status": "not_required" },
+  "changeSet": {
+    "paths": ["docs/agent-os/WORKFLOW.md"],
+    "protectedPaths": [],
+    "forbiddenPaths": []
+  },
+  "validation": {
+    "checks": ["local-link-check", "git-diff-check"],
+    "focusedTests": [],
+    "broadSuiteRequired": false
+  },
+  "safety": {
+    "noProductionWrites": true,
+    "noExternalActions": true,
+    "secretsAccessed": false
+  },
+  "status": "READY",
+  "blockers": []
+}

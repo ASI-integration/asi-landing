@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "asi.agent-os.task-result.v1",
+  "taskId": "pilot-docs-only",
+  "status": "DONE",
+  "branch": "codex/pilot-docs-only",
+  "commitSha": "1111111111111111111111111111111111111111",
+  "prUrl": "https://github.com/ASI-integration/asi-landing/pull/0",
+  "changedFiles": ["docs/agent-os/WORKFLOW.md"],
+  "checks": [
+    { "name": "local-link-check", "status": "PASS", "evidence": "0 missing links" },
+    { "name": "git-diff-check", "status": "PASS", "evidence": "clean" }
+  ],
+  "sideEffects": {
+    "production": false,
+    "database": false,
+    "secrets": false,
+    "dns": false,
+    "payments": false,
+    "realMessages": false,
+    "approvedUx": false
+  },
+  "blockers": [],
+  "ownerDecision": null
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://asi.local/agent-os/task-preflight.schema.json",
+  "title": "ASI Agent OS task preflight",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "task", "repository", "classification", "redActions", "ownerGate", "changeSet", "validation", "safety", "status", "blockers"],
+  "properties": {
+    "schemaVersion": { "const": "asi.agent-os.task-preflight.v1" },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "objective", "acceptanceCriteria", "inScope", "outOfScope"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "acceptanceCriteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "inScope": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "outOfScope": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "baselineSha", "headRef"],
+      "properties": {
+        "name": { "const": "ASI-integration/asi-landing" },
+        "baselineSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "headRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "classification": { "enum": ["green", "yellow", "red"] },
+    "redActions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "owner-gate.schema.json#/$defs/redAction" }
+    },
+    "ownerGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "status": { "enum": ["not_required", "missing", "approved", "rejected", "expired", "consumed"] },
+        "artifactPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "changeSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths", "protectedPaths", "forbiddenPaths"],
+      "properties": {
+        "paths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "protectedPaths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "forbiddenPaths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checks", "focusedTests", "broadSuiteRequired"],
+      "properties": {
+        "checks": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "focusedTests": { "type": "array", "maxItems": 2, "items": { "type": "string", "minLength": 1 } },
+        "broadSuiteRequired": { "type": "boolean" }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["noProductionWrites", "noExternalActions", "secretsAccessed"],
+      "properties": {
+        "noProductionWrites": { "const": true },
+        "noExternalActions": { "type": "boolean" },
+        "secretsAccessed": { "const": false }
+      }
+    },
+    "status": { "enum": ["READY", "AWAITING_OWNER", "BLOCKED"] },
+    "blockers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "classification": { "const": "red" } }, "required": ["classification"] },
+      "then": {
+        "properties": {
+          "redActions": { "type": "array", "minItems": 1 },
+          "ownerGate": { "type": "object", "properties": { "required": { "const": true } } },
+          "status": { "type": "string", "enum": ["AWAITING_OWNER", "BLOCKED"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "BLOCKED" } }, "required": ["status"] },
+      "then": { "properties": { "blockers": { "type": "array", "minItems": 1 } } },
+      "else": { "properties": { "blockers": { "type": "array", "maxItems": 0 } } }
+    }
+  ]
+}
