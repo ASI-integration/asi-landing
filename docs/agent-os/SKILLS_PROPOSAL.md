@@ -113,10 +113,9 @@ description: Prepare owner-gated ASI production rollout, migration, reconciliati
 
 ## Порядок реализации во второй фазе
 
-1. Закрыть GitHub protection и environment blockers.
-2. Ввести machine-readable Issue/PR labels и report schema.
-3. Реализовать и validate `asi-task-execution`.
-4. Добавить staging JSON preflight/result и затем `asi-staging-acceptance`.
-5. Только после tabletop review и безопасного forward-testing реализовать `asi-production-rollout`.
-6. Провести пилот на трёх задачах: docs-only, обычный code fix, isolated staging acceptance.
-7. Production Skill тестировать сначала только на read-only preflight; write path активировать отдельным решением Николая.
+1. Ввести machine-readable task preflight/result schemas и единый owner-gate contract.
+2. Добавить change-to-test map и реализовать/validate `asi-task-execution`.
+3. Провести docs-only пилот, затем отдельный безопасный code-fix пилот.
+4. Добавить staging JSON preflight/result и тестировать `asi-staging-acceptance` только на изолированных deterministic fixtures.
+5. Реализовать `asi-production-rollout` только в read-only/preflight режиме; любой write path активировать отдельным red-решением Николая.
+6. GitHub protection, environment reviewers и repository settings не настраивать без отдельного red-разрешения.
