@@ -32,3 +32,17 @@ node scripts/agent-os/validate-contracts.mjs
 node --test scripts/agent-os/__tests__/contracts.test.mjs
 python C:/Users/Admin/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/asi-task-execution
 ```
+
+### Docs-only result example
+
+Fixture [`fixtures/docs-only-result.json`](fixtures/docs-only-result.json) проверяется существующим validator command:
+
+```powershell
+node scripts/agent-os/validate-contracts.mjs
+```
+
+Ожидаемый PASS result:
+
+```json
+{"ok":true,"schemas":5,"fixtures":5}
+```
