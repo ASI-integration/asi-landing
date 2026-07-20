@@ -66,9 +66,21 @@ jobs:
           # shellcheck disable=SC1090
           source "$ENV_FILE"
           set +a
-          DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-}}"
+          PM2_ENV="$(sudo -u project_ayfaar pm2 env 0 2>/dev/null || true)"
+          while IFS= read -r line; do
+            for prefix in SUPABASE_DB_URL: DATABASE_URL: PRODUCTION_DATABASE_URL:; do
+              if [[ "$line" == "$prefix"* ]]; then
+                key="${prefix%:}"
+                val="${line#"$prefix"}"
+                val="${val#"${val%%[![:space:]]*}"}"
+                export "$key=$val"
+              fi
+            done
+          done <<< "$PM2_ENV"
+          DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-${PRODUCTION_DATABASE_URL:-}}}"
           if [[ -z "$DB_URL" ]]; then
-            echo "Missing SUPABASE_DB_URL/DATABASE_URL in production env"
+            echo "Missing SUPABASE_DB_URL/DATABASE_URL/PRODUCTION_DATABASE_URL in production env or pm2 env"
+            echo "available_db_keys=$(grep -E '^(SUPABASE_DB_URL|DATABASE_URL|PRODUCTION_DATABASE_URL)=' "$ENV_FILE" | cut -d= -f1 | tr '\n' ',' || true)"
             exit 2
           fi
           SQL_FILE="/home/project_ayfaar/asi-migration-tmp/asi_runtime_snapshot_v1.sql"
