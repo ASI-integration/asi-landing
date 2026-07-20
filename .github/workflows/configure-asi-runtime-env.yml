@@ -1,0 +1,191 @@
+name: Configure ASI Runtime Production Env
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_env:
+        description: Type CONFIGURE_ASI_RUNTIME_ENV to set production env vars
+        required: true
+        type: string
+      owner_user_id:
+        description: Production cabinet owner users.id UUID (required if multiple users exist)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  configure_asi_runtime_env:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require explicit confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm_production_env }}" != "CONFIGURE_ASI_RUNTIME_ENV" ]; then
+            echo "Set confirm_production_env to CONFIGURE_ASI_RUNTIME_ENV."
+            exit 1
+          fi
+
+      - name: Configure env on production VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          OWNER_USER_ID_INPUT: ${{ inputs.owner_user_id }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
+            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
+            exit 1
+          fi
+
+          REMOTE_USER="project_ayfaar"
+          REMOTE_PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
+          chmod 600 "$SSH_KEY"
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          SSH_OPTS=(
+            -i "$SSH_KEY"
+            -p "$REMOTE_PORT"
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=accept-new
+            -o LogLevel=ERROR
+            -o ConnectTimeout=20
+          )
+
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" \
+            "OWNER_USER_ID_INPUT='${OWNER_USER_ID_INPUT:-}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE=/var/www/asi/shared/.env.production.live
+          if [[ ! -f "$ENV_FILE" ]]; then
+            echo "Missing env file: $ENV_FILE"
+            exit 1
+          fi
+
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+
+          if [[ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            echo "Missing Supabase REST env on VPS"
+            exit 1
+          fi
+
+          RESOLVE_OUT="$(node <<'NODE'
+          const base = process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/rest\/v1\/?$/, '');
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          const input = (process.env.OWNER_USER_ID_INPUT || '').trim();
+          async function main() {
+            const res = await fetch(`${base}/rest/v1/users?select=id,email,created_at&order=created_at.asc&limit=20`, {
+              headers: { apikey: key, Authorization: `Bearer ${key}` },
+            });
+            const body = await res.text();
+            if (!res.ok) {
+              console.log(`RESOLVE_STATUS=error http=${res.status}`);
+              process.exit(2);
+            }
+            const rows = JSON.parse(body);
+            if (input) {
+              const match = rows.find((row) => row.id === input);
+              if (!match) {
+                console.log('RESOLVE_STATUS=owner_input_not_found');
+                process.exit(3);
+              }
+              console.log(`RESOLVE_STATUS=ok owner_user_id=${match.id} owner_email_domain=${String(match.email || '').split('@')[1] || 'unknown'}`);
+              return;
+            }
+            const candidates = rows.filter((row) => row.email && !/example\.com$/i.test(row.email));
+            if (candidates.length === 1) {
+              console.log(`RESOLVE_STATUS=ok owner_user_id=${candidates[0].id} owner_email_domain=${String(candidates[0].email).split('@')[1] || 'unknown'}`);
+              return;
+            }
+            console.log(`RESOLVE_STATUS=ambiguous candidate_count=${candidates.length}`);
+            for (const row of candidates.slice(0, 5)) {
+              console.log(`candidate id=${row.id} domain=${String(row.email || '').split('@')[1] || 'unknown'}`);
+            }
+            process.exit(4);
+          }
+          main().catch((err) => {
+            console.log(`RESOLVE_STATUS=error message=${err instanceof Error ? err.message : String(err)}`);
+            process.exit(2);
+          });
+          NODE
+          )"
+          echo "$RESOLVE_OUT"
+          OWNER_USER_ID="$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^RESOLVE_STATUS=ok owner_user_id=\([^ ]*\).*/\1/p' | tail -n1)"
+          if [[ -z "$OWNER_USER_ID" ]]; then
+            exit 1
+          fi
+
+          if [[ -z "${ASI_RUNTIME_INGEST_TOKEN:-}" ]]; then
+            ASI_RUNTIME_INGEST_TOKEN="$(openssl rand -hex 32)"
+          else
+            echo "ASI_RUNTIME_INGEST_TOKEN=already_set prefix=$(printf '%s' "$ASI_RUNTIME_INGEST_TOKEN" | cut -c1-8)"
+          fi
+
+          cp "$ENV_FILE" "${ENV_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+
+          set_or_append() {
+            local file="$1"
+            local key="$2"
+            local value="$3"
+            if grep -q "^${key}=" "$file"; then
+              sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+            else
+              printf '\n%s=%s\n' "$key" "$value" >> "$file"
+            fi
+          }
+
+          set_or_append "$ENV_FILE" ASI_RUNTIME_INGEST_TOKEN "$ASI_RUNTIME_INGEST_TOKEN"
+          set_or_append "$ENV_FILE" ASI_RUNTIME_OWNER_USER_ID "$OWNER_USER_ID"
+
+          CURRENT_ENV_LOCAL=/var/www/asi/current/.env.production.local
+          if [[ -f "$CURRENT_ENV_LOCAL" ]]; then
+            set_or_append "$CURRENT_ENV_LOCAL" ASI_RUNTIME_INGEST_TOKEN "$ASI_RUNTIME_INGEST_TOKEN"
+            set_or_append "$CURRENT_ENV_LOCAL" ASI_RUNTIME_OWNER_USER_ID "$OWNER_USER_ID"
+            echo "updated_current_env_local=yes"
+          fi
+
+          echo "ASI_RUNTIME_OWNER_USER_ID=${OWNER_USER_ID}"
+          echo "ASI_RUNTIME_INGEST_TOKEN_prefix=$(printf '%s' "$ASI_RUNTIME_INGEST_TOKEN" | cut -c1-8)"
+
+          pm2 restart asi-landing --update-env
+          pm2 save
+          sleep 4
+
+          echo "=== runtime ingest auth probe (no token) ==="
+          curl -sS -o /tmp/runtime-ingest-probe.json -w "http=%{http_code}\n" \
+            -X POST http://127.0.0.1:3000/api/internal/asi-runtime/snapshot \
+            -H 'content-type: application/json' \
+            -d '{"taskId":"probe","taskTitle":"probe","status":"running","attemptNumber":1,"startedAt":"2026-07-20T12:00:00.000Z","payloadVersion":1}' || true
+          head -c 200 /tmp/runtime-ingest-probe.json 2>/dev/null || true
+          echo
+
+          echo "=== runtime ingest smoke POST (server-side token) ==="
+          set -a
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+          set +a
+          curl -sS -o /tmp/runtime-ingest-smoke.json -w "http=%{http_code}\n" \
+            -X POST http://127.0.0.1:3000/api/internal/asi-runtime/snapshot \
+            -H "authorization: Bearer ${ASI_RUNTIME_INGEST_TOKEN}" \
+            -H 'content-type: application/json' \
+            -d '{"taskId":"smoke-runtime-v1","taskTitle":"Production smoke snapshot","status":"running","currentStage":null,"completedSteps":null,"totalSteps":null,"progressPercent":null,"provider":null,"attemptNumber":1,"commitSha":null,"pullRequestUrl":null,"verificationStatus":null,"lastEvent":null,"startedAt":"2026-07-20T12:00:00.000Z","payloadVersion":1}' || true
+          head -c 200 /tmp/runtime-ingest-smoke.json 2>/dev/null || true
+          echo
+
+          echo "=== runtime status unauthenticated probe ==="
+          curl -sS -o /tmp/runtime-status-probe.json -w "http=%{http_code}\n" \
+            http://127.0.0.1:3000/api/cabinet/runtime/status || true
+          head -c 200 /tmp/runtime-status-probe.json 2>/dev/null || true
+          echo
+          REMOTE
