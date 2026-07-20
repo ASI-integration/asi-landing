@@ -83,6 +83,25 @@ function readNonNegativeInt(value: unknown): number | null {
   return value;
 }
 
+function readOptionalNonNegativeInt(value: unknown, defaultValue: number): number | null {
+  if (value === null || value === undefined) return defaultValue;
+  return readNonNegativeInt(value);
+}
+
+function readOptionalProgressPercent(value: unknown, defaultValue: number): number | null {
+  if (value === null || value === undefined) return defaultValue;
+  return readProgressPercent(value);
+}
+
+function readOptionalTrimmedStringOrDefault(
+  value: unknown,
+  maxLength: number,
+  defaultValue: string,
+): string | null {
+  if (value === null || value === undefined) return defaultValue;
+  return readTrimmedString(value, maxLength);
+}
+
 function readPositiveInt(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) return null;
   return value;
@@ -133,9 +152,9 @@ export function parseRuntimeSnapshotIngestPayload(body: unknown): RuntimeSnapsho
   const taskTitle = readTrimmedString(body.taskTitle, STRING_LIMITS.taskTitle);
   const status = readTrimmedString(body.status, STRING_LIMITS.status);
   const startedAt = readIsoDate(body.startedAt);
-  const completedSteps = readNonNegativeInt(body.completedSteps);
-  const totalSteps = readNonNegativeInt(body.totalSteps);
-  const progressPercent = readProgressPercent(body.progressPercent);
+  const completedSteps = readOptionalNonNegativeInt(body.completedSteps, 0);
+  const totalSteps = readOptionalNonNegativeInt(body.totalSteps, 0);
+  const progressPercent = readOptionalProgressPercent(body.progressPercent, 0);
   const attemptNumber = readPositiveInt(body.attemptNumber);
   const payloadVersion = typeof body.payloadVersion === 'number' && Number.isInteger(body.payloadVersion)
     ? body.payloadVersion
@@ -155,18 +174,26 @@ export function parseRuntimeSnapshotIngestPayload(body: unknown): RuntimeSnapsho
     return null;
   }
 
-  const currentStage = body.currentStage === undefined
-    ? ''
-    : readTrimmedString(body.currentStage, STRING_LIMITS.currentStage);
-  const provider = body.provider === undefined
-    ? ''
-    : readTrimmedString(body.provider, STRING_LIMITS.provider);
-  const verificationStatus = body.verificationStatus === undefined
-    ? 'unknown'
-    : readTrimmedString(body.verificationStatus, STRING_LIMITS.verificationStatus);
-  const lastEvent = body.lastEvent === undefined
-    ? ''
-    : readTrimmedString(body.lastEvent, STRING_LIMITS.lastEvent);
+  const currentStage = readOptionalTrimmedStringOrDefault(
+    body.currentStage,
+    STRING_LIMITS.currentStage,
+    '',
+  );
+  const provider = readOptionalTrimmedStringOrDefault(
+    body.provider,
+    STRING_LIMITS.provider,
+    '',
+  );
+  const verificationStatus = readOptionalTrimmedStringOrDefault(
+    body.verificationStatus,
+    STRING_LIMITS.verificationStatus,
+    'unknown',
+  );
+  const lastEvent = readOptionalTrimmedStringOrDefault(
+    body.lastEvent,
+    STRING_LIMITS.lastEvent,
+    '',
+  );
 
   if (
     currentStage === null

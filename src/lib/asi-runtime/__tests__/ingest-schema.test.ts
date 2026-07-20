@@ -99,4 +99,42 @@ describe('asi-runtime ingest-schema', () => {
     expect(RUNTIME_SNAPSHOT_MAX_BODY_BYTES).toBeGreaterThan(1024);
     expect(RUNTIME_SNAPSHOT_MAX_BODY_BYTES).toBeLessThanOrEqual(32_768);
   });
+
+  it('accepts nullable optional fields emitted by asi-os-runtime snapshot mapper', () => {
+    const parsed = parseRuntimeSnapshotIngestPayload({
+      taskId: 'task-42',
+      taskTitle: 'Добавить runtime snapshot',
+      status: 'running',
+      currentStage: null,
+      completedSteps: null,
+      totalSteps: null,
+      progressPercent: null,
+      provider: null,
+      attemptNumber: 1,
+      commitSha: null,
+      pullRequestUrl: null,
+      verificationStatus: null,
+      lastEvent: null,
+      startedAt: '2026-07-20T09:00:00.000Z',
+      payloadVersion: RUNTIME_SNAPSHOT_SUPPORTED_PAYLOAD_VERSION,
+    });
+
+    expect(parsed).toEqual({
+      taskId: 'task-42',
+      taskTitle: 'Добавить runtime snapshot',
+      status: 'running',
+      currentStage: '',
+      completedSteps: 0,
+      totalSteps: 0,
+      progressPercent: 0,
+      provider: '',
+      attemptNumber: 1,
+      commitSha: null,
+      pullRequestUrl: null,
+      verificationStatus: 'unknown',
+      lastEvent: '',
+      startedAt: '2026-07-20T09:00:00.000Z',
+      payloadVersion: 1,
+    });
+  });
 });
