@@ -1,0 +1,109 @@
+name: Ephemeral ASI Runtime VPS Diagnostic
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type RUN_ASI_RUNTIME_VPS_DIAG
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Confirm
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "RUN_ASI_RUNTIME_VPS_DIAG" ]; then exit 1; fi
+      - name: Run VPS diagnostic
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          REMOTE_USER=project_ayfaar
+          REMOTE_PORT=${VPS_PORT:-22}
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          SSH_KEY=~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY" && chmod 600 "$SSH_KEY"
+          ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" bash -s <<'REMOTE'
+          set -euo pipefail
+          ENV_FILE=/var/www/asi/shared/.env.production.live
+          set -a
+          source "$ENV_FILE"
+          set +a
+          SUPABASE_HOST="$(python3 - <<'PY'
+import os
+from urllib.parse import urlparse
+raw = (os.environ.get('SUPABASE_URL') or os.environ.get('NEXT_PUBLIC_SUPABASE_URL') or '').strip()
+raw = raw.replace('/rest/v1','').replace('/rest/v1/','')
+if not raw:
+    print('MISSING')
+else:
+    print(urlparse(raw).hostname or 'MISSING')
+PY
+)"
+          echo "PRODUCTION_SUPABASE_HOST=${SUPABASE_HOST}"
+          OWNER_ID="${ASI_RUNTIME_OWNER_USER_ID:-}"
+          echo "ASI_RUNTIME_OWNER_USER_ID=${OWNER_ID:-MISSING}"
+          BASE="${NEXT_PUBLIC_SUPABASE_URL%/}"
+          BASE="${BASE%/rest/v1}"
+          PROBE_URL="${BASE}/rest/v1/asi_runtime_snapshots?select=user_id&limit=1"
+          REST_CODE="$(curl -sS -o /tmp/runtime-rest-probe.json -w '%{http_code}' "$PROBE_URL" -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" || true)"
+          echo "REST_PROBE_HTTP=${REST_CODE}"
+          head -c 400 /tmp/runtime-rest-probe.json 2>/dev/null || true
+          echo
+          if [[ -n "$OWNER_ID" ]]; then
+            USER_CODE="$(curl -sS -o /tmp/runtime-owner-probe.json -w '%{http_code}' "${BASE}/rest/v1/users?id=eq.${OWNER_ID}&select=id&limit=1" -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" || true)"
+            OWNER_EXISTS=false
+            if [[ "$USER_CODE" == "200" ]] && grep -q "$OWNER_ID" /tmp/runtime-owner-probe.json 2>/dev/null; then OWNER_EXISTS=true; fi
+            echo "OWNER_EXISTS=${OWNER_EXISTS}"
+            echo "OWNER_PROBE_HTTP=${USER_CODE}"
+          fi
+          sudo -u project_ayfaar pm2 flush asi-landing >/dev/null 2>&1 || true
+          ( curl -sS -o /tmp/runtime-post-smoke.json -w 'POST_HTTP=%{http_code}\n' -X POST http://127.0.0.1:3000/api/internal/asi-runtime/snapshot -H "authorization: Bearer ${ASI_RUNTIME_INGEST_TOKEN}" -H 'content-type: application/json' -d '{"taskId":"diag-runtime-v1","taskTitle":"Production smoke snapshot","status":"running","currentStage":null,"completedSteps":null,"totalSteps":null,"progressPercent":null,"provider":null,"attemptNumber":1,"commitSha":null,"pullRequestUrl":null,"verificationStatus":null,"lastEvent":null,"startedAt":"2026-07-20T12:00:00.000Z","payloadVersion":1}' || true; head -c 300 /tmp/runtime-post-smoke.json 2>/dev/null || true; echo ) &
+          POST_PID=$!
+          sleep 2
+          sudo -u project_ayfaar pm2 logs asi-landing --nostream --lines 120 2>&1 | tail -n 80 | sed -E 's/(Bearer |apikey:|Authorization: )[^ ]+/\1[redacted]/g'
+          wait $POST_PID || true
+          cd /var/www/asi/current
+          node - <<'NODE'
+const { createClient } = require('@supabase/supabase-js');
+const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/rest\/v1\/?$/, '');
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const owner = process.env.ASI_RUNTIME_OWNER_USER_ID;
+const sb = createClient(url, key, { auth: { persistSession: false } });
+(async () => {
+  const { data, error } = await sb.from('asi_runtime_snapshots').upsert({
+    user_id: owner,
+    task_id: 'diag-direct-v1',
+    task_title: 'Direct probe',
+    status: 'running',
+    current_stage: '',
+    completed_steps: 0,
+    total_steps: 0,
+    progress_percent: 0,
+    provider: '',
+    attempt_number: 1,
+    verification_status: 'unknown',
+    last_event: '',
+    started_at: '2026-07-20T12:00:00.000Z',
+    payload_version: 1,
+  }, { onConflict: 'user_id' }).select('user_id').single();
+  if (error) {
+    console.log('DIRECT_UPSERT_ERROR_CODE=' + (error.code || 'none'));
+    console.log('DIRECT_UPSERT_ERROR_MESSAGE=' + error.message);
+    if (error.details) console.log('DIRECT_UPSERT_ERROR_DETAILS=' + error.details);
+    if (error.hint) console.log('DIRECT_UPSERT_ERROR_HINT=' + error.hint);
+  } else {
+    console.log('DIRECT_UPSERT_OK user_id=' + data.user_id);
+  }
+})();
+NODE
+          REMOTE
