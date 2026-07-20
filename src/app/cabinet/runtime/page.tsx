@@ -1,19 +1,51 @@
 'use client';
 
-export default function CabinetRuntimePage() {
-  return (
-    <div className="space-y-8 max-w-2xl">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">ASI Runtime</h1>
-        <p className="mt-2 text-lg text-slate-500 leading-relaxed">
-          Подключение Runtime ещё не настроено
-        </p>
-      </header>
+import { useEffect, useState } from 'react';
+import { CabinetRuntimeView } from './CabinetRuntimeView';
+import type { AsiRuntimeStatusResponse, PublicAsiRuntimeSnapshot } from '@/lib/asi-runtime/types';
 
-      <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <p className="text-sm text-slate-500">Статус</p>
-        <p className="mt-1 text-base font-medium text-slate-900">Нет соединения</p>
-      </section>
-    </div>
-  );
+export default function CabinetRuntimePage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<PublicAsiRuntimeSnapshot | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatus() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch('/api/cabinet/runtime/status', { cache: 'no-store' });
+        if (response.status === 401) {
+          if (!cancelled) {
+            setSnapshot(null);
+            setError('Войдите, чтобы открыть Runtime.');
+          }
+          return;
+        }
+        const payload = (await response.json()) as AsiRuntimeStatusResponse | { ok: false; message: string };
+        if (!response.ok || !payload.ok) {
+          throw new Error('message' in payload ? payload.message : 'Не удалось загрузить статус Runtime.');
+        }
+        if (!cancelled) {
+          setSnapshot('connected' in payload && payload.connected ? payload.snapshot : null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setSnapshot(null);
+          setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить статус Runtime.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return <CabinetRuntimeView loading={loading} error={error} snapshot={snapshot} />;
 }
