@@ -30,61 +30,35 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Apply migration on production VPS
+      - name: Apply migration on production database
+        shell: bash
+        env:
+          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PRODUCTION_DATABASE_URL:-}" ]]; then
+            echo "::error::Missing PRODUCTION_DATABASE_URL"
+            exit 1
+          fi
+
+          python3 -m pip install --quiet psycopg2-binary
+          PRODUCTION_DATABASE_URL="$PRODUCTION_DATABASE_URL" python3 scripts/apply-asi-runtime-snapshot-migration-remote.py
+
+      - name: Verify migration via Supabase REST on VPS env
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          PRODUCTION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: |
           set -euo pipefail
-          if [[ -z "${VPS_HOST:-}" || -z "${VPS_SSH_KEY:-}" ]]; then
-            echo "::error::Missing VPS_HOST or VPS_SSH_KEY"
-            exit 1
-          fi
-
           REMOTE_USER="project_ayfaar"
           REMOTE_PORT="${VPS_PORT:-22}"
-          REMOTE_TMP="/home/project_ayfaar/asi-migration-tmp"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           SSH_KEY=~/.ssh/id_ed25519
           printf '%s\n' "$VPS_SSH_KEY" > "$SSH_KEY"
           chmod 600 "$SSH_KEY"
           ssh-keyscan -p "$REMOTE_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          SSH_OPTS=(
-            -i "$SSH_KEY"
-            -p "$REMOTE_PORT"
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=accept-new
-            -o LogLevel=ERROR
-            -o ServerAliveInterval=15
-            -o ServerAliveCountMax=4
-            -o ConnectTimeout=20
-          )
-          SCP_OPTS=(
-            -i "$SSH_KEY"
-            -P "$REMOTE_PORT"
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=accept-new
-            -o LogLevel=ERROR
-            -o ServerAliveInterval=15
-            -o ServerAliveCountMax=4
-            -o ConnectTimeout=20
-          )
-
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "mkdir -p '${REMOTE_TMP}' && chmod 700 '${REMOTE_TMP}'"
-          scp "${SCP_OPTS[@]}" \
-            supabase/migrations/20260720120000_asi_runtime_snapshot_v1.sql \
-            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/asi_runtime_snapshot_v1.sql"
-          scp "${SCP_OPTS[@]}" \
-            scripts/apply-asi-runtime-snapshot-migration-remote.py \
-            "${REMOTE_USER}@${VPS_HOST}:${REMOTE_TMP}/apply-asi-runtime-snapshot-migration-remote.py"
-
-          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -lc 'set -euo pipefail
-            cp \"${REMOTE_TMP}/asi_runtime_snapshot_v1.sql\" /tmp/asi_runtime_snapshot_v1.sql
-            PRODUCTION_DATABASE_URL=\"${PRODUCTION_DATABASE_URL:-}\" DATABASE_URL=\"${PRODUCTION_DATABASE_URL:-}\" python3 \"${REMOTE_TMP}/apply-asi-runtime-snapshot-migration-remote.py\"
-            rm -f /tmp/asi_runtime_snapshot_v1.sql \"${REMOTE_TMP}/asi_runtime_snapshot_v1.sql\" \"${REMOTE_TMP}/apply-asi-runtime-snapshot-migration-remote.py\"
-          '"
+          SSH_OPTS=(-i "$SSH_KEY" -p "$REMOTE_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR -o ConnectTimeout=20)
+          ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${VPS_HOST}" "bash -lc 'set -a; source /var/www/asi/shared/.env.production.live; set +a; curl -sS -o /tmp/runtime-table-probe.json -w \"http=%{http_code}\n\" \"\${NEXT_PUBLIC_SUPABASE_URL%/}/rest/v1/asi_runtime_snapshots?select=user_id&limit=1\" -H \"apikey: \${SUPABASE_SERVICE_ROLE_KEY}\" -H \"Authorization: Bearer \${SUPABASE_SERVICE_ROLE_KEY}\"'"
