@@ -80,7 +80,7 @@ jobs:
             exit 1
           fi
 
-          RESOLVE_OUT="$(node <<'NODE'
+          RESOLVE_OUT="$(OWNER_USER_ID_INPUT="${OWNER_USER_ID_INPUT:-}" node <<'NODE' || true
           const base = process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/rest\/v1\/?$/, '');
           const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
           const input = (process.env.OWNER_USER_ID_INPUT || '').trim();
@@ -123,6 +123,7 @@ jobs:
           echo "$RESOLVE_OUT"
           OWNER_USER_ID="$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^RESOLVE_STATUS=ok owner_user_id=\([^ ]*\).*/\1/p' | tail -n1)"
           if [[ -z "$OWNER_USER_ID" ]]; then
+            echo "Owner user resolution failed. Re-run workflow with owner_user_id input."
             exit 1
           fi
 
