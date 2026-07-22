@@ -79,6 +79,23 @@ describe('handoff lock — session ownership state machine', () => {
     expect(getHandoffLockState('sess_c')).toBe(HandoffLockState.OperatorActive);
   });
 
+  it('repeated lockSessionForOperator acknowledge is idempotent and keeps AI locked', () => {
+    const { reviewId } = requestOperatorHandoff({
+      sessionId: 'sess_c_idem',
+      channel: 'telegram',
+      targetId: '42',
+      escalationReason: 'REQUIRES_OPERATOR',
+    });
+    const first = lockSessionForOperator({ reviewId, operatorId: 'op_alpha' });
+    const second = lockSessionForOperator({ reviewId, operatorId: 'op_alpha' });
+
+    expect(first.state).toBe(HandoffLockState.OperatorActive);
+    expect(second.state).toBe(HandoffLockState.OperatorActive);
+    expect(second.review.reviewId).toBe(first.review.reviewId);
+    expect(second.review.status).toBe('acknowledged');
+    expect(canAiReply('sess_c_idem')).toBe(false);
+  });
+
   it('duplicate escalation does not duplicate the lock — idempotent', () => {
     const first = requestOperatorHandoff({
       sessionId: 'sess_d',

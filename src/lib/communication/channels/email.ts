@@ -13,6 +13,56 @@ import { ChannelAdapter } from './base';
 import { shouldSuppressEmailOutbound } from '../email-outbound-safe-mode';
 import { CommunicationChannel, InboundMessageEnvelope } from '../types';
 
+/**
+ * Distinguishes EmailAdapter.sendMessage outcomes so callers never treat a
+ * draft-only suppress as confirmed SMTP delivery.
+ *
+ * - suppressed_draft_only: outbound blocked by safe-mode (not SMTP-delivered)
+ * - delivered: SMTP accepted the message
+ * - send_failed: attempted send failed or could not run (misconfig / error)
+ */
+export type EmailAdapterDeliveryStatus =
+  | 'suppressed_draft_only'
+  | 'delivered'
+  | 'send_failed';
+
+export const EMAIL_ADAPTER_DELIVERY_STATUS_KEY = 'emailAdapterDeliveryStatus' as const;
+
+export function readEmailAdapterDeliveryStatus(
+  metadata?: Record<string, unknown> | null,
+): EmailAdapterDeliveryStatus | undefined {
+  const value = metadata?.[EMAIL_ADAPTER_DELIVERY_STATUS_KEY];
+  if (value === 'suppressed_draft_only' || value === 'delivered' || value === 'send_failed') {
+    return value;
+  }
+  return undefined;
+}
+
+function writeEmailAdapterDeliveryStatus(
+  metadata: Record<string, unknown> | undefined,
+  status: EmailAdapterDeliveryStatus,
+): void {
+  if (metadata) {
+    metadata[EMAIL_ADAPTER_DELIVERY_STATUS_KEY] = status;
+  }
+}
+
+type SmtpSendFn = (params: {
+  config: SmtpConfig;
+  to: string;
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  references?: string;
+}) => Promise<void>;
+
+/** Test-only seam to exercise the delivered path without a live SMTP socket. */
+let smtpSendOverrideForTests: SmtpSendFn | null = null;
+
+export function __setEmailSmtpSendForTests(fn: SmtpSendFn | null): void {
+  smtpSendOverrideForTests = fn;
+}
+
 export type EmailAddressInput =
   | string
   | { address?: string | null; email?: string | null; name?: string | null }
@@ -124,23 +174,28 @@ export class EmailAdapter implements ChannelAdapter {
   async sendMessage(to: string, content: string, metadata?: Record<string, unknown>): Promise<boolean> {
     // Defense-in-depth: draft-only / auto-send-off must block even if a caller
     // bypasses the orchestrator dry-run path.
+    // Returns false: boolean success must not mean confirmed SMTP delivery.
     if (shouldSuppressEmailOutbound()) {
+      writeEmailAdapterDeliveryStatus(metadata, 'suppressed_draft_only');
       console.info('[EmailAdapter] outbound suppressed (draft_only)', {
         to: extractEmailAddress(to) || null,
         content_len: String(content ?? '').length,
         subject: metadata?.subject ?? null,
+        emailAdapterDeliveryStatus: 'suppressed_draft_only',
       });
-      return true;
+      return false;
     }
 
     const config = getSmtpConfig();
     if (!config) {
+      writeEmailAdapterDeliveryStatus(metadata, 'send_failed');
       console.error('[EmailAdapter] SMTP is not configured');
       return false;
     }
 
     const recipient = extractEmailAddress(to);
     if (!recipient) {
+      writeEmailAdapterDeliveryStatus(metadata, 'send_failed');
       console.error('[EmailAdapter] recipient email is empty');
       return false;
     }
@@ -150,7 +205,8 @@ export class EmailAdapter implements ChannelAdapter {
     const references = stringOrUndefined(metadata?.references) ?? inReplyTo;
 
     try {
-      await sendSmtpMessage({
+      const sendFn = smtpSendOverrideForTests ?? sendSmtpMessage;
+      await sendFn({
         config,
         to: recipient,
         subject,
@@ -158,8 +214,10 @@ export class EmailAdapter implements ChannelAdapter {
         inReplyTo,
         references,
       });
+      writeEmailAdapterDeliveryStatus(metadata, 'delivered');
       return true;
     } catch (error) {
+      writeEmailAdapterDeliveryStatus(metadata, 'send_failed');
       console.error('[EmailAdapter] sendMessage failed', error);
       return false;
     }

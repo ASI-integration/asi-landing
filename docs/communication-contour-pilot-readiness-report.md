@@ -25,7 +25,10 @@ This report covers local engineering readiness only. No live Telegram, Email, ST
 
 - `src/lib/communication/escalations.ts` — escalate via `requestOperatorHandoff`
 - `src/app/api/operator/escalation-reviews/[reviewId]/route.ts` — acknowledge via `lockSessionForOperator`
-- `src/lib/communication/channels/email.ts` — draft-only defense-in-depth on `sendMessage`
+- `src/app/api/operator/escalation-reviews/[reviewId]/__tests__/route.test.ts` — acknowledge → lock + idempotent re-ack
+- `src/lib/communication/channels/email.ts` — draft-only defense-in-depth; explicit delivery status metadata; suppress returns `false`
+- `src/lib/communication/__tests__/email-adapter-send.test.ts` — suppressed / delivered / send_failed distinctions
+- `src/lib/communication/__tests__/handoff-lock.test.ts` — idempotent `lockSessionForOperator`
 - `src/lib/communication/voice-reply.ts` — document default-off + next enable step
 - `src/lib/communication/__tests__/escalations.test.ts`
 - `src/lib/communication/__tests__/telegram-voice-inbound.test.ts`
@@ -49,11 +52,11 @@ This report covers local engineering readiness only. No live Telegram, Email, ST
 - Operator-active sessions may still receive limited safe operational-intake / autopilot replies (intentional). Strict silence is not enforced.
 - Identity/owner/onboarding escalations still call `createOrUpdateEscalationReview` directly in orchestrator (not every escalate path emits handoff_* audits).
 - Live STT/TTS/Telegram/Email require secrets and external providers — red actions; stopped here.
-- Email adapter returns `true` when outbound is suppressed (dry success). Callers must not treat that as SMTP delivery proof.
+- Email adapter stamps `emailAdapterDeliveryStatus` (`suppressed_draft_only` | `delivered` | `send_failed`) and returns `false` on suppress / failure so callers cannot treat draft-only as confirmed SMTP delivery.
 
 ## Unverified live scenarios
 
-All checklist items in `docs/communication-live-test-plan.md` sections B–E that require a real test bot, SMTP, STT, or operator UI against staging.
+All checklist items in `docs/communication-live-test-plan.md` sections B–E that require a real test bot, SMTP, STT, or operator UI against staging. Live Telegram / Email / STT / TTS tests were not executed in this run.
 
 ## Owner decisions required before further progress
 
@@ -61,4 +64,8 @@ All checklist items in `docs/communication-live-test-plan.md` sections B–E tha
 2. Any real outbound Telegram/Email/STT/TTS call.
 3. Enabling `VOICE_REPLY_ENABLED=1` or `EMAIL_AUTO_SEND=1`.
 4. Staging/production deploy, migrations, merge to `main`.
-5. Commit / push / draft PR (explicitly deferred by runtime execution constraints for this attempt).
+
+## Git / PR status
+
+- Commit, push, and draft PR #110 already created on branch `runtime/dashboard-20260722155509-b18895/20260722T155512486Z-ade2c0`.
+- Follow-up hardening: acknowledge route coverage + EmailAdapter delivery-status semantics.
