@@ -8,7 +8,15 @@
  *   VOICE_TTS_BASE_URL, VOICE_TTS_MODEL, VOICE_TTS_VOICE
  *   VOICE_TTS_RELAY_TOKEN / VOICE_TTS_API_KEY / OPENAI_API_KEY / ELEVENLABS_API_KEY
  *   TELEGRAM_BOT_TOKEN — Required for sendVoice
- *   VOICE_REPLY_ENABLED=1 — Global kill-switch
+ *   VOICE_REPLY_ENABLED=1 — Global kill-switch (off by default)
+ *
+ * Next wiring step (owner decision required before enabling in pilot):
+ * 1. Keep VOICE_REPLY_ENABLED unset in production until TTS credentials and
+ *    budget limits are approved.
+ * 2. Validate helper-only with mocks / dry-run (`TELEGRAM_DRY_RUN=1`).
+ * 3. Only then set VOICE_REPLY_ENABLED=1 on a dedicated test bot.
+ * Note: TELEGRAM_VOICE_REPLY_ENABLED is not read by current code; do not rely
+ * on that alias unless a later change adds it.
  */
 
 import type { VoiceResponseDecision } from './voice-response-policy';

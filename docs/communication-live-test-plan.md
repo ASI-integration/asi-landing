@@ -46,12 +46,14 @@ Open `/dashboard/communication` in a local or staging environment with test data
 - Telegram text messages enter `src/app/api/telegram/webhook/route.ts` and then `processUpdate`.
 - Email and Phone are represented as first-class communication channel types for shared handling.
 - Phone is phone-ready only: `src/lib/communication/channels/phone.ts` and `src/app/api/phone/webhook/route.ts` provide a generic foundation, but no real telephony provider is wired.
-- On this branch, Telegram `voice` and `audio` webhook messages still use the fallback-only path in `src/app/api/telegram/webhook/route.ts`.
-- `src/lib/communication/telegram-voice-inbound.ts` is also fallback-only on this branch.
-- `src/lib/communication/voice-transcription.ts` and `src/lib/communication/voice/stt.ts` contain Telegram file download and STT plumbing, but production Telegram webhook routing must be wired before true live voice STT can pass.
+- Telegram `voice` and `audio` webhook messages route through `processTelegramVoiceUpdate` in `src/lib/communication/telegram-voice-inbound.ts`: download → STT → Communication `processMessage` on the same Telegram chat session.
+- Empty or whitespace-only transcripts and STT failures send a safe RU text fallback and do **not** create a conversation session.
+- Duplicate voice updates are dropped by inbound idempotency (`tg_voice:{updateId}:{messageId}:{fileId}`).
+- `src/lib/communication/voice-transcription.ts` and `src/lib/communication/voice/stt.ts` provide Telegram file download and STT plumbing used by that inbound path. Live STT still needs real provider credentials; local tests must mock them.
 - `src/app/api/dev/voice/simulate/route.ts` can test transcript-to-Communication behavior without real Telegram audio.
-- Outbound Telegram voice reply helper exists in `src/lib/communication/voice-reply.ts`, but it is not wired into the main Telegram webhook flow.
+- Outbound Telegram voice reply helper exists in `src/lib/communication/voice-reply.ts` and is optionally invoked from `TelegramAdapter` only when `VOICE_REPLY_ENABLED=1` and policy allows voice. It is disabled by default; text reply always remains mandatory.
 - The current TTS enable flag in code is `VOICE_REPLY_ENABLED=1`; `TELEGRAM_VOICE_REPLY_ENABLED` is not read by current code unless a later branch adds that alias.
+- Operator handoff: guest escalations go through `requestOperatorHandoff` (via `recordCommunicationEscalation`) so duplicate escalations reuse one active review and emit `handoff_requested` / `handoff_request_idempotent`. Acknowledge uses `lockSessionForOperator` (`handoff_locked`). While a lock is active, normal LLM automation is blocked (`ai_reply_blocked`), but safe operational-intake / limited autopilot replies may still run for context collection — this is intentional, not a full silence mode.
 
 ## A. Pre-Flight Checks
 
@@ -172,18 +174,18 @@ Autopilot MVP helper checks:
 
 ## C. Telegram Voice Inbound Scenarios
 
-Run these against a branch where Telegram voice/audio is wired to download, STT, and Communication routing. On this branch, the expected live result is fallback-only.
+Run these against the wired webhook → download → STT → Communication path. Live STT still requires real provider credentials; without them the expected result is the safe text fallback.
 
 1. Voice message transcribes
    - Send a short Telegram voice note: `What is the Wi-Fi password?`
-   - Expect once wired: Telegram downloads file, STT succeeds, transcript enters Communication, bot replies with text.
+   - Expect with working STT: Telegram downloads file, STT succeeds, transcript enters Communication, bot replies with text.
    - Expected logs: `[tg:voice] inbound`, `[tg:voice] getFile.ok`, `[tg:voice] download.ok`, `[voice:stt] attempt.ok`, `[tg:voice] brain.done`.
-   - Current-branch expected logs: `telegram_voice_fallback` and fallback reply.
+   - Without STT credentials / when transcription is disabled: `telegram_voice_fallback` and fallback reply.
 
 2. Transcript enters same session
    - Send text: `I am arriving tomorrow.`
    - Send voice: `Can I check in early?`
-   - Expect once wired: one Communication session for same Telegram chat, transcript appears as inbound voice/audio source metadata.
+   - Expect with working STT: one Communication session for same Telegram chat, transcript appears as inbound voice/audio source metadata.
 
 3. Failed STT fallback
    - Temporarily set `VOICE_TRANSCRIPTION_DISABLED=1` or break STT config in the test environment.
@@ -193,16 +195,16 @@ Run these against a branch where Telegram voice/audio is wired to download, STT,
 4. Voice after text keeps context
    - Send text with context: `I am at Nevsky 24.`
    - Send voice: `The door code does not work.`
-   - Expect once wired: reply/escalation uses same chat/session context.
+   - Expect with working STT: reply/escalation uses same chat/session context.
 
 5. Text after voice keeps context
    - Send voice: `The shower is leaking.`
    - Send text: `Apartment 12.`
-   - Expect once wired: text is appended to the same session and may complete missing facts.
+   - Expect with working STT: text is appended to the same session and may complete missing facts.
 
 ## D. Telegram Voice Outbound Scenarios
 
-Voice replies are disabled by default and are not wired into the main Telegram webhook on this branch.
+Voice replies are disabled by default (`VOICE_REPLY_ENABLED` unset). The helper is available from `TelegramAdapter` only when explicitly enabled; do not enable on production guest traffic without owner approval.
 
 1. Voice reply disabled by default
    - Ensure `VOICE_REPLY_ENABLED` is unset.
@@ -212,7 +214,7 @@ Voice replies are disabled by default and are not wired into the main Telegram w
 2. Enable voice reply helper
    - Set `VOICE_REPLY_ENABLED=1` with ElevenLabs and Telegram env vars.
    - If a later branch adds `TELEGRAM_VOICE_REPLY_ENABLED`, confirm whether it aliases to `VOICE_REPLY_ENABLED`.
-   - Exercise `sendVoiceReply` in an isolated helper/dev harness before wiring production.
+   - Exercise `sendVoiceReply` in an isolated helper/dev harness before enabling on a live test bot.
 
 3. TTS success sends voice
    - Use a short, non-payment, non-escalation reply under `VOICE_REPLY_MAX_CHARS`.
@@ -265,9 +267,8 @@ Expected logs and events:
 
 - Telegram webhook receipt: `[tg:webhook] recv`
 - Text routing: `[comm:routing] path=telegram_text`
-- Voice routing once wired: `[tg:voice] inbound`, STT attempt logs, brain completion logs
-- Fallback voice path on this branch: `telegram_voice_fallback`
-- Handoff: `operator_review_audit`, `handoff=handoff_requested`, `handoff=handoff_locked`, `handoff=ai_reply_blocked`, `handoff=handoff_released`
+- Voice routing: `[tg:voice] inbound`, STT attempt logs, brain completion logs when STT succeeds; otherwise `telegram_voice_fallback`
+- Handoff: `operator_review_audit`, `handoff=handoff_requested` / `handoff_request_idempotent`, `handoff=handoff_locked`, `handoff=ai_reply_blocked`, `handoff=handoff_released`
 - Duplicate prevention: `DuplicateDropped`, `DuplicatePreventedOutbound`, or operator duplicate-prevented audit event
 
 Expected bot behavior:

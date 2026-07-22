@@ -81,4 +81,23 @@ describe('Telegram voice reply text fallback', () => {
     expect(mockSendVoiceReply).not.toHaveBeenCalled();
     expect(mockReplyToTelegram).toHaveBeenCalledOnce();
   });
+
+  it('keeps voice reply disabled by default even when policy asks for voice', async () => {
+    delete process.env.VOICE_REPLY_ENABLED;
+    const adapter = new TelegramAdapter();
+
+    const sent = await adapter.sendMessage('42', 'Только текст по умолчанию.', {
+      update_id: 1004,
+      reply_handler: 'test:voice_default_off',
+      voice_response_decision: {
+        shouldSendVoice: true,
+        reason: 'inbound_voice_allowed',
+        voiceText: 'Только текст по умолчанию.',
+      },
+    });
+
+    expect(sent).toBe(true);
+    expect(mockSendVoiceReply).not.toHaveBeenCalled();
+    expect(mockReplyToTelegram).toHaveBeenCalledOnce();
+  });
 });

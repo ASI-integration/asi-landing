@@ -230,6 +230,48 @@ describe('telegram voice inbound session continuity', () => {
     );
   });
 
+  it('does not create a dialog for whitespace-only STT success', async () => {
+    mocks.transcribeDetailed.mockResolvedValue({
+      ok: true,
+      text: '   \n\t  ',
+      provider: 'voice_stt_relay',
+      usedFallback: false,
+      filename: 'voice_message.ogg',
+      mimeType: 'audio/ogg',
+      extension: '.ogg',
+      filePath: 'voice/file.oga',
+      downloadBytes: 12,
+    });
+
+    const result = await processTelegramVoiceUpdate(
+      tgVoiceUpdate({ chat_id: 508, user_id: 9008, update_id: 7203, message_id: 8203, language_code: 'ru' }),
+    );
+
+    expect(result.outcome).toBe('voice_fallback_sent');
+    expect((result as any).reason).toBe('stt_failed');
+    expect(telegramSessions()).toHaveLength(0);
+    expect(mocks.replyToTelegram).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a duplicate voice update and does not send a second fallback', async () => {
+    mocks.transcribe.mockResolvedValue(null);
+    const update = tgVoiceUpdate({
+      chat_id: 509,
+      user_id: 9009,
+      update_id: 7204,
+      message_id: 8204,
+      language_code: 'ru',
+    });
+
+    const first = await processTelegramVoiceUpdate(update);
+    const second = await processTelegramVoiceUpdate(update);
+
+    expect(first.outcome).toBe('voice_fallback_sent');
+    expect(second.outcome).toBe('duplicate');
+    expect(mocks.replyToTelegram).toHaveBeenCalledTimes(1);
+    expect(telegramSessions()).toHaveLength(0);
+  });
+
   it('logs sanitized STT auth failures while keeping the voice fallback text', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mocks.transcribeDetailed.mockResolvedValue({
