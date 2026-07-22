@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { createOrUpdateEscalationReview, type EscalationReview } from './operator-review';
+import { requestOperatorHandoff } from './handoff-lock';
+import type { EscalationReview } from './operator-review';
 import { syncAutoOpsTasks } from '@/lib/ops-v1/auto-tasks';
 import type { CommunicationChannel, Message, Role } from './types';
 
@@ -81,8 +82,12 @@ export async function recordCommunicationEscalation(
   const communicationStatus = resolveCommunicationStatus(input.reason, input.communicationStatus);
   const detail = input.detail ?? input.summary ?? input.messageText;
   const contactId = input.contactId?.trim() || null;
+  const parsedChatId = Number(input.targetId);
+  const chatId = Number.isFinite(parsedChatId) ? parsedChatId : undefined;
 
-  const review = createOrUpdateEscalationReview({
+  // Route through handoff-lock so escalate emits handoff_requested /
+  // handoff_request_idempotent audits and reuses one active review per session.
+  const { review } = requestOperatorHandoff({
     sessionId: input.sessionId,
     channel: input.channel,
     targetId: input.targetId,
@@ -102,6 +107,7 @@ export async function recordCommunicationEscalation(
     },
     latestMessages: input.latestMessages,
     suggestedReply: input.suggestedReply,
+    chatId,
     detail,
   });
 

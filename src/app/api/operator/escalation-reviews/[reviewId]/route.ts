@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import {
-  acknowledgeEscalationReview,
   approveEscalationReview,
   closeEscalationReview,
   getEscalationReview,
   getReviewsBySessionId,
   sendOperatorReply,
 } from '@/lib/communication/operator-review';
-import { releaseSessionToAi } from '@/lib/communication/handoff-lock';
+import { lockSessionForOperator, releaseSessionToAi } from '@/lib/communication/handoff-lock';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +50,13 @@ export async function PATCH(req: NextRequest, ctx: { params: { reviewId: string 
 
   try {
     if (action === 'acknowledge') {
-      const review = acknowledgeEscalationReview(reviewId, operatorId);
+      const existing = getEscalationReview(reviewId);
+      const chatId = existing ? Number(existing.targetId) : NaN;
+      const { review } = lockSessionForOperator({
+        reviewId,
+        operatorId,
+        chatId: Number.isFinite(chatId) ? chatId : undefined,
+      });
       return NextResponse.json({ ok: true, review });
     }
     if (action === 'approve') {

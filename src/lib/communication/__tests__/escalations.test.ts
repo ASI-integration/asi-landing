@@ -5,12 +5,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  createOrUpdateEscalationReview: vi.fn(),
+  requestOperatorHandoff: vi.fn(),
   supabaseUpdate: vi.fn(),
 }));
 
-vi.mock('../operator-review', () => ({
-  createOrUpdateEscalationReview: mocks.createOrUpdateEscalationReview,
+vi.mock('../handoff-lock', () => ({
+  requestOperatorHandoff: mocks.requestOperatorHandoff,
 }));
 
 vi.mock('@/lib/supabase', () => ({
@@ -27,16 +27,21 @@ import { recordCommunicationEscalation } from '../escalations';
 
 describe('recordCommunicationEscalation', () => {
   beforeEach(() => {
-    mocks.createOrUpdateEscalationReview.mockReset();
+    mocks.requestOperatorHandoff.mockReset();
     mocks.supabaseUpdate.mockReset();
     mocks.supabaseUpdate.mockResolvedValue({ error: null });
-    mocks.createOrUpdateEscalationReview.mockReturnValue({
+    mocks.requestOperatorHandoff.mockReturnValue({
       reviewId: 'rev-acceptance-1',
-      sessionId: 'sess-1',
-      status: 'pending',
-      escalationReason: 'operator_required',
-      createdAt: '2026-06-22T10:00:00Z',
-      updatedAt: '2026-06-22T10:00:00Z',
+      alreadyLocked: false,
+      state: 'operator_requested',
+      review: {
+        reviewId: 'rev-acceptance-1',
+        sessionId: 'sess-1',
+        status: 'pending',
+        escalationReason: 'operator_required',
+        createdAt: '2026-06-22T10:00:00Z',
+        updatedAt: '2026-06-22T10:00:00Z',
+      },
     });
   });
 
@@ -53,12 +58,13 @@ describe('recordCommunicationEscalation', () => {
     });
 
     expect(result.review.reviewId).toBe('rev-acceptance-1');
-    expect(mocks.createOrUpdateEscalationReview).toHaveBeenCalledWith(
+    expect(mocks.requestOperatorHandoff).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'sess-1',
         leadId: 'contact-1',
         propertyId: 'OBJ-1',
         escalationReason: 'low_confidence',
+        chatId: 12345,
       }),
     );
     expect(mocks.supabaseUpdate).toHaveBeenCalledWith(

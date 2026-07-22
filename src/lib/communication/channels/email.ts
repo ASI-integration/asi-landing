@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
 import { ChannelAdapter } from './base';
+import { shouldSuppressEmailOutbound } from '../email-outbound-safe-mode';
 import { CommunicationChannel, InboundMessageEnvelope } from '../types';
 
 export type EmailAddressInput =
@@ -121,6 +122,17 @@ export class EmailAdapter implements ChannelAdapter {
   }
 
   async sendMessage(to: string, content: string, metadata?: Record<string, unknown>): Promise<boolean> {
+    // Defense-in-depth: draft-only / auto-send-off must block even if a caller
+    // bypasses the orchestrator dry-run path.
+    if (shouldSuppressEmailOutbound()) {
+      console.info('[EmailAdapter] outbound suppressed (draft_only)', {
+        to: extractEmailAddress(to) || null,
+        content_len: String(content ?? '').length,
+        subject: metadata?.subject ?? null,
+      });
+      return true;
+    }
+
     const config = getSmtpConfig();
     if (!config) {
       console.error('[EmailAdapter] SMTP is not configured');
