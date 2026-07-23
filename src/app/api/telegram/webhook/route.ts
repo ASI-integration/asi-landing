@@ -51,13 +51,21 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ ok: true, ignored: 'invalid_json' }, { status: 200 });
   }
 
-  const telegramEventType = update?.edited_message ? 'edited_message' : update?.message ? 'message' : 'unknown';
-  const message = update?.edited_message ?? update?.message;
+  const telegramEventType = update?.callback_query
+    ? 'callback_query'
+    : update?.edited_message
+      ? 'edited_message'
+      : update?.message
+        ? 'message'
+        : 'unknown';
+  // callback_query carries the source message under callback_query.message (no top-level message).
+  const message =
+    update?.edited_message ?? update?.message ?? update?.callback_query?.message;
   const chatId = message?.chat?.id;
   const text = message?.text ?? message?.caption ?? '';
-  const hasVoice = Boolean(message?.voice);
-  const hasAudio = Boolean(message?.audio);
-  const hasText = Boolean(text);
+  const hasVoice = Boolean(message?.voice) && !update?.callback_query;
+  const hasAudio = Boolean(message?.audio) && !update?.callback_query;
+  const hasText = Boolean(text) && !update?.callback_query;
   // Always log webhook receipt — minimal fields, no PII beyond chat_id
   console.info('[tg:webhook] recv', {
     update_id: update?.update_id,

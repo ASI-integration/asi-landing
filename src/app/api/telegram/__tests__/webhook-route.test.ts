@@ -98,6 +98,31 @@ describe('Telegram webhook route', () => {
     );
   });
 
+  it('routes callback_query without top-level message through processUpdate', async () => {
+    const update = {
+      update_id: 9010,
+      callback_query: {
+        id: 'cb-webhook-1',
+        from: { id: 777, language_code: 'ru' },
+        data: 'identity:guest',
+        message: {
+          message_id: 55,
+          chat: { id: 777, type: 'private' },
+          text: 'clarify',
+        },
+      },
+    };
+    mockProcessUpdate.mockResolvedValue({ outcome: 'replied', update_id: 9010, chat_id: 777 });
+
+    const res = await POST(telegramRequest(update));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ ok: true });
+    expect(mockProcessUpdate).toHaveBeenCalledWith(update);
+    expect(mockProcessTelegramVoiceUpdate).toHaveBeenCalledTimes(0);
+  });
+
   it('does not send an extra slow acknowledgement while waiting for final processing', async () => {
     vi.useFakeTimers();
     const update = tgTextUpdate({ chat_id: 444, update_id: 9004, message_id: 45, text: 'Need check-in details' });

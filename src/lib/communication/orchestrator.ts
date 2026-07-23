@@ -4837,6 +4837,12 @@ function telegramIdentityCallbackToRoute(data: unknown): {
 async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<ProcessResult | null> {
   const callback = update.callback_query;
   if (!callback) return null;
+
+  // Always ack the spinner — including ignore/duplicate/missing-chat paths.
+  if (callback.id) {
+    void answerTelegramCallbackQuery(callback.id).catch(() => undefined);
+  }
+
   const message = callback.message;
   const chatId = message?.chat?.id;
   if (typeof chatId !== 'number') {
@@ -4876,8 +4882,6 @@ async function processTelegramCallbackQuery(update: TelegramUpdate): Promise<Pro
     });
     return { outcome: ProcessOutcome.Duplicate, update_id: update.update_id, chat_id: chatId };
   }
-
-  void answerTelegramCallbackQuery(callback.id).catch(() => undefined);
 
   const envelope: InboundMessageEnvelope = {
     channel: 'telegram',
