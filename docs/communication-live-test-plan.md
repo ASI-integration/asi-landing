@@ -44,6 +44,8 @@ Open `/dashboard/communication` in a local or staging environment with test data
 ## Current Implementation Notes
 
 - Telegram text messages enter `src/app/api/telegram/webhook/route.ts` and then `processUpdate`.
+- Long-poll ingress for dedicated test bots uses `src/lib/communication/telegram-poller.ts`
+  (`getUpdates` with `allowed_updates` including `callback_query`) and the same `processUpdate` router.
 - Email and Phone are represented as first-class communication channel types for shared handling.
 - Phone is phone-ready only: `src/lib/communication/channels/phone.ts` and `src/app/api/phone/webhook/route.ts` provide a generic foundation, but no real telephony provider is wired.
 - Telegram `voice` and `audio` webhook messages route through `processTelegramVoiceUpdate` in `src/lib/communication/telegram-voice-inbound.ts`: download → STT → Communication `processMessage` on the same Telegram chat session.
@@ -125,7 +127,7 @@ Set Telegram webhook manually for the test bot:
 ```bash
 curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
   -H "content-type: application/json" \
-  -d '{"url":"https://<ngrok-host>/api/telegram/webhook","secret_token":"<TELEGRAM_WEBHOOK_SECRET>","allowed_updates":["message","edited_message"]}'
+  -d '{"url":"https://<ngrok-host>/api/telegram/webhook","secret_token":"<TELEGRAM_WEBHOOK_SECRET>","allowed_updates":["message","edited_message","callback_query"]}'
 ```
 
 Safety setup:

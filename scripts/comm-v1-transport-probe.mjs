@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * COMM v1 transport probe — live Telegram API smoke for ASI_COMM_Test_Bot only.
+ * COMM v1 transport probe — live Telegram API reachability for ASI_COMM_Test_Bot only.
  *
- * Business callback flows are covered by the unit harness
- * (comm-v1-automated-acceptance.test.ts). This probe verifies UTF-8 transport:
- * getMe, sendMessage, editMessageText, editMessageReplyMarkup, optional
- * answerCallbackQuery (only when COMM_V1_TRANSPORT_CALLBACK_ID is set), deleteMessage.
+ * Reports ONLY transport endpoint reachability. Does NOT claim production callback
+ * ingestion PASS (that is covered by telegram-poller-callback-e2e + acceptance:comm-v1).
  *
- * Never uses production guest bot token — only ASI_COMM_TEST_BOT_TOKEN.
+ * Synthetic answerCallbackQuery QUERY_ID_INVALID = API method reachable, not a real callback.
  */
 
 const TEST_BOT_EXPECTED_USERNAME = 'ASI_COMM_Test_Bot';
@@ -47,6 +45,12 @@ async function main() {
   // Isolate probe token — never reuse production guest bot token from env.
   process.env.TELEGRAM_BOT_TOKEN = token;
 
+  const checks = {
+    transport_endpoint_reachable: 'FAIL',
+    answerCallbackQuery_reachable: 'FAIL',
+    production_callback_ingestion: 'NOT_CLAIMED',
+  };
+
   const me = await tgCall(token, 'getMe', {});
   if (!me.json.ok) fail(`getMe failed: ${me.json.description ?? 'unknown'}`);
   const botUsername = me.json.result?.username ?? '';
@@ -68,7 +72,6 @@ async function main() {
   if (!messageId) fail('sendMessage returned no message_id');
   console.log('[comm-v1-transport] sendMessage ok');
 
-  // Invalidate/remove buttons while markup is still present (before text edit).
   const cleared = await tgCall(token, 'editMessageReplyMarkup', {
     chat_id: ownerChatId,
     message_id: messageId,
@@ -76,7 +79,6 @@ async function main() {
   });
   if (!cleared.json.ok) {
     const desc = String(cleared.json.description ?? '');
-    // Already-cleared / identical markup is acceptable for invalidate semantics.
     if (!/message is not modified/i.test(desc)) {
       fail(`editMessageReplyMarkup failed: ${desc || 'unknown'}`);
     }
@@ -94,24 +96,39 @@ async function main() {
   if (!edited.json.ok) fail(`editMessageText failed: ${edited.json.description ?? 'unknown'}`);
   console.log('[comm-v1-transport] editMessageText ok');
 
-  // answerCallbackQuery requires a live callback_query_id from Telegram.
-  // Business-logic coverage lives in the unit harness (mocked adapter).
-  // Transport probe: call with a synthetic id and accept Telegram rejection as
-  // proof the method is reachable; real ids only when COMM_V1_TRANSPORT_CALLBACK_ID is set.
-  const callbackId = optionalEnv('COMM_V1_TRANSPORT_CALLBACK_ID') ?? 'comm-v1-transport-probe-synthetic';
+  checks.transport_endpoint_reachable = 'PASS';
+
+  // Real callback_query id only when provided; synthetic id proves method reachability only.
+  const liveCallbackId = optionalEnv('COMM_V1_TRANSPORT_CALLBACK_ID');
+  const callbackId = liveCallbackId ?? 'comm-v1-transport-probe-synthetic';
   const answered = await tgCall(token, 'answerCallbackQuery', {
     callback_query_id: callbackId,
     text: 'probe',
   });
-  if (answered.json.ok) {
-    console.log('[comm-v1-transport] answerCallbackQuery ok');
+
+  if (answered.json.ok && liveCallbackId) {
+    checks.answerCallbackQuery_reachable = 'PASS';
+    console.log('[comm-v1-transport] answerCallbackQuery ok (live callback id)');
+  } else if (answered.json.ok && !liveCallbackId) {
+    // Unexpected success on synthetic id — still only reachability.
+    checks.answerCallbackQuery_reachable = 'PASS';
+    console.log(
+      '[comm-v1-transport] answerCallbackQuery reachable (synthetic id unexpectedly accepted; not production callback ingestion)',
+    );
   } else {
     const desc = String(answered.json.description ?? 'unknown');
-    // Expected for synthetic / expired ids — API endpoint reached.
-    if (/query is too old|query ID is invalid|QUERY_ID_INVALID/i.test(desc) || optionalEnv('COMM_V1_TRANSPORT_CALLBACK_ID') === undefined) {
-      console.log(`[comm-v1-transport] answerCallbackQuery reachable (telegram rejected synthetic/expired id: ${desc})`);
+    if (/query is too old|query ID is invalid|QUERY_ID_INVALID/i.test(desc)) {
+      checks.answerCallbackQuery_reachable = 'PASS';
+      console.log(
+        `[comm-v1-transport] answerCallbackQuery reachable only (QUERY_ID_INVALID / synthetic — NOT production callback ingestion PASS): ${desc}`,
+      );
+    } else if (!liveCallbackId) {
+      checks.answerCallbackQuery_reachable = 'PASS';
+      console.log(
+        `[comm-v1-transport] answerCallbackQuery reachable only (synthetic rejection — NOT production callback ingestion PASS): ${desc}`,
+      );
     } else {
-      fail(`answerCallbackQuery failed: ${desc}`);
+      fail(`answerCallbackQuery failed with live id: ${desc}`);
     }
   }
 
@@ -125,7 +142,27 @@ async function main() {
     console.log('[comm-v1-transport] deleteMessage ok');
   }
 
-  console.log('[comm-v1-transport] PASS');
+  console.log(
+    'COMM_V1_TRANSPORT_RESULT=' +
+      JSON.stringify({
+        ok: checks.transport_endpoint_reachable === 'PASS',
+        bot: TEST_BOT_EXPECTED_USERNAME,
+        checks: {
+          transport_endpoint_reachable: checks.transport_endpoint_reachable,
+          answerCallbackQuery_reachable: checks.answerCallbackQuery_reachable,
+          production_callback_ingestion: checks.production_callback_ingestion,
+        },
+        note:
+          'QUERY_ID_INVALID / synthetic answerCallbackQuery is transport reachability only. Production callback ingestion is telegram-poller-callback-e2e.',
+      }),
+  );
+
+  if (checks.transport_endpoint_reachable !== 'PASS') {
+    fail('transport_endpoint_reachable failed');
+  }
+
+  console.log('[comm-v1-transport] TRANSPORT_ENDPOINT_REACHABLE=PASS');
+  console.log('[comm-v1-transport] PRODUCTION_CALLBACK_INGESTION=NOT_CLAIMED');
 }
 
 main().catch((error) => {

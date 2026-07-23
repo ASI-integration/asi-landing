@@ -32,6 +32,7 @@
     "acceptance:ops-v12": "node scripts/ops-v12-live-acceptance.mjs",
     "acceptance:comm-v1": "node scripts/comm-v1-automated-acceptance.mjs",
     "acceptance:comm-v1:transport": "node scripts/comm-v1-transport-probe.mjs",
+    "acceptance:comm-v1:poller": "npx vitest run src/lib/communication/__tests__/telegram-poller-callback-e2e.test.ts --reporter=verbose",
     "acceptance:communication-ops": "node scripts/communication-ops-live-acceptance.mjs",
     "acceptance:telegram-ops-live": "node scripts/telegram-ops-live-acceptance.mjs",
     "acceptance:pilot-readiness": "node scripts/pilot-readiness-live-acceptance.mjs",
