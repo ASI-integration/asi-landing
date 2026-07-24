@@ -38,7 +38,9 @@
     "acceptance:pilot-readiness": "node scripts/pilot-readiness-live-acceptance.mjs",
     "acceptance:pilot-automation": "node scripts/pilot-readiness-live-acceptance.mjs",
     "acceptance:support-bot": "node scripts/support-bot-live-acceptance.mjs",
-    "ops:sync": "node scripts/ops-sync.mjs"
+    "ops:sync": "node scripts/ops-sync.mjs",
+    "runtime-bridge:runner": "node scripts/asi-runtime-bridge-runner.mjs",
+    "runtime-bridge:smoke": "vitest run src/lib/asi-runtime/__tests__/bridge.test.ts -t \"local smoke\""
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
@@ -54,6 +56,7 @@
     "playwright-core": "^1.59.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "server-only": "0.0.1",
     "stripe": "^20.4.1"
   },
   "devDependencies": {
