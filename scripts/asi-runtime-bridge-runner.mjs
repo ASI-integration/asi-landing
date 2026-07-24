@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const baseUrl = validateBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
 const token = process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
 const executor = parseExecutor(process.env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON);
+const executorGuard = fileURLToPath(new URL('./asi-runtime-bridge-executor-guard.mjs', import.meta.url));
 const runnerPrefix = process.env.ASI_RUNTIME_BRIDGE_RUNNER_ID || 'runner';
 const runnerId = `${runnerPrefix.slice(0, 120)}-${randomUUID()}`;
 const leaseSeconds = boundedInt(process.env.ASI_RUNTIME_BRIDGE_LEASE_SECONDS, 120, 30, 900);
@@ -13,6 +15,7 @@ const executionTimeoutMs = boundedInt(process.env.ASI_RUNTIME_BRIDGE_EXECUTION_T
 const maxOutputBytes = 512 * 1024;
 let stopping = false;
 let abortActiveClaim = null;
+let wakePoll = null;
 
 if (!baseUrl || !token || token.length < 32 || !executor) {
   process.stderr.write('Runtime bridge runner is not configured.\n');
@@ -66,27 +69,64 @@ function execute(task, signal) {
         .filter((key) => typeof process.env[key] === 'string')
         .map((key) => [key, process.env[key]]),
     );
-    const child = spawn(executor[0], executor.slice(1), {
+    const encodedExecutor = Buffer.from(JSON.stringify(executor), 'utf8').toString('base64url');
+    const child = spawn(process.execPath, [executorGuard, encodedExecutor], {
       shell: false,
       detached: process.platform !== 'win32',
       windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...executorEnv, ASI_RUNTIME_BRIDGE_TASK_ID: task.taskId },
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      env: {
+        ...executorEnv,
+        ASI_RUNTIME_BRIDGE_TASK_ID: task.taskId,
+        ASI_RUNTIME_BRIDGE_LEASE_TOKEN: task.leaseToken,
+      },
     });
     let terminationTimer;
     let forcedSettlementTimer;
     let outputExceeded = false;
+    let executorFinished = false;
+    let executorPid = null;
+    let taskSent = false;
+    let cleanupStarted = false;
     let settled = false;
+    const executionTreeAlive = () => {
+      try {
+        if (process.platform === 'win32') {
+          if (!executorPid) return false;
+          process.kill(executorPid, 0);
+        } else {
+          if (!child.pid) return false;
+          process.kill(-child.pid, 0);
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const confirmExecutionTreeExit = (callback, attempts = 50) => {
+      if (!executionTreeAlive()) {
+        callback(true);
+        return;
+      }
+      if (attempts <= 0) {
+        callback(false);
+        return;
+      }
+      setTimeout(() => confirmExecutionTreeExit(callback, attempts - 1), 100);
+    };
     const settle = (callback, value) => {
       if (settled) return;
       settled = true;
+      clearTimeout(terminationTimer);
       clearTimeout(forcedSettlementTimer);
       signal.removeEventListener('abort', abort);
       callback(value);
     };
     const terminate = () => {
       forcedSettlementTimer ??= setTimeout(() => {
-        settle(reject, new Error('executor_termination_timeout'));
+        settle(reject, new Error(
+          executionTreeAlive() ? 'executor_cleanup_unconfirmed' : 'executor_termination_timeout',
+        ));
       }, 10_000);
       forcedSettlementTimer.unref();
       if (!child.pid) return;
@@ -110,6 +150,30 @@ function execute(task, signal) {
     };
     const abort = () => terminate();
     signal.addEventListener('abort', abort, { once: true });
+    const taskEnvelope = JSON.stringify({
+      schemaVersion: 'asi.runtime.task.v1',
+      taskId: task.taskId,
+      leaseToken: task.leaseToken,
+      chatgptTaskId: task.chatgptTaskId,
+      conversationId: task.conversationId,
+      attemptCount: task.attemptCount,
+      request: task.request,
+      ownerDecision: task.ownerDecision,
+    });
+    child.on('message', (message) => {
+      if (!message || typeof message !== 'object'
+          || !Number.isInteger(message.pid) || message.pid <= 0) return;
+      if (message.type === 'executor_started' && !taskSent) {
+        executorPid = message.pid;
+        taskSent = true;
+        child.stdin.end(taskEnvelope);
+      } else if (message.type === 'executor_finished' && message.pid === executorPid) {
+        executorFinished = true;
+        if (child.connected) {
+          try { child.send({ type: 'executor_finished_ack', pid: executorPid }); } catch { /* guard exited */ }
+        }
+      }
+    });
     let stdout = '';
     let stderrBytes = 0;
     child.stdout.setEncoding('utf8');
@@ -133,11 +197,11 @@ function execute(task, signal) {
         terminate();
       }
     });
-    child.on('error', (error) => settle(reject, error));
-    child.on('close', (code) => {
+    const finish = (code) => {
+      if (settled) return;
       if (signal.aborted) return settle(reject, new Error('executor_aborted'));
       if (outputExceeded) return settle(reject, new Error('executor_output_limit'));
-      if (code !== 0) return settle(reject, new Error('executor_failed'));
+      if (code !== 0 || !executorFinished) return settle(reject, new Error('executor_failed'));
       try {
         const parsed = JSON.parse(stdout);
         if (!parsed || !['result', 'owner_gate'].includes(parsed.type)) throw new Error('executor_invalid_output');
@@ -145,16 +209,57 @@ function execute(task, signal) {
       } catch {
         settle(reject, new Error('executor_invalid_output'));
       }
+    };
+    const cleanupAfterGuardExit = (code) => {
+      if (cleanupStarted || settled) return;
+      cleanupStarted = true;
+      const finishCleanup = () => {
+        confirmExecutionTreeExit((confirmed) => {
+          if (!confirmed) return settle(reject, new Error('executor_cleanup_unconfirmed'));
+          if (signal.aborted) return settle(reject, new Error('executor_aborted'));
+          if (outputExceeded) return settle(reject, new Error('executor_output_limit'));
+          settle(reject, new Error('executor_failed'));
+        });
+      };
+      if (process.platform === 'win32') {
+        if (!executorPid) {
+          finishCleanup();
+          return;
+        }
+        const killer = spawn('taskkill.exe', ['/PID', String(executorPid), '/T', '/F'], {
+          shell: false, windowsHide: true, stdio: 'ignore',
+        });
+        let cleanupHandled = false;
+        const confirmCleanup = () => {
+          if (cleanupHandled) return;
+          cleanupHandled = true;
+          finishCleanup();
+        };
+        killer.once('error', confirmCleanup);
+        killer.once('close', confirmCleanup);
+        return;
+      }
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch (error) {
+        if (!error || typeof error !== 'object' || error.code !== 'ESRCH') {
+          settle(reject, new Error('executor_cleanup_unconfirmed'));
+          return;
+        }
+      }
+      finishCleanup();
+    };
+    child.on('error', (error) => settle(reject, error));
+    child.on('exit', (code) => {
+      if (!executorFinished) cleanupAfterGuardExit(code);
     });
-    child.stdin.end(JSON.stringify({
-      schemaVersion: 'asi.runtime.task.v1',
-      taskId: task.taskId,
-      chatgptTaskId: task.chatgptTaskId,
-      conversationId: task.conversationId,
-      attemptCount: task.attemptCount,
-      request: task.request,
-      ownerDecision: task.ownerDecision,
-    }));
+    child.on('close', (code) => {
+      if (executorFinished) {
+        finish(code);
+        return;
+      }
+      cleanupAfterGuardExit(code);
+    });
   });
 }
 
@@ -219,10 +324,16 @@ async function runClaim(task) {
     }
   } catch (error) {
     if (leaseLost) return;
-    const code = error instanceof Error && /^[A-Za-z0-9._:-]{1,120}$/.test(error.message)
-      ? (timedOut ? 'executor_timeout' : error.message) : 'executor_failed';
+    const rawCode = error instanceof Error && /^[A-Za-z0-9._:-]{1,120}$/.test(error.message)
+      ? error.message : 'executor_failed';
+    const code = rawCode === 'executor_cleanup_unconfirmed'
+      ? rawCode : (timedOut ? 'executor_timeout' : rawCode);
     await bridge('runner_fail_task', {
-      runnerId, taskId: task.taskId, leaseToken: task.leaseToken, retryable: true, errorCode: code,
+      runnerId,
+      taskId: task.taskId,
+      leaseToken: task.leaseToken,
+      retryable: code !== 'executor_cleanup_unconfirmed',
+      errorCode: code,
     }).catch(() => {});
   } finally {
     if (abortActiveClaim === shutdownClaim) abortActiveClaim = null;
@@ -235,6 +346,7 @@ async function runClaim(task) {
 function stopRunner() {
   stopping = true;
   abortActiveClaim?.();
+  wakePoll?.();
 }
 process.on('SIGINT', stopRunner);
 process.on('SIGTERM', stopRunner);
@@ -248,5 +360,15 @@ while (!stopping) {
     // Deliberately omit response bodies and credentials from logs.
     process.stderr.write('Runtime bridge runner poll failed.\n');
   }
-  if (!stopping) await new Promise((resolve) => setTimeout(resolve, pollMs));
+  if (!stopping) {
+    await new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        if (wakePoll === finish) wakePoll = null;
+        resolve();
+      };
+      const timer = setTimeout(finish, pollMs);
+      wakePoll = finish;
+    });
+  }
 }

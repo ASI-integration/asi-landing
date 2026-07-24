@@ -16,24 +16,38 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/SubmitTask'
+            schema: { $ref: '#/components/schemas/SubmitTask' }
       responses:
-        '200': { $ref: '#/components/responses/JsonResponse' }
+        '200': { $ref: '#/components/responses/SubmitTaskResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /api/internal/asi-runtime/bridge/runtime_get_task:
     post:
       operationId: runtime_get_task
       summary: Read durable task state.
       requestBody: { $ref: '#/components/requestBodies/TaskId' }
       responses:
-        '200': { $ref: '#/components/responses/JsonResponse' }
+        '200': { $ref: '#/components/responses/GetTaskResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /api/internal/asi-runtime/bridge/runtime_get_result:
     post:
       operationId: runtime_get_result
       summary: Read only the safe machine result.
       requestBody: { $ref: '#/components/requestBodies/TaskId' }
       responses:
-        '200': { $ref: '#/components/responses/JsonResponse' }
+        '200': { $ref: '#/components/responses/GetResultResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /api/internal/asi-runtime/bridge/runtime_list_owner_gates:
     post:
       operationId: runtime_list_owner_gates
@@ -42,9 +56,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: false }
+            schema:
+              type: object
+              additionalProperties: false
       responses:
-        '200': { $ref: '#/components/responses/JsonResponse' }
+        '200': { $ref: '#/components/responses/ListOwnerGatesResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /api/internal/asi-runtime/bridge/runtime_submit_owner_decision:
     post:
       operationId: runtime_submit_owner_decision
@@ -55,24 +75,24 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [taskId, gateId, decisionId, taskCycle, decision, source]
-              properties:
-                taskId: { type: string, format: uuid }
-                gateId: { type: string, format: uuid }
-                decisionId: { type: string, maxLength: 200 }
-                taskCycle: { type: string, maxLength: 200 }
-                decision: { type: string, enum: [approved, rejected] }
-                source: { type: string, const: explicit_owner_message }
-                note: { type: string, maxLength: 2000 }
+            schema: { $ref: '#/components/schemas/OwnerDecision' }
       responses:
-        '200': { $ref: '#/components/responses/JsonResponse' }
+        '200': { $ref: '#/components/responses/OwnerDecisionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 components:
   securitySchemes:
-    bearerAuth: { type: http, scheme: bearer }
-    ownerBearerAuth: { type: http, scheme: bearer }
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Dedicated Chat bridge token. Never expose it to a browser.
+    ownerBearerAuth:
+      type: http
+      scheme: bearer
+      description: Separate owner-decision token. Never expose it to Chat or a browser.
   requestBodies:
     TaskId:
       required: true
@@ -83,32 +103,265 @@ components:
             additionalProperties: false
             required: [taskId]
             properties:
-              taskId: { type: string, format: uuid }
+              taskId: { $ref: '#/components/schemas/Uuid' }
   responses:
-    JsonResponse:
-      description: Machine-readable bridge response.
+    SubmitTaskResponse:
+      description: The original or newly created durable task.
       content:
         application/json:
-          schema: { type: object }
+          schema: { $ref: '#/components/schemas/SubmitTaskSuccess' }
+    GetTaskResponse:
+      description: Durable task state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GetTaskSuccess' }
+    GetResultResponse:
+      description: Safe result, or null before a terminal result exists.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GetResultSuccess' }
+    ListOwnerGatesResponse:
+      description: Pending owner gates in the server-derived client scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ListOwnerGatesSuccess' }
+    OwnerDecisionResponse:
+      description: Idempotent owner-decision outcome.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OwnerDecisionSuccess' }
+    BadRequest:
+      description: Invalid JSON, content type, body size, or strict input schema.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing, invalid, or non-separated credential.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: No task exists in the server-derived client scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Idempotency or owner-decision conflict.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    InternalError:
+      description: Safe internal bridge failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unavailable:
+      description: Required server-side bridge configuration is missing.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
+    StrictId:
+      type: string
+      minLength: 1
+      maxLength: 200
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'
+    Uuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-8][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$'
+    CleanText:
+      type: string
+      minLength: 1
+      description: Leading/trailing whitespace, secrets, credentials, and local absolute paths are rejected by the runtime validator.
     SubmitTask:
       type: object
       additionalProperties: false
       required: [chatgptTaskId, conversationId, idempotencyKey, task]
       properties:
-        chatgptTaskId: { type: string, maxLength: 200 }
-        conversationId: { type: string, maxLength: 200 }
-        idempotencyKey: { type: string, maxLength: 200 }
+        chatgptTaskId: { $ref: '#/components/schemas/StrictId' }
+        conversationId: { $ref: '#/components/schemas/StrictId' }
+        idempotencyKey: { $ref: '#/components/schemas/StrictId' }
         task:
           type: object
           additionalProperties: false
           required: [title, objective, instructions, repository, baselineSha]
           properties:
-            title: { type: string, maxLength: 200 }
-            objective: { type: string, maxLength: 4000 }
+            title:
+              allOf:
+                - { $ref: '#/components/schemas/CleanText' }
+                - { maxLength: 200 }
+            objective:
+              allOf:
+                - { $ref: '#/components/schemas/CleanText' }
+                - { maxLength: 4000 }
             instructions:
               type: array
               maxItems: 30
-              items: { type: string, maxLength: 2000 }
+              items:
+                allOf:
+                  - { $ref: '#/components/schemas/CleanText' }
+                  - { maxLength: 2000 }
             repository: { type: string, const: ASI-integration/asi-landing }
             baselineSha: { type: string, pattern: '^[0-9a-f]{40}$' }
+    OwnerDecision:
+      type: object
+      additionalProperties: false
+      required: [taskId, gateId, decisionId, taskCycle, decision, source]
+      properties:
+        taskId: { $ref: '#/components/schemas/Uuid' }
+        gateId: { $ref: '#/components/schemas/Uuid' }
+        decisionId: { $ref: '#/components/schemas/StrictId' }
+        taskCycle: { $ref: '#/components/schemas/StrictId' }
+        decision: { type: string, enum: [approved, rejected] }
+        source: { type: string, const: explicit_owner_message }
+        note:
+          allOf:
+            - { $ref: '#/components/schemas/CleanText' }
+            - { maxLength: 2000 }
+    Task:
+      type: object
+      additionalProperties: false
+      required: [taskId, chatgptTaskId, conversationId, status, attemptCount, createdAt, updatedAt]
+      properties:
+        taskId: { $ref: '#/components/schemas/Uuid' }
+        chatgptTaskId: { $ref: '#/components/schemas/StrictId' }
+        conversationId: { $ref: '#/components/schemas/StrictId' }
+        status: { type: string, enum: [queued, running, awaiting_owner, completed, failed] }
+        attemptCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Check:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        status: { type: string, enum: [PASS, FAIL, SKIP] }
+        detail: { type: string, minLength: 1, maxLength: 1000 }
+    Artifact:
+      type: object
+      additionalProperties: false
+      required: [type, value]
+      properties:
+        type: { type: string, enum: [commit, pull_request, report] }
+        value: { type: string, minLength: 1, maxLength: 2000 }
+    SafeResult:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, status, summary, changedFiles, checks, artifacts, blockers]
+      properties:
+        schemaVersion: { type: string, const: asi.runtime.result.v1 }
+        status: { type: string, enum: [completed, failed] }
+        summary: { type: string, minLength: 1, maxLength: 4000 }
+        changedFiles:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 500 }
+        checks:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Check' }
+        artifacts:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Artifact' }
+        blockers:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 1000 }
+    OwnerGate:
+      type: object
+      additionalProperties: false
+      required: [gateId, taskId, status, schemaVersion, action, exactTarget, identity, reason, evidence, allowedSideEffect, rollback, postActionVerification, taskCycle, expiresAt, createdAt]
+      properties:
+        gateId: { $ref: '#/components/schemas/Uuid' }
+        taskId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [pending, approved, rejected, consumed, expired] }
+        schemaVersion: { type: string, const: asi.runtime.owner-gate.v1 }
+        action: { type: string, minLength: 1, maxLength: 120 }
+        exactTarget: { type: string, minLength: 1, maxLength: 500 }
+        identity: { type: string, minLength: 1, maxLength: 500 }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+        evidence:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        allowedSideEffect: { type: string, minLength: 1, maxLength: 1000 }
+        rollback: { type: string, minLength: 1, maxLength: 1000 }
+        postActionVerification:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 1000 }
+        taskCycle: { $ref: '#/components/schemas/StrictId' }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    SubmitTaskSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, task, deduplicated]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_submit_task }
+        task: { $ref: '#/components/schemas/Task' }
+        deduplicated: { type: boolean }
+    GetTaskSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, task]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_get_task }
+        task: { $ref: '#/components/schemas/Task' }
+    GetResultSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, taskId, status, result]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_get_result }
+        taskId: { $ref: '#/components/schemas/Uuid' }
+        status: { type: string, enum: [queued, running, awaiting_owner, completed, failed] }
+        result:
+          oneOf:
+            - { $ref: '#/components/schemas/SafeResult' }
+            - { type: 'null' }
+    ListOwnerGatesSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, gates]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_list_owner_gates }
+        gates:
+          type: array
+          items: { $ref: '#/components/schemas/OwnerGate' }
+    OwnerDecisionSuccess:
+      type: object
+      additionalProperties: false
+      required: [ok, operation, task, gate, deduplicated]
+      properties:
+        ok: { type: boolean, const: true }
+        operation: { type: string, const: runtime_submit_owner_decision }
+        task: { $ref: '#/components/schemas/Task' }
+        gate: { $ref: '#/components/schemas/OwnerGate' }
+        deduplicated: { type: boolean }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, error]
+      properties:
+        ok: { type: boolean, const: false }
+        error:
+          type: string
+          enum:
+            - unauthorized
+            - bridge_not_configured
+            - invalid_request
+            - owner_endpoint_required
+            - task_not_found
+            - idempotency_conflict
+            - decision_conflict
+            - owner_gate_mismatch
+            - runtime_bridge_storage_error
+            - runtime_bridge_error

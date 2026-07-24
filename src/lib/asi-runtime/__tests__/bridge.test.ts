@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isRuntimeBridgeAuthorized } from '../bridge-auth';
 import { runtimeBridgeRequestHash } from '../bridge-hash';
 import { parseRuntimeBridgeChatInput, parseRuntimeBridgeRunnerInput } from '../bridge-schema';
+import { RUNTIME_BRIDGE_CHAT_OPERATIONS } from '../bridge-types';
+
+vi.mock('server-only', () => ({}));
 
 const repository = vi.hoisted(() => ({
   submitRuntimeBridgeTask: vi.fn(),
@@ -204,17 +209,24 @@ describe('runtime bridge durable contracts', () => {
     const sql = readFileSync('supabase/migrations/20260724120000_asi_chat_runtime_bridge_v1.sql', 'utf8');
     expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain('FROM PUBLIC, anon, authenticated');
+    expect(sql).not.toContain('CREATE OR REPLACE FUNCTION');
+    expect(sql.match(/SET search_path = pg_catalog/g)).toHaveLength(8);
     expect(sql).toContain('idx_asi_runtime_bridge_single_running');
+    expect(sql).toContain('idx_asi_runtime_bridge_owner_decision_once');
     expect(sql).toContain('pg_advisory_xact_lock');
+    expect(sql).toContain('IF FOUND THEN RETURN NULL; END IF;');
     expect(sql).toContain('runner_id = p_runner_id AND lease_token = p_lease_token');
     expect(sql).toContain('idempotency_conflict');
     expect(sql).toContain('decision_conflict');
+    expect(sql).toContain('p_task_cycle IS NULL');
+    expect(sql).toContain('IS DISTINCT FROM p_task_cycle');
     expect(sql).toContain('expire_asi_runtime_bridge_owner_gates');
     expect(sql).toContain('recovery_count');
   });
 
-  it('runner never invokes a shell or logs response bodies', () => {
+  it('runner and guard never invoke a shell or log response bodies', () => {
     const source = readFileSync('scripts/asi-runtime-bridge-runner.mjs', 'utf8');
+    const guard = readFileSync('scripts/asi-runtime-bridge-executor-guard.mjs', 'utf8');
     expect(source).toContain('shell: false');
     expect(source).not.toContain('env: { ...process.env');
     expect(source).toContain('controller.abort()');
@@ -225,8 +237,192 @@ describe('runtime bridge durable contracts', () => {
     expect(source).toContain("child.on('close'");
     expect(source).toContain('initialLeaseRemainingMs');
     expect(source).toContain('abortActiveClaim?.()');
+    expect(source).toContain('ASI_RUNTIME_BRIDGE_LEASE_TOKEN');
+    expect(source).toContain('wakePoll?.()');
+    expect(guard).toContain('shell: false');
+    expect(guard).toContain("process.once('disconnect', terminateTree)");
+    expect(guard).toContain("process.kill(-process.pid, 'SIGKILL')");
+    expect(guard).toContain("'taskkill.exe'");
     expect(source).not.toContain('console.log');
     expect(source).not.toContain('process.stderr.write(error');
+  });
+
+  it('executor guard kills its child when the runner IPC disappears', async () => {
+    const executor = Buffer.from(JSON.stringify([
+      process.execPath,
+      '-e',
+      'setInterval(() => {}, 1000)',
+    ]), 'utf8').toString('base64url');
+    const guard = spawn(process.execPath, ['scripts/asi-runtime-bridge-executor-guard.mjs', executor], {
+      detached: process.platform !== 'win32',
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      env: {
+        ...process.env,
+        ASI_RUNTIME_BRIDGE_TASK_ID: randomUUID(),
+        ASI_RUNTIME_BRIDGE_LEASE_TOKEN: randomUUID(),
+      },
+    });
+    let executorPid = 0;
+    try {
+      executorPid = await new Promise<number>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('guard_start_timeout')), 5_000);
+        guard.once('error', reject);
+        guard.on('message', (message) => {
+          if (!message || typeof message !== 'object' || !('pid' in message)) return;
+          clearTimeout(timer);
+          resolve(Number(message.pid));
+        });
+      });
+      const guardExit = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('guard_exit_timeout')), 5_000);
+        guard.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      guard.disconnect();
+      await guardExit;
+      await vi.waitFor(() => {
+        let alive = true;
+        try { process.kill(executorPid, 0); } catch { alive = false; }
+        expect(alive).toBe(false);
+      }, { timeout: 5_000, interval: 100 });
+    } finally {
+      if (guard.exitCode === null && guard.pid) {
+        if (process.platform === 'win32') {
+          spawn('taskkill.exe', ['/PID', String(guard.pid), '/T', '/F'], {
+            shell: false, windowsHide: true, stdio: 'ignore',
+          }).unref();
+        } else {
+          try { process.kill(-guard.pid, 'SIGKILL'); } catch { guard.kill('SIGKILL'); }
+        }
+      }
+      if (executorPid) {
+        try { process.kill(executorPid, 'SIGKILL'); } catch { /* already gone */ }
+      }
+    }
+  }, 15_000);
+
+  it('runner kills an orphan executor before retrying after a guard crash', async () => {
+    const taskId = randomUUID();
+    const leaseToken = randomUUID();
+    let claimed = false;
+    let executorPid = 0;
+    let guardPid = 0;
+    let failureObserved = false;
+    let failureBeforeExecutorExit = false;
+    const server = createServer(async (incoming, response) => {
+      const url = new URL(incoming.url ?? '/', 'http://127.0.0.1');
+      if (url.pathname === '/executor-start') {
+        executorPid = Number(url.searchParams.get('pid'));
+        guardPid = Number(url.searchParams.get('ppid'));
+        response.writeHead(204).end();
+        return;
+      }
+      let raw = '';
+      for await (const chunk of incoming) raw += String(chunk);
+      const body = JSON.parse(raw) as { operation: string };
+      let data: unknown = true;
+      if (body.operation === 'runner_claim_task') {
+        data = claimed ? null : {
+          taskId,
+          chatgptTaskId: 'chat-task-guard-crash',
+          conversationId: 'conversation-guard-crash',
+          request: task,
+          ownerDecision: null,
+          attemptCount: 1,
+          leaseToken,
+          leaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+        };
+        claimed = true;
+      } else if (body.operation === 'runner_fail_task') {
+        failureObserved = true;
+        try { process.kill(executorPid, 0); failureBeforeExecutorExit = true; } catch { /* executor exited */ }
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ ok: true, data }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('bridge_fixture_address');
+    const executorSource = [
+      "let body='';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data',(chunk)=>body+=chunk);",
+      "process.stdin.on('end',()=>{",
+      "JSON.parse(body);",
+      "fetch(`${process.argv[1]}?pid=${process.pid}&ppid=${process.ppid}`)",
+      ".finally(()=>setInterval(()=>{},1000));",
+      '});',
+    ].join('');
+    const runner = spawn(process.execPath, ['scripts/asi-runtime-bridge-runner.mjs'], {
+      windowsHide: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        ASI_RUNTIME_BRIDGE_URL: `http://127.0.0.1:${address.port}`,
+        ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
+        ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([process.execPath, '-e', executorSource, `http://127.0.0.1:${address.port}/executor-start`]),
+        ASI_RUNTIME_BRIDGE_POLL_MS: '250',
+      },
+    });
+    try {
+      await vi.waitFor(() => {
+        expect(executorPid).toBeGreaterThan(0);
+        expect(guardPid).toBeGreaterThan(0);
+      }, { timeout: 5_000, interval: 50 });
+      process.kill(guardPid, 'SIGKILL');
+      await vi.waitFor(() => {
+        expect(failureObserved).toBe(true);
+        expect(failureBeforeExecutorExit).toBe(false);
+        let alive = true;
+        try { process.kill(executorPid, 0); } catch { alive = false; }
+        expect(alive).toBe(false);
+      }, { timeout: 8_000, interval: 100 });
+    } finally {
+      if (runner.exitCode === null) runner.kill('SIGTERM');
+      await new Promise<void>((resolve) => {
+        if (runner.exitCode !== null) return resolve();
+        const timer = setTimeout(() => {
+          runner.kill('SIGKILL');
+          resolve();
+        }, 3_000);
+        runner.once('exit', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      for (const pid of [guardPid, executorPid]) {
+        if (!pid) continue;
+        try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+      }
+    }
+  }, 20_000);
+
+  it('OpenAPI exposes exactly the five strict Chat operations and typed responses', () => {
+    const openapi = readFileSync('docs/asi-chat-runtime-bridge-v1.openapi.yaml', 'utf8');
+    const operationIds = [...openapi.matchAll(/^\s+operationId:\s+(\S+)$/gm)].map((match) => match[1]);
+    expect(operationIds).toEqual(RUNTIME_BRIDGE_CHAT_OPERATIONS);
+    expect(openapi).not.toContain('JsonResponse');
+    expect(openapi).toContain("pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'");
+    expect(openapi).toContain("SubmitTaskResponse:");
+    expect(openapi).toContain("GetTaskResponse:");
+    expect(openapi).toContain("GetResultResponse:");
+    expect(openapi).toContain("ListOwnerGatesResponse:");
+    expect(openapi).toContain("OwnerDecisionResponse:");
+    expect(openapi.match(/'401':/g)).toHaveLength(5);
+    expect(openapi.match(/'503':/g)).toHaveLength(5);
+  });
+
+  it('auth and repository modules enforce the server-only boundary', () => {
+    for (const path of [
+      'src/lib/asi-runtime/bridge-auth.ts',
+      'src/lib/asi-runtime/bridge-repository.ts',
+    ]) {
+      expect(readFileSync(path, 'utf8')).toContain("import 'server-only';");
+    }
   });
 
   it('local smoke: deduplicates, single-claims, recovers, gates and resumes the same task', () => {

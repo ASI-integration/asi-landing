@@ -36,9 +36,9 @@ Postgres — единственный источник истины. Atomic RPC:
 4. выдаёт новый fencing `leaseToken`;
 5. принимает heartbeat/result/gate/failure только от точного `runnerId + taskId + leaseToken`.
 
-`queued`, `awaiting_owner`, terminal result, Chat identity и owner decision переживают restart. После потери claim response задача повторно выдаётся с тем же `taskId`, новым fence и увеличенным `attemptCount`. Старый runner не может записать итог.
+`queued`, `awaiting_owner`, terminal result, Chat identity и owner decision переживают restart. Активная lease никогда не выдаётся повторно, даже тому же `runnerId`: после потери claim response задача ждёт истечения lease, затем повторно выдаётся с тем же `taskId`, новым fence и увеличенным `attemptCount`. Старый runner не может записать итог.
 
-Каждый runner process добавляет случайный session UUID к `runnerId`. Heartbeat не перекрываются; короткий request timeout и локальный deadline останавливают process tree до server lease expiry и запрещают stale outcome. Execution deadline ограничивает зависший child; после трёх crash/retry cycles отдельный `recovery_count` завершает задачу machine-readable failure, не расходуя budget на обычные owner-gate resume. Просроченный owner gate атомарно становится `expired`, а задача — `failed` при любом task/result/gate poll или runner claim.
+Каждый runner process добавляет случайный session UUID к `runnerId`. Heartbeat не перекрываются; короткий request timeout и локальный deadline останавливают process tree до server lease expiry и запрещают stale outcome. Executor запускается через отдельный guard process: runner сначала получает PID executor и только затем передаёт task envelope. При обычном завершении runner, timeout, output overflow и при обрыве IPC после hard crash guard уничтожает своё дерево процессов. Если аварийно завершился сам guard, runner уничтожает сохранённое дерево executor и подтверждает его исчезновение до retry. Если cleanup подтвердить нельзя и lease ещё действительна, задача завершается без retry с `executor_cleanup_unconfirmed`. После уже подтверждённой потери lease runner не имеет права менять durable state; последующее recovery остаётся at-least-once и требует Runtime-idempotency по стабильному `taskId`. На Unix guard и executor находятся в отдельной process group; на Windows используется `taskkill /T /F`. Execution deadline ограничивает зависший child; stdout и stderr независимо ограничены 512 KiB. После трёх crash/retry cycles отдельный `recovery_count` завершает задачу machine-readable failure, не расходуя budget на обычные owner-gate resume. Просроченный owner gate атомарно становится `expired`, а задача — `failed` при любом task/result/gate poll или runner claim.
 
 Доставка в Runtime — at-least-once после crash. Для effectively-once внешнего выполнения отдельный ASI Runtime обязан использовать стабильный bridge `taskId` как idempotency key. Bridge не обещает exactly-once side effects внешнего executor.
 
@@ -52,7 +52,7 @@ Runner может вернуть `asi.runtime.owner-gate.v1` только с:
 - rollback и post-action verification;
 - `taskCycle` и `expiresAt`.
 
-Решение принимается только с `source=explicit_owner_message`. Typed confirmation не считается approval. Повтор того же `decisionId` идемпотентен; другой decision для уже решённого gate возвращает conflict. Approval ставит ту же задачу обратно в очередь. Rejection завершает её безопасным machine result.
+Решение принимается только с `source=explicit_owner_message`. Typed confirmation не считается approval. Повтор того же `decisionId` для того же gate идемпотентен; другой decision для уже решённого gate возвращает conflict. Один `decisionId` нельзя повторно использовать для другого gate в том же client scope. Approval ставит ту же задачу обратно в очередь. Rejection завершает её безопасным machine result.
 
 ## Конфигурация
 
@@ -66,11 +66,18 @@ ASI_RUNTIME_BRIDGE_CLIENT_ID
 ASI_RUNTIME_BRIDGE_URL
 ASI_RUNTIME_BRIDGE_EXECUTOR_JSON
 ASI_RUNTIME_BRIDGE_EXECUTION_TIMEOUT_MS
+ASI_RUNTIME_BRIDGE_LEASE_SECONDS
+ASI_RUNTIME_BRIDGE_POLL_MS
+ASI_RUNTIME_BRIDGE_RUNNER_ID
 SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY
 ```
 
-Все три токена должны быть не короче 32 символов и попарно различаться. Owner token доступен только доверенному контуру, который получает явное сообщение владельца; обычный Chat token не может вызвать owner-decision endpoint. Bridge URL должен быть HTTPS; HTTP разрешён только для loopback. `ASI_RUNTIME_BRIDGE_EXECUTOR_JSON` — JSON-массив executable и аргументов, например `["node","/opt/asi-runtime/bridge-executor.mjs"]`. Runner вызывает его через `spawn(..., {shell:false})`, передаёт только allowlisted OS env и task ID, task envelope — в stdin, и принимает ровно один JSON:
+Все три токена должны быть не короче 32 символов и попарно различаться. Owner token доступен только доверенному контуру, который получает явное сообщение владельца; обычный Chat token не может вызвать owner-decision endpoint. Bridge URL должен быть HTTPS; HTTP разрешён только для loopback.
+
+Runner принимает lease от 30 до 900 секунд (default 120), poll interval от 250 до 60 000 ms (default 2 000) и execution timeout от 30 секунд до 6 часов (default 30 минут). `ASI_RUNTIME_BRIDGE_RUNNER_ID` — только короткий стабильный prefix; к нему всегда добавляется случайный session UUID. Ожидание между poll прерывается SIGINT/SIGTERM.
+
+`ASI_RUNTIME_BRIDGE_EXECUTOR_JSON` — JSON-массив executable и аргументов, например `["node","/opt/asi-runtime/bridge-executor.mjs"]`. Runner вызывает внутренний guard через `spawn(..., {shell:false})`; guard запускает executor без shell. Executor получает только allowlisted OS env, `ASI_RUNTIME_BRIDGE_TASK_ID`, `ASI_RUNTIME_BRIDGE_LEASE_TOKEN` и task envelope в stdin. Lease token нужен как fencing context, но Runtime всё равно обязан идемпотентно связывать внешние side effects со стабильным `taskId`. Runner принимает ровно один JSON:
 
 ```json
 {"type":"result","result":{"schemaVersion":"asi.runtime.result.v1","status":"completed","summary":"Done","changedFiles":[],"checks":[],"artifacts":[],"blockers":[]}}

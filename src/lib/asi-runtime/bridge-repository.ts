@@ -1,3 +1,4 @@
+import 'server-only';
 import { supabase } from '@/lib/supabase';
 import { runtimeBridgeRequestHash } from './bridge-hash';
 import type {

@@ -50,10 +50,13 @@ CREATE INDEX idx_asi_runtime_bridge_chat_identity
   ON public.asi_runtime_bridge_tasks(client_id, chatgpt_task_id, conversation_id);
 CREATE INDEX idx_asi_runtime_bridge_pending_gates
   ON public.asi_runtime_bridge_owner_gates(client_id, status, created_at);
+CREATE UNIQUE INDEX idx_asi_runtime_bridge_owner_decision_once
+  ON public.asi_runtime_bridge_owner_gates(client_id, decision_id)
+  WHERE decision_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_asi_runtime_bridge_single_running
   ON public.asi_runtime_bridge_tasks ((true)) WHERE status = 'running';
 
-CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task(
+CREATE FUNCTION public.submit_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_chatgpt_task_id TEXT,
   p_conversation_id TEXT,
@@ -63,7 +66,7 @@ CREATE OR REPLACE FUNCTION public.submit_asi_runtime_bridge_task(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 DECLARE
   v_task public.asi_runtime_bridge_tasks%ROWTYPE;
@@ -110,14 +113,14 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.claim_asi_runtime_bridge_task(
+CREATE FUNCTION public.claim_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_runner_id TEXT,
   p_lease_seconds INTEGER DEFAULT 120
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 DECLARE
   v_task public.asi_runtime_bridge_tasks%ROWTYPE;
@@ -165,17 +168,7 @@ BEGIN
   FROM public.asi_runtime_bridge_tasks
   WHERE status = 'running' AND lease_expires_at > now()
   LIMIT 1;
-  IF FOUND THEN
-    IF v_task.client_id = p_client_id AND v_task.runner_id = p_runner_id THEN
-      RETURN jsonb_build_object(
-        'taskId', v_task.id, 'chatgptTaskId', v_task.chatgpt_task_id,
-        'conversationId', v_task.conversation_id, 'request', v_task.request,
-        'ownerDecision', v_task.owner_decision, 'attemptCount', v_task.attempt_count,
-        'leaseToken', v_task.lease_token, 'leaseExpiresAt', v_task.lease_expires_at
-      );
-    END IF;
-    RETURN NULL;
-  END IF;
+  IF FOUND THEN RETURN NULL; END IF;
 
   SELECT * INTO v_task
   FROM public.asi_runtime_bridge_tasks
@@ -205,7 +198,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.heartbeat_asi_runtime_bridge_task(
+CREATE FUNCTION public.heartbeat_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_runner_id TEXT,
   p_task_id UUID,
@@ -214,7 +207,7 @@ CREATE OR REPLACE FUNCTION public.heartbeat_asi_runtime_bridge_task(
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 BEGIN
   IF p_lease_seconds NOT BETWEEN 30 AND 900 THEN RETURN FALSE; END IF;
@@ -226,7 +219,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.complete_asi_runtime_bridge_task(
+CREATE FUNCTION public.complete_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_runner_id TEXT,
   p_task_id UUID,
@@ -235,7 +228,7 @@ CREATE OR REPLACE FUNCTION public.complete_asi_runtime_bridge_task(
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 BEGIN
   UPDATE public.asi_runtime_bridge_tasks
@@ -249,7 +242,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.gate_asi_runtime_bridge_task(
+CREATE FUNCTION public.gate_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_runner_id TEXT,
   p_task_id UUID,
@@ -258,7 +251,7 @@ CREATE OR REPLACE FUNCTION public.gate_asi_runtime_bridge_task(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 DECLARE
   v_gate public.asi_runtime_bridge_owner_gates%ROWTYPE;
@@ -279,11 +272,11 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.expire_asi_runtime_bridge_owner_gates(p_client_id TEXT)
+CREATE FUNCTION public.expire_asi_runtime_bridge_owner_gates(p_client_id TEXT)
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 DECLARE
   v_count INTEGER;
@@ -311,7 +304,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.fail_asi_runtime_bridge_task(
+CREATE FUNCTION public.fail_asi_runtime_bridge_task(
   p_client_id TEXT,
   p_runner_id TEXT,
   p_task_id UUID,
@@ -321,7 +314,7 @@ CREATE OR REPLACE FUNCTION public.fail_asi_runtime_bridge_task(
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 BEGIN
   UPDATE public.asi_runtime_bridge_tasks
@@ -341,7 +334,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.decide_asi_runtime_bridge_owner_gate(
+CREATE FUNCTION public.decide_asi_runtime_bridge_owner_gate(
   p_client_id TEXT,
   p_task_id UUID,
   p_gate_id UUID,
@@ -353,7 +346,7 @@ CREATE OR REPLACE FUNCTION public.decide_asi_runtime_bridge_owner_gate(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog
 AS $$
 DECLARE
   v_gate public.asi_runtime_bridge_owner_gates%ROWTYPE;
@@ -361,10 +354,21 @@ DECLARE
   v_payload JSONB;
   v_deduplicated BOOLEAN := FALSE;
 BEGIN
+  IF p_client_id IS NULL OR p_task_id IS NULL OR p_gate_id IS NULL
+     OR p_decision_id IS NULL OR p_task_cycle IS NULL OR p_decision IS NULL OR p_source IS NULL THEN
+    RAISE EXCEPTION 'invalid_owner_decision';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_client_id || ':' || p_decision_id, 0));
   PERFORM pg_advisory_xact_lock(hashtextextended(p_gate_id::text, 0));
+  IF EXISTS (
+    SELECT 1 FROM public.asi_runtime_bridge_owner_gates
+    WHERE client_id = p_client_id AND decision_id = p_decision_id AND id <> p_gate_id
+  ) THEN
+    RAISE EXCEPTION 'decision_conflict';
+  END IF;
   SELECT * INTO v_gate FROM public.asi_runtime_bridge_owner_gates
   WHERE id = p_gate_id AND task_id = p_task_id AND client_id = p_client_id;
-  IF NOT FOUND OR v_gate.task_cycle <> p_task_cycle THEN RAISE EXCEPTION 'owner_gate_mismatch'; END IF;
+  IF NOT FOUND OR v_gate.task_cycle IS DISTINCT FROM p_task_cycle THEN RAISE EXCEPTION 'owner_gate_mismatch'; END IF;
 
   v_payload := jsonb_build_object(
     'decisionId', p_decision_id, 'decision', p_decision, 'source', p_source,
@@ -378,7 +382,7 @@ BEGIN
       RAISE EXCEPTION 'decision_conflict';
     END IF;
   ELSE
-    IF p_decision NOT IN ('approved', 'rejected') OR p_source <> 'explicit_owner_message'
+    IF p_decision NOT IN ('approved', 'rejected') OR p_source IS DISTINCT FROM 'explicit_owner_message'
        OR (v_gate.request->>'expiresAt')::timestamptz <= now() THEN
       RAISE EXCEPTION 'owner_gate_mismatch';
     END IF;
