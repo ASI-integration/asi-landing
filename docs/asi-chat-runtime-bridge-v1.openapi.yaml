@@ -1,0 +1,114 @@
+openapi: 3.1.0
+info:
+  title: ASI Chat to Runtime Bridge
+  version: 1.0.0
+servers:
+  - url: https://bridge.invalid
+    description: Replace with the private server-side bridge origin.
+security:
+  - bearerAuth: []
+paths:
+  /api/internal/asi-runtime/bridge/runtime_submit_task:
+    post:
+      operationId: runtime_submit_task
+      summary: Submit one idempotent task to ASI Runtime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTask'
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/internal/asi-runtime/bridge/runtime_get_task:
+    post:
+      operationId: runtime_get_task
+      summary: Read durable task state.
+      requestBody: { $ref: '#/components/requestBodies/TaskId' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/internal/asi-runtime/bridge/runtime_get_result:
+    post:
+      operationId: runtime_get_result
+      summary: Read only the safe machine result.
+      requestBody: { $ref: '#/components/requestBodies/TaskId' }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/internal/asi-runtime/bridge/runtime_list_owner_gates:
+    post:
+      operationId: runtime_list_owner_gates
+      summary: List pending owner gates for the configured owner scope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+  /api/internal/asi-runtime/bridge/runtime_submit_owner_decision:
+    post:
+      operationId: runtime_submit_owner_decision
+      summary: Submit an explicit decision for one exact owner gate.
+      security:
+        - ownerBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [taskId, gateId, decisionId, taskCycle, decision, source]
+              properties:
+                taskId: { type: string, format: uuid }
+                gateId: { type: string, format: uuid }
+                decisionId: { type: string, maxLength: 200 }
+                taskCycle: { type: string, maxLength: 200 }
+                decision: { type: string, enum: [approved, rejected] }
+                source: { type: string, const: explicit_owner_message }
+                note: { type: string, maxLength: 2000 }
+      responses:
+        '200': { $ref: '#/components/responses/JsonResponse' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+    ownerBearerAuth: { type: http, scheme: bearer }
+  requestBodies:
+    TaskId:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [taskId]
+            properties:
+              taskId: { type: string, format: uuid }
+  responses:
+    JsonResponse:
+      description: Machine-readable bridge response.
+      content:
+        application/json:
+          schema: { type: object }
+  schemas:
+    SubmitTask:
+      type: object
+      additionalProperties: false
+      required: [chatgptTaskId, conversationId, idempotencyKey, task]
+      properties:
+        chatgptTaskId: { type: string, maxLength: 200 }
+        conversationId: { type: string, maxLength: 200 }
+        idempotencyKey: { type: string, maxLength: 200 }
+        task:
+          type: object
+          additionalProperties: false
+          required: [title, objective, instructions, repository, baselineSha]
+          properties:
+            title: { type: string, maxLength: 200 }
+            objective: { type: string, maxLength: 4000 }
+            instructions:
+              type: array
+              maxItems: 30
+              items: { type: string, maxLength: 2000 }
+            repository: { type: string, const: ASI-integration/asi-landing }
+            baselineSha: { type: string, pattern: '^[0-9a-f]{40}$' }
