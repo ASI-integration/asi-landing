@@ -1,6 +1,8 @@
 import 'server-only';
 import { getRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
 import {
+  findRuntimeBridgeTaskByIdempotencyKey,
+  getRuntimeBridgeOwnerGate,
   getRuntimeBridgeResult,
   getRuntimeBridgeTask,
   listRuntimeBridgeOwnerGates,
@@ -11,6 +13,7 @@ import {
 import type {
   RuntimeBridgeOwnerGateView,
   RuntimeBridgeSafeResult,
+  RuntimeBridgeTaskRequest,
   RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
 import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema';
@@ -19,7 +22,6 @@ import {
   createDevelopmentChatgptTaskId,
   createDevelopmentConversationId,
   createDevelopmentDecisionId,
-  createDevelopmentIdempotencyKey,
   normalizeClientIdempotencyKey,
 } from './ids';
 import { resolveDevelopmentRepository } from './repositories';
@@ -69,6 +71,36 @@ function requireClientId(): string {
   return clientId;
 }
 
+function requireOwnerConversation(ownerUserId: string): string {
+  if (!ownerUserId || typeof ownerUserId !== 'string') {
+    throw new DevelopmentConsoleError('invalid_owner', 400, 'Некорректный владелец.');
+  }
+  return createDevelopmentConversationId(ownerUserId);
+}
+
+function assertOwnerTaskScope(task: RuntimeBridgeTaskView, ownerUserId: string): void {
+  const expectedConversationId = requireOwnerConversation(ownerUserId);
+  if (task.conversationId !== expectedConversationId) {
+    throw new DevelopmentConsoleError('task_not_found', 404, 'Задача не найдена.');
+  }
+}
+
+function taskContentMatches(
+  stored: RuntimeBridgeTaskRequest,
+  next: {
+    title: string;
+    objective: string;
+    instructions: string[];
+    repository: string;
+  },
+): boolean {
+  return stored.title === next.title
+    && stored.objective === next.objective
+    && stored.repository === next.repository
+    && stored.instructions.length === next.instructions.length
+    && stored.instructions.every((line, index) => line === next.instructions[index]);
+}
+
 function mapBridgeError(error: unknown): never {
   if (error instanceof DevelopmentConsoleError) throw error;
   if (error instanceof BaselineShaError) {
@@ -94,7 +126,10 @@ function mapBridgeError(error: unknown): never {
   throw new DevelopmentConsoleError('runtime_bridge_error', 500, 'Не удалось выполнить операцию.');
 }
 
-export async function buildDevelopmentTaskSnapshot(taskId: string): Promise<DevelopmentTaskSnapshot> {
+export async function buildDevelopmentTaskSnapshot(
+  taskId: string,
+  ownerUserId: string,
+): Promise<DevelopmentTaskSnapshot> {
   const clientId = requireClientId();
   if (!UUID.test(taskId)) {
     throw new DevelopmentConsoleError('invalid_task_id', 400, 'Некорректный идентификатор задачи.');
@@ -102,6 +137,8 @@ export async function buildDevelopmentTaskSnapshot(taskId: string): Promise<Deve
 
   try {
     const task = await getRuntimeBridgeTask(clientId, taskId);
+    assertOwnerTaskScope(task, ownerUserId);
+
     let result: RuntimeBridgeSafeResult | null = null;
     let pendingGates: RuntimeBridgeOwnerGateView[] = [];
 
@@ -189,16 +226,48 @@ export async function submitDevelopmentTask(input: {
     );
   }
 
-  const idempotencyKey =
-    normalizeClientIdempotencyKey(input.idempotencyKey) ?? createDevelopmentIdempotencyKey();
+  const idempotencyKey = normalizeClientIdempotencyKey(input.idempotencyKey);
+  if (!idempotencyKey) {
+    throw new DevelopmentConsoleError(
+      'idempotency_key_required',
+      400,
+      'Требуется корректный ключ идемпотентности.',
+    );
+  }
 
   const clientId = requireClientId();
+  const conversationId = requireOwnerConversation(input.ownerUserId);
+  const chatgptTaskId = createDevelopmentChatgptTaskId(input.ownerUserId, idempotencyKey);
+  const normalizedContent = {
+    title: input.title,
+    objective: input.objective,
+    instructions,
+    repository: repository.fullName,
+  };
 
   try {
+    const existing = await findRuntimeBridgeTaskByIdempotencyKey(clientId, idempotencyKey);
+    if (existing) {
+      if (
+        existing.conversationId !== conversationId
+        || !taskContentMatches(existing.request, normalizedContent)
+      ) {
+        throw new DevelopmentConsoleError(
+          'idempotency_conflict',
+          409,
+          'Повторный запрос с другим содержимым отклонён.',
+        );
+      }
+
+      const snapshot = await buildDevelopmentTaskSnapshot(existing.taskId, input.ownerUserId);
+      snapshot.task.repository = repository.fullName;
+      return { snapshot, deduplicated: true };
+    }
+
     const baselineSha = await resolveAllowlistedBaselineSha(repository);
     const submitted = await submitRuntimeBridgeTask(clientId, {
-      chatgptTaskId: createDevelopmentChatgptTaskId(),
-      conversationId: createDevelopmentConversationId(input.ownerUserId),
+      chatgptTaskId,
+      conversationId,
       idempotencyKey,
       task: {
         title: input.title,
@@ -209,7 +278,7 @@ export async function submitDevelopmentTask(input: {
       },
     });
 
-    const snapshot = await buildDevelopmentTaskSnapshot(submitted.task.taskId);
+    const snapshot = await buildDevelopmentTaskSnapshot(submitted.task.taskId, input.ownerUserId);
     snapshot.task.repository = repository.fullName;
     return { snapshot, deduplicated: submitted.deduplicated };
   } catch (error) {
@@ -218,6 +287,7 @@ export async function submitDevelopmentTask(input: {
 }
 
 export async function submitDevelopmentOwnerDecision(input: {
+  ownerUserId: string;
   taskId: unknown;
   gateId: unknown;
   taskCycle: unknown;
@@ -253,20 +323,15 @@ export async function submitDevelopmentOwnerDecision(input: {
   const clientId = requireClientId();
 
   try {
-    const gates = await listRuntimeBridgeOwnerGates(clientId);
-    const gate = gates.find((item) => item.gateId === gateId);
+    const task = await getRuntimeBridgeTask(clientId, taskId);
+    assertOwnerTaskScope(task, input.ownerUserId);
+
+    const gate = await getRuntimeBridgeOwnerGate(clientId, gateId);
     if (!gate || gate.taskId !== taskId) {
       throw new DevelopmentConsoleError(
         'owner_gate_mismatch',
         409,
         'Gate не принадлежит этой задаче или уже недоступен.',
-      );
-    }
-    if (gate.status !== 'pending') {
-      throw new DevelopmentConsoleError(
-        'owner_gate_unavailable',
-        409,
-        'Gate уже обработан или истёк.',
       );
     }
     if (gate.taskCycle !== taskCycle) {
@@ -276,7 +341,7 @@ export async function submitDevelopmentOwnerDecision(input: {
         'Cycle gate не совпадает с ожидаемым.',
       );
     }
-    if (Date.parse(gate.expiresAt) <= Date.now()) {
+    if (gate.status === 'expired' || (gate.status === 'pending' && Date.parse(gate.expiresAt) <= Date.now())) {
       throw new DevelopmentConsoleError(
         'owner_gate_expired',
         409,
@@ -284,6 +349,7 @@ export async function submitDevelopmentOwnerDecision(input: {
       );
     }
 
+    // Already-decided gates must reach the Bridge RPC so exact retries can dedupe.
     const decided = await submitRuntimeBridgeOwnerDecision(clientId, {
       taskId,
       gateId,
@@ -294,7 +360,7 @@ export async function submitDevelopmentOwnerDecision(input: {
       note,
     });
 
-    const snapshot = await buildDevelopmentTaskSnapshot(decided.task.taskId);
+    const snapshot = await buildDevelopmentTaskSnapshot(decided.task.taskId, input.ownerUserId);
     return { snapshot, deduplicated: decided.deduplicated };
   } catch (error) {
     mapBridgeError(error);

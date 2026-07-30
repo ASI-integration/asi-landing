@@ -135,6 +135,7 @@ describe('development console task submit API', () => {
     expect(JSON.stringify(json)).not.toMatch(/ASI_RUNTIME_BRIDGE|SUPABASE_SERVICE_ROLE|CHAT_TOKEN|OWNER_TOKEN/i);
     expect(submitDevelopmentTask).toHaveBeenCalledWith(
       expect.objectContaining({
+        ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
         idempotencyKey: 'dev-console-idem-1',
       }),
@@ -227,6 +228,7 @@ describe('development console task read API', () => {
     expect(json.task.status).toBe(status);
     expect(json.result ?? null).toEqual(extras.result);
     expect(json.pendingGates).toEqual(extras.pendingGates);
+    expect(buildDevelopmentTaskSnapshot).toHaveBeenCalledWith(taskBase.taskId, 'user-1');
     expect(JSON.stringify(json)).not.toMatch(/stdout|stderr|leaseToken|SERVICE_ROLE/i);
   });
 
@@ -284,6 +286,7 @@ describe('development console owner decision API', () => {
     expect(res.status).toBe(200);
     expect(submitDevelopmentOwnerDecision).toHaveBeenCalledWith(
       expect.objectContaining({
+        ownerUserId: 'user-1',
         decision: 'approved',
         gateId: '22222222-2222-4222-8222-222222222222',
       }),

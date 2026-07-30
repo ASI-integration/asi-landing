@@ -44,6 +44,8 @@ Do not set owner emails or bridge tokens via `NEXT_PUBLIC_*`.
 
 Baseline SHA is resolved on the server from the allowlisted repository `main` tip. The browser never supplies baseline SHA.
 
+Exact HTTP retries reuse the browser idempotency key until a successful response. The server looks up an existing durable task by `client_id` + idempotency key before creating a new submission, so a retry still returns the original task even if `main` tip SHA changed. Tasks and owner gates are bound to the authenticated owner's deterministic conversation scope.
+
 ## Open a PR
 
 When the terminal safe result contains artifact `type=pull_request` with an HTTPS GitHub PR URL for the allowlisted ASI repository, the console shows **Открыть PR** (`target=_blank`, `rel=noopener noreferrer`). Invalid hosts/repositories are not rendered as links.

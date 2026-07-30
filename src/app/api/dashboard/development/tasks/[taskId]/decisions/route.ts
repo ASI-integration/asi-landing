@@ -33,6 +33,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const result = await submitDevelopmentOwnerDecision({
+      ownerUserId: auth.session.userId!,
       taskId: context.params.taskId,
       gateId: payload.gateId,
       taskCycle: payload.taskCycle,

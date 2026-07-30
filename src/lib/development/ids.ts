@@ -6,8 +6,12 @@ export function isSafeBridgeId(value: string): boolean {
   return ID.test(value);
 }
 
-export function createDevelopmentChatgptTaskId(): string {
-  return `dev-console-task-${randomUUID()}`;
+export function createDevelopmentChatgptTaskId(ownerUserId: string, idempotencyKey: string): string {
+  const digest = createHash('sha256')
+    .update(`${ownerUserId}|${idempotencyKey}`, 'utf8')
+    .digest('hex')
+    .slice(0, 32);
+  return `dev-console-task-${digest}`;
 }
 
 export function createDevelopmentConversationId(ownerUserId: string): string {

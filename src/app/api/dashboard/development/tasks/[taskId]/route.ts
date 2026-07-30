@@ -19,7 +19,10 @@ export async function GET(_request: Request, context: RouteContext) {
   if ('error' in auth) return auth.error;
 
   try {
-    const snapshot = await buildDevelopmentTaskSnapshot(context.params.taskId);
+    const snapshot = await buildDevelopmentTaskSnapshot(
+      context.params.taskId,
+      auth.session.userId!,
+    );
     return json({
       ok: true,
       task: snapshot.task,
