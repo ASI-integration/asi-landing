@@ -1,0 +1,613 @@
+'use client';
+
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { readResponseJson } from '@/lib/safeResponseJson';
+import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
+import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
+import { useDevelopmentTaskPolling } from '@/lib/development/use-task-polling';
+import type {
+  RuntimeBridgeOwnerGateView,
+  RuntimeBridgeSafeResult,
+  RuntimeBridgeTaskStatus,
+  RuntimeBridgeTaskView,
+} from '@/lib/asi-runtime/bridge-types';
+
+type RepositoryOption = { id: string; label: string; fullName: string };
+
+type TaskPayload = RuntimeBridgeTaskView & { repository: string };
+
+type SnapshotResponse = {
+  ok: boolean;
+  message?: string;
+  taskId?: string;
+  deduplicated?: boolean;
+  task?: TaskPayload | null;
+  result?: RuntimeBridgeSafeResult | null;
+  pendingGates?: RuntimeBridgeOwnerGateView[];
+  repositories?: RepositoryOption[];
+};
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('ru-RU');
+}
+
+function createClientIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `dev-console-idem-${crypto.randomUUID()}`;
+  }
+  return `dev-console-idem-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export default function DevelopmentConsoleClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const taskIdFromUrl = searchParams.get('taskId');
+
+  const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
+  const [repositoryId, setRepositoryId] = useState('asi-landing');
+  const [title, setTitle] = useState('');
+  const [objective, setObjective] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [task, setTask] = useState<TaskPayload | null>(null);
+  const [result, setResult] = useState<RuntimeBridgeSafeResult | null>(null);
+  const [pendingGates, setPendingGates] = useState<RuntimeBridgeOwnerGateView[]>([]);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [confirmGate, setConfirmGate] = useState<{
+    gate: RuntimeBridgeOwnerGateView;
+    decision: 'approved' | 'rejected';
+  } | null>(null);
+
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const activeTaskId = task?.taskId ?? taskIdFromUrl;
+
+  const applySnapshot = useCallback((payload: SnapshotResponse) => {
+    if (payload.task) setTask(payload.task);
+    setResult(payload.result ?? null);
+    setPendingGates(Array.isArray(payload.pendingGates) ? payload.pendingGates : []);
+  }, []);
+
+  const loadTask = useCallback(async (id: string) => {
+    const res = await fetch(`/api/dashboard/development/tasks/${encodeURIComponent(id)}`, {
+      cache: 'no-store',
+      credentials: 'include',
+    });
+    const data = await readResponseJson<SnapshotResponse>(res, {
+      ok: false,
+      message: 'Не удалось загрузить задачу.',
+    });
+    if (!res.ok || !data.ok) {
+      setError(data.message ?? 'Не удалось загрузить задачу.');
+      return;
+    }
+    setError(null);
+    applySnapshot(data);
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await fetch('/api/dashboard/development/tasks', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = await readResponseJson<SnapshotResponse>(res, { ok: false, repositories: [] });
+      if (cancelled) return;
+      if (!res.ok || !data.ok) {
+        setError(data.message ?? 'Нет доступа к консоли разработки.');
+        return;
+      }
+      const repos = data.repositories ?? [];
+      setRepositories(repos);
+      if (repos[0]) setRepositoryId(repos[0].id);
+    })().catch(() => {
+      if (!cancelled) setError('Не удалось инициализировать консоль.');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!taskIdFromUrl) return;
+    void loadTask(taskIdFromUrl);
+  }, [taskIdFromUrl, loadTask]);
+
+  useDevelopmentTaskPolling({
+    taskId: activeTaskId,
+    status: task?.status as RuntimeBridgeTaskStatus | null,
+    enabled: Boolean(activeTaskId && task),
+    onPoll: loadTask,
+  });
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = createClientIdempotencyKey();
+    }
+
+    try {
+      const res = await fetch('/api/dashboard/development/tasks', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          repositoryId,
+          title: title.trim(),
+          objective: objective.trim(),
+          instructions,
+          idempotencyKey: idempotencyKeyRef.current,
+        }),
+      });
+      const data = await readResponseJson<SnapshotResponse>(res, {
+        ok: false,
+        message: 'Не удалось создать задачу.',
+      });
+      if (!res.ok || !data.ok || !data.taskId) {
+        setError(data.message ?? 'Не удалось создать задачу.');
+        return;
+      }
+      applySnapshot(data);
+      idempotencyKeyRef.current = null;
+      router.replace(`/dashboard/development?taskId=${encodeURIComponent(data.taskId)}`);
+    } catch {
+      setError('Не удалось создать задачу.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleNewTask() {
+    setTask(null);
+    setResult(null);
+    setPendingGates([]);
+    setConfirmGate(null);
+    setError(null);
+    idempotencyKeyRef.current = null;
+    router.replace('/dashboard/development');
+  }
+
+  async function sendDecision(decision: 'approved' | 'rejected', gate: RuntimeBridgeOwnerGateView) {
+    if (!task || decisionBusy) return;
+    setDecisionBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/dashboard/development/tasks/${encodeURIComponent(task.taskId)}/decisions`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            gateId: gate.gateId,
+            taskCycle: gate.taskCycle,
+            decision,
+          }),
+        },
+      );
+      const data = await readResponseJson<SnapshotResponse>(res, {
+        ok: false,
+        message: 'Не удалось отправить решение.',
+      });
+      if (!res.ok || !data.ok) {
+        setError(data.message ?? 'Не удалось отправить решение.');
+        return;
+      }
+      setConfirmGate(null);
+      applySnapshot(data);
+      await loadTask(task.taskId);
+    } catch {
+      setError('Не удалось отправить решение.');
+    } finally {
+      setDecisionBusy(false);
+    }
+  }
+
+  const showForm = !task;
+  const pendingGate = useMemo(
+    () => pendingGates.find((gate) => gate.status === 'pending') ?? null,
+    [pendingGates],
+  );
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Разработка ASI</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Закрытая владельческая консоль: задача → Runtime Bridge → безопасный итог → owner gate.
+          </p>
+        </div>
+        {task ? (
+          <button
+            type="button"
+            onClick={handleNewTask}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          >
+            Новая задача
+          </button>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      ) : null}
+
+      {showForm ? (
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <div>
+            <label htmlFor="dev-repo" className="block text-sm font-medium text-slate-800">
+              Репозиторий
+            </label>
+            <select
+              id="dev-repo"
+              value={repositoryId}
+              onChange={(e) => setRepositoryId(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              required
+            >
+              {repositories.map((repo) => (
+                <option key={repo.id} value={repo.id}>
+                  {repo.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="dev-title" className="block text-sm font-medium text-slate-800">
+              Название задачи
+            </label>
+            <input
+              id="dev-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={200}
+              required
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="dev-objective" className="block text-sm font-medium text-slate-800">
+              Цель
+            </label>
+            <textarea
+              id="dev-objective"
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+              maxLength={4000}
+              required
+              rows={4}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label htmlFor="dev-instructions" className="block text-sm font-medium text-slate-800">
+              Инструкции
+            </label>
+            <textarea
+              id="dev-instructions"
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              required
+              rows={8}
+              placeholder="Каждая строка — отдельная инструкция"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? 'Запуск…' : 'Запустить задачу'}
+          </button>
+        </form>
+      ) : null}
+
+      {task ? (
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Статус задачи</h2>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">taskId</dt>
+              <dd className="mt-0.5 break-all font-mono text-slate-900">{task.taskId}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Репозиторий</dt>
+              <dd className="mt-0.5 text-slate-900">{task.repository}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Статус</dt>
+              <dd className="mt-0.5 font-medium text-slate-900">
+                {DEVELOPMENT_STATUS_LABELS[task.status] ?? task.status}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Попытки</dt>
+              <dd className="mt-0.5 text-slate-900">{task.attemptCount}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Создано</dt>
+              <dd className="mt-0.5 text-slate-900">{formatDate(task.createdAt)}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Обновлено</dt>
+              <dd className="mt-0.5 text-slate-900">{formatDate(task.updatedAt)}</dd>
+            </div>
+          </dl>
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {developmentStageText(task.status)}
+          </p>
+        </section>
+      ) : null}
+
+      {result ? <SafeResultPanel result={result} /> : null}
+
+      {task?.status === 'awaiting_owner' && pendingGate ? (
+        <OwnerGatePanel
+          gate={pendingGate}
+          busy={decisionBusy}
+          onRequestDecision={(decision) => setConfirmGate({ gate: pendingGate, decision })}
+        />
+      ) : null}
+
+      {confirmGate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="owner-gate-confirm-title"
+            className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+          >
+            <h3 id="owner-gate-confirm-title" className="text-lg font-semibold text-slate-900">
+              {confirmGate.decision === 'approved' ? 'Подтвердить одобрение' : 'Подтвердить отклонение'}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Решение отправится только после подтверждения. Проверьте exact action и side effect.
+            </p>
+            <dl className="mt-4 space-y-2 text-sm">
+              <div>
+                <dt className="text-slate-500">Действие</dt>
+                <dd className="font-medium text-slate-900">{confirmGate.gate.action}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Exact target</dt>
+                <dd className="break-all text-slate-900">{confirmGate.gate.exactTarget}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Identity</dt>
+                <dd className="break-all text-slate-900">{confirmGate.gate.identity}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Разрешённый side effect</dt>
+                <dd className="text-slate-900">{confirmGate.gate.allowedSideEffect}</dd>
+              </div>
+            </dl>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={decisionBusy}
+                onClick={() => setConfirmGate(null)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={decisionBusy}
+                onClick={() => void sendDecision(confirmGate.decision, confirmGate.gate)}
+                className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
+                  confirmGate.decision === 'approved'
+                    ? 'bg-emerald-700 hover:bg-emerald-800'
+                    : 'bg-red-700 hover:bg-red-800'
+                }`}
+              >
+                {decisionBusy
+                  ? 'Отправка…'
+                  : confirmGate.decision === 'approved'
+                    ? 'Подтвердить одобрение'
+                    : 'Подтвердить отклонение'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SafeResultPanel({ result }: { result: RuntimeBridgeSafeResult }) {
+  return (
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-900">Безопасный итог</h2>
+
+      <ResultBlock title="Итог">
+        <p className="text-sm text-slate-800 whitespace-pre-wrap">{result.summary}</p>
+        <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">{result.status}</p>
+      </ResultBlock>
+
+      <ResultBlock title="Изменённые файлы">
+        {result.changedFiles.length === 0 ? (
+          <p className="text-sm text-slate-500">Нет</p>
+        ) : (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+            {result.changedFiles.map((file) => (
+              <li key={file} className="break-all font-mono text-xs sm:text-sm">
+                {file}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ResultBlock>
+
+      <ResultBlock title="Проверки">
+        {result.checks.length === 0 ? (
+          <p className="text-sm text-slate-500">Нет</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {result.checks.map((check, index) => (
+              <li key={`${check.name}-${index}`} className="rounded-md bg-slate-50 px-3 py-2">
+                <span className="font-medium text-slate-900">{check.name}</span>
+                <span className="ml-2 text-slate-600">{check.status}</span>
+                {check.detail ? <p className="mt-1 text-slate-600">{check.detail}</p> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ResultBlock>
+
+      <ResultBlock title="Артефакты">
+        {result.artifacts.length === 0 ? (
+          <p className="text-sm text-slate-500">Нет</p>
+        ) : (
+          <ul className="space-y-3">
+            {result.artifacts.map((artifact, index) => (
+              <li key={`${artifact.type}-${index}`}>
+                <ArtifactItem artifact={artifact} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </ResultBlock>
+
+      <ResultBlock title="Блокеры">
+        {result.blockers.length === 0 ? (
+          <p className="text-sm text-slate-500">Нет</p>
+        ) : (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+            {result.blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        )}
+      </ResultBlock>
+    </section>
+  );
+}
+
+function ArtifactItem({
+  artifact,
+}: {
+  artifact: RuntimeBridgeSafeResult['artifacts'][number];
+}) {
+  if (artifact.type === 'pull_request') {
+    const safeUrl = safeAllowlistedPullRequestUrl(artifact.value);
+    if (!safeUrl) {
+      return <p className="text-sm text-slate-500">PR URL недоступен для безопасного открытия.</p>;
+    }
+    return (
+      <a
+        href={safeUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+      >
+        Открыть PR
+      </a>
+    );
+  }
+
+  if (artifact.type === 'commit') {
+    return (
+      <p className="text-sm text-slate-800">
+        Commit:{' '}
+        <span className="font-mono text-xs sm:text-sm break-all">{artifact.value}</span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-sm text-slate-800">
+      Report: <span className="font-mono text-xs sm:text-sm break-all">{artifact.value}</span>
+    </p>
+  );
+}
+
+function OwnerGatePanel({
+  gate,
+  busy,
+  onRequestDecision,
+}: {
+  gate: RuntimeBridgeOwnerGateView;
+  busy: boolean;
+  onRequestDecision: (decision: 'approved' | 'rejected') => void;
+}) {
+  return (
+    <section className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-900">Owner gate</h2>
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <GateField label="Действие" value={gate.action} />
+        <GateField label="Exact target" value={gate.exactTarget} />
+        <GateField label="Identity" value={gate.identity} />
+        <GateField label="Причина" value={gate.reason} />
+        <GateField label="Разрешённый side effect" value={gate.allowedSideEffect} />
+        <GateField label="Rollback" value={gate.rollback} />
+        <GateField label="Истекает" value={formatDate(gate.expiresAt)} />
+      </dl>
+      <div>
+        <h3 className="text-sm font-medium text-slate-800">Evidence</h3>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
+          {gate.evidence.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <h3 className="text-sm font-medium text-slate-800">Post-action verification</h3>
+        <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
+          {gate.postActionVerification.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onRequestDecision('approved')}
+          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+        >
+          Одобрить
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onRequestDecision('rejected')}
+          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+        >
+          Отклонить
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function GateField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-slate-900">{value}</dd>
+    </div>
+  );
+}
+
+function ResultBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
