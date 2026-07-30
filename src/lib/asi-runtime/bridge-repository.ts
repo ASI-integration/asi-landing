@@ -6,6 +6,7 @@ import type {
   RuntimeBridgeOwnerGateView,
   RuntimeBridgeRunnerInput,
   RuntimeBridgeSafeResult,
+  RuntimeBridgeTaskRequest,
   RuntimeBridgeTaskView,
 } from './bridge-types';
 
@@ -52,6 +53,21 @@ function gateView(row: Row): RuntimeBridgeOwnerGateView {
   };
 }
 
+export type RuntimeBridgeTaskRecord = RuntimeBridgeTaskView & {
+  idempotencyKey: string;
+  requestHash: string;
+  request: RuntimeBridgeTaskRequest;
+};
+
+function taskRecord(row: Row): RuntimeBridgeTaskRecord {
+  return {
+    ...taskView(row),
+    idempotencyKey: String(row.idempotency_key),
+    requestHash: String(row.request_hash),
+    request: row.request as RuntimeBridgeTaskRequest,
+  };
+}
+
 export async function submitRuntimeBridgeTask(
   clientId: string,
   input: Extract<RuntimeBridgeChatInput, { operation: 'runtime_submit_task' }>['input'],
@@ -69,6 +85,23 @@ export async function submitRuntimeBridgeTask(
   return { task: taskView(response.task), deduplicated: response.deduplicated };
 }
 
+export async function findRuntimeBridgeTaskByIdempotencyKey(
+  clientId: string,
+  idempotencyKey: string,
+): Promise<RuntimeBridgeTaskRecord | null> {
+  const { data, error } = await supabase
+    .from('asi_runtime_bridge_tasks')
+    .select(
+      'id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at,idempotency_key,request_hash,request',
+    )
+    .eq('client_id', clientId)
+    .eq('idempotency_key', idempotencyKey)
+    .maybeSingle();
+  if (error) rpcError(error);
+  if (!data) return null;
+  return taskRecord(data as Row);
+}
+
 export async function getRuntimeBridgeTask(clientId: string, taskId: string): Promise<RuntimeBridgeTaskView> {
   const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
@@ -81,6 +114,23 @@ export async function getRuntimeBridgeTask(clientId: string, taskId: string): Pr
   if (error) rpcError(error);
   if (!data) throw new RuntimeBridgeError('task_not_found', 404);
   return taskView(data as Row);
+}
+
+export async function getRuntimeBridgeOwnerGate(
+  clientId: string,
+  gateId: string,
+): Promise<RuntimeBridgeOwnerGateView | null> {
+  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  if (expired.error) rpcError(expired.error);
+  const { data, error } = await supabase
+    .from('asi_runtime_bridge_owner_gates')
+    .select('id,task_id,status,request,created_at')
+    .eq('client_id', clientId)
+    .eq('id', gateId)
+    .maybeSingle();
+  if (error) rpcError(error);
+  if (!data) return null;
+  return gateView(data as Row);
 }
 
 export async function getRuntimeBridgeResult(

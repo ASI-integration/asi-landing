@@ -15,6 +15,7 @@ type Session = {
     trial_ends_at: string | null;
   } | null;
   isCrmOperator?: boolean;
+  isDevelopmentOwner?: boolean;
 };
 
 const SessionContext = createContext<{
@@ -35,6 +36,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         subscription: null as Session['subscription'] | null,
         account: null as Session['account'] | null,
         isCrmOperator: false,
+        isDevelopmentOwner: false,
       });
       if (data.user) {
         setSession({
@@ -42,6 +44,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           subscription: data.subscription,
           account: data.account ?? null,
           isCrmOperator: data.isCrmOperator === true,
+          isDevelopmentOwner: data.isDevelopmentOwner === true,
         });
       } else {
         setSession(null);

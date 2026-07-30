@@ -23,7 +23,8 @@ type DashboardNavItem = {
     | 'propertyKnowledge'
     | 'automations'
     | 'settings'
-    | 'onboarding';
+    | 'onboarding'
+    | 'development';
   label?: string;
 };
 
@@ -41,6 +42,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/booking-ops', key: 'bookingOps', label: 'Операции по броням' },
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
   { href: '/dashboard/automations', key: 'automations' },
+  { href: '/dashboard/development', key: 'development', label: 'Разработка ASI' },
   { href: '/dashboard/settings', key: 'settings' },
 ] as const;
 
@@ -55,6 +57,9 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     }
     if (item.key === 'automations') {
       return session?.isCrmOperator === true;
+    }
+    if (item.key === 'development') {
+      return session?.isDevelopmentOwner === true;
     }
     return true;
   });
