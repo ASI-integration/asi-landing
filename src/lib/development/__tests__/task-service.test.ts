@@ -457,6 +457,72 @@ describe('submitDevelopmentTask', () => {
     expect(submitArgs.task.baselineSha).toBe('d'.repeat(40));
   });
 
+  it('accepts up to 100 non-empty instruction lines and rejects 101', async () => {
+    createCompatibleBridge();
+    resolveAllowlistedBaselineSha.mockResolvedValue('a'.repeat(40));
+    const { submitDevelopmentTask } = await import('../task-service');
+
+    const hundred = Array.from({ length: 100 }, (_, index) => `step-${index + 1}`);
+    const accepted = await submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-landing',
+      title: 'Title',
+      objective: 'Objective',
+      instructions: hundred,
+      idempotencyKey: 'dev-console-idem-100-lines',
+    });
+    expect(accepted.deduplicated).toBe(false);
+    expect(submitRuntimeBridgeTask.mock.calls[0][1].task.instructions).toHaveLength(100);
+
+    await expect(
+      submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: [...hundred, 'step-101'],
+        idempotencyKey: 'dev-console-idem-101-lines',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_task_fields', status: 400 });
+  });
+
+  it('rejects instruction payloads that exceed the total content limit', async () => {
+    const { submitDevelopmentTask } = await import('../task-service');
+    const { RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS } = await import('@/lib/asi-runtime/bridge-schema');
+    const line = 'x'.repeat(2000);
+    const oversized = Array.from(
+      { length: Math.floor(RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS / 2000) + 1 },
+      () => line,
+    );
+    expect(oversized.length).toBeLessThanOrEqual(100);
+    await expect(
+      submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: oversized,
+        idempotencyKey: 'dev-console-idem-total-limit',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_task_fields', status: 400 });
+    expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
+  });
+
+  it('keeps the 2000-character per-line instruction limit', async () => {
+    const { submitDevelopmentTask } = await import('../task-service');
+    await expect(
+      submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: ['x'.repeat(2001)],
+        idempotencyKey: 'dev-console-idem-line-limit',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_task_fields', status: 400 });
+    expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
+  });
+
   it('rejects modified content that reuses the same idempotency key', async () => {
     createCompatibleBridge();
     resolveAllowlistedBaselineSha.mockResolvedValue('f'.repeat(40));

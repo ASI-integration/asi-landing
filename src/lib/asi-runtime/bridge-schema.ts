@@ -8,6 +8,10 @@ import type {
 } from './bridge-types';
 
 export const RUNTIME_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
+export const RUNTIME_BRIDGE_MAX_INSTRUCTIONS = 100;
+export const RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS = 2000;
+/** Sum of instruction line lengths; sized so UTF-8 Cyrillic stays under the 64 KiB body cap. */
+export const RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS = 24 * 1024;
 
 const SHA = /^[0-9a-f]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -35,6 +39,18 @@ function textList(value: unknown, maxItems: number, maxText: number): value is s
   return Array.isArray(value)
     && value.length <= maxItems
     && value.every((item) => text(item, maxText));
+}
+
+function instructionList(value: unknown): value is string[] {
+  if (!textList(value, RUNTIME_BRIDGE_MAX_INSTRUCTIONS, RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS)) {
+    return false;
+  }
+  let total = 0;
+  for (const line of value) {
+    total += line.length;
+    if (total > RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS) return false;
+  }
+  return true;
 }
 
 function repoPath(value: unknown): value is string {
@@ -66,7 +82,7 @@ function safeArtifact(value: unknown): boolean {
 
 function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
   if (!object(value) || !exact(value, ['title', 'objective', 'instructions', 'repository', 'baselineSha'])) return null;
-  if (!text(value.title, 200) || !text(value.objective, 4000) || !textList(value.instructions, 30, 2000)) return null;
+  if (!text(value.title, 200) || !text(value.objective, 4000) || !instructionList(value.instructions)) return null;
   if (value.repository !== 'ASI-integration/asi-landing' || !text(value.baselineSha, 40, SHA)) return null;
   return value as RuntimeBridgeTaskRequest;
 }
