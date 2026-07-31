@@ -63,15 +63,17 @@ ASI_RUNTIME_BRIDGE_CHAT_TOKEN
 ASI_RUNTIME_BRIDGE_OWNER_TOKEN
 ASI_RUNTIME_BRIDGE_RUNNER_TOKEN
 ASI_RUNTIME_BRIDGE_CLIENT_ID
+ASI_RUNTIME_BRIDGE_SUPABASE_URL
+ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY
 ASI_RUNTIME_BRIDGE_URL
 ASI_RUNTIME_BRIDGE_EXECUTOR_JSON
 ASI_RUNTIME_BRIDGE_EXECUTION_TIMEOUT_MS
 ASI_RUNTIME_BRIDGE_LEASE_SECONDS
 ASI_RUNTIME_BRIDGE_POLL_MS
 ASI_RUNTIME_BRIDGE_RUNNER_ID
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
 ```
+
+Bridge storage uses an **isolated** Supabase project (`ASI_RUNTIME_BRIDGE_SUPABASE_*`). Do not reuse primary `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (auth, CRM, app data) for Bridge tables. Ready only when `ASI_RUNTIME_BRIDGE_CLIENT_ID`, `ASI_RUNTIME_BRIDGE_SUPABASE_URL`, and `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY` are all set. Never expose Bridge URL or service-role key via `NEXT_PUBLIC_*` or browser responses.
 
 Все три токена должны быть не короче 32 символов и попарно различаться. Owner token доступен только доверенному контуру, который получает явное сообщение владельца; обычный Chat token не может вызвать owner-decision endpoint. Bridge URL должен быть HTTPS; HTTP разрешён только для loopback.
 

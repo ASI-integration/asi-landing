@@ -16,6 +16,7 @@ import type {
   RuntimeBridgeTaskRequest,
   RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
+import { isRuntimeBridgeSupabaseConfigured } from '@/lib/asi-runtime/bridge-supabase';
 import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema';
 import { BaselineShaError, resolveAllowlistedBaselineSha } from './baseline-sha';
 import {
@@ -61,7 +62,7 @@ export class DevelopmentConsoleError extends Error {
 
 function requireClientId(): string {
   const clientId = getRuntimeBridgeClientId();
-  if (!clientId) {
+  if (!clientId || !isRuntimeBridgeSupabaseConfigured()) {
     throw new DevelopmentConsoleError(
       'bridge_not_configured',
       503,
@@ -112,6 +113,7 @@ function mapBridgeError(error: unknown): never {
   }
   if (error instanceof RuntimeBridgeError) {
     const messages: Record<string, string> = {
+      bridge_not_configured: 'Runtime Bridge не настроен.',
       task_not_found: 'Задача не найдена.',
       idempotency_conflict: 'Повторный запрос с другим содержимым отклонён.',
       decision_conflict: 'Решение по этому gate уже принято с другим значением.',

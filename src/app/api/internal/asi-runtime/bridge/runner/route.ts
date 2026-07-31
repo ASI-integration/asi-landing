@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRuntimeBridgeClientId, isRuntimeBridgeAuthorized } from '@/lib/asi-runtime/bridge-auth';
+import { isRuntimeBridgeAuthorized, resolveRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
 import { runRuntimeBridgeRunnerOperation, RuntimeBridgeError } from '@/lib/asi-runtime/bridge-repository';
 import { parseRuntimeBridgeRunnerInput, readRuntimeBridgeBody } from '@/lib/asi-runtime/bridge-schema';
 
@@ -12,7 +12,7 @@ function response(body: unknown, status = 200): NextResponse {
 
 export async function POST(request: Request): Promise<NextResponse> {
   if (!isRuntimeBridgeAuthorized(request, 'runner')) return response({ ok: false, error: 'unauthorized' }, 401);
-  const clientId = getRuntimeBridgeClientId();
+  const clientId = resolveRuntimeBridgeClientId();
   if (!clientId) return response({ ok: false, error: 'bridge_not_configured' }, 503);
   const parsed = parseRuntimeBridgeRunnerInput(await readRuntimeBridgeBody(request));
   if (!parsed) return response({ ok: false, error: 'invalid_request' }, 400);

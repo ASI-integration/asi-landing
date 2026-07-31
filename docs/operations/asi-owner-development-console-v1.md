@@ -16,12 +16,17 @@ Set this server-only env name (comma-separated emails):
 
 - `ASI_DEVELOPMENT_OWNER_EMAILS`
 
-Also required for bridge operations (already part of Runtime Bridge):
+Also required for bridge operations (isolated Runtime Bridge Supabase project — not the primary app database):
 
 - `ASI_RUNTIME_BRIDGE_CLIENT_ID`
-- Supabase service role used by existing bridge repository (server-only)
+- `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
+- `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
 
-Do not set owner emails or bridge tokens via `NEXT_PUBLIC_*`.
+All three Bridge variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
+
+Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
+
+Do not set owner emails or bridge tokens/keys via `NEXT_PUBLIC_*`.
 
 ## Verify owner access
 
@@ -66,6 +71,8 @@ No force-release, lease mutation, durable-task deletion, or fencing bypass is ex
 - `ASI_RUNTIME_BRIDGE_CHAT_TOKEN`
 - `ASI_RUNTIME_BRIDGE_OWNER_TOKEN`
 - `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN`
+- `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
+- `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - Values of `ASI_DEVELOPMENT_OWNER_EMAILS`
 - Lease tokens, runner credentials, raw stdout/stderr, local paths

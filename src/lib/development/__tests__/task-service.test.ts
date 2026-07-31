@@ -243,6 +243,8 @@ function createCompatibleBridge() {
 beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
   process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID = 'chatgpt-owner';
+  process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = 'https://bridge-isolated.supabase.co';
+  process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = 'bridge-service-role-key-for-isolated-project';
   vi.resetModules();
   getRuntimeBridgeClientId.mockReturnValue('chatgpt-owner');
   submitRuntimeBridgeTask.mockReset();
@@ -289,6 +291,59 @@ describe('submitDevelopmentTask', () => {
       }),
     ).rejects.toMatchObject({ code: 'baseline_sha_forbidden' });
     expect(resolveAllowlistedBaselineSha).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe Russian 503 when Bridge Supabase URL is missing', async () => {
+    delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL;
+    const { submitDevelopmentTask, DevelopmentConsoleError } = await import('../task-service');
+    await expect(
+      submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: 'Do the thing',
+        idempotencyKey: 'dev-console-idem-abc',
+      }),
+    ).rejects.toMatchObject({
+      code: 'bridge_not_configured',
+      status: 503,
+      messageRu: 'Runtime Bridge не настроен.',
+    });
+    try {
+      await submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: 'Do the thing',
+        idempotencyKey: 'dev-console-idem-abc',
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(DevelopmentConsoleError);
+      expect(JSON.stringify(error)).not.toMatch(/SERVICE_ROLE|https?:\/\/|supabase\.co|bridge-service-role/i);
+    }
+    expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe Russian 503 when Bridge service-role key is missing', async () => {
+    delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY;
+    const { submitDevelopmentTask } = await import('../task-service');
+    await expect(
+      submitDevelopmentTask({
+        ownerUserId: 'user-1',
+        repositoryId: 'asi-landing',
+        title: 'Title',
+        objective: 'Objective',
+        instructions: 'Do the thing',
+        idempotencyKey: 'dev-console-idem-abc',
+      }),
+    ).rejects.toMatchObject({
+      code: 'bridge_not_configured',
+      status: 503,
+      messageRu: 'Runtime Bridge не настроен.',
+    });
+    expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
   });
 
   it('rejects missing or malformed idempotency keys with 400', async () => {
