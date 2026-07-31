@@ -74,18 +74,18 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         />
       )}
       <aside
-        className={`fixed left-0 top-0 bottom-0 w-60 bg-slate-900 flex flex-col z-50 transform transition-transform md:translate-x-0 ${
+        className={`fixed left-0 top-0 bottom-0 h-dvh max-h-dvh w-60 bg-slate-900 flex flex-col z-50 transform transition-transform md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
         <Link
           href="/ru"
-          className="mx-3 mt-3 mb-1 rounded-lg px-3 py-3 inline-flex items-center text-3xl font-bold text-white tracking-tight cursor-pointer transition-colors hover:bg-slate-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+          className="shrink-0 mx-3 mt-3 mb-1 rounded-lg px-3 py-3 inline-flex items-center text-3xl font-bold text-white tracking-tight cursor-pointer transition-colors hover:bg-slate-800/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
           onClick={onClose}
         >
           ASI
         </Link>
-        <nav className="flex-1 px-4 py-4 space-y-1.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y px-4 py-4 space-y-1.5">
           {visibleNavItems.map(({ href, key, label }) => {
             const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
             return (
