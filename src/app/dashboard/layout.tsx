@@ -29,21 +29,21 @@ type DashboardNavItem = {
 };
 
 const navItems: DashboardNavItem[] = [
-  { href: '/dashboard', key: 'overview' },
+  { href: '/dashboard', key: 'overview', label: 'Обзор' },
   { href: '/dashboard/onboarding', key: 'onboarding', label: 'Запуск объектов' },
   { href: '/dashboard/crm/queue', key: 'crmQueue', label: 'Очередь CRM' },
   { href: '/dashboard/crm', key: 'crm', label: 'CRM' },
-  { href: '/dashboard/reports', key: 'reports' },
-  { href: '/dashboard/channel-connections', key: 'channelConnections' },
-  { href: '/dashboard/properties', key: 'properties' },
-  { href: '/dashboard/communication', key: 'communication' },
-  { href: '/dashboard/ops', key: 'operations' },
+  { href: '/dashboard/reports', key: 'reports', label: 'Мои отчёты' },
+  { href: '/dashboard/channel-connections', key: 'channelConnections', label: 'Подключения каналов' },
+  { href: '/dashboard/properties', key: 'properties', label: 'Объекты' },
+  { href: '/dashboard/communication', key: 'communication', label: 'Коммуникация' },
+  { href: '/dashboard/ops', key: 'operations', label: 'Операции' },
   { href: '/dashboard/reservations', key: 'bookings', label: 'Единый календарь' },
   { href: '/dashboard/booking-ops', key: 'bookingOps', label: 'Операции по броням' },
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
-  { href: '/dashboard/automations', key: 'automations' },
+  { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/development', key: 'development', label: 'Разработка ASI' },
-  { href: '/dashboard/settings', key: 'settings' },
+  { href: '/dashboard/settings', key: 'settings', label: 'Настройки' },
 ] as const;
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
