@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRuntimeBridgeClientId, isRuntimeBridgeAuthorized } from '@/lib/asi-runtime/bridge-auth';
+import { isRuntimeBridgeAuthorized, resolveRuntimeBridgeClientId } from '@/lib/asi-runtime/bridge-auth';
 import {
   getRuntimeBridgeResult,
   getRuntimeBridgeTask,
@@ -23,7 +23,7 @@ export async function handleRuntimeBridgeChatRequest(
 ): Promise<NextResponse> {
   const requiredRole = forcedOperation === 'runtime_submit_owner_decision' ? 'owner' : 'chat';
   if (!isRuntimeBridgeAuthorized(request, requiredRole)) return response({ ok: false, error: 'unauthorized' }, 401);
-  const clientId = getRuntimeBridgeClientId();
+  const clientId = resolveRuntimeBridgeClientId();
   if (!clientId) return response({ ok: false, error: 'bridge_not_configured' }, 503);
   const body = await readRuntimeBridgeBody(request);
   const parsed = parseRuntimeBridgeChatInput(forcedOperation ? { operation: forcedOperation, input: body } : body);

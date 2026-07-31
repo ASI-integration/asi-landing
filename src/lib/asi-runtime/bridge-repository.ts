@@ -1,6 +1,9 @@
 import 'server-only';
-import { supabase } from '@/lib/supabase';
 import { runtimeBridgeRequestHash } from './bridge-hash';
+import {
+  isRuntimeBridgeSupabaseConfigured,
+  runtimeBridgeSupabase,
+} from './bridge-supabase';
 import type {
   RuntimeBridgeChatInput,
   RuntimeBridgeOwnerGateView,
@@ -19,6 +22,13 @@ export class RuntimeBridgeError extends Error {
   ) {
     super(code);
   }
+}
+
+function bridgeDb() {
+  if (!isRuntimeBridgeSupabaseConfigured()) {
+    throw new RuntimeBridgeError('bridge_not_configured', 503);
+  }
+  return runtimeBridgeSupabase;
 }
 
 function rpcError(error: { message?: string; code?: string } | null): never {
@@ -72,7 +82,7 @@ export async function submitRuntimeBridgeTask(
   clientId: string,
   input: Extract<RuntimeBridgeChatInput, { operation: 'runtime_submit_task' }>['input'],
 ): Promise<{ task: RuntimeBridgeTaskView; deduplicated: boolean }> {
-  const { data, error } = await supabase.rpc('submit_asi_runtime_bridge_task', {
+  const { data, error } = await bridgeDb().rpc('submit_asi_runtime_bridge_task', {
     p_client_id: clientId,
     p_chatgpt_task_id: input.chatgptTaskId,
     p_conversation_id: input.conversationId,
@@ -89,7 +99,7 @@ export async function findRuntimeBridgeTaskByIdempotencyKey(
   clientId: string,
   idempotencyKey: string,
 ): Promise<RuntimeBridgeTaskRecord | null> {
-  const { data, error } = await supabase
+  const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
     .select(
       'id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at,idempotency_key,request_hash,request',
@@ -103,9 +113,9 @@ export async function findRuntimeBridgeTaskByIdempotencyKey(
 }
 
 export async function getRuntimeBridgeTask(clientId: string, taskId: string): Promise<RuntimeBridgeTaskView> {
-  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
-  const { data, error } = await supabase
+  const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
     .select('id,chatgpt_task_id,conversation_id,status,attempt_count,created_at,updated_at')
     .eq('client_id', clientId)
@@ -120,9 +130,9 @@ export async function getRuntimeBridgeOwnerGate(
   clientId: string,
   gateId: string,
 ): Promise<RuntimeBridgeOwnerGateView | null> {
-  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
-  const { data, error } = await supabase
+  const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_owner_gates')
     .select('id,task_id,status,request,created_at')
     .eq('client_id', clientId)
@@ -137,9 +147,9 @@ export async function getRuntimeBridgeResult(
   clientId: string,
   taskId: string,
 ): Promise<{ taskId: string; status: RuntimeBridgeTaskView['status']; result: RuntimeBridgeSafeResult | null }> {
-  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
-  const { data, error } = await supabase
+  const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_tasks')
     .select('id,status,result')
     .eq('client_id', clientId)
@@ -151,9 +161,9 @@ export async function getRuntimeBridgeResult(
 }
 
 export async function listRuntimeBridgeOwnerGates(clientId: string): Promise<RuntimeBridgeOwnerGateView[]> {
-  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
-  const { data, error } = await supabase
+  const { data, error } = await bridgeDb()
     .from('asi_runtime_bridge_owner_gates')
     .select('id,task_id,status,request,created_at')
     .eq('client_id', clientId)
@@ -167,9 +177,9 @@ export async function submitRuntimeBridgeOwnerDecision(
   clientId: string,
   input: Extract<RuntimeBridgeChatInput, { operation: 'runtime_submit_owner_decision' }>['input'],
 ): Promise<{ task: RuntimeBridgeTaskView; gate: RuntimeBridgeOwnerGateView; deduplicated: boolean }> {
-  const expired = await supabase.rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
+  const expired = await bridgeDb().rpc('expire_asi_runtime_bridge_owner_gates', { p_client_id: clientId });
   if (expired.error) rpcError(expired.error);
-  const { data, error } = await supabase.rpc('decide_asi_runtime_bridge_owner_gate', {
+  const { data, error } = await bridgeDb().rpc('decide_asi_runtime_bridge_owner_gate', {
     p_client_id: clientId,
     p_task_id: input.taskId,
     p_gate_id: input.gateId,
@@ -231,7 +241,7 @@ export async function runRuntimeBridgeRunnerOperation(clientId: string, request:
       break;
     }
   }
-  const { data, error } = await supabase.rpc(rpc, args);
+  const { data, error } = await bridgeDb().rpc(rpc, args);
   if (error) rpcError(error);
   return data;
 }

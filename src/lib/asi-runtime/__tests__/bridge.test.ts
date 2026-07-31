@@ -58,6 +58,8 @@ beforeEach(() => {
   process.env.ASI_RUNTIME_BRIDGE_OWNER_TOKEN = 'owner-token-with-at-least-thirty-two-characters';
   process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN = 'runner-token-with-at-least-thirty-two-characters';
   process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID = 'chatgpt-owner';
+  process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL = 'https://bridge-isolated.supabase.co';
+  process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY = 'bridge-service-role-key-for-isolated-project';
 });
 
 afterEach(() => {
@@ -65,6 +67,8 @@ afterEach(() => {
   delete process.env.ASI_RUNTIME_BRIDGE_OWNER_TOKEN;
   delete process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
   delete process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID;
+  delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_URL;
+  delete process.env.ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY;
 });
 
 describe('runtime bridge authentication and schemas', () => {
