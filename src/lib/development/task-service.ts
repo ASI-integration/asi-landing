@@ -17,6 +17,11 @@ import type {
   RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
 import { isRuntimeBridgeSupabaseConfigured } from '@/lib/asi-runtime/bridge-supabase';
+import {
+  RUNTIME_BRIDGE_MAX_INSTRUCTIONS,
+  RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS,
+  RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS,
+} from '@/lib/asi-runtime/bridge-schema';
 import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema';
 import { BaselineShaError, resolveAllowlistedBaselineSha } from './baseline-sha';
 import {
@@ -42,6 +47,18 @@ function textList(value: unknown, maxItems: number, maxText: number): value is s
     && value.length > 0
     && value.length <= maxItems
     && value.every((item) => text(item, maxText));
+}
+
+function instructionList(value: unknown): value is string[] {
+  if (!textList(value, RUNTIME_BRIDGE_MAX_INSTRUCTIONS, RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS)) {
+    return false;
+  }
+  let total = 0;
+  for (const line of value) {
+    total += line.length;
+    if (total > RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS) return false;
+  }
+  return true;
 }
 
 export type DevelopmentTaskSnapshot = {
@@ -210,7 +227,7 @@ export async function submitDevelopmentTask(input: {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
-    if (!textList(lines, 30, 2000)) {
+    if (!instructionList(lines)) {
       throw new DevelopmentConsoleError(
         'invalid_task_fields',
         400,
@@ -218,7 +235,7 @@ export async function submitDevelopmentTask(input: {
       );
     }
     instructions = lines;
-  } else if (textList(input.instructions, 30, 2000)) {
+  } else if (instructionList(input.instructions)) {
     instructions = input.instructions;
   } else {
     throw new DevelopmentConsoleError(

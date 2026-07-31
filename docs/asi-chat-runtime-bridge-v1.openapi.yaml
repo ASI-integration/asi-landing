@@ -197,7 +197,8 @@ components:
                 - { maxLength: 4000 }
             instructions:
               type: array
-              maxItems: 30
+              maxItems: 100
+              description: Non-empty instruction lines; combined length across all lines must not exceed 24576 characters so the JSON body stays within the 64 KiB Bridge limit.
               items:
                 allOf:
                   - { $ref: '#/components/schemas/CleanText' }

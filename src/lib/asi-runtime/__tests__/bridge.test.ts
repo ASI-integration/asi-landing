@@ -5,7 +5,11 @@ import { createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isRuntimeBridgeAuthorized } from '../bridge-auth';
 import { runtimeBridgeRequestHash } from '../bridge-hash';
-import { parseRuntimeBridgeChatInput, parseRuntimeBridgeRunnerInput } from '../bridge-schema';
+import {
+  parseRuntimeBridgeChatInput,
+  parseRuntimeBridgeRunnerInput,
+  RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS,
+} from '../bridge-schema';
 import { RUNTIME_BRIDGE_CHAT_OPERATIONS } from '../bridge-types';
 
 vi.mock('server-only', () => ({}));
@@ -95,6 +99,32 @@ describe('runtime bridge authentication and schemas', () => {
     expect(parseRuntimeBridgeChatInput(submit)?.operation).toBe('runtime_submit_task');
     expect(parseRuntimeBridgeChatInput({ ...submit, input: { ...submit.input, command: 'npm test' } })).toBeNull();
     expect(parseRuntimeBridgeChatInput({ ...submit, input: { ...submit.input, ownerId: 'attacker' } })).toBeNull();
+  });
+
+  it('accepts 100 instruction lines and rejects over-limit instruction payloads', () => {
+    const hundred = Array.from({ length: 100 }, (_, index) => `step-${index + 1}`);
+    expect(parseRuntimeBridgeChatInput({
+      ...submit,
+      input: { ...submit.input, task: { ...task, instructions: hundred } },
+    })?.operation).toBe('runtime_submit_task');
+    expect(parseRuntimeBridgeChatInput({
+      ...submit,
+      input: { ...submit.input, task: { ...task, instructions: [...hundred, 'step-101'] } },
+    })).toBeNull();
+    expect(parseRuntimeBridgeChatInput({
+      ...submit,
+      input: { ...submit.input, task: { ...task, instructions: ['x'.repeat(2001)] } },
+    })).toBeNull();
+    const oversizedLine = 'x'.repeat(2000);
+    const oversized = Array.from(
+      { length: Math.floor(RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS / 2000) + 1 },
+      () => oversizedLine,
+    );
+    expect(oversized.length).toBeLessThanOrEqual(100);
+    expect(parseRuntimeBridgeChatInput({
+      ...submit,
+      input: { ...submit.input, task: { ...task, instructions: oversized } },
+    })).toBeNull();
   });
 
   it('rejects secrets and local paths in task content', () => {
