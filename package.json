@@ -39,6 +39,7 @@
     "acceptance:pilot-readiness": "node scripts/pilot-readiness-live-acceptance.mjs",
     "acceptance:pilot-automation": "node scripts/pilot-readiness-live-acceptance.mjs",
     "acceptance:support-bot": "node scripts/support-bot-live-acceptance.mjs",
+    "acceptance:owner-console-runtime": "node scripts/owner-console-runtime-acceptance.mjs",
     "ops:sync": "node scripts/ops-sync.mjs",
     "runtime-bridge:runner": "node scripts/asi-runtime-bridge-runner.mjs",
     "runtime-bridge:smoke": "vitest run src/lib/asi-runtime/__tests__/bridge.test.ts -t \"local smoke\""

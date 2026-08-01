@@ -6,10 +6,14 @@ import {
   executeWithRuntimeBaselineRecovery,
   parseRuntimeCheckoutConfig,
 } from './asi-runtime-baseline-recovery.mjs';
+import {
+  parseRuntimeExecutorConfig,
+  validateRuntimeBridgeUrl,
+} from './asi-runtime-runner-config.mjs';
 
-const baseUrl = validateBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
+const baseUrl = validateRuntimeBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
 const token = process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
-const executor = parseExecutor(process.env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON);
+const executor = parseRuntimeExecutorConfig(process.env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON);
 let runtimeCheckouts = null;
 try {
   runtimeCheckouts = parseRuntimeCheckoutConfig(process.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON);
@@ -40,29 +44,6 @@ function auditBaselineEvent(event) {
 function boundedInt(raw, fallback, min, max) {
   const value = Number(raw ?? fallback);
   return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
-}
-
-function validateBridgeUrl(raw) {
-  try {
-    const url = new URL(raw ?? '');
-    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-    if (url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) return null;
-    if (url.username || url.password || url.search || url.hash) return null;
-    return url.toString().replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
-}
-
-function parseExecutor(raw) {
-  try {
-    const value = JSON.parse(raw ?? '');
-    return Array.isArray(value) && value.length > 0 && value.length <= 20
-      && value.every((item) => typeof item === 'string' && item.length > 0 && item.length <= 1000)
-      ? value : null;
-  } catch {
-    return null;
-  }
 }
 
 async function bridge(operation, input, timeoutMs = 30_000) {

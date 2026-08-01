@@ -69,6 +69,20 @@ export type RuntimeBridgeTaskRecord = RuntimeBridgeTaskView & {
   request: RuntimeBridgeTaskRequest;
 };
 
+/** Bounded, non-mutating storage probe used by the owner readiness check. */
+export async function probeRuntimeBridgeStorage(timeoutMs = 5_000): Promise<void> {
+  try {
+    const { error } = await bridgeDb()
+      .from('asi_runtime_bridge_tasks')
+      .select('id', { head: true })
+      .limit(1)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    if (error) throw error;
+  } catch {
+    throw new RuntimeBridgeError('runtime_bridge_storage_unreachable', 503);
+  }
+}
+
 function taskRecord(row: Row): RuntimeBridgeTaskRecord {
   return {
     ...taskView(row),

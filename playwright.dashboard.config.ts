@@ -1,8 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync } from 'node:fs';
 
 const port = 3100;
 const baseURL = `http://127.0.0.1:${port}`;
-const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL as 'chrome' | 'msedge' | undefined;
+const windowsEdge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const browserChannel = (process.env.PLAYWRIGHT_BROWSER_CHANNEL
+  ?? (process.platform === 'win32' && existsSync(windowsEdge) ? 'msedge' : undefined)) as
+  | 'chrome'
+  | 'msedge'
+  | undefined;
 const browserUse = browserChannel ? { channel: browserChannel } : {};
 
 export default defineConfig({
@@ -28,6 +34,11 @@ export default defineConfig({
       name: 'dashboard-mobile',
       grep: /mobile drawer/,
       use: { ...devices['Pixel 5'], ...browserUse },
+    },
+    {
+      name: 'development-readiness',
+      grep: /development readiness panel/,
+      use: { ...devices['Desktop Chrome'], ...browserUse },
     },
   ],
   webServer: {

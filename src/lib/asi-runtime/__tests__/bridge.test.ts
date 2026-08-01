@@ -262,6 +262,31 @@ describe('runtime bridge durable contracts', () => {
     expect(sql).toContain('recovery_count');
   });
 
+  it('validates runner credentials and executor availability without starting the executor', async () => {
+    const { inspectRuntimeRunnerPrerequisites } = await import(
+      '../../../../scripts/asi-runtime-runner-config.mjs'
+    );
+    const configured = {
+      ASI_RUNTIME_BRIDGE_URL: 'https://runtime.example.com',
+      ASI_RUNTIME_BRIDGE_CHAT_TOKEN: 'chat-token-with-at-least-thirty-two-characters',
+      ASI_RUNTIME_BRIDGE_OWNER_TOKEN: 'owner-token-with-at-least-thirty-two-characters',
+      ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
+      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([process.execPath, '--version']),
+    };
+    await expect(inspectRuntimeRunnerPrerequisites(configured)).resolves.toEqual({
+      ready: true,
+      reasonCode: 'runtime_executor_ready',
+    });
+    await expect(inspectRuntimeRunnerPrerequisites({
+      ...configured,
+      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify(['missing-asi-executor-command']),
+    })).resolves.toEqual({ ready: false, reasonCode: 'runtime_executor_unavailable' });
+    await expect(inspectRuntimeRunnerPrerequisites({
+      ...configured,
+      ASI_RUNTIME_BRIDGE_OWNER_TOKEN: configured.ASI_RUNTIME_BRIDGE_CHAT_TOKEN,
+    })).resolves.toEqual({ ready: false, reasonCode: 'runtime_runner_credentials_invalid' });
+  });
+
   it('runner and guard never invoke a shell or log response bodies', () => {
     const source = readFileSync('scripts/asi-runtime-bridge-runner.mjs', 'utf8');
     const guard = readFileSync('scripts/asi-runtime-bridge-executor-guard.mjs', 'utf8');

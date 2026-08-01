@@ -10,6 +10,16 @@ import { OWNER_DECISION_BUS_ISSUE_NUMBER } from './owner-merge-gate';
 
 const API_VERSION = '2022-11-28';
 
+export class GitHubProviderReadinessError extends Error {
+  constructor(public readonly code:
+    | 'github_provider_missing'
+    | 'github_provider_unauthenticated'
+    | 'github_provider_repository_mismatch'
+    | 'github_provider_unreachable') {
+    super(code);
+  }
+}
+
 export class GitHubControlCenterError extends Error {
   constructor(
     public readonly code:
@@ -54,6 +64,35 @@ function headers(token?: string): HeadersInit {
     'X-GitHub-Api-Version': API_VERSION,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+}
+
+/** Non-destructive authenticated probe for the only allowlisted repository. */
+export async function probeGitHubMergeProvider(
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const token = String(process.env.GITHUB_TOKEN ?? '').trim();
+  if (!token) throw new GitHubProviderReadinessError('github_provider_missing');
+
+  let response: Response;
+  try {
+    response = await fetchImpl('https://api.github.com/repos/ASI-integration/asi-landing', {
+      method: 'GET',
+      headers: headers(token),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    throw new GitHubProviderReadinessError('github_provider_unreachable');
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new GitHubProviderReadinessError('github_provider_unauthenticated');
+  }
+  if (!response.ok) throw new GitHubProviderReadinessError('github_provider_unreachable');
+
+  const payload = await responseJson(response);
+  if (payload.full_name !== 'ASI-integration/asi-landing') {
+    throw new GitHubProviderReadinessError('github_provider_repository_mismatch');
+  }
 }
 
 async function responseJson(response: Response): Promise<Record<string, unknown>> {

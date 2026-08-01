@@ -27,9 +27,14 @@ export function isRuntimeBridgeAuthorized(request: Request, role: RuntimeBridgeR
   return timingSafeEqual(digest(expected), digest(match[1]));
 }
 
+export function parseRuntimeBridgeClientId(value: unknown): string | null {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized && /^[a-z0-9][a-z0-9._:-]{2,99}$/i.test(normalized) ? normalized : null;
+}
+
 export function getRuntimeBridgeClientId(): string | null {
-  const value = process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID?.trim();
-  return value && /^[a-z0-9][a-z0-9._:-]{2,99}$/i.test(value) ? value : null;
+  const value = process.env.ASI_RUNTIME_BRIDGE_CLIENT_ID;
+  return parseRuntimeBridgeClientId(value);
 }
 
 /** Ready only when client id and isolated Bridge Supabase URL + service-role key are all set. */

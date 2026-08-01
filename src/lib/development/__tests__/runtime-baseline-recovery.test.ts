@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   executeWithRuntimeBaselineRecovery,
+  inspectRuntimeCheckoutReadiness,
   isExpectedRuntimeRemote,
   parseRuntimeCheckoutConfig,
   synchronizeRuntimeCheckouts,
@@ -101,6 +102,39 @@ describe('Runtime baseline recovery', () => {
     ]);
     expect(await git(fixture.checkouts[0].path, ['status', '--porcelain'])).toBe('');
     expect(await git(fixture.checkouts[1].path, ['status', '--porcelain'])).toBe('');
+  }, 20_000);
+
+  it('probes checkout readiness without mutating drift or dirty state', async () => {
+    const fixture = await createCheckoutFixture();
+    const inspect = () => inspectRuntimeCheckoutReadiness({
+      checkouts: fixture.checkouts,
+      repository: 'ASI-integration/asi-landing',
+      branch: 'main',
+      baselineSha: fixture.baselineSha,
+      validateRemote: (remoteUrl: string) => remoteUrl === fixture.remote,
+    });
+
+    const drift = await inspect();
+    expect(drift).toMatchObject({
+      state: 'degraded',
+      reasonCode: 'runtime_checkout_recoverable_drift',
+    });
+    expect(await git(fixture.checkouts[0].path, ['rev-parse', 'HEAD'])).toBe(fixture.firstSha);
+
+    await writeFile(path.join(fixture.checkouts[1].path, 'local-change.txt'), 'keep me\n', 'utf8');
+    await expect(inspect()).rejects.toMatchObject({ code: 'runtime_checkout_dirty' });
+    expect(await git(fixture.checkouts[1].path, ['status', '--porcelain'])).toContain('local-change.txt');
+
+    await expect(inspectRuntimeCheckoutReadiness({
+      checkouts: [
+        fixture.checkouts[0],
+        { id: 'runtime-missing', path: path.join(path.dirname(fixture.remote), 'missing') },
+      ],
+      repository: 'ASI-integration/asi-landing',
+      branch: 'main',
+      baselineSha: fixture.baselineSha,
+      validateRemote: (remoteUrl: string) => remoteUrl === fixture.remote,
+    })).rejects.toMatchObject({ code: 'runtime_checkout_missing', checkoutId: 'runtime-missing' });
   }, 20_000);
 
   it('hides a recoverable mismatch and retries the same task exactly once', async () => {

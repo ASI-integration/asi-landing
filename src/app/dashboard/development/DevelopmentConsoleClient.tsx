@@ -17,6 +17,10 @@ import type {
   RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
 import type { ControlCenterMergeGateView } from '@/lib/development/owner-merge-gate';
+import type {
+  DevelopmentReadinessComponentId,
+  DevelopmentReadinessSnapshot,
+} from '@/lib/development/readiness-types';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
 
@@ -33,6 +37,12 @@ type SnapshotResponse = {
   mergeGate?: ControlCenterMergeGateView | null;
   gate?: ControlCenterMergeGateView | null;
   repositories?: RepositoryOption[];
+};
+
+type ReadinessResponse = {
+  ok: boolean;
+  message?: string;
+  readiness?: DevelopmentReadinessSnapshot;
 };
 
 function formatDate(value: string): string {
@@ -72,6 +82,9 @@ export default function DevelopmentConsoleClient() {
     gate: RuntimeBridgeOwnerGateView;
     decision: 'approved' | 'rejected';
   } | null>(null);
+  const [readiness, setReadiness] = useState<DevelopmentReadinessSnapshot | null>(null);
+  const [readinessBusy, setReadinessBusy] = useState(true);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
 
   const idempotencyKeyRef = useRef<string | null>(null);
   const activeTaskId = task?.taskId ?? taskIdFromUrl;
@@ -99,6 +112,30 @@ export default function DevelopmentConsoleClient() {
     setError(null);
     applySnapshot(data);
   }, [applySnapshot]);
+
+  const loadReadiness = useCallback(async () => {
+    setReadinessBusy(true);
+    setReadinessError(null);
+    try {
+      const res = await fetch('/api/dashboard/development/readiness', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const data = await readResponseJson<ReadinessResponse>(res, {
+        ok: false,
+        message: 'Не удалось проверить готовность.',
+      });
+      if (!res.ok || !data.ok || !data.readiness) {
+        setReadinessError(data.message ?? 'Не удалось проверить готовность.');
+        return;
+      }
+      setReadiness(data.readiness);
+    } catch {
+      setReadinessError('Не удалось проверить готовность.');
+    } finally {
+      setReadinessBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +168,10 @@ export default function DevelopmentConsoleClient() {
   }, []);
 
   useEffect(() => {
+    void loadReadiness();
+  }, [loadReadiness]);
+
+  useEffect(() => {
     if (!taskIdFromUrl) return;
     void loadTask(taskIdFromUrl);
   }, [taskIdFromUrl, loadTask]);
@@ -144,7 +185,7 @@ export default function DevelopmentConsoleClient() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || readiness?.canLaunch === false) return;
     setSubmitting(true);
     setError(null);
     if (!idempotencyKeyRef.current) {
@@ -303,6 +344,13 @@ export default function DevelopmentConsoleClient() {
         </div>
       ) : null}
 
+      <ReadinessPanel
+        readiness={readiness}
+        busy={readinessBusy}
+        error={readinessError}
+        onRetry={() => void loadReadiness()}
+      />
+
       {showForm ? (
         <form
           onSubmit={handleSubmit}
@@ -398,10 +446,14 @@ export default function DevelopmentConsoleClient() {
           </details>
           <button
             type="submit"
-            disabled={submitting || !repositoryId}
+            disabled={submitting || !repositoryId || readiness?.canLaunch === false}
             className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Запуск…' : 'Запустить задачу'}
+            {submitting
+              ? 'Запуск…'
+              : readiness?.canLaunch === false
+                ? 'Запуск пока недоступен'
+                : 'Запустить задачу'}
           </button>
         </form>
       ) : null}
@@ -564,6 +616,97 @@ export default function DevelopmentConsoleClient() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+const READINESS_COMPONENT_LABELS: Record<DevelopmentReadinessComponentId, string> = {
+  bridge: 'Runtime Bridge',
+  checkouts: 'Рабочие каталоги Runtime',
+  baseline: 'Текущая версия main',
+  executor: 'Исполнитель',
+  github: 'GitHub',
+};
+
+const READINESS_STATE_LABELS = {
+  ready: 'Готово',
+  degraded: 'Требует внимания',
+  blocked: 'Есть блокер',
+} as const;
+
+function ReadinessPanel({
+  readiness,
+  busy,
+  error,
+  onRetry,
+}: {
+  readiness: DevelopmentReadinessSnapshot | null;
+  busy: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const overallMessage = readiness?.overallState === 'ready'
+    ? 'Система готова к запуску задачи.'
+    : readiness?.canLaunch === false
+      ? 'Запуск остановлен до устранения обязательных блокеров.'
+      : readiness
+        ? 'Запуск возможен, но отдельные возможности требуют внимания.'
+        : 'Выполняется безопасная проверка готовности.';
+
+  return (
+    <section
+      aria-labelledby="development-readiness-title"
+      className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="development-readiness-title" className="text-lg font-semibold text-slate-900">
+            Готовность к запуску
+          </h2>
+          <p className="mt-1 text-sm text-slate-600" aria-live="polite">
+            {error ?? overallMessage}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onRetry}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {busy ? 'Проверка…' : 'Проверить готовность'}
+        </button>
+      </div>
+
+      {readiness ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {Object.entries(readiness.components).map(([id, item]) => (
+            <div key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-slate-900">
+                  {READINESS_COMPONENT_LABELS[id as DevelopmentReadinessComponentId]}
+                </h3>
+                <span className={`text-xs font-semibold ${
+                  item.state === 'ready'
+                    ? 'text-emerald-700'
+                    : item.state === 'degraded'
+                      ? 'text-amber-700'
+                      : 'text-red-700'
+                }`}>
+                  {READINESS_STATE_LABELS[item.state]}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-slate-700">{item.message}</p>
+              <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{item.reasonCode}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {readiness ? (
+        <p className="text-xs text-slate-500">
+          Последняя проверка: {formatDate(readiness.checkedAt)}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
