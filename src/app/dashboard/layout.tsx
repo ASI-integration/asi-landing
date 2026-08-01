@@ -74,7 +74,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         />
       )}
       <aside
-        className={`fixed left-0 top-0 bottom-0 h-dvh max-h-dvh w-60 bg-slate-900 flex flex-col z-50 transform transition-transform md:translate-x-0 ${
+        className={`fixed left-0 top-0 bottom-0 h-dvh max-h-dvh w-60 overflow-hidden bg-slate-900 flex flex-col z-50 transform transition-transform md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -145,7 +145,7 @@ function Header({ onMenuClick }: { onMenuClick: () => void }) {
   }
 
   return (
-    <header className="h-[60px] bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 relative z-30">
+    <header className="h-[60px] shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 relative z-30">
       <button
         type="button"
         onClick={onMenuClick}
@@ -199,11 +199,13 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <DashboardAuthGuard>
-      <div className="min-h-screen bg-slate-50">
+      <div className="fixed inset-0 z-20 h-dvh w-full overflow-hidden bg-slate-50">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="md:pl-60">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden md:pl-60">
           <Header onMenuClick={() => setSidebarOpen(true)} />
-          <main className="p-4 md:p-6">{children}</main>
+          <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 md:p-6">
+            {children}
+          </main>
         </div>
       </div>
     </DashboardAuthGuard>

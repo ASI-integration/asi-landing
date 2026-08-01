@@ -15,6 +15,7 @@
     "test:smoke": "playwright test tests/smoke.spec.ts --project=desktop",
     "test:smoke:ui": "playwright test tests/smoke.spec.ts --project=desktop --ui",
     "test:smoke:headed": "playwright test tests/smoke.spec.ts --project=desktop --headed",
+    "test:dashboard-sidebar-scroll": "playwright test --config=playwright.dashboard.config.ts",
     "test:responsive": "playwright test tests/responsive.spec.ts",
     "test:a11y": "playwright test tests/a11y.spec.ts --project=desktop",
     "test:e2e": "playwright test",
