@@ -94,6 +94,46 @@ describe('development console API access', () => {
 });
 
 describe('development console task submit API', () => {
+  it('submits one required natural-language prompt without advanced fields', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    submitDevelopmentTask.mockResolvedValue({
+      deduplicated: false,
+      snapshot: {
+        task: {
+          taskId: '11111111-1111-4111-8111-111111111111',
+          chatgptTaskId: 'dev-console-task-1',
+          conversationId: 'dev-console-owner-1',
+          status: 'queued',
+          attemptCount: 0,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+          repository: 'ASI-integration/asi-landing',
+        },
+        result: null,
+        pendingGates: [],
+      },
+    });
+
+    const { POST } = await import('@/app/api/dashboard/development/tasks/route');
+    const res = await POST(new Request('http://localhost/api/dashboard/development/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repositoryId: 'asi-landing',
+        prompt: 'Исправь ошибку, из-за которой задача падает при рассинхроне baseline.',
+        idempotencyKey: 'dev-console-idem-single-prompt',
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(submitDevelopmentTask).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'Исправь ошибку, из-за которой задача падает при рассинхроне baseline.',
+      title: undefined,
+      objective: undefined,
+      instructions: undefined,
+    }));
+  });
+
   it('submits through the service and never returns credentials', async () => {
     getSession.mockResolvedValue(ownerSession());
     submitDevelopmentTask.mockResolvedValue({
@@ -140,6 +180,18 @@ describe('development console task submit API', () => {
         idempotencyKey: 'dev-console-idem-1',
       }),
     );
+  });
+});
+
+describe('development console repository preference', () => {
+  it('uses an allowlisted remembered repository and safely falls back', async () => {
+    const repositories = await import('@/lib/development/repositories');
+    const options = repositories.listDevelopmentRepositories();
+
+    expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'asi-landing'))
+      .toBe('asi-landing');
+    expect(repositories.resolveRememberedDevelopmentRepositoryId(options, 'forged-repository'))
+      .toBe(options[0].id);
   });
 });
 

@@ -33,6 +33,15 @@ import {
 import { resolveDevelopmentRepository } from './repositories';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OWNER_PROMPT_MAX_CHARS = 4000;
+const DERIVED_TITLE_MAX_CHARS = 200;
+
+const STANDARD_SAFETY_CONSTRAINTS = [
+  'Не выполнять merge или deploy и не менять production data, migrations, secrets, environment variables, DNS, payments или repository settings.',
+  'Не отправлять реальные сообщения и не вызывать внешние продуктовые сервисы.',
+  'Сохранять авторизацию, server-only границы, аудит и идемпотентность submit и owner-decision.',
+  'Работать только в изолированном checkout, менять минимальный согласованный scope и запускать только focused checks.',
+] as const;
 
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string'
@@ -59,6 +68,100 @@ function instructionList(value: unknown): value is string[] {
     if (total > RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS) return false;
   }
   return true;
+}
+
+function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const candidate = value.slice(0, max - 1);
+  const boundary = candidate.lastIndexOf(' ');
+  const prefix = boundary >= Math.floor(max * 0.6) ? candidate.slice(0, boundary) : candidate;
+  return `${prefix.trimEnd()}…`;
+}
+
+function optionalText(value: unknown, max: number): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return text(normalized, max) ? normalized : null;
+}
+
+function promptInstructionLines(prompt: string): string[] {
+  const lines: string[] = [];
+  let remaining = prompt.replace(/\s+/g, ' ').trim();
+  while (remaining.length > RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS) {
+    let boundary = remaining.lastIndexOf(' ', RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS);
+    if (boundary < Math.floor(RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS * 0.6)) {
+      boundary = RUNTIME_BRIDGE_MAX_INSTRUCTION_LINE_CHARS;
+    }
+    lines.push(remaining.slice(0, boundary).trim());
+    remaining = remaining.slice(boundary).trim();
+  }
+  if (remaining) lines.push(remaining);
+  return lines.length ? lines : [prompt];
+}
+
+export type DerivedDevelopmentTaskPackage = {
+  title: string;
+  objective: string;
+  instructions: string[];
+  acceptanceCriteria: string[];
+  safetyConstraints: string[];
+};
+
+export function deriveDevelopmentTaskPackage(input: {
+  prompt: unknown;
+  title?: unknown;
+  objective?: unknown;
+  instructions?: unknown;
+}): DerivedDevelopmentTaskPackage {
+  if (!text(input.prompt, OWNER_PROMPT_MAX_CHARS)) {
+    throw new DevelopmentConsoleError(
+      'invalid_prompt',
+      400,
+      'Опишите, что нужно сделать.',
+    );
+  }
+
+  const prompt = input.prompt.trim();
+  const advancedTitle = optionalText(input.title, 200);
+  const advancedObjective = optionalText(input.objective, 4000);
+  if ((input.title !== undefined && input.title !== null && String(input.title).trim() && !advancedTitle)
+    || (input.objective !== undefined && input.objective !== null && String(input.objective).trim() && !advancedObjective)) {
+    throw new DevelopmentConsoleError('invalid_task_fields', 400, 'Проверьте расширенные настройки.');
+  }
+
+  let advancedInstructions: string[] | null = null;
+  if (typeof input.instructions === 'string') {
+    const lines = input.instructions.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (lines.length && !instructionList(lines)) {
+      throw new DevelopmentConsoleError('invalid_task_fields', 400, 'Проверьте инструкции задачи.');
+    }
+    advancedInstructions = lines.length ? lines : null;
+  } else if (input.instructions !== undefined && input.instructions !== null) {
+    if (!instructionList(input.instructions)) {
+      throw new DevelopmentConsoleError('invalid_task_fields', 400, 'Проверьте инструкции задачи.');
+    }
+    advancedInstructions = input.instructions;
+  }
+
+  const compactPrompt = prompt.replace(/\s+/g, ' ');
+  const title = advancedTitle ?? truncateText(compactPrompt, DERIVED_TITLE_MAX_CHARS);
+  const objective = advancedObjective ?? truncateText(`Выполнить запрос владельца: ${compactPrompt}`, 4000);
+  const instructions = advancedInstructions ?? promptInstructionLines(prompt);
+  const acceptanceCriteria = [
+    `Запрос владельца выполнен: ${truncateText(compactPrompt, 900)}`,
+    'Добавлены или обновлены focused tests для изменённого поведения.',
+    'Typecheck, ESLint для затронутых файлов и git diff --check проходят.',
+  ];
+
+  return {
+    title,
+    objective,
+    instructions,
+    acceptanceCriteria,
+    safetyConstraints: [...STANDARD_SAFETY_CONSTRAINTS],
+  };
 }
 
 export type DevelopmentTaskSnapshot = {
@@ -109,6 +212,8 @@ function taskContentMatches(
     title: string;
     objective: string;
     instructions: string[];
+    acceptanceCriteria: string[];
+    safetyConstraints: string[];
     repository: string;
   },
 ): boolean {
@@ -116,7 +221,11 @@ function taskContentMatches(
     && stored.objective === next.objective
     && stored.repository === next.repository
     && stored.instructions.length === next.instructions.length
-    && stored.instructions.every((line, index) => line === next.instructions[index]);
+    && stored.instructions.every((line, index) => line === next.instructions[index])
+    && (stored.acceptanceCriteria ?? []).length === next.acceptanceCriteria.length
+    && (stored.acceptanceCriteria ?? []).every((line, index) => line === next.acceptanceCriteria[index])
+    && (stored.safetyConstraints ?? []).length === next.safetyConstraints.length
+    && (stored.safetyConstraints ?? []).every((line, index) => line === next.safetyConstraints[index]);
 }
 
 function mapBridgeError(error: unknown): never {
@@ -187,9 +296,10 @@ export async function buildDevelopmentTaskSnapshot(
 export async function submitDevelopmentTask(input: {
   ownerUserId: string;
   repositoryId: unknown;
-  title: unknown;
-  objective: unknown;
-  instructions: unknown;
+  prompt: unknown;
+  title?: unknown;
+  objective?: unknown;
+  instructions?: unknown;
   idempotencyKey?: unknown;
   /** Must be ignored if present — never trusted from the browser. */
   baselineSha?: unknown;
@@ -213,37 +323,7 @@ export async function submitDevelopmentTask(input: {
     );
   }
 
-  if (!text(input.title, 200) || !text(input.objective, 4000)) {
-    throw new DevelopmentConsoleError(
-      'invalid_task_fields',
-      400,
-      'Проверьте название и цель задачи.',
-    );
-  }
-
-  let instructions: string[];
-  if (typeof input.instructions === 'string') {
-    const lines = input.instructions
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (!instructionList(lines)) {
-      throw new DevelopmentConsoleError(
-        'invalid_task_fields',
-        400,
-        'Проверьте инструкции задачи.',
-      );
-    }
-    instructions = lines;
-  } else if (instructionList(input.instructions)) {
-    instructions = input.instructions;
-  } else {
-    throw new DevelopmentConsoleError(
-      'invalid_task_fields',
-      400,
-      'Проверьте инструкции задачи.',
-    );
-  }
+  const taskPackage = deriveDevelopmentTaskPackage(input);
 
   const idempotencyKey = normalizeClientIdempotencyKey(input.idempotencyKey);
   if (!idempotencyKey) {
@@ -258,9 +338,7 @@ export async function submitDevelopmentTask(input: {
   const conversationId = requireOwnerConversation(input.ownerUserId);
   const chatgptTaskId = createDevelopmentChatgptTaskId(input.ownerUserId, idempotencyKey);
   const normalizedContent = {
-    title: input.title,
-    objective: input.objective,
-    instructions,
+    ...taskPackage,
     repository: repository.fullName,
   };
 
@@ -289,9 +367,7 @@ export async function submitDevelopmentTask(input: {
       conversationId,
       idempotencyKey,
       task: {
-        title: input.title,
-        objective: input.objective,
-        instructions,
+        ...taskPackage,
         repository: repository.fullName,
         baselineSha,
       },

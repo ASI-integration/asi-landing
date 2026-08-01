@@ -81,8 +81,19 @@ function safeArtifact(value: unknown): boolean {
 }
 
 function parseTask(value: unknown): RuntimeBridgeTaskRequest | null {
-  if (!object(value) || !exact(value, ['title', 'objective', 'instructions', 'repository', 'baselineSha'])) return null;
+  const required = ['title', 'objective', 'instructions', 'repository', 'baselineSha'];
+  const allowed = [...required, 'acceptanceCriteria', 'safetyConstraints'];
+  if (!object(value)
+    || !Object.keys(value).every((key) => allowed.includes(key))
+    || !required.every((key) => Object.hasOwn(value, key))) return null;
   if (!text(value.title, 200) || !text(value.objective, 4000) || !instructionList(value.instructions)) return null;
+  const packageLists = [value.acceptanceCriteria, value.safetyConstraints]
+    .filter((item) => item !== undefined);
+  if (packageLists.some((item) => !textList(item, 10, 1000))) return null;
+  const packageChars = packageLists
+    .flatMap((item) => item as string[])
+    .reduce((total, item) => total + item.length, 0);
+  if (packageChars > 4 * 1024) return null;
   if (value.repository !== 'ASI-integration/asi-landing' || !text(value.baselineSha, 40, SHA)) return null;
   return value as RuntimeBridgeTaskRequest;
 }

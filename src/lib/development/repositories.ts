@@ -28,12 +28,25 @@ export const DEVELOPMENT_REPOSITORY_ALLOWLIST = [
 
 export type DevelopmentRepositoryId = (typeof DEVELOPMENT_REPOSITORY_ALLOWLIST)[number]['id'];
 
+export const DEVELOPMENT_REPOSITORY_STORAGE_KEY = 'asi.owner-console.last-repository';
+
 export function listDevelopmentRepositories(): Array<{ id: string; label: string; fullName: string }> {
   return DEVELOPMENT_REPOSITORY_ALLOWLIST.map((repo) => ({
     id: repo.id,
     label: repo.label,
     fullName: repo.fullName,
   }));
+}
+
+export function resolveRememberedDevelopmentRepositoryId(
+  repositories: ReadonlyArray<{ id: string }>,
+  rememberedId: string | null | undefined,
+): string {
+  const remembered = String(rememberedId ?? '').trim();
+  if (remembered && repositories.some((repository) => repository.id === remembered)) {
+    return remembered;
+  }
+  return repositories[0]?.id ?? '';
 }
 
 export function resolveDevelopmentRepository(

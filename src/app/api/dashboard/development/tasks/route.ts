@@ -44,6 +44,7 @@ export async function POST(request: Request) {
     const result = await submitDevelopmentTask({
       ownerUserId: auth.session.userId!,
       repositoryId: payload.repositoryId,
+      prompt: payload.prompt,
       title: payload.title,
       objective: payload.objective,
       instructions: payload.instructions,

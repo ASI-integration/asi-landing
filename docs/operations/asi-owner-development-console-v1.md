@@ -22,6 +22,14 @@ Also required for bridge operations (isolated Runtime Bridge Supabase project �
 - `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
 - `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
 
+Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JSON array with exactly two Runtime checkout identities and absolute paths:
+
+```json
+[{"id":"runtime-primary","path":"/srv/asi-runtime/primary"},{"id":"runtime-secondary","path":"/srv/asi-runtime/secondary"}]
+```
+
+Paths stay runner-only and are never returned to the browser. Each checkout must be clean and have `origin` bound to the allowlisted repository.
+
 All three Bridge variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
 
 Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
@@ -43,11 +51,16 @@ Do not set owner emails or bridge tokens/keys via `NEXT_PUBLIC_*`.
 
 1. Open `/dashboard/development`.
 2. Choose allowlisted repository (`ASI-integration/asi-landing` in v1).
-3. Fill title, objective, instructions.
-4. Click **Запустить задачу**.
-5. URL becomes `/dashboard/development?taskId=<uuid>` and status polling starts.
+3. В поле **Что нужно сделать?** опишите задачу обычным языком. Номер GitHub Issue не нужен.
+4. При необходимости откройте **Расширенные настройки** и переопределите название, цель или инструкции.
+5. Click **Запустить задачу**.
+6. URL becomes `/dashboard/development?taskId=<uuid>` and status polling starts.
 
-Baseline SHA is resolved on the server from the allowlisted repository `main` tip. The browser never supplies baseline SHA.
+Название, цель, инструкции, acceptance criteria и стандартные safety constraints формируются на сервере. Расширенные значения необязательны; safety constraints не снимаются. Последний выбранный allowlisted repository сохраняется в локальном browser storage и повторно проверяется против server allowlist при загрузке.
+
+Baseline SHA is resolved on the server from the allowlisted repository `main` tip. The browser never supplies baseline SHA. Перед executor runner проверяет оба настроенных checkout. Чистые checkout безопасно переводятся в detached state точного baseline; dirty checkout не сбрасывается.
+
+Если executor возвращает `runtime_baseline_mismatch`, runner не публикует этот промежуточный результат владельцу: он повторно синхронизирует checkout и запускает тот же task identity ещё один раз. Повторный mismatch, ошибка recovery или ошибка retry становятся terminal safe result с `record_identity`, стабильным blocker code и checkout identity без локального пути, stdout/stderr или credentials.
 
 Exact HTTP retries reuse the browser idempotency key until a successful response. The server looks up an existing durable task by `client_id` + idempotency key before creating a new submission, so a retry still returns the original task even if `main` tip SHA changed. Tasks and owner gates are bound to the authenticated owner's deterministic conversation scope.
 
