@@ -23,13 +23,26 @@ import {
   RUNTIME_BRIDGE_MAX_INSTRUCTION_TOTAL_CHARS,
 } from '@/lib/asi-runtime/bridge-schema';
 import { containsForbiddenStringContent } from '@/lib/asi-runtime/ingest-schema';
-import { BaselineShaError, resolveAllowlistedBaselineSha } from './baseline-sha';
+import { BaselineShaError, isExactGitSha, resolveAllowlistedBaselineSha } from './baseline-sha';
+import {
+  controlCenterMergeDependencies,
+  GitHubControlCenterError,
+} from './github-control-center';
 import {
   createDevelopmentChatgptTaskId,
   createDevelopmentConversationId,
   createDevelopmentDecisionId,
   normalizeClientIdempotencyKey,
 } from './ids';
+import {
+  evaluateControlCenterMergeGate,
+  requestControlCenterMerge,
+  unavailableControlCenterMergeGate,
+  type ControlCenterMergeGateView,
+  type ControlCenterMergeOutcome,
+  type ControlCenterPullRequest,
+} from './owner-merge-gate';
+import { safeAllowlistedPullRequestUrl } from './pr-url';
 import { resolveDevelopmentRepository } from './repositories';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -168,6 +181,7 @@ export type DevelopmentTaskSnapshot = {
   task: RuntimeBridgeTaskView & { repository: string };
   result: RuntimeBridgeSafeResult | null;
   pendingGates: RuntimeBridgeOwnerGateView[];
+  mergeGate: ControlCenterMergeGateView | null;
 };
 
 export class DevelopmentConsoleError extends Error {
@@ -254,6 +268,55 @@ function mapBridgeError(error: unknown): never {
   throw new DevelopmentConsoleError('runtime_bridge_error', 500, 'Не удалось выполнить операцию.');
 }
 
+function pullRequestArtifact(result: RuntimeBridgeSafeResult | null): string | null {
+  const value = result?.artifacts.find((artifact) => artifact.type === 'pull_request')?.value;
+  return safeAllowlistedPullRequestUrl(value);
+}
+
+function commitArtifact(result: RuntimeBridgeSafeResult | null): string | null {
+  const value = result?.artifacts.find((artifact) => artifact.type === 'commit')?.value ?? '';
+  return isExactGitSha(value) ? value : null;
+}
+
+function unavailablePullRequest(
+  pullRequestUrl: string,
+  expectedSha: string,
+): ControlCenterPullRequest {
+  const parts = new URL(pullRequestUrl).pathname.split('/').filter(Boolean);
+  return {
+    repository: 'ASI-integration/asi-landing',
+    pullRequestNumber: Number(parts[3]),
+    pullRequestUrl,
+    headSha: expectedSha,
+    merged: false,
+    mergeCommitSha: null,
+  };
+}
+
+async function resolveDevelopmentMergeGate(
+  result: RuntimeBridgeSafeResult | null,
+): Promise<ControlCenterMergeGateView | null> {
+  const pullRequestUrl = pullRequestArtifact(result);
+  if (!pullRequestUrl) return null;
+  const resultSha = commitArtifact(result) ?? '0000000000000000000000000000000000000000';
+  let pullRequest: ControlCenterPullRequest | null = null;
+  try {
+    pullRequest = await controlCenterMergeDependencies.loadPullRequest(pullRequestUrl);
+    const records = await controlCenterMergeDependencies.loadOwnerDecisionRecords(pullRequest);
+    return evaluateControlCenterMergeGate({
+      pullRequest,
+      expectedSha: pullRequest.headSha,
+      records,
+    });
+  } catch {
+    return unavailableControlCenterMergeGate({
+      pullRequest: pullRequest ?? unavailablePullRequest(pullRequestUrl, resultSha),
+      expectedSha: pullRequest?.headSha ?? resultSha,
+      message: 'Не удалось проверить решение владельца. Объединение заблокировано.',
+    });
+  }
+}
+
 export async function buildDevelopmentTaskSnapshot(
   taskId: string,
   ownerUserId: string,
@@ -269,10 +332,12 @@ export async function buildDevelopmentTaskSnapshot(
 
     let result: RuntimeBridgeSafeResult | null = null;
     let pendingGates: RuntimeBridgeOwnerGateView[] = [];
+    let mergeGate: ControlCenterMergeGateView | null = null;
 
     if (task.status === 'completed' || task.status === 'failed') {
       const payload = await getRuntimeBridgeResult(clientId, taskId);
       result = payload.result;
+      mergeGate = await resolveDevelopmentMergeGate(result);
     }
 
     if (task.status === 'awaiting_owner') {
@@ -287,7 +352,88 @@ export async function buildDevelopmentTaskSnapshot(
       },
       result,
       pendingGates,
+      mergeGate,
     };
+  } catch (error) {
+    mapBridgeError(error);
+  }
+}
+
+export async function submitDevelopmentMergeRequest(input: {
+  ownerUserId: string;
+  taskId: unknown;
+  pullRequestUrl: unknown;
+  expectedHeadSha: unknown;
+}): Promise<ControlCenterMergeOutcome> {
+  const taskId = typeof input.taskId === 'string' ? input.taskId.trim() : '';
+  const expectedHeadSha = typeof input.expectedHeadSha === 'string'
+    ? input.expectedHeadSha.trim().toLowerCase()
+    : '';
+  const pullRequestUrl = safeAllowlistedPullRequestUrl(
+    typeof input.pullRequestUrl === 'string' ? input.pullRequestUrl : null,
+  );
+  if (!UUID.test(taskId) || !pullRequestUrl || !isExactGitSha(expectedHeadSha)) {
+    throw new DevelopmentConsoleError('invalid_merge_request', 400, 'Некорректный запрос на объединение PR.');
+  }
+
+  const clientId = requireClientId();
+  try {
+    const task = await getRuntimeBridgeTask(clientId, taskId);
+    assertOwnerTaskScope(task, input.ownerUserId);
+    if (task.status !== 'completed') {
+      throw new DevelopmentConsoleError(
+        'merge_task_not_completed',
+        409,
+        'Задача ещё не завершена. Объединение заблокировано.',
+      );
+    }
+    const result = (await getRuntimeBridgeResult(clientId, taskId)).result;
+    if (pullRequestArtifact(result) !== pullRequestUrl) {
+      throw new DevelopmentConsoleError(
+        'merge_pull_request_mismatch',
+        409,
+        'PR не принадлежит этой задаче.',
+      );
+    }
+
+    let pullRequest: ControlCenterPullRequest;
+    try {
+      pullRequest = await controlCenterMergeDependencies.loadPullRequest(pullRequestUrl);
+    } catch {
+      pullRequest = unavailablePullRequest(pullRequestUrl, expectedHeadSha);
+      const gate = unavailableControlCenterMergeGate({
+        pullRequest,
+        expectedSha: expectedHeadSha,
+        message: 'Не удалось проверить текущую версию PR. Объединение заблокировано.',
+      });
+      return { gate, merged: false, deduplicated: false, mergeCommitSha: null };
+    }
+
+    try {
+      return await requestControlCenterMerge(
+        { pullRequestUrl, expectedSha: expectedHeadSha },
+        controlCenterMergeDependencies,
+      );
+    } catch (error) {
+      const provider = error instanceof GitHubControlCenterError ? error.code : 'merge_provider_rejected';
+      const code = provider === 'merge_provider_not_configured'
+        ? 'merge_provider_not_configured'
+        : provider === 'owner_gate_unavailable'
+          ? 'owner_gate_unavailable'
+          : 'merge_provider_rejected';
+      const message = code === 'merge_provider_not_configured'
+        ? 'Серверное объединение PR не настроено.'
+        : code === 'owner_gate_unavailable'
+          ? 'Не удалось проверить решение владельца. Объединение заблокировано.'
+          : 'GitHub отклонил объединение. Запрос безопасно остановлен.';
+      const gate = unavailableControlCenterMergeGate({
+        pullRequest,
+        expectedSha: expectedHeadSha,
+        code,
+        message,
+      });
+      return { gate, merged: false, deduplicated: false, mergeCommitSha: pullRequest.mergeCommitSha };
+    }
   } catch (error) {
     mapBridgeError(error);
   }

@@ -16,6 +16,7 @@ import type {
   RuntimeBridgeTaskStatus,
   RuntimeBridgeTaskView,
 } from '@/lib/asi-runtime/bridge-types';
+import type { ControlCenterMergeGateView } from '@/lib/development/owner-merge-gate';
 
 type RepositoryOption = { id: string; label: string; fullName: string };
 
@@ -29,6 +30,8 @@ type SnapshotResponse = {
   task?: TaskPayload | null;
   result?: RuntimeBridgeSafeResult | null;
   pendingGates?: RuntimeBridgeOwnerGateView[];
+  mergeGate?: ControlCenterMergeGateView | null;
+  gate?: ControlCenterMergeGateView | null;
   repositories?: RepositoryOption[];
 };
 
@@ -61,6 +64,9 @@ export default function DevelopmentConsoleClient() {
   const [task, setTask] = useState<TaskPayload | null>(null);
   const [result, setResult] = useState<RuntimeBridgeSafeResult | null>(null);
   const [pendingGates, setPendingGates] = useState<RuntimeBridgeOwnerGateView[]>([]);
+  const [mergeGate, setMergeGate] = useState<ControlCenterMergeGateView | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [confirmMerge, setConfirmMerge] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [confirmGate, setConfirmGate] = useState<{
     gate: RuntimeBridgeOwnerGateView;
@@ -74,6 +80,7 @@ export default function DevelopmentConsoleClient() {
     if (payload.task) setTask(payload.task);
     setResult(payload.result ?? null);
     setPendingGates(Array.isArray(payload.pendingGates) ? payload.pendingGates : []);
+    setMergeGate(payload.mergeGate ?? payload.gate ?? null);
   }, []);
 
   const loadTask = useCallback(async (id: string) => {
@@ -180,6 +187,8 @@ export default function DevelopmentConsoleClient() {
     setTask(null);
     setResult(null);
     setPendingGates([]);
+    setMergeGate(null);
+    setConfirmMerge(false);
     setConfirmGate(null);
     setError(null);
     setPrompt('');
@@ -223,6 +232,42 @@ export default function DevelopmentConsoleClient() {
       setError('Не удалось отправить решение.');
     } finally {
       setDecisionBusy(false);
+    }
+  }
+
+  async function sendMergeRequest() {
+    if (!task || !mergeGate || mergeBusy || mergeGate.mergeState !== 'merge_allowed') return;
+    setMergeBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/dashboard/development/tasks/${encodeURIComponent(task.taskId)}/merge`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            pullRequestUrl: mergeGate.pullRequestUrl,
+            expectedHeadSha: mergeGate.currentSha,
+          }),
+        },
+      );
+      const data = await readResponseJson<SnapshotResponse>(res, {
+        ok: false,
+        message: 'Не удалось объединить PR.',
+      });
+      if (data.gate) setMergeGate(data.gate);
+      if (!res.ok || !data.ok) {
+        setError(data.message ?? 'Объединение PR заблокировано.');
+        setConfirmMerge(false);
+        return;
+      }
+      setConfirmMerge(false);
+      await loadTask(task.taskId);
+    } catch {
+      setError('Не удалось объединить PR.');
+    } finally {
+      setMergeBusy(false);
     }
   }
 
@@ -400,6 +445,14 @@ export default function DevelopmentConsoleClient() {
 
       {result ? <SafeResultPanel result={result} /> : null}
 
+      {mergeGate ? (
+        <MergeGatePanel
+          gate={mergeGate}
+          busy={mergeBusy}
+          onRequestMerge={() => setConfirmMerge(true)}
+        />
+      ) : null}
+
       {task?.status === 'awaiting_owner' && pendingGate ? (
         <OwnerGatePanel
           gate={pendingGate}
@@ -469,7 +522,99 @@ export default function DevelopmentConsoleClient() {
           </div>
         </div>
       ) : null}
+
+      {confirmMerge && mergeGate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="merge-confirm-title"
+            className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+          >
+            <h3 id="merge-confirm-title" className="text-lg font-semibold text-slate-900">
+              Подтвердить объединение PR
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Сервер ещё раз проверит решение владельца и точную текущую версию PR.
+            </p>
+            <dl className="mt-4 space-y-2 text-sm">
+              <GateField label="PR" value={`${mergeGate.repository}#${mergeGate.pullRequestNumber}`} />
+              <GateField label="Текущая версия" value={mergeGate.currentSha} />
+              <GateField label="Одобренная версия" value={mergeGate.approvedSha ?? 'Нет'} />
+            </dl>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={mergeBusy}
+                onClick={() => setConfirmMerge(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={mergeBusy || mergeGate.mergeState !== 'merge_allowed'}
+                onClick={() => void sendMergeRequest()}
+                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {mergeBusy ? 'Проверка…' : 'Объединить PR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+const MERGE_GATE_LABELS: Record<ControlCenterMergeGateView['gateState'], string> = {
+  pending: 'Ожидает решения владельца',
+  passed: 'Решение владельца подтверждено',
+  failed: 'Решение не разрешает объединение',
+  stale_sha: 'Разрешение относится к старой версии',
+  head_changed: 'Состав PR изменился',
+};
+
+function MergeGatePanel({
+  gate,
+  busy,
+  onRequestMerge,
+}: {
+  gate: ControlCenterMergeGateView;
+  busy: boolean;
+  onRequestMerge: () => void;
+}) {
+  const allowed = gate.mergeState === 'merge_allowed' && !gate.merged;
+  return (
+    <section className={`space-y-4 rounded-xl border p-5 shadow-sm ${
+      allowed ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/60'
+    }`}>
+      <h2 className="text-lg font-semibold text-slate-900">Разрешение на объединение</h2>
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <GateField label="Состояние проверки" value={MERGE_GATE_LABELS[gate.gateState]} />
+        <GateField
+          label="Объединение"
+          value={gate.merged ? 'PR уже объединён' : gate.mergeState === 'merge_allowed' ? 'Разрешено' : 'Заблокировано'}
+        />
+        <GateField label="PR" value={`${gate.repository}#${gate.pullRequestNumber}`} />
+        <GateField label="Текущая версия" value={gate.currentSha} />
+        <GateField label="Одобренная версия" value={gate.approvedSha ?? 'Нет'} />
+        <GateField label="Код запроса" value={gate.mergeRequestId} />
+      </dl>
+      {gate.blocker ? (
+        <p className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800">
+          {gate.blocker.message}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        disabled={!allowed || busy}
+        onClick={onRequestMerge}
+        className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {gate.merged ? 'PR уже объединён' : allowed ? 'Объединить PR' : 'Объединение заблокировано'}
+      </button>
+    </section>
   );
 }
 

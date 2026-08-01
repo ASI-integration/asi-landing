@@ -28,6 +28,7 @@ export async function GET(_request: Request, context: RouteContext) {
       task: snapshot.task,
       result: snapshot.result,
       pendingGates: snapshot.pendingGates,
+      mergeGate: snapshot.mergeGate,
     });
   } catch (error) {
     if (error instanceof DevelopmentConsoleError) {

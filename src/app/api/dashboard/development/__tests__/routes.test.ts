@@ -7,6 +7,7 @@ const isSessionSecretConfigured = vi.fn(() => true);
 const submitDevelopmentTask = vi.fn();
 const buildDevelopmentTaskSnapshot = vi.fn();
 const submitDevelopmentOwnerDecision = vi.fn();
+const submitDevelopmentMergeRequest = vi.fn();
 
 class DevelopmentConsoleError extends Error {
   constructor(
@@ -28,6 +29,7 @@ vi.mock('@/lib/development/task-service', () => ({
   submitDevelopmentTask,
   buildDevelopmentTaskSnapshot,
   submitDevelopmentOwnerDecision,
+  submitDevelopmentMergeRequest,
 }));
 
 vi.mock('@/lib/development/access', async () => {
@@ -53,6 +55,7 @@ beforeEach(() => {
   submitDevelopmentTask.mockReset();
   buildDevelopmentTaskSnapshot.mockReset();
   submitDevelopmentOwnerDecision.mockReset();
+  submitDevelopmentMergeRequest.mockReset();
 });
 
 afterEach(() => {
@@ -344,5 +347,71 @@ describe('development console owner decision API', () => {
       }),
     );
     expect(submitDevelopmentOwnerDecision.mock.calls[0][0]).not.toHaveProperty('source');
+  });
+});
+
+describe('development console merge API', () => {
+  it('returns the structured server blocker and cannot be bypassed by a direct request', async () => {
+    getSession.mockResolvedValue(ownerSession());
+    const currentSha = 'a'.repeat(40);
+    submitDevelopmentMergeRequest.mockResolvedValue({
+      merged: false,
+      deduplicated: false,
+      mergeCommitSha: null,
+      gate: {
+        gateState: 'pending',
+        mergeState: 'blocked',
+        repository: 'ASI-integration/asi-landing',
+        pullRequestNumber: 123,
+        pullRequestUrl: 'https://github.com/ASI-integration/asi-landing/pull/123',
+        expectedSha: currentSha,
+        currentSha,
+        approvedSha: null,
+        approvalTaskId: null,
+        approvalSourceId: null,
+        mergeRequestId: 'control-center-merge-stable',
+        blocker: {
+          code: 'owner_gate_pending',
+          message: 'Ожидается решение владельца для текущей версии PR.',
+          repository: 'ASI-integration/asi-landing',
+          pullRequestNumber: 123,
+          expectedSha: currentSha,
+          currentSha,
+          approvedSha: null,
+          approvalTaskId: null,
+        },
+        merged: false,
+        mergeCommitSha: null,
+      },
+    });
+
+    const { POST } = await import('@/app/api/dashboard/development/tasks/[taskId]/merge/route');
+    const res = await POST(new Request('http://localhost/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        pullRequestUrl: 'https://github.com/ASI-integration/asi-landing/pull/123',
+        expectedHeadSha: currentSha,
+        gateState: 'merge_allowed',
+        approved: true,
+      }),
+    }), { params: { taskId: '11111111-1111-4111-8111-111111111111' } });
+    const json = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(json).toMatchObject({
+      ok: false,
+      merged: false,
+      gate: { gateState: 'pending', mergeState: 'blocked' },
+      blocker: { code: 'owner_gate_pending', expectedSha: currentSha, currentSha },
+    });
+    expect(submitDevelopmentMergeRequest).toHaveBeenCalledWith({
+      ownerUserId: 'user-1',
+      taskId: '11111111-1111-4111-8111-111111111111',
+      pullRequestUrl: 'https://github.com/ASI-integration/asi-landing/pull/123',
+      expectedHeadSha: currentSha,
+    });
+    expect(submitDevelopmentMergeRequest.mock.calls[0][0]).not.toHaveProperty('approved');
+    expect(submitDevelopmentMergeRequest.mock.calls[0][0]).not.toHaveProperty('gateState');
   });
 });

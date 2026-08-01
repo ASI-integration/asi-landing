@@ -9,6 +9,7 @@
   - `GET/POST /api/dashboard/development/tasks`
   - `GET /api/dashboard/development/tasks/[taskId]`
   - `POST /api/dashboard/development/tasks/[taskId]/decisions`
+  - `POST /api/dashboard/development/tasks/[taskId]/merge`
 
 ## Required deployment configuration
 
@@ -31,6 +32,8 @@ Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JS
 Paths stay runner-only and are never returned to the browser. Each checkout must be clean and have `origin` bound to the allowlisted repository.
 
 All three Bridge variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
+
+Server-side PR merge also requires `GITHUB_TOKEN` with the narrow repository permission needed to merge pull requests. The value stays server-only and is never returned to the browser. Without it, the merge endpoint fails closed with a structured `merge_provider_not_configured` blocker.
 
 Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
 
@@ -68,6 +71,24 @@ Exact HTTP retries reuse the browser idempotency key until a successful response
 
 When the terminal safe result contains artifact `type=pull_request` with an HTTPS GitHub PR URL for the allowlisted ASI repository, the console shows **Открыть PR** (`target=_blank`, `rel=noopener noreferrer`). Invalid hosts/repositories are not rendered as links.
 
+## Merge owner gate
+
+Control Center never trusts a browser-supplied approval flag. For a PR artifact it reads the canonical `asi.agent-os.owner-gate.v1` records from Owner Decision Bus Issue #106 and the related PR discussion/reviews, then compares the approval target and SHA with the current GitHub PR head.
+
+The review state is one of `pending`, `passed`, `failed`, `stale_sha`, or `head_changed`. The effective merge state is always either `blocked` or `merge_allowed`. The UI keeps **Объединить PR** disabled unless the server reports `passed` and `merge_allowed` for the exact current SHA.
+
+`POST /api/dashboard/development/tasks/[taskId]/merge` repeats every check server-side:
+
+1. the authenticated owner owns the exact durable task;
+2. the task completed with the exact allowlisted PR artifact supplied to the endpoint;
+3. one canonical explicit-owner approval matches `merge`, `owner/repository#PR`, task identity and the exact current head SHA;
+4. rejected, expired, consumed, conflicting, missing, old-SHA and unrelated approvals fail closed;
+5. the final GitHub merge request includes the same exact head SHA as an atomic precondition.
+
+Blocked responses include a stable reason code, repository, PR number, expected SHA, current SHA, approved SHA and approval task ID. A head change therefore invalidates the old approval automatically even if the browser has stale state. Identical owner artifacts are deduplicated by `taskId` and identical merge retries use a deterministic request ID; an already merged exact head returns an idempotent success.
+
+Successful server authorization and merge return the canonical marker `CONTROL_CENTER_OWNER_GATE_MERGE_BLOCK_PASSED`.
+
 ## Handle an owner gate
 
 1. When status is `awaiting_owner`, review action, exact target, identity, reason, evidence, allowed side effect, rollback, post-action verification, and `expiresAt`.
@@ -86,6 +107,7 @@ No force-release, lease mutation, durable-task deletion, or fencing bypass is ex
 - `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN`
 - `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
 - `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
+- `GITHUB_TOKEN`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - Values of `ASI_DEVELOPMENT_OWNER_EMAILS`
 - Lease tokens, runner credentials, raw stdout/stderr, local paths
