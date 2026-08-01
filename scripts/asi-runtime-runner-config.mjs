@@ -9,11 +9,6 @@ import {
 } from './asi-runtime-baseline-recovery.mjs';
 
 const execFileAsync = promisify(execFile);
-const BRIDGE_TOKEN_NAMES = [
-  'ASI_RUNTIME_BRIDGE_CHAT_TOKEN',
-  'ASI_RUNTIME_BRIDGE_OWNER_TOKEN',
-  'ASI_RUNTIME_BRIDGE_RUNNER_TOKEN',
-];
 const INTERPRETERS = new Set([
   'node', 'node.exe',
   'python', 'python.exe', 'python3', 'python3.exe',
@@ -59,9 +54,9 @@ export function parseRuntimeExecutorConfig(raw) {
   }
 }
 
-function runnerCredentialsReady(env) {
-  const tokens = BRIDGE_TOKEN_NAMES.map((name) => String(env[name] ?? '').trim());
-  return tokens.every((token) => token.length >= 32) && new Set(tokens).size === tokens.length;
+export function validateRuntimeRunnerToken(raw) {
+  const token = String(raw ?? '');
+  return token.length >= 32 && token === token.trim() ? token : null;
 }
 
 async function executableAvailable(command, cwd) {
@@ -137,7 +132,7 @@ export async function inspectRuntimeRunnerPrerequisites(
   if (!validateRuntimeBridgeUrl(rawUrl)) {
     return { ready: false, reasonCode: 'runtime_runner_url_invalid' };
   }
-  if (!runnerCredentialsReady(env)) {
+  if (!validateRuntimeRunnerToken(env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN)) {
     return { ready: false, reasonCode: 'runtime_runner_credentials_invalid' };
   }
   const rawExecutor = String(env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON ?? '').trim();

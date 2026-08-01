@@ -14,6 +14,8 @@
 
 ## Required deployment configuration
 
+### Control-plane/web host
+
 Set this server-only env name (comma-separated emails):
 
 - `ASI_DEVELOPMENT_OWNER_EMAILS`
@@ -24,7 +26,26 @@ Also required for bridge operations (isolated Runtime Bridge Supabase project �
 - `ASI_RUNTIME_BRIDGE_SUPABASE_URL`
 - `ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY`
 
-Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JSON array with exactly two Runtime checkout identities and absolute paths:
+All three Bridge storage variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
+
+The control-plane/web host validates each Bridge role only at its own authenticated route:
+
+- `ASI_RUNTIME_BRIDGE_CHAT_TOKEN` for Chat task operations;
+- `ASI_RUNTIME_BRIDGE_OWNER_TOKEN` for owner-decision operations;
+- `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` for runner operations.
+
+These control-plane values must each be at least 32 characters and must be distinct. They stay server-only and are never returned to the browser.
+
+Server-side PR merge also requires `GITHUB_TOKEN` with the narrow repository permission needed to merge pull requests. The value stays server-only and is never returned to the browser. Without it, the merge endpoint fails closed with a structured `merge_provider_not_configured` blocker.
+
+### Runtime runner host
+
+The Runtime runner host requires only:
+
+- `ASI_RUNTIME_BRIDGE_URL`;
+- `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN`, at least 32 characters;
+- `ASI_RUNTIME_BRIDGE_EXECUTOR_JSON`, a JSON command array for the existing executor;
+- `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`, a JSON array with exactly two Runtime checkout identities and absolute paths:
 
 ```json
 [{"id":"runtime-primary","path":"/srv/asi-runtime/primary"},{"id":"runtime-secondary","path":"/srv/asi-runtime/secondary"}]
@@ -32,17 +53,9 @@ Runner baseline recovery also requires `ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON`: a JS
 
 Paths stay runner-only and are never returned to the browser. Each checkout must be clean and have `origin` bound to the allowlisted repository.
 
-All three Bridge variables must be present and well-formed. Missing Bridge storage configuration returns a safe Russian `503` (`Runtime Bridge не настроен.`) without URLs, keys, or stack traces.
-
-Server-side PR merge also requires `GITHUB_TOKEN` with the narrow repository permission needed to merge pull requests. The value stays server-only and is never returned to the browser. Without it, the merge endpoint fails closed with a structured `merge_provider_not_configured` blocker.
-
-The Runtime runner additionally requires these server-only values:
-
-- `ASI_RUNTIME_BRIDGE_URL`
-- distinct `ASI_RUNTIME_BRIDGE_CHAT_TOKEN`, `ASI_RUNTIME_BRIDGE_OWNER_TOKEN`, and `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` values of at least 32 characters;
-- `ASI_RUNTIME_BRIDGE_EXECUTOR_JSON`, a JSON command array for the existing executor.
-
 `ASI_RUNTIME_BRIDGE_RUNNER_ID` is optional. The runner hashes it (or the host name when omitted) into a stable opaque identity; the original value is never published. When the command starts with an interpreter such as `node`, the command must include a readable script entrypoint. Readiness validates both the interpreter and that file without executing the configured executor.
+
+Do not place `ASI_RUNTIME_BRIDGE_CHAT_TOKEN` or `ASI_RUNTIME_BRIDGE_OWNER_TOKEN` on the runner host. Runner readiness does not read, compare, or require them; only `ASI_RUNTIME_BRIDGE_RUNNER_TOKEN` authenticates runner heartbeats, claims, lease renewals, and results.
 
 Primary application auth/CRM/accounts continue to use `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY`. Do not point those at the Bridge project and do not put Bridge credentials behind `NEXT_PUBLIC_*`.
 

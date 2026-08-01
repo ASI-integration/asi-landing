@@ -10,6 +10,11 @@ const buildDevelopmentTaskSnapshot = vi.fn();
 const submitDevelopmentOwnerDecision = vi.fn();
 const submitDevelopmentMergeRequest = vi.fn();
 const getDevelopmentReadiness = vi.fn();
+const ROLE_TOKEN_VALUES = {
+  chat: 'chat-secret-value-with-at-least-thirty-two-characters',
+  owner: 'owner-secret-value-with-at-least-thirty-two-characters',
+  runner: 'runner-secret-value-with-at-least-thirty-two-characters',
+};
 
 class DevelopmentConsoleError extends Error {
   constructor(
@@ -142,6 +147,9 @@ describe('development console readiness API', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(json).toEqual({ ok: true, readiness: launchableReadiness });
     expect(JSON.stringify(json)).not.toMatch(/C:\\|\/srv\/|TOKEN|SERVICE_ROLE|stdout|stderr/i);
+    for (const secret of Object.values(ROLE_TOKEN_VALUES)) {
+      expect(JSON.stringify(json)).not.toContain(secret);
+    }
   });
 });
 
@@ -150,6 +158,9 @@ describe('development readiness component behavior', () => {
     ASI_RUNTIME_BRIDGE_CLIENT_ID: 'owner-console',
     ASI_RUNTIME_BRIDGE_SUPABASE_URL: 'https://bridge-isolated.example.com',
     ASI_RUNTIME_BRIDGE_SUPABASE_SERVICE_ROLE_KEY: 'not-returned-by-readiness',
+    ASI_RUNTIME_BRIDGE_CHAT_TOKEN: ROLE_TOKEN_VALUES.chat,
+    ASI_RUNTIME_BRIDGE_OWNER_TOKEN: ROLE_TOKEN_VALUES.owner,
+    ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: ROLE_TOKEN_VALUES.runner,
   };
   const codedError = (code: string) => Object.assign(new Error(code), { code });
   const runnerStatus = (
@@ -207,6 +218,9 @@ describe('development readiness component behavior', () => {
     expect(readiness.components[componentId].reasonCode).toBe(code);
     expect(readiness.canLaunch).toBe(canLaunch);
     expect(JSON.stringify(readiness)).not.toMatch(/\/runtime\/|not-returned-by-readiness/);
+    for (const secret of Object.values(ROLE_TOKEN_VALUES)) {
+      expect(JSON.stringify(readiness)).not.toContain(secret);
+    }
   });
 
   it('reports successful full readiness and retry is semantically idempotent', async () => {

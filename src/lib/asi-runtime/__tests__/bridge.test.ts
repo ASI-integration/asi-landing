@@ -190,7 +190,15 @@ describe('runtime bridge authentication and schemas', () => {
         },
       },
     };
-    expect(parseRuntimeBridgeRunnerInput(readiness)?.operation).toBe('runner_publish_readiness');
+    const parsed = parseRuntimeBridgeRunnerInput(readiness);
+    expect(parsed?.operation).toBe('runner_publish_readiness');
+    for (const name of [
+      'ASI_RUNTIME_BRIDGE_CHAT_TOKEN',
+      'ASI_RUNTIME_BRIDGE_OWNER_TOKEN',
+      'ASI_RUNTIME_BRIDGE_RUNNER_TOKEN',
+    ] as const) {
+      expect(JSON.stringify(parsed)).not.toContain(process.env[name]);
+    }
     expect(parseRuntimeBridgeRunnerInput({
       ...readiness,
       input: { ...readiness.input, executorPath: '/opt/runtime/executor.mjs' },
@@ -332,7 +340,15 @@ describe('runtime bridge runner readiness control plane', () => {
     ));
     expect(response.status).toBe(200);
     expect(repository.runRuntimeBridgeRunnerOperation).toHaveBeenCalledWith('chatgpt-owner', body);
-    expect(JSON.stringify(await response.json())).not.toMatch(/\/opt\/|argv|stdout|stderr|TOKEN/i);
+    const responseJson = JSON.stringify(await response.json());
+    expect(responseJson).not.toMatch(/\/opt\/|argv|stdout|stderr|TOKEN/i);
+    for (const name of [
+      'ASI_RUNTIME_BRIDGE_CHAT_TOKEN',
+      'ASI_RUNTIME_BRIDGE_OWNER_TOKEN',
+      'ASI_RUNTIME_BRIDGE_RUNNER_TOKEN',
+    ] as const) {
+      expect(responseJson).not.toContain(process.env[name]);
+    }
   });
 });
 
@@ -356,15 +372,14 @@ describe('runtime bridge durable contracts', () => {
     expect(sql).toContain('recovery_count');
   });
 
-  it('validates runner credentials and executor availability without starting the executor', async () => {
+  it('validates only the runner credential and executor availability without starting the executor', async () => {
     const { inspectRuntimeRunnerPrerequisites } = await import(
       '../../../../scripts/asi-runtime-runner-config.mjs'
     );
+    const runnerToken = 'runner-token-with-at-least-thirty-two-characters';
     const configured = {
       ASI_RUNTIME_BRIDGE_URL: 'https://runtime.example.com',
-      ASI_RUNTIME_BRIDGE_CHAT_TOKEN: 'chat-token-with-at-least-thirty-two-characters',
-      ASI_RUNTIME_BRIDGE_OWNER_TOKEN: 'owner-token-with-at-least-thirty-two-characters',
-      ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
+      ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: runnerToken,
       ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
         process.execPath,
         path.resolve('scripts/asi-runtime-bridge-executor-guard.mjs'),
@@ -388,10 +403,57 @@ describe('runtime bridge durable contracts', () => {
       ready: false,
       reasonCode: 'runtime_executor_entrypoint_unavailable',
     });
+  });
+
+  it.each([undefined, '', 'short-runner-token', ' runner-token-with-at-least-thirty-two-characters'])(
+    'blocks runner readiness for a missing, short or malformed runner token (%s)',
+    async (runnerToken) => {
+      const { inspectRuntimeRunnerPrerequisites } = await import(
+        '../../../../scripts/asi-runtime-runner-config.mjs'
+      );
+      await expect(inspectRuntimeRunnerPrerequisites({
+        ASI_RUNTIME_BRIDGE_URL: 'https://runtime.example.com',
+        ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: runnerToken,
+        ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
+          process.execPath,
+          path.resolve('scripts/asi-runtime-bridge-executor-guard.mjs'),
+        ]),
+      })).resolves.toEqual({ ready: false, reasonCode: 'runtime_runner_credentials_invalid' });
+    },
+  );
+
+  it('does not read or require Chat and Owner credentials on the runner host', async () => {
+    const { inspectRuntimeRunnerPrerequisites } = await import(
+      '../../../../scripts/asi-runtime-runner-config.mjs'
+    );
+    const configured = {
+      ASI_RUNTIME_BRIDGE_URL: 'https://runtime.example.com',
+      ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
+      ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([
+        process.execPath,
+        path.resolve('scripts/asi-runtime-bridge-executor-guard.mjs'),
+      ]),
+    };
+    const expected = { ready: true, reasonCode: 'runtime_executor_ready' };
+    await expect(inspectRuntimeRunnerPrerequisites(configured)).resolves.toEqual(expected);
     await expect(inspectRuntimeRunnerPrerequisites({
       ...configured,
-      ASI_RUNTIME_BRIDGE_OWNER_TOKEN: configured.ASI_RUNTIME_BRIDGE_CHAT_TOKEN,
-    })).resolves.toEqual({ ready: false, reasonCode: 'runtime_runner_credentials_invalid' });
+      ASI_RUNTIME_BRIDGE_CHAT_TOKEN: configured.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN,
+      ASI_RUNTIME_BRIDGE_OWNER_TOKEN: 'owner-token-that-must-not-affect-runner-readiness',
+    })).resolves.toEqual(expected);
+
+    const unreadableRoleCredentials = new Proxy(configured, {
+      get(target, property, receiver) {
+        if (property === 'ASI_RUNTIME_BRIDGE_CHAT_TOKEN'
+          || property === 'ASI_RUNTIME_BRIDGE_OWNER_TOKEN') {
+          throw new Error('runner_read_role_credential');
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const result = await inspectRuntimeRunnerPrerequisites(unreadableRoleCredentials);
+    expect(result).toEqual(expected);
+    expect(JSON.stringify(result)).not.toContain(configured.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN);
   });
 
   it('runner and guard never invoke a shell or log response bodies', () => {
@@ -416,9 +478,38 @@ describe('runtime bridge durable contracts', () => {
     expect(guard).toContain("'taskkill.exe'");
     expect(source).not.toContain('console.log');
     expect(source).not.toContain('process.stderr.write(error');
+    expect(source).not.toContain('ASI_RUNTIME_BRIDGE_CHAT_TOKEN');
+    expect(source).not.toContain('ASI_RUNTIME_BRIDGE_OWNER_TOKEN');
+    expect(source).not.toMatch(/stderr\.write\([^)]*token/i);
     expect(recovery).toContain("execFileAsync('git'");
     expect(recovery).not.toContain('shell: true');
     expect(recovery).not.toContain('console.log');
+  });
+
+  it('runner startup logs never disclose any role credential value', async () => {
+    const secrets = {
+      chat: 'chat-secret-value-with-at-least-thirty-two-characters',
+      owner: 'owner-secret-value-with-at-least-thirty-two-characters',
+      runner: 'runner-secret-value-with-at-least-thirty-two-characters',
+    };
+    const child = spawn(process.execPath, ['scripts/asi-runtime-bridge-runner.mjs'], {
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: {
+        ...process.env,
+        ASI_RUNTIME_BRIDGE_URL: 'not-a-runtime-url',
+        ASI_RUNTIME_BRIDGE_CHAT_TOKEN: secrets.chat,
+        ASI_RUNTIME_BRIDGE_OWNER_TOKEN: secrets.owner,
+        ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: secrets.runner,
+      },
+    });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const exitCode = await new Promise<number | null>((resolve) => child.once('close', resolve));
+    expect(exitCode).toBe(1);
+    expect(stderr).toBe('Runtime bridge runner is not configured.\n');
+    for (const secret of Object.values(secrets)) expect(stderr).not.toContain(secret);
   });
 
   it('executor guard kills its child when the runner IPC disappears', async () => {

@@ -9,10 +9,11 @@ import {
 import {
   inspectRuntimeRunnerHostReadiness,
   validateRuntimeBridgeUrl,
+  validateRuntimeRunnerToken,
 } from './asi-runtime-runner-config.mjs';
 
 const baseUrl = validateRuntimeBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
-const token = process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
+const token = validateRuntimeRunnerToken(process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN);
 const executorGuard = fileURLToPath(new URL('./asi-runtime-bridge-executor-guard.mjs', import.meta.url));
 const runnerIdentitySource = process.env.ASI_RUNTIME_BRIDGE_RUNNER_ID?.trim() || os.hostname();
 const runnerId = `runner-${createHash('sha256').update(runnerIdentitySource).digest('hex').slice(0, 24)}`;
@@ -25,7 +26,7 @@ let abortActiveClaim = null;
 let wakePoll = null;
 let readinessPublishing = false;
 
-if (!baseUrl || !token || token.length < 32) {
+if (!baseUrl || !token) {
   process.stderr.write('Runtime bridge runner is not configured.\n');
   process.exit(1);
 }
