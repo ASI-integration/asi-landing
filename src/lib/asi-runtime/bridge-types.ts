@@ -18,6 +18,8 @@ export type RuntimeBridgeTaskRequest = {
   title: string;
   objective: string;
   instructions: string[];
+  acceptanceCriteria?: string[];
+  safetyConstraints?: string[];
   repository: 'ASI-integration/asi-landing';
   baselineSha: string;
 };

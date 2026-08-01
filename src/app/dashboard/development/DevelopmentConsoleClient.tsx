@@ -6,6 +6,10 @@ import { readResponseJson } from '@/lib/safeResponseJson';
 import { safeAllowlistedPullRequestUrl } from '@/lib/development/pr-url';
 import { DEVELOPMENT_STATUS_LABELS, developmentStageText } from '@/lib/development/status-labels';
 import { useDevelopmentTaskPolling } from '@/lib/development/use-task-polling';
+import {
+  DEVELOPMENT_REPOSITORY_STORAGE_KEY,
+  resolveRememberedDevelopmentRepositoryId,
+} from '@/lib/development/repositories';
 import type {
   RuntimeBridgeOwnerGateView,
   RuntimeBridgeSafeResult,
@@ -47,7 +51,8 @@ export default function DevelopmentConsoleClient() {
   const taskIdFromUrl = searchParams.get('taskId');
 
   const [repositories, setRepositories] = useState<RepositoryOption[]>([]);
-  const [repositoryId, setRepositoryId] = useState('asi-landing');
+  const [repositoryId, setRepositoryId] = useState('');
+  const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [objective, setObjective] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -103,7 +108,13 @@ export default function DevelopmentConsoleClient() {
       }
       const repos = data.repositories ?? [];
       setRepositories(repos);
-      if (repos[0]) setRepositoryId(repos[0].id);
+      let rememberedRepository: string | null = null;
+      try {
+        rememberedRepository = window.localStorage.getItem(DEVELOPMENT_REPOSITORY_STORAGE_KEY);
+      } catch {
+        // Storage may be unavailable; the first server-allowlisted repository remains safe.
+      }
+      setRepositoryId(resolveRememberedDevelopmentRepositoryId(repos, rememberedRepository));
     })().catch(() => {
       if (!cancelled) setError('Не удалось инициализировать консоль.');
     });
@@ -140,9 +151,10 @@ export default function DevelopmentConsoleClient() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           repositoryId,
-          title: title.trim(),
-          objective: objective.trim(),
-          instructions,
+          prompt: prompt.trim(),
+          title: title.trim() || undefined,
+          objective: objective.trim() || undefined,
+          instructions: instructions.trim() || undefined,
           idempotencyKey: idempotencyKeyRef.current,
         }),
       });
@@ -170,6 +182,10 @@ export default function DevelopmentConsoleClient() {
     setPendingGates([]);
     setConfirmGate(null);
     setError(null);
+    setPrompt('');
+    setTitle('');
+    setObjective('');
+    setInstructions('');
     idempotencyKeyRef.current = null;
     router.replace('/dashboard/development');
   }
@@ -254,7 +270,15 @@ export default function DevelopmentConsoleClient() {
             <select
               id="dev-repo"
               value={repositoryId}
-              onChange={(e) => setRepositoryId(e.target.value)}
+              onChange={(e) => {
+                const selected = e.target.value;
+                setRepositoryId(selected);
+                try {
+                  window.localStorage.setItem(DEVELOPMENT_REPOSITORY_STORAGE_KEY, selected);
+                } catch {
+                  // A blocked storage API must not block task submission.
+                }
+              }}
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               required
             >
@@ -266,49 +290,70 @@ export default function DevelopmentConsoleClient() {
             </select>
           </div>
           <div>
-            <label htmlFor="dev-title" className="block text-sm font-medium text-slate-800">
-              Название задачи
-            </label>
-            <input
-              id="dev-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={200}
-              required
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="dev-objective" className="block text-sm font-medium text-slate-800">
-              Цель
+            <label htmlFor="dev-prompt" className="block text-sm font-medium text-slate-800">
+              Что нужно сделать?
             </label>
             <textarea
-              id="dev-objective"
-              value={objective}
-              onChange={(e) => setObjective(e.target.value)}
+              id="dev-prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
               maxLength={4000}
               required
-              rows={4}
+              rows={6}
+              placeholder="Опишите задачу обычным языком"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
-          <div>
-            <label htmlFor="dev-instructions" className="block text-sm font-medium text-slate-800">
-              Инструкции
-            </label>
-            <textarea
-              id="dev-instructions"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              required
-              rows={8}
-              placeholder="Каждая строка — отдельная инструкция"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
+          <details className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+            <summary className="cursor-pointer text-sm font-medium text-slate-800">
+              Расширенные настройки
+            </summary>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="dev-title" className="block text-sm font-medium text-slate-800">
+                  Название задачи
+                </label>
+                <input
+                  id="dev-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  maxLength={200}
+                  placeholder="Необязательно — сервер сформирует автоматически"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="dev-objective" className="block text-sm font-medium text-slate-800">
+                  Цель
+                </label>
+                <textarea
+                  id="dev-objective"
+                  value={objective}
+                  onChange={(e) => setObjective(e.target.value)}
+                  maxLength={4000}
+                  rows={3}
+                  placeholder="Необязательно"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="dev-instructions" className="block text-sm font-medium text-slate-800">
+                  Инструкции
+                </label>
+                <textarea
+                  id="dev-instructions"
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  rows={6}
+                  placeholder="Необязательно; каждая строка — отдельная инструкция"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </details>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !repositoryId}
             className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? 'Запуск…' : 'Запустить задачу'}

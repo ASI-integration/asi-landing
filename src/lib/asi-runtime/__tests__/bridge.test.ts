@@ -1,7 +1,9 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isRuntimeBridgeAuthorized } from '../bridge-auth';
 import { runtimeBridgeRequestHash } from '../bridge-hash';
@@ -34,6 +36,8 @@ const task = {
   title: 'Implement bridge',
   objective: 'Return a safe, verified result.',
   instructions: ['Use focused tests.'],
+  acceptanceCriteria: ['Focused tests pass.'],
+  safetyConstraints: ['Do not merge or deploy.'],
   repository: 'ASI-integration/asi-landing',
   baselineSha: '8301b36310c663818b56fb5adce92bbc0d8693a3',
 };
@@ -261,6 +265,7 @@ describe('runtime bridge durable contracts', () => {
   it('runner and guard never invoke a shell or log response bodies', () => {
     const source = readFileSync('scripts/asi-runtime-bridge-runner.mjs', 'utf8');
     const guard = readFileSync('scripts/asi-runtime-bridge-executor-guard.mjs', 'utf8');
+    const recovery = readFileSync('scripts/asi-runtime-baseline-recovery.mjs', 'utf8');
     expect(source).toContain('shell: false');
     expect(source).not.toContain('env: { ...process.env');
     expect(source).toContain('controller.abort()');
@@ -279,6 +284,9 @@ describe('runtime bridge durable contracts', () => {
     expect(guard).toContain("'taskkill.exe'");
     expect(source).not.toContain('console.log');
     expect(source).not.toContain('process.stderr.write(error');
+    expect(recovery).toContain("execFileAsync('git'");
+    expect(recovery).not.toContain('shell: true');
+    expect(recovery).not.toContain('console.log');
   });
 
   it('executor guard kills its child when the runner IPC disappears', async () => {
@@ -339,6 +347,25 @@ describe('runtime bridge durable contracts', () => {
   }, 15_000);
 
   it('runner kills an orphan executor before retrying after a guard crash', async () => {
+    const checkoutRoot = mkdtempSync(path.join(os.tmpdir(), 'asi-runner-checkouts-'));
+    const primaryCheckout = path.join(checkoutRoot, 'primary');
+    const secondaryCheckout = path.join(checkoutRoot, 'secondary');
+    execFileSync('git', ['init', primaryCheckout], { windowsHide: true });
+    execFileSync('git', ['-C', primaryCheckout, 'config', 'user.name', 'ASI Test'], { windowsHide: true });
+    execFileSync('git', ['-C', primaryCheckout, 'config', 'user.email', 'asi-test@example.invalid'], { windowsHide: true });
+    writeFileSync(path.join(primaryCheckout, 'marker.txt'), 'runner baseline\n', 'utf8');
+    execFileSync('git', ['-C', primaryCheckout, 'add', 'marker.txt'], { windowsHide: true });
+    execFileSync('git', ['-C', primaryCheckout, 'commit', '-m', 'runner baseline'], { windowsHide: true });
+    const runnerBaselineSha = execFileSync('git', ['-C', primaryCheckout, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8', windowsHide: true,
+    }).trim();
+    execFileSync('git', ['clone', '--no-hardlinks', primaryCheckout, secondaryCheckout], { windowsHide: true });
+    for (const checkout of [primaryCheckout, secondaryCheckout]) {
+      const remoteArgs = checkout === primaryCheckout ? ['remote', 'add'] : ['remote', 'set-url'];
+      execFileSync('git', [
+        '-C', checkout, ...remoteArgs, 'origin', 'https://github.com/ASI-integration/asi-landing.git',
+      ], { windowsHide: true });
+    }
     const taskId = randomUUID();
     const leaseToken = randomUUID();
     let claimed = false;
@@ -363,7 +390,7 @@ describe('runtime bridge durable contracts', () => {
           taskId,
           chatgptTaskId: 'chat-task-guard-crash',
           conversationId: 'conversation-guard-crash',
-          request: task,
+          request: { ...task, baselineSha: runnerBaselineSha },
           ownerDecision: null,
           attemptCount: 1,
           leaseToken,
@@ -398,6 +425,10 @@ describe('runtime bridge durable contracts', () => {
         ASI_RUNTIME_BRIDGE_URL: `http://127.0.0.1:${address.port}`,
         ASI_RUNTIME_BRIDGE_RUNNER_TOKEN: 'runner-token-with-at-least-thirty-two-characters',
         ASI_RUNTIME_BRIDGE_EXECUTOR_JSON: JSON.stringify([process.execPath, '-e', executorSource, `http://127.0.0.1:${address.port}/executor-start`]),
+        ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON: JSON.stringify([
+          { id: 'runtime-primary', path: primaryCheckout },
+          { id: 'runtime-secondary', path: secondaryCheckout },
+        ]),
         ASI_RUNTIME_BRIDGE_POLL_MS: '250',
       },
     });
@@ -432,6 +463,7 @@ describe('runtime bridge durable contracts', () => {
         if (!pid) continue;
         try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
       }
+      rmSync(checkoutRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   }, 20_000);
 

@@ -262,12 +262,66 @@ afterEach(() => {
 });
 
 describe('submitDevelopmentTask', () => {
+  it('requires one non-empty natural-language prompt', async () => {
+    const { submitDevelopmentTask } = await import('../task-service');
+    await expect(submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-landing',
+      prompt: '   ',
+      idempotencyKey: 'dev-console-idem-empty-prompt',
+    })).rejects.toMatchObject({ code: 'invalid_prompt', status: 400 });
+    expect(submitRuntimeBridgeTask).not.toHaveBeenCalled();
+  });
+
+  it('derives the normalized task package from one natural-language prompt', async () => {
+    createCompatibleBridge();
+    resolveAllowlistedBaselineSha.mockResolvedValue('a'.repeat(40));
+    const { submitDevelopmentTask } = await import('../task-service');
+
+    await submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-landing',
+      prompt: 'Сделай так, чтобы merge был невозможен без валидного owner approval.',
+      idempotencyKey: 'dev-console-idem-derived',
+    });
+
+    const request = submitRuntimeBridgeTask.mock.calls[0][1].task as RuntimeBridgeTaskRequest;
+    expect(request.title).toMatch(/merge.*owner approval/i);
+    expect(request.objective).toMatch(/валидного owner approval/i);
+    expect(request.instructions.join('\n')).toMatch(/merge.*owner approval/i);
+    expect(request.acceptanceCriteria?.join('\n')).toMatch(/focused tests/i);
+    expect(request.safetyConstraints?.join('\n')).toMatch(/merge|deploy|production data/i);
+  });
+
+  it('applies optional advanced overrides without dropping standard safety constraints', async () => {
+    createCompatibleBridge();
+    resolveAllowlistedBaselineSha.mockResolvedValue('b'.repeat(40));
+    const { submitDevelopmentTask } = await import('../task-service');
+
+    await submitDevelopmentTask({
+      ownerUserId: 'user-1',
+      repositoryId: 'asi-landing',
+      prompt: 'Переведи оставшиеся английские подписи бокового меню на русский.',
+      title: 'Точный заголовок',
+      objective: 'Точная цель',
+      instructions: 'Сохрани утверждённый вид меню',
+      idempotencyKey: 'dev-console-idem-overrides',
+    });
+
+    const request = submitRuntimeBridgeTask.mock.calls[0][1].task as RuntimeBridgeTaskRequest;
+    expect(request.title).toBe('Точный заголовок');
+    expect(request.objective).toBe('Точная цель');
+    expect(request.instructions).toContain('Сохрани утверждённый вид меню');
+    expect(request.safetyConstraints?.join('\n')).toMatch(/merge|deploy|production data/i);
+  });
+
   it('rejects non-allowlisted repositories', async () => {
     const { submitDevelopmentTask, DevelopmentConsoleError } = await import('../task-service');
     await expect(
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'other-repo',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -283,6 +337,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -300,6 +355,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -314,6 +370,7 @@ describe('submitDevelopmentTask', () => {
       await submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -333,6 +390,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -352,6 +410,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -361,6 +420,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -379,6 +439,7 @@ describe('submitDevelopmentTask', () => {
     const result = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: 'Do the thing',
@@ -412,6 +473,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -428,6 +490,7 @@ describe('submitDevelopmentTask', () => {
     const first = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: 'Do the thing',
@@ -439,6 +502,7 @@ describe('submitDevelopmentTask', () => {
     const second = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: 'Do the thing',
@@ -466,6 +530,7 @@ describe('submitDevelopmentTask', () => {
     const accepted = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: hundred,
@@ -478,6 +543,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: [...hundred, 'step-101'],
@@ -499,6 +565,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: oversized,
@@ -514,6 +581,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: ['x'.repeat(2001)],
@@ -531,6 +599,7 @@ describe('submitDevelopmentTask', () => {
     await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: 'Do the thing',
@@ -541,6 +610,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Different title',
         objective: 'Objective',
         instructions: 'Do the thing',
@@ -559,6 +629,7 @@ describe('submitDevelopmentTask', () => {
     const first = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: ['step-1'],
@@ -571,6 +642,7 @@ describe('submitDevelopmentTask', () => {
     const second = await submitDevelopmentTask({
       ownerUserId: 'user-1',
       repositoryId: 'asi-landing',
+      prompt: 'Owner prompt.',
       title: 'Title',
       objective: 'Objective',
       instructions: ['step-1'],
@@ -591,6 +663,7 @@ describe('submitDevelopmentTask', () => {
       submitDevelopmentTask({
         ownerUserId: 'user-1',
         repositoryId: 'asi-landing',
+        prompt: 'Owner prompt.',
         title: 'Title',
         objective: 'Objective',
         instructions: ['step-1'],

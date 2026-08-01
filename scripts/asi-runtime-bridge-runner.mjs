@@ -2,10 +2,20 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  executeWithRuntimeBaselineRecovery,
+  parseRuntimeCheckoutConfig,
+} from './asi-runtime-baseline-recovery.mjs';
 
 const baseUrl = validateBridgeUrl(process.env.ASI_RUNTIME_BRIDGE_URL);
 const token = process.env.ASI_RUNTIME_BRIDGE_RUNNER_TOKEN;
 const executor = parseExecutor(process.env.ASI_RUNTIME_BRIDGE_EXECUTOR_JSON);
+let runtimeCheckouts = null;
+try {
+  runtimeCheckouts = parseRuntimeCheckoutConfig(process.env.ASI_RUNTIME_BRIDGE_CHECKOUTS_JSON);
+} catch {
+  runtimeCheckouts = null;
+}
 const executorGuard = fileURLToPath(new URL('./asi-runtime-bridge-executor-guard.mjs', import.meta.url));
 const runnerPrefix = process.env.ASI_RUNTIME_BRIDGE_RUNNER_ID || 'runner';
 const runnerId = `${runnerPrefix.slice(0, 120)}-${randomUUID()}`;
@@ -17,9 +27,14 @@ let stopping = false;
 let abortActiveClaim = null;
 let wakePoll = null;
 
-if (!baseUrl || !token || token.length < 32 || !executor) {
+if (!baseUrl || !token || token.length < 32 || !executor || !runtimeCheckouts) {
   process.stderr.write('Runtime bridge runner is not configured.\n');
   process.exit(1);
+}
+
+function auditBaselineEvent(event) {
+  // Event payloads contain only stable record/checkpoint identities and commit SHAs.
+  process.stderr.write(`[runtime-baseline] ${JSON.stringify(event)}\n`);
 }
 
 function boundedInt(raw, fallback, min, max) {
@@ -311,7 +326,12 @@ async function runClaim(task) {
   }, executionTimeoutMs);
   deadline.unref();
   try {
-    const outcome = await execute(task, controller.signal);
+    const outcome = await executeWithRuntimeBaselineRecovery({
+      task,
+      checkouts: runtimeCheckouts,
+      executeTask: (currentTask) => execute(currentTask, controller.signal),
+      audit: auditBaselineEvent,
+    });
     if (leaseLost) return;
     if (outcome.type === 'result') {
       await bridge('runner_submit_result', {

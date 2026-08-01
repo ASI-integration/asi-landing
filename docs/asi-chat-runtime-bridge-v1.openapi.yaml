@@ -203,6 +203,22 @@ components:
                 allOf:
                   - { $ref: '#/components/schemas/CleanText' }
                   - { maxLength: 2000 }
+            acceptanceCriteria:
+              type: array
+              maxItems: 10
+              description: Optional server-derived acceptance criteria. Together with safetyConstraints, content is limited to 4096 characters.
+              items:
+                allOf:
+                  - { $ref: '#/components/schemas/CleanText' }
+                  - { maxLength: 1000 }
+            safetyConstraints:
+              type: array
+              maxItems: 10
+              description: Optional server-derived standard safety constraints. Together with acceptanceCriteria, content is limited to 4096 characters.
+              items:
+                allOf:
+                  - { $ref: '#/components/schemas/CleanText' }
+                  - { maxLength: 1000 }
             repository: { type: string, const: ASI-integration/asi-landing }
             baselineSha: { type: string, pattern: '^[0-9a-f]{40}$' }
     OwnerDecision:
