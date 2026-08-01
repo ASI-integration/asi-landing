@@ -13,6 +13,8 @@ describe('dashboard sidebar scroll layout', () => {
     expect(layoutSrc).toMatch(/\bh-dvh\b/);
     expect(layoutSrc).toMatch(/\bmax-h-dvh\b/);
     expect(layoutSrc).toMatch(/flex flex-col/);
+    expect(layoutSrc).toMatch(/fixed inset-0 z-20 h-dvh w-full overflow-hidden bg-slate-50/);
+    expect(layoutSrc).toMatch(/flex h-full min-h-0 flex-col overflow-hidden md:pl-60/);
 
     const logoMatch = layoutSrc.match(
       /<Link[\s\S]*?>\s*ASI\s*<\/Link>/,
@@ -26,6 +28,12 @@ describe('dashboard sidebar scroll layout', () => {
     expect(navMatch?.[1]).toMatch(/\boverflow-y-auto\b/);
     expect(navMatch?.[1]).toMatch(/\boverflow-x-hidden\b/);
     expect(navMatch?.[1]).toMatch(/\btouch-pan-y\b/);
+
+    const mainMatch = layoutSrc.match(/<main className="([^"]+)"/);
+    expect(mainMatch?.[1]).toMatch(/\bmin-h-0\b/);
+    expect(mainMatch?.[1]).toMatch(/\bflex-1\b/);
+    expect(mainMatch?.[1]).toMatch(/\boverflow-y-auto\b/);
+    expect(mainMatch?.[1]).toMatch(/\boverflow-x-hidden\b/);
   });
 
   it('preserves overlay close, role filtering, routes, and active-state matching', () => {
